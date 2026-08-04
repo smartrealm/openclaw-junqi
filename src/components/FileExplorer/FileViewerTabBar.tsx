@@ -156,7 +156,7 @@ export function FileViewerTabBar({
             padding: "4px 0",
             border: "1px solid var(--aegis-menu-border)",
             borderRadius: 6,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.32)",
+            boxShadow: "var(--aegis-shadow-popover)",
             background: "var(--aegis-menu-bg)",
           }}
         >

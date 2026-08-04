@@ -262,8 +262,8 @@ function TerminalGitDiffBadge({ counts }: { counts: TerminalGitDiffCounts }) {
   }
   return (
     <span style={{ marginInlineStart: 'auto', flexShrink: 0, display: 'inline-flex', gap: 5, paddingInlineStart: 4, fontSize: 10, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace', position: 'relative' }}>
-      {counts.insertions > 0 && <span style={{ color: 'rgb(115 199 128)' }}><span style={{ color: 'rgb(115 199 128 / 0.6)' }}>+</span>{counts.insertions}</span>}
-      {counts.deletions > 0 && <span style={{ color: 'rgb(232 102 102)' }}><span style={{ color: 'rgb(232 102 102 / 0.6)' }}>−</span>{counts.deletions}</span>}
+      {counts.insertions > 0 && <span style={{ color: 'rgb(var(--aegis-status-ended))' }}><span style={{ color: 'rgb(var(--aegis-status-ended) / 0.6)' }}>+</span>{counts.insertions}</span>}
+      {counts.deletions > 0 && <span style={{ color: 'rgb(var(--aegis-status-failed))' }}><span style={{ color: 'rgb(var(--aegis-status-failed) / 0.6)' }}>−</span>{counts.deletions}</span>}
     </span>
   );
 }

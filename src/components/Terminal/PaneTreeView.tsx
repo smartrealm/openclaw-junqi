@@ -376,9 +376,9 @@ function SplitRenderer({
               gap: 2,
               background: 'rgb(var(--aegis-elevated))',
               borderRadius: 6,
-              border: '1px solid rgb(255 255 255 / 0.06)',
+              border: '1px solid var(--aegis-border)',
               padding: 2,
-              boxShadow: '0 4px 12px rgb(0 0 0 / 0.3)',
+              boxShadow: 'var(--aegis-shadow-popover)',
             }}
           >
             <SplitButton
@@ -583,7 +583,7 @@ export function PaneTreeView({
             padding: '4px 10px',
             borderRadius: 6,
             background: 'rgb(var(--aegis-elevated))',
-            border: '1px solid rgb(255 255 255 / 0.08)',
+            border: '1px solid var(--aegis-border-hover)',
             color: 'rgb(var(--aegis-text-dim))',
             fontSize: 11,
             fontFamily: '"JetBrains Mono", monospace',

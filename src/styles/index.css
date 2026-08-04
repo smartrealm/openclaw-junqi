@@ -70,6 +70,12 @@
   --color-aegis-danger: rgb(var(--aegis-danger));
   --color-aegis-warning: rgb(var(--aegis-warning));
   --color-aegis-success: rgb(var(--aegis-success));
+  --color-aegis-status-running: rgb(var(--aegis-status-running));
+  --color-aegis-status-attention: rgb(var(--aegis-status-attention));
+  --color-aegis-status-idle: rgb(var(--aegis-status-idle));
+  --color-aegis-status-dormant: rgb(var(--aegis-status-dormant));
+  --color-aegis-status-failed: rgb(var(--aegis-status-failed));
+  --color-aegis-status-ended: rgb(var(--aegis-status-ended));
   --color-aegis-menu-text: rgb(var(--aegis-menu-text));
   --color-aegis-menu-text-muted: rgb(var(--aegis-menu-text-muted));
 
@@ -99,10 +105,10 @@
   --font-editor: var(--font-mono);
   --font-arabic: 'IBM Plex Sans Arabic', 'Segoe UI', 'Tahoma', sans-serif;
 
-  /* ── shadows — junqi-scale (cards use borders, not shadows) ── */
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-float: 0 8px 32px rgba(0,0,0,0.2);
-  --shadow-popover: 0 8px 32px rgba(0,0,0,0.22);
+  /* ── 阴影由当前主题解析 ── */
+  --shadow-card: var(--aegis-shadow-card);
+  --shadow-float: var(--aegis-shadow-float);
+  --shadow-popover: var(--aegis-shadow-popover);
 
   /* ── background images ── */
   --background-image-gradient-radial: radial-gradient(var(--tw-gradient-stops));
@@ -736,7 +742,7 @@
   background: rgb(var(--aegis-primary));
   cursor: pointer;
   border: 2px solid var(--aegis-bg-solid);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+  box-shadow: var(--aegis-shadow-card);
 }
 .aegis-slider::-moz-range-thumb {
   width: 16px;
@@ -745,7 +751,7 @@
   background: rgb(var(--aegis-primary));
   cursor: pointer;
   border: 2px solid var(--aegis-bg-solid);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+  box-shadow: var(--aegis-shadow-card);
 }
 
 /* Calendar shared utilities */

@@ -411,8 +411,8 @@ function FileRow({
       {/* Stats */}
       {showStats && entry.additions !== undefined && (
         <span style={{ display: "flex", gap: 5, fontSize: 10.5, flexShrink: 0 }}>
-          <span style={{ color: "#3fb950" }}>+{entry.additions}</span>
-          <span style={{ color: "#f85149" }}>-{entry.deletions}</span>
+          <span style={{ color: "var(--diff-add-fg)" }}>+{entry.additions}</span>
+          <span style={{ color: "var(--diff-delete-fg)" }}>-{entry.deletions}</span>
         </span>
       )}
       {/* Action buttons */}

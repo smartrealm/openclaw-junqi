@@ -185,7 +185,7 @@ function GitBranchSlot({ projectPath }: { projectPath: string }) {
           position: "absolute", bottom: 30, left: 0, zIndex: 200,
           width: 230, maxWidth: 'calc(100vw - 32px)', maxHeight: 320, overflowY: "auto",
           border: "1px solid rgb(var(--aegis-overlay) / 0.10)", borderRadius: 6,
-          boxShadow: "0 10px 30px rgb(0 0 0 / 0.42)", padding: 4,
+          boxShadow: "var(--aegis-shadow-popover)", padding: 4,
         }}>
           {branches.map((item) => (
             <TerminalKookyMenuItem
@@ -229,8 +229,8 @@ function SignedDiffCount({ sign, value, color }: { sign: '+' | '−'; value: num
 function DiffCountBadge({ insertions, deletions }: { insertions: number; deletions: number }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, fontFamily: '"Kooky JetBrains Mono", "JetBrains Mono", monospace', fontSize: 11 }}>
-      {insertions > 0 && <SignedDiffCount sign="+" value={insertions} color="rgb(115 199 128)" />}
-      {deletions > 0 && <SignedDiffCount sign="−" value={deletions} color="rgb(232 102 102)" />}
+      {insertions > 0 && <SignedDiffCount sign="+" value={insertions} color="rgb(var(--aegis-status-ended))" />}
+      {deletions > 0 && <SignedDiffCount sign="−" value={deletions} color="rgb(var(--aegis-status-failed))" />}
       {insertions === 0 && deletions === 0 && <span style={{ color: 'rgb(var(--aegis-text-dim))' }}>±</span>}
     </span>
   );
@@ -317,8 +317,8 @@ function GitDiffSlot({ projectPath }: { projectPath: string }) {
       <button type="button" title="Show changed files" onClick={togglePresentation} style={{ ...pillBase, ...pill.style }} {...pill.handlers}>
         <Diff size={11} strokeWidth={1.8} style={{ color: 'rgb(var(--aegis-text-dim))', flexShrink: 0 }} />
         <span style={{ color: 'rgb(var(--aegis-text-dim))' }}>{stat.files_changed}</span>
-        {stat.insertions > 0 && <SignedDiffCount sign="+" value={stat.insertions} color="rgb(115 199 128)" />}
-        {stat.deletions > 0 && <SignedDiffCount sign="−" value={stat.deletions} color="rgb(232 102 102)" />}
+        {stat.insertions > 0 && <SignedDiffCount sign="+" value={stat.insertions} color="rgb(var(--aegis-status-ended))" />}
+        {stat.deletions > 0 && <SignedDiffCount sign="−" value={stat.deletions} color="rgb(var(--aegis-status-failed))" />}
       </button>
       {open && presentation && (
         <div className="terminal-kooky-menu" role="menu" style={{
@@ -326,7 +326,7 @@ function GitDiffSlot({ projectPath }: { projectPath: string }) {
           width: 320, maxWidth: 'calc(100vw - 32px)', maxHeight: 360,
           display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 4,
           border: '1px solid rgb(var(--aegis-overlay) / 0.10)', borderRadius: 6,
-          boxShadow: '0 10px 30px rgb(0 0 0 / 0.42)',
+          boxShadow: 'var(--aegis-shadow-popover)',
         }}>
           <div style={{ overflowY: 'auto', minHeight: 0 }}>
             {presentation.loadError ? (
@@ -408,7 +408,7 @@ function ProxySlot({ proxy }: { proxy: ShellProxyInfo }) {
         {proxy.summary}
       </button>
       {open && (
-        <div className="terminal-kooky-menu" role="menu" style={{ position: 'absolute', right: 0, bottom: 30, zIndex: 200, width: 380, maxWidth: 'calc(100vw - 32px)', maxHeight: 240, overflowY: 'auto', padding: 4, borderRadius: 6, border: '1px solid rgb(var(--aegis-overlay) / 0.10)', boxShadow: '0 10px 30px rgb(0 0 0 / 0.42)' }}>
+        <div className="terminal-kooky-menu" role="menu" style={{ position: 'absolute', right: 0, bottom: 30, zIndex: 200, width: 380, maxWidth: 'calc(100vw - 32px)', maxHeight: 240, overflowY: 'auto', padding: 4, borderRadius: 6, border: '1px solid rgb(var(--aegis-overlay) / 0.10)', boxShadow: 'var(--aegis-shadow-popover)' }}>
           {proxy.entries.map((entry) => (
             <div key={entry} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, padding: '6px 10px', borderRadius: 5 }} onMouseEnter={(event) => { event.currentTarget.style.background = 'rgb(var(--aegis-overlay) / 0.07)'; }} onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}>
               <button type="button" title="Copy" onClick={() => void copyEntry(entry)} style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', border: 'none', padding: 0, background: 'transparent', color: 'rgb(var(--aegis-text))', cursor: 'pointer', textAlign: 'left', fontFamily: '"Kooky Onest", "Onest", sans-serif', fontSize: 12.5 }}>
@@ -437,7 +437,7 @@ function toolCallPresentation(state: TerminalToolCall['state']): ToolCallPresent
     case 'running':
       return { textColor: 'rgb(var(--aegis-status-running))', glyphColor: 'rgb(var(--aegis-status-running))', glyph: '⋯', accessibleName: 'running' };
     case 'success':
-      return { textColor: 'rgb(var(--aegis-text))', glyphColor: 'rgb(115 199 128)', glyph: 'OK', accessibleName: 'succeeded' };
+      return { textColor: 'rgb(var(--aegis-text))', glyphColor: 'rgb(var(--aegis-status-ended))', glyph: 'OK', accessibleName: 'succeeded' };
     case 'failed':
       return { textColor: 'rgb(var(--aegis-status-failed))', glyphColor: 'rgb(var(--aegis-status-failed))', glyph: 'X', accessibleName: 'failed' };
     case 'stalled':
@@ -729,7 +729,7 @@ export function PaneStatusBar({
       minHeight: 32, flexShrink: 0,
       display: "flex", alignItems: "center",
       padding: "5px 8px", gap: 8,
-      borderTop: "1px solid rgb(255 255 255 / 0.06)",
+      borderTop: "1px solid var(--aegis-border)",
       background: "rgb(var(--aegis-surface))",
       overflow: "visible",
     }}>

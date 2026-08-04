@@ -41,9 +41,7 @@
   color: var(--island-text);
   background: var(--island-surface);
   border: 1px solid var(--island-border);
-  box-shadow:
-    0 18px 46px rgb(0 0 0 / 0.22),
-    inset 0 1px 0 rgb(var(--aegis-overlay) / 0.06);
+  box-shadow: var(--aegis-shadow-float), inset 0 1px 0 rgb(var(--aegis-overlay) / 0.06);
   backdrop-filter: blur(26px) saturate(1.18);
   -webkit-backdrop-filter: blur(26px) saturate(1.18);
 }

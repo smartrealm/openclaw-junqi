@@ -20,6 +20,12 @@ test('Tailwind theme colors resolve to valid CSS values in every concrete theme'
     'danger',
     'warning',
     'success',
+    'status-running',
+    'status-attention',
+    'status-idle',
+    'status-dormant',
+    'status-failed',
+    'status-ended',
     'menu-text',
     'menu-text-muted',
   ]) {
@@ -40,4 +46,10 @@ test('semantic color aliases preserve the storage type of their source token', (
     css,
     /(?:color|background|background-color|border-color):\s*var\(--aegis-(?:text|text-secondary|text-muted|text-dim|primary|primary-hover|primary-deep|accent|accent-hover|danger|warning|success|menu-text|menu-text-muted)\)/,
   );
+});
+
+test('elevation utilities follow the active theme', () => {
+  assert.match(css, /--shadow-card: var\(--aegis-shadow-card\);/);
+  assert.match(css, /--shadow-float: var\(--aegis-shadow-float\);/);
+  assert.match(css, /--shadow-popover: var\(--aegis-shadow-popover\);/);
 });

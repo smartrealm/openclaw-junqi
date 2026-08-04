@@ -503,7 +503,7 @@ export function PromptEditor({
             bottom: '100%',
             background: 'rgb(var(--aegis-card))',
             border: '1px solid rgb(var(--aegis-border))',
-            boxShadow: '0 -8px 24px rgb(0 0 0 / 0.2)',
+            boxShadow: 'var(--aegis-shadow-float)',
             maxHeight: 220,
           }}
         >

@@ -8,19 +8,19 @@ const reading = (luminance: number, contrast = 0.05): PetBackdropReading => ({
 
 test('pet backdrop contrast chooses dark text on a bright wallpaper', () => {
   const style = resolvePetBackdropTextStyle(reading(0.8), 'dark');
-  assert.equal(style.foreground, '#101318');
+  assert.equal(style.foreground, 'rgb(var(--aegis-pet-text-on-light))');
   assert.equal(style.shadow, 'none');
 });
 
 test('pet backdrop contrast chooses light text on a dark wallpaper', () => {
   const style = resolvePetBackdropTextStyle(reading(0.12), 'light');
-  assert.equal(style.foreground, '#f8fafc');
+  assert.equal(style.foreground, 'rgb(var(--aegis-pet-text-on-dark))');
   assert.equal(style.shadow, 'none');
 });
 
 test('pet backdrop contrast compares actual text contrast on a middle-luminance wallpaper', () => {
   const style = resolvePetBackdropTextStyle(reading(0.3), 'dark');
-  assert.equal(style.foreground, '#101318');
+  assert.equal(style.foreground, 'rgb(var(--aegis-pet-text-on-light))');
   assert.equal(style.surface, 'light');
 });
 
@@ -29,8 +29,8 @@ test('pet backdrop contrast always chooses the higher-contrast foreground while 
   const fromLight = resolvePetBackdropTextStyle(reading(0.2), 'light');
   assert.equal(fromDark.surface, 'light');
   assert.equal(fromLight.surface, 'light');
-  assert.equal(fromDark.foreground, '#101318');
-  assert.equal(fromLight.foreground, '#101318');
+  assert.equal(fromDark.foreground, 'rgb(var(--aegis-pet-text-on-light))');
+  assert.equal(fromLight.foreground, 'rgb(var(--aegis-pet-text-on-light))');
 });
 
 test('pet backdrop contrast keeps textured wallpaper captions free of effects', () => {
@@ -62,14 +62,14 @@ test('pet backdrop contrast follows the resolved light theme when native samplin
     reason: 'permission-denied',
   }, 'light');
 
-  assert.equal(style.foreground, '#101318');
+  assert.equal(style.foreground, 'rgb(var(--aegis-pet-text-on-light))');
   assert.equal(style.shadow, 'none');
 });
 
 test('pet backdrop contrast follows the resolved dark theme when native sampling is unavailable', () => {
   const style = resolvePetBackdropTextStyle(null, 'dark');
 
-  assert.equal(style.foreground, '#f8fafc');
+  assert.equal(style.foreground, 'rgb(var(--aegis-pet-text-on-dark))');
   assert.equal(style.shadow, 'none');
 });
 

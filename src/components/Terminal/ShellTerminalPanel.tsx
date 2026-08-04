@@ -306,7 +306,7 @@ function TabShellItem({
         {hasCommandFailure && (
           <span
             title={exitCode != null ? `exit ${exitCode}` : t('terminal.failed', 'Terminal stopped unexpectedly')}
-            style={{ width: 5, height: 5, flexShrink: 0, borderRadius: '50%', background: 'rgb(232 102 102)' }}
+            style={{ width: 5, height: 5, flexShrink: 0, borderRadius: '50%', background: 'rgb(var(--aegis-status-failed))' }}
           />
         )}
         <span style={{ display: 'inline-flex', flexShrink: 0 }}>
@@ -1395,7 +1395,7 @@ const ShellTerminalInstance = forwardRef<ShellTerminalInstanceHandle, {
               display: 'flex', alignItems: 'center', gap: 8,
               padding: '6px 8px', borderRadius: 5,
               background: 'rgb(var(--aegis-elevated))',
-              border: `1px solid ${runtimeState === 'failed' ? 'rgb(239 68 68 / 0.45)' : 'rgb(var(--aegis-overlay) / 0.14)'}`,
+              border: `1px solid ${runtimeState === 'failed' ? 'rgb(var(--aegis-status-failed) / 0.45)' : 'rgb(var(--aegis-overlay) / 0.14)'}`,
               color: 'rgb(var(--aegis-text-secondary))',
               fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
             }}
@@ -2461,7 +2461,7 @@ export const ShellTerminalPanel = forwardRef<ShellTerminalPanelHandle, Props>(
           </div>
           {/* 1pt hairline between tab strip and terminal — kooky chromeHairline
               (foreground.opacity(0.07) in dark) */}
-          <div style={{ height: 1, background: "rgb(255 255 255 / 0.07)", flexShrink: 0 }}></div>
+          <div style={{ height: 1, background: "var(--aegis-border)", flexShrink: 0 }}></div>
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: "relative" }}>
             <PaneSearchBar
               term={activeTermRef.current}

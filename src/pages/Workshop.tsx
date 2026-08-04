@@ -200,7 +200,7 @@ function TaskCard({ task, onMove, onDelete, onProgress }: {
         y: -1,
         boxShadow: '0 4px 16px rgb(var(--aegis-overlay) / 0.08)',
       } : undefined}
-      whileDrag={{ scale: 1.03, boxShadow: '0 8px 32px rgba(0,0,0,0.35)', zIndex: 50 }}
+      whileDrag={{ scale: 1.03, boxShadow: 'var(--aegis-shadow-float)', zIndex: 50 }}
     >
       {/* Priority strip */}
       <div

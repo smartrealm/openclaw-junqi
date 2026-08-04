@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
+import { detachWorkbenchTerminalView } from './workbenchTerminalViewLifecycle';
 
 const source = readFileSync(new URL('./WorkbenchTerminalPane.tsx', import.meta.url), 'utf8');
 
@@ -31,7 +32,15 @@ test('explicit restart retires the exact old run before replacing identity', () 
   assert.match(restart, /workbench:run:/);
 });
 
-test('workbench terminal detach does not stop its backend PTY', () => {
-  assert.doesNotMatch(source, /stopWorkbenchPty/);
-  assert.match(source, /Deliberately do not stop the PTY/);
+test('workbench terminal detach releases only renderer-owned resources', () => {
+  const released: string[] = [];
+  detachWorkbenchTerminalView({
+    observer: { disconnect: () => released.push('observer') },
+    subscription: { dispose: () => released.push('subscription') },
+    input: { dispose: () => released.push('input') },
+    resize: { dispose: () => released.push('resize') },
+    terminal: { dispose: () => released.push('terminal') },
+  });
+
+  assert.deepEqual(released, ['observer', 'subscription', 'input', 'resize', 'terminal']);
 });

@@ -4,16 +4,16 @@
   --wb-panel: var(--aegis-surface-elevated);
   --wb-elevated: var(--aegis-elevated-solid);
   --wb-editor: var(--aegis-code-bg);
-  --wb-line: var(--aegis-border, rgba(255, 255, 255, 0.07));
-  --wb-line-strong: var(--aegis-border-hover, rgba(255, 255, 255, 0.12));
-  --wb-text: rgb(var(--aegis-text, 241 244 251));
-  --wb-text-2: rgb(var(--aegis-text-secondary, 214 219 232));
-  --wb-muted: rgb(var(--aegis-text-muted, 164 173 194));
-  --wb-dim: rgb(var(--aegis-text-dim, 114 123 143));
-  --wb-primary: rgb(var(--aegis-primary, 127 154 255));
-  --wb-success: rgb(var(--aegis-success, 61 214 140));
-  --wb-warning: rgb(var(--aegis-status-attention, 232 176 102));
-  --wb-danger: rgb(var(--aegis-status-failed, 232 102 102));
+  --wb-line: var(--aegis-border);
+  --wb-line-strong: var(--aegis-border-hover);
+  --wb-text: rgb(var(--aegis-text));
+  --wb-text-2: rgb(var(--aegis-text-secondary));
+  --wb-muted: rgb(var(--aegis-text-muted));
+  --wb-dim: rgb(var(--aegis-text-dim));
+  --wb-primary: rgb(var(--aegis-primary));
+  --wb-success: rgb(var(--aegis-success));
+  --wb-warning: rgb(var(--aegis-status-attention));
+  --wb-danger: rgb(var(--aegis-status-failed));
   display: grid;
   grid-template-columns: 220px minmax(480px, 1fr) 350px;
   width: 100%;
@@ -37,11 +37,11 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border: 1px solid rgb(var(--aegis-status-failed, 232 102 102) / 0.38);
+  border: 1px solid rgb(var(--aegis-status-failed) / 0.38);
   border-radius: 6px;
   color: var(--wb-text-2);
   background: var(--wb-elevated);
-  box-shadow: 0 10px 32px rgb(0 0 0 / 0.3);
+  box-shadow: var(--aegis-shadow-float);
 }
 
 .junqi-wb-storage-gate span {
@@ -58,7 +58,7 @@
 .junqi-wb-storage-gate > button {
   flex: 0 0 auto;
   padding: 4px 8px;
-  border: 1px solid rgb(var(--aegis-status-failed, 232 102 102) / 0.35);
+  border: 1px solid rgb(var(--aegis-status-failed) / 0.35);
   border-radius: 4px;
   color: var(--wb-text);
   background: transparent;
@@ -133,7 +133,7 @@
   display: flex;
   align-items: center;
   color: var(--wb-dim);
-  background: rgb(var(--aegis-overlay, 255 255 255) / 0.035);
+  background: rgb(var(--aegis-overlay) / 0.035);
 }
 
 .junqi-wb-worktree-scroll,
@@ -168,11 +168,11 @@
 }
 
 .junqi-wb-worktree:hover {
-  background: rgb(var(--aegis-overlay, 255 255 255) / 0.035);
+  background: rgb(var(--aegis-overlay) / 0.035);
 }
 
 .junqi-wb-worktree.is-active {
-  background: rgb(var(--aegis-primary, 127 154 255) / 0.1);
+  background: rgb(var(--aegis-primary) / 0.1);
 }
 
 .junqi-wb-worktree-select {
@@ -273,7 +273,7 @@
 
 .junqi-wb-collapsed-worktree.is-active {
   color: var(--wb-text);
-  background: rgb(var(--aegis-primary, 127 154 255) / 0.13);
+  background: rgb(var(--aegis-primary) / 0.13);
 }
 
 .junqi-wb-main {
@@ -410,7 +410,7 @@
 
 .junqi-wb-tab-close:hover {
   color: var(--wb-text);
-  background: rgb(var(--aegis-overlay, 255 255 255) / 0.08);
+  background: rgb(var(--aegis-overlay) / 0.08);
 }
 
 .junqi-wb-dirty {
@@ -440,7 +440,7 @@
 }
 
 .junqi-wb-tab-group.is-active {
-  box-shadow: inset 0 0 0 1px rgb(var(--aegis-primary, 127 154 255) / 0.16);
+  box-shadow: inset 0 0 0 1px rgb(var(--aegis-primary) / 0.16);
 }
 
 .junqi-wb-group-content {
@@ -468,7 +468,7 @@
 
 .junqi-wb-split-handle:hover,
 .junqi-wb-split-handle:active {
-  background: rgb(var(--aegis-primary, 127 154 255) / 0.55);
+  background: rgb(var(--aegis-primary) / 0.55);
 }
 
 .junqi-wb-split-handle.is-horizontal {
@@ -499,7 +499,7 @@
 .junqi-wb-terminal-pane {
   position: relative;
   background:
-    linear-gradient(180deg, rgb(var(--aegis-primary, 127 154 255) / 0.025), transparent 110px),
+    linear-gradient(180deg, rgb(var(--aegis-primary) / 0.025), transparent 110px),
     var(--wb-editor);
 }
 
@@ -521,7 +521,7 @@
   right: 8px;
   left: 8px;
   padding: 7px 9px;
-  border: 1px solid rgb(var(--aegis-status-failed, 232 102 102) / 0.35);
+  border: 1px solid rgb(var(--aegis-status-failed) / 0.35);
   border-radius: 5px;
   color: var(--wb-danger);
   background: var(--wb-elevated);
@@ -530,10 +530,10 @@
 .junqi-wb-terminal-error button {
   margin-left: 10px;
   padding: 3px 7px;
-  border: 1px solid rgb(var(--aegis-primary, 127 154 255) / 0.35);
+  border: 1px solid rgb(var(--aegis-primary) / 0.35);
   border-radius: 4px;
   color: var(--wb-text);
-  background: rgb(var(--aegis-primary, 127 154 255) / 0.1);
+  background: rgb(var(--aegis-primary) / 0.1);
 }
 
 .junqi-wb-muted {
@@ -724,7 +724,7 @@
 }
 
 .junqi-wb-search-results button:hover {
-  background: rgb(var(--aegis-overlay, 255 255 255) / 0.035);
+  background: rgb(var(--aegis-overlay) / 0.035);
 }
 
 .junqi-wb-search-results span,
@@ -806,7 +806,7 @@
     top: 0;
     bottom: 0;
     width: min(300px, 78vw);
-    box-shadow: 0 16px 48px rgb(0 0 0 / 0.35);
+    box-shadow: var(--aegis-shadow-popover);
   }
 
   .junqi-wb-sidebar:not(.junqi-wb-sidebar-collapsed) { left: 0; }

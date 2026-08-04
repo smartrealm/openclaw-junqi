@@ -226,6 +226,7 @@ docs/
 - [默认模型已安装契约审计](quality/default-model-installed-contract-audit-2026-07-29.md)
 - [全量代码审查](quality/full-codebase-audit-2026-07-29.md)
 - [CLAUDE.md 全量合规审查](quality/agent-guide-compliance-audit-2026-07-31.md)
+- [主题 Token 收敛验证](quality/theme-token-convergence-2026-08-04.md)
 - [全量代码审查修复规格](../specs/quality/2026-07-30-full-codebase-audit-remediation.md)
 - [全量代码审查修复计划](../plans/quality/2026-07-30-full-codebase-audit-remediation.md)
 - [会话模型选择器与 OpenClaw 对齐记录](quality/session-model-picker-openclaw-parity-2026-07-30.md)

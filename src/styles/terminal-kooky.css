@@ -194,7 +194,7 @@
   border: 1px solid rgb(var(--aegis-overlay) / 0.1);
   border-radius: 0;
   background: var(--aegis-surface-elevated);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+  box-shadow: var(--aegis-shadow-popover);
   color: rgb(var(--aegis-text));
   font: 400 11px/1.2 'Kooky JetBrains Mono', 'JetBrains Mono', monospace;
 }

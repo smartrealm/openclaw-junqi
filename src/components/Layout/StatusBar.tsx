@@ -200,7 +200,7 @@ export function StatusBar() {
       {gatewayPanelOpen && createPortal(
         <div
           ref={gatewayPanelRef}
-          className="fixed left-2 bottom-[30px] z-[2147482000] w-[380px] max-w-[calc(100vw-16px)] max-h-[calc(100vh-48px)] overflow-y-auto rounded-xl bg-aegis-menu-bg shadow-[0_12px_36px_rgba(0,0,0,0.42)]"
+          className="fixed left-2 bottom-[30px] z-[2147482000] w-[380px] max-w-[calc(100vw-16px)] max-h-[calc(100vh-48px)] overflow-y-auto rounded-xl bg-aegis-menu-bg shadow-popover"
         >
           <GatewaySelfRescuePanel
             variant="popover"

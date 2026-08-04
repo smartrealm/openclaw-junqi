@@ -104,7 +104,7 @@ function ToastItem({ toast }: { toast: Toast }) {
         width: 320,
         background: 'var(--aegis-bg-solid)',
         border: `1px solid ${themeAlpha('primary', 0.25)}`,
-        boxShadow: `0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 ${themeAlpha('primary', 0.08)}`,
+        boxShadow: `var(--aegis-shadow-float), inset 0 1px 0 ${themeAlpha('primary', 0.08)}`,
         opacity: entered ? 1 : 0,
         transform: entered ? 'translateX(0) scale(1)' : `translateX(${rtl ? -60 : 60}px) scale(0.96)`,
         transition: 'opacity 160ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1), filter 150ms ease',

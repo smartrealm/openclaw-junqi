@@ -206,3 +206,4 @@ specs/
 - [Agent canonical main session 投影](quality/2026-08-03-agent-main-session-projection.md)
 - [OpenClaw tools.invoke 受控调用](quality/2026-08-03-openclaw-tools-invoke.md)
 - [Provider Catalog 构建可复现性](quality/2026-08-03-provider-catalog-build-reproducibility.md)
+- [主题 Token 收敛](quality/2026-08-04-theme-token-convergence.md)

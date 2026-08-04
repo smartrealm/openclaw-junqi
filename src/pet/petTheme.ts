@@ -43,67 +43,22 @@ export function normalizePetThemeName(themeName: string | null, systemDark: bool
   return systemDark ? 'aegis-dark' : 'aegis-light';
 }
 
-export function resolvePetTextPalette(themeName: PetThemeName): PetTextPalette {
-  switch (themeName) {
-    case 'aegis-dark':
-    case 'aegis-midnight':
-      return {
-        primary: '#f8fafc',
-        secondary: '#dbe4f0',
-        danger: '#fecaca',
-      };
-    case 'aegis-eyecare':
-      return {
-        primary: '#201307',
-        secondary: '#36220d',
-        danger: '#7f1d1d',
-      };
-    case 'aegis-light':
-    default:
-      return {
-        primary: '#020617',
-        secondary: '#0f172a',
-        danger: '#7f1d1d',
-      };
-  }
+export function resolvePetTextPalette(_themeName: PetThemeName): PetTextPalette {
+  return {
+    primary: 'rgb(var(--aegis-text))',
+    secondary: 'rgb(var(--aegis-text-secondary))',
+    danger: 'rgb(var(--aegis-danger))',
+  };
 }
 
-export function resolvePetAccentPalette(themeName: PetThemeName): PetAccentPalette {
-  switch (themeName) {
-    case 'aegis-light':
-      return {
-        primary: '#3b82f6',
-        secondary: '#0891b2',
-        warm: '#d97706',
-        success: '#16825d',
-        warning: '#b45309',
-      };
-    case 'aegis-eyecare':
-      return {
-        primary: '#4f7fa8',
-        secondary: '#4f9dba',
-        warm: '#9a5a1f',
-        success: '#3d7c59',
-        warning: '#8a5a12',
-      };
-    case 'aegis-midnight':
-      return {
-        primary: '#7f9aff',
-        secondary: '#67e8f9',
-        warm: '#f6c177',
-        success: '#9bd88f',
-        warning: '#e8b066',
-      };
-    case 'aegis-dark':
-    default:
-      return {
-        primary: '#6c9fff',
-        secondary: '#73e6ff',
-        warm: '#f6c177',
-        success: '#8bd98b',
-        warning: '#f0b45d',
-      };
-  }
+export function resolvePetAccentPalette(_themeName: PetThemeName): PetAccentPalette {
+  return {
+    primary: 'rgb(var(--aegis-primary))',
+    secondary: 'rgb(var(--aegis-accent))',
+    warm: 'rgb(var(--aegis-warning))',
+    success: 'rgb(var(--aegis-success))',
+    warning: 'rgb(var(--aegis-status-attention))',
+  };
 }
 
 const BODY_BY_THEME: Record<PetThemeName, Record<PetSkin, string>> = {

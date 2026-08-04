@@ -51,6 +51,7 @@ import {
   applyTerminalFontSize,
   applyTerminalThemeOnPanel,
   attachTerminalScrollbarAutoHide,
+  buildDarkTerminalTheme,
   loadWebglAddon,
   refreshTerminalDisplay,
 } from '@/components/Terminal/terminalShared';
@@ -351,7 +352,7 @@ function LaunchSelector({ mode, baseBranch, onMode, onBranch, disabled, projectP
           </button>
           {open && (
             <div className="absolute top-full mt-1 left-0 z-50 w-48 rounded-lg overflow-hidden"
-              style={{ background: 'rgb(var(--aegis-card))', border: '1px solid rgb(var(--aegis-border))', boxShadow: '0 8px 24px rgba(0,0,0,0.3)' }}>
+              style={{ background: 'rgb(var(--aegis-card))', border: '1px solid rgb(var(--aegis-border))', boxShadow: 'var(--aegis-shadow-float)' }}>
               <div className="px-2 py-1.5 border-b flex items-center gap-1" style={{ borderColor: 'rgb(var(--aegis-border))' }}>
                 <Search size={11} className="text-aegis-text-dim" />
                 <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
@@ -713,13 +714,7 @@ export function AgentRunView({
           cursorStyle: terminalCursorStyleRef.current,
           fontSize: terminalFontSizeRef.current,
           fontFamily: monoFontFamilyRef.current,
-          theme: (() => {
-            const cs = getComputedStyle(document.documentElement);
-            return {
-              background: cs.getPropertyValue('--terminal-bg').trim() || '#0d1117',
-              foreground: cs.getPropertyValue('--terminal-text').trim() || '#e6edf3',
-            };
-          })(),
+          theme: buildDarkTerminalTheme(),
           rows: 30,
           cols: 120,
           scrollback: terminalScrollbackRef.current,

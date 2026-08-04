@@ -133,7 +133,7 @@ const CompactPill = React.forwardRef<HTMLButtonElement, Omit<PillProps, 'ref'>>(
         gap: 4,
         padding: '2px 6px',
         borderRadius: 4,
-        border: '1px solid rgb(255 255 255 / 0.08)',
+        border: '1px solid var(--aegis-border-hover)',
         background: isOpen ? 'rgb(var(--aegis-overlay)/0.08)' : 'transparent',
         cursor: 'pointer',
         color: 'rgb(var(--aegis-text-dim))',
@@ -194,7 +194,7 @@ function ToolCallHistoryPopoverContent({ events, stats, onClose }: PopoverProps)
         color: 'rgb(var(--aegis-text))',
         borderRadius: 8,
         overflow: 'hidden',
-        boxShadow: '0 16px 48px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.06)',
+        boxShadow: 'var(--aegis-shadow-popover)',
       }}
     >
       {/* Header (kooky ToolCallHistoryPopover.header) */}
@@ -235,7 +235,7 @@ function ToolCallHistoryPopoverContent({ events, stats, onClose }: PopoverProps)
       </div>
 
       {/* 1px hairline */}
-      <div style={{ height: 1, flexShrink: 0, background: 'rgb(255 255 255 / 0.07)' }} />
+      <div style={{ height: 1, flexShrink: 0, background: 'var(--aegis-border)' }} />
 
       {/* Scrollable event list (newest first) */}
       {events.length === 0 ? (
@@ -246,7 +246,7 @@ function ToolCallHistoryPopoverContent({ events, stats, onClose }: PopoverProps)
             <div key={event.id}>
               <EventRow event={event} />
               {idx < events.length - 1 && (
-                <div style={{ height: 1, background: 'rgb(255 255 255 / 0.04)', margin: '0 14px' }} />
+                <div style={{ height: 1, background: 'var(--aegis-border)', margin: '0 14px' }} />
               )}
             </div>
           ))}
