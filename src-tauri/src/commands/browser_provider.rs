@@ -105,6 +105,8 @@ pub fn open_ego_lite() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::{
         ego_lite_application_candidates, EGO_BROWSER_BINARY, EGO_LITE_APPLICATION_NAME,
         EGO_LITE_PROVIDER_ID,
@@ -120,9 +122,8 @@ mod tests {
     #[test]
     fn application_candidates_are_fixed_to_known_locations() {
         let candidates = ego_lite_application_candidates();
-        assert!(candidates
-            .iter()
-            .any(|candidate| candidate.to_string_lossy() == "/Applications/ego lite.app"));
+        let system_application = PathBuf::from("/Applications").join(EGO_LITE_APPLICATION_NAME);
+        assert!(candidates.contains(&system_application));
         assert!(candidates.iter().all(|candidate| {
             candidate.file_name().and_then(|name| name.to_str()) == Some(EGO_LITE_APPLICATION_NAME)
         }));

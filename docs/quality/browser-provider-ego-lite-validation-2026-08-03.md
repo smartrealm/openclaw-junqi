@@ -22,6 +22,13 @@
 | `git diff --check` | 通过 |
 | Emoji 扫描 | 通过，未发现匹配项 |
 
+## 2026-08-05 Windows 发布回归
+
+- 依据：`v2.2.2` 的 Windows x64 发布任务在 Rust 测试阶段失败；677 项通过，`application_candidates_are_fixed_to_known_locations` 失败。
+- 当前行为：候选路径实现使用 `PathBuf`，测试却把路径转换为字符串并按 macOS 分隔符比较，导致 Windows 将分隔符规范化后产生误报。
+- 目标行为：测试使用 `PathBuf` 语义比较固定系统应用路径，并继续验证所有候选项只能使用官方应用名称。
+- 验证边界：本机执行 Rust 测试与版本一致性检查；Windows x64 真实验证以 `v2.2.3` 标签发布工作流结果为准。
+
 ## 尚未验证
 
 - 尚未在真实 macOS 设备安装 ego-lite 并验证 `ego-browser` 与应用路径的实际发现。
