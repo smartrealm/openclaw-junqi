@@ -11,6 +11,8 @@
   状态机边界。
 - [x] 增加普通发送、显式本地队列和 Task Run 复用的回归测试。
 - [x] 更新 docs、specs、plans 索引，记录真实验证和未验证平台边界。
+- [x] 按更新后的官方 OpenClaw 工作树复核 `chat.send`、queued turn 取消身份与
+  共享会话建议/输入状态协议，确认当前实现无需伪造共享会话能力。
 - [ ] 在具备真实 Gateway 的 macOS、Windows、CentOS、Ubuntu 桌面环境中验证各
   queue mode、断连恢复和 Jarvis steering。
 

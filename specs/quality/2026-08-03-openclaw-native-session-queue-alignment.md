@@ -38,3 +38,6 @@ Quick Chat、显式本地队列、Jarvis steering 和 Task checkpoint 行为。J
 - 不硬编码 OpenClaw 版本、安装路径、平台名称或默认 queue mode。
 - 不把一次 `chat.send` ACK 推断成 Gateway 已经执行，也不为 queued followup 生成
   未被官方事件确认的本地 Run。
+- 不把 `session.suggestions.*`、`session.typing` 或共享会话可见性事件映射为单人
+  composer suggestion、助手生成状态或 JunQi 协作插件状态；这些协议只能在 OpenClaw
+  共享会话身份、可见性、成员权限和事件投影均已完整接入时使用。

@@ -60,3 +60,18 @@ OpenClaw 原生 `sessions.steer`，因为它是另一种明确的中断并转向
   恢复和语音打断验收。
 - OpenClaw 官方 queue 文档、协议 schema 或 handler 变化时，必须重新核对官方
   源码后更新适配器和本记录。
+
+## 2026-08-04 上游复核
+
+本次按本机官方 OpenClaw 工作树 `1e3880352e614116549c0a30c67a59a2d40ba259`
+复核。上游已将部分 Gateway handler 拆分为 `chat-send-*.ts` 和
+`sessions-*.ts`，旧文件路径不能再作为行为依据；但 `chat.send` 仍由 Gateway
+拥有队列准入、`queueMode` 单次覆盖、idempotency key 与 queued turn 的取消身份。
+JunQi 普通发送不生成 `queueMode`，继续忠实交由 Gateway 依据运行时配置决定。
+
+上游同时提供 `session.suggestions.*`、`session.typing`、`session.sharing`、
+`session.visibility.set` 和 `session.members.*` 协议。这些能力要求可验证的共享
+会话身份、可见性、成员权限与活跃观察者，并非单人 Chat 的本地输入建议或助手生成
+状态。JunQi 当前没有对应的官方共享会话管理链路，因此不将本地 composer suggestion、
+`typingBySession` 或协作插件状态伪装成这些协议。待 JunQi 具备完整的官方共享会话
+入口、身份和事件投影后，才可按该协议另行设计与验收。
