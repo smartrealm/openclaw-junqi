@@ -160,6 +160,7 @@ specs/
 - [OpenClaw 模型目录权威性](quality/2026-08-04-openclaw-model-catalog-authority-alignment.md)
 - [OpenClaw Talk 事件契约](quality/2026-08-04-openclaw-talk-event-contract-alignment.md)
 - [OpenClaw Talk Barge-in Turn 围栏](quality/2026-08-04-openclaw-talk-barge-in-turn-fence.md)
+- [Task 执行终态合并围栏](quality/2026-08-04-task-execution-terminal-merge-fence.md)
 - [OpenClaw Task 工具事件 Run 绑定](quality/2026-08-04-openclaw-task-tool-event-run-binding.md)
 - [OpenClaw 工具生命周期终态围栏](quality/2026-08-04-openclaw-tool-lifecycle-terminal-fence.md)
 - [OpenClaw 会话 category 权威性](quality/2026-08-04-openclaw-session-category-authority-alignment.md)

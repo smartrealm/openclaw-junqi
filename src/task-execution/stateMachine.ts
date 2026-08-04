@@ -95,6 +95,18 @@ function preferByTimeAndStatus<T extends { updatedAt: number; status: string }>(
   return rank(candidate.status) > rank(current.status) ? candidate : current;
 }
 
+function preferLifecycleState<T extends { updatedAt: number; status: string }>(
+  current: T,
+  candidate: T,
+  rank: (status: string) => number,
+  isTerminal: (status: string) => boolean,
+): T {
+  const currentTerminal = isTerminal(current.status);
+  const candidateTerminal = isTerminal(candidate.status);
+  if (currentTerminal !== candidateTerminal) return currentTerminal ? current : candidate;
+  return preferByTimeAndStatus(current, candidate, rank);
+}
+
 function runStatusRank(status: string): number {
   return ({
     pending: 1,
@@ -119,6 +131,21 @@ function nodeStatusRank(status: string): number {
     blocked: 7,
     verification_required: 8,
   } as Record<string, number>)[status] ?? 0;
+}
+
+function isTerminalRunStatus(status: string): boolean {
+  return status === 'succeeded'
+    || status === 'cancelled'
+    || status === 'failed'
+    || status === 'verification_required';
+}
+
+function isTerminalNodeStatus(status: string): boolean {
+  return status === 'succeeded'
+    || status === 'cancelled'
+    || status === 'rolled_back'
+    || status === 'failed'
+    || status === 'verification_required';
 }
 
 function closeConflictingRunIntents(
@@ -154,12 +181,16 @@ function mergeCheckpoint(left: TaskExecutionCheckpoint, right: TaskExecutionChec
   const runs = new Map(left.runs.map((run) => [run.runId, { ...run }]));
   for (const run of right.runs) {
     const existing = runs.get(run.runId);
-    runs.set(run.runId, existing ? preferByTimeAndStatus(existing, run, runStatusRank) : { ...run });
+    runs.set(run.runId, existing
+      ? preferLifecycleState(existing, run, runStatusRank, isTerminalRunStatus)
+      : { ...run });
   }
   const nodes = new Map(left.nodes.map((node) => [node.id, { ...node }]));
   for (const node of right.nodes) {
     const existing = nodes.get(node.id);
-    nodes.set(node.id, existing ? preferByTimeAndStatus(existing, node, nodeStatusRank) : { ...node });
+    nodes.set(node.id, existing
+      ? preferLifecycleState(existing, node, nodeStatusRank, isTerminalNodeStatus)
+      : { ...node });
   }
   const edges = new Map((left.edges ?? []).map((edge) => [edge.id, { ...edge }]));
   for (const edge of right.edges ?? []) {
@@ -202,7 +233,7 @@ function ensureActiveRun(checkpoint: TaskExecutionCheckpoint, runId: string) {
 }
 
 function isTerminalRun(status: TaskRunStatus): boolean {
-  return status === 'succeeded' || status === 'cancelled' || status === 'failed' || status === 'verification_required';
+  return isTerminalRunStatus(status);
 }
 
 function updateNodeStatus(node: TaskExecutionNode, status: TaskNodeStatus, updatedAt: number): void {

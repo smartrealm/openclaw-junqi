@@ -249,6 +249,29 @@ test('cross-window checkpoint merge preserves independent tool nodes', () => {
   );
 });
 
+test('cross-window merge cannot reopen terminal run or node from a delayed active snapshot', () => {
+  const started = beginTaskRun(emptyTaskExecutionSnapshot(), {
+    binding,
+    runId: 'run-terminal-merge',
+    source: 'jarvis',
+    now: 10,
+  });
+  const terminal = settleTaskRun(started, binding, 'run-terminal-merge', 'final', 30);
+  const delayedActive = {
+    ...started,
+    tasks: started.tasks.map((task) => ({
+      ...task,
+      updatedAt: 40,
+      runs: task.runs.map((run) => ({ ...run, updatedAt: 40 })),
+      nodes: task.nodes.map((node) => ({ ...node, updatedAt: 40 })),
+    })),
+  };
+
+  const merged = mergeTaskExecutionSnapshots(terminal, delayedActive);
+  assert.equal(merged.tasks[0]?.runs[0]?.status, 'succeeded');
+  assert.equal(merged.tasks[0]?.nodes.find((node) => node.kind === 'model_turn')?.status, 'succeeded');
+});
+
 test('cross-window steer intents keep one running replacement and quarantine the competing intent', () => {
   const started = beginTaskRun(emptyTaskExecutionSnapshot(), {
     binding,

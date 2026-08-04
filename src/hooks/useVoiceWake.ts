@@ -127,8 +127,7 @@ export function useVoiceWake({
   const captureDrainingRef = useRef(false);
   const suppressNativeCaptureRef = useRef(false);
   const wakeAcceptanceGateRef = useRef(new VoiceWakeAcceptanceGate());
-  const ownerIdRef = useRef<string | null>(null);
-  if (ownerIdRef.current === null) ownerIdRef.current = createVoiceWakeOwnerId();
+  const [ownerId] = useState(createVoiceWakeOwnerId);
   const callbacksRef = useRef({ onTranscript, onCaptureFallback, onWakeDetected, onPcmAudio, sessionKey });
   callbacksRef.current = { onTranscript, onCaptureFallback, onWakeDetected, onPcmAudio, sessionKey };
 
@@ -171,9 +170,9 @@ export function useVoiceWake({
     if (nativeVADRef.current || stoppedRef.current) return;
     nativeVADRef.current = true;
     try {
-      await startVoiceWake(mode, { streamPcm, ownerId: ownerIdRef.current });
+      await startVoiceWake(mode, { streamPcm, ownerId });
       if (stoppedRef.current) {
-        await stopVoiceWake(ownerIdRef.current).catch(() => undefined);
+        await stopVoiceWake(ownerId).catch(() => undefined);
         nativeVADRef.current = false;
         return;
       }
@@ -187,7 +186,7 @@ export function useVoiceWake({
       voiceRuntime.setError(error, callbacksRef.current.sessionKey);
       setEnabled(false);
     }
-  }, [updatePhase]);
+  }, [ownerId, updatePhase]);
 
   const startBrowserRecognition = useCallback(() => {
     const Ctor = getSpeechRecognition();
@@ -292,7 +291,7 @@ export function useVoiceWake({
       restartTimerRef.current = null;
     }
     if (nativeVADRef.current) {
-      try { await stopVoiceWake(ownerIdRef.current); } catch {}
+      try { await stopVoiceWake(ownerId); } catch {}
     }
     nativeVADRef.current = false;
     const recognition = recognitionRef.current;
@@ -301,7 +300,7 @@ export function useVoiceWake({
     setEnabled(false);
     setError(null);
     updatePhase('idle');
-  }, [updatePhase]);
+  }, [ownerId, updatePhase]);
 
   useEffect(() => () => {
     stoppedRef.current = true;
@@ -312,10 +311,10 @@ export function useVoiceWake({
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
     if (recognition) { try { recognition.stop(); } catch {} }
-    if (nativeVADRef.current) void stopVoiceWake(ownerIdRef.current).catch(() => undefined);
+    if (nativeVADRef.current) void stopVoiceWake(ownerId).catch(() => undefined);
     nativeVADRef.current = false;
     voiceRuntime.setIdle(callbacksRef.current.sessionKey);
-  }, []);
+  }, [ownerId]);
 
   // Subscribe to Rust voice-wake events for the lifetime of `enabled`.
   useEffect(() => {

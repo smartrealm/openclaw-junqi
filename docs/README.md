@@ -136,6 +136,7 @@ docs/
 - [语音唤醒监听配置围栏](quality/voice-wake-listener-configuration-fence-2026-08-04.md)
 - [OpenClaw Task 工具事件 Run 绑定审计](quality/openclaw-task-tool-event-run-binding-2026-08-04.md)
 - [OpenClaw 工具生命周期终态围栏](quality/openclaw-tool-lifecycle-terminal-fence-2026-08-04.md)
+- [Task 执行终态合并围栏](quality/task-execution-terminal-merge-fence-2026-08-04.md)
 - [OpenClaw 会话 category 权威性对齐](quality/openclaw-session-category-authority-alignment-2026-08-04.md)
 - [OpenClaw 原生会话组目录投影](quality/openclaw-native-session-group-catalog-projection-2026-08-04.md)
 - [OpenClaw Gateway 方法广告发现边界修正](quality/openclaw-gateway-method-advertisement-gate-2026-08-04.md)
