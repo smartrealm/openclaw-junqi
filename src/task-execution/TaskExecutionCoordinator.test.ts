@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { RuntimeIdentity } from '@/types/gatewayRuntime';
-import { beginTaskRun, emptyTaskExecutionSnapshot } from './stateMachine';
-import { resolveTaskExecutionBinding } from './TaskExecutionCoordinator';
+import { beginTaskRun, emptyTaskExecutionSnapshot, recordTaskToolEvent } from './stateMachine';
+import {
+  resolveTaskExecutionBinding,
+  resolveTaskExecutionToolEventBinding,
+} from './TaskExecutionCoordinator';
 
 const identity = {
   verified: true,
@@ -68,5 +71,74 @@ test('uses the caller session identity instead of a stored checkpoint for a rota
   assert.deepEqual(
     resolveTaskExecutionBinding(rotated.tasks, baseBinding.sessionKey, 'session-2', identity, true),
     { ...baseBinding, sessionId: 'session-2' },
+  );
+});
+
+test('binds a tool event to its exact Run after a session identity rotation', () => {
+  const first = beginTaskRun(emptyTaskExecutionSnapshot(), {
+    binding: baseBinding,
+    runId: 'run-before-reset',
+    source: 'chat',
+    now: 10,
+  });
+  const rotatedBinding = { ...baseBinding, sessionId: 'session-2' };
+  const rotated = beginTaskRun(first, {
+    binding: rotatedBinding,
+    runId: 'run-after-reset',
+    source: 'chat',
+    now: 20,
+  });
+
+  const toolBinding = resolveTaskExecutionToolEventBinding(
+    rotated.tasks,
+    baseBinding.sessionKey,
+    'run-after-reset',
+    identity,
+  );
+  assert.deepEqual(toolBinding, rotatedBinding);
+  assert.ok(toolBinding);
+  const recorded = recordTaskToolEvent(rotated, toolBinding, {
+    runId: 'run-after-reset',
+    toolCallId: 'tool-after-reset',
+    toolName: 'write',
+    phase: 'start',
+    now: 30,
+  });
+  const previousTask = recorded.tasks.find((task) => task.binding.sessionId === baseBinding.sessionId);
+  const currentTask = recorded.tasks.find((task) => task.binding.sessionId === rotatedBinding.sessionId);
+  assert.equal(previousTask?.nodes.some((node) => node.toolCallId === 'tool-after-reset'), false);
+  assert.equal(currentTask?.nodes.some((node) => node.toolCallId === 'tool-after-reset'), true);
+  assert.deepEqual(
+    resolveTaskExecutionToolEventBinding(
+      rotated.tasks,
+      baseBinding.sessionKey,
+      'run-before-reset',
+      identity,
+    ),
+    baseBinding,
+  );
+  assert.equal(
+    resolveTaskExecutionToolEventBinding(rotated.tasks, baseBinding.sessionKey, 'unknown-run', identity),
+    null,
+  );
+});
+
+test('refuses a tool event Run that is present in more than one stored Task', () => {
+  const first = beginTaskRun(emptyTaskExecutionSnapshot(), {
+    binding: baseBinding,
+    runId: 'duplicated-run',
+    source: 'chat',
+    now: 10,
+  });
+  const rotated = beginTaskRun(first, {
+    binding: { ...baseBinding, sessionId: 'session-2' },
+    runId: 'duplicated-run',
+    source: 'chat',
+    now: 20,
+  });
+
+  assert.equal(
+    resolveTaskExecutionToolEventBinding(rotated.tasks, baseBinding.sessionKey, 'duplicated-run', identity),
+    null,
   );
 });

@@ -71,6 +71,23 @@ export function resolveTaskExecutionBinding(
   return current;
 }
 
+/** Resolve a tool event only when its OpenClaw runId identifies one stored Task. */
+export function resolveTaskExecutionToolEventBinding(
+  tasks: TaskExecutionSnapshot['tasks'],
+  sessionKey: string,
+  runId: string,
+  identity: ReturnType<typeof getCurrentRuntimeIdentity>,
+): TaskExecutionRuntimeBinding | null {
+  const normalizedRunId = runId.trim();
+  if (!normalizedRunId || !identity?.verified) return null;
+  const candidates = tasks.filter((task) => (
+    sameSession(task, sessionKey)
+    && sameRuntime(task, identity)
+    && task.runs.some((run) => run.runId === normalizedRunId)
+  ));
+  return candidates.length === 1 ? { ...candidates[0].binding } : null;
+}
+
 export class TaskExecutionCoordinator {
   private snapshot: TaskExecutionSnapshot = emptyTaskExecutionSnapshot();
   private generation = 0;
@@ -119,6 +136,19 @@ export class TaskExecutionCoordinator {
     await this.hydrate();
     const identity = getCurrentRuntimeIdentity();
     return resolveTaskExecutionBinding(this.snapshot.tasks, sessionKey, sessionId, identity, allowStored);
+  }
+
+  private async toolEventBinding(
+    sessionKey: string,
+    runId: string,
+  ): Promise<TaskExecutionRuntimeBinding | null> {
+    await this.hydrate();
+    return resolveTaskExecutionToolEventBinding(
+      this.snapshot.tasks,
+      sessionKey,
+      runId,
+      getCurrentRuntimeIdentity(),
+    );
   }
 
   private async commit(next: TaskExecutionSnapshot): Promise<void> {
@@ -198,7 +228,7 @@ export class TaskExecutionCoordinator {
     phase: 'start' | 'update' | 'result';
     resultStatus?: 'done' | 'error' | 'cancelled';
   }): Promise<void> {
-    const binding = await this.operationBinding(params.sessionKey, undefined, true);
+    const binding = await this.toolEventBinding(params.sessionKey, params.runId);
     if (!binding) return;
     await this.commit(recordTaskToolEvent(this.snapshot, binding, params));
   }
