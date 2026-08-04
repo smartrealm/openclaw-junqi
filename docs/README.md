@@ -131,6 +131,7 @@ docs/
 - [OpenClaw Agent 身份投影](quality/openclaw-agent-identity-projection-2026-08-04.md)
 - [OpenClaw Composer 队列权威与灵动岛预览可见性审计](quality/openclaw-composer-queue-authority-2026-08-03.md)
 - [OpenClaw Transcript Active Leaf 围栏对齐](quality/openclaw-transcript-active-leaf-fence-2026-08-04.md)
+- [OpenClaw 原生会话分支对齐](quality/openclaw-session-branches-alignment-2026-08-04.md)
 - [灵动岛显隐生命周期审计](quality/dynamic-island-visibility-lifecycle-audit-2026-08-04.md)
 - [OpenClaw 本地发送队列交付原子性审计](quality/openclaw-local-send-queue-dispatch-atomicity-audit-2026-08-04.md)
 - [P0 IPC 与 Gateway 边界收敛验证](quality/p0-ipc-and-gateway-boundary-validation-2026-08-03.md)

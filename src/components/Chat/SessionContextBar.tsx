@@ -20,6 +20,7 @@ import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
 import { SessionRuntimeControl } from './session-runtime/SessionRuntimeControl';
 import { EffectiveToolsControl } from './EffectiveToolsControl';
 import { SessionInspectionControl } from './SessionInspectionControl';
+import { SessionBranchesControl } from './SessionBranchesControl';
 import { SessionArtifactsControl } from './SessionArtifactsControl';
 import { desktopFileRuntime } from '@/services/chat/desktopFileRuntime';
 import { getGatewaySessionContextBudgetNotice } from '@/services/gateway/sessionContextBudgetStatus';
@@ -412,6 +413,7 @@ export function SessionContextBar() {
             agentId={agentId}
             onOpenConfiguration={() => navigate('/tools')}
           />
+          <SessionBranchesControl sessionKey={activeSessionKey} agentId={agentId} />
           <SessionInspectionControl sessionKey={activeSessionKey} agentId={agentId} />
           <SessionArtifactsControl sessionKey={activeSessionKey} agentId={agentId} />
           <button

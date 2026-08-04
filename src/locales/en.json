@@ -1495,6 +1495,23 @@
         "timeoutRetry": "Timeout retry"
       }
     },
+    "sessionBranches": {
+      "open": "View and switch session branches",
+      "title": "Session branches",
+      "loading": "Reading session branches from Gateway",
+      "error": "The session branches could not be read.",
+      "retry": "Retry",
+      "refresh": "Refresh session branches",
+      "empty": "There are no switchable branches for this session.",
+      "active": "Current branch",
+      "switch": "Switch to this branch",
+      "switchConfirmTitle": "Switch session branch?",
+      "switchConfirmMessage": "OpenClaw will switch the transcript branch used for the current session display and subsequent input. Any active work must first end in Gateway.",
+      "switchFailedTitle": "Session branch switch failed",
+      "switchFailed": "OpenClaw did not confirm that the session branch was switched.",
+      "messageCount": "{{count}} messages",
+      "untitled": "Untitled branch"
+    },
     "sessionArtifacts": {
       "open": "View session artifacts",
       "title": "Session artifacts",

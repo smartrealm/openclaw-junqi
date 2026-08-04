@@ -68,6 +68,7 @@ import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
 import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClient';
 import { OpenClawSessionCompactionCheckpointsClient } from './OpenClawSessionCompactionCheckpointsClient';
 import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
+import { OpenClawSessionBranchesClient } from './OpenClawSessionBranchesClient';
 import { OpenClawSessionObserverClient } from './OpenClawSessionObserverClient';
 import {
   openClawSessionObserverStream,
@@ -154,6 +155,7 @@ export type {
   OpenClawSessionUsageLogEntry,
   OpenClawSessionUsageLogRole,
 } from './OpenClawSessionUsageLogsClient';
+export type { OpenClawSessionBranch } from './OpenClawSessionBranchesClient';
 export type { OpenClawModelAuthStatusSnapshot } from './OpenClawModelAuthStatusClient';
 export type { OpenClawProviderUsageSnapshot } from './OpenClawProviderUsageClient';
 export type {
@@ -1046,6 +1048,10 @@ const sessionCompactionOperations = new SessionCompactionClient({
   requestPrivileged: (method, params) => requestPrivileged(method, params),
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
 });
+const sessionBranches = new OpenClawSessionBranchesClient({
+  request: (method, params) => connection.request(method, params),
+  runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
+});
 const agentManagement = new OpenClawAgentManagement({
   request: (method, params) => requestPrivileged(method, params),
 });
@@ -1359,6 +1365,12 @@ export const gateway = {
     agentId?: string,
   ) {
     return sessionCompactionOperations.restore(sessionKey, checkpointId, agentId);
+  },
+  async listSessionBranches(sessionKey: string, agentId?: string) {
+    return sessionBranches.list(sessionKey, agentId);
+  },
+  async switchSessionBranch(sessionKey: string, leafEntryId: string, agentId?: string) {
+    return sessionBranches.switch(sessionKey, leafEntryId, agentId);
   },
   async listSessionArtifacts(sessionKey: string, agentId?: string): Promise<ArtifactSummary[]> {
     const targetSessionKey = requireOpenClawSessionTarget(sessionKey);

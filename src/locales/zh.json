@@ -1484,6 +1484,23 @@
         "timeoutRetry": "超时重试"
       }
     },
+    "sessionBranches": {
+      "open": "查看并切换会话分支",
+      "title": "会话分支",
+      "loading": "正在从 Gateway 读取会话分支",
+      "error": "无法读取会话分支。",
+      "retry": "重试",
+      "refresh": "刷新会话分支",
+      "empty": "当前会话没有可切换的分支。",
+      "active": "当前分支",
+      "switch": "切换到此分支",
+      "switchConfirmTitle": "切换会话分支？",
+      "switchConfirmMessage": "OpenClaw 将切换当前会话显示和后续输入所使用的 transcript 分支。当前正在进行的工作必须先由 Gateway 结束。",
+      "switchFailedTitle": "切换会话分支失败",
+      "switchFailed": "OpenClaw 未确认会话分支已切换。",
+      "messageCount": "{{count}} 条消息",
+      "untitled": "未命名分支"
+    },
     "sessionArtifacts": {
       "open": "查看会话产物",
       "title": "会话产物",
