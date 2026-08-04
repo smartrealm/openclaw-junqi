@@ -15,7 +15,7 @@
 - 签署并验证最终 NSIS 安装器。
 - 内部测试配置关闭 updater artifacts。
 - Tag 测试发布在 Windows 临时 runner 生成不可导出的短期证书，并只上传 CER 和证书信息。
-- 临时 runner 通过 Windows `certutil -user -f -addstore` 在当前用户证书存储中信任公开 CER，以执行 Authenticode 验证，并在 `always()` 清理私钥与信任项。
+- 临时 runner 通过 Windows `certutil -user -f -addstore` 在当前用户 `TrustedPeople` 与 `TrustedPublisher` 中信任公开 CER，以执行 Authenticode 验证，不修改受保护的根证书库，并在 `always()` 清理私钥与信任项。
 
 ## 阶段 3：文档和守护
 

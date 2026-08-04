@@ -54,7 +54,8 @@ test('ephemeral CI certificate is non-exportable, short-lived, and emits public 
   assert.match(ciCertificate, /certutil\.exe -user -f -addstore \$storeName \$cerPath/);
   assert.match(ciCertificate, /if \(\$LASTEXITCODE -ne 0\)/);
   assert.ok(thumbprintOutput >= 0 && thumbprintOutput < trustStoreWrite);
-  assert.match(ciCertificate, /'Root', 'TrustedPublisher'/);
+  assert.match(ciCertificate, /'TrustedPeople', 'TrustedPublisher'/);
+  assert.doesNotMatch(ciCertificate, /'Root'/);
   assert.doesNotMatch(ciCertificate, /Import-Certificate|X509Store/);
   assert.doesNotMatch(ciCertificate, /LocalMachine/);
 });
@@ -100,5 +101,5 @@ test('tagged Windows test release signs the application before NSIS and publishe
   assert.doesNotMatch(taggedRelease, /windows-tag-internal-signing\/\*\.pfx/);
   assert.match(taggedRelease, /Smart App Control 开启时仍可能阻止/);
   assert.match(taggedRelease, /always\(\) && runner\.os == 'Windows'/);
-  assert.match(taggedRelease, /'My', 'Root', 'TrustedPublisher'/);
+  assert.match(taggedRelease, /'My', 'TrustedPeople', 'TrustedPublisher'/);
 });

@@ -175,7 +175,7 @@ junqi-internal-test-signing-info.txt
 
 CI 私钥只存在于临时 runner 的当前用户证书存储，不导出、不上传。每个 tag 都生成新的证书，因此每次测试新 tag 前都必须核对并安装该 Release 对应的 CER；旧 tag 的 CER 不能用于验证新 tag。
 
-为使 `signtool verify /pa /all /tw` 能验证自签内部证书，临时 runner 会把公开 CER 导入当前用户的 `Root` 和 `TrustedPublisher`。该信任只存在于 GitHub 托管的临时用户环境，job 结束前通过 `always()` 同时清理 `My`、`Root` 和 `TrustedPublisher` 中的对应 thumbprint；安装器不会在用户设备执行这项操作。
+为使 `signtool verify /pa /all /tw` 能验证自签内部证书，临时 runner 会把公开 CER 导入当前用户的 `TrustedPeople` 和 `TrustedPublisher`。该信任只存在于 GitHub 托管的临时用户环境，job 结束前通过 `always()` 同时清理 `My`、`TrustedPeople` 和 `TrustedPublisher` 中的对应 thumbprint；安装器不会在用户设备执行这项操作。
 
 该 tag 路径是内部测试发布，不是公共可信正式发布。Release 说明必须保留 Smart App Control 限制，不能将 Tauri updater 的 `.sig` 描述为 Authenticode 公共信任。
 
@@ -198,9 +198,10 @@ CI 私钥只存在于临时 runner 的当前用户证书存储，不导出、不
 
 - `v2.2.5` 的 `Import-Certificate` 在非交互 Windows Runner 写入自签根存储时持续阻塞，工作流已主动取消，未创建公开 Release。
 - `v2.2.6` 改用 .NET `X509Store` 后仍在 Windows 2025 Runner 的根存储写入阶段持续阻塞，工作流已主动取消，未创建公开 Release。
-- 当前实现改用 Windows 自带的 `certutil -user -f -addstore` 写入当前用户 `Root` 与 `TrustedPublisher`。每次调用都检查退出码，避免把未建立的信任误判为成功。
-- thumbprint 在信任操作前写入 job output，确保后续失败时 `always()` 清理仍有精确目标；最终结果以 `v2.2.7` 标签工作流为准。
+- `v2.2.7` 使用 `certutil` 后仍因写入受保护的 `Root` 存储而阻塞，macOS 双架构已通过，但 Windows job 已主动取消，未创建公开 Release。
+- 当前实现按 Microsoft 对测试代码签名证书的建议，使用 `certutil -user -f -addstore` 写入当前用户 `TrustedPeople` 与 `TrustedPublisher`，不再修改受保护的根证书库。每次调用都检查退出码，避免把未建立的信任误判为成功。
+- thumbprint 在信任操作前写入 job output，确保后续失败时 `always()` 清理仍有精确目标；最终结果以 `v2.2.8` 标签工作流为准。
 
-官方依据：Microsoft Learn, [certutil](https://learn.microsoft.com/windows-server/administration/windows-commands/certutil)。该契约明确列出 `-addstore`、`-user` 与 `-f` 参数。
+官方依据：Microsoft Learn, [certutil](https://learn.microsoft.com/windows-server/administration/windows-commands/certutil) 与 [How to sign an app package using SignTool](https://learn.microsoft.com/windows/win32/appxpkg/how-to-sign-a-package-using-signtool)。前者明确列出 `-addstore`、`-user` 与 `-f` 参数；后者建议将测试代码签名证书加入 `TrustedPeople` 并在不再需要时及时移除。
 
 官方依据：Microsoft Learn, [Smart App Control overview](https://learn.microsoft.com/windows/apps/develop/smart-app-control/overview)。

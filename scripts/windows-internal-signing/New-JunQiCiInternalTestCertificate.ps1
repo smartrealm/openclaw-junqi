@@ -40,7 +40,7 @@ Export-Certificate -Cert $certificate -FilePath $cerPath -Type CERT | Out-Null
 "certificate_path=$cerPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 "metadata_path=$metadataPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-foreach ($storeName in @('Root', 'TrustedPublisher')) {
+foreach ($storeName in @('TrustedPeople', 'TrustedPublisher')) {
   & certutil.exe -user -f -addstore $storeName $cerPath | Out-Host
   if ($LASTEXITCODE -ne 0) {
     throw "Failed to trust the ephemeral certificate in CurrentUser\$storeName."
