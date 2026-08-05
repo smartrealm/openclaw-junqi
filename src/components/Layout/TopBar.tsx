@@ -41,7 +41,6 @@ import {
 } from '@/components/Terminal/terminalOpenInPreferences';
 import { TerminalKookyMenuItem } from '@/components/Terminal/KookyMenu';
 import { TerminalOpenInAppIcon, type TerminalOpenInApp } from '@/components/Terminal/TerminalOpenInAppIcon';
-import { isTerminalAgentId } from '@/components/Terminal/terminalAgentCatalog';
 import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspaceTree';
 import { resolveNotificationTarget } from '@/utils/notificationTarget';
 import { projectSessionActivity } from '@/utils/sessionPresentation';
@@ -220,13 +219,6 @@ export function toNotificationPanelItem(
     url: item.url,
     agent: item.agent,
   };
-}
-
-/** Kooky's terminal inbox is fed exclusively by a real terminal agent. */
-export function terminalInboxItems(
-  items: readonly NotificationPanelItem[],
-): NotificationPanelItem[] {
-  return items.filter((item) => isTerminalAgentId(item.agent ?? ''));
 }
 
 /**
@@ -423,13 +415,10 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     )),
     [language, persistentNotifications?.notifications],
   );
-  const terminalInbox = useMemo(() => terminalInboxItems(history), [history]);
-  const notificationItems = terminalChrome ? terminalInbox : history;
+  const notificationItems = history;
   const dndMode = useSettingsStore((s) => s.dndMode);
   const setDndMode = useSettingsStore((s) => s.setDndMode);
-  const unread = terminalChrome
-    ? terminalInbox.filter((item) => !item.read).length
-    : persistentNotifications?.unreadCount ?? 0;
+  const unread = persistentNotifications?.unreadCount ?? 0;
 
   const toggleDnd = useCallback(() => {
     const next = !dndMode;

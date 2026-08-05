@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { terminalInboxItems, toNotificationPanelItem } from './TopBar';
+import { toNotificationPanelItem } from './TopBar';
 
 test('TopBar maps persisted notification fields and localized body', () => {
   const item = {
@@ -26,16 +26,6 @@ test('TopBar maps persisted notification fields and localized body', () => {
   assert.equal(mapped.agent, 'claude');
 });
 
-test('terminal inbox excludes persistent records without a verified terminal agent', () => {
-  const items = terminalInboxItems([
-    { id: 'claude', type: 'message', title: 'Claude', body: '', timestamp: '', read: false, agent: 'claude' },
-    { id: 'workflow', type: 'info', title: 'Workflow', body: '', timestamp: '', read: false },
-    { id: 'unknown', type: 'info', title: 'Unknown', body: '', timestamp: '', read: false, agent: 'other-cli' },
-  ]);
-
-  assert.deepEqual(items.map((item) => item.id), ['claude']);
-});
-
 test('TopBar and notification service use the persistent notification contract', () => {
   const topBar = readFileSync(new URL('./TopBar.tsx', import.meta.url), 'utf8');
   const service = readFileSync(new URL('../../services/notifications.ts', import.meta.url), 'utf8');
@@ -44,6 +34,9 @@ test('TopBar and notification service use the persistent notification contract',
   assert.doesNotMatch(topBar, /useNotificationStore/);
   assert.match(service, /persistentNotificationRepository\.push/);
   assert.match(service, /notifyPersistentNotificationsChanged/);
+  assert.match(service, /@tauri-apps\/plugin-notification/);
+  assert.doesNotMatch(service, /window\.aegis/);
+  assert.doesNotMatch(service, /\bnew\s+Notification\s*\(/);
   assert.match(topBar, /resolveNotificationTarget\(item\.url\)/);
   assert.match(topBar, /if \(!target\) \{\s+if \(terminalChrome\) setPanelOpen\(false\);\s+return;/);
   assert.match(topBar, /<TerminalNotificationPanel/);

@@ -29,6 +29,7 @@
     "process:default",
     "dialog:default",
     "fs:default",
-    "autostart:default"
+    "autostart:default",
+    "notification:default"
   ]
 }

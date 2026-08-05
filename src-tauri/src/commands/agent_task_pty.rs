@@ -707,6 +707,7 @@ pub async fn run_task(
             _ => "info",
         };
         super::notification::push_local_notification(
+            &app_for_reader,
             notif_level,
             notif_title,
             &format!(
@@ -807,6 +808,7 @@ fn spawn_session_watcher(
                                         );
                                     }
                                     super::notification::push_local_notification(
+                                        &app,
                                         "info",
                                         "Session discovered",
                                         &format!(
@@ -842,6 +844,7 @@ fn spawn_session_watcher(
                         spawn_toolcall_watcher(app.clone(), task_id.clone(), path.clone());
                     }
                     super::notification::push_local_notification(
+                        &app,
                         "info",
                         "Session discovered",
                         &format!(

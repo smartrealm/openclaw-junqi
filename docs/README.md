@@ -125,6 +125,7 @@ docs/
 
 目录：[`quality/`](quality/)
 
+- [桌面原生通知投递修复](quality/native-notification-delivery-2026-08-05.md)
 - [统一文件预览呈现审计](quality/unified-file-preview-surface-audit-2026-08-05.md)
 - [Orca 文件工作区体验审计](quality/orca-file-workspace-experience-audit-2026-08-05.md)
 - [Agent Workspace 能力权威性收敛](quality/agent-workspace-capability-authority-2026-08-04.md)

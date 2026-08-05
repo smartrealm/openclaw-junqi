@@ -107,6 +107,7 @@ async function notifyLazy(options: {
   title: string;
   body: string;
   dedupeKey?: string;
+  url?: string | null;
 }) {
   const mod = await import('@/services/notifications');
   mod.notifications.notify(options);
@@ -464,18 +465,6 @@ export default function App() {
     setAvailableModels(models);
   }, [setAvailableModels]);
 
-  // ── Request notification permission (Web Notification API) ──
-  // Notification access is not an onboarding prerequisite. Defer the prompt
-  // until setup has committed so it cannot interrupt language, storage,
-  // installer, or Gateway authorization steps with an unrelated permission.
-  useEffect(() => {
-    if (setupComplete !== true) return;
-    const timer = window.setTimeout(() => {
-      void import('@/services/notifications').then((mod) => mod.notifications.requestPermission());
-    }, 3000);
-    return () => window.clearTimeout(timer);
-  }, [setupComplete]);
-
   // OpenClaw exposes durable transcript updates through a subscription scoped
   // to one session. Keep the selected conversation attached to that official
   // stream; the service serializes unsubscribe/subscribe transitions.
@@ -797,6 +786,7 @@ export default function App() {
               : t('notifications.newMessage'),
             body: notification.body,
             dedupeKey: notification.dedupeKey,
+            url: notification.url,
           });
         }
       },
@@ -853,6 +843,7 @@ export default function App() {
               : t('notifications.newMessage'),
             body: notification.body,
             dedupeKey: notification.dedupeKey,
+            url: notification.url,
           });
         }
       },

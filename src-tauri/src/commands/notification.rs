@@ -15,6 +15,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationItem {
@@ -407,9 +408,25 @@ fn sanitize_text(s: &str, max_len: usize) -> String {
     cleaned
 }
 
-/// Push a notification from another backend module (e.g. agent_task_pty).
-pub fn push_local_notification(level: &str, title: &str, body: &str, url: Option<&str>) {
-    let _ = persist_notification(create_notification(level, title, body, url));
+/// 后端产生的通知写入成功后立即通知所有 WebView 刷新和呈现。
+pub fn push_local_notification(
+    app: &AppHandle,
+    level: &str,
+    title: &str,
+    body: &str,
+    url: Option<&str>,
+) {
+    let Ok(result) = persist_notification(create_notification(level, title, body, url)) else {
+        return;
+    };
+    if !result.inserted
+        || app
+            .state::<super::privacy_lock::PrivacyLockState>()
+            .is_locked()
+    {
+        return;
+    }
+    let _ = app.emit("junqi:notification-created", result);
 }
 
 fn load_local_notifications(path: &Path) -> Vec<NotificationItem> {

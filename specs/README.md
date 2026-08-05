@@ -43,6 +43,7 @@ specs/
 
 ## Quality
 
+- [桌面原生通知投递](quality/2026-08-05-native-notification-delivery.md)
 - [统一文件预览呈现](quality/2026-08-05-unified-file-preview-surface.md)
 - [Orca 文件工作区体验](quality/2026-08-05-orca-file-workspace-experience.md)
 - [Agent Workspace 能力权威性收敛规格](quality/2026-08-04-agent-workspace-capability-authority.md)

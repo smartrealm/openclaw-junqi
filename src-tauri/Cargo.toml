@@ -55,6 +55,7 @@ parking_lot = "0.12"
 node-semver = "2.2"
 argon2 = "0.5.3"
 zeroize = "1.8.1"
+tauri-plugin-notification = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

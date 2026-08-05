@@ -19,6 +19,11 @@ export interface ChatNotificationProjection {
   kind: ChatNotificationKind;
   body: string;
   dedupeKey: string;
+  url: string;
+}
+
+export function chatNotificationTarget(sessionKey: string): string {
+  return `/chat?session=${encodeURIComponent(sessionKey)}`;
 }
 
 /**
@@ -43,5 +48,6 @@ export function projectChatNotification(
     kind: event.role.trim().toLowerCase() === 'assistant' ? 'task_complete' : 'message',
     body: body.slice(0, 120),
     dedupeKey,
+    url: chatNotificationTarget(event.sessionKey),
   };
 }
