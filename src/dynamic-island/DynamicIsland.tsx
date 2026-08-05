@@ -23,6 +23,7 @@ import {
 import { AnimatePresence, motion } from 'framer-motion';
 import { combineUnlisteners, emitTauriEvent, subscribeTauriEvent } from '@/utils/tauriEvents';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
+import { AgentActivityIndicator } from '@/components/shared/AgentActivityIndicator';
 import {
   EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
   formatElapsedTime,
@@ -30,6 +31,7 @@ import {
   isVoiceActivePhase,
   formatRemainingTime,
   shouldPeekForSnapshot,
+  resolveDynamicIslandAgentActivity,
   type DynamicIslandVoiceInput,
   type DynamicIslandSnapshot,
   type DynamicIslandTask,
@@ -62,7 +64,7 @@ function StatusGlyph({ task }: { task: DynamicIslandTask }) {
   const tone = statusTone(task.status);
   if (tone === 'success') return <Check size={13} strokeWidth={2.4} />;
   if (tone === 'attention' || tone === 'error') return <CircleAlert size={13} strokeWidth={2.2} />;
-  return <span className="junqi-island-spinner" aria-hidden="true" />;
+  return <AgentActivityIndicator activity="working" size={20} decorative className="junqi-island-activity-glyph" />;
 }
 
 export default function DynamicIsland() {
@@ -182,6 +184,12 @@ export default function DynamicIsland() {
   const outputVoiceActive = isVoiceActivePhase(snapshot.voicePhase);
   const inputVoiceActive = isDynamicIslandVoiceInputActive(snapshot.voiceInput);
   const voiceActive = outputVoiceActive || inputVoiceActive;
+  const compactActivity = resolveDynamicIslandAgentActivity({
+    voicePhase: snapshot.voicePhase,
+    voiceInput: snapshot.voiceInput,
+    sessionPhase: primarySessionActivity?.phase,
+    runningTaskCount: runningCount,
+  });
   const remaining = formatRemainingTime(snapshot, now);
   const headline = useMemo(() => {
     if (snapshot.resourceDrop?.phase === 'dragging') {
@@ -233,7 +241,7 @@ export default function DynamicIsland() {
 
   return (
     <main
-      className={`junqi-island-shell ${expanded ? 'is-expanded' : 'is-compact'}`}
+      className={`junqi-island-shell ${expanded ? 'is-expanded' : 'is-compact'} ${compactActivity ? 'has-agent-activity' : ''}`}
       onPointerEnter={() => {
         clearAutoCollapse();
         if (hoverCollapseTimerRef.current !== null) {
@@ -274,7 +282,16 @@ export default function DynamicIsland() {
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
           >
             <span className={`junqi-island-orb ${attentionCount > 0 ? 'is-attention' : ''}`}>
-              <JunQiLogo variant="emblem" className="junqi-island-brand-emblem" title="JunQi" />
+              {compactActivity ? (
+                <AgentActivityIndicator
+                  activity={compactActivity}
+                  size={20}
+                  decorative
+                  className="junqi-island-primary-activity"
+                />
+              ) : (
+                <JunQiLogo variant="emblem" className="junqi-island-brand-emblem" title="JunQi" />
+              )}
             </span>
             <span className="junqi-island-compact-copy">
               <strong>{headline}</strong>
@@ -286,7 +303,7 @@ export default function DynamicIsland() {
               ) : voiceActive ? (
                 <span className="junqi-island-running">{inputVoiceActive ? <Radio size={12} /> : <Volume2 size={12} />}{snapshot.voiceQueueLength || ''}</span>
               ) : runningCount > 0 ? (
-                <span className="junqi-island-running"><span className="junqi-island-spinner" />{runningCount}</span>
+                <span className="junqi-island-running">{runningCount}</span>
               ) : (
                 <span className={`junqi-island-connection ${snapshot.connected ? 'is-online' : ''}`} />
               )}
@@ -369,7 +386,14 @@ export default function DynamicIsland() {
                     )}
                     {snapshot.sessionActivities.slice(0, 2).map((activity) => (
                       <button key={activity.id} type="button" className="junqi-island-task is-session" onClick={() => action({ type: 'open-session', sessionKey: activity.sessionKey })}>
-                        <span className="junqi-island-task-icon is-running"><span className="junqi-island-spinner" /></span>
+                        <span className="junqi-island-task-icon is-running">
+                          <AgentActivityIndicator
+                            activity={activity.phase === 'thinking' ? 'thinking' : activity.phase === 'generating' ? 'generating' : 'working'}
+                            size={20}
+                            decorative
+                            className="junqi-island-activity-glyph"
+                          />
+                        </span>
                         <span className="junqi-island-task-copy">
                           <strong>{activity.observer?.headline ?? t(`dynamicIsland.agent.${activity.phase}`, { agent: activity.agentName })}</strong>
                           <small>{activity.observer

@@ -12,7 +12,7 @@ import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { RenderBlock } from '@/types/RenderBlock';
 import type { ExecutionProcessBlock } from './executionProcessGrouping';
-import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { AgentActivityIndicator } from '@/components/shared/AgentActivityIndicator';
 
 interface ExecutionProcessGroupProps {
   blocks: ExecutionProcessBlock[];
@@ -28,6 +28,10 @@ function formatDuration(ms: number): string {
   const minutes = Math.floor(ms / 60_000);
   const seconds = Math.floor((ms % 60_000) / 1000);
   return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+}
+
+export function executionProcessActivity(runningCount: number): 'thinking' | 'working' {
+  return runningCount > 0 ? 'working' : 'thinking';
 }
 
 function toolLabel(name: string): string {
@@ -80,7 +84,12 @@ export function ExecutionProcessGroup({
           className="flex min-h-[31px] w-full items-center gap-2 px-2.5 py-1.5 text-left"
         >
           {streaming ? (
-            <LoadingIndicator size={13} className="shrink-0 text-aegis-primary" />
+            <AgentActivityIndicator
+              activity={executionProcessActivity(runningCount)}
+              size={20}
+              decorative
+              className="-m-[3px] shrink-0 text-aegis-primary"
+            />
           ) : errorCount > 0 ? (
             <TriangleAlert size={13} className="shrink-0 text-aegis-danger" />
           ) : (

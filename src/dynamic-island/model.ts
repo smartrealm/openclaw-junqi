@@ -32,6 +32,8 @@ export interface DynamicIslandSessionActivity {
   };
 }
 
+export type DynamicIslandAgentActivity = 'thinking' | 'generating' | 'working' | 'listening';
+
 export type DynamicIslandSessionObserverHealth =
   | 'on-track'
   | 'grinding'
@@ -110,6 +112,26 @@ export function projectDynamicIslandVoiceInput(
 
 export function isDynamicIslandVoiceInputActive(input: DynamicIslandVoiceInput): boolean {
   return input.mode === 'talk' && input.phase !== 'off';
+}
+
+export function resolveDynamicIslandAgentActivity(input: {
+  voicePhase: VoicePhase;
+  voiceInput: DynamicIslandVoiceInput;
+  sessionPhase?: DynamicIslandSessionActivity['phase'];
+  runningTaskCount: number;
+}): DynamicIslandAgentActivity | null {
+  if (isDynamicIslandVoiceInputActive(input.voiceInput)) {
+    if (input.voiceInput.phase === 'thinking') return 'thinking';
+    if (input.voiceInput.phase === 'speaking') return 'generating';
+    if (input.voiceInput.phase === 'listening' || input.voiceInput.phase === 'hearing') return 'listening';
+    if (input.voiceInput.phase === 'preparing') return 'working';
+  }
+  if (input.voicePhase === 'listening' || input.voicePhase === 'transcribing') return 'listening';
+  if (input.voicePhase === 'speaking' || input.voicePhase === 'queued') return 'generating';
+  if (input.sessionPhase === 'thinking') return 'thinking';
+  if (input.sessionPhase === 'generating') return 'generating';
+  if (input.runningTaskCount > 0 || input.sessionPhase === 'observing') return 'working';
+  return null;
 }
 
 export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {

@@ -12,7 +12,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
-import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { AgentActivityIndicator } from '@/components/shared/AgentActivityIndicator';
 
 interface ThinkingBubbleProps {
   content: string;
@@ -88,7 +88,12 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
           )}
         >
           {isStreaming ? (
-            <LoadingIndicator size={12} className="text-aegis-primary/75 shrink-0" />
+            <AgentActivityIndicator
+              activity="thinking"
+              size={20}
+              decorative
+              className="-m-1 shrink-0 text-aegis-primary/75"
+            />
           ) : (
             <span className="w-3 h-3 flex items-center justify-center shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-aegis-primary/45" />
@@ -114,13 +119,6 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
             <ChevronDown size={10} className="text-aegis-text-dim/30 shrink-0" />
           )}
 
-          {isStreaming && (
-            <span className="flex items-center gap-[3px] shrink-0">
-              <span className="w-[3px] h-[3px] rounded-full bg-aegis-primary/45 animate-pulse" />
-              <span className="w-[3px] h-[3px] rounded-full bg-aegis-primary/45 animate-pulse" style={{ animationDelay: '0.15s' }} />
-              <span className="w-[3px] h-[3px] rounded-full bg-aegis-primary/45 animate-pulse" style={{ animationDelay: '0.3s' }} />
-            </span>
-          )}
         </div>
 
         {/* Content */}

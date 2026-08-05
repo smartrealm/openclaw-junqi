@@ -1148,6 +1148,24 @@ html {
   }
 }
 
+/* Agent activity is semantically distinct from generic loading. The canvas
+   remains layout-stable and never captures input from its host control. */
+.aegis-agent-activity-indicator {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  vertical-align: middle;
+  pointer-events: none;
+}
+
+.aegis-agent-activity-indicator canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
 /* Shared indeterminate loading indicators. */
 .aegis-loading-indicator {
   display: inline-flex;
