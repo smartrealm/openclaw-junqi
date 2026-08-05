@@ -217,6 +217,7 @@ docs/
 - [Gateway 生命周期审计与前端重启协调器](gateway/openclaw-gateway-lifecycle-audit.md)
 - [OpenClaw 配置权威源审计](quality/openclaw-config-authority-audit-2026-07-29.md)
 - [加载指示器收敛记录](quality/loading-indicator-convergence-2026-07-29.md)
+- [JunQi 隐私锁设计与现状审计](quality/privacy-lock-design-and-audit-2026-08-05.md)
 - [Agent 活动视觉语言接入记录](quality/agent-activity-visual-language-2026-08-05.md)
 - [萌宠文字与聊天窗口恢复记录](quality/pet-caption-and-chat-window-recovery-2026-07-29.md)
 - [默认模型已安装契约审计](quality/default-model-installed-contract-audit-2026-07-29.md)

@@ -20,4 +20,9 @@ agent icon artwork from the local Kooky reference project.
 ## Desktop integration dependencies
 
 - tauri-plugin-autostart 2.5.1: Apache License 2.0 or MIT License.
+- tauri-plugin-global-shortcut 2.3.2: Apache License 2.0 or MIT License.
+- argon2 0.5.3: Apache License 2.0 or MIT License.
+- zeroize 1.8.1: Apache License 2.0 or MIT License.
+- objc2-local-authentication 0.3.2: Apache License 2.0, MIT License, or Zlib License.
+- windows 0.61.3: Apache License 2.0 or MIT License.
 - auto-launch 0.5.0: application-scoped command-serialization patch; MIT License.

@@ -53,6 +53,8 @@ toml = "0.8"
 notify = "6.1"
 parking_lot = "0.12"
 node-semver = "2.2"
+argon2 = "0.5.3"
+zeroize = "1.8.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -63,17 +65,21 @@ objc2 = "0.6.4"
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSGeometry"] }
 core-graphics = { version = "0.25", features = ["link"] }
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
+objc2-local-authentication = "0.3.2"
+block2 = "0.6.2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Environment", "Win32_System_Power", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_Environment", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
+windows = { version = "0.61.3", features = ["Security_Credentials_UI", "Foundation"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-autostart = "2.5.1"
+tauri-plugin-global-shortcut = "2.3.2"
 
 [profile.release]
 codegen-units = 1

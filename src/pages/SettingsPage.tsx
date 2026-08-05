@@ -8,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Copy, Sun, Moon,
-  MonitorDot, FileText, HardDrive, RefreshCw, Type, PawPrint, Info, Clock, Palette, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop, Trash2, Radio,
+  MonitorDot, FileText, HardDrive, RefreshCw, Type, PawPrint, Info, Clock, Palette, Wallet, Wrench, Sparkles, FolderOpen, TerminalSquare, PanelTop, Trash2, Radio, ShieldCheck,
 } from 'lucide-react';
 import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard, GlassCardEnterMotionScope } from '@/components/shared/GlassCard';
@@ -60,6 +60,7 @@ import {
   savePetAsset,
 } from '@/api/tauri-commands';
 import { StructuredPlanSettingsPanel } from '@/components/settings/StructuredPlanSettingsPanel';
+import { PrivacyLockSettingsPanel } from '@/components/settings/PrivacyLockSettingsPanel';
 import { useJarvisVoiceSettings } from '@/hooks/useJarvisVoiceSettings';
 import { useOpenClawTtsStatus } from '@/hooks/useOpenClawTtsStatus';
 import { useOpenClawPlanToolSetting } from '@/hooks/useOpenClawPlanToolSetting';
@@ -71,8 +72,8 @@ import { requestDynamicIslandPreview } from '@/dynamic-island/DynamicIslandPrevi
 import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
-type SettingsTab = 'appearance' | 'terminal' | 'notify' | 'jarvis' | 'pet' | 'connect' | 'storage' | 'maintenance' | 'about';
-const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'terminal', 'notify', 'jarvis', 'pet', 'connect', 'storage', 'maintenance', 'about'];
+type SettingsTab = 'appearance' | 'terminal' | 'notify' | 'privacy' | 'jarvis' | 'pet' | 'connect' | 'storage' | 'maintenance' | 'about';
+const SETTINGS_TABS: readonly SettingsTab[] = ['appearance', 'terminal', 'notify', 'privacy', 'jarvis', 'pet', 'connect', 'storage', 'maintenance', 'about'];
 
 export function SettingsPageFull() {
   const { t, i18n } = useTranslation();
@@ -423,6 +424,7 @@ export function SettingsPageFull() {
           ['appearance', t('settings.tab.appearance'), Sun],
           ['terminal', t('settings.tab.terminal'), TerminalSquare],
           ['notify', t('settings.tab.notify'), Bell],
+          ['privacy', t('settings.tab.privacy'), ShieldCheck],
           ['jarvis', t('settings.tab.jarvis'), Radio],
           ['pet', t('settings.tab.pet'), PawPrint],
           ['connect', t('settings.tab.connect'), Wifi],
@@ -455,6 +457,8 @@ export function SettingsPageFull() {
       {activeTab === 'terminal' && <TerminalSettingsPanel />}
 
       {activeTab === 'jarvis' && <JarvisVoiceSettingsPanel settings={jarvisVoiceSettings} />}
+
+      {activeTab === 'privacy' && <PrivacyLockSettingsPanel />}
 
       {activeTab === 'maintenance' && (
         <MaintenanceCenter

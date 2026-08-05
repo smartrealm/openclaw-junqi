@@ -6,8 +6,27 @@ mod tray;
 mod window_adaptation;
 mod window_sizing;
 
-use state::{CollaborationControlState, GatewayProcess, RuntimeIdentityState};
+use state::{CollaborationControlState, GatewayProcess, PrivacyLockState, RuntimeIdentityState};
 use tauri::{Emitter, Manager, RunEvent};
+
+fn privacy_guarded_handler<F>(
+    generated: F,
+) -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static
+where
+    F: Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static,
+{
+    move |invoke| {
+        let command = invoke.message.command().to_string();
+        let app = invoke.message.webview().app_handle().clone();
+        if app.state::<PrivacyLockState>().is_locked()
+            && !commands::privacy_lock::command_allowed_while_locked(&command)
+        {
+            invoke.resolver.reject("privacy_locked");
+            return true;
+        }
+        generated(invoke)
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -48,6 +67,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // The plugin uses a LaunchAgent on macOS, the current-user Run entry
         // on Windows, and the XDG autostart entry on Linux. The launcher
         // argument only applies on macOS.
@@ -66,8 +86,9 @@ pub fn run() {
         .manage(GatewayProcess::new())
         .manage(RuntimeIdentityState::new())
         .manage(CollaborationControlState::new())
+        .manage(PrivacyLockState::new())
         .manage(file_preview_registry)
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(privacy_guarded_handler(tauri::generate_handler![
             // Gateway
             commands::gateway::start_gateway,
             commands::gateway::restart_gateway,
@@ -124,6 +145,16 @@ pub fn run() {
             commands::secret_store::list_provider_secrets,
             commands::secret_store::get_legacy_gateway_credential,
             commands::secret_store::delete_legacy_gateway_credential,
+            commands::privacy_lock::get_privacy_lock_status,
+            commands::privacy_lock::focus_privacy_unlock,
+            commands::privacy_lock::enable_privacy_lock,
+            commands::privacy_lock::update_privacy_lock_settings,
+            commands::privacy_lock::change_privacy_lock_pin,
+            commands::privacy_lock::disable_privacy_lock,
+            commands::privacy_lock::lock_privacy_now,
+            commands::privacy_lock::unlock_privacy_lock,
+            commands::privacy_lock::refresh_privacy_system_authentication,
+            commands::privacy_lock::unlock_privacy_with_system_authentication,
             commands::session_labels::load_legacy_session_labels,
             commands::session_labels::remove_legacy_session_labels,
             commands::provider_oauth::start_provider_oauth,
@@ -402,7 +433,7 @@ pub fn run() {
             commands::workbench_session::load_workbench_session,
             commands::workbench_session::reset_workbench_session,
             commands::workbench_session::save_workbench_session,
-        ])
+        ]))
         .setup(|app| {
             if std::env::args().any(|arg| arg == "--voice-resident") {
                 if let Some(window) = app.get_webview_window("main") {
@@ -425,6 +456,15 @@ pub fn run() {
                 eprintln!("[runtime-reconfiguration] {error}");
             }
             commands::fs_watcher::init(app);
+            commands::privacy_shortcut::initialize(app.handle());
+            commands::privacy_lock::start_idle_monitor(app.handle().clone());
+            let privacy_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = commands::privacy_lock::refresh_privacy_system_authentication(
+                    privacy_handle.clone(),
+                )
+                .await;
+            });
             // Use the default (Regular) activation policy so JunQi gets a Dock
             // tile with its icon and a Cmd+Tab entry — the whole point of
             // shipping a branded .app. The pet window is still skip_taskbar
@@ -646,7 +686,20 @@ pub fn run() {
                 }
             }
         }
+        if let RunEvent::Resumed = event {
+            let settings = app_handle.state::<PrivacyLockState>().settings();
+            if settings.enabled && settings.lock_on_resume {
+                commands::privacy_lock::lock_from_native(
+                    app_handle,
+                    commands::privacy_lock::PrivacyLockReason::Suspend,
+                );
+            }
+        }
         if let RunEvent::Exit = event {
+            let privacy_settings = app_handle.state::<PrivacyLockState>().settings();
+            if privacy_settings.enabled && privacy_settings.lock_on_startup {
+                let _ = commands::app_settings::set_privacy_lock_session_armed(true);
+            }
             commands::terminal_keep_awake::shutdown();
             if let Err(error) = commands::workbench_pty::stop_all_workbench_ptys() {
                 eprintln!("[workbench] failed to drain PTYs during application exit: {error}");

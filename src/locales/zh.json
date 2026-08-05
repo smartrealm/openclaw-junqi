@@ -735,8 +735,8 @@
     "noJobsHint": "添加定时任务以自动化工作流程，或从下面的模板开始",
     "nextRun": "下次运行",
     "nextWake": "下次唤醒",
-    "schedulerEnabled": "调度器已启用",
-    "schedulerDisabled": "调度器已禁用",
+    "schedulerEnabled": "调度器运行中",
+    "schedulerDisabled": "调度器已停用",
     "schedulerJobs": "{{count}} 个任务",
     "schedulerStatusLoading": "正在读取调度器状态",
     "schedulerStatusUnsupported": "此 Gateway 未提供调度器状态",
@@ -787,8 +787,6 @@
     "templatesSubtitle": "一键添加预配置任务",
     "schedulerLoading": "正在读取调度器状态",
     "schedulerUnavailable": "调度器状态不可用",
-    "schedulerEnabled": "调度器运行中",
-    "schedulerDisabled": "调度器已停用",
     "nextWakeIn": "下次唤醒 {{time}}",
     "jobDetailLoading": "正在读取 OpenClaw 任务详情",
     "jobDetailUnavailable": "任务详情暂不可用，当前显示列表快照"
@@ -856,7 +854,8 @@
       "connect": "连接",
       "storage": "存储",
       "maintenance": "检修",
-      "about": "关于"
+      "about": "关于",
+      "privacy": "安全与隐私"
     },
     "language": "语言",
     "notifications": "通知",
@@ -1601,7 +1600,10 @@
       "conflict": "文件已在 Gateway 中变更；保留本地草稿，请重读后再处理。",
       "reload": "重读并替换草稿",
       "saveFailed": "Gateway 未确认文件已保存。",
-      "kind": { "modified": "修改", "read": "读取" }
+      "kind": {
+        "modified": "修改",
+        "read": "读取"
+      }
     },
     "messageCount": "{{count}} 条消息",
     "refresh": "刷新",
@@ -1853,7 +1855,6 @@
       "compactionDescription": "OpenClaw 在会话记录中报告了一次上下文压缩事件。",
       "structuredAction": "结构化操作",
       "artifact": "产物",
-      "compaction": "上下文压缩",
       "sequence": "序号",
       "toolCall": "工具调用",
       "toolDetails": "查看工具输入与输出",
@@ -5928,6 +5929,75 @@
         "title": "打开工作区",
         "description": "选择项目并打开它的终端工作区。"
       }
+    }
+  },
+  "privacyLock": {
+    "lockedTitle": "JunQi 已锁定",
+    "unlockInMain": "请在主窗口完成身份验证。",
+    "openMain": "打开主窗口",
+    "backgroundRunning": "正在运行的智能体和 Gateway 会继续在后台工作。",
+    "pinLabel": "PIN 或密码",
+    "unlock": "解锁",
+    "systemPrompt": "验证身份以解锁 JunQi",
+    "useSystemAuthentication": "使用系统身份验证",
+    "retryAfter": "尝试次数过多，请在 {{seconds}} 秒后重试。",
+    "currentPin": "当前 PIN 或密码",
+    "newPin": "新 PIN 或密码",
+    "confirmPin": "确认新 PIN 或密码",
+    "settings": {
+      "title": "JunQi 隐私锁",
+      "description": "离席时隐藏所有 JunQi 窗口中的敏感内容，但保持后台任务运行。",
+      "lockNow": "立即锁定",
+      "changePin": "修改 PIN",
+      "autoLock": "自动锁定",
+      "idleDelay": "无操作后锁定",
+      "idleUnavailable": "当前平台无法提供可靠的系统空闲时间，自动离席锁定不可用。",
+      "lockOnResume": "系统恢复后锁定",
+      "lockOnStartup": "应用启动时锁定",
+      "shortcut": "全局锁定快捷键",
+      "enableShortcut": "启用全局快捷键",
+      "shortcutValue": "快捷键组合",
+      "systemAuthentication": "系统身份验证",
+      "delays": {
+        "0": "从不",
+        "60": "1 分钟",
+        "300": "5 分钟",
+        "600": "10 分钟",
+        "1800": "30 分钟",
+        "3600": "1 小时"
+      },
+      "mandatoryFence": "启用隐私锁后，应用启动和系统恢复锁定是不可关闭的安全门禁。"
+    },
+    "actions": {
+      "enableTitle": "开启隐私锁",
+      "enableDescription": "设置至少 6 位数字 PIN，或至少 8 个字符的密码。验证材料只保存到系统凭据库。",
+      "changeTitle": "修改解锁 PIN",
+      "changeDescription": "先验证当前 PIN，再设置新的 PIN 或密码。",
+      "disableTitle": "关闭隐私锁",
+      "disableDescription": "关闭后，应用启动和离席时将不再要求解锁。"
+    },
+    "errors": {
+      "retryLater": "请等待重试时间结束。",
+      "stateChanged": "锁定状态已变化，请重试。",
+      "credentialUnavailable": "系统凭据库暂不可用。",
+      "cancelled": "系统身份验证已取消。",
+      "timeout": "系统身份验证超时。",
+      "busy": "系统身份验证设备正忙。",
+      "systemUnavailable": "系统身份验证不可用，请使用 PIN。",
+      "incorrectPin": "PIN 或密码不正确。",
+      "pinPolicy": "请使用至少 6 位数字 PIN，或至少 8 个字符的密码。",
+      "pinMismatch": "两次输入不一致。",
+      "shortcutConflict": "快捷键注册失败，可能已被系统或其他应用占用。",
+      "operationFailed": "操作未完成，请重试。"
+    },
+    "systemStatus": {
+      "available": "系统身份验证可用，解锁时可以优先使用。",
+      "device_not_present": "设备不支持系统身份验证。",
+      "not_configured": "系统身份验证尚未配置。",
+      "disabled_by_policy": "系统身份验证被系统策略禁用。",
+      "busy": "系统身份验证设备正忙。",
+      "unsupported": "当前平台不支持统一的系统身份验证，仍可使用 PIN。",
+      "unavailable": "暂时无法读取系统身份验证状态。"
     }
   }
 }
