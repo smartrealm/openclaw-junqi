@@ -1,5 +1,5 @@
 // Step `ready` — completion and dashboard entry.
-import { Check, CheckCircle2, Circle, LoaderCircle, Minus, Power } from "lucide-react";
+import { Check, CheckCircle2, Circle, Minus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SetupLog } from "@/stores/app-store";
@@ -12,7 +12,7 @@ import { type InstallMode } from "@/stores/setup-navigation";
 import { gatewayLifecycle } from "@/services/gateway/gatewayLifecycle";
 import { presentGatewayAutostart } from "@/components/settings/gatewayAutostartPresentation";
 import { presentAppAutostart } from "@/components/settings/appAutostartPresentation";
-import { SettingsSwitch } from "@/components/settings/SettingsSwitch";
+import { AutostartPreferenceRow } from "@/components/settings/AutostartPreferenceRow";
 
 export function GatewayAutostartPreference({
   installMode,
@@ -43,14 +43,7 @@ export function GatewayAutostartPreference({
 
   if (installMode !== "native" || status === null || status?.supported === false) return null;
   if (status === undefined) {
-    return (
-      <div className="py-1 text-left" aria-busy="true">
-        <div className="flex items-center gap-3 py-1">
-          <span className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-aegis-surface" />
-          <span className="h-3 w-36 animate-pulse rounded bg-aegis-surface" />
-        </div>
-      </div>
-    );
+    return <AutostartPreferenceRow.Skeleton />;
   }
   const enabled = status.enabled;
   const presentation = presentGatewayAutostart(status, t);
@@ -83,52 +76,21 @@ export function GatewayAutostartPreference({
   };
 
   return (
-    <div className="py-1 text-left">
-      <div className="flex items-start gap-3 py-1">
-        <span className={clsx(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-          enabled ? "bg-aegis-success/15 text-aegis-success" : "bg-aegis-primary/15 text-aegis-primary",
-        )}>
-          <Power size={18} />
+    <AutostartPreferenceRow
+      title={presentation.title}
+      description={presentation.description}
+      actionLabel={presentation.action}
+      checked={enabled}
+      pendingLabel={busy ? phase : null}
+      error={error}
+      onCheckedChange={() => { void toggleAutostart(); }}
+      badge={enabled && (
+        <span className="inline-flex items-center gap-1 rounded-full border border-aegis-success/30 bg-aegis-success/10 px-2 py-0.5 text-[11px] font-medium text-aegis-success">
+          <Check size={11} strokeWidth={3} />
+          {presentation.badge}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-aegis-text">
-              {presentation.title}
-            </span>
-            {enabled && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-aegis-success/30 bg-aegis-success/10 px-2 py-0.5 text-[11px] font-medium text-aegis-success">
-                <Check size={11} strokeWidth={3} />
-                {presentation.badge}
-              </span>
-            )}
-          </div>
-          <p className="mt-1.5 text-xs leading-5 text-aegis-text-secondary">
-            {presentation.description}
-          </p>
-          {busy && phase && (
-            <p className="mt-2 flex items-center gap-1.5 text-xs text-aegis-text-muted">
-              <LoaderCircle size={12} className="animate-spin" />
-              {phase}
-            </p>
-          )}
-          {error && <p className="mt-2 break-all text-xs text-aegis-danger">{error}</p>}
-        </div>
-        <button
-          type="button"
-          onClick={() => void toggleAutostart()}
-          disabled={busy}
-          className={clsx(
-            "shrink-0 rounded-lg px-4 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
-            enabled
-              ? "border border-aegis-border text-aegis-text-secondary hover:bg-aegis-surface"
-              : "bg-aegis-primary text-white hover:opacity-90",
-          )}
-        >
-          {presentation.action}
-        </button>
-      </div>
-    </div>
+      )}
+    />
   );
 }
 
@@ -161,12 +123,7 @@ export function AppAutostartPreference({
   }, [busy, onOperationStateChange]);
 
   if (status === undefined) {
-    return (
-      <div className="flex items-center gap-3 border-t border-aegis-border py-4 text-left" aria-busy="true">
-        <span className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-aegis-surface" />
-        <span className="h-3 w-36 animate-pulse rounded bg-aegis-surface" />
-      </div>
-    );
+    return <AutostartPreferenceRow.Skeleton className="border-t border-aegis-border" />;
   }
 
   const enabled = status?.enabled ?? false;
@@ -185,33 +142,22 @@ export function AppAutostartPreference({
   };
 
   return (
-    <div className="flex items-start gap-3 border-t border-aegis-border py-4 text-left">
-      <span className={clsx(
-        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-        enabled ? "bg-aegis-success/15 text-aegis-success" : "bg-aegis-primary/15 text-aegis-primary",
-      )}>
-        <Power size={18} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-aegis-text">{presentation.title}</span>
-          {presentation.badge && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-aegis-success/30 bg-aegis-success/10 px-2 py-0.5 text-[11px] font-medium text-aegis-success">
-              <Check size={11} strokeWidth={3} />
-              {presentation.badge}
-            </span>
-          )}
-        </div>
-        <p className="mt-1.5 text-xs leading-5 text-aegis-text-secondary">{presentation.description}</p>
-        {error && <p className="mt-2 break-all text-xs text-aegis-danger">{error}</p>}
-      </div>
-      <SettingsSwitch
-        checked={enabled}
-        disabled={busy}
-        label={presentation.action}
-        onCheckedChange={(nextEnabled) => { void toggleAutostart(nextEnabled); }}
-      />
-    </div>
+    <AutostartPreferenceRow
+      className="border-t border-aegis-border"
+      title={presentation.title}
+      description={presentation.description}
+      actionLabel={presentation.action}
+      checked={enabled}
+      pendingLabel={busy ? t(enabled ? "setup.appAutostart.disabling" : "setup.appAutostart.enabling") : null}
+      error={error}
+      onCheckedChange={(nextEnabled) => { void toggleAutostart(nextEnabled); }}
+      badge={presentation.badge && (
+        <span className="inline-flex items-center gap-1 rounded-full border border-aegis-success/30 bg-aegis-success/10 px-2 py-0.5 text-[11px] font-medium text-aegis-success">
+          <Check size={11} strokeWidth={3} />
+          {presentation.badge}
+        </span>
+      )}
+    />
   );
 }
 

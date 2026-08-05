@@ -5,4 +5,5 @@
 3. Use one `SessionTranscriptHistoryClient` as the protocol boundary for branch, fork, and rewind operations.
 4. Connect controls through hooks and existing message/session surfaces.
 5. Add regression tests for capability gating, payload shape, response validation, request-lane selection, and unsupported-protocol distinction.
-6. Run static checks, focused tests, boundary checks, and production build.
+6. Keep the hello external-store subscription stable and publish only real observation changes; make repeated connection-status commits idempotent.
+7. Run static checks, focused tests, boundary checks, and production build.

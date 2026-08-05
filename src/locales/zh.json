@@ -4112,7 +4112,9 @@
       "enabledHint": "JunQi Desktop 已设为在当前用户登录后自动启动。",
       "enable": "登录后启动 JunQi Desktop",
       "disable": "关闭 JunQi Desktop 自启动",
-      "enabledBadge": "已启用"
+      "enabledBadge": "已启用",
+      "enabling": "正在设置 JunQi Desktop 登录启动…",
+      "disabling": "正在关闭 JunQi Desktop 登录启动…"
     },
     "petReadyHint": "可以进入仪表盘了",
     "enterDashboard": "进入仪表盘",

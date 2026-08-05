@@ -736,6 +736,41 @@ test('native session group catalog stays transient and preserves Gateway display
   }
 });
 
+test('重复 Gateway 连接状态不会重复发布全局状态', () => {
+  const original = useChatStore.getState();
+  useChatStore.setState({
+    connected: false,
+    connecting: false,
+    connectionError: null,
+    restarting: false,
+    sessionGroupCatalog: [],
+    sessionGroupCatalogAvailability: 'unknown',
+  });
+  let updates = 0;
+  const unsubscribe = useChatStore.subscribe(() => { updates += 1; });
+
+  try {
+    useChatStore.getState().setConnectionStatus({ connected: false, connecting: false });
+    assert.equal(updates, 0);
+
+    useChatStore.getState().setConnectionStatus({ connected: true, connecting: false });
+    assert.equal(updates, 1);
+
+    useChatStore.getState().setConnectionStatus({ connected: true, connecting: false });
+    assert.equal(updates, 1);
+  } finally {
+    unsubscribe();
+    useChatStore.setState({
+      connected: original.connected,
+      connecting: original.connecting,
+      connectionError: original.connectionError,
+      restarting: original.restarting,
+      sessionGroupCatalog: original.sessionGroupCatalog,
+      sessionGroupCatalogAvailability: original.sessionGroupCatalogAvailability,
+    });
+  }
+});
+
 test('会话组仅在 Gateway 确认后写入瞬态目录', async () => {
   const ensureSessionGroup = gateway.ensureSessionGroup;
   Object.assign(gateway, {

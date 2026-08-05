@@ -9,3 +9,5 @@
    operation state, and navigation gate.
 4. [x] Add focused regressions, run TypeScript and Rust validation, and record
    the platform-specific login-item boundaries.
+5. [x] Consolidate Ready-screen autostart action surfaces into one loading-safe
+   switch row for both independent login policies.

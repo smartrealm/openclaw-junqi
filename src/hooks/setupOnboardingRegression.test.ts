@@ -166,6 +166,15 @@ test('BUG-PAIR-03 Ready entry is not blocked by background autostart preference 
   assert.doesNotMatch(nextAction, /gatewayAutostartBusy|appAutostartBusy/);
 });
 
+test('autostart preferences use one stable switch row while status is loading or changing', () => {
+  const readyFile = screen('ReadyScreen');
+
+  assert.match(readyFile, /import \{ AutostartPreferenceRow \}/);
+  assert.ok((readyFile.match(/<AutostartPreferenceRow\.Skeleton/g) ?? []).length >= 2);
+  assert.ok((readyFile.match(/<AutostartPreferenceRow/g) ?? []).length >= 4);
+  assert.doesNotMatch(readyFile, /<SettingsSwitch/);
+});
+
 test('BUG-ONB-35 notification permission waits until onboarding is complete', () => {
   const notificationPermission = app.slice(
     app.indexOf('// ── Request notification permission'),

@@ -23,12 +23,20 @@ The Ready screen has two separate login-time policies:
 While either operation is in progress, the Ready-screen navigation controls
 remain unavailable so the selected state cannot be left half-applied.
 
+Both policies use the same preference-row component. Before either status has
+returned, the row keeps its icon, text and switch footprint as a skeleton.
+During a change, the switch remains in place but is disabled, with a visible
+spinner and an announced progress message. This avoids swapping a switch for a
+button or exposing an incomplete control during the first render.
+
 ## Validation
 
 - The application autostart presentation regression covers disabled and enabled
   states independently from Gateway presentation.
 - Ready-screen regressions verify both autostart operations lock navigation and
   preserve the Gateway official-service handoff contract.
+- The shared preference-row regression verifies loading, ready and in-progress
+  states keep an accessible switch action surface.
 - `pnpm exec tsc --noEmit`, focused frontend tests, `cargo fmt -- --check`,
   `cargo check --lib`, `cargo test --lib app_autostart`, and `git diff --check`
   passed.

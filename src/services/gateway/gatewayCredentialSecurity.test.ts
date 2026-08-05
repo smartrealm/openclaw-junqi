@@ -487,7 +487,7 @@ describe('Gateway credential security regression gates', () => {
     await turn();
   });
 
-  it('publishes authenticated Gateway method discovery and clears it on disconnect', async () => {
+  it('仅在 Gateway hello 状态实际变更时发布方法发现', async () => {
     resetSockets();
     const connection = createMemoryGatewayConnection();
     const observations: Array<string | null> = [];
@@ -508,13 +508,13 @@ describe('Gateway credential security regression gates', () => {
     await waitForSocketRequest(socket, 'connect');
     await turn();
 
-    assert.deepEqual(observations, [null, 'history-connection']);
+    assert.deepEqual(observations, ['history-connection']);
     assert.deepEqual(connection.getHelloObservation()?.methods, ['sessions.branches.list', 'sessions.fork']);
 
     connection.disconnect();
     stopPolling();
     await turn();
-    assert.deepEqual(observations, [null, 'history-connection', null]);
+    assert.deepEqual(observations, ['history-connection', null]);
     unsubscribe();
   });
 

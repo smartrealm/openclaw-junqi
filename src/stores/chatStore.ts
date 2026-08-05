@@ -2366,16 +2366,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
   restarting: false,
 
   setConnectionStatus: (status) =>
-    set((state) => ({
-      connected: status.connected,
-      connecting: status.connecting,
-      connectionError: status.error || null,
-      ...(!status.connected
-        ? { sessionGroupCatalog: [], sessionGroupCatalogAvailability: 'unknown' as const }
-        : {}),
-      // Clear restarting once we (re)connect
-      restarting: status.connected ? false : state.restarting,
-    })),
+    set((state) => {
+      const connectionError = status.error || null;
+      const clearSessionGroupCatalog = !status.connected
+        && (state.sessionGroupCatalog.length > 0 || state.sessionGroupCatalogAvailability !== 'unknown');
+      const restarting = status.connected ? false : state.restarting;
+      if (
+        state.connected === status.connected
+        && state.connecting === status.connecting
+        && state.connectionError === connectionError
+        && state.restarting === restarting
+        && !clearSessionGroupCatalog
+      ) {
+        return state;
+      }
+      return {
+        connected: status.connected,
+        connecting: status.connecting,
+        connectionError,
+        ...(clearSessionGroupCatalog
+          ? { sessionGroupCatalog: [], sessionGroupCatalogAvailability: 'unknown' as const }
+          : {}),
+        restarting,
+      };
+    }),
 
   setRestarting: (v) => set({ restarting: v }),
 }));

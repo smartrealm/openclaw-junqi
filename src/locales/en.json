@@ -4154,7 +4154,9 @@
       "enabledHint": "JunQi Desktop is set to start automatically after the current user signs in.",
       "enable": "Start JunQi Desktop after sign-in",
       "disable": "Turn off JunQi Desktop autostart",
-      "enabledBadge": "Enabled"
+      "enabledBadge": "Enabled",
+      "enabling": "Setting up JunQi Desktop autostart…",
+      "disabling": "Turning off JunQi Desktop autostart…"
     },
     "petReadyHint": "You can enter the dashboard now.",
     "enterDashboard": "Enter dashboard",

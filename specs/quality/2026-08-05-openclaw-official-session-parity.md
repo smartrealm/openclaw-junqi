@@ -12,3 +12,4 @@ Expose official transcript history controls only when the connected Gateway adve
 4. `sessions.branches.list` validates every returned branch before rendering it.
 5. Method-not-found is distinct from authorization, pairing, transport, and response-validation failures; none are converted into local transcript mutations.
 6. All new visible text exists in Simplified Chinese, Traditional Chinese, and English locale catalogs.
+7. Hello subscriptions publish only authenticated handshake or disconnect changes. Repeated identical Gateway connection facts do not create a new chat-store state or rerender the global UI.
