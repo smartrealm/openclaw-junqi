@@ -23,6 +23,7 @@ const response = {
       status: 'expiring',
       expiry: { at: 1_700_000_600_000, remainingMs: 600_000, label: '10m' },
       reasonCode: 'token-expiring',
+      logoutSupported: true,
     }],
   }],
 };
@@ -52,6 +53,7 @@ test('OpenClawModelAuthStatusClient fences and projects only non-secret authenti
         type: 'oauth',
         status: 'expiring',
         expiry: { at: 1_700_000_600_000, remainingMs: 600_000, label: '10m' },
+        logoutSupported: true,
       }],
     }],
   });

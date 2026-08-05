@@ -90,6 +90,8 @@ import { OpenClawHooksStatusClient } from './OpenClawHooksStatusClient';
 import { OpenClawSessionCompanionClient } from './OpenClawSessionCompanionClient';
 import { OpenClawSessionUsageLogsClient } from './OpenClawSessionUsageLogsClient';
 import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
+import { OpenClawModelAuthLogoutClient } from './OpenClawModelAuthLogoutClient';
+import { OpenClawModelProbeClient } from './OpenClawModelProbeClient';
 import { OpenClawProviderUsageClient } from './OpenClawProviderUsageClient';
 import { OpenClawAgentIdentityClient } from './OpenClawAgentIdentityClient';
 import { OpenClawAgentFilesClient } from './OpenClawAgentFilesClient';
@@ -194,6 +196,8 @@ export type {
 } from './OpenClawSessionFilesClient';
 export { OpenClawSessionFileConflictError } from './OpenClawSessionFilesClient';
 export type { OpenClawModelAuthStatusSnapshot } from './OpenClawModelAuthStatusClient';
+export type { OpenClawModelAuthLogoutResult } from './OpenClawModelAuthLogoutClient';
+export type { OpenClawModelProbeResult } from './OpenClawModelProbeClient';
 export type { OpenClawProviderUsageSnapshot } from './OpenClawProviderUsageClient';
 export type {
   OpenClawAgentAvatarStatus,
@@ -581,6 +585,14 @@ export const openClawModelAuthStatusClient = new OpenClawModelAuthStatusClient({
     params,
     expectedConnectionId,
   ),
+});
+
+export const openClawModelAuthLogoutClient = new OpenClawModelAuthLogoutClient({
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
+});
+
+export const openClawModelProbeClient = new OpenClawModelProbeClient({
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
 });
 
 export const openClawProviderUsageClient = new OpenClawProviderUsageClient({

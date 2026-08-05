@@ -37,7 +37,12 @@ import {
 import { MaskedInput, ChipInput } from './components';
 import { buildProviderSubmissionModelIds } from './providerModelSelection';
 import { resolveExplicitProviderDefault } from './providerDefaultSelection';
-import { gateway } from '@/services/gateway';
+import {
+  gateway,
+  openClawModelAuthLogoutClient,
+  openClawModelProbeClient,
+  type OpenClawModelProbeResult,
+} from '@/services/gateway';
 import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
 import {
   GENERATED_IMAGE_GENERATION_MODELS,
@@ -61,7 +66,7 @@ import {
   inspectModelRouting,
   type ModelRoutingIssue,
 } from './modelRoutingHealth';
-import { showConfirm } from '@/components/shared/AlertDialog';
+import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { AUTH_MODE_INFO, normalizeProviderAuthMode } from '@/types/providerAuthMode';
 import { normalizeOpenClawApiProtocol } from '@/types/openclawApiProtocol';
 import {
@@ -3271,6 +3276,9 @@ export function ProvidersTab({
   const { t } = useTranslation();
   const modelAuthStatus = useOpenClawModelAuthStatus(true);
   const providerUsage = useOpenClawProviderUsage(true);
+  const [logoutProvider, setLogoutProvider] = useState<string | null>(null);
+  const [probeProvider, setProbeProvider] = useState<string | null>(null);
+  const [probeResults, setProbeResults] = useState<Record<string, OpenClawModelProbeResult>>({});
   const [showModal, setShowModal]                   = useState(false);
   const [modalInitialTemplate, setModalInitialTemplate] = useState<ProviderTemplate | undefined>();
   const [apiProtocolOptions, setApiProtocolOptions] = useState<string[]>([]);
@@ -3444,6 +3452,62 @@ export function ProvidersTab({
     if (addRequestId > 0) openModal();
   }, [addRequestId, openModal]);
 
+  useEffect(() => {
+    setProbeResults({});
+  }, [modelAuthStatus.status?.timestampMs, modelAuthStatus.failure]);
+
+  const requestProviderProbe = useCallback((provider: string, displayName: string) => {
+    showConfirm(
+      t('config.gatewayAuthStatus.probeTitle', { provider: displayName }),
+      t('config.gatewayAuthStatus.probeMessage', { provider: displayName }),
+      async () => {
+        setProbeProvider(provider);
+        try {
+          const result = await openClawModelProbeClient.probeProvider(provider);
+          setProbeResults((current) => ({ ...current, [provider]: result }));
+        } catch {
+          window.setTimeout(() => showAlert(
+            t('config.gatewayAuthStatus.probeFailedTitle'),
+            t('config.gatewayAuthStatus.probeFailedMessage'),
+            'error',
+          ), 0);
+        } finally {
+          setProbeProvider(null);
+        }
+      },
+    );
+  }, [t]);
+
+  const requestProviderAuthLogout = useCallback((provider: string, displayName: string) => {
+    showConfirm(
+      t('config.gatewayAuthStatus.logoutTitle', { provider: displayName }),
+      t('config.gatewayAuthStatus.logoutMessage', { provider: displayName }),
+      async () => {
+        setLogoutProvider(provider);
+        try {
+          const result = await openClawModelAuthLogoutClient.logoutProvider(provider);
+          await modelAuthStatus.refresh();
+          window.setTimeout(() => showAlert(
+            t('config.gatewayAuthStatus.logoutSuccessTitle'),
+            t('config.gatewayAuthStatus.logoutSuccessMessage', {
+              count: result.removedProfileCount,
+              runs: result.abortedRunCount,
+            }),
+            'success',
+          ), 0);
+        } catch {
+          window.setTimeout(() => showAlert(
+            t('config.gatewayAuthStatus.logoutFailedTitle'),
+            t('config.gatewayAuthStatus.logoutFailedMessage'),
+            'error',
+          ), 0);
+        } finally {
+          setLogoutProvider(null);
+        }
+      },
+    );
+  }, [modelAuthStatus, t]);
+
   // ── Add provider (auth profile + models) ──
 
   return (
@@ -3498,7 +3562,12 @@ export function ProvidersTab({
           status={modelAuthStatus.status}
           loading={modelAuthStatus.loading}
           failure={modelAuthStatus.failure}
+          logoutProvider={logoutProvider}
+          probeProvider={probeProvider}
+          probeResults={probeResults}
           onRefresh={() => { void modelAuthStatus.refresh(); }}
+          onLogoutProvider={requestProviderAuthLogout}
+          onProbeProvider={requestProviderProbe}
         />
 
         <OpenClawProviderUsagePanel

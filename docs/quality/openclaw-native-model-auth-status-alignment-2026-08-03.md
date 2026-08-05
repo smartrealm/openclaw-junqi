@@ -7,14 +7,17 @@
 JunQi 的 Provider 页面此前主要根据选定 runtime 的配置判断“已配置”或“需要 API Key”。这只能说明
 配置形状，不能说明 Gateway 计算出的 OAuth、token 或静态凭据是否已缺失、即将到期或过期。
 
-当前 OpenClaw 提供 `models.authStatus` 的 `operator.read` 只读投影。JunQi 将该状态作为 Provider 页的独立
-Gateway 事实区呈现，不再把本地配置推断为认证成功，也不发起登录、注销、刷新凭据或配置写入。
+当前 OpenClaw 提供 `models.authStatus` 的 `operator.read` 状态投影、`models.authLogout` 的
+`operator.admin` 受控注销，以及 `models.probe` 的 `operator.admin` 有界实时验证。JunQi 将认证状态作为 Provider 页的
+独立 Gateway 事实区呈现，不再把本地配置推断为认证成功；只有官方状态明确标记可注销的已保存 OAuth/token Profile
+时，才向用户提供二次确认后的官方注销操作。实时验证只在用户确认后执行，不随页面加载自动消耗 Token。
 
 ## 权威依据
 
 - [OpenClaw Gateway 方法权限目录](https://github.com/openclaw/openclaw/blob/main/src/gateway/methods/core-descriptors.ts)
 - [OpenClaw models.authStatus handler](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/models-auth-status.ts)
 - [OpenClaw models.authStatus 类型](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/models-auth-status.types.ts)
+- [OpenClaw Gateway 协议参数](https://github.com/openclaw/openclaw/blob/main/packages/gateway-protocol/src/schema/agents-models-skills.ts)
 
 官方方法目录将 `models.authStatus` 标为 `operator.read`。当前 handler 返回时间戳、provider id/display name、
 provider/profile health status、可选 expiry、API-key 来源和可选 usage。其认证状态仅为 `ok`、`expiring`、
@@ -28,16 +31,24 @@ provider/profile health status、可选 expiry、API-key 来源和可选 usage�
   expired 状态可返回的负值；畸形回包不会生成健康状态。
 - RPC 不传 `agentId`，因此由官方 handler 选择 Gateway 配置的默认 Agent；客户端不根据 Provider 页面配置猜测
   其他 Agent 的认证状态。
-- React 状态只保留 provider id/display name、provider/profile status 和 expiry 摘要。API-key source、环境变量名、
-  profile id、reason code、usage、account email、billing、plan 和任何 Secret 均不进入前端状态、日志、持久化或 UI。
+- React 状态只保留 provider id/display name、provider/profile status、expiry 和官方 `logoutSupported` 布尔能力。
+  API-key source、环境变量名、profile id、reason code、usage、account email、billing、plan 和任何 Secret 均不进入前端
+  状态、日志、持久化或 UI。
 - Provider 页将 Gateway 认证状态与本地配置卡片并列呈现。用户可以显式刷新状态；本项不把刷新解释为登录、
   凭据修复或后续模型请求一定成功。
+- 可注销 Provider 显示官方认证注销入口。用户确认后，JunQi 通过临时 `operator.admin` 连接调用
+  `models.authLogout { provider }`，由 OpenClaw 删除该 Provider 当前 Agent 下可删除的 OAuth/token Profile、刷新
+  运行时认证快照，并按官方规则中止需要中止的运行。JunQi 不传 Profile id、不读取认证存储，也不自行删除配置。
+- Gateway 报告的 Provider 可由用户主动选择“实时验证”。确认文案明确该操作会产生一个最多 8 Token 的官方
+  `models.probe { provider }` 请求，并可能产生少量费用或触发速率限制。Renderer 只保留 provider、官方状态、延迟和
+  目标数量，不保留 Profile id、label 或上游错误详情；认证状态刷新或 Gateway 状态变化后清除旧探测结果。
 
 ## 权限与跨平台边界
 
-`models.authStatus` 使用既有日常 `operator.read` 连接，不增加 `operator.admin`、`operator.approvals` 或其他
-scope，也不读取本机路径、系统凭据库或浏览器 API。它通过 Gateway WebSocket RPC 工作，macOS、Windows、
-CentOS 和 Ubuntu 不依赖系统特定认证实现。
+`models.authStatus` 使用既有日常 `operator.read` 连接。`models.authLogout` 与 `models.probe` 只在用户明确确认后
+通过现有临时 privileged requester 申请 `operator.admin`，不把管理权限加入日常连接。三者都不读取本机路径、系统
+凭据库或浏览器 API，而是通过 Gateway WebSocket RPC 工作；macOS、Windows、CentOS 和 Ubuntu 不依赖系统特定
+认证实现。
 
 本轮同时核对了官方 `question.*`：该能力需要独立的常驻 `operator.questions` scope 才能接收
 `question.requested`/`question.resolved` 事件。JunQi 现有日常连接有意仅请求 read/write scope，因此本轮不将
@@ -45,6 +56,10 @@ CentOS 和 Ubuntu 不依赖系统特定认证实现。
 
 ## 验证结果
 
+- 2026-08-05 增量：核对 OpenClaw 官方 `main` 提交 `02f7ed0f`，确认 `models.authLogout`、
+  `logoutSupported`、`models.probe`、`operator.admin` 和对应返回契约；同时核对已安装正式版本 `v2026.7.1-2`，其包含
+  `models.authLogout`，但未包含 `models.probe` handler，因此实际调用会明确进入旧 Runtime 不支持路径，不使用 CLI
+  fallback 或伪造结果。
 - TypeScript 无输出类型检查通过。
 - 7 项定向回归通过，覆盖安全投影、敏感字段剔除、畸形 enum/expiry 拒绝、过期负 duration 保留、方法发现遗漏仍请求、未知方法、断线、
   connection fence、已切换 Gateway 的旧响应丢弃，以及 UI 不可用状态。
@@ -54,6 +69,6 @@ CentOS 和 Ubuntu 不依赖系统特定认证实现。
 
 ## 未验证边界
 
-- 当前工作区未连接真实 Gateway，尚未验证实际 provider OAuth/token 到期、静态 key、外部 CLI 凭据和 Gateway
-  认证错误的页面呈现。
+- 当前工作区未连接真实 Gateway，尚未验证实际 provider OAuth/token 到期、静态 key、外部 CLI 凭据、实时探测
+  的 Token 消耗、计费、限流和 Gateway 认证错误的页面呈现。
 - 尚未在 macOS、Windows、CentOS、Ubuntu 的 Tauri 安装包上完成真机验收。

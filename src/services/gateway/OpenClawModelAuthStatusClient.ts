@@ -22,6 +22,7 @@ export interface OpenClawModelAuthProfile {
   readonly type: OpenClawModelAuthProfileType;
   readonly status: OpenClawModelAuthStatus;
   readonly expiry?: OpenClawModelAuthExpiry;
+  readonly logoutSupported: boolean;
 }
 
 export interface OpenClawModelAuthProvider {
@@ -101,7 +102,12 @@ function profile(value: unknown): OpenClawModelAuthProfile {
   const status = oneOf(source?.status, MODEL_AUTH_STATUSES);
   if (!source || !type || !status) throw new OpenClawModelAuthStatusResponseError();
   const profileExpiry = expiry(source.expiry);
-  return { type, status, ...(profileExpiry ? { expiry: profileExpiry } : {}) };
+  return {
+    type,
+    status,
+    ...(profileExpiry ? { expiry: profileExpiry } : {}),
+    logoutSupported: source.logoutSupported === true,
+  };
 }
 
 function provider(value: unknown): OpenClawModelAuthProvider {
