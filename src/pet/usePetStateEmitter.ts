@@ -65,7 +65,7 @@ function localizedSetupMessage(app: ReturnType<typeof useAppStore.getState>): st
     case 'choosing-mode':
       return i18n.t('setup.chooseMode', { defaultValue: 'Choose how you want to set up the OpenClaw Gateway.' });
     case 'gateway-stopped':
-      return i18n.t('setup.gatewayNotRunning', { defaultValue: 'Gateway is not running. Click below to start it.' });
+      return i18n.t('setup.gatewayStartingHint');
     case 'git-missing':
       return i18n.t('setup.gitRequired', { defaultValue: 'Git Required' });
     case 'checking':
@@ -79,7 +79,7 @@ function localizedSetupMessage(app: ReturnType<typeof useAppStore.getState>): st
     case 'gateway-ready':
       return i18n.t('setup.gatewayConnected', { defaultValue: 'Gateway is ready' });
     case 'configure-openclaw':
-      return i18n.t('setup.preparingGateway', { defaultValue: 'Preparing Gateway...' });
+      return i18n.t('setup.wizard.title');
     case 'ready':
       return i18n.t('setup.ready', { defaultValue: 'Ready!' });
     case 'error':
@@ -92,22 +92,28 @@ function localizedSetupMessage(app: ReturnType<typeof useAppStore.getState>): st
 function setupStepTitleKey(step: ReturnType<typeof useAppStore.getState>['setupStep']): string {
   switch (step) {
     case 'welcome':
-      return 'setup.steps.identity.title';
     case 'detecting':
+    case 'environment-review':
+      return 'setup.steps.environment.title';
     case 'storage':
+      return 'setup.steps.storage.title';
+    case 'gateway-ready':
+    case 'configure-openclaw':
+      return 'setup.steps.configuration.title';
     case 'gateway-stopped':
     case 'choosing-mode':
-      return 'setup.steps.runtime.title';
-    case 'ready':
-      return 'setup.steps.ready.title';
     case 'checking':
     case 'install-git':
     case 'git-missing':
+    case 'node-missing':
     case 'install-node':
     case 'install-openclaw':
     case 'error':
+      return 'setup.steps.runtime.title';
+    case 'ready':
+      return 'setup.steps.ready.title';
     default:
-      return 'setup.steps.install.title';
+      return 'setup.steps.environment.title';
   }
 }
 

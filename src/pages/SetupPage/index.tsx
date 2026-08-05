@@ -13,7 +13,7 @@ import { StorageSetupStep } from "@/components/setup/StorageSetupGate";
 import { WelcomeScreen } from "./WelcomeScreen";
 import { DetectingScreen } from "./DetectingScreen";
 import { EnvironmentReviewScreen } from "./EnvironmentReviewScreen";
-import { GatewayStoppedScreen } from "./GatewayStoppedScreen";
+import { GatewayStartingScreen } from "./GatewayStartingScreen";
 import { ModeSelectScreen } from "./ModeSelectScreen";
 import { ProgressScreen } from "./ProgressScreen";
 import { WizardScreen } from "./WizardScreen";
@@ -78,11 +78,11 @@ export function SetupPage() {
 
   const sharedLogs = useMemo(() => logs, [logs]);
   switch (setupStep) {
-    case "welcome": return <WelcomeScreen logs={sharedLogs} />;
+    case "welcome": return <WelcomeScreen flow={flow} logs={sharedLogs} />;
     case "detecting": return <DetectingScreen flow={flow} logs={sharedLogs} />;
     case "environment-review": return <EnvironmentReviewScreen flow={flow} logs={sharedLogs} />;
-    case "storage": return <StorageSetupStep logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={flow.goBack} forceConfigure={flow.forceStorageSelection} />;
-    case "gateway-stopped": return <GatewayStoppedScreen flow={flow} logs={sharedLogs} />;
+    case "storage": return <StorageSetupStep activeStage={flow.presentation.stage} logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={flow.goBack} forceConfigure={flow.forceStorageSelection} />;
+    case "gateway-stopped": return <GatewayStartingScreen flow={flow} logs={sharedLogs} />;
     case "choosing-mode": return <ModeSelectScreen flow={flow} logs={sharedLogs} />;
     case "ready": return <ReadyScreen flow={flow} logs={sharedLogs} />;
     case "checking":

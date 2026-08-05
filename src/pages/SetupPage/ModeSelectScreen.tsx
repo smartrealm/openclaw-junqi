@@ -65,7 +65,7 @@ export function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupL
 
   return (
     <SetupShell
-      active={3}
+      active={flow.presentation.stage}
       title={t("setup.modeSelectionTitle", "确认 OpenClaw 运行方式")}
       subtitle={t("setup.chooseMode")}
       logs={logs}
@@ -161,4 +161,3 @@ export function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupL
     </SetupShell>
   );
 }
-

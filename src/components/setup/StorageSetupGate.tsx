@@ -8,7 +8,8 @@ import { SetupShell } from '@/components/setup/SetupFlowPanels';
 import { initialStorageCompletion, type StorageCompletion } from '@/components/setup/storageSetupModel';
 import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
 import { useAppStore, type SetupLog, type StorageSetupDraft } from '@/stores/app-store';
-import { subscribeTauriEvent } from '@/utils/tauriEvents';
+import type { SetupFlow } from '@/hooks/useSetupFlow';
+import { hasTauriEventBridge, subscribeTauriEvent } from '@/utils/tauriEvents';
 
 interface StorageSetupStatus {
   configured: boolean;
@@ -45,6 +46,7 @@ interface MigrationProgress {
 }
 
 interface StorageSetupStepProps {
+  activeStage: SetupFlow['presentation']['stage'];
   onReady: (result?: StorageCompletion) => void;
   onBack: () => void | Promise<void>;
   logs: SetupLog[];
@@ -82,10 +84,8 @@ function remapChildPath(path: string, source: string, target: string): string {
 }
 
 function migrationSource(status: StorageSetupStatus, forceConfigure: boolean): string {
-  // Once storage has been configured, every later relocation starts from the
-  // selected state directory. Falling back to legacyDir here can create a
-  // fresh target while leaving the user's active configuration, sessions, and
-  // credentials behind when the legacy default no longer exists.
+  // 存储已配置后，后续迁移必须从当前选定的数据目录开始。
+  // 回退到旧目录会造成新目标与现有配置、会话和凭据脱节。
   return forceConfigure || status.configured ? status.stateDir : status.legacyDir;
 }
 
@@ -130,7 +130,7 @@ function LocationRow({ icon, label, value, onChoose, disabled }: LocationRowProp
   );
 }
 
-export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false }: StorageSetupStepProps) {
+export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConfigure = false }: StorageSetupStepProps) {
   const { t } = useTranslation();
   const storageDraft = useAppStore((state) => state.storageDraft);
   const setStorageDraft = useAppStore((state) => state.setStorageDraft);
@@ -169,8 +169,8 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     setLoading(true);
     setError(null);
     try {
-      if (!(window as any).__TAURI_INTERNALS__) {
-        return;
+      if (!hasTauriEventBridge()) {
+        throw new Error(t('storage.desktopIntegrationUnavailable'));
       }
       const result = await invoke<StorageSetupStatus>('get_storage_setup_status');
       if (!mountedRef.current) return;
@@ -289,9 +289,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   }, []);
 
   const applyStorage = useCallback(async () => {
-    // React does not commit `applying` synchronously. Guard the native storage
-    // transaction before its first await so a double click cannot configure or
-    // migrate the same directory twice.
+    // React 不会同步提交 applying；首次 await 前先锁定原生存储事务，避免重复迁移。
     if (!status || !targetDir || applyInFlightRef.current || advanceInFlightRef.current || backInFlightRef.current) return;
     applyInFlightRef.current = true;
     setApplying(true);
@@ -313,9 +311,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
         message: t('storage.logSaving', '正在保存 OpenClaw 数据位置…'),
         progress: 0.02,
       });
-      // Storage owns a native, single-flight transaction. It stops and
-      // restores the selected Gateway as needed, so an optional collaboration
-      // plugin must never become a prerequisite for first-run storage setup.
+      // 存储层拥有原生单飞事务，按需停止并恢复选定 Gateway；协作插件不能成为首次配置前提。
       const result = await invoke<StorageConfigureResult>('configure_storage', {
         targetDir,
         migrateExisting: shouldMigrateSelectedState,
@@ -437,7 +433,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   if (loading) {
     return (
       <SetupShell
-        active={2}
+        active={activeStage}
         title={t('storage.title', '选择 OpenClaw 数据位置')}
         subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
         logs={logs}
@@ -454,7 +450,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   if (!status) {
     return (
       <SetupShell
-        active={2}
+        active={activeStage}
         title={t('storage.loadFailed', '无法读取存储配置')}
         subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
         logs={logs}
@@ -472,7 +468,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
   if (status.runtimeReconfigurationRecoveryError) {
     return (
       <SetupShell
-        active={2}
+        active={activeStage}
         title={t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')}
         subtitle={t('storage.runtimeRecoverySubtitle', 'OpenClaw 的先前运行时和 Gateway 服务需要先恢复，完成后才能继续更改数据位置。')}
         logs={logs}
@@ -497,8 +493,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
     );
   }
 
-  // Selecting a location is a setup transition: persistence happens as part
-  // of advancing to the next stage, rather than as a separate save action.
+  // 选择位置即引导状态转换，持久化随下一阶段提交，不单独暴露保存动作。
   const actionLabel = t('setup.nextStep', '下一步');
   const dataLayoutLocked = !usingSourceLocation
     && hasMigratableSource(status, forceConfigure)
@@ -515,7 +510,7 @@ export function StorageSetupStep({ onReady, onBack, logs, forceConfigure = false
 
   return (
     <SetupShell
-      active={2}
+      active={activeStage}
       title={t('storage.title', '选择 OpenClaw 数据位置')}
       subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
       logs={logs}

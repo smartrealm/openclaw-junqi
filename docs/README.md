@@ -29,6 +29,7 @@ docs/
 
 目录：[`installation/`](installation/)
 
+- [新手引导编排重构记录](installation/onboarding-orchestration-redesign-2026-08-05.md)
 - [Windows 安装阶段全量复审](installation/windows-installation-full-audit-2026-07-24.md)
 - [Windows Native 安装审计](installation/windows-native-install-audit.md)
 - [安装向导存储页导航可见性验证](installation/setup-storage-navigation-visibility-validation-2026-08-02.md)
@@ -64,6 +65,8 @@ docs/
 - [`../plans/installation/2026-07-29-install-cancellation-and-diagnostic-boundary.md`](../plans/installation/2026-07-29-install-cancellation-and-diagnostic-boundary.md)
 - [`../specs/installation/2026-07-29-setup-state-ownership.md`](../specs/installation/2026-07-29-setup-state-ownership.md)
 - [`../plans/installation/2026-07-29-setup-state-ownership.md`](../plans/installation/2026-07-29-setup-state-ownership.md)
+- [`../specs/installation/2026-08-05-onboarding-orchestration-redesign.md`](../specs/installation/2026-08-05-onboarding-orchestration-redesign.md)
+- [`../plans/installation/2026-08-05-onboarding-orchestration-redesign.md`](../plans/installation/2026-08-05-onboarding-orchestration-redesign.md)
 
 ## Gateway 生命周期与服务归属
 

@@ -236,7 +236,7 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
   if (!step) {
     return (
       <SetupShell
-        active={5}
+        active={flow.presentation.stage}
         title={t("setup.wizard.title", "配置 OpenClaw")}
         subtitle={t("setup.wizard.connecting", "正在连接 OpenClaw 官方配置向导…")}
         logs={logs}
@@ -302,7 +302,7 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
 
   return (
     <SetupShell
-      active={5}
+      active={flow.presentation.stage}
       title={wizardTitle}
       subtitle={wizardSubtitle}
       logs={logs}

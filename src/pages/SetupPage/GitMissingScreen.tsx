@@ -1,4 +1,4 @@
-// Step `git-missing` — Git prerequisite.
+// 引导 git-missing 状态的 Git 前置条件页面。
 import { Package } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { SetupLog } from "@/stores/app-store";
@@ -13,7 +13,7 @@ export function GitMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupL
     : t("setup.gitRequiredDesc");
   return (
     <SetupShell
-      active={4}
+      active={flow.presentation.stage}
       title={t("setup.gitRequired")}
       subtitle={description}
       logs={logs}
@@ -23,11 +23,10 @@ export function GitMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupL
       <StatusPanel
         icon={<Package size={22} />}
         tone="danger"
-        eyebrow={t("setup.steps.install.title")}
+        eyebrow={t("setup.steps.runtime.title")}
         title={t("setup.gitRequired")}
         message={description}
       />
     </SetupShell>
   );
 }
-

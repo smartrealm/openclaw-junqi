@@ -31,13 +31,8 @@ import type { SetupLog } from "@/stores/app-store";
 import type { InstallTarget, SetupFlow, StepState } from "@/hooks/useSetupFlow";
 
 const SETUP_STEPS = [
-  { id: "identity", titleKey: "setup.steps.identity.title", titleFallback: "Preferences", descriptionKey: "setup.steps.identity.description", descriptionFallback: "Language / Theme" },
   { id: "environment", titleKey: "setup.steps.environment.title", titleFallback: "Environment", descriptionKey: "setup.steps.environment.description", descriptionFallback: "OpenClaw / Docker" },
   { id: "storage", titleKey: "setup.steps.storage.title", titleFallback: "Data location", descriptionKey: "setup.steps.storage.description", descriptionFallback: "Configuration / Workspace" },
-  // Choosing the runtime is its own decision, distinct from installing it.
-  // Setup skips this stage whenever the selected runtime is already usable, so
-  // the stepper may advance straight past it — that is expected, not a jump.
-  { id: "runtimeChoice", titleKey: "setup.steps.runtimeChoice.title", titleFallback: "Runtime mode", descriptionKey: "setup.steps.runtimeChoice.description", descriptionFallback: "Native / Docker" },
   { id: "runtime", titleKey: "setup.steps.runtime.title", titleFallback: "Runtime", descriptionKey: "setup.steps.runtime.description", descriptionFallback: "Install and start Gateway" },
   { id: "configuration", titleKey: "setup.steps.configuration.title", titleFallback: "OpenClaw setup", descriptionKey: "setup.steps.configuration.description", descriptionFallback: "Models / credentials / channels" },
   { id: "ready", titleKey: "setup.steps.ready.title", titleFallback: "Complete", descriptionKey: "setup.steps.ready.description", descriptionFallback: "Enter dashboard" },
@@ -231,7 +226,7 @@ export function SetupShell({
 }) {
   const { t } = useTranslation();
   const [showLogs, setShowLogs] = useState(false);
-  const isRuntime = active > 0 && active < 3;
+  const isRuntime = active >= 2 && active < 4;
   const showActions = previousAction || secondaryAction || nextAction;
 
   return (
@@ -529,18 +524,19 @@ export function OpenClawRuntimeDetails({
 }: {
   status: OpenclawStatus | null;
   installTarget: InstallTarget | null;
-  gatewayState?: "checking" | "stopped" | "running" | "unknown";
+  gatewayState?: "checking" | "starting" | "stopped" | "running" | "unknown";
 }) {
   const { t } = useTranslation();
   const installed = Boolean(status?.installed);
   const gatewayTone =
     gatewayState === "running" ? "ok" :
       gatewayState === "stopped" ? "warn" :
-        gatewayState === "checking" ? "neutral" : "neutral";
+        gatewayState === "checking" || gatewayState === "starting" ? "neutral" : "neutral";
   const gatewayLabel =
     gatewayState === "running" ? t("setup.runtimeDetails.gatewayRunning", "运行中") :
       gatewayState === "stopped" ? t("setup.runtimeDetails.gatewayStopped", "未运行") :
         gatewayState === "checking" ? t("setup.runtimeDetails.gatewayChecking", "检测中") :
+          gatewayState === "starting" ? t("setup.startingGateway") :
           t("setup.runtimeDetails.unknown", "未知");
 
   return (

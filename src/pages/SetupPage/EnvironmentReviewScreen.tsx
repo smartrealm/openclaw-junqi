@@ -15,7 +15,7 @@ export function EnvironmentReviewScreen({ flow, logs }: { flow: SetupFlow; logs:
 
   return (
     <SetupShell
-      active={1}
+      active={flow.presentation.stage}
       title={t("setup.runtimeTitle")}
       subtitle={t("setup.runtimeSubtitle")}
       logs={logs}

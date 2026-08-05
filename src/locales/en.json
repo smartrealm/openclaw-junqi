@@ -3922,6 +3922,7 @@
     "defaultLocation": "Use current location",
     "existingData": "Existing OpenClaw data detected",
     "loadFailed": "Could not read storage configuration",
+    "desktopIntegrationUnavailable": "JunQi Desktop storage service is unavailable. Continue in the desktop app.",
     "loading": "Reading storage information…",
     "runtimeRecoveryTitle": "Restoring the previous runtime change",
     "runtimeRecoverySubtitle": "The prior OpenClaw runtime and Gateway service must be restored before data locations can be changed.",
@@ -4034,10 +4035,6 @@
     "copyLogs": "Copy logs",
     "copiedLogs": "Copied",
     "steps": {
-      "identity": {
-        "title": "Preferences",
-        "description": "Language / Theme"
-      },
       "environment": {
         "title": "Environment",
         "description": "OpenClaw / Docker"
@@ -4045,10 +4042,6 @@
       "storage": {
         "title": "Data location",
         "description": "Configuration / Workspace"
-      },
-      "runtimeChoice": {
-        "title": "Runtime mode",
-        "description": "Native / Docker"
       },
       "runtime": {
         "title": "Runtime",
@@ -4218,6 +4211,7 @@
     "checkingOpenclaw": "Checking OpenClaw...",
     "installingOpenclaw": "Installing OpenClaw...",
     "startingGateway": "Starting Gateway...",
+    "gatewayStartingHint": "Starting the selected OpenClaw Gateway and verifying its connection.",
     "gatewayStarted": "Gateway started",
     "preparingGateway": "Preparing Gateway...",
     "waitingGateway": "Waiting for Gateway...",
