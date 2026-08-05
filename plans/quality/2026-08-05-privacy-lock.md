@@ -39,9 +39,10 @@
 
 ## 阶段六：自动离席、休眠和会话锁定
 
-- [ ] Windows 使用 `GetLastInputInfo`，macOS 使用 CoreGraphics 读取系统空闲时间。
-- [ ] Linux 提供能力探测；无可靠系统 API 时显示不可用，不使用 Renderer 猜测。
-- [ ] Tauri 恢复事件在窗口展示前锁定。
+- [x] Windows 使用 `GetLastInputInfo`，macOS 使用 CoreGraphics 读取系统空闲时间。
+- [x] Linux 提供能力探测；无可靠系统 API 时显示不可用，不使用 Renderer 猜测。
+- [x] Tauri 恢复事件在窗口展示前锁定。
+- [x] 修复解锁后系统空闲计时未归零导致的立即重复锁定：必须先观察到一次真实系统活动。
 - [ ] 接入并验证 Windows 和 macOS 可取得的系统会话锁定信号。
 
 ## 阶段七：系统身份验证

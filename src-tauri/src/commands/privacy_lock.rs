@@ -248,6 +248,18 @@ fn retry_after_ms(retry_after: Option<Instant>) -> u64 {
         .unwrap_or(0)
 }
 
+fn should_lock_for_idle(idle_lock_armed: &mut bool, idle: Duration, threshold: Duration) -> bool {
+    if idle < threshold {
+        *idle_lock_armed = true;
+        return false;
+    }
+    if !*idle_lock_armed {
+        return false;
+    }
+    *idle_lock_armed = false;
+    true
+}
+
 fn retry_delay(failed_attempts: u32) -> Option<Duration> {
     match failed_attempts {
         0..=4 => None,
@@ -661,17 +673,30 @@ fn system_idle_duration() -> Option<Duration> {
 
 pub fn start_idle_monitor(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        // System idle time is not reset by a successful JunQi unlock. Do not
+        // immediately re-lock after unlocking from an already-idle desktop;
+        // require a fresh period of observed system activity first.
+        let mut idle_lock_armed = true;
         loop {
             tokio::time::sleep(Duration::from_secs(5)).await;
             let state = app.state::<PrivacyLockState>();
             let settings = state.settings();
-            if !settings.enabled || settings.auto_lock_seconds == 0 || state.is_locked() {
+            if !settings.enabled || settings.auto_lock_seconds == 0 {
+                idle_lock_armed = true;
+                continue;
+            }
+            if state.is_locked() {
+                idle_lock_armed = false;
                 continue;
             }
             let Some(idle) = system_idle_duration() else {
                 continue;
             };
-            if idle >= Duration::from_secs(settings.auto_lock_seconds) {
+            if should_lock_for_idle(
+                &mut idle_lock_armed,
+                idle,
+                Duration::from_secs(settings.auto_lock_seconds),
+            ) {
                 lock_from_native(&app, PrivacyLockReason::Idle);
             }
         }
@@ -861,6 +886,43 @@ mod tests {
         assert!(!command_allowed_while_locked("start_gateway"));
         assert!(!command_allowed_while_locked("store_provider_secret"));
         assert!(!command_allowed_while_locked("open_terminal_window"));
+    }
+
+    #[test]
+    fn idle_lock_requires_fresh_activity_after_unlock() {
+        let threshold = Duration::from_secs(300);
+        let mut armed = false;
+        assert!(!should_lock_for_idle(
+            &mut armed,
+            Duration::from_secs(900),
+            threshold
+        ));
+        assert!(!armed);
+        assert!(!should_lock_for_idle(
+            &mut armed,
+            Duration::from_secs(20),
+            threshold
+        ));
+        assert!(armed);
+        assert!(should_lock_for_idle(&mut armed, threshold, threshold));
+        assert!(!armed);
+    }
+
+    #[test]
+    fn idle_lock_can_be_rearmed_when_automatic_lock_is_disabled() {
+        let mut armed = false;
+        assert!(!should_lock_for_idle(
+            &mut armed,
+            Duration::from_secs(900),
+            Duration::from_secs(300)
+        ));
+        // The monitor resets this latch whenever the setting is disabled.
+        armed = true;
+        assert!(should_lock_for_idle(
+            &mut armed,
+            Duration::from_secs(300),
+            Duration::from_secs(300)
+        ));
     }
 
     #[test]
