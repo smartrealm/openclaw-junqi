@@ -1,12 +1,13 @@
-// Step `welcome` — entry screen.
+// 引导 welcome 状态的入口页面。
 import { Monitor } from "lucide-react";
 import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { SetupLog } from "@/stores/app-store";
+import type { SetupFlow } from "@/hooks/useSetupFlow";
 import { SetupShell } from "@/components/setup/SetupFlowPanels";
 import { LanguageThemeControls, useSetupNavigation } from "./shared";
 
-export function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
+export function WelcomeScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const navigateSetup = useSetupNavigation();
   const navigationInFlightRef = useRef(false);
@@ -18,7 +19,7 @@ export function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
 
   return (
     <SetupShell
-      active={0}
+      active={flow.presentation.stage}
       title={t("setup.title")}
       subtitle={t("setup.welcomeSubtitle")}
       logs={logs}
@@ -41,4 +42,3 @@ export function WelcomeScreen({ logs }: { logs: SetupLog[] }) {
     </SetupShell>
   );
 }
-

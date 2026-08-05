@@ -29,6 +29,7 @@ docs/
 
 目录：[`installation/`](installation/)
 
+- [新手引导编排重构记录](installation/onboarding-orchestration-redesign-2026-08-05.md)
 - [Windows 安装阶段全量复审](installation/windows-installation-full-audit-2026-07-24.md)
 - [Windows Native 安装审计](installation/windows-native-install-audit.md)
 - [安装向导存储页导航可见性验证](installation/setup-storage-navigation-visibility-validation-2026-08-02.md)
@@ -64,6 +65,8 @@ docs/
 - [`../plans/installation/2026-07-29-install-cancellation-and-diagnostic-boundary.md`](../plans/installation/2026-07-29-install-cancellation-and-diagnostic-boundary.md)
 - [`../specs/installation/2026-07-29-setup-state-ownership.md`](../specs/installation/2026-07-29-setup-state-ownership.md)
 - [`../plans/installation/2026-07-29-setup-state-ownership.md`](../plans/installation/2026-07-29-setup-state-ownership.md)
+- [`../specs/installation/2026-08-05-onboarding-orchestration-redesign.md`](../specs/installation/2026-08-05-onboarding-orchestration-redesign.md)
+- [`../plans/installation/2026-08-05-onboarding-orchestration-redesign.md`](../plans/installation/2026-08-05-onboarding-orchestration-redesign.md)
 
 ## Gateway 生命周期与服务归属
 
@@ -71,15 +74,16 @@ docs/
 
 建议按以下顺序阅读：
 
-1. [Gateway 生命周期审计](gateway/openclaw-gateway-lifecycle-audit.md)
-2. [Gateway 服务归属审计](gateway/openclaw-gateway-service-ownership-audit.md)
-3. [Gateway 服务归属验证](gateway/openclaw-gateway-service-ownership-validation.md)
-4. [Windows Gateway 重启等待契约加固](quality/windows-gateway-restart-hardening-2026-08-03.md)
-5. [Tauri Adapter IPC 契约加固](quality/tauri-adapter-ipc-contract-hardening-2026-08-03.md)
-6. [Gateway 凭据绑定失败关闭](quality/gateway-credential-binding-fail-closed-2026-08-03.md)
-7. [Gateway Client 平台身份对齐](quality/gateway-client-platform-identity-alignment-2026-08-03.md)
-8. [OpenClaw Operator Protocol v4 对齐](quality/openclaw-operator-protocol-v4-alignment-2026-08-03.md)
-9. [OpenClaw Gateway 挑战与策略对齐](quality/openclaw-gateway-challenge-policy-alignment-2026-08-04.md)
+1. [Gateway 入口与生命周期全链审计](gateway/openclaw-gateway-entry-lifecycle-audit-2026-08-05.md)
+2. [Gateway 生命周期审计](gateway/openclaw-gateway-lifecycle-audit.md)
+3. [Gateway 服务归属审计](gateway/openclaw-gateway-service-ownership-audit.md)
+4. [Gateway 服务归属验证](gateway/openclaw-gateway-service-ownership-validation.md)
+5. [Windows Gateway 重启等待契约加固](quality/windows-gateway-restart-hardening-2026-08-03.md)
+6. [Tauri Adapter IPC 契约加固](quality/tauri-adapter-ipc-contract-hardening-2026-08-03.md)
+7. [Gateway 凭据绑定失败关闭](quality/gateway-credential-binding-fail-closed-2026-08-03.md)
+8. [Gateway Client 平台身份对齐](quality/gateway-client-platform-identity-alignment-2026-08-03.md)
+9. [OpenClaw Operator Protocol v4 对齐](quality/openclaw-operator-protocol-v4-alignment-2026-08-03.md)
+10. [OpenClaw Gateway 挑战与策略对齐](quality/openclaw-gateway-challenge-policy-alignment-2026-08-04.md)
 
 对应规格与计划：
 

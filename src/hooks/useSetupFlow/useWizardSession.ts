@@ -19,7 +19,7 @@ import {
 } from "@/api/tauri-commands";
 import {
   classifyOpenClawWizardFailure,
-  createBrowserOpenClawWizardSessionStore,
+  createScopedOpenClawWizardSessionStore,
   isOpenClawWizardCompletionStep,
   OpenClawWizardCancelledError,
   OpenClawWizardClient,
@@ -27,6 +27,7 @@ import {
   isOpenClawWizardSessionLost,
   isOpenClawWizardStepDesynchronized,
   type OpenClawWizardResult,
+  type OpenClawWizardSessionScope,
   type OpenClawWizardStep,
 } from "@/services/openclawWizard";
 import { cacheGatewayTarget } from "./helpers";
@@ -73,11 +74,12 @@ export function useWizardSession({
   const wizardNavigationInFlightRef = useRef<"next" | null>(null);
   const wizardRecoveryInFlightRef = useRef<"retry" | "reclaim" | null>(null);
   const wizardOperationRef = useRef(0);
+  const wizardSessionScopeRef = useRef<OpenClawWizardSessionScope | null>(null);
   const wizardClientRef = useRef<OpenClawWizardClient | null>(null);
   if (!wizardClientRef.current) {
     wizardClientRef.current = new OpenClawWizardClient(
       (method, params, options) => gateway.callPrivileged(method, params, options),
-      createBrowserOpenClawWizardSessionStore(),
+      createScopedOpenClawWizardSessionStore(() => wizardSessionScopeRef.current),
     );
   }
   const wizardFailureMessage = useCallback((error: unknown): string => {
@@ -155,15 +157,34 @@ export function useWizardSession({
     }
   }, []);
 
-  const refreshGatewayConnectionTarget = useCallback(async () => {
+  const refreshWizardSessionScope = useCallback(async () => {
     try {
       const target = await detectGatewayConfig();
       cacheGatewayTarget(target.port);
       const gatewayWsUrl = target.ws_url;
       if (!gatewayWsUrl) {
+        wizardSessionScopeRef.current = null;
+        return null;
+      }
+      wizardSessionScopeRef.current = {
+        runtimeMode: target.runtime_mode,
+        gatewayWsUrl,
+      };
+      return target;
+    } catch {
+      wizardSessionScopeRef.current = null;
+      return null;
+    }
+  }, []);
+
+  const refreshGatewayConnectionTarget = useCallback(async () => {
+    try {
+      const target = await refreshWizardSessionScope();
+      if (!target?.ws_url) {
         gatewayManager.reconnect();
         return false;
       }
+      const gatewayWsUrl = target.ws_url;
       // The official wizard writes the final Gateway token before installing or
       // restarting its service. Re-read it instead of retaining the bootstrap
       // process' stale in-memory credential.
@@ -176,12 +197,11 @@ export function useWizardSession({
       gatewayManager.reconnect();
       return false;
     }
-  }, []);
+  }, [refreshWizardSessionScope]);
 
   const waitForGatewayConnection = useCallback(async (operationId: number, timeoutMs = 20_000) => {
-    if (!gateway.getStatus().connected) {
-      await refreshGatewayConnectionTarget();
-    }
+    if (!gateway.getStatus().connected) await refreshGatewayConnectionTarget();
+    else await refreshWizardSessionScope();
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       assertWizardOperationCurrent(operationId);
@@ -190,7 +210,7 @@ export function useWizardSession({
     }
     assertWizardOperationCurrent(operationId);
     throw new Error(t("setup.wizard.connectionTimeout", "Gateway 已启动，但配置向导连接超时。"));
-  }, [assertWizardOperationCurrent, refreshGatewayConnectionTarget, t]);
+  }, [assertWizardOperationCurrent, refreshGatewayConnectionTarget, refreshWizardSessionScope, t]);
 
   const applyWizardResult = useCallback(async (
     result: OpenClawWizardResult,

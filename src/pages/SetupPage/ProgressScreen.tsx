@@ -11,7 +11,6 @@ import { GatewayAiDiagnosticDisclosure } from "@/components/GatewayAiDiagnosticD
 export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const { setupStep, setupError } = useAppStore();
-  const active = setupStep === "ready" ? 6 : 4;
   const isGatewayReady = setupStep === "gateway-ready";
   const gatewayReadyChecking = isGatewayReady && flow.gatewayReadyContinuation.status === "checking";
   const gatewayReadyError = isGatewayReady && flow.gatewayReadyContinuation.status === "failed"
@@ -42,7 +41,7 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
 
   return (
     <SetupShell
-      active={active}
+      active={flow.presentation.stage}
       title={setupStep === "ready" ? t("setup.ready") : isGatewayReady ? t("setup.gatewayConnected") : t("setup.settingUp")}
       subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isGatewayReady ? t("setup.gatewayReadySubtitle") : t("setup.subtitle")}
       logs={logs}

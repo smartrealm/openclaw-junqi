@@ -60,14 +60,6 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
   assert.match(detection, /const next = await detectEnvironment\(runId\);[\s\S]*?!isRunActive\(runId\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
 });
 
-test('BUG-ONB-04 update completion preserves the OpenClaw onboarding gate', () => {
-  const stopped = screen('GatewayStoppedScreen');
-
-  assert.match(stopped, /refreshed\.needsOnboarding \? "configure-openclaw" : "ready"/);
-  assert.match(setupFlow, /needsOnboarding = await resolveActiveRuntimeOnboardingRequirement\(\)/);
-  assert.match(setupFlow, /updateOnboardingRequirement\(needsOnboarding\)/);
-});
-
 test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway readiness', () => {
   const completion = setupFlow.slice(
     setupFlow.indexOf('if (result.done || result.status === "done")'),
@@ -337,13 +329,6 @@ test('BUG-ONB-11 Back navigation returns to history instead of a hard-coded scre
   assert.match(setupPage, /onBack=\{flow\.goBack\}/);
 });
 
-test('BUG-ONB-12 stopped Gateway screen uses a completed detection title', () => {
-  const stopped = screen('GatewayStoppedScreen');
-
-  assert.match(stopped, /setup\.openclawDetectedTitle/);
-  assert.doesNotMatch(stopped, /setup\.foundOclaw/);
-});
-
 test('BUG-ONB-14 selected runtimes resume their full startup closure after storage', () => {
   const completeStorage = setupFlow.slice(
     setupFlow.indexOf('const completeStorageSetup = useCallback'),
@@ -357,25 +342,21 @@ test('BUG-ONB-14 selected runtimes resume their full startup closure after stora
   assert.match(completeStorage, /installMode === "docker"[\s\S]*?void runDockerSetup\(\)[\s\S]*?void runNativeSetup\(\)/);
 });
 
-test('BUG-ONB-15 setup navigation has one complete seven-step translation contract per locale', () => {
+test('BUG-ONB-15 setup navigation has one complete five-step translation contract per locale', () => {
   const zh = JSON.parse(readFileSync(new URL('../locales/zh.json', import.meta.url), 'utf8'));
   const zhTW = JSON.parse(readFileSync(new URL('../locales/zh-TW.json', import.meta.url), 'utf8'));
   const en = JSON.parse(readFileSync(new URL('../locales/en.json', import.meta.url), 'utf8'));
 
   const zhExpected = {
-    identity: { title: '品牌与偏好', description: '语言 / 主题' },
     environment: { title: '环境检测', description: 'OpenClaw / Docker' },
     storage: { title: '数据位置', description: '配置与工作区' },
-    runtimeChoice: { title: '运行方式', description: '本机 / Docker' },
     runtime: { title: '运行时', description: '安装并启动 Gateway' },
     configuration: { title: 'OpenClaw 配置', description: '模型、凭据与渠道' },
     ready: { title: '完成', description: '进入仪表盘' },
   };
   const enExpected = {
-    identity: { title: 'Preferences', description: 'Language / Theme' },
     environment: { title: 'Environment', description: 'OpenClaw / Docker' },
     storage: { title: 'Data location', description: 'Configuration / Workspace' },
-    runtimeChoice: { title: 'Runtime mode', description: 'Native / Docker' },
     runtime: { title: 'Runtime', description: 'Install and start Gateway' },
     configuration: { title: 'OpenClaw setup', description: 'Models / credentials / channels' },
     ready: { title: 'Ready', description: 'Enter dashboard' },
@@ -699,44 +680,6 @@ test('wizard recovery actions are synchronous single-flight before React commits
     setupFlow,
     /const invalidateWizardOperations[\s\S]*?wizardRecoveryInFlightRef\.current = null;[\s\S]*?invalidatePendingOperations/,
   );
-});
-
-test('each setup screen highlights the stage it actually belongs to', () => {
-  // The stage strip and the screens are two separate lists that must stay
-  // aligned by index. They drifted before: the stage advertising
-  // "OpenClaw / Docker" was the read-only detection screen, while the screen
-  // that actually asks for Native or Docker highlighted "Install and start
-  // Gateway" — so confirming storage looked like it had skipped a stage.
-  const panels = readFileSync(new URL('../components/setup/SetupFlowPanels.tsx', import.meta.url), 'utf8');
-  const stages = [...panels.matchAll(/\{ id: "(\w+)", titleKey: "setup\.steps\./g)].map((m) => m[1]);
-  assert.deepEqual(stages, [
-    'identity', 'environment', 'storage', 'runtimeChoice', 'runtime', 'configuration', 'ready',
-  ]);
-
-  const stageOf = (name: string) => stages.indexOf(name);
-  const activeOf = (file: string) => {
-    const match = screen(file).match(/active=\{(\d+)\}/);
-    assert.ok(match, `${file} must declare a stage`);
-    return Number(match![1]);
-  };
-
-  assert.equal(activeOf('WelcomeScreen'), stageOf('identity'));
-  assert.equal(activeOf('DetectingScreen'), stageOf('environment'));
-  assert.equal(activeOf('EnvironmentReviewScreen'), stageOf('environment'));
-  assert.equal(activeOf('ModeSelectScreen'), stageOf('runtimeChoice'));
-  assert.equal(activeOf('GatewayStoppedScreen'), stageOf('runtime'));
-  assert.equal(activeOf('GitMissingScreen'), stageOf('runtime'));
-  assert.equal(activeOf('NodeMissingScreen'), stageOf('runtime'));
-  assert.equal(activeOf('WizardScreen'), stageOf('configuration'));
-  assert.equal(activeOf('ReadyScreen'), stageOf('ready'));
-
-  // The storage screen lives in its own component outside the step folder.
-  const gate = readFileSync(new URL('../components/setup/StorageSetupGate.tsx', import.meta.url), 'utf8');
-  assert.match(gate, new RegExp(`active=\\{${stageOf('storage')}\\}`));
-
-  // ProgressScreen covers the install run and reuses the runtime stage.
-  const progress = screen('ProgressScreen');
-  assert.match(progress, new RegExp(`setupStep === "ready" \\? ${stageOf('ready')} : ${stageOf('runtime')}`));
 });
 
 test('environment review distinguishes Docker installation from daemon readiness', () => {

@@ -9,7 +9,7 @@ export function DetectingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLo
   const { t } = useTranslation();
   return (
     <SetupShell
-      active={1}
+      active={flow.presentation.stage}
       title={t("setup.runtimeTitle")}
       subtitle={t("setup.runtimeSubtitle")}
       logs={logs}
@@ -25,4 +25,3 @@ export function DetectingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLo
     </SetupShell>
   );
 }
-

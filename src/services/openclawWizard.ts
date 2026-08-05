@@ -154,38 +154,82 @@ type GatewayCaller = (
  * Keep only the opaque session id locally so a renderer or application restart
  * can resume the same official step. The id contains no credentials.
  */
-export interface OpenClawWizardSessionStore {
+export interface OpenClawWizardLegacySessionStore {
   load(): string | null;
   save(sessionId: string): void;
   clear(): void;
 }
 
-const WIZARD_SESSION_STORAGE_KEY = 'junqi.openclaw-wizard-session-id';
+export interface OpenClawWizardScopedSessionStore {
+  scopeKey(): string | null;
+  load(scopeKey: string): string | null;
+  save(scopeKey: string, sessionId: string): void;
+  clear(scopeKey: string): void;
+}
 
-export function createBrowserOpenClawWizardSessionStore(): OpenClawWizardSessionStore {
+export type OpenClawWizardSessionStore = OpenClawWizardLegacySessionStore | OpenClawWizardScopedSessionStore;
+
+export interface OpenClawWizardSessionScope {
+  runtimeMode: 'native' | 'docker';
+  gatewayWsUrl: string;
+}
+
+const WIZARD_SESSION_STORAGE_KEY = 'junqi.openclaw-wizard-session';
+
+function wizardSessionScopeKey(scope: OpenClawWizardSessionScope): string | null {
+  try {
+    const url = new URL(scope.gatewayWsUrl.trim());
+    if ((url.protocol !== 'ws:' && url.protocol !== 'wss:') || !url.hostname || url.username || url.password) {
+      return null;
+    }
+    return `${scope.runtimeMode}:${url.toString()}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 会话号只对创建它的运行时和 Gateway 有效。范围变化时保留旧记录但绝不读取，
+ * 因而 Native/Docker 切换或连接目标变更不会把旧会话提交给新的官方 Gateway。
+ */
+export function createScopedOpenClawWizardSessionStore(
+  resolveScope: () => OpenClawWizardSessionScope | null,
+): OpenClawWizardScopedSessionStore {
   return {
-    load: () => {
+    scopeKey: () => {
+      const scope = resolveScope();
+      return scope ? wizardSessionScopeKey(scope) : null;
+    },
+    load: (scopeKey) => {
       try {
-        return globalThis.localStorage?.getItem(WIZARD_SESSION_STORAGE_KEY) || null;
+        return globalThis.localStorage?.getItem(`${WIZARD_SESSION_STORAGE_KEY}:${encodeURIComponent(scopeKey)}`) || null;
       } catch {
         return null;
       }
     },
-    save: (sessionId) => {
+    save: (scopeKey, sessionId) => {
       try {
-        globalThis.localStorage?.setItem(WIZARD_SESSION_STORAGE_KEY, sessionId);
+        if (!scopeKey) return;
+        globalThis.localStorage?.setItem(`${WIZARD_SESSION_STORAGE_KEY}:${encodeURIComponent(scopeKey)}`, sessionId);
       } catch {
-        // Storage must not prevent the official wizard from operating.
+        // 本地恢复记录不可阻止官方 Wizard 继续执行。
       }
     },
-    clear: () => {
+    clear: (scopeKey) => {
       try {
-        globalThis.localStorage?.removeItem(WIZARD_SESSION_STORAGE_KEY);
+        if (!scopeKey) return;
+        globalThis.localStorage?.removeItem(`${WIZARD_SESSION_STORAGE_KEY}:${encodeURIComponent(scopeKey)}`);
       } catch {
-        // Storage must not prevent the official wizard from operating.
+        // 本地恢复记录不可阻止官方 Wizard 继续执行。
       }
     },
   };
+}
+
+function isScopedWizardSessionStore(
+  store: OpenClawWizardSessionStore,
+): store is OpenClawWizardScopedSessionStore {
+  return 'scopeKey' in store;
 }
 
 /**
@@ -336,6 +380,7 @@ function assertWizardCancelStatus(value: unknown): 'cancelled' {
 export class OpenClawWizardClient {
   private operationEpoch = 0;
   private sessionId: string | null = null;
+  private sessionScopeKey: string | null | undefined;
   private failedSessionId: string | null = null;
   private currentStep: OpenClawWizardStep | null = null;
   private failedStep: OpenClawWizardStep | null = null;
@@ -345,10 +390,11 @@ export class OpenClawWizardClient {
     private readonly callGateway: GatewayCaller,
     private readonly sessionStore?: OpenClawWizardSessionStore,
   ) {
-    this.sessionId = sessionStore?.load() ?? null;
+    this.synchronizeStoredSession();
   }
 
   get hasActiveSession(): boolean {
+    this.synchronizeStoredSession();
     return this.sessionId !== null;
   }
 
@@ -385,7 +431,29 @@ export class OpenClawWizardClient {
     if (operation !== this.operationEpoch) throw new OpenClawWizardOperationSupersededError();
   }
 
+  /**
+   * 每次使用前重新核对范围。目标变更意味着旧 Gateway 的会话不再可恢复，
+   * 因此清空内存中的步骤和诊断，并只尝试读取新范围自己的持久化会话。
+   */
+  private synchronizeStoredSession(): void {
+    if (!this.sessionStore) return;
+    if (!isScopedWizardSessionStore(this.sessionStore)) {
+      if (this.sessionScopeKey !== undefined) return;
+      this.sessionScopeKey = null;
+      this.sessionId = this.sessionStore.load();
+      return;
+    }
+    const nextScopeKey = this.sessionStore.scopeKey();
+    if (this.sessionScopeKey !== undefined && this.sessionScopeKey === nextScopeKey) return;
+    this.sessionScopeKey = nextScopeKey;
+    this.sessionId = nextScopeKey === null ? null : this.sessionStore.load(nextScopeKey);
+    this.currentStep = null;
+    this.failedStep = null;
+    this.failedSessionId = null;
+  }
+
   async start(workspace?: string): Promise<OpenClawWizardStartResult> {
+    this.synchronizeStoredSession();
     const operation = this.captureOperation();
     // A refresh/back navigation can leave the official server-side session
     // alive. Reconcile it before starting a new session so OpenClaw's
@@ -414,6 +482,7 @@ export class OpenClawWizardClient {
   }
 
   async next(stepId: string, value?: unknown): Promise<OpenClawWizardResult> {
+    this.synchronizeStoredSession();
     const operation = this.captureOperation();
     if (!this.sessionId) throw new Error('OpenClaw wizard session is not running.');
     const submittedSessionId = this.sessionId;
@@ -452,6 +521,7 @@ export class OpenClawWizardClient {
    * still be performing an external operation.
    */
   async resume(): Promise<OpenClawWizardResult> {
+    this.synchronizeStoredSession();
     const operation = this.captureOperation();
     if (!this.sessionId) throw new Error('OpenClaw wizard session is not running.');
     const resumedSessionId = this.sessionId;
@@ -501,6 +571,7 @@ export class OpenClawWizardClient {
    * answers are never retained or replayed by the desktop.
    */
   async retry(): Promise<OpenClawWizardResult> {
+    this.synchronizeStoredSession();
     if (this.sessionId) return await this.resume();
     return await this.start(this.workspace);
   }
@@ -513,6 +584,7 @@ export class OpenClawWizardClient {
   }
 
   async cancel(): Promise<void> {
+    this.synchronizeStoredSession();
     const operation = this.captureOperation();
     if (!this.sessionId) return;
     const sessionId = this.sessionId;
@@ -539,8 +611,15 @@ export class OpenClawWizardClient {
 
   private setSession(sessionId: string | null): void {
     this.sessionId = sessionId;
-    if (sessionId) this.sessionStore?.save(sessionId);
-    else this.sessionStore?.clear();
+    if (!this.sessionStore) return;
+    if (isScopedWizardSessionStore(this.sessionStore)) {
+      if (this.sessionScopeKey === null || this.sessionScopeKey === undefined) return;
+      if (sessionId) this.sessionStore.save(this.sessionScopeKey, sessionId);
+      else this.sessionStore.clear(this.sessionScopeKey);
+      return;
+    }
+    if (sessionId) this.sessionStore.save(sessionId);
+    else this.sessionStore.clear();
   }
 }
 
@@ -575,8 +654,18 @@ export function isOpenClawWizardStepDesynchronized(error: unknown): boolean {
 
 export function requiresOpenClawOnboarding(configExists: boolean, config: unknown): boolean {
   if (!configExists || !config || typeof config !== 'object') return true;
-  const cfg = config as Record<string, any>;
-  const model = cfg.agents?.defaults?.model;
-  const primary = typeof model === 'string' ? model : model?.primary;
+  const cfg = config as Record<string, unknown>;
+  const agents = cfg.agents;
+  const defaults = agents && typeof agents === 'object'
+    ? (agents as Record<string, unknown>).defaults
+    : null;
+  const model = defaults && typeof defaults === 'object'
+    ? (defaults as Record<string, unknown>).model
+    : null;
+  const primary = typeof model === 'string'
+    ? model
+    : model && typeof model === 'object'
+      ? (model as Record<string, unknown>).primary
+      : null;
   return !(typeof primary === 'string' && primary.trim());
 }

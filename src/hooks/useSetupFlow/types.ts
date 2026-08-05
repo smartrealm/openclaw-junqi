@@ -3,6 +3,7 @@ import type { InstallMode } from "@/stores/setup-navigation";
 import type { DockerStatus, OpenclawStatus } from "@/api/tauri-commands";
 import type { BrokenGatewayPlugin } from "@/services/gateway/pluginRecovery";
 import type { OpenClawWizardResult, OpenClawWizardStep } from "@/services/openclawWizard";
+import type { OnboardingPresentation } from "@/services/setup/onboardingPresentation";
 
 export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
 
@@ -40,6 +41,7 @@ export type GatewayReadyContinuation =
   | { status: "failed"; error: string };
 
 export interface SetupFlow {
+  presentation: OnboardingPresentation;
   progress: number;
   statusMessage: string;
   installMode: InstallMode;

@@ -3888,6 +3888,7 @@
     "defaultLocation": "使用當前位置",
     "existingData": "檢測到現有 OpenClaw 數據",
     "loadFailed": "無法讀取存儲配置",
+    "desktopIntegrationUnavailable": "無法存取 JunQi Desktop 儲存服務。請在桌面應用程式中繼續。",
     "loading": "正在讀取存儲信息…",
     "runtimeRecoveryTitle": "正在恢復上一次運行時更改",
     "runtimeRecoverySubtitle": "OpenClaw 的先前運行時和 Gateway 服務需要先恢復，完成後才能繼續更改數據位置。",
@@ -4000,10 +4001,6 @@
     "copyLogs": "複製日誌",
     "copiedLogs": "已複製",
     "steps": {
-      "identity": {
-        "title": "品牌與偏好",
-        "description": "語言 / 主題"
-      },
       "environment": {
         "title": "環境檢測",
         "description": "OpenClaw / Docker"
@@ -4011,10 +4008,6 @@
       "storage": {
         "title": "數據位置",
         "description": "配置與工作區"
-      },
-      "runtimeChoice": {
-        "title": "執行方式",
-        "description": "本機 / Docker"
       },
       "runtime": {
         "title": "運行時",
@@ -4184,6 +4177,7 @@
     "checkingOpenclaw": "正在檢測 OpenClaw...",
     "installingOpenclaw": "正在安裝 OpenClaw...",
     "startingGateway": "正在啟動 Gateway...",
+    "gatewayStartingHint": "正在啟動所選 OpenClaw Gateway，並驗證其連線。",
     "gatewayStarted": "Gateway 已啟動",
     "preparingGateway": "正在準備 Gateway...",
     "waitingGateway": "等待 Gateway 就緒...",

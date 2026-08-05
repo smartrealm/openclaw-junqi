@@ -11,6 +11,7 @@ import {
   OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS,
   OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS,
   OpenClawWizardOperationSupersededError,
+  createScopedOpenClawWizardSessionStore,
   requiresOpenClawOnboarding,
 } from './openclawWizard';
 
@@ -158,6 +159,40 @@ test('wizard client restores an unfinished official session after a renderer res
     },
   ]);
   assert.equal(storedSessionId, null);
+});
+
+test('Wizard 会话只会在创建它的运行时与 Gateway 目标中恢复', async () => {
+  localStorage.clear();
+  const firstGatewayUrl = new URL('/', `ws://${crypto.randomUUID()}.invalid`).toString();
+  const secondGatewayUrl = new URL('/', `ws://${crypto.randomUUID()}.invalid`).toString();
+  let scope: { runtimeMode: 'native' | 'docker'; gatewayWsUrl: string } = {
+    runtimeMode: 'native',
+    gatewayWsUrl: firstGatewayUrl,
+  };
+  const store = createScopedOpenClawWizardSessionStore(() => scope);
+  const firstClient = new OpenClawWizardClient(async () => ({
+    sessionId: 'native-session',
+    done: false,
+    status: 'running',
+    step: { id: 'model', type: 'select' },
+  }), store);
+  await firstClient.start();
+
+  scope = { runtimeMode: 'docker', gatewayWsUrl: secondGatewayUrl };
+  const calls: string[] = [];
+  const dockerClient = new OpenClawWizardClient(async (method) => {
+    calls.push(method);
+    return {
+      sessionId: 'docker-session',
+      done: false,
+      status: 'running',
+      step: { id: 'model', type: 'select' },
+    };
+  }, store);
+
+  assert.equal(dockerClient.hasActiveSession, false);
+  await dockerClient.start();
+  assert.deepEqual(calls, ['wizard.start']);
 });
 
 test('wizard client starts fresh after terminal failure without replaying accepted answers', async () => {

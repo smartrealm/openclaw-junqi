@@ -3919,6 +3919,7 @@
     "defaultLocation": "使用当前位置",
     "existingData": "检测到现有 OpenClaw 数据",
     "loadFailed": "无法读取存储配置",
+    "desktopIntegrationUnavailable": "无法访问 JunQi Desktop 存储服务。请在桌面应用中继续。",
     "loading": "正在读取存储信息…",
     "runtimeRecoveryTitle": "正在恢复上一次运行时更改",
     "runtimeRecoverySubtitle": "OpenClaw 的先前运行时和 Gateway 服务需要先恢复，完成后才能继续更改数据位置。",
@@ -4031,10 +4032,6 @@
     "copyLogs": "复制日志",
     "copiedLogs": "已复制",
     "steps": {
-      "identity": {
-        "title": "品牌与偏好",
-        "description": "语言 / 主题"
-      },
       "environment": {
         "title": "环境检测",
         "description": "OpenClaw / Docker"
@@ -4042,10 +4039,6 @@
       "storage": {
         "title": "数据位置",
         "description": "配置与工作区"
-      },
-      "runtimeChoice": {
-        "title": "运行方式",
-        "description": "本机 / Docker"
       },
       "runtime": {
         "title": "运行时",
@@ -4215,6 +4208,7 @@
     "checkingOpenclaw": "正在检测 OpenClaw...",
     "installingOpenclaw": "正在安装 OpenClaw...",
     "startingGateway": "正在启动 Gateway...",
+    "gatewayStartingHint": "正在启动所选 OpenClaw Gateway，并验证其连接。",
     "gatewayStarted": "Gateway 已启动",
     "preparingGateway": "正在准备 Gateway...",
     "waitingGateway": "等待 Gateway 就绪...",

@@ -1,4 +1,4 @@
-// Step `node-missing` — Node.js prerequisite.
+// 引导 node-missing 状态的 Node.js 前置条件页面。
 import { Package } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { SetupLog } from "@/stores/app-store";
@@ -11,7 +11,7 @@ export function NodeMissingScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
   const message = t("setup.nodeRequiredDesc", { requirement });
   return (
     <SetupShell
-      active={4}
+      active={flow.presentation.stage}
       title={t("setup.nodeRequired")}
       subtitle={message}
       logs={logs}
@@ -22,23 +22,14 @@ export function NodeMissingScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
         <StatusPanel
           icon={<Package size={22} />}
           tone="danger"
-          eyebrow={t("setup.steps.install.title")}
+        eyebrow={t("setup.steps.runtime.title")}
           title={t("setup.nodeRequired")}
           message={message}
         />
         <p className="text-sm leading-6 text-aegis-text-secondary">
           {t("setup.nodeRequiredInstallHint")}
         </p>
-        <a
-          href="https://npmmirror.com/mirrors/node/"
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex text-sm font-medium text-aegis-primary hover:underline"
-        >
-          {t("setup.nodeDownload")}
-        </a>
       </div>
     </SetupShell>
   );
 }
-

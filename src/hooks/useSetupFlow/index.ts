@@ -3,7 +3,7 @@
 // Pure logic hook, no UI. Drives app-store state transitions.
 // ═══════════════════════════════════════════════════════════
 
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/stores/app-store";
 import {
@@ -23,6 +23,7 @@ import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
 import { executeRuntimeSelectionTransaction } from "@/services/setup/runtimeSelectionTransaction";
 import { validateSetupCompletion } from "@/services/setup/setupCompletionGate";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
+import { createOnboardingPresentationMachine } from "@/services/setup/onboardingPresentation";
 import {
   readActiveOpenclawConfig,
   validateActiveOpenclawConfig,
@@ -79,6 +80,11 @@ export function useSetupFlow(
     setWorkspaceStartupMode,
   } = useAppStore();
   const { t } = useTranslation();
+  const presentationMachineRef = useRef(createOnboardingPresentationMachine(setupStep));
+  const presentation = useMemo(
+    () => presentationMachineRef.current.transition(setupStep),
+    [setupStep],
+  );
   const [installTarget, setInstallTarget] = useState<InstallTarget | null>(null);
   const [openclawStatus, setOpenclawStatus] = useState<OpenclawStatus | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
@@ -925,6 +931,7 @@ export function useSetupFlow(
   }, [beginRun, isRunActive, resolveActiveRuntimeOnboardingRequirement, setGatewayRunning, setPostStorageStep, commitSteps, setInstallMode, updateOnboardingRequirement]);
 
   return {
+    presentation,
     progress, statusMessage, installMode, dockerStatus, openclawStatus, checkingDocker, needsGit, nodeRequirement, steps,
     installTarget,
     wizardStep,

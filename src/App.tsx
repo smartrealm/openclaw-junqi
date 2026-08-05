@@ -86,6 +86,7 @@ import { validateCachedSetupInstallation } from '@/services/setupInstallationHea
 import { approveSelectedGatewayDevice } from '@/api/tauri-commands';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
 import { JarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
+import { createWorkspaceBootstrapReadiness } from '@/runtime/workspaceBootstrapReadiness';
 import {
   describeOpenClawSessionOperation,
   type OpenClawSessionOperationEvent,
@@ -189,7 +190,7 @@ export default function App() {
   );
   const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
   const [workspaceStartupFailed, setWorkspaceStartupFailed] = useState(false);
-  const initialWorkspaceDataReadyRef = useRef(false);
+  const workspaceBootstrapReadinessRef = useRef(createWorkspaceBootstrapReadiness());
   const initialSessionSnapshotSettledRef = useRef(false);
   const gatewayBootstrapDataReady = useGatewayDataStore(hasCurrentWorkspaceBootstrapData);
   const gatewayBootstrapDataFailed = useGatewayDataStore(hasCurrentWorkspaceBootstrapFailure);
@@ -250,26 +251,26 @@ export default function App() {
 
   useEffect(() => {
     if (setupComplete !== true) {
-      initialWorkspaceDataReadyRef.current = false;
+      workspaceBootstrapReadinessRef.current.reset();
       initialSessionSnapshotSettledRef.current = false;
       setWorkspaceDataReady(false);
       setWorkspaceStartupFailed(false);
       return;
     }
-    if (!cachedSetupValidationPending && !initialWorkspaceDataReadyRef.current) {
+    if (!cachedSetupValidationPending && !workspaceBootstrapReadinessRef.current.isWorkspaceDataReady()) {
       setWorkspaceDataReady(false);
     }
   }, [cachedSetupValidationPending, setupComplete]);
 
-  const markInitialWorkspaceDataReady = useCallback(() => {
-    if (initialWorkspaceDataReadyRef.current) return;
-    if (!gatewayBootstrapDataReady) return;
-    initialWorkspaceDataReadyRef.current = true;
-    setWorkspaceStartupFailed(false);
-    setWorkspaceDataReady(true);
-  }, [gatewayBootstrapDataReady]);
+  const markInitialWorkspaceDataReady = useCallback((allowIncompleteData = false) => {
+    if (workspaceBootstrapReadinessRef.current.markInitialWorkspaceDataReady(allowIncompleteData)) {
+      setWorkspaceStartupFailed(false);
+      setWorkspaceDataReady(true);
+    }
+  }, []);
 
   useEffect(() => {
+    workspaceBootstrapReadinessRef.current.updateGatewayDataReady(gatewayBootstrapDataReady);
     if (!initialSessionSnapshotSettledRef.current) return;
     markInitialWorkspaceDataReady();
     if (gatewayBootstrapDataFailed) setWorkspaceStartupFailed(true);
@@ -532,7 +533,7 @@ export default function App() {
   }, [loadAvailableModels, loadSessions, markInitialWorkspaceDataReady]);
 
   const retryWorkspaceStartup = useCallback(() => {
-    initialWorkspaceDataReadyRef.current = false;
+    workspaceBootstrapReadinessRef.current.reset();
     initialSessionSnapshotSettledRef.current = false;
     setWorkspaceDataReady(false);
     setWorkspaceStartupFailed(false);
