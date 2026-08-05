@@ -73,6 +73,7 @@ import { findTraceSourceMessage, projectChatResponseTrace } from './chatResponse
 import { ChatTraceSourceMessagePanel } from './ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from './useChatSidePanel';
 import { getToolLabelKey } from './toolCallPresentation';
+import { useGatewaySessionCapabilities } from '@/hooks/useGatewaySessionCapabilities';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -255,6 +256,7 @@ function ChatViewContent() {
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const sessionCapabilities = useGatewaySessionCapabilities();
   const sidePanel = useChatSidePanel(activeSessionKey);
   const isLoadingHistory = useChatStore(
     (s) => Boolean(s.loadingHistoryBySession[activeSessionKey]),
@@ -932,6 +934,42 @@ function ChatViewContent() {
     );
   }, [activeSessionKey, t]);
 
+  const handleForkAtMessage = useCallback((sourceMessage: ChatMessage) => {
+    if (!sourceMessage.nativeMessageId) return;
+    showConfirm(
+      t('chat.sessionTranscript.forkConfirmTitle'),
+      t('chat.sessionTranscript.forkConfirmMessage'),
+      async () => {
+        await gateway.forkSessionAtMessage(
+          activeSessionKey,
+          sourceMessage.nativeMessageId!,
+          activeAgentId || undefined,
+        );
+        window.dispatchEvent(new CustomEvent('aegis:sessions-changed', {
+          detail: { reason: 'fork', sessionKey: activeSessionKey },
+        }));
+      },
+    );
+  }, [activeAgentId, activeSessionKey, t]);
+
+  const handleRewindToMessage = useCallback((sourceMessage: ChatMessage) => {
+    if (!sourceMessage.nativeMessageId) return;
+    showConfirm(
+      t('chat.sessionTranscript.rewindConfirmTitle'),
+      t('chat.sessionTranscript.rewindConfirmMessage'),
+      async () => {
+        await gateway.rewindSessionToMessage(
+          activeSessionKey,
+          sourceMessage.nativeMessageId!,
+          activeAgentId || undefined,
+        );
+        window.dispatchEvent(new CustomEvent('aegis:session-reset', {
+          detail: { sessionKey: activeSessionKey },
+        }));
+      },
+    );
+  }, [activeAgentId, activeSessionKey, t]);
+
   // ── Error Action Handler — called by MessageBubble when user clicks an error action button ──
   const handleErrorAction = useCallback(async (action: string) => {
     if (action === 'reset-session') {
@@ -1127,6 +1165,16 @@ function ChatViewContent() {
                 ? () => handleLoadFullMessage(sourceMessage)
                 : undefined}
               onOpenPreview={sidePanel.openMessagePreview}
+              transcriptActions={sourceMessage?.role === 'user' && sourceMessage.nativeMessageId
+                ? {
+                    ...(sessionCapabilities.forkAtMessage
+                      ? { fork: () => handleForkAtMessage(sourceMessage) }
+                      : {}),
+                    ...(sessionCapabilities.rewind
+                      ? { rewind: () => handleRewindToMessage(sourceMessage) }
+                      : {}),
+                  }
+                : undefined}
               collaborationAction={block.role === 'user'
                 ? collaboration.getMessageAction(sourceMessage)
                 : undefined}
@@ -1145,12 +1193,16 @@ function ChatViewContent() {
     handleInlineButtonClick,
     handleDecisionSelect,
     handleErrorAction,
+    handleForkAtMessage,
     handleLoadFullMessage,
+    handleRewindToMessage,
     activeSessionKey,
     messages,
     sidePanel.openMessagePreview,
     sidePanel.openResponseTrace,
     workspaceForSession,
+    sessionCapabilities.forkAtMessage,
+    sessionCapabilities.rewind,
   ]);
 
   const renderGroup = useCallback((index: number, group: ResponseGroup) => {

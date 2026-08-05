@@ -1557,6 +1557,25 @@
         "timeoutRetry": "Timeout retry"
       }
     },
+    "sessionTranscript": {
+      "forkAtMessage": "Fork from this message",
+      "rewindToMessage": "Rewind to this message",
+      "forkConfirmTitle": "Create a branch from this message?",
+      "forkConfirmMessage": "OpenClaw will create a new session without changing this session.",
+      "rewindConfirmTitle": "Rewind to this message?",
+      "rewindConfirmMessage": "OpenClaw will interrupt active work and rewind the transcript to before this message.",
+      "branches": "Session branches",
+      "loadingBranches": "Reading session branches",
+      "branchesFailed": "Session branches could not be read.",
+      "noBranches": "This session has no switchable branches.",
+      "activeBranch": "Active branch",
+      "untitledBranch": "Untitled branch",
+      "branchMessageCount": "{{count}} messages",
+      "switchBranch": "Switch to this branch",
+      "switchingBranch": "Switching",
+      "switchConfirmTitle": "Switch session branch?",
+      "switchConfirmMessage": "OpenClaw will interrupt active work and switch the active transcript path."
+    },
     "sessionArtifacts": {
       "open": "View session artifacts",
       "title": "Session artifacts",

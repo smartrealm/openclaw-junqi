@@ -144,6 +144,7 @@ docs/
 - [Provider Catalog 构建可复现性验证](quality/provider-catalog-build-reproducibility-2026-08-03.md)
 - [JunQi Desktop 登录自启动](quality/junqi-app-autostart-2026-08-02.md)
 - [OpenClaw 原生会话体验对齐](quality/openclaw-native-session-experience-alignment-2026-08-02.md)
+- [OpenClaw 官方会话历史能力对齐](quality/openclaw-official-session-parity-2026-08-05.md)
 - [原生新建会话列表竞态修复验证](quality/native-session-list-race-validation-2026-08-03.md)
 - [Chat 响应追溯与人工审核](quality/chat-response-trace-and-human-review-2026-07-31.md)
 - [OpenClaw 审批控制能力对齐](quality/openclaw-approval-controls-parity-2026-08-03.md)

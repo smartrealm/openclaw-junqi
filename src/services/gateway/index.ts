@@ -49,6 +49,7 @@ import { SessionSettingsClient } from './SessionSettingsClient';
 import { OpenClawSessionOrganizationClient } from './OpenClawSessionOrganizationClient';
 import { OpenClawSessionLifecycleClient } from './OpenClawSessionLifecycleClient';
 import { SessionCompactionClient } from './SessionCompactionClient';
+import { SessionTranscriptHistoryClient } from './SessionTranscriptHistoryClient';
 import {
   OpenClawApprovalClient,
   type ApprovalDecision,
@@ -699,6 +700,11 @@ const sessionCompaction = new SessionCompactionClient({
   requestPrivileged: (method, params) => requestPrivileged(method, params),
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
 });
+const sessionTranscriptHistory = new SessionTranscriptHistoryClient({
+  request: (method, params) => connection.request(method, params),
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
+  runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
+});
 const agentManagement = new OpenClawAgentManagement({
   request: (method, params) => requestPrivileged(method, params),
 });
@@ -805,6 +811,10 @@ export const gateway = {
   setCallbacks(cb: GatewayCallbacks) { connection.setCallbacks(cb); },
   /** Replays the current socket state after a new UI host takes ownership. */
   refreshConnectionStatus() { connection.emitStatus(); },
+  getHelloObservation() { return connection.getHelloObservation(); },
+  subscribeHello(listener: Parameters<typeof connection.subscribeHello>[0]) {
+    return connection.subscribeHello(listener);
+  },
 
   // Live chat projection
   invalidateChatSession(sessionKey: string) { chatHandler.invalidateSession(sessionKey); },
@@ -933,6 +943,21 @@ export const gateway = {
       sessionKey,
     );
     return result.checkpoints;
+  },
+  async listSessionBranches(sessionKey: string, agentId?: string) {
+    return sessionTranscriptHistory.listBranches(sessionKey, agentId);
+  },
+  async forkSessionAtMessage(sessionKey: string, entryId: string, agentId?: string) {
+    return sessionTranscriptHistory.forkAtMessage(sessionKey, entryId, agentId);
+  },
+  async rewindSessionToMessage(sessionKey: string, entryId: string, agentId?: string) {
+    const result = await sessionTranscriptHistory.rewindToMessage(sessionKey, entryId, agentId);
+    gateway.invalidateChatSession(sessionKey);
+    return result;
+  },
+  async switchSessionBranch(sessionKey: string, leafEntryId: string, agentId?: string) {
+    await sessionTranscriptHistory.switchBranch(sessionKey, leafEntryId, agentId);
+    gateway.invalidateChatSession(sessionKey);
   },
   async getSessionCompactionCheckpoint(
     sessionKey: string,

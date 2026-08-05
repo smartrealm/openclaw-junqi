@@ -1555,6 +1555,25 @@
         "timeoutRetry": "超时重试"
       }
     },
+    "sessionTranscript": {
+      "forkAtMessage": "从此消息分叉",
+      "rewindToMessage": "回退到此消息",
+      "forkConfirmTitle": "从此消息创建分支？",
+      "forkConfirmMessage": "OpenClaw 将创建一个新会话，当前会话不会被修改。",
+      "rewindConfirmTitle": "回退到此消息？",
+      "rewindConfirmMessage": "OpenClaw 将中断当前工作并将会话历史回退到此消息之前。",
+      "branches": "会话分支",
+      "loadingBranches": "正在读取会话分支",
+      "branchesFailed": "无法读取会话分支。",
+      "noBranches": "当前会话没有可切换的分支。",
+      "activeBranch": "当前分支",
+      "untitledBranch": "未命名分支",
+      "branchMessageCount": "{{count}} 条消息",
+      "switchBranch": "切换到此分支",
+      "switchingBranch": "正在切换",
+      "switchConfirmTitle": "切换会话分支？",
+      "switchConfirmMessage": "OpenClaw 将中断当前工作并切换活动历史路径。"
+    },
     "sessionArtifacts": {
       "open": "查看会话产物",
       "title": "会话产物",

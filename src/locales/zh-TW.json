@@ -1526,6 +1526,25 @@
         "timeoutRetry": "逾時重試"
       }
     },
+    "sessionTranscript": {
+      "forkAtMessage": "從此訊息建立分支",
+      "rewindToMessage": "回退到此訊息",
+      "forkConfirmTitle": "從此訊息建立分支？",
+      "forkConfirmMessage": "OpenClaw 將建立新會話，不會修改目前會話。",
+      "rewindConfirmTitle": "回退到此訊息？",
+      "rewindConfirmMessage": "OpenClaw 將中斷目前工作，並將會話歷史回退到此訊息之前。",
+      "branches": "會話分支",
+      "loadingBranches": "正在讀取會話分支",
+      "branchesFailed": "無法讀取會話分支。",
+      "noBranches": "目前會話沒有可切換的分支。",
+      "activeBranch": "目前分支",
+      "untitledBranch": "未命名分支",
+      "branchMessageCount": "{{count}} 條訊息",
+      "switchBranch": "切換到此分支",
+      "switchingBranch": "正在切換",
+      "switchConfirmTitle": "切換會話分支？",
+      "switchConfirmMessage": "OpenClaw 將中斷目前工作，並切換活動歷史路徑。"
+    },
     "sessionArtifacts": {
       "open": "查看會話產物",
       "title": "會話產物",

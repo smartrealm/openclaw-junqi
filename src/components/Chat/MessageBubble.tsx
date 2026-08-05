@@ -196,6 +196,10 @@ interface MessageBubbleProps {
   historyTruncationReason?: string;
   onLoadFullMessage?: () => Promise<void>;
   onOpenPreview?: (preview: ChatMessagePreview) => void;
+  transcriptActions?: {
+    fork?: () => void;
+    rewind?: () => void;
+  };
   collaborationAction?: {
     state: 'confirming' | 'ready' | 'active';
     onClick?: () => void;
@@ -436,6 +440,7 @@ export const MessageBubble = memo(function MessageBubble({
   block, sessionKey, onEdit, onDelete, onRetry, onErrorAction, collaborationAction,
   deliveryStatus, deliveryError, outboundAttachments,
   historyTruncated, historyTruncationReason, onLoadFullMessage, onOpenPreview,
+  transcriptActions,
   groupPosition = 'standalone',
 }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
@@ -504,6 +509,7 @@ function stripInlineCodeTicks(md: string): string {
       onPreview={() => {
         if (messagePreview) onOpenPreview?.(messagePreview);
       }}
+      transcriptActions={isUser ? transcriptActions : undefined}
     />
   ) : null;
   const hasBubbleActions = !isUser && Boolean(messageActions);

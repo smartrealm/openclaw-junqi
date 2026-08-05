@@ -249,6 +249,8 @@ export class GatewayConnection {
   private attemptTimer: ReturnType<typeof setTimeout> | null = null;
   private handshakeRequestId: string | null = null;
   private runtimeIdentityConnectionId: string | null = null;
+  private helloObservation: GatewayHelloObservation | null = null;
+  private readonly helloListeners = new Set<(observation: GatewayHelloObservation | null) => void>();
 
   // ── Pairing detection (gentle retry instead of exponential backoff) ──
   private pairingRequired = false;
@@ -332,6 +334,22 @@ export class GatewayConnection {
   /** The attested socket identity used by requestFenced. */
   getAttestedConnectionId(): string | null {
     return this.runtimeIdentityConnectionId;
+  }
+
+  /** The handshake facts for the authenticated socket, cleared when it closes. */
+  getHelloObservation(): GatewayHelloObservation | null {
+    return this.helloObservation;
+  }
+
+  subscribeHello(listener: (observation: GatewayHelloObservation | null) => void): () => void {
+    this.helloListeners.add(listener);
+    listener(this.helloObservation);
+    return () => this.helloListeners.delete(listener);
+  }
+
+  private publishHello(observation: GatewayHelloObservation | null): void {
+    this.helloObservation = observation;
+    this.helloListeners.forEach((listener) => listener(observation));
   }
 
   // ══════════════════════════════════════════════════════
@@ -418,6 +436,7 @@ export class GatewayConnection {
       this.connected = false;
       this.connecting = false;
       this.ws = null;
+      if (!this.transient) this.publishHello(null);
       if (!this.transient) this.invalidateObservedRuntimeIdentity();
       this.rejectAllPending(new GatewayTransportLifecycleError(
         event.reason || 'Gateway connection closed',
@@ -469,6 +488,7 @@ export class GatewayConnection {
     this.rejectAllPending(new GatewayTransportLifecycleError());
     this.connected = false;
     this.connecting = false;
+    if (!this.transient) this.publishHello(null);
     if (!this.transient) this.invalidateObservedRuntimeIdentity();
     this.emitRetryState('idle');
     this.emitStatus();
@@ -575,6 +595,7 @@ export class GatewayConnection {
           if (!this.transient) {
             const helloObservation = buildGatewayHelloObservation(this.url, helloPayload);
             this.runtimeIdentityConnectionId = helloObservation.connectionId || null;
+            this.publishHello(helloObservation);
             this.callbacks?.onHello?.(helloObservation);
             void observeGatewayHello(helloObservation)
               .then((identity) => {
