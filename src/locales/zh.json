@@ -1526,6 +1526,7 @@
       "empty": "当前会话没有可切换的分支。",
       "active": "当前分支",
       "switch": "切换到此分支",
+      "switchUnavailable": "当前 Gateway 不支持切换会话分支",
       "switchConfirmTitle": "切换会话分支？",
       "switchConfirmMessage": "OpenClaw 将切换当前会话显示和后续输入所使用的 transcript 分支。当前正在进行的工作必须先由 Gateway 结束。",
       "switchFailedTitle": "切换会话分支失败",

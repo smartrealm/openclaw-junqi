@@ -1537,6 +1537,7 @@
       "empty": "There are no switchable branches for this session.",
       "active": "Current branch",
       "switch": "Switch to this branch",
+      "switchUnavailable": "The current Gateway does not support switching session branches",
       "switchConfirmTitle": "Switch session branch?",
       "switchConfirmMessage": "OpenClaw will switch the transcript branch used for the current session display and subsequent input. Any active work must first end in Gateway.",
       "switchFailedTitle": "Session branch switch failed",

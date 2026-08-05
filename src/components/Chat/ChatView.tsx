@@ -87,7 +87,7 @@ import { getToolLabelKey } from './toolCallPresentation';
 import { TaskExecutionRecoveryBanner } from './TaskExecutionRecoveryBanner';
 import { SessionCompanionPanel } from './SessionCompanionPanel';
 import { subscribeSessionCompanionOpen } from './sessionCompanionUi';
-import { useGatewaySessionCapabilities } from '@/hooks/useGatewaySessionCapabilities';
+import { useGatewaySessionHistoryCapabilities } from '@/hooks/useGatewaySessionHistoryCapabilities';
 import {
   hasConfirmedEmptyTranscript,
   shouldLoadActiveSessionHistory,
@@ -274,7 +274,7 @@ function ChatViewContent() {
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
-  const sessionCapabilities = useGatewaySessionCapabilities();
+  const sessionHistoryCapabilities = useGatewaySessionHistoryCapabilities();
   const sidePanel = useChatSidePanel(activeSessionKey);
   const [sessionCompanion, setSessionCompanion] = useState<{ open: boolean; question?: string }>({ open: false });
   useEffect(() => subscribeSessionCompanionOpen((question) => setSessionCompanion({ open: true, ...(question ? { question } : {}) })), []);
@@ -1262,10 +1262,10 @@ function ChatViewContent() {
                 ? () => handleLoadFullMessage(sourceMessage)
                 : undefined}
               onOpenPreview={sidePanel.openMessagePreview}
-              onRewind={sessionCapabilities.rewind && canCutAtMessage && sourceMessage
+              onRewind={sessionHistoryCapabilities.rewind && canCutAtMessage && sourceMessage
                 ? () => handleRewindMessage(sourceMessage)
                 : undefined}
-              onFork={sessionCapabilities.forkAtMessage && canCutAtMessage && sourceMessage
+              onFork={sessionHistoryCapabilities.forkAtMessage && canCutAtMessage && sourceMessage
                 ? () => handleForkMessage(sourceMessage)
                 : undefined}
               messageCutDisabled={messageCutDisabled}
@@ -1285,8 +1285,8 @@ function ChatViewContent() {
     activeSessionHasRun,
     isLoadingHistory,
     isTyping,
-    sessionCapabilities.forkAtMessage,
-    sessionCapabilities.rewind,
+    sessionHistoryCapabilities.forkAtMessage,
+    sessionHistoryCapabilities.rewind,
     handleDeleteLocalMessage,
     handleEditFailedMessage,
     handleForkMessage,

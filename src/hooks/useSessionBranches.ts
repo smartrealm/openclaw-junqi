@@ -1,23 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { gateway } from '@/services/gateway';
 import type { SessionTranscriptBranch } from '@/services/gateway/SessionTranscriptHistoryClient';
-import { useGatewaySessionCapabilities } from './useGatewaySessionCapabilities';
+import { useGatewaySessionHistoryCapabilities } from './useGatewaySessionHistoryCapabilities';
 
-interface SessionTranscriptBranchesState {
+interface SessionBranchesState {
   readonly branches: readonly SessionTranscriptBranch[];
   readonly loading: boolean;
   readonly error: string | null;
 }
 
-const EMPTY_STATE: SessionTranscriptBranchesState = {
+const EMPTY_STATE: SessionBranchesState = {
   branches: [],
   loading: false,
   error: null,
 };
 
-export function useSessionTranscriptBranches(sessionKey: string, agentId: string, enabled: boolean) {
-  const capabilities = useGatewaySessionCapabilities();
-  const [state, setState] = useState<SessionTranscriptBranchesState>(EMPTY_STATE);
+export function useSessionBranches(sessionKey: string, agentId: string, enabled: boolean) {
+  const capabilities = useGatewaySessionHistoryCapabilities();
+  const [state, setState] = useState<SessionBranchesState>(EMPTY_STATE);
   const requestId = useRef(0);
 
   const refresh = useCallback(async () => {

@@ -3,7 +3,7 @@ import { AlertCircle, CheckCircle2, GitBranch, LoaderCircle, RefreshCw } from 'l
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
-import { useSessionTranscriptBranches } from '@/hooks/useSessionTranscriptBranches';
+import { useSessionBranches } from '@/hooks/useSessionBranches';
 import { useChatStore } from '@/stores/chatStore';
 
 interface SessionBranchesControlProps {
@@ -28,7 +28,7 @@ export function SessionBranchesControl({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const historyLoader = useChatStore((state) => state.historyLoader);
-  const { capabilities, branches, loading, error, refresh, switchBranch } = useSessionTranscriptBranches(
+  const { capabilities, branches, loading, error, refresh, switchBranch } = useSessionBranches(
     sessionKey,
     agentId,
     open && enabled,
@@ -175,7 +175,7 @@ export function SessionBranchesControl({
                         ? t('chat.sessionBranches.active')
                         : capabilities.branchSwitch
                           ? t('chat.sessionBranches.switch')
-                          : t('chat.sessionBranches.title')}
+                          : t('chat.sessionBranches.switchUnavailable')}
                     >
                       <div className="flex items-start gap-2">
                         {switching
