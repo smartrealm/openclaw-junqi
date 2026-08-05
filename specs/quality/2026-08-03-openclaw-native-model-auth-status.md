@@ -26,6 +26,8 @@ Secret 和实际模型调用结果相互独立。
    `operator.admin` 连接调用官方 `models.probe { provider }`；探测失败只显示本地化分类，不展示原始 Gateway 错误。
 10. 探测结果只可保留 provider、官方状态、可选 latency 和目标数量；Profile id、label、账户信息和上游错误详情不得
     进入 React 状态或 UI。认证状态快照变化后必须清除旧结果，避免把旧 Gateway 事实显示为当前事实。
+11. 初始状态加载可以读取 Gateway 快照；用户手动刷新或注销后同步必须发送官方 `refresh: true`，不得把缓存响应
+    表示为一次新的认证状态读取。
 
 ## 非目标
 

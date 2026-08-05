@@ -44,6 +44,11 @@ export interface OpenClawModelAuthStatusClientDependencies {
   requestFenced: (method: string, params: Record<string, unknown>, connectionId: string) => Promise<unknown>;
 }
 
+export interface OpenClawModelAuthStatusRequest {
+  /** Bypass the Gateway's status cache after an explicit user action. */
+  readonly refresh?: boolean;
+}
+
 export class OpenClawModelAuthStatusUnavailableError extends Error {
   readonly code = 'OPENCLAW_MODEL_AUTH_STATUS_UNAVAILABLE';
 
@@ -149,13 +154,17 @@ export function parseOpenClawModelAuthStatus(value: unknown): OpenClawModelAuthS
 export class OpenClawModelAuthStatusClient {
   constructor(private readonly dependencies: OpenClawModelAuthStatusClientDependencies) {}
 
-  async get(): Promise<OpenClawModelAuthStatusSnapshot> {
+  async get({ refresh = false }: OpenClawModelAuthStatusRequest = {}): Promise<OpenClawModelAuthStatusSnapshot> {
     const connectionId = this.dependencies.captureConnectionId();
     if (!connectionId) {
       throw new OpenClawModelAuthStatusUnavailableError('No attested Gateway connection is available for model authentication status');
     }
     try {
-      const response = await this.dependencies.requestFenced(OPENCLAW_MODEL_AUTH_STATUS_METHOD, {}, connectionId);
+      const response = await this.dependencies.requestFenced(
+        OPENCLAW_MODEL_AUTH_STATUS_METHOD,
+        refresh ? { refresh: true } : {},
+        connectionId,
+      );
       if (!this.dependencies.isConnectionCurrent(connectionId)) {
         throw new OpenClawModelAuthStatusUnavailableError('Gateway connection changed while reading model authentication status');
       }

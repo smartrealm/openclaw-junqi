@@ -62,6 +62,23 @@ test('OpenClawModelAuthStatusClient fences and projects only non-secret authenti
   assert.equal(JSON.stringify(snapshot).includes('openai:default'), false);
 });
 
+test('OpenClawModelAuthStatusClient sends the official cache-bypass flag only when requested', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const client = new OpenClawModelAuthStatusClient({
+    captureConnectionId: () => 'gateway-a',
+    isConnectionCurrent: () => true,
+    requestFenced: async (_method, params) => {
+      calls.push(params);
+      return response;
+    },
+  });
+
+  await client.get();
+  await client.get({ refresh: true });
+
+  assert.deepEqual(calls, [{}, { refresh: true }]);
+});
+
 test('OpenClawModelAuthStatusClient rejects malformed native status fields', () => {
   assert.throws(() => parseOpenClawModelAuthStatus({ ...response, ts: -1 }), OpenClawModelAuthStatusResponseError);
   assert.throws(() => parseOpenClawModelAuthStatus({

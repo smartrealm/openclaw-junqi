@@ -3486,7 +3486,7 @@ export function ProvidersTab({
         setLogoutProvider(provider);
         try {
           const result = await openClawModelAuthLogoutClient.logoutProvider(provider);
-          await modelAuthStatus.refresh();
+          await modelAuthStatus.refresh({ force: true });
           window.setTimeout(() => showAlert(
             t('config.gatewayAuthStatus.logoutSuccessTitle'),
             t('config.gatewayAuthStatus.logoutSuccessMessage', {
@@ -3565,7 +3565,7 @@ export function ProvidersTab({
           logoutProvider={logoutProvider}
           probeProvider={probeProvider}
           probeResults={probeResults}
-          onRefresh={() => { void modelAuthStatus.refresh(); }}
+          onRefresh={() => { void modelAuthStatus.refresh({ force: true }); }}
           onLogoutProvider={requestProviderAuthLogout}
           onProbeProvider={requestProviderProbe}
         />

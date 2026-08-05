@@ -34,8 +34,8 @@ provider/profile health status、可选 expiry、API-key 来源和可选 usage�
 - React 状态只保留 provider id/display name、provider/profile status、expiry 和官方 `logoutSupported` 布尔能力。
   API-key source、环境变量名、profile id、reason code、usage、account email、billing、plan 和任何 Secret 均不进入前端
   状态、日志、持久化或 UI。
-- Provider 页将 Gateway 认证状态与本地配置卡片并列呈现。用户可以显式刷新状态；本项不把刷新解释为登录、
-  凭据修复或后续模型请求一定成功。
+- Provider 页将 Gateway 认证状态与本地配置卡片并列呈现。首次加载读取当前快照；用户手动刷新和注销后的同步
+  明确发送官方 `models.authStatus { refresh: true }`，不把刷新解释为登录、凭据修复或后续模型请求一定成功。
 - 可注销 Provider 显示官方认证注销入口。用户确认后，JunQi 通过临时 `operator.admin` 连接调用
   `models.authLogout { provider }`，由 OpenClaw 删除该 Provider 当前 Agent 下可删除的 OAuth/token Profile、刷新
   运行时认证快照，并按官方规则中止需要中止的运行。JunQi 不传 Profile id、不读取认证存储，也不自行删除配置。

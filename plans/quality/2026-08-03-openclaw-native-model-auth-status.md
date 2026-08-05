@@ -10,6 +10,7 @@
 4. 完成：仅按官方 `logoutSupported` 能力增加 Provider 级注销确认，通过临时 `operator.admin` 调用 `models.authLogout` 并刷新状态。
 5. 完成：增加用户确认后的官方 `models.probe` 实时验证，限制安全投影并在认证快照变化时清除旧结果。
 6. 实施：更新验证记录，执行完整检查和扫描。
+7. 完成：区分首次快照读取与用户触发的强制刷新，令后者传递官方 `models.authStatus.refresh` 参数并补回归测试。
 
 ## 文件范围
 
