@@ -29,6 +29,7 @@ import {
   OpenClawAgentManagement,
 } from './AgentManagement';
 import { debugWarn } from '@/utils/debugLog';
+import type { GatewayHelloObservation } from '@/types/gatewayRuntime';
 import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
 import type { GatewayAgentCreatePayload } from '@/utils/gatewayAgentFlow';
 import { routeGatewayEvent } from './collaborationEventBridge';
@@ -70,8 +71,7 @@ import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
 import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClient';
 import { OpenClawSessionCompactionCheckpointsClient } from './OpenClawSessionCompactionCheckpointsClient';
 import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
-import { OpenClawSessionBranchesClient } from './OpenClawSessionBranchesClient';
-import { OpenClawSessionMessageCutClient } from './OpenClawSessionMessageCutClient';
+import { SessionTranscriptHistoryClient } from './SessionTranscriptHistoryClient';
 import { OpenClawSessionObserverClient } from './OpenClawSessionObserverClient';
 import { OpenClawSessionViewerPresenceClient } from './OpenClawSessionViewerPresenceClient';
 import { OpenClawSessionDiffClient } from './OpenClawSessionDiffClient';
@@ -178,12 +178,11 @@ export type {
   OpenClawSessionUsageLogEntry,
   OpenClawSessionUsageLogRole,
 } from './OpenClawSessionUsageLogsClient';
-export type { OpenClawSessionBranch } from './OpenClawSessionBranchesClient';
 export type {
-  OpenClawSessionEditorAttachment,
-  OpenClawSessionForkResult,
-  OpenClawSessionRewindResult,
-} from './OpenClawSessionMessageCutClient';
+  SessionTranscriptBranch as OpenClawSessionBranch,
+  SessionTranscriptForkResult as OpenClawSessionForkResult,
+  SessionTranscriptRewindResult as OpenClawSessionRewindResult,
+} from './SessionTranscriptHistoryClient';
 export type { OpenClawSessionViewerPresenceResult } from './OpenClawSessionViewerPresenceClient';
 export type { OpenClawSessionDiff, OpenClawSessionDiffFile } from './OpenClawSessionDiffClient';
 export type {
@@ -1187,12 +1186,7 @@ const sessionCompactionOperations = new SessionCompactionClient({
   requestPrivileged: (method, params) => requestPrivileged(method, params),
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
 });
-const sessionBranches = new OpenClawSessionBranchesClient({
-  request: (method, params) => connection.request(method, params),
-  requestPrivileged: (method, params) => requestPrivileged(method, params),
-  runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
-});
-const sessionMessageCut = new OpenClawSessionMessageCutClient({
+const sessionTranscriptHistory = new SessionTranscriptHistoryClient({
   request: (method, params) => connection.request(method, params),
   requestPrivileged: (method, params) => requestPrivileged(method, params),
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
@@ -1334,6 +1328,10 @@ export const gateway = {
   acquireGatewayApprovalEvents() { return acquireGatewayApprovalEvents(); },
   getStatus() { return connection.getStatus(); },
   getLastError() { return connection.getLastError(); },
+  getHelloObservation() { return connection.getHelloObservation(); },
+  subscribeHello(listener: (observation: GatewayHelloObservation | null) => void) {
+    return connection.subscribeHello(listener);
+  },
   captureConnectionId() { return connection.getAttestedConnectionId(); },
   isConnectionCurrent(connectionId: string) {
     return connection.isConnected() && connection.getAttestedConnectionId() === connectionId;
@@ -1506,16 +1504,19 @@ export const gateway = {
     return sessionCompactionOperations.restore(sessionKey, checkpointId, agentId);
   },
   async listSessionBranches(sessionKey: string, agentId?: string) {
-    return sessionBranches.list(sessionKey, agentId);
+    return sessionTranscriptHistory.listBranches(sessionKey, agentId);
   },
   async switchSessionBranch(sessionKey: string, leafEntryId: string, agentId?: string) {
-    return sessionBranches.switch(sessionKey, leafEntryId, agentId);
+    await sessionTranscriptHistory.switchBranch(sessionKey, leafEntryId, agentId);
+    gateway.invalidateChatSession(sessionKey);
   },
   async rewindSessionAtMessage(sessionKey: string, entryId: string, agentId?: string) {
-    return sessionMessageCut.rewind(sessionKey, entryId, agentId);
+    const result = await sessionTranscriptHistory.rewindToMessage(sessionKey, entryId, agentId);
+    gateway.invalidateChatSession(sessionKey);
+    return result;
   },
   async forkSessionAtMessage(sessionKey: string, entryId: string, agentId?: string) {
-    return sessionMessageCut.fork(sessionKey, entryId, agentId);
+    return sessionTranscriptHistory.forkAtMessage(sessionKey, entryId, agentId);
   },
   async getSessionDiff(sessionKey: string, agentId?: string) {
     return sessionDiff.get(sessionKey, agentId);

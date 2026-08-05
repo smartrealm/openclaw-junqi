@@ -487,6 +487,37 @@ describe('Gateway credential security regression gates', () => {
     await turn();
   });
 
+  it('publishes authenticated Gateway method discovery and clears it on disconnect', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection();
+    const observations: Array<string | null> = [];
+    const unsubscribe = connection.subscribeHello((observation) => {
+      observations.push(observation?.connectionId ?? null);
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(socket, message, 'history-connection', ['operator.read', 'operator.write'], undefined, [
+          'sessions.branches.list',
+          'sessions.fork',
+        ]);
+      }
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    await turn();
+
+    assert.deepEqual(observations, [null, 'history-connection']);
+    assert.deepEqual(connection.getHelloObservation()?.methods, ['sessions.branches.list', 'sessions.fork']);
+
+    connection.disconnect();
+    stopPolling();
+    await turn();
+    assert.deepEqual(observations, [null, 'history-connection', null]);
+    unsubscribe();
+  });
+
   it('requests only read/write scopes in the daily socket handshake', async () => {
     resetSockets();
     const connection = createMemoryGatewayConnection({

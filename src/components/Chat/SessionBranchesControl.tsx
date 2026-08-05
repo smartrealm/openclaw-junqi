@@ -3,12 +3,13 @@ import { AlertCircle, CheckCircle2, GitBranch, LoaderCircle, RefreshCw } from 'l
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
-import { useSessionBranches } from '@/hooks/useSessionBranches';
+import { useSessionTranscriptBranches } from '@/hooks/useSessionTranscriptBranches';
 import { useChatStore } from '@/stores/chatStore';
 
 interface SessionBranchesControlProps {
-  sessionKey: string;
-  agentId: string;
+  readonly sessionKey: string;
+  readonly agentId: string;
+  readonly enabled?: boolean;
 }
 
 function branchTime(value: string | undefined, language: string): string | null {
@@ -18,16 +19,21 @@ function branchTime(value: string | undefined, language: string): string | null 
   return new Intl.DateTimeFormat(language, { dateStyle: 'short', timeStyle: 'short' }).format(timestamp);
 }
 
-export function SessionBranchesControl({ sessionKey, agentId }: SessionBranchesControlProps) {
+export function SessionBranchesControl({
+  sessionKey,
+  agentId,
+  enabled = true,
+}: SessionBranchesControlProps) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const historyLoader = useChatStore((state) => state.historyLoader);
-  const { branches, loading, error, switchingLeafEntryId, refresh, switchBranch } = useSessionBranches(
+  const { capabilities, branches, loading, error, refresh, switchBranch } = useSessionTranscriptBranches(
     sessionKey,
     agentId,
-    open,
+    open && enabled,
   );
+  const [switchingLeafEntryId, setSwitchingLeafEntryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -46,10 +52,12 @@ export function SessionBranchesControl({ sessionKey, agentId }: SessionBranchesC
   }, [open]);
 
   const confirmSwitch = (leafEntryId: string) => {
+    if (!capabilities.branchSwitch || switchingLeafEntryId !== null) return;
     showConfirm(
       t('chat.sessionBranches.switchConfirmTitle'),
       t('chat.sessionBranches.switchConfirmMessage'),
       async () => {
+        setSwitchingLeafEntryId(leafEntryId);
         try {
           await switchBranch(leafEntryId);
           if (historyLoader) {
@@ -66,10 +74,14 @@ export function SessionBranchesControl({ sessionKey, agentId }: SessionBranchesC
               'error',
             );
           }, 0);
+        } finally {
+          setSwitchingLeafEntryId(null);
         }
       },
     );
   };
+
+  if (!capabilities.branches) return null;
 
   return (
     <div ref={rootRef} className="relative no-drag">
@@ -152,14 +164,18 @@ export function SessionBranchesControl({ sessionKey, agentId }: SessionBranchesC
                       key={branch.leafEntryId}
                       type="button"
                       onClick={() => !branch.active && confirmSwitch(branch.leafEntryId)}
-                      disabled={branch.active || switchingLeafEntryId !== null}
+                      disabled={branch.active || !capabilities.branchSwitch || switchingLeafEntryId !== null}
                       className={clsx(
                         'w-full rounded-md border px-2.5 py-2 text-start transition-colors disabled:cursor-default',
                         branch.active
                           ? 'border-aegis-primary/35 bg-aegis-primary/5'
                           : 'border-aegis-border hover:border-aegis-border-hover hover:bg-[rgb(var(--aegis-overlay)/0.025)] disabled:opacity-50',
                       )}
-                      title={branch.active ? t('chat.sessionBranches.active') : t('chat.sessionBranches.switch')}
+                      title={branch.active
+                        ? t('chat.sessionBranches.active')
+                        : capabilities.branchSwitch
+                          ? t('chat.sessionBranches.switch')
+                          : t('chat.sessionBranches.title')}
                     >
                       <div className="flex items-start gap-2">
                         {switching

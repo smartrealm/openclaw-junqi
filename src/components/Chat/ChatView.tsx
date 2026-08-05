@@ -87,6 +87,7 @@ import { getToolLabelKey } from './toolCallPresentation';
 import { TaskExecutionRecoveryBanner } from './TaskExecutionRecoveryBanner';
 import { SessionCompanionPanel } from './SessionCompanionPanel';
 import { subscribeSessionCompanionOpen } from './sessionCompanionUi';
+import { useGatewaySessionCapabilities } from '@/hooks/useGatewaySessionCapabilities';
 import {
   hasConfirmedEmptyTranscript,
   shouldLoadActiveSessionHistory,
@@ -273,6 +274,7 @@ function ChatViewContent() {
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const sessionCapabilities = useGatewaySessionCapabilities();
   const sidePanel = useChatSidePanel(activeSessionKey);
   const [sessionCompanion, setSessionCompanion] = useState<{ open: boolean; question?: string }>({ open: false });
   useEffect(() => subscribeSessionCompanionOpen((question) => setSessionCompanion({ open: true, ...(question ? { question } : {}) })), []);
@@ -1028,7 +1030,7 @@ function ChatViewContent() {
             sessionTranscriptFence.invalidate(sessionKey);
             clearSessionMessages(sessionKey);
             setDraft(sessionKey, result.editorText ?? '');
-            setPreparedAttachments(sessionKey, restoreOpenClawEditorImages(result.editorAttachments));
+            setPreparedAttachments(sessionKey, restoreOpenClawEditorImages(result.editorAttachments ?? []));
             await loadHistory(sessionKey, { force: true });
           });
         } catch (cause) {
@@ -1060,7 +1062,7 @@ function ChatViewContent() {
             ...(activeAgentId ? { agentId: activeAgentId } : {}),
           });
           setDraft(result.sessionKey, result.editorText ?? '');
-          setPreparedAttachments(result.sessionKey, restoreOpenClawEditorImages(result.editorAttachments));
+          setPreparedAttachments(result.sessionKey, restoreOpenClawEditorImages(result.editorAttachments ?? []));
           await loadHistory(result.sessionKey, { force: true });
         } catch (cause) {
           const detail = cause instanceof Error && cause.message ? cause.message : String(cause);
@@ -1260,10 +1262,10 @@ function ChatViewContent() {
                 ? () => handleLoadFullMessage(sourceMessage)
                 : undefined}
               onOpenPreview={sidePanel.openMessagePreview}
-              onRewind={canCutAtMessage && sourceMessage
+              onRewind={sessionCapabilities.rewind && canCutAtMessage && sourceMessage
                 ? () => handleRewindMessage(sourceMessage)
                 : undefined}
-              onFork={canCutAtMessage && sourceMessage
+              onFork={sessionCapabilities.forkAtMessage && canCutAtMessage && sourceMessage
                 ? () => handleForkMessage(sourceMessage)
                 : undefined}
               messageCutDisabled={messageCutDisabled}
@@ -1283,6 +1285,8 @@ function ChatViewContent() {
     activeSessionHasRun,
     isLoadingHistory,
     isTyping,
+    sessionCapabilities.forkAtMessage,
+    sessionCapabilities.rewind,
     handleDeleteLocalMessage,
     handleEditFailedMessage,
     handleForkMessage,
