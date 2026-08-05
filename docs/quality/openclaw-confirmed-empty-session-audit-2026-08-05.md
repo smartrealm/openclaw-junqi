@@ -31,3 +31,24 @@ JunQi 的 `sessionCreate` 在 Gateway 返回 `key`、`sessionId` 和 entry 后�
 - [x] `pnpm lint`、生产构建、`git diff --check` 与本次修改文件 Emoji 扫描通过。
 - [ ] `pnpm test` 未通过：未修改的 `src/theme/tailwindThemeBridge.test.ts` 在“semantic color aliases preserve the storage type of their source token”失败；本次 diff 未包含主题 CSS 或该测试，待独立处理。
 - [ ] macOS、Windows、Ubuntu、CentOS 真实 Gateway 桌面验收待执行。
+
+## 后续协调修复（2026-08-05）
+
+再次以本地 OpenClaw 官方源码提交 `1e3880352e6` 对照创建链路。官方 UI 的
+`createResult` 在 `sessions.create` 确认后执行 `refreshReplacement`，随后才通知创建完成；
+Gateway 会话行中的 `activeLeafEntryId` 为可空字段。
+
+JunQi 在本地立即提交已确认的创建结果，再接收 `sessions.list`。此前同一会话身份的稀疏列表行
+若省略 `activeLeafEntryId`，会覆盖创建时已确认的 `null`。这不是 Gateway 已确认 transcript
+变化，却会让 Chat 首屏重新进入历史加载和首发门禁。
+
+现在会话合并只在 key、sessionId、agentId 三者均一致，且列表未给出任何 leaf 时保留该 `null`。
+Gateway 明确返回 leaf、identity 变化或 identity 缺失时不保留，继续以 Gateway 数据为准。该规则
+只稳定创建与列表协调之间的短暂事实，不在客户端推导或伪造 transcript 状态。
+
+### 本次验证
+
+- [x] `node --import ./test-setup.ts --import tsx --test src/utils/confirmedEmptyTranscript.test.ts src/stores/chatStore.test.ts src/utils/sessionCreate.test.ts src/components/Chat/newSessionEntryContracts.test.ts`：64 项通过。
+- [x] `pnpm lint`：模块边界、版本一致性与 TypeScript 检查通过。
+- [x] `git diff --check` 与全仓 Emoji 扫描通过。
+- [ ] macOS、Windows、Ubuntu、CentOS 真实 Gateway 桌面验收仍待执行。

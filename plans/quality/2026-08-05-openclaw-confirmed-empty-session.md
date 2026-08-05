@@ -11,6 +11,7 @@
 5. [x] 在发送事务确认 Gateway 受理后失效本地空 leaf，避免把历史事实用于后续发送。
 6. [x] 补充创建、发送和 UI 回归测试，执行定向测试、lint、生产构建、`git diff --check` 与 Emoji 扫描。
 7. [ ] 处理全套 `pnpm test` 的既有 `src/theme/tailwindThemeBridge.test.ts` 语义颜色别名断言失败；该主题范围不在本次会话修复内。
+8. [x] 在 `chatStore.setSessions` 的同身份列表协调中保留已确认的空 leaf，并用 store 与纯函数回归测试覆盖稀疏行、明确 leaf 和身份变化。
 
 ## 文件范围
 

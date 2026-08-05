@@ -34,6 +34,7 @@ import {
   restoreSessionKey,
   withoutDeletedSessions,
 } from '@/utils/sessionLifecycle';
+import { preserveConfirmedEmptyTranscriptLeaf } from '@/utils/confirmedEmptyTranscript';
 import {
   projectSessionOrganization,
   removeSessionOrganization,
@@ -1413,9 +1414,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ? session.hasPendingCompletion ?? false
           : previous?.hasPendingCompletion ?? session.hasPendingCompletion ?? false,
       };
+      const withConfirmedEmptyLeaf = preserveConfirmedEmptyTranscriptLeaf(previous, merged);
       const projected = session.key === activeSessionKey
-        ? clearSessionAttentionState(merged)
-        : merged;
+        ? clearSessionAttentionState(withConfirmedEmptyLeaf)
+        : withConfirmedEmptyLeaf;
       return previous && sessionsHaveEqualProjection(previous, projected)
         ? previous
         : projected;

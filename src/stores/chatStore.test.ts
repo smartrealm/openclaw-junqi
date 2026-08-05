@@ -373,6 +373,61 @@ test('a partial sessions.list page preserves sessions outside the current page',
   assert.equal(state.activeSessionKey, outsidePageKey);
 });
 
+test('a sparse sessions.list row cannot erase a confirmed empty transcript leaf', () => {
+  const createdKey = 'agent:architect:empty-session';
+  useChatStore.setState({
+    sessions: [{
+      key: createdKey,
+      sessionId: 'empty-session-id',
+      agentId: 'architect',
+      label: 'New chat',
+      activeLeafEntryId: null,
+    }],
+    openTabs: [createdKey],
+    activeSessionKey: createdKey,
+  });
+
+  useChatStore.getState().setSessions([{
+    key: createdKey,
+    sessionId: 'empty-session-id',
+    agentId: 'architect',
+    label: 'New chat',
+  }]);
+
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === createdKey)?.activeLeafEntryId,
+    null,
+  );
+});
+
+test('a sessions.list leaf or identity change remains authoritative over a confirmed empty leaf', () => {
+  const createdKey = 'agent:architect:empty-session';
+  useChatStore.setState({
+    sessions: [{
+      key: createdKey,
+      sessionId: 'empty-session-id',
+      agentId: 'architect',
+      label: 'New chat',
+      activeLeafEntryId: null,
+    }],
+    openTabs: [createdKey],
+    activeSessionKey: createdKey,
+  });
+
+  useChatStore.getState().setSessions([{
+    key: createdKey,
+    sessionId: 'empty-session-id',
+    agentId: 'architect',
+    label: 'New chat',
+    activeLeafEntryId: 'gateway-leaf',
+  }]);
+
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === createdKey)?.activeLeafEntryId,
+    'gateway-leaf',
+  );
+});
+
 test('a complete snapshot started before a confirmed new session cannot select a historical fallback', () => {
   const createdKey = 'agent:main:dashboard-created';
   useChatStore.setState({

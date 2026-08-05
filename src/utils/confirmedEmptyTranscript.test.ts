@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  type ConfirmedEmptyTranscriptSession,
   hasConfirmedEmptyTranscript,
+  preserveConfirmedEmptyTranscriptLeaf,
   shouldLoadActiveSessionHistory,
   shouldWarmUpHistoryBeforeFirstSend,
 } from './confirmedEmptyTranscript';
@@ -42,4 +44,40 @@ test('已确认空会话不读取首屏历史且首发不预热，未知 transcr
     messageCount: 0,
     confirmedEmptyTranscript: false,
   }), true);
+});
+
+test('同一 Gateway 身份的稀疏列表行保留已确认空 leaf', () => {
+  const incoming: ConfirmedEmptyTranscriptSession = {
+    key: EMPTY_SESSION.key,
+    sessionId: EMPTY_SESSION.sessionId,
+    agentId: EMPTY_SESSION.agentId,
+  };
+
+  assert.deepEqual(
+    preserveConfirmedEmptyTranscriptLeaf(EMPTY_SESSION, incoming),
+    { ...incoming, activeLeafEntryId: null },
+  );
+});
+
+test('明确 leaf 或任何身份差异都覆盖本地空 leaf 投影', () => {
+  const incoming: ConfirmedEmptyTranscriptSession = {
+    key: EMPTY_SESSION.key,
+    sessionId: EMPTY_SESSION.sessionId,
+    agentId: EMPTY_SESSION.agentId,
+  };
+
+  assert.deepEqual(
+    preserveConfirmedEmptyTranscriptLeaf(EMPTY_SESSION, {
+      ...incoming,
+      activeLeafEntryId: 'gateway-leaf',
+    }),
+    { ...incoming, activeLeafEntryId: 'gateway-leaf' },
+  );
+  assert.deepEqual(
+    preserveConfirmedEmptyTranscriptLeaf(EMPTY_SESSION, {
+      ...incoming,
+      sessionId: 'different-session',
+    }),
+    { ...incoming, sessionId: 'different-session' },
+  );
 });
