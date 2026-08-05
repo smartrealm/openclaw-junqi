@@ -27,22 +27,22 @@ export function SidebarRow({ icon, title, meta, live, active, onClick }: Sidebar
       onClick={onClick}
       onKeyDown={handleKey}
       className={clsx(
-        'flex items-start gap-2.5 px-4 py-2.5 cursor-pointer transition-colors',
-        // Selection state: opaque accent-tinted background + left accent stripe.
-        // Was bg-aegis-primary/15 — too subtle, read as "same as unselected".
-        // Now uses a denser overlay + a 2px-wide accent stripe so the active
-        // row is unmistakably distinct from the unselected rows around it.
+        'relative flex items-start gap-2.5 pe-4 ps-[var(--aegis-sidebar-menu-icon-start)] py-2.5 cursor-pointer transition-colors',
+        // 选中态使用更清晰的主色底和左侧指示条。
+        // 指示条以伪元素绘制，避免边框挤压图标槽位而破坏对齐。
         active
-          ? 'bg-[rgb(var(--aegis-primary)/0.22)] border-l-2 border-l-aegis-primary shadow-[inset_1px_0_0_rgb(var(--aegis-primary)/0.55)]'
-          : 'border-l-2 border-l-transparent hover:bg-aegis-overlay/[0.04]',
+          ? "bg-[rgb(var(--aegis-primary)/0.22)] shadow-[inset_1px_0_0_rgb(var(--aegis-primary)/0.55)] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-aegis-primary before:content-['']"
+          : 'hover:bg-aegis-overlay/[0.04]',
       )}
     >
       {live ? (
-        <span className="w-[5px] h-[5px] rounded-full mt-[5px] shrink-0 bg-aegis-success shadow-[0_0_0_3px_rgb(61_214_140/0.22)]" />
+        <span className="flex w-[var(--aegis-sidebar-menu-icon-size)] shrink-0 justify-center pt-[5px]">
+          <span className="h-[5px] w-[5px] rounded-full bg-aegis-success shadow-[0_0_0_3px_rgb(61_214_140/0.22)]" />
+        </span>
       ) : icon ? (
-        <span className="shrink-0 opacity-80 mt-[2px]">{icon}</span>
+        <span className="flex w-[var(--aegis-sidebar-menu-icon-size)] shrink-0 justify-center pt-[2px] opacity-80">{icon}</span>
       ) : (
-        <span className="w-[5px] h-[5px] mt-[5px] shrink-0" />
+        <span className="w-[var(--aegis-sidebar-menu-icon-size)] shrink-0" />
       )}
       <div className="min-w-0 flex-1">
         <div className={clsx('text-[13px] truncate leading-5', active ? 'text-aegis-text font-semibold' : 'text-aegis-text')}>{title}</div>

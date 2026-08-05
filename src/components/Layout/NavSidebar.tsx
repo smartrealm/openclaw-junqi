@@ -551,10 +551,8 @@ function WorkbenchPanel() {
         {t('sidebar.newChat', '新建对话')}
       </SidebarPrimaryAction>
 
-      {/* Four flat navigation rows with leading icon.
-          Left-aligned, no + / 新增 / 添加 prefix on the labels — just
-          the noun and the icon. Active route gets primary tint. */}
-      <div className="px-4 mb-4 flex flex-col gap-1">
+      {/* 四个带前置图标的平铺导航项，仅保留图标和名称，激活项使用主色。 */}
+      <div className="mb-4 flex flex-col gap-1 pe-4 ps-[var(--aegis-sidebar-menu-row-inset)]">
         {[
           { key: 'agents',  to: '/agents',                  label: t('sidebar.nav.agents',  '智能体'),   icon: <Bot size={14} /> },
           { key: 'models',  to: '/config?tab=providers',    label: t('sidebar.nav.models',  '模型服务'), icon: <Cpu size={14} /> },
@@ -587,7 +585,7 @@ function WorkbenchPanel() {
               key={it.key}
               type="button"
               onClick={() => navigate(it.to)}
-              className={clsx(rowClassName, 'px-2 -mx-2')}
+              className={clsx(rowClassName, 'pe-2 ps-[var(--aegis-sidebar-menu-button-icon-padding)]')}
             >
               {rowContent}
             </button>
@@ -871,13 +869,11 @@ function MiniView({ tab }: { tab: SidebarTab }) {
   const { t } = useTranslation();
   const items = filterEnabledNavigationItems(miniItemsFor(tab, t));
   return (
-    <nav className="flex flex-col items-center gap-1 px-2">
-      {/* Active-tab chip — single text label at top so users always know
-          which panel they're seeing in mini mode. Without this the icons
-          alone give no semantic context. */}
+    <nav className="flex flex-col items-start gap-1 pe-2 ps-[var(--aegis-sidebar-mini-control-start)]">
+      {/* 迷你模式顶部保留当前面板名称，避免仅靠图标失去语义。 */}
       <div
         title={t(`sidebar.tab.${tab}`, tab)}
-        className="w-10 h-7 mt-0.5 mb-1 flex items-center justify-center rounded-md
+        className="h-7 w-[var(--aegis-sidebar-mini-control-size)] mt-0.5 mb-1 flex items-center justify-center rounded-md
           bg-aegis-primary/15 border border-aegis-primary/25
           text-aegis-primary text-[11.5px] font-bold uppercase tracking-wider select-none"
       >
@@ -889,7 +885,7 @@ function MiniView({ tab }: { tab: SidebarTab }) {
           type="button"
           title={it.label}
           onClick={() => navigate(it.to)}
-          className="w-10 h-10 flex items-center justify-center rounded-lg text-aegis-text-muted hover:text-aegis-text hover:bg-aegis-hover/40"
+          className="h-[var(--aegis-sidebar-mini-control-size)] w-[var(--aegis-sidebar-mini-control-size)] flex items-center justify-center rounded-lg text-aegis-text-muted hover:text-aegis-text hover:bg-aegis-hover/40"
         >
           {it.icon}
         </button>

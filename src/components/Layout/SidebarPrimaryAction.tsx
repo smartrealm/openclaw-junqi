@@ -15,7 +15,7 @@ export function SidebarPrimaryAction({
   ...buttonProps
 }: SidebarPrimaryActionProps) {
   return (
-    <div className="mb-3 mt-1 px-4">
+    <div className="mb-3 mt-1 pe-4 ps-[var(--aegis-sidebar-menu-row-inset)]">
       <Button
         {...buttonProps}
         variant="soft"
@@ -23,6 +23,7 @@ export function SidebarPrimaryAction({
         size="lg"
         fullWidth
         leadingIcon={icon}
+        className="!justify-start !pe-4 !ps-[var(--aegis-sidebar-action-icon-padding)]"
       >
         {children}
       </Button>

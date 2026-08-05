@@ -259,6 +259,12 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /* macOS 原生交通灯的第一个控件中心位于窗口左侧 20px。 */
+  html[data-tauri-platform='macos'],
+  html[data-platform='macos'] {
+    --aegis-window-control-center: 20px;
+  }
+
   /* Windows: disable grayscale AA so ClearType subpixel rendering works */
   html[data-tauri-platform='windows'],
   html[data-platform='windows'],

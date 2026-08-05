@@ -188,4 +188,13 @@
   --aegis-sidebar-expanded: 204px;
   --aegis-sidebar-mini:     64px;
   --aegis-rail-w:           52px;
+  /* 侧栏导航与窗口控件共用同一条图标轴。 */
+  --aegis-window-control-center:              26px;
+  --aegis-sidebar-menu-icon-size:             14px;
+  --aegis-sidebar-menu-icon-start:            calc(var(--aegis-window-control-center) - 7px);
+  --aegis-sidebar-menu-row-inset:             8px;
+  --aegis-sidebar-menu-button-icon-padding:   calc(var(--aegis-window-control-center) - var(--aegis-sidebar-menu-row-inset) - 7px);
+  --aegis-sidebar-action-icon-padding:        calc(var(--aegis-window-control-center) - var(--aegis-sidebar-menu-row-inset) - 8px);
+  --aegis-sidebar-mini-control-size:          40px;
+  --aegis-sidebar-mini-control-start:         calc(var(--aegis-window-control-center) - 20px);
 }
