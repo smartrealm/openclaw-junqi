@@ -516,9 +516,10 @@ pub fn save_app_settings(mut settings: AppSettings) -> Result<(), String> {
     let _guard = settings_lock().lock();
     // Agent profiles have their own command boundary. Preserve them when an
     // older settings writer sends an AppSettings payload without that field.
+    settings.agent_profiles = load_settings_unlocked().agent_profiles;
     let current = load_settings_unlocked();
-    settings.agent_profiles = current.agent_profiles;
     settings.privacy_lock = current.privacy_lock;
+    settings.privacy_lock_session_armed = current.privacy_lock_session_armed;
     settings.language = normalize_application_language(&settings.language)
         .unwrap_or(FALLBACK_APPLICATION_LANGUAGE)
         .to_string();
