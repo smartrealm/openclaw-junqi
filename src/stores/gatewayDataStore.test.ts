@@ -25,6 +25,7 @@ import {
   startPolling,
   stopPolling,
   searchOpenClawSessions,
+  selectSessionArtifacts,
   useGatewayDataStore,
 } from './gatewayDataStore';
 import { parseCronStatus } from '@/services/gateway/cronStatus';
@@ -43,6 +44,15 @@ const METRICS = {
   totalTokens: 33,
   missingCostEntries: 0,
 };
+
+test('会话产物缺失时复用稳定空快照', () => {
+  const state = { sessionArtifacts: {} };
+  const first = selectSessionArtifacts(state, 'agent:main:missing');
+  const second = selectSessionArtifacts(state, 'agent:main:missing');
+
+  assert.equal(first, second);
+  assert.deepEqual(first, []);
+});
 
 test('sub-agent activity follows explicit OpenClaw run fields before timestamp compatibility fallback', () => {
   assert.equal(isRunningSubagentSession({ key: 'agent:writer:subagent:a', hasActiveRun: true }, NOW), true);

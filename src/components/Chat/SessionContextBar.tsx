@@ -8,6 +8,7 @@ import { useChatStore } from '@/stores/chatStore';
 import {
   ensureSessionArtifactsFresh,
   saveSessionArtifact,
+  selectSessionArtifacts,
   useGatewayDataStore,
   type OpenClawArtifactSummary,
 } from '@/stores/gatewayDataStore';
@@ -122,7 +123,7 @@ function SessionArtifactsButton({ sessionKey, agentId }: { sessionKey: string; a
   const [open, setOpen] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const artifacts = useGatewayDataStore((state) => state.sessionArtifacts[sessionKey] ?? []);
+  const artifacts = useGatewayDataStore((state) => selectSessionArtifacts(state, sessionKey));
   const loading = useGatewayDataStore((state) => state.sessionArtifactsLoading)
     && useGatewayDataStore((state) => state.sessionArtifactsLoadingKey) === sessionKey;
   const error = useGatewayDataStore((state) => state.sessionArtifactsError);
