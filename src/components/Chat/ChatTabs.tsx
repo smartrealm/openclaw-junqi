@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, Trash2, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
+import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, Check, CircleAlert, CircleStop, Gauge, ListTodo, MessageSquareText, Trash2, GripVertical, Sparkles, Pencil, Plus, GitFork } from 'lucide-react';
 import { Icon } from '@/components/shared/icons';
 import { IconButton } from '@/components/shared/button/Button';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +24,8 @@ import type { SkillPersona } from '@/types/skills';
 import clsx from 'clsx';
 import { applyPersonaToSessionDraft } from '@/utils/personaDraft';
 import { resolveAgentStatusSnapshot } from './agentStatus';
+import { gatewayThinkingLevelLabel } from '@/services/gateway/sessionThinkingProfile';
+import { getGatewaySessionContextBudgetNotice } from '@/services/gateway/sessionContextBudgetStatus';
 import { useOptionalCollaborationChat } from './CollaborationChatProvider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SessionActionsMenu } from './session-actions/SessionActionsMenu';
@@ -208,23 +210,41 @@ function sessionLabel(
 }
 
 // ═══════════════════════════════════════════════════════════
-// Agent Status Tooltip — hover card on every agent's canonical session tab
+// Agent 状态提示：每个 Agent 规范会话标签上的悬停卡片。
 // ═══════════════════════════════════════════════════════════
 
-function AgentStatusTooltip({ visible, tokenUsage, connected, agentName, session, thinkingLevel }: {
+function AgentStatusTooltip({
+  visible,
+  tokenUsage,
+  connected,
+  agentName,
+  session,
+  agentRuntime,
+  thinkingLevel,
+  thinkingLevels,
+  thinkingDefault,
+}: {
   visible: boolean;
   tokenUsage: ReturnType<typeof resolveAgentStatusSnapshot>['tokenUsage'];
   connected: boolean;
   agentName: string;
   session: Session;
+  agentRuntime: ReturnType<typeof resolveAgentStatusSnapshot>['agentRuntime'];
   thinkingLevel: string | null;
+  thinkingLevels: ReturnType<typeof resolveAgentStatusSnapshot>['thinkingLevels'];
+  thinkingDefault: string | null;
 }) {
   const { t } = useTranslation();
 
-  // Reuse the same i18n keys as TitleBar's ThinkingPicker
-  const thinkingId = thinkingLevel ?? 'auto';
-  const thinkingFallback = thinkingId.charAt(0).toUpperCase() + thinkingId.slice(1);
-  const thinkingLabel = t(`titlebar.thinking.levels.${thinkingId}`, thinkingFallback);
+  const effectiveThinkingLabel = gatewayThinkingLevelLabel(thinkingLevel, thinkingLevels);
+  const inheritedThinkingLabel = thinkingLevels
+    ?.find((option) => option.id === thinkingDefault)
+    ?.label ?? null;
+  const thinkingLabel = thinkingLevel === null
+    ? inheritedThinkingLabel
+      ? t('input.sessionRuntimeThinkingInherited', { level: inheritedThinkingLabel })
+      : t('input.sessionRuntimeThinkingInherit')
+    : effectiveThinkingLabel ?? t('input.sessionRuntimeThinkingInherit');
 
   const contextTokens = tokenUsage?.contextTokens || 0;
   const maxTokens = tokenUsage?.maxTokens || 0;
@@ -247,7 +267,7 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, agentName, session
       {visible && (
         <div
           className="absolute start-0 top-0 mt-2 w-[300px] rounded-2xl border border-[rgb(var(--aegis-overlay)/0.1)] z-[9999] overflow-hidden"
-                style={{ background: 'var(--aegis-bg-frosted)', backdropFilter: 'blur(40px)', boxShadow: 'var(--aegis-shadow-popover)' }}
+          style={{ background: 'var(--aegis-bg-frosted)', backdropFilter: 'blur(40px)', boxShadow: 'var(--aegis-shadow-popover)' }}
         >
           {/* Header */}
           <div className="flex items-center gap-3 p-4 border-b border-[rgb(var(--aegis-overlay)/0.06)]">
@@ -298,7 +318,7 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, agentName, session
             </div>
           </div>
 
-          {/* Info Rows */}
+          {/* 会话状态信息行。 */}
           <div className="px-4 pb-3 space-y-0">
             <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
               <span className="text-xs flex items-center text-aegis-text-dim">{Icon.chat.tab.compact}</span>
@@ -312,6 +332,15 @@ function AgentStatusTooltip({ visible, tokenUsage, connected, agentName, session
               <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.heartbeat')}</span>
               <span className="text-[10px] font-bold font-mono text-aegis-primary">{t('chat.heartbeatInterval')}</span>
             </div>
+            {agentRuntime && (
+              <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
+                <Bot size={12} className="text-aegis-text-dim" aria-hidden />
+                <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.agentRuntime')}</span>
+                <span className="max-w-[148px] truncate text-[10px] font-bold font-mono" style={{ color: dataColor(3) }} title={agentRuntime.id}>
+                  {agentRuntime.id}
+                </span>
+              </div>
+            )}
             <div className="flex items-center gap-2 py-1.5 border-t border-[rgb(var(--aegis-overlay)/0.03)]">
               <span className="text-xs flex items-center text-aegis-text-dim">{Icon.chat.tab.memory}</span>
               <span className="text-[10px] text-aegis-text-muted flex-1">{t('chat.thinking')}</span>
@@ -1162,6 +1191,20 @@ export function ChatTabs() {
             || label;
           const unread = session?.unread ?? 0;
           const isEditing = editingKey === key;
+          const contextBudgetNotice = getGatewaySessionContextBudgetNotice(session?.contextBudgetStatus);
+          const contextBudgetLabel = contextBudgetNotice === 'compact'
+            ? t('chat.sessionContextBudgetCompact')
+            : contextBudgetNotice === 'trim-tools'
+              ? t('chat.sessionContextBudgetTrimTools')
+              : contextBudgetNotice === 'compact-and-trim-tools'
+                ? t('chat.sessionContextBudgetCompactAndTrimTools')
+                : null;
+          const sessionGoalLabel = session?.goal
+            ? t('chat.sessionGoal', {
+                objective: session.goal.objective,
+                status: t(`chat.sessionGoalStatus.${session.goal.status}`),
+              })
+            : null;
 
           return (
             <SortableTab id={key} disabled={isMain}>
@@ -1174,7 +1217,7 @@ export function ChatTabs() {
               onMouseLeave={isMainSession ? handleAgentStatusTabLeave : undefined}
               onContextMenu={(e) => handleTabContextMenu(e, key)}
             >
-              {/* Tab button */}
+              {/* 会话页签操作区。 */}
               <button
                 role="tab"
                 aria-selected={isActive}
@@ -1196,7 +1239,7 @@ export function ChatTabs() {
                     className="inset-0 -z-10 border-b-2 border-aegis-primary bg-[rgb(var(--aegis-overlay)/0.04)]"
                   />
                 )}
-                {/* Canonical agent sessions share the same status affordance. */}
+                {/* 主智能体会话统一使用同一状态提示。 */}
                 {isMainSession ? (
                   <>
                     <div className={clsx('w-[6px] h-[6px] rounded-full shrink-0', statusDotClass)} title={statusLabel} />
@@ -1205,8 +1248,58 @@ export function ChatTabs() {
                 ) : (
                   <FilePlus size={12} className={clsx('shrink-0 opacity-60', isActive ? 'text-aegis-primary' : 'text-aegis-text-dim')} />
                 )}
+                {session?.agentStatus && (
+                  <span
+                    role="img"
+                    aria-label={t('chat.sessionAgentStatus', { note: session.agentStatus.note })}
+                    title={t('chat.sessionAgentStatus', { note: session.agentStatus.note })}
+                    className="shrink-0 text-aegis-text-muted"
+                  >
+                    <MessageSquareText size={12} aria-hidden="true" />
+                  </span>
+                )}
+                {contextBudgetLabel && (
+                  <span
+                    role="img"
+                    aria-label={contextBudgetLabel}
+                    title={contextBudgetLabel}
+                    className="shrink-0 text-aegis-warning"
+                  >
+                    <Gauge size={12} aria-hidden="true" />
+                  </span>
+                )}
+                {sessionGoalLabel && (
+                  <span
+                    role="img"
+                    aria-label={sessionGoalLabel}
+                    title={sessionGoalLabel}
+                    className="shrink-0 text-aegis-primary"
+                  >
+                    <ListTodo size={12} aria-hidden="true" />
+                  </span>
+                )}
+                {session?.lastRunError && (
+                  <span
+                    role="img"
+                    aria-label={t('chat.sessionLastRunFailed', { reason: session.lastRunError })}
+                    title={t('chat.sessionLastRunFailed', { reason: session.lastRunError })}
+                    className="shrink-0 text-aegis-danger"
+                  >
+                    <CircleAlert size={12} aria-hidden="true" />
+                  </span>
+                )}
+                {session?.abortedLastRun && (
+                  <span
+                    role="img"
+                    aria-label={t('chat.sessionLastRunAborted')}
+                    title={t('chat.sessionLastRunAborted')}
+                    className="shrink-0 text-aegis-text-muted"
+                  >
+                    <CircleStop size={12} aria-hidden="true" />
+                  </span>
+                )}
 
-                {/* Label (double-click to rename) */}
+                {/* 会话标签，双击可重命名。 */}
                 {isEditing ? (
                   <input
                     autoFocus
@@ -1343,7 +1436,10 @@ export function ChatTabs() {
                   connected={connected}
                   agentName={agentName}
                   session={session}
+                  agentRuntime={status.agentRuntime}
                   thinkingLevel={status.thinkingLevel}
+                  thinkingLevels={status.thinkingLevels}
+                  thinkingDefault={status.thinkingDefault}
                 />
               );
             })()}

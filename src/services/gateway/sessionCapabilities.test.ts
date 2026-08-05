@@ -1,29 +1,45 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildGatewayHelloObservation } from './runtimeIdentity';
-import { readOpenClawSessionCapabilities } from './sessionCapabilities';
+import { readOpenClawSessionHistoryCapabilities } from './sessionCapabilities';
 
-test('new session controls require explicit Gateway method advertisement', () => {
-  assert.deepEqual(readOpenClawSessionCapabilities(null), {
-    connectionId: null,
-    methodsAdvertised: false,
+const observation = (methods: string[]) => ({
+  endpoint: 'ws://127.0.0.1:18789',
+  protocol: 4,
+  serverVersion: '2026.7.2',
+  connectionId: 'connection-1',
+  stateDir: null,
+  configPath: null,
+  authMode: null,
+  methods,
+  events: [],
+  negotiatedRole: 'operator',
+  negotiatedScopes: [],
+  observedAtMs: 0,
+});
+
+test('hides transcript history controls without an advertised method list', () => {
+  assert.deepEqual(readOpenClawSessionHistoryCapabilities(null), {
     branches: false,
     branchSwitch: false,
     rewind: false,
     forkAtMessage: false,
-    workspace: false,
-    viewerPresence: false,
-    abortSession: false,
   });
+  assert.deepEqual(readOpenClawSessionHistoryCapabilities(observation([])), {
+    branches: false,
+    branchSwitch: false,
+    rewind: false,
+    forkAtMessage: false,
+  });
+});
 
-  const capabilities = readOpenClawSessionCapabilities(buildGatewayHelloObservation('ws://127.0.0.1:18789', {
-    protocol: 4,
-    server: { connId: 'connection-1' },
-    features: { methods: ['sessions.branches.list', 'sessions.fork', 'sessions.files.list', 'sessions.files.get'] },
-  }));
-  assert.equal(capabilities.branches, true);
-  assert.equal(capabilities.branchSwitch, false);
-  assert.equal(capabilities.rewind, false);
-  assert.equal(capabilities.forkAtMessage, true);
-  assert.equal(capabilities.workspace, true);
+test('maps every transcript history method independently', () => {
+  assert.deepEqual(readOpenClawSessionHistoryCapabilities(observation([
+    'sessions.branches.list',
+    'sessions.fork',
+  ])), {
+    branches: true,
+    branchSwitch: false,
+    rewind: false,
+    forkAtMessage: true,
+  });
 });

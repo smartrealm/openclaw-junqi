@@ -7,6 +7,7 @@ import type { WorkspaceFilesAdapter } from './types';
 import type {
   WorkspaceFileCapabilities,
   WorkspaceFileEntry,
+  WorkspaceFileSearchEntry,
   WorkspaceFileScope,
   WorkspaceFileSearchRequest,
   WorkspaceFileSearchResult,
@@ -30,6 +31,15 @@ interface NativeFileSearchResult {
   extension: string | null;
 }
 
+export function mapNativeFileSearchEntry(match: NativeFileSearchResult): WorkspaceFileSearchEntry {
+  return {
+    path: match.path,
+    name: match.name,
+    directory: match.dir,
+    extension: match.extension,
+  };
+}
+
 const READ_ONLY: WorkspaceFileCapabilities = {
   list: true, read: true, write: false, create: false, delete: false,
   rename: false, search: true, watch: false, nativePreview: true,
@@ -40,6 +50,7 @@ const READ_WRITE: WorkspaceFileCapabilities = {
 const TERMINAL_STRICT: WorkspaceFileCapabilities = {
   ...READ_ONLY, search: false,
 };
+const MAX_NATIVE_FILE_SEARCH_RESULTS = 200;
 
 function assertLocalScope(scope: WorkspaceFileScope): void {
   if (scope.hostId !== 'local') throw new Error(`Local file adapter cannot serve host ${scope.hostId}`);
@@ -118,13 +129,13 @@ export const localWorkspaceFiles: WorkspaceFilesAdapter = {
   async search(scope, request: WorkspaceFileSearchRequest): Promise<WorkspaceFileSearchResult> {
     assertLocalScope(scope);
     if (scope.policy === 'terminal-strict') throw new Error('Terminal-strict file scopes do not expose project search');
-    const maxResults = Math.min(2_000, Math.max(1, request.maxResults ?? 200));
+    const maxResults = Math.min(MAX_NATIVE_FILE_SEARCH_RESULTS, Math.max(1, request.maxResults ?? MAX_NATIVE_FILE_SEARCH_RESULTS));
     const matches = await invoke<NativeFileSearchResult[]>('search_project_files', {
       projectPath: scope.rootPath,
       query: request.query,
       extensions: [],
       limit: maxResults,
     });
-    return { paths: matches.map((match) => match.path), truncated: matches.length >= maxResults };
+    return { entries: matches.map(mapNativeFileSearchEntry) };
   },
 };

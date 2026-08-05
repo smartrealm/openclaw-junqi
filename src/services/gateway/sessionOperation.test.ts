@@ -1,52 +1,90 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseSessionOperationEvent } from './sessionOperation';
+import {
+  describeOpenClawSessionOperation,
+  parseOpenClawSessionOperationEvent,
+} from './sessionOperation';
 
-test('parses the official compact session.operation start payload', () => {
-  assert.deepEqual(parseSessionOperationEvent({
-    operationId: 'operation-1',
+const translate = (key: string, options?: { reason: string }): string => (
+  options ? `${key}:${options.reason}` : key
+);
+
+test('decodes the official session.operation compact start and end fields', () => {
+  const start = parseOpenClawSessionOperationEvent({
+    operationId: 'op-1',
     operation: 'compact',
     phase: 'start',
     sessionKey: 'agent:main:main',
     agentId: 'main',
-    ts: 1_754_000_000_000,
-  }), {
-    operationId: 'operation-1',
+    ts: 1_725_000_000_000,
+  });
+  assert.deepEqual(start, {
+    operationId: 'op-1',
     operation: 'compact',
     phase: 'start',
     sessionKey: 'agent:main:main',
     agentId: 'main',
-    ts: 1_754_000_000_000,
+    ts: 1_725_000_000_000,
   });
-});
 
-test('parses the official compact session.operation end payload', () => {
-  assert.deepEqual(parseSessionOperationEvent({
-    operationId: 'operation-1',
+  const end = parseOpenClawSessionOperationEvent({
+    operationId: 'op-1',
     operation: 'compact',
     phase: 'end',
     sessionKey: 'agent:main:main',
-    ts: 1_754_000_000_123,
-    completed: true,
-    reason: 'manual',
-  }), {
-    operationId: 'operation-1',
+    ts: 1_725_000_000_100,
+    completed: false,
+    reason: 'session changed',
+  });
+  assert.equal(end?.completed, false);
+  assert.equal(end?.reason, 'session changed');
+});
+
+test('rejects malformed or non-official operation payloads', () => {
+  assert.equal(parseOpenClawSessionOperationEvent(null), null);
+  assert.equal(parseOpenClawSessionOperationEvent({
+    operationId: 'op-1',
     operation: 'compact',
     phase: 'end',
     sessionKey: 'agent:main:main',
-    ts: 1_754_000_000_123,
-    completed: true,
-    reason: 'manual',
-  });
+    ts: 1.5,
+  }), null);
+  assert.equal(parseOpenClawSessionOperationEvent({
+    operationId: 'op-1',
+    operation: 'reset',
+    phase: 'end',
+    sessionKey: 'agent:main:main',
+    ts: 1,
+  }), null);
+  assert.equal(parseOpenClawSessionOperationEvent({
+    operationId: 'op-1',
+    operation: 'compact',
+    phase: 'end',
+    sessionKey: 'agent:main:main',
+    ts: 1,
+    completed: 'true',
+  }), null);
+  assert.equal(parseOpenClawSessionOperationEvent({
+    operationId: 'op-1',
+    operation: 'compact',
+    phase: 'end',
+    sessionKey: 'agent:main:main',
+    ts: 1,
+    runId: 'not-in-the-official-schema',
+  }), null);
 });
 
-test('rejects incomplete or non-compact session operations', () => {
-  assert.equal(parseSessionOperationEvent({
-    operationId: 'operation-1', operation: 'compact', phase: 'end',
-    sessionKey: 'agent:main:main', ts: 1_754_000_000_123,
-  }), null);
-  assert.equal(parseSessionOperationEvent({
-    operationId: 'operation-1', operation: 'reset', phase: 'start',
-    sessionKey: 'agent:main:main', ts: 1_754_000_000_123,
-  }), null);
+test('does not claim success when OpenClaw omits the terminal completion flag', () => {
+  const operation = parseOpenClawSessionOperationEvent({
+    operationId: 'op-2',
+    operation: 'compact',
+    phase: 'end',
+    sessionKey: 'agent:main:main',
+    ts: 2,
+  });
+  assert.ok(operation);
+  assert.deepEqual(describeOpenClawSessionOperation(operation, translate), {
+    kind: 'compaction',
+    text: 'chat.sessionCompactionEnded',
+  });
 });

@@ -7,15 +7,11 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { buildCronAgentOptions, resolveCronAgentAvailability } from './cronAgentSelection';
-import { Play, RotateCcw, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock, CalendarClock } from 'lucide-react';
+import { Play, RotateCcw, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock, CalendarClock, Trash2 } from 'lucide-react';
 import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
-import { gateway } from '@/services/gateway';
-import {
-  CronRunWaitTimeoutError,
-  type CronRunLogEntry,
-  type CronRunStatus,
-  type OpenClawCronJobDetails,
-} from '@/services/gateway/cronRuns';
+import { gateway, type OpenClawCronRunEntry, type OpenClawCronStatus } from '@/services/gateway';
+import { OpenClawCronStatusUnsupportedError } from '@/services/gateway/OpenClawCronStatusClient';
+import type { OpenClawCronJobDetails } from '@/services/gateway/cronRuns';
 import {
   buildCronAgentTurnAddParams,
   cronAgentUpdatePatch,
@@ -73,19 +69,12 @@ interface CronJob {
   };
 }
 
-interface RunEntry {
-  ts: number;
-  status: CronRunStatus | 'unknown';
-  summary?: string;
-  error?: string;
-  durationMs?: number;
-  jobId?: string;
-  jobName?: string;
-  // Gateway 2026.2.22+: split delivery status
-  deliveryStatus?: string;
-}
+type RunEntry = OpenClawCronRunEntry;
 
-type RunFeedback = 'queued' | 'ok' | 'error' | 'skipped' | 'timeout';
+// Current OpenClaw CLI waits at most ten minutes and polls cron.runs every two seconds.
+// These are JunQi presentation limits, not Gateway protocol fields.
+const OPENCLAW_CRON_RUN_WAIT_TIMEOUT_MS = 600_000;
+const OPENCLAW_CRON_RUN_POLL_INTERVAL_MS = 2_000;
 
 // ═══════════════════════════════════════════════════════════
 // Constants & Helpers
@@ -232,13 +221,8 @@ function formatDuration(ms?: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-function toRunEntry(entry: CronRunLogEntry, fallbackJobName?: string): RunEntry {
-  return {
-    ...entry,
-    status: entry.status ?? 'unknown',
-    jobId: entry.jobId,
-    jobName: entry.jobName || fallbackJobName || entry.jobId,
-  };
+function cronRunInFlight(status: 'queued' | 'waiting' | 'ok' | 'error' | 'skipped' | undefined): boolean {
+  return status === 'queued' || status === 'waiting';
 }
 
 
@@ -267,7 +251,7 @@ export function CronMonitorPage() {
   const agentsLoading = useGatewayDataStore((s) => s.loading.agents);
   const agentsError = useGatewayDataStore((s) => s.errors.agents);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [runResult, setRunResult] = useState<Record<string, RunFeedback>>({});
+  const [runResult, setRunResult] = useState<Record<string, 'queued' | 'waiting' | 'ok' | 'error' | 'skipped'>>({});
   const [templateResult, setTemplateResult] = useState<Record<string, 'ok' | 'error'>>({});
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedJobDetails, setSelectedJobDetails] = useState<OpenClawCronJobDetails | null>(null);
@@ -276,6 +260,10 @@ export function CronMonitorPage() {
   const [recentRuns, setRecentRuns] = useState<RunEntry[]>([]);
   const [selectedJobRuns, setSelectedJobRuns] = useState<RunEntry[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
+  const [runsError, setRunsError] = useState<string | null>(null);
+  const [schedulerStatus, setSchedulerStatus] = useState<OpenClawCronStatus | null>(null);
+  const [schedulerStatusLoading, setSchedulerStatusLoading] = useState(false);
+  const [schedulerStatusError, setSchedulerStatusError] = useState<'unsupported' | 'failed' | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused' | 'error'>('all');
@@ -288,8 +276,11 @@ export function CronMonitorPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [agentUpdateError, setAgentUpdateError] = useState<string | null>(null);
+  const [cronMutationError, setCronMutationError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [pendingAgentId, setPendingAgentId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const schedulerStatusRequest = useRef(0);
   const requestedJobId = searchParams.get('job')?.trim() || null;
   useEffect(() => {
     if (!connected) return;
@@ -298,6 +289,32 @@ export function CronMonitorPage() {
       ensureGroupFresh('cron'),
     ]);
   }, [connected]);
+
+  const refreshSchedulerStatus = useCallback(async () => {
+    const requestId = ++schedulerStatusRequest.current;
+    if (!connected) {
+      setSchedulerStatus(null);
+      setSchedulerStatusError(null);
+      setSchedulerStatusLoading(false);
+      return;
+    }
+    setSchedulerStatusLoading(true);
+    setSchedulerStatusError(null);
+    try {
+      const status = await gateway.getCronStatus();
+      if (requestId !== schedulerStatusRequest.current) return;
+      setSchedulerStatus(status);
+    } catch (error) {
+      if (requestId !== schedulerStatusRequest.current) return;
+      setSchedulerStatusError(error instanceof OpenClawCronStatusUnsupportedError ? 'unsupported' : 'failed');
+    } finally {
+      if (requestId === schedulerStatusRequest.current) setSchedulerStatusLoading(false);
+    }
+  }, [connected]);
+
+  useEffect(() => {
+    void refreshSchedulerStatus();
+  }, [refreshSchedulerStatus]);
 
   useEffect(() => {
     if (searchParams.get('new') === '1') {
@@ -438,6 +455,7 @@ export function CronMonitorPage() {
     const currentJobs = jobsRef.current;
     if (!connected || currentJobs.length === 0) return;
     setLoadingRuns(true);
+    setRunsError(null);
     try {
       const all: RunEntry[] = [];
       const jobList = currentJobs.slice(0, 12);
@@ -447,18 +465,20 @@ export function CronMonitorPage() {
         const batch = jobList.slice(i, i + BATCH_SIZE);
         await Promise.all(batch.map(async (job) => {
           try {
-            const result = await gateway.listCronRuns({ jobId: job.id, limit: 5, sortDir: 'desc' });
-            const entries = result.entries.map((entry) => toRunEntry(entry, job.name || job.id));
+            const result = await gateway.listCronRuns(job.id);
+            const entries = result.entries.slice(-5).map((e) => ({
+              ...e, jobId: job.id, jobName: job.name || job.id,
+            }));
             runsCache.current[job.id] = entries;
             all.push(...entries);
-          } catch { /* silent */ }
+          } catch (error) { setRunsError(error instanceof Error ? error.message : String(error)); }
         }));
       }
 
       all.sort((a, b) => new Date(b.ts || 0).getTime() - new Date(a.ts || 0).getTime());
       setRecentRuns(all.slice(0, 30));
       runsCacheLoaded.current = true;
-    } catch { /* silent */ }
+    } catch (error) { setRunsError(error instanceof Error ? error.message : String(error)); }
     finally { setLoadingRuns(false); }
   }, [connected]);
 
@@ -466,10 +486,13 @@ export function CronMonitorPage() {
   // Fix #1: uses jobsRef for a stable callback without rebuilds on polling
   const loadSingleJobRuns = useCallback(async (jobId: string) => {
     if (!connected) return;
+    setRunsError(null);
     try {
       const job = jobsRef.current.find(j => j.id === jobId);
-      const result = await gateway.listCronRuns({ jobId, limit: 5, sortDir: 'desc' });
-      const entries = result.entries.map((entry) => toRunEntry(entry, job?.name || jobId));
+      const result = await gateway.listCronRuns(jobId);
+      const entries = result.entries.slice(-5).map((e) => ({
+        ...e, jobId, jobName: job?.name || jobId,
+      }));
       runsCache.current[jobId] = entries;
 
       // Rebuild recent runs from cache
@@ -477,7 +500,7 @@ export function CronMonitorPage() {
       Object.values(runsCache.current).forEach(arr => all.push(...arr));
       all.sort((a, b) => new Date(b.ts || 0).getTime() - new Date(a.ts || 0).getTime());
       setRecentRuns(all.slice(0, 30));
-    } catch { /* silent */ }
+    } catch (error) { setRunsError(error instanceof Error ? error.message : String(error)); }
   }, [connected]);
 
   // Load once on first mount only
@@ -501,13 +524,17 @@ export function CronMonitorPage() {
     // Then fetch fresh data in background
     (async () => {
       try {
-        const result = await gateway.listCronRuns({ jobId: selectedJobId, limit: 14, sortDir: 'desc' });
+        const result = await gateway.listCronRuns(selectedJobId);
         if (fetchId !== selectedFetchId.current) return; // stale — discard
         const job = jobsRef.current.find(j => j.id === selectedJobId);
-        const entries = result.entries.map((entry) => toRunEntry(entry, job?.name || selectedJobId));
+        const entries = result.entries.slice(-14).reverse().map((e) => ({
+          ...e, jobId: selectedJobId, jobName: job?.name || selectedJobId,
+        }));
         setSelectedJobRuns(entries);
-      } catch {
+        setRunsError(null);
+      } catch (error) {
         if (fetchId !== selectedFetchId.current) return; // stale
+        setRunsError(error instanceof Error ? error.message : String(error));
         if (!cached?.length) setSelectedJobRuns([]);
       }
     })();
@@ -516,46 +543,58 @@ export function CronMonitorPage() {
   // ── Actions ──
   const toggleJob = async (jobId: string, enabled: boolean) => {
     setActionLoading(jobId);
-    try { await gateway.call('cron.update', { jobId, patch: { enabled } }); await refreshGroup('cron'); }
-    catch { /* silent */ } finally { setActionLoading(null); }
+    setCronMutationError(null);
+    try {
+      await gateway.updateCronJob(jobId, { enabled });
+      if (!await refreshGroup('cron')) throw new Error(t('cron.updateReadbackFailed'));
+    } catch (error) {
+      setCronMutationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setActionLoading(null);
+    }
   };
 
+  const runPollEpoch = useRef(0);
+  useEffect(() => () => { runPollEpoch.current += 1; }, []);
+
   const runJob = async (jobId: string) => {
+    const epoch = runPollEpoch.current + 1;
+    runPollEpoch.current = epoch;
     setActionLoading(`run-${jobId}`);
     setRunResult(p => { const n = { ...p }; delete n[jobId]; return n; });
+    setRunsError(null);
     try {
-      const queued = await gateway.enqueueCronRun(jobId, 'force');
-      await refreshGroup('cron');
-      if (queued.enqueued === true && queued.runId) {
-        setRunResult(p => ({ ...p, [jobId]: 'queued' }));
-        try {
-          const finished = await gateway.waitForCronRun(jobId, queued.runId);
-          setRunResult(p => ({
-            ...p,
-            [jobId]: finished.status === 'ok'
-              ? 'ok'
-              : finished.status === 'skipped'
-                ? 'skipped'
-                : 'error',
-          }));
-        } catch (error) {
-          setRunResult(p => ({
-            ...p,
-            [jobId]: error instanceof CronRunWaitTimeoutError ? 'timeout' : 'error',
-          }));
-        }
-        await Promise.all([refreshGroup('cron'), loadSingleJobRuns(jobId)]);
-      } else if (queued.ran === false) {
-        setRunResult(p => ({ ...p, [jobId]: 'skipped' }));
-      } else {
-        setRunResult(p => ({ ...p, [jobId]: 'error' }));
+      const acknowledgement = await gateway.enqueueCronRun(jobId);
+      const runId = acknowledgement.runId;
+      if (!acknowledgement.ok || !acknowledgement.enqueued || !runId) {
+        throw new Error(acknowledgement.reason || t('cron.runNotQueued'));
       }
-    } catch {
-      setRunResult(p => ({ ...p, [jobId]: 'error' }));
+      setRunResult(p => ({ ...p, [jobId]: 'queued' }));
+      await refreshGroup('cron');
+      const startedAt = Date.now();
+      for (;;) {
+        const terminal = await gateway.findTerminalCronRun(jobId, runId);
+        if (epoch !== runPollEpoch.current) return;
+        if (terminal) {
+          setRunResult(p => ({ ...p, [jobId]: terminal.status ?? 'error' }));
+          await loadSingleJobRuns(jobId);
+          return;
+        }
+        if (Date.now() - startedAt >= OPENCLAW_CRON_RUN_WAIT_TIMEOUT_MS) {
+          throw new Error(t('cron.runWaitTimedOut'));
+        }
+        setRunResult(p => ({ ...p, [jobId]: 'waiting' }));
+        await new Promise<void>((resolve) => window.setTimeout(resolve, OPENCLAW_CRON_RUN_POLL_INTERVAL_MS));
+        if (epoch !== runPollEpoch.current) return;
+      }
+    } catch (error) {
+      if (epoch === runPollEpoch.current) {
+        setRunResult(p => ({ ...p, [jobId]: 'error' }));
+        setRunsError(error instanceof Error ? error.message : String(error));
+      }
     }
     finally {
-      setActionLoading(null);
-      setTimeout(() => setRunResult(p => { const n = { ...p }; delete n[jobId]; return n; }), 5000);
+      if (epoch === runPollEpoch.current) setActionLoading(null);
     }
   };
 
@@ -564,7 +603,7 @@ export function CronMonitorPage() {
   const addTemplate = async (tpl: ReturnType<typeof getCronTemplates>[0]) => {
     setActionLoading(`tpl-${tpl.id}`);
     try {
-      await gateway.call('cron.add', buildCronAgentTurnAddParams({
+      await gateway.addCronAgentTurn(buildCronAgentTurnAddParams({
         ...tpl.job,
         agentId: createJob.agentId,
       }));
@@ -583,10 +622,7 @@ export function CronMonitorPage() {
     setActionLoading(`agent-${jobId}`);
     setAgentUpdateError(null);
     try {
-      await gateway.call('cron.update', {
-        jobId,
-        patch: cronAgentUpdatePatch(agentId),
-      });
+      await gateway.updateCronJob(jobId, cronAgentUpdatePatch(agentId));
       const refreshed = await refreshGroup('cron');
       const confirmed = refreshed
         && isCronAgentSelectionConfirmed(
@@ -599,6 +635,30 @@ export function CronMonitorPage() {
     } catch (error) {
       setPendingAgentId(null);
       setAgentUpdateError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const deleteJob = async () => {
+    const target = deleteTarget;
+    if (!target) return;
+    setActionLoading(`delete-${target.id}`);
+    setCronMutationError(null);
+    try {
+      await gateway.removeCronJob(target.id);
+      setDeleteTarget(null);
+      if (!await refreshGroup('cron')) {
+        setCronMutationError(t('cron.deleteReadbackFailed'));
+        return;
+      }
+      if (useGatewayDataStore.getState().cronJobs.some((job) => job.id === target.id)) {
+        setCronMutationError(t('cron.deleteReadbackFailed'));
+        return;
+      }
+      if (selectedJobId === target.id) setSelectedJobId(null);
+    } catch (error) {
+      setCronMutationError(error instanceof Error ? error.message : String(error));
     } finally {
       setActionLoading(null);
     }
@@ -669,7 +729,7 @@ export function CronMonitorPage() {
               outline-none focus:border-aegis-accent/30 focus:bg-aegis-accent/[0.03] transition-all"
           />
         </div>
-        <button onClick={() => { refreshGroup('cron'); loadAllRuns(); }}
+        <button onClick={() => { void refreshGroup('cron'); void loadAllRuns(); void refreshSchedulerStatus(); }}
           className="flex items-center gap-1.5 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)]
             text-[11px] font-semibold text-aegis-text-muted hover:text-aegis-text-secondary transition-colors">
           <RotateCcw size={12} className={loading ? 'animate-spin' : ''} /> {t('common.refresh', 'Refresh')}
@@ -679,6 +739,27 @@ export function CronMonitorPage() {
             text-[11px] font-semibold hover:opacity-90 transition-opacity">
           <Plus size={12} /> {t('cron.newJob', 'New Job')}
         </button>
+        <div className="flex items-center gap-1.5 text-[10px] text-aegis-text-dim min-w-0" aria-live="polite">
+          {schedulerStatusLoading ? (
+            <><LoadingIndicator size={10} /> <span>{t('cron.schedulerStatusLoading')}</span></>
+          ) : schedulerStatusError ? (
+            <span className="text-aegis-danger">{t(schedulerStatusError === 'unsupported' ? 'cron.schedulerStatusUnsupported' : 'cron.schedulerStatusFailed')}</span>
+          ) : schedulerStatus ? (
+            <>
+              <span className={clsx('w-1.5 h-1.5 rounded-full shrink-0', schedulerStatus.enabled ? 'bg-aegis-success' : 'bg-aegis-text-dim')} />
+              <span>{t(schedulerStatus.enabled ? 'cron.schedulerEnabled' : 'cron.schedulerDisabled')}</span>
+              <span>{t('cron.schedulerJobs', { count: schedulerStatus.jobs })}</span>
+              {schedulerStatus.enabled && schedulerStatus.nextWakeAtMs !== null && (
+                <span>{t('cron.nextWake')}: {formatCountdown(schedulerStatus.nextWakeAtMs)}</span>
+              )}
+            </>
+          ) : null}
+        </div>
+        {cronMutationError && (
+          <div className="basis-full text-[10px] text-aegis-danger" role="alert">
+            {t('cron.updateFailed')}: {cronMutationError}
+          </div>
+        )}
       </div>
 
       {/* Master-detail maintenance layout */}
@@ -802,19 +883,23 @@ export function CronMonitorPage() {
                       </button>
                       {/* Run */}
                       <button onClick={(e) => { e.stopPropagation(); runJob(job.id); }}
-                        disabled={!!actionLoading || !!runResult[job.id]}
+                        disabled={!!actionLoading || cronRunInFlight(runResult[job.id])}
+                        title={runResult[job.id] === 'queued' ? t('cron.runQueued')
+                          : runResult[job.id] === 'waiting' ? t('cron.runWaiting')
+                            : t('cron.runNow')}
+                        aria-label={runResult[job.id] === 'queued' ? t('cron.runQueued')
+                          : runResult[job.id] === 'waiting' ? t('cron.runWaiting')
+                            : t('cron.runNow')}
                         className={clsx(
                           'w-7 h-7 rounded-lg flex items-center justify-center border transition-all text-[11px] shrink-0',
                           runResult[job.id] === 'ok' ? 'bg-aegis-primary/10 border-aegis-primary/30 text-aegis-primary'
-                          : runResult[job.id] === 'error' || runResult[job.id] === 'timeout' ? 'bg-aegis-danger/10 border-aegis-danger/30 text-aegis-danger'
-                          : runResult[job.id] === 'skipped' ? 'bg-aegis-warning/10 border-aegis-warning/30 text-aegis-warning'
+                          : runResult[job.id] === 'error' || runResult[job.id] === 'skipped' ? 'bg-aegis-danger/10 border-aegis-danger/30 text-aegis-danger'
                           : isError ? 'border-aegis-danger/20 text-aegis-danger/50 hover:text-aegis-danger hover:border-aegis-danger/40'
                           : 'border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim hover:text-aegis-accent hover:border-aegis-accent/30 hover:bg-aegis-accent/[0.04]',
                         )}>
-                        {actionLoading === `run-${job.id}` ? <LoadingIndicator size={11} />
+                        {actionLoading === `run-${job.id}` || cronRunInFlight(runResult[job.id]) ? <LoadingIndicator size={11} />
                           : runResult[job.id] === 'ok' ? <Check size={11} />
-                          : runResult[job.id] === 'error' || runResult[job.id] === 'timeout' ? <X size={11} />
-                          : runResult[job.id] === 'skipped' ? <RotateCcw size={11} />
+                          : runResult[job.id] === 'error' || runResult[job.id] === 'skipped' ? <X size={11} />
                           : isError ? <RotateCcw size={11} />
                           : <Play size={11} fill="currentColor" />}
                       </button>
@@ -877,6 +962,16 @@ export function CronMonitorPage() {
                       )}
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget({ id: selectedJob.id, name: selectedJob.name || selectedJob.id })}
+                    disabled={actionLoading !== null}
+                    title={t('cron.deleteJob')}
+                    aria-label={t('cron.deleteJob')}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-aegis-danger/25 text-aegis-danger transition-colors hover:bg-aegis-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-danger/40 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
                 {(selectedJobDetailLoading || selectedJobDetailError) && (
                   <div className="mb-2 text-[9px] text-aegis-text-dim" aria-live="polite">
@@ -1000,18 +1095,16 @@ export function CronMonitorPage() {
                 {/* Actions */}
                 <div className="flex gap-1.5">
                   <button onClick={() => runJob(selectedJob.id)}
-                    disabled={!!actionLoading}
+                    disabled={!!actionLoading || cronRunInFlight(runResult[selectedJob.id])}
                     className="flex-1 py-2 rounded-md text-center text-[11px] font-semibold
                       bg-aegis-primary/[0.08] border border-aegis-primary/20 text-aegis-primary
                       hover:bg-aegis-primary/15 transition-colors disabled:opacity-40">
-                    {actionLoading === `run-${selectedJob.id}`
-                      ? <LoadingIndicator size={12} className="mx-auto" />
+                    {actionLoading === `run-${selectedJob.id}` || cronRunInFlight(runResult[selectedJob.id])
+                      ? <span className="flex items-center justify-center gap-1.5"><LoadingIndicator size={12} />
+                        {runResult[selectedJob.id] === 'queued' ? t('cron.runQueued') : t('cron.runWaiting')}</span>
                       : runResult[selectedJob.id] === 'ok' ? t('cronDetail.done')
-                        : runResult[selectedJob.id] === 'queued' ? t('cronDetail.running')
-                          : runResult[selectedJob.id] === 'skipped' ? t('cronDetail.skipped', 'Skipped')
-                            : runResult[selectedJob.id] === 'timeout' ? t('cronDetail.timeout', 'Timed out')
-                              : runResult[selectedJob.id] === 'error' ? t('cronDetail.error')
-                                : t('cronDetail.runNow')}
+                        : runResult[selectedJob.id] === 'skipped' ? t('cron.runSkipped')
+                          : runResult[selectedJob.id] === 'error' ? t('cron.failed') : t('cronDetail.runNow')}
                   </button>
                   <button onClick={() => toggleJob(selectedJob.id, !selectedJob.enabled)}
                     disabled={!!actionLoading}
@@ -1046,7 +1139,9 @@ export function CronMonitorPage() {
               )}
             </div>
             <div className={clsx('px-2 py-1', showAllLogs ? 'flex-1 overflow-y-auto' : 'overflow-hidden')}>
-              {loadingRuns ? (
+              {runsError ? (
+                <div className="text-[10px] text-aegis-danger py-4 px-3" role="alert">{runsError}</div>
+              ) : loadingRuns ? (
                 <div className="flex items-center gap-2 py-4 px-3 text-[10px] text-aegis-text-dim">
                   <LoadingIndicator size={12} /> Loading...
                 </div>
@@ -1075,7 +1170,7 @@ export function CronMonitorPage() {
                           </div>
                           <div className="text-[9px] text-aegis-text-dim truncate"
                             style={!isOk ? { color: runColor } : undefined}>
-                            {run.summary || run.error || (isOk ? t('cron.completed', 'Completed') : isSkipped ? t('cronDetail.skipped', 'Skipped') : run.status === 'unknown' ? t('cronDetail.unknown', 'Unknown') : t('cron.failed', 'Failed'))}
+                            {run.summary || run.error || (isOk ? t('cron.completed', 'Completed') : isSkipped ? t('cronDetail.skipped', 'Skipped') : t('cron.failed', 'Failed'))}
                           </div>
                         </div>
                         <div className="text-[8px] font-mono text-aegis-text-dim px-1.5 py-0.5 rounded
@@ -1237,7 +1332,7 @@ export function CronMonitorPage() {
                 setCreating(true);
                 setCreateError(null);
                 try {
-                  await gateway.call('cron.add', buildCronAgentTurnAddParams({
+                  await gateway.addCronAgentTurn(buildCronAgentTurnAddParams({
                     name: createJob.name,
                     agentId: createJob.agentId,
                     schedule: { kind: 'cron', expr: createJob.cronExpr.trim(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
@@ -1259,6 +1354,49 @@ export function CronMonitorPage() {
             >
               {creating ? <LoadingIndicator size={11} className="inline" /> : null}
               {t('common.create', '创建')}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && deleteTarget && actionLoading !== `delete-${deleteTarget.id}`) {
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <DialogContent
+          onEscapeKeyDown={(event) => {
+            if (deleteTarget && actionLoading === `delete-${deleteTarget.id}`) event.preventDefault();
+          }}
+          onPointerDownOutside={(event) => {
+            if (deleteTarget && actionLoading === `delete-${deleteTarget.id}`) event.preventDefault();
+          }}
+          className="w-[min(420px,calc(100vw-2rem))] max-w-none gap-0 border-aegis-border bg-aegis-card-solid p-0 text-aegis-text shadow-2xl sm:rounded-lg"
+        >
+          <DialogHeader className="border-b border-aegis-border px-5 py-4 pe-12 text-start">
+            <DialogTitle className="text-sm font-bold text-aegis-text">{t('cron.deleteJob')}</DialogTitle>
+            <DialogDescription className="text-[11px] text-aegis-text-dim">
+              {t('cron.deleteJobDescription', { name: deleteTarget?.name ?? '' })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="border-t border-aegis-border bg-[rgb(var(--aegis-overlay)/0.02)] px-5 py-3">
+            <DialogClose
+              disabled={deleteTarget !== null && actionLoading === `delete-${deleteTarget.id}`}
+              className="px-3 py-1.5 text-[11.5px] text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40 disabled:opacity-50"
+            >
+              {t('common.cancel')}
+            </DialogClose>
+            <button
+              type="button"
+              onClick={() => { void deleteJob(); }}
+              disabled={deleteTarget === null || actionLoading === `delete-${deleteTarget?.id}`}
+              className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-md bg-aegis-danger px-3 py-1.5 text-[11.5px] font-semibold text-aegis-btn-primary-text transition-[filter,transform] hover:brightness-110 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-danger/45 disabled:opacity-50"
+            >
+              {deleteTarget && actionLoading === `delete-${deleteTarget.id}` ? <LoadingIndicator size={11} /> : <Trash2 size={11} />}
+              {t('cron.deleteJob')}
             </button>
           </DialogFooter>
         </DialogContent>

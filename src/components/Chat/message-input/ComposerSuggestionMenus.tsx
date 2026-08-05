@@ -1,8 +1,6 @@
-import { Cpu, File, Sparkles, X } from 'lucide-react';
+import { Cpu, File, Sparkles, TerminalSquare, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { CATEGORY_META, type SlashCategory } from '@/data/slashCommands';
-import { cmdIcon } from '@/data/cmdIcons';
 import { ComposerSuggestionPopover } from './ComposerSuggestionPopover';
 import type { useComposerSuggestions } from './useComposerSuggestions';
 
@@ -46,6 +44,8 @@ export function ComposerSuggestionMenus({
     setArgumentPicker,
     setMentionPicker,
     setSlashPicker,
+    slashCommandsFailure,
+    slashCommandsLoading,
     skills,
     slashPicker,
     textareaRef,
@@ -124,7 +124,7 @@ export function ComposerSuggestionMenus({
         </ComposerSuggestionPopover>
       )}
 
-      {slashPicker.open && matchedSlash.length > 0 && (
+      {slashPicker.open && (
         <ComposerSuggestionPopover
           open={slashPicker.open}
           onOpenChange={(open) => { if (!open) closeSlashPicker(); }}
@@ -133,12 +133,26 @@ export function ComposerSuggestionMenus({
           {...SUGGESTION_LAYOUT.slash}
         >
           <div className="max-h-[300px] overflow-y-auto py-1 scrollbar-hidden">
-            {groupedSlash.order.map((category) => {
-              const meta = CATEGORY_META[category as SlashCategory];
+            {slashCommandsLoading ? (
+              <div className="px-3 py-4 text-center text-[11px] text-aegis-text-dim">
+                {t('openclawCommands.loading')}
+              </div>
+            ) : slashCommandsFailure ? (
+              <div className="px-3 py-4 text-center text-[11px] text-aegis-text-dim">
+                {t(slashCommandsFailure === 'unavailable'
+                  ? 'openclawCommands.unavailable'
+                  : 'openclawCommands.invalidResponse')}
+              </div>
+            ) : matchedSlash.length === 0 ? (
+              <div className="px-3 py-4 text-center text-[11px] text-aegis-text-dim">
+                {t('input.suggestions.noMatches')}
+              </div>
+            ) : groupedSlash.order.map((category) => {
               return (
                 <div key={category}>
                   <div className="flex items-center gap-1.5 px-3 pb-1 pt-2 text-[9px] font-semibold uppercase text-aegis-text-dim">
-                    {meta?.icon}<span>{meta?.label}</span>
+                    <TerminalSquare size={11} aria-hidden="true" />
+                    <span>{t(`openclawCommands.categories.${category}`)}</span>
                   </div>
                   {groupedSlash.groups[category]?.map((command) => {
                     const index = matchedSlash.indexOf(command);
@@ -155,16 +169,16 @@ export function ComposerSuggestionMenus({
                             ? 'border-s-aegis-primary bg-[rgb(var(--aegis-primary)/0.08)] ps-[9px]'
                             : 'border-s-transparent ps-[9px] hover:bg-[rgb(var(--aegis-overlay)/0.03)]',
                         )}
-                      >
-                        <span className={clsx('shrink-0', active ? 'text-aegis-primary' : 'text-aegis-text-dim')}>
-                          {cmdIcon(command.cmd, 14)}
+                        >
+                          <span className={clsx('shrink-0', active ? 'text-aegis-primary' : 'text-aegis-text-dim')}>
+                            <TerminalSquare size={14} />
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-2">
                             <span className={clsx('font-mono text-[12px] font-semibold', active ? 'text-aegis-primary' : 'text-aegis-text-secondary')}>
                               {command.cmd}
                             </span>
-                            {command.argHint && <span className="font-mono text-[10px] text-aegis-text-dim">{command.argHint}</span>}
+                            {command.args?.[0] && <span className="font-mono text-[10px] text-aegis-text-dim">{command.args[0].name}</span>}
                           </span>
                           <span className="block truncate text-[10px] text-aegis-text-dim">{command.description}</span>
                         </span>

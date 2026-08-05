@@ -18,13 +18,14 @@ import { parseButtons } from '@/utils/buttonParser';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
 import i18n from '@/i18n';
+import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import { readGatewayMessageIdentity } from './messageIdentity';
 import {
   type GatewayCallbacks,
   type MediaInfo,
 } from './Connection';
 import {
-  classifyOpenClawChatAbortAcknowledgement,
+  classifyOpenClawSessionAbortAcknowledgement,
   classifyOpenClawChatSendAcknowledgement,
   OpenClawChatRunProjection,
   parseOpenClawInFlightRunSnapshot,
@@ -36,7 +37,11 @@ import {
   OpenClawPendingChatSendRegistry,
   type OpenClawPendingChatSendPhase,
 } from './OpenClawPendingChatSend';
-import { parseSessionOperationEvent } from './sessionOperation';
+import { parseOpenClawChatSendTiming } from './chatSendTiming';
+import {
+  parseOpenClawSessionOperationEvent,
+  type OpenClawSessionOperationEvent,
+} from './sessionOperation';
 
 // ── Workshop Command Parser ──
 // Parses [[workshop:action ...]] commands from agent messages
@@ -129,6 +134,7 @@ export class ChatHandler {
   private toolStartedAtByKey = new Map<string, number>();
   private lastCompactionTsBySession = new Map<string, number>();
   private seenCompactionOperationIds = new Set<string>();
+  private seenSessionOperationEvents = new Set<string>();
 
   // ── Stream micro-batching ──
   // Buffer WebSocket chunks and flush to React every STREAM_FLUSH_MS
@@ -137,6 +143,7 @@ export class ChatHandler {
   private static readonly MAX_RUN_SESSION_BINDINGS = 512;
   private static readonly RECENT_TERMINAL_REPLY_TTL_MS = 120_000;
   private static readonly MAX_RECENT_TERMINAL_REPLIES = 512;
+  private static readonly MAX_SESSION_OPERATION_EVENTS = 512;
   private streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingStreams = new Map<string, { id: string; content: string; media?: MediaInfo; runId?: string | null }>();
   private sessionKeyByRunId = new Map<string, string>();
@@ -145,6 +152,28 @@ export class ChatHandler {
   private recentTerminalAssistantReplies = new Map<string, RecentTerminalAssistantReply>();
 
   constructor(private conn: ChatHandlerConnection) {}
+
+  private rememberSessionOperationEvent(
+    sessionKey: string,
+    operation: OpenClawSessionOperationEvent,
+  ): boolean {
+    const marker = JSON.stringify([
+      sessionKey,
+      operation.operationId,
+      operation.phase,
+      operation.ts,
+      operation.completed ?? null,
+      operation.reason ?? null,
+      operation.agentId ?? null,
+    ]);
+    if (this.seenSessionOperationEvents.has(marker)) return false;
+    this.seenSessionOperationEvents.add(marker);
+    if (this.seenSessionOperationEvents.size > ChatHandler.MAX_SESSION_OPERATION_EVENTS) {
+      const oldest = this.seenSessionOperationEvents.values().next().value;
+      if (typeof oldest === 'string') this.seenSessionOperationEvents.delete(oldest);
+    }
+    return true;
+  }
 
   private injectCompactionDivider(sessionKey: string, operationId?: string): void {
     if (!sessionKey || isIsolatedExecutionSessionKey(sessionKey)) return;
@@ -204,6 +233,35 @@ export class ChatHandler {
     return true;
   }
 
+  /** Settle only an exact uncertain delivery confirmed terminal by `agent.wait`. */
+  reconcilePendingRunWaitTerminal(
+    sessionKey: string,
+    runId: string,
+    observation: ChatSessionRunObservation,
+  ): boolean {
+    const normalizedSessionKey = sessionKey.trim();
+    const normalizedRunId = runId.trim();
+    if (
+      !normalizedSessionKey
+      || !normalizedRunId
+      || !this.isSessionRunObservationCurrent(observation)
+    ) {
+      return false;
+    }
+    const pending = this.pendingSends.current(normalizedSessionKey);
+    if (pending?.phase !== 'uncertain' || pending.runId !== normalizedRunId) return false;
+    const active = this.runProjection.active(normalizedSessionKey);
+    if (active && active.runId !== normalizedRunId) return false;
+
+    this.completePendingSend(normalizedSessionKey, normalizedRunId);
+    const resolutions = this.runProjection.reconcileSessionSnapshots(
+      [{ key: normalizedSessionKey, hasActiveRun: false, activeRunIds: [] }],
+      [normalizedSessionKey],
+    );
+    this.applySessionRunReconciliations(resolutions);
+    return resolutions.some((resolution) => resolution.state === 'settled');
+  }
+
   /** Release a request that definitively failed before OpenClaw accepted it. */
   failPendingSend(sessionKey: string, runId: string): void {
     this.pendingSends.complete(sessionKey.trim(), runId.trim());
@@ -251,36 +309,35 @@ export class ChatHandler {
     return 'settled';
   }
 
-  /** Apply only the exact runs confirmed by OpenClaw's `chat.abort` result. */
-  reconcileAbortAcknowledgement(sessionKey: string, response: unknown): boolean {
+  /** Apply only the exact run confirmed by OpenClaw's native sessions.abort result. */
+  reconcileSessionAbortAcknowledgement(sessionKey: string, response: unknown): boolean {
     const normalizedSessionKey = sessionKey.trim();
     if (!normalizedSessionKey) return false;
-    const acknowledgement = classifyOpenClawChatAbortAcknowledgement(response);
+    const acknowledgement = classifyOpenClawSessionAbortAcknowledgement(response);
     if (acknowledgement.state !== 'aborted') {
-      if (acknowledgement.state === 'not_aborted') {
-        this.conn.callbacks?.onSessionRunReconciliationNeeded?.(normalizedSessionKey);
-      }
+      this.conn.callbacks?.onSessionRunReconciliationNeeded?.(normalizedSessionKey);
       return false;
     }
 
-    let settled = false;
-    for (const runId of acknowledgement.runIds) {
-      const active = this.runProjection.active(normalizedSessionKey);
-      if (active && active.runId !== runId) continue;
-      const pending = this.pendingSends.current(normalizedSessionKey);
-      if (!active && pending?.runId !== runId && !this.runProjection.hasActiveSession(normalizedSessionKey)) {
-        continue;
-      }
-      const lease = this.claimTerminal(normalizedSessionKey, runId);
-      if (!lease) continue;
-      const messageId = this.ensureActiveMessageId(normalizedSessionKey, runId);
-      const content = this.currentRunIdBySession.get(normalizedSessionKey) === runId
-        ? this.currentStreamContentBySession.get(normalizedSessionKey) || ''
-        : '';
-      this.finalizeAbortedResponse(normalizedSessionKey, messageId, content, lease);
-      settled = true;
+    const { runId } = acknowledgement;
+    const active = this.runProjection.active(normalizedSessionKey);
+    if (active && active.runId !== runId) {
+      this.conn.callbacks?.onSessionRunReconciliationNeeded?.(normalizedSessionKey);
+      return false;
     }
-    return settled;
+    const pending = this.pendingSends.current(normalizedSessionKey);
+    if (!active && pending?.runId !== runId && !this.runProjection.hasActiveSession(normalizedSessionKey)) {
+      this.conn.callbacks?.onSessionRunReconciliationNeeded?.(normalizedSessionKey);
+      return false;
+    }
+    const lease = this.claimTerminal(normalizedSessionKey, runId);
+    if (!lease) return false;
+    const messageId = this.ensureActiveMessageId(normalizedSessionKey, runId);
+    const content = this.currentRunIdBySession.get(normalizedSessionKey) === runId
+      ? this.currentStreamContentBySession.get(normalizedSessionKey) || ''
+      : '';
+    this.finalizeAbortedResponse(normalizedSessionKey, messageId, content, lease);
+    return true;
   }
 
   /** A closed socket cannot deliver its old frames, but its run may continue remotely. */
@@ -619,6 +676,17 @@ export class ChatHandler {
     return null;
   }
 
+  private handleChatSendTiming(payload: unknown): void {
+    const timing = parseOpenClawChatSendTiming(payload);
+    if (!timing || isIsolatedExecutionSessionKey(timing.sessionKey)) return;
+
+    // This event is not a run admission signal. It can be delayed after the
+    // official chat.send acknowledgement, so it may only decorate an exact
+    // Run already accepted by this projection.
+    if (!this.runProjection.active(timing.sessionKey, timing.runId)) return;
+    useChatStore.getState().setChatSendTiming(timing.sessionKey, timing);
+  }
+
   /** Flush buffered stream content to the UI */
   private flushStream(sessionKey?: string) {
     const entries = sessionKey
@@ -850,7 +918,9 @@ export class ChatHandler {
     // accepted the user's request. Do not keep its optimistic bubble pending
     // while the assistant is working or after a later abort.
     this.completePendingSend(sessionKey, runId);
-    useChatStore.getState().setIsTyping(true, sessionKey);
+    const store = useChatStore.getState();
+    store.setIsTyping(true, sessionKey);
+    store.setChatSendTiming(sessionKey, null);
     if (started.replacedRunId) {
       this.closeCurrentStreamSegment(sessionKey, undefined, started.replacedRunId);
       this.clearActiveResponse(sessionKey, started.replacedRunId);
@@ -953,6 +1023,7 @@ export class ChatHandler {
     if (!this.runProjection.complete(lease)) return;
     this.rememberObservedRun(sessionKey, lease.runId);
     this.forceFlushStream(sessionKey);
+    this.markUnresolvedToolCards(sessionKey, lease.runId);
     this.clearActiveResponse(sessionKey, lease.runId);
     this.markTranscriptHandledByTerminal(sessionKey);
     useChatStore.getState().clearThinking(sessionKey);
@@ -964,6 +1035,20 @@ export class ChatHandler {
       undefined,
       { state: 'aborted', runId: lease.runId, refreshHistory: true },
     );
+  }
+
+  /** An abort can race a side-effecting tool. Keep its UI state explicitly uncertain. */
+  private markUnresolvedToolCards(sessionKey: string, runId: string): void {
+    const store = useChatStore.getState();
+    const messages = store.getCachedMessages(sessionKey) || [];
+    const updated = messages.map((message) => (
+      message.role === 'tool' && message.runId === runId && message.toolStatus === 'running'
+        ? { ...message, toolStatus: 'verification_required' as const, responseState: 'aborted' as const }
+        : message
+    ));
+    if (updated.some((message, index) => message !== messages[index])) {
+      store.setMessages(updated, sessionKey);
+    }
   }
 
   private handleAssistantStream(payload: any) {
@@ -1055,9 +1140,37 @@ export class ChatHandler {
     const msgId = `tool-live-${runId}-${toolCallId}`;
     if (!this.beginRun(sessionKey, runId)) return;
     this.bindRunToSession(sessionKey, runId);
-
     const store = useChatStore.getState();
     const listFor = () => store.getCachedMessages(sessionKey) || [];
+    const existingToolCard = listFor().find((message) => message.id === msgId);
+    const toolCardIsTerminal = existingToolCard?.responseState === 'final'
+      || existingToolCard?.toolStatus === 'done'
+      || existingToolCard?.toolStatus === 'error'
+      || existingToolCard?.toolStatus === 'cancelled'
+      || existingToolCard?.toolStatus === 'verification_required';
+    // A delayed non-terminal event must not make a completed or locally
+    // verification-required tool appear active again. A later result remains
+    // admissible because it may be the authoritative closure for that state.
+    if (
+      phase !== 'result'
+      && toolCardIsTerminal
+    ) return;
+    void taskExecutionCoordinator.recordToolEvent({
+      sessionKey,
+      runId,
+      toolCallId,
+      toolName,
+      phase,
+      ...(phase === 'result'
+        ? {
+            resultStatus: toolEvent.status === 'error'
+              ? 'error' as const
+              : toolEvent.status === 'cancelled'
+                ? 'cancelled' as const
+                : 'done' as const,
+          }
+        : {}),
+    }).catch((error) => taskExecutionCoordinator.reportPersistenceFailure('record tool checkpoint', error));
 
     if (phase === 'start') {
       const currentContent = this.currentStreamContentBySession.get(sessionKey) || '';
@@ -1237,10 +1350,46 @@ export class ChatHandler {
   handleEvent(msg: any) {
     const event = msg.event || '';
     const p = msg.payload || {};
+    if (event === 'chat.send_timing') {
+      this.handleChatSendTiming(p);
+      return;
+    }
     if (event === 'session.tool' && !isOpenClawSessionToolPayload(p)) {
       debugWarn('gateway', '[GW] Ignoring malformed OpenClaw session.tool event');
       return;
     }
+
+    if (event === 'session.operation') {
+      const operation = parseOpenClawSessionOperationEvent(p);
+      if (!operation) {
+        debugWarn('gateway', '[GW] Ignoring malformed OpenClaw session.operation event');
+        return;
+      }
+      const operationSessionKey = this.resolveSessionKey(operation.sessionKey);
+      if (!operationSessionKey || isIsolatedExecutionSessionKey(operationSessionKey)) return;
+      if (!this.rememberSessionOperationEvent(operationSessionKey, operation)) return;
+      this.conn.callbacks?.onSessionOperation?.({
+        ...operation,
+        sessionKey: operationSessionKey,
+      });
+      const store = useChatStore.getState();
+      const current = store.compactionStatusBySession[operationSessionKey];
+      if (operation.phase === 'start') {
+        store.setCompactionStatus(operationSessionKey, {
+          operationId: operation.operationId,
+          phase: 'active',
+          startedAt: operation.ts,
+        });
+        return;
+      }
+      if (current && current.operationId !== operation.operationId) return;
+      if (operation.completed === true) {
+        this.injectCompactionDivider(operationSessionKey, operation.operationId);
+      }
+      store.setCompactionStatus(operationSessionKey, null);
+      return;
+    }
+
     const sessionKey = this.resolveSessionKey(p.sessionKey, p.runId);
 
     if (event === 'agent' || event === 'chat' || event === 'session.tool') {
@@ -1259,7 +1408,7 @@ export class ChatHandler {
     }
 
     if (event === 'session.tool') {
-      // v2026.7.1 contract: the event payload is the agent tool payload itself
+      // The official contract carries the agent tool payload itself
       // (`runId`, `seq`, `stream`, `ts`, `data`) plus a session snapshot. Do
       // not unwrap or translate fields that the Gateway did not send.
       if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
@@ -1345,27 +1494,6 @@ export class ChatHandler {
         // event so native history cannot race the live assistant message.
         if (!settledBySnapshot) this.scheduleTranscriptRefresh(transcriptSessionKey);
       }
-      return;
-    }
-
-    if (event === 'session.operation') {
-      const operation = parseSessionOperationEvent(p);
-      if (!operation) return;
-      const store = useChatStore.getState();
-      const current = store.compactionStatusBySession[operation.sessionKey];
-      if (operation.phase === 'start') {
-        store.setCompactionStatus(operation.sessionKey, {
-          operationId: operation.operationId,
-          phase: 'active',
-          startedAt: operation.ts,
-        });
-        return;
-      }
-      if (current && current.operationId !== operation.operationId) return;
-      if (operation.completed === true) {
-        this.injectCompactionDivider(operation.sessionKey, operation.operationId);
-      }
-      store.setCompactionStatus(operation.sessionKey, null);
       return;
     }
 

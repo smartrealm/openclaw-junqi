@@ -582,7 +582,7 @@ export function OpenClawRuntimeDetails({
           <RuntimeDetailRow
             label={t("setup.runtimeDetails.version", "版本")}
             value={status?.version ? `v${status.version}` : t("setup.runtimeDetails.notReturned", "未返回")}
-            tone={status?.version ? (status.version_beyond_verified_range ? "warn" : "neutral") : "warn"}
+            tone={status?.version ? "neutral" : "warn"}
             mono
           />
           <RuntimeDetailRow
@@ -594,22 +594,10 @@ export function OpenClawRuntimeDetails({
 
         <div className="grid content-start gap-2 sm:grid-cols-2 lg:grid-cols-1">
           <RuntimeCheck label={t("setup.runtimeDetails.binaryFound", "找到 openclaw 可执行文件")} ok={status?.binary_found ?? null} />
-          <RuntimeCheck label={t("setup.runtimeDetails.versionOk", "版本受支持")} ok={status?.version_ok ?? null} />
           <RuntimeCheck label={t("setup.runtimeDetails.packageValid", "npm 包信息有效")} ok={status?.package_valid ?? null} />
           <RuntimeCheck label={t("setup.runtimeDetails.gatewayCommandOk", "支持 Gateway 启动命令")} ok={status?.gateway_command_ok ?? null} />
         </div>
       </div>
-
-      {status?.version_beyond_verified_range && (
-        // Usable but untested: say so plainly, otherwise a later wizard or
-        // protocol failure sends the user looking in the wrong place.
-        <div className="mt-3 rounded-md border border-aegis-status-warning/30 bg-aegis-status-warning/5 px-3 py-2 text-[11px] leading-5 text-aegis-status-warning">
-          {t("setup.runtimeDetails.versionBeyondVerified", {
-            version: status.version ?? "",
-            defaultValue: "OpenClaw v{{version}} 超出本版本 JunQi 的已验证范围，仍可使用。若配置向导或连接出现异常，请优先考虑版本兼容问题。",
-          })}
-        </div>
-      )}
 
       {status?.error && (
         <div className="mt-3 rounded-md border border-red-500/25 bg-red-500/5 px-3 py-2 font-mono text-[11px] leading-5 text-red-300">

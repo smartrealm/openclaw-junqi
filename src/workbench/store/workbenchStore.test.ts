@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { beforeEach } from 'node:test';
 import { useWorkbenchStore } from './workbenchStore';
+import { WORKBENCH_SESSION_SCHEMA_VERSION } from '../session/schema';
 import type { WorkbenchTab } from '../domain/types';
 
 const mainGroup = 'workbench:group:main';
@@ -226,5 +227,5 @@ test('natural PTY exit reconciles only the exact renderer claim identity', () =>
 });
 
 test('session snapshots always emit the current schema version', () => {
-  assert.equal(useWorkbenchStore.getState().sessionSnapshot().schemaVersion, 3);
+  assert.equal(useWorkbenchStore.getState().sessionSnapshot().schemaVersion, WORKBENCH_SESSION_SCHEMA_VERSION);
 });

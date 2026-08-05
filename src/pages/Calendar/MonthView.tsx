@@ -14,6 +14,7 @@ import {
   getWeekOrder, getDayName,
 } from './calendarUtils';
 import type { CalendarEvent } from './calendarTypes';
+import { projectUpcomingCronJobs } from './cronProjection';
 
 interface MonthViewProps {
   onDateClick: (date: Date) => void;
@@ -31,14 +32,11 @@ export function MonthView({ onDateClick, onEventClick }: MonthViewProps) {
   const weekOrder = getWeekOrder(settings.weekStartDay);
   const todayStr = useMemo(() => toDateStr(new Date()), []);
 
-  // ── Cron dates set: which dates have cron jobs scheduled ──
+  // The Gateway owns recurrence calculation. Mark only its reported next run.
   const cronDates = useMemo(() => {
     const set = new Set<string>();
-    cronJobs.forEach((j) => {
-      if (j.lastRun) {
-        const d = toDateStr(new Date(j.lastRun));
-        set.add(d);
-      }
+    projectUpcomingCronJobs(cronJobs, Date.now()).forEach((job) => {
+      set.add(toDateStr(new Date(job.nextRunAtMs)));
     });
     return set;
   }, [cronJobs]);

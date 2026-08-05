@@ -540,7 +540,6 @@
   color: var(--wb-dim);
 }
 
-.junqi-wb-browser-empty,
 .junqi-wb-empty-panel {
   display: flex;
   flex: 1;
@@ -549,11 +548,6 @@
   flex-direction: column;
   gap: 8px;
   color: var(--wb-dim);
-}
-
-.junqi-wb-browser-empty strong {
-  color: var(--wb-muted);
-  font-size: 13px;
 }
 
 .junqi-wb-local-status {

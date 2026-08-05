@@ -42,7 +42,7 @@ interface WorkbenchState {
   writerReady: boolean;
   hydrationError: string | null;
   sidebarMode: 'full' | 'compact' | 'hidden';
-  rightSidebarPanel: 'files' | 'search' | 'source' | 'checks' | 'ports' | 'vault';
+  rightSidebarPanel: 'files' | 'search' | 'source';
   rightSidebarCollapsed: boolean;
   worktrees: Record<WorktreeId, WorkbenchWorktree>;
   activeWorktreeId: WorktreeId | null;

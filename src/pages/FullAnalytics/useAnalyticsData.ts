@@ -9,12 +9,16 @@
 //     persist the selection — it's volatile.
 //   • Clicking "Apply" saves the current preset to localStorage,
 //     so next visit starts with that preset.
-//   • "All Time" fetches 365 days + 2000 sessions.
+//   • "All Time" requests the official `range: "all"` + 2000 sessions.
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useChatStore }  from '@/stores/chatStore';
-import { fetchFullCost, fetchFullUsage } from '@/stores/gatewayDataStore';
+import {
+  fetchFullCost,
+  fetchFullUsage,
+  type SessionsUsageQuery,
+} from '@/stores/gatewayDataStore';
 
 import {
   type CostSummary,
@@ -113,6 +117,22 @@ function getFetchParams(preset: PresetId): { days: number; limit: number } {
   }
 }
 
+export function resolveSessionsUsageQuery(
+  preset: PresetId,
+  startDate = '',
+  endDate = '',
+): SessionsUsageQuery {
+  if (preset === 'all') return { range: 'all' };
+  if (preset === '7d') return { range: '7d' };
+  if (preset === '30d') return { range: '30d' };
+  if (preset === '90d') return { range: '90d' };
+  if (startDate && endDate) return {
+    startDate,
+    endDate,
+  };
+  return { range: '30d' };
+}
+
 // ═══════════════════════════════════════════════════════════
 // Public interface
 // ═══════════════════════════════════════════════════════════
@@ -195,7 +215,12 @@ export function useAnalyticsData(): AnalyticsData {
 
   // ── Data fetching ──
   const fetchData = useCallback(
-    async (days = 30, limit = 200, showLoading = true) => {
+    async (
+      days = 30,
+      limit = 200,
+      showLoading = true,
+      usageQuery: SessionsUsageQuery = resolveSessionsUsageQuery('30d'),
+    ) => {
       if (!connected) return;
       try {
         setError(null);
@@ -203,7 +228,7 @@ export function useAnalyticsData(): AnalyticsData {
 
         const [costResult, usageResult] = await Promise.allSettled([
           fetchFullCost(days),
-          fetchFullUsage(limit),
+          fetchFullUsage(limit, usageQuery),
         ]);
 
         if (costResult.status === 'fulfilled' && costResult.value) {
@@ -256,7 +281,7 @@ export function useAnalyticsData(): AnalyticsData {
 
     if (isStale || !hasCached) {
       const { days, limit } = getFetchParams(saved);
-      fetchData(days, limit, !hasCached);
+      fetchData(days, limit, !hasCached, resolveSessionsUsageQuery(saved));
     }
   }, [fetchData, hydrateFromCache]);
 
@@ -274,7 +299,7 @@ export function useAnalyticsData(): AnalyticsData {
       if (requiredDays > currentDays) {
         setIsRefetching(true);
         const { limit } = getFetchParams(id);
-        await fetchData(requiredDays, limit, false);
+        await fetchData(requiredDays, limit, false, resolveSessionsUsageQuery(id, start, end));
         setIsRefetching(false);
       }
     },
@@ -304,7 +329,7 @@ export function useAnalyticsData(): AnalyticsData {
         const currentDays = costData?.days || 0;
         if (dayDiff > currentDays) {
           setIsRefetching(true);
-          await fetchData(365, 2000, false);
+          await fetchData(365, 2000, false, resolveSessionsUsageQuery('custom', customStart, customEnd));
           setIsRefetching(false);
         }
       } else {
@@ -480,7 +505,7 @@ export function useAnalyticsData(): AnalyticsData {
     handleApply,
     refresh: async () => {
       const { days, limit } = getFetchParams(activePreset);
-      await fetchData(days, limit, true);
+      await fetchData(days, limit, true, resolveSessionsUsageQuery(activePreset, startDate, endDate));
     },
   };
 }

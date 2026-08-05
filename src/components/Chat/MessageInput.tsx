@@ -7,8 +7,6 @@ import { ComposerAttachmentTray } from './message-input/ComposerAttachmentTray';
 import { ComposerInputSurface } from './message-input/ComposerInputSurface';
 import { ComposerVoiceRecorder } from './message-input/ComposerVoiceRecorder';
 import { MessageQueuePanel } from './message-input/MessageQueuePanel';
-import { VoiceStatusBanner } from './message-input/VoiceStatusBanner';
-import { VoiceWorkspace } from './message-input/VoiceWorkspace';
 import { useComposerAttachments } from './message-input/useComposerAttachments';
 import { useComposerInterruption } from './message-input/useComposerInterruption';
 import { useComposerMenu } from './message-input/useComposerMenu';
@@ -80,6 +78,7 @@ export function MessageInput() {
   });
   const stop = useComposerInterruption({
     activeSessionKey,
+    activeSessionId,
     activeMenu: menu.active,
     closeMenu: menu.close,
     voiceOutputActive: voice.outputActive,
@@ -95,28 +94,6 @@ export function MessageInput() {
         onRemove={attachments.removeFile}
       />
       <MessageQueuePanel sessionKey={activeSessionKey} dir={dir} />
-      {!voice.recording && voice.voiceMode.mode !== 'wake_word' && (
-        <VoiceWorkspace
-          snapshot={voice.voiceMode}
-          connected={connected && !historyLoading}
-          onStartDictation={voice.startDictation}
-          onRequestWakeWord={voice.requestWakeWord}
-          onStop={voice.stopVoiceMode}
-          onConfirmDraft={voice.confirmVoiceDraft}
-          onDiscardDraft={voice.discardVoiceDraft}
-        />
-      )}
-      {!voice.recording && voice.voiceMode.mode === 'off' && voice.voiceMode.phase === 'off' && voice.voiceMode.draft === null && (
-        <VoiceStatusBanner
-          enabled={voice.voiceWake.enabled}
-          error={voice.voiceWake.error}
-          status={voice.status}
-          onStop={voice.toggleDictation}
-          onRetry={voice.toggleDictation}
-          onDismissError={() => { void voice.voiceWake.stop(); }}
-        />
-      )}
-
       {voice.recording ? (
         <ComposerVoiceRecorder
           dir={dir}
@@ -138,10 +115,9 @@ export function MessageInput() {
           attachments={attachments}
           suggestions={suggestions}
           menu={menu}
-          dictationEnabled={voice.voiceWake.enabled || voice.voiceMode.mode !== 'off' || voice.voiceMode.draft !== null}
+          talkActive={voice.voiceMode.mode === 'talk'}
           onStartRecording={voice.startRecording}
-          onToggleDictation={voice.toggleDictation}
-          onRequestWakeWord={voice.requestWakeWord}
+          onToggleTalk={voice.toggleTalk}
           onSend={send}
           onSteer={steer}
           onStop={stop}

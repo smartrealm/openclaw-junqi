@@ -16,6 +16,8 @@ test('writes a guarded patch while preserving sibling experimental flags', async
   const client = new OpenClawPlanToolSettingsClient({
     async call() {
       return {
+        exists: true,
+        valid: true,
         config: { tools: { experimental: { otherPreview: true } } },
         hash: 'config-hash',
       };
@@ -41,8 +43,10 @@ test('automatic mode removes only the plan tool override', async () => {
   const client = new OpenClawPlanToolSettingsClient({
     async call() {
       return {
+        exists: true,
+        valid: true,
         config: { tools: { experimental: { planTool: false, otherPreview: true } } },
-        baseHash: 'config-hash',
+        hash: 'config-hash',
       };
     },
     async callPrivileged(_method, params) {
@@ -55,5 +59,29 @@ test('automatic mode removes only the plan tool override', async () => {
   assert.equal(patches.length, 1);
   assert.deepEqual(JSON.parse(String(patches[0].raw)), {
     tools: { experimental: { otherPreview: true } },
+  });
+});
+
+test('allows the official hashless first-write configuration flow', async () => {
+  const patches: Record<string, unknown>[] = [];
+  const client = new OpenClawPlanToolSettingsClient({
+    async call() {
+      return {
+        exists: false,
+        valid: true,
+        config: {},
+      };
+    },
+    async callPrivileged(_method, params) {
+      patches.push(params);
+      return { ok: true };
+    },
+  });
+
+  await client.write('enabled');
+  assert.equal(patches.length, 1);
+  assert.equal(patches[0].baseHash, undefined);
+  assert.deepEqual(JSON.parse(String(patches[0].raw)), {
+    tools: { experimental: { planTool: true } },
   });
 });

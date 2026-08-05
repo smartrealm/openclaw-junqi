@@ -1,5 +1,7 @@
 # Dashboard 数据与操作区审查
 
+> 历史审计说明：本文记录的是审计时的实现与环境观察。当前 `sessions.usage` 请求和响应契约已按 OpenClaw 官方文档、schema 与 handler 重新核对，范围对齐见 [OpenClaw 会话用量范围对齐](openclaw-sessions-usage-range-alignment-2026-08-03.md)。文中安装版本号只表示当时的复现证据，不是 JunQi 的能力开关或当前协议契约。
+
 ## 审查范围
 
 - 活跃智能体名称与会话名称的一致性

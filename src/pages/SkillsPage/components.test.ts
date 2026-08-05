@@ -12,4 +12,9 @@ test('skill details use a compact action-oriented drawer and sanitize external r
   assert.match(source, /dangerouslySetInnerHTML=\{\{ __html: safeReadme \}\}/);
   assert.doesNotMatch(source, /dangerouslySetInnerHTML=\{\{ __html: skill\.readme \}\}/);
   assert.match(source, /resolvedPersona &&/);
+  assert.doesNotMatch(source, /skill\.downloads/);
+  assert.doesNotMatch(source, /skill\.stars/);
+  assert.doesNotMatch(source, /skill\.installs/);
+  assert.doesNotMatch(source, /openclaw skills install \$\{skill\.slug\}/);
+  assert.doesNotMatch(source, /https:\/\/clawhub\.ai\/skills\/\$\{skill\.slug\}/);
 });

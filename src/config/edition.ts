@@ -140,7 +140,7 @@ const APP_ROUTE_ORDER: { feature: EditionFeatureKey; path: string }[] = [
   { feature: 'git', path: '/git' },
   { feature: 'calendar', path: '/calendar' },
   { feature: 'sandbox', path: '/sandbox' },
-  { feature: 'tools', path: '/tools' },
+  { feature: 'tools', path: '/openclaw-commands' },
   { feature: 'settings', path: '/settings' },
 ];
 
@@ -165,7 +165,7 @@ const PATH_PREFIXES: { prefix: string; feature: EditionFeatureKey }[] = [
   { prefix: '/calendar', feature: 'calendar' },
   { prefix: '/sandbox', feature: 'sandbox' },
   { prefix: '/openclaw-commands', feature: 'tools' },
-  { prefix: '/tools', feature: 'tools' },
+  { prefix: '/tools', feature: 'configManager' },
   { prefix: '/settings', feature: 'settings' },
   { prefix: '/chat', feature: 'chat' },
   { prefix: '/workshop', feature: 'workshop' },

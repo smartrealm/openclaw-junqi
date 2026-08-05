@@ -1,29 +1,27 @@
 /* ═══════════════════════════════════════════════════════════
-   Terminal — aegis-native palette, 1:1 with the rest of the app.
+   终端使用 aegis 原生色板，与应用其他界面保持一致。
 
-   Every colour below is a derivative of aegis design tokens so
-   the terminal reads as part of the chrome, not a foreign island.
-   xterm.js reads them via getComputedStyle at init time.
+   下列颜色全部派生自 aegis 设计令牌，xterm.js 在初始化时通过
+   getComputedStyle 读取。
    ═══════════════════════════════════════════════════════════ */
 
 :root {
-  /* Terminal canvas — follows aegis-bg so the terminal feels embedded
-     and switches correctly with light / midnight / eyecare themes. */
+  /* 终端画布跟随 aegis-bg，并随亮色、午夜和护眼主题切换。 */
   --terminal-bg:        var(--aegis-bg);
   --terminal-surface:   var(--aegis-surface);
   --terminal-elevated:  var(--aegis-surface-elevated);
   --terminal-border:    var(--aegis-border);
 
-  /* Text — follows aegis text tokens. */
+  /* 文本跟随 aegis 文本令牌。 */
   --terminal-text:      rgb(var(--aegis-text));
   --terminal-text-dim:  rgb(var(--aegis-text-muted));
 
-  /* Cursor and selection follow the active product accent. */
+  /* 光标和选区跟随当前产品强调色。 */
   --terminal-cursor:    rgb(var(--aegis-primary));
   --terminal-cursor-accent: var(--aegis-btn-primary-text);
   --terminal-selection: rgb(var(--aegis-primary) / 0.25);
 
-  /* ANSI 16-color palette — semantic tokens, not a second theme palette. */
+  /* ANSI 十六色使用语义令牌，不维护第二套主题色板。 */
   --ansi-black:         rgb(var(--aegis-text-dim));
   --ansi-red:           rgb(var(--aegis-danger));
   --ansi-green:         rgb(var(--aegis-success));
@@ -42,15 +40,14 @@
   --ansi-bright-white:  rgb(var(--aegis-text));
 }
 
-/* StatusBadge pulse — used by StatusDot when state === "running". */
+/* StatusDot 处于 running 状态时使用的脉冲动画。 */
 @keyframes aegis-pulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.45; }
 }
 
 
-/* xterm cursor visibility fallback. WebGL/canvas normally consumes theme.cursor,
-   but DOM renderer / renderer fallback still uses these nodes. */
+/* xterm 光标可见性回退。WebGL 或画布通常读取 theme.cursor，DOM 回退渲染仍使用这些节点。 */
 .xterm .xterm-cursor-block {
   background-color: var(--terminal-cursor) !important;
   color: var(--terminal-cursor-accent) !important;

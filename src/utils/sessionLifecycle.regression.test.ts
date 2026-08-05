@@ -19,7 +19,6 @@ import {
 } from '@/utils/sessionDelete';
 import { __setSessionRenameDepsForTest, applySessionRename } from '@/utils/sessionRename';
 import { __setSessionResetDepsForTest, resetSessionEverywhere } from '@/utils/sessionReset';
-import { projectSessionOrganization, setSessionOrganizationFlag } from '@/services/chat/sessionOrganization';
 
 const MAIN_KEY = 'agent:main:main';
 const SESSION_KEY = 'agent:worker:desktop-lifecycle-regression';
@@ -306,11 +305,9 @@ describe('session lifecycle regression fixes', () => {
     assert.doesNotMatch(source, /window\.history\.replaceState|appliedRef/);
   });
 
-  test('BUG-08 native pin snapshots survive reload and deletion clears legacy identity-bound organization state', () => {
+  test('BUG-08 native pin snapshots follow authoritative session records', () => {
     seedSession(MAIN_KEY);
     useChatStore.getState().setSessionIdentity(SESSION_KEY, 'worker-session-id');
-    setSessionOrganizationFlag({ key: SESSION_KEY, sessionId: 'worker-session-id' }, 'pinned', true);
-    assert.equal(projectSessionOrganization({ key: SESSION_KEY, sessionId: 'worker-session-id' }).pinned, true);
 
     useChatStore.setState({ sessions: [] });
     useChatStore.getState().setSessions([
@@ -325,8 +322,5 @@ describe('session lifecycle regression fixes', () => {
       { key: SESSION_KEY, label: 'Worker', sessionId: 'worker-session-id', pinned: false },
     ]);
     assert.equal(useChatStore.getState().sessions.find((session) => session.key === SESSION_KEY)?.pinned, false);
-
-    useChatStore.getState().removeSession(SESSION_KEY);
-    assert.equal(projectSessionOrganization({ key: SESSION_KEY, sessionId: 'worker-session-id' }).pinned, false);
   });
 });

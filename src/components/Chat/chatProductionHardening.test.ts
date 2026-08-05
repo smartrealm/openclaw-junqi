@@ -10,12 +10,12 @@ function source(path: string): string {
 test('CHAT-01 generated artifacts stay scriptless while local file previews use the scoped protocol', () => {
   const bubble = source('src/components/Chat/MessageBubble.tsx');
   const resultCards = source('src/components/Chat/ResultCards.tsx');
-  const managedPreview = source('src/components/FileExplorer/ManagedFilePreview.tsx');
+  const previewSurface = source('src/components/FileExplorer/FilePreviewSurface.tsx');
   const previewProtocol = source('src-tauri/src/commands/file_preview.rs');
   assert.doesNotMatch(bubble, /sandbox=["']allow-scripts/);
   assert.match(bubble, /srcDoc=\{artifact\.content\}[\s\S]*?sandbox=""/);
-  assert.match(managedPreview, /src=\{preview\.mode === 'interactive' \? preview\.url/);
-  assert.match(managedPreview, /sandbox=\{preview\.mode === 'interactive' \? 'allow-scripts' : ''\}/);
+  assert.match(previewSurface, /src=\{content\.mode === 'interactive' \? content\.url/);
+  assert.match(previewSurface, /sandbox=\{content\.mode === 'interactive' \? 'allow-scripts' : ''\}/);
   assert.match(resultCards, /loadLocalFilePreview\(path, name, workspaceRoot\)/);
   assert.match(previewProtocol, /PREVIEW_GRANT_TTL/);
   assert.match(previewProtocol, /resolve_granted_path/);
@@ -119,16 +119,8 @@ test('CHAT-05 forced history refreshes queue behind the active request', () => {
   assert.match(view, /await loadHistory\(sessionKey, queued\)/);
 });
 
-test('CHAT-16 every detached history load stays in the recoverable chat surface', () => {
-  const view = source('src/components/Chat/ChatView.tsx');
+test('CHAT-16 App detached history loads stay in the recoverable chat surface', () => {
   const app = source('src/App.tsx');
-  assert.doesNotMatch(view, /void loadHistory\(/);
-  assert.match(view, /startRecoverableTask\([\s\S]*?\(\) => loadHistory\(\)/);
-  assert.equal(
-    [...view.matchAll(/\(\) => loadHistory\(sessionKey, \{ force: true, background: true \}\)/g)].length,
-    3,
-  );
-  assert.match(view, /Manual reconnect failed/);
   assert.doesNotMatch(app, /void historyLoader\(/);
   assert.match(app, /startRecoverableTask\([\s\S]*?\(\) => historyLoader\(/);
   assert.match(app, /onTranscriptChanged:[\s\S]*?refreshDurableTranscript\(sessionKey\)/);

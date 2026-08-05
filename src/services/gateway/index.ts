@@ -5,6 +5,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import {
+  GatewayConnectionFenceError,
   GatewayConnection,
   GatewayDisconnectedError,
   GatewayRpcError,
@@ -41,35 +42,85 @@ import { TalkGatewayClient } from './TalkGatewayClient';
 import {
   routeTalkGatewayEvent,
   subscribeTalkGatewayEvents,
+  subscribeTalkRelayEvents,
 } from './talkEventBridge';
 import type { GatewayAuthorizationIssue } from './messageRouter';
+import type { GatewayHelloObservation } from '@/types/gatewayRuntime';
 import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
 import type { GatewayAttachment } from '@/services/chat/types';
 import { SessionSettingsClient } from './SessionSettingsClient';
+import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
 import { OpenClawSessionOrganizationClient } from './OpenClawSessionOrganizationClient';
+import { OpenClawSessionGroupsClient } from './OpenClawSessionGroupsClient';
 import { OpenClawSessionLifecycleClient } from './OpenClawSessionLifecycleClient';
-import { SessionCompactionClient } from './SessionCompactionClient';
-import { SessionTranscriptHistoryClient } from './SessionTranscriptHistoryClient';
+import {
+  OpenClawTaskLedgerClient,
+  type OpenClawTaskListInput,
+} from './OpenClawTaskLedgerClient';
+import {
+  OpenClawAuditClient,
+  type OpenClawAuditListInput,
+} from './OpenClawAuditClient';
 import {
   OpenClawApprovalClient,
-  type ApprovalDecision,
-  type ApprovalRecord,
-  type ApprovalResolveResult,
-} from './approvals';
-import { buildSessionsCompactParams, parseSessionsCompactResult } from './sessionMaintenance';
-import { buildSessionsSteerParams } from './sessionSteering';
+  type OpenClawApproval,
+  type OpenClawApprovalDecision,
+  type OpenClawApprovalHistoryRequest,
+} from './OpenClawApprovalClient';
+import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
+import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClient';
+import { OpenClawSessionCompactionCheckpointsClient } from './OpenClawSessionCompactionCheckpointsClient';
+import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
+import { OpenClawSessionBranchesClient } from './OpenClawSessionBranchesClient';
+import { OpenClawSessionMessageCutClient } from './OpenClawSessionMessageCutClient';
+import { OpenClawSessionObserverClient } from './OpenClawSessionObserverClient';
+import { OpenClawSessionViewerPresenceClient } from './OpenClawSessionViewerPresenceClient';
+import { OpenClawSessionDiffClient } from './OpenClawSessionDiffClient';
+import { OpenClawSessionFilesClient } from './OpenClawSessionFilesClient';
+import {
+  openClawSessionObserverStream,
+  routeOpenClawSessionObserverEvent,
+} from './sessionObserverEventBridge';
+import { OpenClawCronRunClient } from './OpenClawCronRunClient';
+import { OpenClawCronStatusClient } from './OpenClawCronStatusClient';
+import { OpenClawTtsClient } from './OpenClawTtsClient';
+import { OpenClawTtsStatusClient } from './OpenClawTtsStatusClient';
+import { OpenClawTtsPreferencesClient } from './OpenClawTtsPreferencesClient';
+import { OpenClawDiagnosticStabilityClient } from './OpenClawDiagnosticStabilityClient';
+import { OpenClawHooksStatusClient } from './OpenClawHooksStatusClient';
+import { OpenClawSessionCompanionClient } from './OpenClawSessionCompanionClient';
+import { OpenClawSessionUsageLogsClient } from './OpenClawSessionUsageLogsClient';
+import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
+import { OpenClawProviderUsageClient } from './OpenClawProviderUsageClient';
+import { OpenClawAgentIdentityClient } from './OpenClawAgentIdentityClient';
+import { OpenClawAgentFilesClient } from './OpenClawAgentFilesClient';
+import {
+  OpenClawAgentsWorkspaceClient,
+  type OpenClawAgentsWorkspaceListInput,
+} from './OpenClawAgentsWorkspaceClient';
+import { OpenClawAgentWaitClient } from './OpenClawAgentWaitClient';
+import { OpenClawPendingRunWaitReconciler } from './OpenClawPendingRunWaitReconciler';
+import {
+  OpenClawCommandsClient,
+  type OpenClawCommandsListInput,
+} from './OpenClawCommandsClient';
+import {
+  OpenClawCronManagementClient,
+  type OpenClawCronManagedJob,
+  type OpenClawCronMutationPatch,
+} from './OpenClawCronManagementClient';
+import type { CronAgentTurnAddParams } from './cronContract';
+import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
+import { SessionCompactionClient } from './SessionCompactionClient';
 import { buildToolsEffectiveParams, parseToolsEffectiveResult, type ToolsEffectiveResult } from './toolsEffective';
 import { buildToolsCatalogParams, parseToolsCatalogResult, type ToolsCatalogResult } from './toolsCatalog';
 import { buildToolsInvokeParams, parseToolsInvokeResult, type ToolsInvokeParams, type ToolsInvokeResult } from './toolsInvoke';
 import {
-  buildSessionsCompactionListParams,
   buildSessionsPreviewParams,
   buildSessionsResolveParams,
-  parseSessionsCompactionListResult,
   parseSessionsPreviewResult,
   parseSessionsResolveResult,
   requireSessionPreview,
-  type SessionCompactionCheckpoint,
   type SessionPreview,
   type SessionsPreviewParams,
   type SessionsResolveResult,
@@ -94,16 +145,8 @@ import {
   type MemoryStatusResult,
 } from './memoryDoctor';
 import {
-  enqueueCronRun,
   getCronJob,
-  listCronRuns,
-  waitForCronRun,
-  type CronRunEnqueueResult,
-  type CronRunLogEntry,
-  type CronRunWaitOptions,
-  type CronRunsPage,
   type OpenClawCronJobDetails,
-  type CronRunsParams,
 } from './cronRuns';
 
 // Re-export types for consumers
@@ -115,7 +158,126 @@ export type {
   GatewayRequestOptions,
 };
 export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
-export { GatewayConnectionFenceError, GatewayDisconnectedError, GatewayRpcError } from './Connection';
+export type { OpenClawTtsClip, OpenClawTtsSpeakInput } from './OpenClawTtsClient';
+export type { OpenClawTtsStatus } from './OpenClawTtsStatusClient';
+export type { OpenClawTtsPreferenceMutation } from './OpenClawTtsPreferencesClient';
+export type {
+  OpenClawDiagnosticStabilityEvent,
+  OpenClawDiagnosticStabilitySnapshot,
+} from './OpenClawDiagnosticStabilityClient';
+export type {
+  OpenClawHookBlockedReason,
+  OpenClawHookStatusEntry,
+  OpenClawHooksStatusSnapshot,
+} from './OpenClawHooksStatusClient';
+export type {
+  OpenClawSessionCompanionAnswer,
+  OpenClawSessionCompanionExchange,
+  OpenClawSessionCompanionState,
+} from './OpenClawSessionCompanionClient';
+export type {
+  OpenClawSessionUsageLogEntry,
+  OpenClawSessionUsageLogRole,
+} from './OpenClawSessionUsageLogsClient';
+export type { OpenClawSessionBranch } from './OpenClawSessionBranchesClient';
+export type {
+  OpenClawSessionEditorAttachment,
+  OpenClawSessionForkResult,
+  OpenClawSessionRewindResult,
+} from './OpenClawSessionMessageCutClient';
+export type { OpenClawSessionViewerPresenceResult } from './OpenClawSessionViewerPresenceClient';
+export type { OpenClawSessionDiff, OpenClawSessionDiffFile } from './OpenClawSessionDiffClient';
+export type {
+  OpenClawSessionFile,
+  OpenClawSessionFileBrowser,
+  OpenClawSessionFileBrowserEntry,
+  OpenClawSessionFilesGet,
+  OpenClawSessionFilesList,
+} from './OpenClawSessionFilesClient';
+export { OpenClawSessionFileConflictError } from './OpenClawSessionFilesClient';
+export type { OpenClawModelAuthStatusSnapshot } from './OpenClawModelAuthStatusClient';
+export type { OpenClawProviderUsageSnapshot } from './OpenClawProviderUsageClient';
+export type {
+  OpenClawAgentAvatarStatus,
+  OpenClawAgentIdentity,
+  OpenClawAgentIdentityInput,
+} from './OpenClawAgentIdentityClient';
+export type {
+  OpenClawAgentBootstrapFile,
+  OpenClawAgentBootstrapFileGet,
+  OpenClawAgentBootstrapFilesList,
+} from './OpenClawAgentFilesClient';
+export type {
+  OpenClawAgentWorkspaceEntry,
+  OpenClawAgentWorkspaceFile,
+  OpenClawAgentWorkspaceList,
+  OpenClawAgentsWorkspaceListInput,
+} from './OpenClawAgentsWorkspaceClient';
+export type {
+  OpenClawAgentWaitResult,
+  OpenClawAgentWaitStatus,
+} from './OpenClawAgentWaitClient';
+export type {
+  OpenClawSessionObserverDigest,
+  OpenClawSessionObserverHealth,
+} from './sessionObserverEventBridge';
+export type {
+  OpenClawCompactionCheckpoint,
+  OpenClawCompactionCheckpointReason,
+  OpenClawCompactionTranscriptReference,
+} from './OpenClawSessionCompactionCheckpointsClient';
+export type {
+  OpenClawCommandArgument,
+  OpenClawCommandArgumentChoice,
+  OpenClawCommandCategory,
+  OpenClawCommandEntry,
+  OpenClawCommandScope,
+  OpenClawCommandSource,
+  OpenClawCommandsListInput,
+} from './OpenClawCommandsClient';
+export type {
+  OpenClawTaskCancelResult,
+  OpenClawTaskLedgerStatus,
+  OpenClawTaskListInput,
+  OpenClawTaskListPage,
+  OpenClawTaskSummary,
+} from './OpenClawTaskLedgerClient';
+export type {
+  OpenClawCronRunAcknowledgement,
+  OpenClawCronRunEntry,
+  OpenClawCronRunPage,
+  OpenClawCronRunStatus,
+} from './OpenClawCronRunClient';
+export type { OpenClawCronStatus } from './OpenClawCronStatusClient';
+export type {
+  OpenClawCronManagedJob,
+  OpenClawCronMutationPatch,
+} from './OpenClawCronManagementClient';
+export type {
+  OpenClawApproval,
+  OpenClawApprovalDecision,
+  OpenClawApprovalListResult,
+  OpenClawApprovalKind,
+  OpenClawApprovalAvailability,
+  OpenClawApprovalHistoryAvailability,
+  OpenClawApprovalGetResult,
+  OpenClawApprovalHistoryRequest,
+  OpenClawApprovalHistoryResult,
+  OpenClawApprovalResolveResult,
+  OpenClawApprovalSnapshot,
+  OpenClawApprovalStatus,
+  OpenClawApprovalTerminalReason,
+  OpenClawApprovalPresentation,
+  OpenClawApprovalExecPresentation,
+  OpenClawApprovalPluginPresentation,
+  OpenClawApprovalSystemAgentPresentation,
+} from './OpenClawApprovalClient';
+export {
+  GatewayConnectionFenceError,
+  GatewayDisconnectedError,
+  GatewayRequestAbortedError,
+  GatewayRpcError,
+} from './Connection';
 
 export class GatewaySessionMutationRejectedError extends Error {
   readonly code = 'SESSION_MUTATION_REJECTED';
@@ -124,6 +286,18 @@ export class GatewaySessionMutationRejectedError extends Error {
     super(message);
     this.name = 'GatewaySessionMutationRejectedError';
   }
+}
+
+/**
+ * A remote Stop is permitted only after its local Task checkpoint is durable.
+ * The caller owns both operations; this helper only preserves their ordering.
+ */
+export async function abortAfterTaskCheckpoint<T>(
+  checkpointStop: () => Promise<void>,
+  abort: () => Promise<T>,
+): Promise<T> {
+  await checkpointStop();
+  return abort();
 }
 
 export interface GatewayAgentCreateParams {
@@ -142,6 +316,47 @@ export interface GatewayChatSendDeliveryUncertain {
 interface GatewayChatSendDeliveryObserved {
   deliveryObserved: true;
   runId: string;
+}
+
+export interface GatewayChatMessageDispatchInput {
+  message: string;
+  attachments?: readonly unknown[];
+  sessionKey: string;
+  clientMessageId: string;
+  sessionId?: string;
+  expectedLeafEntryId?: string | null;
+  delivery?: 'send' | 'steer';
+}
+
+export interface GatewayChatDispatchTransport {
+  isConnected(): boolean;
+  request(method: string, params: GatewayRequestParams): Promise<unknown>;
+}
+
+export async function dispatchGatewayChatMessage(
+  transport: GatewayChatDispatchTransport,
+  steerClient: Pick<OpenClawSessionSteerClient, 'steer'>,
+  input: GatewayChatMessageDispatchInput,
+): Promise<unknown> {
+  if (!transport.isConnected()) throw new GatewayDisconnectedError();
+  if (input.delivery === 'steer') {
+    return steerClient.steer({
+      key: input.sessionKey,
+      message: input.message,
+      idempotencyKey: input.clientMessageId,
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    });
+  }
+  return transport.request('chat.send', {
+    sessionKey: input.sessionKey,
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.expectedLeafEntryId !== undefined
+      ? { expectedLeafEntryId: input.expectedLeafEntryId }
+      : {}),
+    message: input.message,
+    idempotencyKey: input.clientMessageId,
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+  });
 }
 
 export function isGatewayChatSendDeliveryUncertain(
@@ -177,6 +392,34 @@ export interface GatewayHistoryOptions {
   maxChars?: number;
 }
 
+function historyTaskObservation(response: unknown): {
+  sessionId: string | null;
+  hasActiveRun: boolean;
+  activeRunIds: string[];
+} | null {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return null;
+  const record = response as Record<string, unknown>;
+  const sessionInfo = record.sessionInfo;
+  if (!sessionInfo || typeof sessionInfo !== 'object' || Array.isArray(sessionInfo)) return null;
+  const info = sessionInfo as Record<string, unknown>;
+  if (typeof info.hasActiveRun !== 'boolean') return null;
+  const activeRunIds = Array.isArray(info.activeRunIds)
+    ? info.activeRunIds.flatMap((value) => typeof value === 'string' && value.trim() ? [value.trim()] : [])
+    : [];
+  const inFlight = record.inFlightRun;
+  if (inFlight && typeof inFlight === 'object' && !Array.isArray(inFlight)) {
+    const runId = (inFlight as Record<string, unknown>).runId;
+    if (typeof runId === 'string' && runId.trim() && !activeRunIds.includes(runId.trim())) {
+      activeRunIds.push(runId.trim());
+    }
+  }
+  return {
+    sessionId: typeof record.sessionId === 'string' && record.sessionId.trim() ? record.sessionId.trim() : null,
+    hasActiveRun: info.hasActiveRun,
+    activeRunIds,
+  };
+}
+
 export interface GatewaySessionDefaults extends Record<string, unknown> {
   modelProvider?: unknown;
   model?: unknown;
@@ -208,30 +451,44 @@ export interface GatewayMessageResponse extends Record<string, unknown> {
 const connection = new GatewayConnection();
 const chatHandler = new ChatHandler(connection);
 const transcriptSubscription = new OpenClawSessionTranscriptSubscription(connection);
+export const openClawSessionObserverClient = new OpenClawSessionObserverClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+const sessionViewerPresence = new OpenClawSessionViewerPresenceClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+const sessionDiff = new OpenClawSessionDiffClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+const auditClient = new OpenClawAuditClient(
+  (method, params) => connection.request(method, params),
+);
 const SESSION_ARTIFACT_CLEANUP_TIMEOUT_MS = 5_000;
 const RUN_STATE_LOOKUP_TIMEOUT_MS = 5_000;
-
-interface GatewayMessageIdentity {
-  clientMessageId?: string;
-  sessionId?: string;
-}
-
-type GatewayMessageMethod = 'chat.send' | 'sessions.steer';
-
-function gatewayAttachmentPayload(attachments?: GatewayAttachment[]) {
-  return attachments?.map((att) => {
-    let rawBase64 = att.content || '';
-    if (rawBase64.startsWith('data:')) {
-      rawBase64 = rawBase64.replace(/^data:[^;]+;base64,/, '');
-    }
-    return {
-      type: att.mimeType?.startsWith('image/') ? 'image' : 'file',
-      mimeType: att.mimeType,
-      content: rawBase64,
-      fileName: att.fileName || 'file',
-    };
-  });
-}
 
 export const voiceWakeGatewayClient = new VoiceWakeGatewayClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
@@ -246,7 +503,11 @@ export const voiceWakeGatewayClient = new VoiceWakeGatewayClient({
   subscribe: subscribeVoiceWakeGatewayEvents,
 });
 
-export const talkGatewayClient = new TalkGatewayClient({
+export const openClawTtsClient = new OpenClawTtsClient(
+  (method, params, options) => connection.request(method, params, options),
+);
+
+export const openClawTtsStatusClient = new OpenClawTtsStatusClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
   isConnectionCurrent: (connectionId) => (
     connection.isConnected() && connection.getAttestedConnectionId() === connectionId
@@ -256,7 +517,159 @@ export const talkGatewayClient = new TalkGatewayClient({
     params,
     expectedConnectionId,
   ),
+});
+
+export const openClawTtsPreferencesClient = new OpenClawTtsPreferencesClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawDiagnosticStabilityClient = new OpenClawDiagnosticStabilityClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawHooksStatusClient = new OpenClawHooksStatusClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawSessionCompanionClient = new OpenClawSessionCompanionClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => connection.isConnected() && connection.getAttestedConnectionId() === connectionId,
+  requestFenced: (method, params, connectionId) => connection.requestFenced(method, params, connectionId),
+});
+
+export const openClawSessionUsageLogsClient = new OpenClawSessionUsageLogsClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawModelAuthStatusClient = new OpenClawModelAuthStatusClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawProviderUsageClient = new OpenClawProviderUsageClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawCommandsClient = new OpenClawCommandsClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawAgentIdentityClient = new OpenClawAgentIdentityClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawAgentFilesClient = new OpenClawAgentFilesClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawAgentsWorkspaceClient = new OpenClawAgentsWorkspaceClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export const openClawAgentWaitClient = new OpenClawAgentWaitClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+    { timeoutMs: RUN_STATE_LOOKUP_TIMEOUT_MS },
+  ),
+});
+
+export const talkGatewayClient = new TalkGatewayClient({
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId, options) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+    options,
+  ),
   subscribe: subscribeTalkGatewayEvents,
+  subscribeRelay: subscribeTalkRelayEvents,
 });
 
 export { GatewayAgentDisplayNameUpdateError };
@@ -312,11 +725,13 @@ export interface PrivilegedRequester {
   retryPairingNow(): void;
 }
 
-interface PrivilegedRequesterOptions {
+export interface PrivilegedRequesterOptions {
+  scopes?: readonly GatewayOperatorScope[];
   pairingRetryMs?: number;
   pairingTimeoutMs?: number;
-  scopes?: readonly GatewayOperatorScope[];
 }
+
+const DEFAULT_PRIVILEGED_OPERATOR_SCOPES: readonly GatewayOperatorScope[] = ['operator.admin'];
 
 type PrivilegedAuthorizationIssueListener = (issue: GatewayAuthorizationIssue) => void;
 const privilegedAuthorizationIssueListeners = new Set<PrivilegedAuthorizationIssueListener>();
@@ -425,7 +840,7 @@ function errorValue(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
 }
 
-/** Build a serialized admin lane whose elevated socket exists for one RPC only. */
+/** Build a serialized transient scope lane whose elevated socket exists for one RPC only. */
 export function createPrivilegedRequester(
   source: PrivilegedSourceConnection,
   createConnection: PrivilegedConnectionFactory = (options) => new GatewayConnection(options),
@@ -433,6 +848,10 @@ export function createPrivilegedRequester(
 ): PrivilegedRequester {
   let lane: Promise<void> = Promise.resolve();
   let cancelActivePairingRetry: (() => void) | null = null;
+  const scopes = [...new Set(options.scopes ?? DEFAULT_PRIVILEGED_OPERATOR_SCOPES)];
+  if (scopes.length === 0) {
+    throw new Error('A transient Gateway requester requires at least one operator scope');
+  }
   let retryActivePairingNow: (() => void) | null = null;
   const pairingRetryMs = options.pairingRetryMs ?? 5_000;
   const pairingTimeoutMs = options.pairingTimeoutMs ?? 5 * 60_000;
@@ -454,10 +873,7 @@ export function createPrivilegedRequester(
     registerCancel: (cancel: () => void) => void,
     onConnected: () => void,
   ): Promise<AttemptResult<T>> => {
-    const transient = createConnection({
-      scopes: options.scopes?.length ? options.scopes : ['operator.admin'],
-      transient: true,
-    });
+    const transient = createConnection({ scopes, transient: true });
     return new Promise<AttemptResult<T>>((resolve) => {
       let settled = false;
       let requestStarted = false;
@@ -660,13 +1076,42 @@ export function createPrivilegedRequester(
   return request;
 }
 
+const APPROVAL_OPERATOR_SCOPES: readonly GatewayOperatorScope[] = ['operator.approvals'];
+
+/** Build a transient requester for the official OpenClaw approval scope only. */
+export function createApprovalRequester(
+  source: PrivilegedSourceConnection,
+  createConnection: PrivilegedConnectionFactory = (options) => new GatewayConnection(options),
+  options: Omit<PrivilegedRequesterOptions, 'scopes'> = {},
+): PrivilegedRequester {
+  return createPrivilegedRequester(source, createConnection, {
+    ...options,
+    scopes: APPROVAL_OPERATOR_SCOPES,
+  });
+}
+
 const requestPrivileged = createPrivilegedRequester(connection);
-const requestApprovals = createPrivilegedRequester(connection, undefined, {
-  scopes: ['operator.approvals'],
+const requestApprovals = createApprovalRequester(connection);
+const sessionFiles = new OpenClawSessionFilesClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+  requestPrivileged: (method, params, expectedConnectionId) => {
+    if (!connection.isConnected() || connection.getAttestedConnectionId() !== expectedConnectionId) {
+      throw new GatewayConnectionFenceError(expectedConnectionId, connection.getAttestedConnectionId());
+    }
+    return requestPrivileged(method, params);
+  },
 });
-const approvalClient = new OpenClawApprovalClient({
-  requestPrivileged: (method, params) => requestApprovals(method, params),
-});
+const approvalClient = new OpenClawApprovalClient(
+  (method, params) => requestApprovals(method, params),
+);
 const approvalEventSubscription = new GatewayApprovalEventSubscription({
   source: connection,
 });
@@ -690,17 +1135,65 @@ const sessionSettings = new SessionSettingsClient({
 });
 const sessionOrganization = new OpenClawSessionOrganizationClient({
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
-  requestPrivileged: (method, params) => requestPrivileged(method, params),
+  request: (method, params) => connection.request(method, params),
 });
+const sessionGroups = new OpenClawSessionGroupsClient(
+  (method, params) => connection.request(method, params),
+);
 const sessionLifecycle = new OpenClawSessionLifecycleClient(
   (method, params) => connection.request(method, params),
 );
-const sessionCompaction = new SessionCompactionClient({
+const taskLedger = new OpenClawTaskLedgerClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+const cronRunClient = new OpenClawCronRunClient(
+  (method, params) => connection.request(method, params),
+);
+const cronStatusClient = new OpenClawCronStatusClient(
+  (method, params) => connection.request(method, params),
+);
+const cronManagementClient = new OpenClawCronManagementClient(
+  (method, params) => requestPrivileged(method, { ...params }),
+);
+const sessionSteer = new OpenClawSessionSteerClient(
+  (method, params) => connection.request(method, params),
+);
+const sessionAbort = new OpenClawSessionAbortClient(
+  (method, params) => connection.request(method, params),
+);
+const sessionCompaction = new OpenClawSessionCompactionClient(
+  (method, params) => requestPrivileged(method, params),
+);
+const sessionCompactionCheckpoints = new OpenClawSessionCompactionCheckpointsClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+const sessionCompactionOperations = new SessionCompactionClient({
   request: (method, params) => connection.request(method, params),
   requestPrivileged: (method, params) => requestPrivileged(method, params),
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
 });
-const sessionTranscriptHistory = new SessionTranscriptHistoryClient({
+const sessionBranches = new OpenClawSessionBranchesClient({
+  request: (method, params) => connection.request(method, params),
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
+  runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
+});
+const sessionMessageCut = new OpenClawSessionMessageCutClient({
   request: (method, params) => connection.request(method, params),
   requestPrivileged: (method, params) => requestPrivileged(method, params),
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
@@ -736,74 +1229,41 @@ const sessionRunReconciler = new OpenClawSessionRunReconciler({
   },
 });
 
+const pendingRunWaitReconciler = new OpenClawPendingRunWaitReconciler({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  checkRunForConnection: (runId, connectionId) => openClawAgentWaitClient.checkForConnection(runId, connectionId),
+  captureObservation: (sessionKey) => chatHandler.captureSessionRunObservation(sessionKey),
+  isObservationCurrent: (observation) => chatHandler.isSessionRunObservationCurrent(observation),
+  applyTerminal: (sessionKey, runId, observation) => chatHandler.reconcilePendingRunWaitTerminal(
+    sessionKey,
+    runId,
+    observation,
+  ),
+  onError: (sessionKey, error) => {
+    debugWarn('gateway', `[gateway] Could not resolve uncertain run ${sessionKey} through agent.wait:`, error);
+  },
+});
+
+async function reconcileOneChatSessionRun(sessionKey: string): Promise<void> {
+  const settledByExactRun = await pendingRunWaitReconciler.reconcile(sessionKey);
+  if (!settledByExactRun) await sessionRunReconciler.reconcile(sessionKey);
+}
+
 // Collaboration plugin streams are refresh hints, not chat/agent activity.
 // Route them through the typed bridge before the generic ChatHandler path.
 connection.onEvent = (msg: unknown) => routeTalkGatewayEvent(
   msg,
   (talkRemainder) => routeVoiceWakeGatewayEvent(
     talkRemainder,
-    (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+    (voiceWakeRemainder) => routeOpenClawSessionObserverEvent(
+      voiceWakeRemainder,
+      (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+    ),
   ),
 );
-
-async function sendGatewayMessage(
-  method: GatewayMessageMethod,
-  message: string,
-  attachments: GatewayAttachment[] | undefined,
-  sessionKey: string,
-  identity: GatewayMessageIdentity = {},
-): Promise<unknown> {
-  const gwAttachments = gatewayAttachmentPayload(attachments);
-  const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
-  const steerParams = method === 'sessions.steer'
-    ? buildSessionsSteerParams(sessionKey, message, {
-      attachments: gwAttachments,
-      idempotencyKey: clientMessageId,
-    })
-    : undefined;
-  chatHandler.beginPendingSend(sessionKey, clientMessageId);
-  let requestDispatched = false;
-  try {
-    const result = await sessionCommandCoordinator.runMutation(sessionKey, async () => {
-      if (!connection.isConnected()) throw new GatewayDisconnectedError();
-      await connection.ensureReasoningStream(sessionKey);
-      if (!connection.isConnected()) throw new GatewayDisconnectedError();
-      requestDispatched = true;
-      if (method === 'sessions.steer') {
-        return connection.request(method, steerParams);
-      }
-      return connection.request(method, {
-        sessionKey,
-        ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
-        message,
-        idempotencyKey: clientMessageId,
-        ...(gwAttachments?.length ? { attachments: gwAttachments } : {}),
-      });
-    });
-    const acknowledgement = chatHandler.reconcileSendAcknowledgement(
-      sessionKey,
-      clientMessageId,
-      result,
-    );
-    if (acknowledgement !== 'unknown') return result;
-    if (chatHandler.markPendingSendUncertain(sessionKey, clientMessageId)) {
-      return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
-    }
-    return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
-  } catch (error) {
-    if (chatHandler.isSendObserved(sessionKey, clientMessageId)) {
-      return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
-    }
-    if (requestDispatched && !(error instanceof GatewayRpcError)) {
-      if (chatHandler.markPendingSendUncertain(sessionKey, clientMessageId)) {
-        return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
-      }
-      return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
-    }
-    chatHandler.failPendingSend(sessionKey, clientMessageId);
-    throw error;
-  }
-}
 
 // ── Public API (matches original gateway.ts exactly) ──
 export const gateway = {
@@ -811,10 +1271,6 @@ export const gateway = {
   setCallbacks(cb: GatewayCallbacks) { connection.setCallbacks(cb); },
   /** Replays the current socket state after a new UI host takes ownership. */
   refreshConnectionStatus() { connection.emitStatus(); },
-  getHelloObservation() { return connection.getHelloObservation(); },
-  subscribeHello(listener: Parameters<typeof connection.subscribeHello>[0]) {
-    return connection.subscribeHello(listener);
-  },
 
   // Live chat projection
   invalidateChatSession(sessionKey: string) { chatHandler.invalidateSession(sessionKey); },
@@ -833,7 +1289,7 @@ export const gateway = {
       observations,
     );
     if (unresolved.length > 0) {
-      void Promise.all(unresolved.map((sessionKey) => sessionRunReconciler.reconcile(sessionKey)));
+      void Promise.all(unresolved.map((sessionKey) => reconcileOneChatSessionRun(sessionKey)));
     }
   },
   observeActiveChatSessionRuns(sessions: unknown[]) { chatHandler.observeActiveSessionRuns(sessions); },
@@ -841,7 +1297,7 @@ export const gateway = {
     return chatHandler.captureSessionRunObservation(sessionKey);
   },
   reconcileChatSessionRun(sessionKey: string) {
-    return sessionRunReconciler.reconcile(sessionKey);
+    return reconcileOneChatSessionRun(sessionKey);
   },
   reconcileChatHistoryRunState(
     sessionKey: string,
@@ -849,6 +1305,11 @@ export const gateway = {
     observation?: ChatSessionRunObservation,
   ) {
     chatHandler.reconcileHistoryRunState(sessionKey, response, observation);
+    const history = historyTaskObservation(response);
+    if (!history) return;
+    void taskExecutionCoordinator.reconcileHistory({ sessionKey, ...history }).catch((error) => {
+      taskExecutionCoordinator.reportPersistenceFailure('history reconciliation', error);
+    });
   },
   async synchronizeSessionTranscript(target: OpenClawTranscriptTarget | null) {
     if (!connection.isConnected()) return;
@@ -856,38 +1317,125 @@ export const gateway = {
   },
   resetSessionTranscriptTransport() { transcriptSubscription.resetTransport(); },
   forgetSessionTranscript() { transcriptSubscription.forget(); },
+  async setVisibleSessionKeys(sessionKeys: readonly string[]) {
+    return sessionViewerPresence.setVisibleSessions(sessionKeys);
+  },
+  forgetSessionViewerPresence() { sessionViewerPresence.resetTransport(); },
 
   // Connection
   connect(url: string, token: string, deviceToken = '') { connection.connect(url, token, deviceToken); },
   disconnect() {
     approvalEventSubscription.stop();
     transcriptSubscription.resetTransport();
+    sessionViewerPresence.resetTransport();
+    openClawSessionObserverClient.resetTransport();
+    openClawSessionObserverStream.clear();
     connection.disconnect();
   },
   acquireGatewayApprovalEvents() { return acquireGatewayApprovalEvents(); },
   getStatus() { return connection.getStatus(); },
   getLastError() { return connection.getLastError(); },
+  getHelloObservation() { return connection.getHelloObservation(); },
+  subscribeHello(listener: (observation: GatewayHelloObservation | null) => void) {
+    return connection.subscribeHello(listener);
+  },
   captureConnectionId() { return connection.getAttestedConnectionId(); },
   isConnectionCurrent(connectionId: string) {
     return connection.isConnected() && connection.getAttestedConnectionId() === connectionId;
   },
 
-  // Messaging
+  // 消息发送
   async sendMessage(
     message: string,
-    attachments?: GatewayAttachment[],
-    sessionKey = 'agent:main:main',
-    identity: GatewayMessageIdentity = {},
+    attachments: GatewayAttachment[] | undefined,
+    sessionKey: string,
+    identity: {
+      clientMessageId?: string;
+      sessionId?: string;
+      expectedLeafEntryId?: string | null;
+      delivery?: 'send' | 'steer';
+      supersededRunId?: string;
+    } = {},
   ) {
-    return sendGatewayMessage('chat.send', message, attachments, sessionKey, identity);
-  },
-  async steerMessage(
-    message: string,
-    attachments?: GatewayAttachment[],
-    sessionKey = 'agent:main:main',
-    identity: Pick<GatewayMessageIdentity, 'clientMessageId'> = {},
-  ) {
-    return sendGatewayMessage('sessions.steer', message, attachments, sessionKey, identity);
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    const gwAttachments = attachments?.map((att) => {
+      let rawBase64 = att.content || '';
+      if (rawBase64.startsWith('data:')) {
+        rawBase64 = rawBase64.replace(/^data:[^;]+;base64,/, '');
+      }
+      return {
+        type: att.mimeType?.startsWith('image/') ? 'image' : 'file',
+        mimeType: att.mimeType,
+        content: rawBase64,
+        ...(att.fileName ? { fileName: att.fileName } : {}),
+      };
+    });
+
+    const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
+    const isSteer = identity.delivery === 'steer';
+    chatHandler.beginPendingSend(targetSessionKey, clientMessageId);
+    let requestDispatched = false;
+    try {
+      const dispatch = async () => {
+        // 渲染层拥有唯一可见、可取消的重试队列，传输层不得另建 UI 无法检查的队列。
+        requestDispatched = true;
+        return dispatchGatewayChatMessage(connection, sessionSteer, {
+          message,
+          attachments: gwAttachments,
+          sessionKey: targetSessionKey,
+          clientMessageId,
+          sessionId: identity.sessionId,
+          expectedLeafEntryId: identity.expectedLeafEntryId,
+          delivery: isSteer ? 'steer' : 'send',
+        });
+      };
+      // sessions.steer 自身即为 OpenClaw 的中断并发送控制操作，不能等待长时间 chat.send 请求。
+      const dispatched = isSteer
+        ? await dispatch()
+        : await sessionCommandCoordinator.runMutation(targetSessionKey, dispatch);
+      const result = isSteer
+        ? (dispatched as Awaited<ReturnType<OpenClawSessionSteerClient['steer']>>).response
+        : dispatched;
+      const acknowledgement = chatHandler.reconcileSendAcknowledgement(
+        targetSessionKey,
+        clientMessageId,
+        result,
+      );
+      if (
+        isSteer
+        && identity.supersededRunId
+        && (dispatched as Awaited<ReturnType<OpenClawSessionSteerClient['steer']>>).interruptedActiveRun === true
+      ) {
+        await taskExecutionCoordinator.settleRun({
+          sessionKey: targetSessionKey,
+          sessionId: identity.sessionId,
+          runId: identity.supersededRunId,
+          terminalReason: 'aborted',
+        }).catch((error) => taskExecutionCoordinator.reportPersistenceFailure('settle steered Run checkpoint', error));
+      }
+      if (acknowledgement !== 'unknown') return result;
+      if (chatHandler.markPendingSendUncertain(targetSessionKey, clientMessageId)) {
+        return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
+      }
+      return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
+    } catch (error) {
+      // sessions.steer 的原生准入可能已经尝试中断活动 Run 后才失败。
+      // 单独的 RPC 错误无法区分该情况与请求被拒绝，故交由带围栏的历史解析器确认。
+      if (isSteer && requestDispatched) {
+        void sessionRunReconciler.reconcile(targetSessionKey);
+      }
+      if (chatHandler.isSendObserved(targetSessionKey, clientMessageId)) {
+        return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
+      }
+      if (requestDispatched && !(error instanceof GatewayRpcError)) {
+        if (chatHandler.markPendingSendUncertain(targetSessionKey, clientMessageId)) {
+          return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
+        }
+        return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
+      }
+      chatHandler.failPendingSend(targetSessionKey, clientMessageId);
+      throw error;
+    }
   },
 
   // Sessions & Agents
@@ -903,11 +1451,13 @@ export const gateway = {
     return sessionLifecycle.create(input);
   },
   async describeSession(sessionKey: string) {
-    return connection.request('sessions.describe', { key: sessionKey });
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    return connection.request('sessions.describe', { key: targetSessionKey });
   },
-  async getEffectiveTools(sessionKey = 'agent:main:main', agentId?: string): Promise<ToolsEffectiveResult> {
+  async getEffectiveTools(sessionKey: string, agentId?: string): Promise<ToolsEffectiveResult> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return parseToolsEffectiveResult(
-      await connection.request('tools.effective', buildToolsEffectiveParams(sessionKey, agentId)),
+      await connection.request('tools.effective', buildToolsEffectiveParams(targetSessionKey, agentId)),
     );
   },
   async invokeTool(params: ToolsInvokeParams): Promise<ToolsInvokeResult> {
@@ -921,125 +1471,135 @@ export const gateway = {
     );
   },
   async getSessionPreview(
-    sessionKey = 'agent:main:main',
+    sessionKey: string,
     options: Pick<SessionsPreviewParams, 'limit' | 'maxChars'> = {},
   ): Promise<SessionPreview> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     const result = parseSessionsPreviewResult(
-      await connection.request('sessions.preview', buildSessionsPreviewParams([sessionKey], options)),
+      await connection.request('sessions.preview', buildSessionsPreviewParams([targetSessionKey], options)),
     );
-    return requireSessionPreview(result, sessionKey);
+    return requireSessionPreview(result, targetSessionKey);
   },
-  async resolveSessionKey(sessionKey = 'agent:main:main', agentId?: string): Promise<SessionsResolveResult> {
+  async resolveSessionKey(sessionKey: string, agentId?: string): Promise<SessionsResolveResult> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return parseSessionsResolveResult(
       await connection.request(
         'sessions.resolve',
-        buildSessionsResolveParams(sessionKey, { agentId, allowMissing: true }),
+        buildSessionsResolveParams(targetSessionKey, { agentId, allowMissing: true }),
       ),
     );
-  },
-  async listSessionCompactionCheckpoints(sessionKey = 'agent:main:main', agentId?: string): Promise<SessionCompactionCheckpoint[]> {
-    const result = parseSessionsCompactionListResult(
-      await connection.request('sessions.compaction.list', buildSessionsCompactionListParams(sessionKey, agentId)),
-      sessionKey,
-    );
-    return result.checkpoints;
-  },
-  async listSessionBranches(sessionKey: string, agentId?: string) {
-    return sessionTranscriptHistory.listBranches(sessionKey, agentId);
-  },
-  async forkSessionAtMessage(sessionKey: string, entryId: string, agentId?: string) {
-    return sessionTranscriptHistory.forkAtMessage(sessionKey, entryId, agentId);
-  },
-  async rewindSessionToMessage(sessionKey: string, entryId: string, agentId?: string) {
-    const result = await sessionTranscriptHistory.rewindToMessage(sessionKey, entryId, agentId);
-    gateway.invalidateChatSession(sessionKey);
-    return result;
-  },
-  async switchSessionBranch(sessionKey: string, leafEntryId: string, agentId?: string) {
-    await sessionTranscriptHistory.switchBranch(sessionKey, leafEntryId, agentId);
-    gateway.invalidateChatSession(sessionKey);
   },
   async getSessionCompactionCheckpoint(
     sessionKey: string,
     checkpointId: string,
     agentId?: string,
   ) {
-    return sessionCompaction.get(sessionKey, checkpointId, agentId);
+    return sessionCompactionOperations.get(sessionKey, checkpointId, agentId);
   },
   async branchSessionCompactionCheckpoint(
     sessionKey: string,
     checkpointId: string,
     agentId?: string,
   ) {
-    return sessionCompaction.branch(sessionKey, checkpointId, agentId);
+    return sessionCompactionOperations.branch(sessionKey, checkpointId, agentId);
   },
   async restoreSessionCompactionCheckpoint(
     sessionKey: string,
     checkpointId: string,
     agentId?: string,
   ) {
-    return sessionCompaction.restore(sessionKey, checkpointId, agentId);
+    return sessionCompactionOperations.restore(sessionKey, checkpointId, agentId);
   },
-  async listSessionArtifacts(sessionKey = 'agent:main:main', agentId?: string): Promise<ArtifactSummary[]> {
+  async listSessionBranches(sessionKey: string, agentId?: string) {
+    return sessionBranches.list(sessionKey, agentId);
+  },
+  async switchSessionBranch(sessionKey: string, leafEntryId: string, agentId?: string) {
+    return sessionBranches.switch(sessionKey, leafEntryId, agentId);
+  },
+  async rewindSessionAtMessage(sessionKey: string, entryId: string, agentId?: string) {
+    return sessionMessageCut.rewind(sessionKey, entryId, agentId);
+  },
+  async forkSessionAtMessage(sessionKey: string, entryId: string, agentId?: string) {
+    return sessionMessageCut.fork(sessionKey, entryId, agentId);
+  },
+  async getSessionDiff(sessionKey: string, agentId?: string) {
+    return sessionDiff.get(sessionKey, agentId);
+  },
+  async listSessionFiles(
+    sessionKey: string,
+    options: { agentId?: string; path?: string; search?: string } = {},
+  ) {
+    return sessionFiles.list(sessionKey, options);
+  },
+  async getSessionFile(sessionKey: string, path: string, agentId?: string) {
+    return sessionFiles.get(sessionKey, path, agentId);
+  },
+  async setSessionFile(
+    sessionKey: string,
+    path: string,
+    content: string,
+    expectedHash: string,
+    agentId?: string,
+    expectedConnectionId?: string,
+  ) {
+    return sessionFiles.set(sessionKey, path, content, expectedHash, agentId, expectedConnectionId);
+  },
+  async listAgentWorkspace(input: OpenClawAgentsWorkspaceListInput) {
+    return openClawAgentsWorkspaceClient.list(input);
+  },
+  async getAgentWorkspaceFile(agentId: string, path: string) {
+    return openClawAgentsWorkspaceClient.get(agentId, path);
+  },
+  async listAgentBootstrapFiles(agentId: string) {
+    return openClawAgentFilesClient.list(agentId);
+  },
+  async getAgentBootstrapFile(agentId: string, name: string) {
+    return openClawAgentFilesClient.get(agentId, name);
+  },
+  async listSessionArtifacts(sessionKey: string, agentId?: string): Promise<ArtifactSummary[]> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return parseArtifactsListResult(
-      await connection.request('artifacts.list', buildArtifactsListParams({ sessionKey, agentId })),
-      sessionKey,
+      await connection.request(
+        'artifacts.list',
+        buildArtifactsListParams({ sessionKey: targetSessionKey, agentId }),
+      ),
+      targetSessionKey,
     ).artifacts;
   },
   async getSessionArtifact(
     artifactId: string,
-    sessionKey = 'agent:main:main',
+    sessionKey: string,
     agentId?: string,
   ): Promise<ArtifactSummary> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return parseArtifactGetResult(
-      await connection.request('artifacts.get', buildArtifactsGetParams(artifactId, { sessionKey, agentId })),
+      await connection.request(
+        'artifacts.get',
+        buildArtifactsGetParams(artifactId, { sessionKey: targetSessionKey, agentId }),
+      ),
       artifactId,
-      sessionKey,
+      targetSessionKey,
     ).artifact;
   },
   async downloadSessionArtifact(
     artifactId: string,
-    sessionKey = 'agent:main:main',
+    sessionKey: string,
     agentId?: string,
   ): Promise<ArtifactDownloadResult> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return parseArtifactDownloadResult(
       await connection.request(
         'artifacts.download',
-        buildArtifactsDownloadParams(artifactId, { sessionKey, agentId }),
+        buildArtifactsDownloadParams(artifactId, { sessionKey: targetSessionKey, agentId }),
       ),
       artifactId,
-      sessionKey,
+      targetSessionKey,
     );
   },
   async getCronJob(jobId: string): Promise<OpenClawCronJobDetails> {
     return getCronJob(
       (method, params) => connection.request(method, params),
       jobId,
-    );
-  },
-  async listCronRuns(params: CronRunsParams): Promise<CronRunsPage> {
-    return listCronRuns(
-      (method, requestParams) => connection.request(method, requestParams),
-      params,
-    );
-  },
-  async enqueueCronRun(jobId: string, mode: 'due' | 'force' = 'force'): Promise<CronRunEnqueueResult> {
-    return enqueueCronRun(
-      (method, params) => connection.request(method, params),
-      jobId,
-      mode,
-    );
-  },
-  async waitForCronRun(
-    jobId: string,
-    runId: string,
-    options?: CronRunWaitOptions,
-  ): Promise<CronRunLogEntry> {
-    return waitForCronRun(
-      (method, params) => connection.request(method, params),
-      jobId,
-      runId,
-      options,
     );
   },
   async getMemoryStatus(agentId?: string, deep = false): Promise<MemoryStatusResult> {
@@ -1052,16 +1612,35 @@ export const gateway = {
       await connection.request('doctor.memory.remHarness', buildMemoryRemHarnessParams(options)),
     );
   },
-  async listGatewayApprovals(): Promise<ApprovalRecord[]> {
-    return approvalClient.list();
-  },
-  async resolveGatewayApproval(
-    record: ApprovalRecord,
-    decision: ApprovalDecision,
-  ): Promise<ApprovalResolveResult> {
-    return approvalClient.resolve(record, decision);
-  },
   async getAgents() { return connection.request('agents.list', {}); },
+  async listCommands(input: OpenClawCommandsListInput = {}) { return openClawCommandsClient.list(input); },
+  async listTasks(input: OpenClawTaskListInput = {}) { return taskLedger.list(input); },
+  async getTask(taskId: string) { return taskLedger.get(taskId); },
+  async cancelTask(taskId: string, reason?: string) { return taskLedger.cancel(taskId, reason); },
+  async retryTaskDelivery(taskIds: readonly string[]) { return taskLedger.retry(taskIds); },
+  async dismissTaskDelivery(taskIds: readonly string[]) { return taskLedger.dismiss(taskIds); },
+  async enqueueCronRun(jobId: string) { return cronRunClient.enqueue(jobId); },
+  async listCronRuns(jobId: string, runId?: string) { return cronRunClient.list(jobId, runId); },
+  async findTerminalCronRun(jobId: string, runId: string) { return cronRunClient.findTerminal(jobId, runId); },
+  async getCronStatus() { return cronStatusClient.get(); },
+  async addCronAgentTurn(params: CronAgentTurnAddParams): Promise<OpenClawCronManagedJob> {
+    return cronManagementClient.addAgentTurn(params);
+  },
+  async updateCronJob(jobId: string, patch: OpenClawCronMutationPatch): Promise<OpenClawCronManagedJob> {
+    return cronManagementClient.update(jobId, patch);
+  },
+  async removeCronJob(jobId: string): Promise<void> {
+    return cronManagementClient.remove(jobId);
+  },
+  async listAuditEvents(input: OpenClawAuditListInput = {}) { return auditClient.list(input); },
+  async listPendingApprovals() { return approvalClient.list(); },
+  async listApprovalHistory(input: OpenClawApprovalHistoryRequest = {}) {
+    return approvalClient.history(input);
+  },
+  async getApproval(id: string) { return approvalClient.get(id); },
+  async resolveApproval(approval: OpenClawApproval, decision: OpenClawApprovalDecision) {
+    return approvalClient.resolve(approval, decision);
+  },
   async createAgent(agent: GatewayAgentCreatePayload) { return agentManagement.create(agent); },
   async updateAgent(agentId: string, patch: GatewayAgentUpdateParams) {
     return requestPrivileged<{ ok: true; agentId: string }>('agents.update', { agentId, ...patch });
@@ -1075,8 +1654,9 @@ export const gateway = {
     timeoutMs = 15_000,
     options: GatewayHistoryOptions = {},
   ): Promise<GatewayHistoryResponse> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return connection.request<GatewayHistoryResponse>('chat.history', {
-      sessionKey,
+      sessionKey: targetSessionKey,
       limit,
       ...(options.offset !== undefined ? { offset: options.offset } : {}),
       ...(options.maxChars !== undefined ? { maxChars: options.maxChars } : {}),
@@ -1087,56 +1667,72 @@ export const gateway = {
     messageId: string,
     agentId?: string,
   ): Promise<GatewayMessageResponse> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return connection.request<GatewayMessageResponse>('chat.message.get', {
-      sessionKey,
+      sessionKey: targetSessionKey,
       messageId,
       ...(agentId ? { agentId } : {}),
     });
   },
-  async abortChat(sessionKey = 'agent:main:main') {
-    // Abort is a control-plane request. Waiting behind a long-running
-    // chat.send request makes it impossible to stop a response whose send
-    // acknowledgement was lost or delayed.
-    const runId = chatHandler.abortRunId(sessionKey);
-    const result = await connection.request('chat.abort', {
-      sessionKey,
-      ...(runId ? { runId } : {}),
-    });
-    return chatHandler.reconcileAbortAcknowledgement(sessionKey, result);
-  },
-  async compactSession(sessionKey = 'agent:main:main') {
-    return sessionCommandCoordinator.runMutation(
-      sessionKey,
-      async () => parseSessionsCompactResult(
-        await connection.request('sessions.compact', buildSessionsCompactParams(sessionKey)),
-        sessionKey,
-      ),
+  async abortChat(sessionKey: string, sessionId?: string) {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    // 中止属于控制面请求。若等待长时间运行的 chat.send 请求，会无法停止
+    // 发送确认已丢失或延迟的响应。
+    return abortAfterTaskCheckpoint(
+      async () => {
+        try {
+          await taskExecutionCoordinator.requestStop(targetSessionKey, sessionId);
+        } catch (error) {
+          taskExecutionCoordinator.reportPersistenceFailure('persist Stop checkpoint', error);
+          throw error;
+        }
+      },
+      async () => {
+        const runId = chatHandler.abortRunId(targetSessionKey);
+        const result = await sessionAbort.abort({
+          key: targetSessionKey,
+          ...(runId ? { runId } : {}),
+        });
+        return chatHandler.reconcileSessionAbortAcknowledgement(targetSessionKey, result);
+      },
     );
+  },
+  async compactSession(sessionKey: string) {
+    const key = requireOpenClawSessionTarget(sessionKey);
+    return sessionCommandCoordinator.runMutation(
+      key,
+      () => sessionCompaction.compact({ key }),
+    );
+  },
+  async listSessionCompactionCheckpoints(sessionKey: string) {
+    return sessionCompactionCheckpoints.list(sessionKey);
   },
 
   // Session Lifecycle
   async deleteSession(sessionKey: string, deleteTranscript = true, expectedSessionId?: string) {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return sessionCommandCoordinator.runMutation(
-      sessionKey,
+      targetSessionKey,
       async () => {
         const result = await requestPrivileged<Record<string, unknown>>('sessions.delete', {
-          key: sessionKey,
+          key: targetSessionKey,
           deleteTranscript,
           ...(expectedSessionId ? { expectedSessionId } : {}),
         });
-        assertVerifiedSessionMutationResult(result, 'delete', sessionKey);
-        await cleanupSessionArtifacts(sessionKey);
+        assertVerifiedSessionMutationResult(result, 'delete', targetSessionKey);
+        await cleanupSessionArtifacts(targetSessionKey);
         return result;
       },
     );
   },
   async resetSession(sessionKey: string) {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return sessionCommandCoordinator.runMutation(
-      sessionKey,
+      targetSessionKey,
       async () => {
-        const result = await requestPrivileged<Record<string, unknown>>('sessions.reset', { key: sessionKey });
-        assertVerifiedSessionMutationResult(result, 'reset', sessionKey);
-        await cleanupSessionArtifacts(sessionKey);
+        const result = await requestPrivileged<Record<string, unknown>>('sessions.reset', { key: targetSessionKey });
+        assertVerifiedSessionMutationResult(result, 'reset', targetSessionKey);
+        await cleanupSessionArtifacts(targetSessionKey);
         return result;
       },
     );
@@ -1147,50 +1743,67 @@ export const gateway = {
     expectedSessionId: string,
     expectedConnectionId: string,
   ) {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return sessionCommandCoordinator.runMutation(
-      sessionKey,
+      targetSessionKey,
       async () => {
         if (connection.getAttestedConnectionId() !== expectedConnectionId) {
           throw new Error('The verified Gateway connection changed before session deletion');
         }
         const result = await requestPrivileged<Record<string, unknown>>('sessions.delete', {
-          key: sessionKey,
+          key: targetSessionKey,
           deleteTranscript,
           expectedSessionId,
         });
         if (connection.getAttestedConnectionId() !== expectedConnectionId) {
           throw new Error('The verified Gateway connection changed while session deletion was completing');
         }
-        assertVerifiedSessionMutationResult(result, 'delete', sessionKey);
-        await cleanupSessionArtifacts(sessionKey);
+        assertVerifiedSessionMutationResult(result, 'delete', targetSessionKey);
+        await cleanupSessionArtifacts(targetSessionKey);
         return result;
       },
     );
   },
   async resetSessionFenced(sessionKey: string, expectedConnectionId: string) {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return sessionCommandCoordinator.runMutation(
-      sessionKey,
+      targetSessionKey,
       async () => {
         const result = await connection.requestFenced(
           'sessions.reset',
-          { key: sessionKey },
+          { key: targetSessionKey },
           expectedConnectionId,
         );
-        assertVerifiedSessionMutationResult(result, 'reset', sessionKey);
-        await cleanupSessionArtifacts(sessionKey);
+        assertVerifiedSessionMutationResult(result, 'reset', targetSessionKey);
+        await cleanupSessionArtifacts(targetSessionKey);
         return result;
       },
     );
   },
 
-  // Session Settings
-  async setSessionModel(model: string | null, sessionKey = 'agent:main:main') {
+  // 会话设置
+  async setSessionModel(model: string | null, sessionKey: string) {
     return sessionSettings.setModel(sessionKey, model);
   },
-  async setSessionThinking(level: string | null, sessionKey = 'agent:main:main') {
+  async setSessionThinking(level: string | null, sessionKey: string) {
     return sessionSettings.setThinking(sessionKey, level);
   },
-  async setSessionLabel(label: string | null, sessionKey = 'agent:main:main') {
+  async setSessionFastMode(mode: boolean | 'auto' | null, sessionKey: string) {
+    return sessionSettings.setFastMode(sessionKey, mode);
+  },
+  async setSessionVerbose(level: 'on' | 'full' | 'off' | null, sessionKey: string) {
+    return sessionSettings.setVerbose(sessionKey, level);
+  },
+  async setSessionTrace(level: 'on' | 'off' | null, sessionKey: string) {
+    return sessionSettings.setTrace(sessionKey, level);
+  },
+  async setSessionResponseUsage(level: 'off' | 'tokens' | 'full' | null, sessionKey: string) {
+    return sessionSettings.setResponseUsage(sessionKey, level);
+  },
+  async setSessionReasoning(level: 'on' | 'off' | 'stream' | null, sessionKey: string) {
+    return sessionSettings.setReasoning(sessionKey, level);
+  },
+  async setSessionLabel(label: string | null, sessionKey: string) {
     return sessionSettings.setLabel(sessionKey, label);
   },
   async setSessionPinned(pinned: boolean, sessionKey: string) {
@@ -1206,23 +1819,16 @@ export const gateway = {
     return sessionOrganization.setCategory(sessionKey, category);
   },
   async listSessionGroups() {
-    return sessionOrganization.listGroups();
+    return sessionGroups.list();
   },
-  async createSessionGroup(label: string) {
-    return sessionOrganization.putGroup(label);
-  },
-  async renameSessionGroup(from: string, to: string) {
-    return sessionOrganization.renameGroup(from, to);
-  },
-  async deleteSessionGroup(label: string) {
-    return sessionOrganization.deleteGroup(label);
+  async ensureSessionGroup(name: string) {
+    return sessionGroups.ensure(name);
   },
   async updateAgentParams(agentId: string, params: Record<string, unknown>) {
     return requestPrivileged('agents.update', { agentId, params });
   },
 
-  // Models & Usage
-  async getSessionStatus(_sessionKey = 'agent:main:main') { return connection.request('sessions.list', {}); },
+  // Models
   async getAvailableModels(view: 'default' | 'configured' | 'all' = 'configured') {
     return connection.request('models.list', { view });
   },
@@ -1249,13 +1855,6 @@ export const gateway = {
   },
   // Skills — list installed skills with status (input for the @skill picker)
   async getSkills(agentId?: string) { return connection.request('skills.status', agentId ? { agentId } : {}); },
-  async getCostSummary(days = 30) { return connection.request('usage.cost', { days, agentScope: 'all' }); },
-  async getSessionsUsage(params: Record<string, unknown> = {}) {
-    const scope = params.agentId || params.key ? {} : { agentScope: 'all' };
-    return connection.request('sessions.usage', { limit: 50, ...scope, ...params });
-  },
-  async getSessionTimeseries(key: string) { return connection.request('sessions.usage.timeseries', { key }); },
-  async getSessionLogs(key: string, limit = 200) { return connection.request('sessions.usage.logs', { key, limit }); },
 
   // Pairing
   getHttpBaseUrl() { return connection.getHttpBaseUrl(); },

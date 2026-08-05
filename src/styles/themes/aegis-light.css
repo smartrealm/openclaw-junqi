@@ -117,12 +117,12 @@
   --aegis-menu-text:      23 27 36;
   --aegis-menu-text-muted:105 117 138;
 
-  /* ── Shared elevation and scrim tokens ── */
+  /* ── 共享层级阴影与遮罩令牌 ── */
   --aegis-shadow-color:   15 23 42;
   --aegis-shadow-card:    0 1px 3px rgb(var(--aegis-shadow-color) / 0.08), 0 1px 2px rgb(var(--aegis-shadow-color) / 0.06);
   --aegis-shadow-float:   0 8px 32px rgb(var(--aegis-shadow-color) / 0.20);
   --aegis-shadow-popover: 0 8px 32px rgb(var(--aegis-shadow-color) / 0.22);
-  --aegis-scrim:          rgb(var(--aegis-overlay) / 0.45);
+  --aegis-scrim:          rgb(var(--aegis-shadow-color) / 0.45);
 
   /* ── Button ── */
   --aegis-btn-primary-text: #ffffff;

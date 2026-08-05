@@ -6,7 +6,7 @@ import { normalizeGatewayMessage } from '@/processing/normalizeGatewayMessage';
 import { buildSemanticBlocks, projectSemanticBlocksToRenderBlocks } from '@/processing/buildSemanticBlocks';
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
 import { gateway, isGatewayChatSendDeliveryUncertain } from '@/services/gateway';
-import { SessionOrganizationProtocolUnsupportedError } from '@/services/gateway/OpenClawSessionOrganizationClient';
+import { OpenClawSessionGroupsUnsupportedError } from '@/services/gateway/OpenClawSessionGroupsClient';
 import type {
   OutboundChatPayload,
   PreparedAttachment,
@@ -20,6 +20,7 @@ import {
   queuedChatMessageBytes,
 } from '@/services/chat/types';
 import { sessionMutationGate } from '@/services/chat/sessionMutationGate';
+import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import {
   collectSessionIdentityTransitions,
   publishSessionIdentityTransitions,
@@ -34,17 +35,16 @@ import {
   withoutDeletedSessions,
 } from '@/utils/sessionLifecycle';
 import {
-  createSessionOrganizationGroup,
-  deleteSessionOrganizationGroup,
-  getSessionOrganizationGroups,
   projectSessionOrganization,
   removeSessionOrganization,
-  renameSessionOrganizationGroup,
-  setSessionOrganizationFlag,
-  setSessionOrganizationGroup,
   setSessionOrganizationTopic,
-  type SessionGroup,
 } from '@/services/chat/sessionOrganization';
+import type { OpenClawChatSendTiming } from '@/services/gateway/chatSendTiming';
+import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
+import type { GatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
+import type { GatewaySessionAgentStatus } from '@/services/gateway/sessionAgentStatus';
+import type { GatewaySessionContextBudgetStatus } from '@/services/gateway/sessionContextBudgetStatus';
+import type { GatewaySessionGoal } from '@/services/gateway/sessionGoal';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
@@ -191,18 +191,20 @@ function resolveAndPersistSessionTopic(
 
 const clearSessionAttentionState = (session: Session): Session => ({
   ...session,
-  unread: 0,
   hasPendingCompletion: false,
 });
 
 function persistSessionAsRead(session: Session | undefined): void {
   if (!session) return;
-  // Clear the desktop projection immediately. The native write below keeps
-  // current Gateways in sync, while legacy identity-bound state remains correct.
-  setSessionOrganizationFlag(session, 'unread', false);
-  void gateway.setSessionUnread(false, session.key).catch((error: unknown) => {
-    if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) return;
-  });
+  void gateway.setSessionUnread(false, session.key).then(() => {
+    useChatStore.setState((state) => ({
+      sessions: updateSession(state.sessions, session.key, (item) => ({
+        ...item,
+        unread: 0,
+        hasPendingCompletion: false,
+      })),
+    }));
+  }).catch(() => undefined);
 }
 
 function unreadCount(value: number | boolean | undefined): number {
@@ -257,10 +259,10 @@ export interface ChatMessage {
   attachments?: Array<{
     mimeType: string;
     content: string;
-    fileName: string;
+    fileName?: string;
   }>;
   /** Local delivery metadata. Never serialized into the OpenClaw transcript. */
-  outboundAttachments?: Array<{ fileName: string; mimeType: string }>;
+  outboundAttachments?: Array<{ fileName?: string; mimeType: string }>;
   /** Retained only while a delivery is queued or failed so retry is lossless. */
   retryPayload?: OutboundChatPayload;
   // Tool call metadata (role === 'tool')
@@ -269,7 +271,7 @@ export interface ChatMessage {
   toolOutput?: string;
   /** Original tool result value retained for non-destructive trace presentation. */
   toolOutputValue?: unknown;
-  toolStatus?: 'running' | 'done' | 'error';
+  toolStatus?: 'running' | 'done' | 'error' | 'cancelled' | 'verification_required';
   toolDurationMs?: number;
   toolCallId?: string;
   /** Gateway-provided execution error, separate from the display result. */
@@ -327,13 +329,43 @@ export interface Session {
   spawnedBy?: string;
   parentSessionKey?: string;
   status?: string;
+  /** Gateway 已过滤有效期的会话 Agent 状态说明；缺失时不保留旧值。 */
+  agentStatus?: GatewaySessionAgentStatus | null;
+  /** Gateway 明确记录的最近一次运行已中止；缺失时不保留旧值。 */
+  abortedLastRun?: true | null;
+  /** Gateway 预提示估算出的上下文预算路线；客户端不得自行推导。 */
+  contextBudgetStatus?: GatewaySessionContextBudgetStatus | null;
+  /** Gateway 持久化的会话目标；本地 Task checkpoint 与协作 Run 不得写入或替代它。 */
+  goal?: GatewaySessionGoal | null;
+  /** Gateway 记录的最近失败或超时运行摘要；缺失时不保留旧值。 */
+  lastRunError?: string | null;
+  /** Gateway 当前 transcript 分支 leaf；缺失表示当前客户端尚未取得该事实。 */
+  activeLeafEntryId?: string | null;
   hasActiveRun?: boolean;
   hasActiveSubagentRun?: boolean;
   subagentRunState?: string;
   systemSent?: boolean;
-  // Per-session model/thinking/token data cached from sessions.list
+  // 从 sessions.list 缓存的每会话模型、思考、快速模式、输出、追踪、推理和用量数据。
   model?: string | null;
+  /** Gateway 明确锁定模型选择时为 true；客户端不得发起模型写入。 */
+  modelSelectionLocked?: boolean;
+  /** Gateway 已解析的实际 Agent Runtime；缺失时客户端不得推测。 */
+  agentRuntime?: GatewaySessionAgentRuntime | null;
   thinkingLevel?: string | null;
+  /** Gateway 按当前模型 profile 下发的可选思考等级；缺失时客户端不得猜测。 */
+  thinkingLevels?: readonly GatewayThinkingLevelOption[] | null;
+  /** Gateway 解析出的当前模型默认思考等级；仅用于说明继承结果。 */
+  thinkingDefault?: string | null;
+  /** OpenClaw 会话快速模式覆盖；null 表示继承运行时默认值。 */
+  fastMode?: boolean | 'auto' | null;
+  /** OpenClaw 会话详细工具输出覆盖；null 表示继承运行时默认值。 */
+  verboseLevel?: 'on' | 'full' | 'off' | null;
+  /** OpenClaw 会话插件追踪覆盖；未知字符串须保留，不能由客户端猜测替换。 */
+  traceLevel?: string | null;
+  /** OpenClaw 响应使用量页脚覆盖；保留兼容别名和未知字符串供控制面判定。 */
+  responseUsage?: string | null;
+  /** OpenClaw 会话推理可见性覆盖；null 表示继承运行时默认值。 */
+  reasoningLevel?: 'on' | 'off' | 'stream' | null;
   totalTokens?: number;
   contextTokens?: number;
   compactionCount?: number;
@@ -342,7 +374,7 @@ export interface Session {
   // User-controlled lifecycle flags (SPEC: archive + pin)
   pinned?: boolean;
   archived?: boolean;
-  /** Desktop organization metadata, keyed by the Gateway session identity. */
+  /** Renderer projection of OpenClaw's native `category` field. */
   groupId?: string;
 }
 
@@ -448,25 +480,40 @@ interface ChatState {
     options?: { completeSnapshot?: boolean; sourceProjectionRevision?: number },
   ) => void;
   setSessionIdentity: (key: string, sessionId: string, agentId?: string) => void;
+  /** 仅接受 Gateway 的历史或会话列表投影，不能由客户端推导。 */
+  setSessionActiveLeafEntryId: (key: string, activeLeafEntryId: string | null | undefined) => void;
   /** Commit a session only after `sessions.create` confirms its Gateway identity. */
   addNativeSession: (session: Session) => void;
   /** Update a single session's label locally without a full sessions.list refetch. */
   setSessionLabel: (key: string, label: string) => void;
-  /** Update a single session's model locally after sessions.patch succeeds. */
+  /** `sessions.patch` 成功后在本地更新单个会话模型。 */
   setSessionModel: (key: string, model: string | null) => void;
+  /** Gateway 模型回执确认 runtime 后，定向更新对应会话。 */
+  setSessionAgentRuntime: (key: string, runtime: GatewaySessionAgentRuntime) => void;
   /** Update a single session's thinking level locally after sessions.patch succeeds. */
   setSessionThinking: (key: string, level: string | null) => void;
+  /** sessions.patch 成功后在本地更新会话原生快速模式覆盖。 */
+  setSessionFastMode: (key: string, mode: boolean | 'auto' | null) => void;
+  /** sessions.patch 成功后在本地更新会话原生详细工具输出覆盖。 */
+  setSessionVerbose: (key: string, level: 'on' | 'full' | 'off' | null) => void;
+  /** sessions.patch 成功后在本地更新会话原生插件追踪覆盖。 */
+  setSessionTrace: (key: string, level: string | null) => void;
+  /** sessions.patch 成功后在本地更新会话原生响应使用量页脚覆盖。 */
+  setSessionResponseUsage: (key: string, level: string | null) => void;
+  /** sessions.patch 成功后在本地更新会话原生推理可见性覆盖。 */
+  setSessionReasoning: (key: string, level: 'on' | 'off' | 'stream' | null) => void;
   /** Pin/unpin through the native Gateway protocol, with a legacy fallback. */
   togglePinSession: (key: string) => Promise<void>;
   /** Archive/restore through the native Gateway protocol, with a legacy fallback. */
   setSessionArchived: (key: string, archived: boolean) => Promise<void>;
   markSessionUnread: (key: string) => Promise<void>;
-  sessionGroups: SessionGroup[];
-  refreshSessionGroups: () => Promise<void>;
-  createSessionGroup: (label: string) => Promise<SessionGroup | null>;
-  renameSessionGroup: (groupId: string, label: string) => Promise<SessionGroup | null>;
-  deleteSessionGroup: (groupId: string) => Promise<void>;
-  moveSessionToGroup: (key: string, groupId: string | null) => Promise<void>;
+  setSessionCategory: (key: string, category: string | null) => Promise<void>;
+  /** 确认 Gateway 会话组目录包含名称，不持久化客户端副本。 */
+  ensureSessionGroup: (name: string) => Promise<void>;
+  /** Gateway-owned category catalog; never persisted or locally synthesized. */
+  sessionGroupCatalog: readonly string[];
+  sessionGroupCatalogAvailability: 'unknown' | 'ready' | 'unavailable';
+  refreshSessionGroupCatalog: () => Promise<void>;
   setActiveSession: (key: string) => void;
   incrementSessionUnread: (key: string, amount?: number) => void;
   markSessionCompleted: (key: string) => void;
@@ -523,6 +570,9 @@ interface ChatState {
   typingBySession: Record<string, boolean>;
   /** Started timestamps keep background activity surfaces truthful and measurable. */
   typingStartedAtBySession: Record<string, number>;
+  /** Read-only Gateway timing for the currently projected response, never persisted. */
+  chatSendTimingBySession: Record<string, OpenClawChatSendTiming>;
+  setChatSendTiming: (sessionKey: string, timing: OpenClawChatSendTiming | null) => void;
   setIsTyping: (typing: boolean, sessionKey?: string) => void;
   /** Atomically release every transient run indicator for one session. */
   settleSessionRunUi: (sessionKey?: string) => void;
@@ -581,6 +631,12 @@ interface ChatState {
 
 export const selectActiveSessionTyping = (state: ChatState): boolean =>
   Boolean(state.typingBySession[state.activeSessionKey]);
+
+/** Only a Gateway-owned request can receive a native OpenClaw Stop. */
+export const selectSessionRequestActive = (
+  state: Pick<ChatState, 'typingBySession'>,
+  sessionKey: string,
+): boolean => Boolean(state.typingBySession[sessionKey]);
 
 const EMPTY_THINKING_STATE = Object.freeze({ runId: null, text: '' });
 
@@ -645,6 +701,7 @@ function clearTranscriptStateForIdentityChanges(
     typingBySession: withoutSessionKeys(state.typingBySession, sessionKeys),
     compactionStatusBySession: withoutSessionKeys(state.compactionStatusBySession, sessionKeys),
     typingStartedAtBySession: withoutSessionKeys(state.typingStartedAtBySession, sessionKeys),
+    chatSendTimingBySession: withoutSessionKeys(state.chatSendTimingBySession, sessionKeys),
     quickRepliesBySession: withoutSessionKeys(state.quickRepliesBySession, sessionKeys),
     thinkingBySession: withoutSessionKeys(state.thinkingBySession, sessionKeys),
     sendingBySession: withoutSessionKeys(state.sendingBySession, sessionKeys),
@@ -1194,6 +1251,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       typingStartedAtBySession: Object.fromEntries(
         Object.entries(state.typingStartedAtBySession).filter(([key]) => key !== targetKey),
       ),
+      chatSendTimingBySession: Object.fromEntries(
+        Object.entries(state.chatSendTimingBySession).filter(([key]) => key !== targetKey),
+      ),
       quickRepliesBySession: {
         ...state.quickRepliesBySession,
         [targetKey]: [],
@@ -1265,6 +1325,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       typingStartedAtBySession: Object.fromEntries(
         Object.entries(state.typingStartedAtBySession).filter(([sessionKey]) => sessionKey !== key),
       ),
+      chatSendTimingBySession: Object.fromEntries(
+        Object.entries(state.chatSendTimingBySession).filter(([sessionKey]) => sessionKey !== key),
+      ),
       quickRepliesBySession: { ...state.quickRepliesBySession, [key]: [] },
       thinkingBySession: {
         ...state.thinkingBySession,
@@ -1287,7 +1350,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [{ key: MAIN_SESSION, label: 'Main Session' }],
   activeSessionKey: MAIN_SESSION,
   sessionProjectionRevision: 0,
-  sessionGroups: getSessionOrganizationGroups(),
 
   setSessions: (sessions, defaults, options) => {
     const stateBeforeMerge = get();
@@ -1337,22 +1399,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // User mutations are only applied locally after `sessions.patch`
         // confirms them, so no client-side shadow value is needed here.
         label: typeof session.label === 'string' ? session.label : '',
-        // Current Gateways own organization fields. The desktop repository is
-        // only a fallback for a Gateway that explicitly lacks this protocol.
-        pinned: typeof session.pinned === 'boolean' ? session.pinned : organization.pinned,
-        archived: typeof session.archived === 'boolean' ? session.archived : organization.archived,
+        pinned: session.pinned,
+        archived: session.archived,
         ...(typeof session.category === 'string' && session.category.trim()
           ? { groupId: session.category.trim() }
-          : organization.groupId ? { groupId: organization.groupId } : {}),
+          : {}),
         topic: hasCachedMessages
           ? resolveAndPersistSessionTopic({ ...session, topic: hydratedTopic }, cachedMessages, session.lastMessage)
           : resolveAndPersistSessionTopic({ ...session, topic: hydratedTopic }, [], session.lastMessage),
-        unread: Math.max(
-          organization.unread ? 1 : 0,
-          changedIdentityKeys.has(session.key)
-            ? unreadCount(session.unread)
-            : unreadCount(previous?.unread ?? session.unread),
-        ),
+        unread: unreadCount(session.unread),
         hasPendingCompletion: changedIdentityKeys.has(session.key)
           ? session.hasPendingCompletion ?? false
           : previous?.hasPendingCompletion ?? session.hasPendingCompletion ?? false,
@@ -1387,7 +1442,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       ...transcriptReset,
       sessions: nextSessions,
-      sessionGroups: getSessionOrganizationGroups(),
       ...(defaults ? { sessionDefaults: defs } : {}),
       currentThinking: titleBar.currentThinking,
       tokenUsage: titleBar.tokenUsage,
@@ -1413,11 +1467,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...(changed ? {
           topic: undefined,
           ...(organization.topic ? { topic: organization.topic } : {}),
-          unread: organization.unread ? 1 : 0,
+          unread: 0,
           hasPendingCompletion: false,
-          pinned: organization.pinned,
-          archived: organization.archived,
-          groupId: organization.groupId,
+          pinned: undefined,
+          archived: undefined,
+          groupId: undefined,
+          category: null,
+          activeLeafEntryId: undefined,
         } : {}),
       })),
       ...(changed ? { sessionProjectionRevision: state.sessionProjectionRevision + 1 } : {}),
@@ -1430,6 +1486,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }]);
     }
   },
+
+  setSessionActiveLeafEntryId: (key, activeLeafEntryId) => set((state) => {
+    if (isSessionDeleted(key)) return state;
+    return {
+      sessions: updateSession(state.sessions, key, (session) => (
+        session.activeLeafEntryId === activeLeafEntryId
+          ? session
+          : { ...session, activeLeafEntryId }
+      )),
+    };
+  }),
 
   setActiveSession: (key) => {
     if (isSessionDeleted(key)) return;
@@ -1534,7 +1601,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
   )),
 
-  /** Locally apply a model switch without waiting for sessions.list. */
+  /** 不等待 `sessions.list`，在本地应用已确认的模型切换。 */
   setSessionModel: (key, model) => set((state) => (
     isSessionDeleted(key)
       ? state
@@ -1543,6 +1610,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
             session.model === model ? session : { ...session, model },
           ),
           ...(state.activeSessionKey === key ? { currentModel: model } : {}),
+        }
+  )),
+
+  /** 仅应用 `sessions.patch.resolved` 已确认的 Agent Runtime。 */
+  setSessionAgentRuntime: (key, runtime) => set((state) => (
+    isSessionDeleted(key) || !state.sessions.some((session) => session.key === key)
+      ? state
+      : {
+          sessions: state.sessions.map((session) => (
+            session.key !== key || session.agentRuntime?.id === runtime.id
+              ? session
+              : { ...session, agentRuntime: runtime }
+          )),
         }
   )),
 
@@ -1558,40 +1638,80 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
   )),
 
+  /** 不等待 sessions.list，在本地应用已确认的原生快速模式覆盖。 */
+  setSessionFastMode: (key, mode) => set((state) => (
+    isSessionDeleted(key)
+      ? state
+      : {
+          sessions: upsertSession(state.sessions, key, (session) =>
+            session.fastMode === mode ? session : { ...session, fastMode: mode },
+          ),
+        }
+  )),
+
+  /** 不等待 sessions.list，在本地应用已确认的原生详细工具输出覆盖。 */
+  setSessionVerbose: (key, level) => set((state) => (
+    isSessionDeleted(key)
+      ? state
+      : {
+          sessions: upsertSession(state.sessions, key, (session) =>
+            session.verboseLevel === level ? session : { ...session, verboseLevel: level },
+          ),
+        }
+  )),
+
+  /** 不等待 sessions.list，在本地应用已确认的原生插件追踪覆盖。 */
+  setSessionTrace: (key, level) => set((state) => (
+    isSessionDeleted(key)
+      ? state
+      : {
+          sessions: upsertSession(state.sessions, key, (session) =>
+            session.traceLevel === level ? session : { ...session, traceLevel: level },
+          ),
+        }
+  )),
+
+  /** 不等待 sessions.list，在本地应用已确认的原生响应使用量页脚覆盖。 */
+  setSessionResponseUsage: (key, level) => set((state) => (
+    isSessionDeleted(key)
+      ? state
+      : {
+          sessions: upsertSession(state.sessions, key, (session) =>
+            session.responseUsage === level ? session : { ...session, responseUsage: level },
+          ),
+        }
+  )),
+
+  /** 不等待 sessions.list，在本地应用已确认的原生推理可见性覆盖。 */
+  setSessionReasoning: (key, level) => set((state) => (
+    isSessionDeleted(key)
+      ? state
+      : {
+          sessions: upsertSession(state.sessions, key, (session) =>
+            session.reasoningLevel === level ? session : { ...session, reasoningLevel: level },
+          ),
+        }
+  )),
+
   togglePinSession: async (key) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
     if (!session) return;
     const pinned = !session.pinned;
-    try {
-      await gateway.setSessionPinned(pinned, key);
-    } catch (error) {
-      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
-      setSessionOrganizationFlag(session, 'pinned', pinned);
-    }
+    await gateway.setSessionPinned(pinned, key);
     set((state) => ({ sessions: updateSession(state.sessions, key, (item) => ({ ...item, pinned })) }));
   },
 
   setSessionArchived: async (key, archived) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
     if (!session) return;
-    try {
-      await gateway.setSessionArchived(archived, key);
-    } catch (error) {
-      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
-      setSessionOrganizationFlag(session, 'archived', archived);
-    }
+    await gateway.setSessionArchived(archived, key);
     set((state) => ({ sessions: updateSession(state.sessions, key, (item) => ({ ...item, archived })) }));
   },
 
   markSessionUnread: async (key) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
     if (!session) return;
-    try {
-      await gateway.setSessionUnread(true, key);
-    } catch (error) {
-      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
-      setSessionOrganizationFlag(session, 'unread', true);
-    }
+    await gateway.setSessionUnread(true, key);
     set((state) => ({
       sessions: updateSession(state.sessions, key, (item) => ({
         ...item,
@@ -1601,88 +1721,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
   },
 
-  refreshSessionGroups: async () => {
-    try {
-      const groups = await gateway.listSessionGroups();
-      set({ sessionGroups: groups.map((group, index) => ({ ...group, createdAt: index })) });
-    } catch (error) {
-      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
-      set({ sessionGroups: getSessionOrganizationGroups() });
-    }
-  },
-
-  createSessionGroup: async (label) => {
-    const normalized = label.trim();
-    if (!normalized) return null;
-    try {
-      await gateway.createSessionGroup(normalized);
-      const group = { id: normalized, label: normalized, createdAt: get().sessionGroups.length };
-      set((state) => ({
-        sessionGroups: state.sessionGroups.some((item) => item.id === group.id)
-          ? state.sessionGroups
-          : [...state.sessionGroups, group],
-      }));
-      return group;
-    } catch (error) {
-      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
-      const group = createSessionOrganizationGroup(normalized);
-      if (group) set({ sessionGroups: getSessionOrganizationGroups() });
-      return group;
-    }
-  },
-
-  renameSessionGroup: async (groupId, label) => {
-    const normalized = label.trim();
-    if (!normalized) return null;
-    try {
-      await gateway.renameSessionGroup(groupId, normalized);
-      const group = { id: normalized, label: normalized, createdAt: 0 };
-      set((state) => ({
-        sessionGroups: state.sessionGroups.map((item) => item.id === groupId ? { ...item, ...group, createdAt: item.createdAt } : item),
-        sessions: state.sessions.map((session) => session.groupId === groupId ? { ...session, groupId: normalized, category: normalized } : session),
-      }));
-      return group;
-    } catch (error) {
-      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
-      const group = renameSessionOrganizationGroup(groupId, normalized);
-      if (group) set({ sessionGroups: getSessionOrganizationGroups() });
-      return group;
-    }
-  },
-
-  deleteSessionGroup: async (groupId) => {
-    try {
-      await gateway.deleteSessionGroup(groupId);
-      set((state) => ({
-        sessionGroups: state.sessionGroups.filter((group) => group.id !== groupId),
-        sessions: state.sessions.map((session) => session.groupId === groupId ? { ...session, groupId: undefined, category: null } : session),
-      }));
-    } catch (error) {
-      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
-      deleteSessionOrganizationGroup(groupId);
-      set((state) => ({
-        sessionGroups: getSessionOrganizationGroups(),
-        sessions: state.sessions.map((session) => session.groupId === groupId ? { ...session, groupId: undefined } : session),
-      }));
-    }
-  },
-
-  moveSessionToGroup: async (key, groupId) => {
+  setSessionCategory: async (key, category) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
     if (!session) return;
-    try {
-      await gateway.setSessionCategory(groupId, key);
-    } catch (error) {
-      if (!(error instanceof SessionOrganizationProtocolUnsupportedError)) throw error;
-      setSessionOrganizationGroup(session, groupId);
-    }
+    const confirmedCategory = await gateway.setSessionCategory(category, key);
     set((state) => ({
       sessions: updateSession(state.sessions, key, (item) => ({
         ...item,
-        ...(groupId ? { groupId, category: groupId } : { groupId: undefined, category: null }),
+        ...(confirmedCategory
+          ? { groupId: confirmedCategory, category: confirmedCategory }
+          : { groupId: undefined, category: null }),
       })),
-      sessionGroups: get().sessionGroups,
     }));
+  },
+  ensureSessionGroup: async (name) => {
+    const groups = await gateway.ensureSessionGroup(name);
+    set({
+      sessionGroupCatalog: groups.map((group) => group.name),
+      sessionGroupCatalogAvailability: 'ready',
+    });
+  },
+  sessionGroupCatalog: [],
+  sessionGroupCatalogAvailability: 'unknown',
+  refreshSessionGroupCatalog: async () => {
+    if (get().sessionGroupCatalogAvailability === 'unavailable') return;
+    try {
+      const groups = await gateway.listSessionGroups();
+      set({
+        sessionGroupCatalog: groups.map((group) => group.name),
+        sessionGroupCatalogAvailability: 'ready',
+      });
+    } catch (error) {
+      if (error instanceof OpenClawSessionGroupsUnsupportedError) {
+        set({ sessionGroupCatalog: [], sessionGroupCatalogAvailability: 'unavailable' });
+        return;
+      }
+      throw error;
+    }
   },
 
   // ── Pending file attachments (drag-drop → new session) ─────
@@ -1839,6 +1914,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { [key]: _groupsRm, ...restGroupsCache } = state._groupsCache;
     const { [key]: _typingRm, ...restTyping } = state.typingBySession;
     const { [key]: _typingStartedAt, ...restTypingStartedAt } = state.typingStartedAtBySession;
+    const { [key]: _timingRm, ...restChatSendTiming } = state.chatSendTimingBySession;
     const { [key]: _qr, ...restQuickReplies } = state.quickRepliesBySession;
     const { [key]: _thinking, ...restThinking } = state.thinkingBySession;
     const { [key]: _draft, ...restDrafts } = state.drafts;
@@ -1863,6 +1939,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       _groupsCache: restGroupsCache,
       typingBySession: restTyping,
       typingStartedAtBySession: restTypingStartedAt,
+      chatSendTimingBySession: restChatSendTiming,
       quickRepliesBySession: restQuickReplies,
       thinkingBySession: restThinking,
       drafts: restDrafts,
@@ -1934,6 +2011,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── UI State ──
   typingBySession: {},
   typingStartedAtBySession: {},
+  chatSendTimingBySession: {},
+  setChatSendTiming: (sessionKey, timing) => set((state) => {
+    const targetKey = sessionKey.trim();
+    if (!targetKey || isSessionDeleted(targetKey)) return state;
+    const next = { ...state.chatSendTimingBySession };
+    if (!timing) {
+      delete next[targetKey];
+      return { chatSendTimingBySession: next };
+    }
+    if (!state.typingBySession[targetKey]) return state;
+    next[targetKey] = timing;
+    return { chatSendTimingBySession: next };
+  }),
   compactionStatusBySession: {},
   setCompactionStatus: (sessionKey, status) => set((state) => {
     const normalizedKey = sessionKey.trim();
@@ -1970,6 +2060,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     ) return;
     const next = get().messageQueue[sessionKey]?.[0];
     if (!next || next.failed) return;
+
+    // Claim the renderer-owned item before any await. A local clear/edit action
+    // can only affect items that have not crossed this handoff boundary.
+    set((state) => {
+      const queue = state.messageQueue[sessionKey] || [];
+      if (queue[0]?.id !== next.id) return state;
+      return {
+        messageQueue: {
+          ...state.messageQueue,
+          [sessionKey]: queue.slice(1),
+        },
+      };
+    });
     drainingQueueSessions.add(sessionKey);
     const retryPayload = outboundPayloadFromQueue(next);
     // Mark typing so the drained reply is tracked through its lifecycle — its
@@ -1995,18 +2098,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }, sessionKey);
     get().updateMessage(sessionKey, next.id, { status: 'pending', deliveryError: undefined });
     get().setIsTyping(true, sessionKey);
+    let taskRunId = next.id;
+    let taskRunCreated = false;
     try {
+      const observedModel = useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.model
+        ?? (useChatStore.getState().activeSessionKey === sessionKey ? useChatStore.getState().currentModel : null)
+        ?? null;
+      const prepared = await taskExecutionCoordinator.prepareSend({
+        sessionKey,
+        sessionId: next.sessionId,
+        runId: next.id,
+        source: next.source ?? 'chat',
+        model: observedModel,
+      });
+      taskRunId = prepared.runId ?? next.id;
+      taskRunCreated = prepared.created;
+      if (taskRunCreated && await taskExecutionCoordinator.isRunStopRequested({
+        sessionKey,
+        sessionId: next.sessionId,
+        runId: taskRunId,
+      })) {
+        get().updateMessage(sessionKey, next.id, {
+          status: 'cancelled',
+          deliveryError: undefined,
+          retryPayload,
+        });
+        get().setIsTyping(false, sessionKey);
+        return;
+      }
       const result = await gateway.sendMessage(next.text, next.attachments, sessionKey, {
         clientMessageId: next.id,
         sessionId: next.sessionId,
       }) as { queued?: boolean } | undefined;
       const deliveryUncertain = isGatewayChatSendDeliveryUncertain(result);
-      set((state) => ({
-        messageQueue: {
-          ...state.messageQueue,
-          [sessionKey]: (state.messageQueue[sessionKey] || []).filter((item) => item.id !== next.id),
-        },
-      }));
       get().updateMessage(sessionKey, next.id, deliveryUncertain
         ? { status: 'pending', deliveryError: undefined, retryPayload }
         : {
@@ -2018,12 +2142,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || 'Message delivery failed');
       set((state) => ({
-        messageQueue: {
-          ...state.messageQueue,
-          [sessionKey]: (state.messageQueue[sessionKey] || []).map((item) => (
-            item.id === next.id ? { ...item, failed: true, error: message } : item
-          )),
-        },
+        ...(isSessionDeleted(sessionKey) ? {} : {
+          messageQueue: {
+            ...state.messageQueue,
+            [sessionKey]: [{ ...next, failed: true, error: message }, ...(state.messageQueue[sessionKey] || [])],
+          },
+        }),
       }));
       get().updateMessage(sessionKey, next.id, {
         status: 'failed',
@@ -2031,6 +2155,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         retryPayload,
       });
       get().setIsTyping(false, sessionKey);
+      await taskExecutionCoordinator.settleRun({
+        sessionKey,
+        sessionId: next.sessionId,
+        runId: taskRunCreated ? taskRunId : null,
+        terminalReason: 'error',
+      }).catch((settleError) => taskExecutionCoordinator.reportPersistenceFailure('settle queued send checkpoint', settleError));
     } finally {
       drainingQueueSessions.delete(sessionKey);
       // A cached terminal chat.send acknowledgement can settle typing before
@@ -2112,24 +2242,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (isSessionDeleted(targetKey)) return state;
       const wasTyping = state.typingBySession[targetKey] === true;
       const typingStartedAtBySession = { ...state.typingStartedAtBySession };
+      const chatSendTimingBySession = { ...state.chatSendTimingBySession };
       if (typing && !wasTyping) typingStartedAtBySession[targetKey] = Date.now();
-      if (!typing) delete typingStartedAtBySession[targetKey];
+      if (!typing) {
+        delete typingStartedAtBySession[targetKey];
+        delete chatSendTimingBySession[targetKey];
+      }
       return {
         typingBySession: {
           ...state.typingBySession,
           [targetKey]: typing,
         },
         typingStartedAtBySession,
+        chatSendTimingBySession,
       };
     }),
   settleSessionRunUi: (sessionKey) => set((state) => {
     const targetKey = sessionKey ?? state.activeSessionKey;
     if (isSessionDeleted(targetKey)) return state;
     const typingStartedAtBySession = { ...state.typingStartedAtBySession };
+    const chatSendTimingBySession = { ...state.chatSendTimingBySession };
     delete typingStartedAtBySession[targetKey];
+    delete chatSendTimingBySession[targetKey];
     return {
       typingBySession: { ...state.typingBySession, [targetKey]: false },
       typingStartedAtBySession,
+      chatSendTimingBySession,
       thinkingBySession: {
         ...state.thinkingBySession,
         [targetKey]: { runId: null, text: '' },
@@ -2232,6 +2370,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       connected: status.connected,
       connecting: status.connecting,
       connectionError: status.error || null,
+      ...(!status.connected
+        ? { sessionGroupCatalog: [], sessionGroupCatalogAvailability: 'unknown' as const }
+        : {}),
       // Clear restarting once we (re)connect
       restarting: status.connected ? false : state.restarting,
     })),

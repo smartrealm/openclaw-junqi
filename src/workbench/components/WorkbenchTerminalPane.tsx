@@ -6,6 +6,7 @@ import { useResolvedTheme } from '@/theme/useTheme';
 import { buildDarkTerminalTheme } from '@/components/Terminal/terminalShared';
 import type { WorkbenchTab } from '../domain/types';
 import { useWorkbenchStore } from '../store/workbenchStore';
+import { detachWorkbenchTerminalView } from './workbenchTerminalViewLifecycle';
 import {
   closeWorkbenchPtyTab,
   createWorkbenchPty,
@@ -132,19 +133,14 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
     observer.observe(containerRef.current);
     return () => {
       alive = false;
-      observer.disconnect();
-      subscription?.dispose();
-      input.dispose();
-      resize.dispose();
-      terminal.dispose();
+      detachWorkbenchTerminalView({ observer, subscription, input, resize, terminal });
       terminalRef.current = null;
-      // Deliberately do not stop the PTY: hidden/unmounted panes detach only.
+      // 隐藏或卸载面板时只断开视图，不主动停止 PTY。
     };
   }, [acknowledgePtyCreate, cwd, identity, reconcileProviderPtyExit, tab.id, tab.paneId, tab.ptyCreatePending, tab.worktreeId]);
 
-  // xterm paints to a canvas, so CSS custom-property changes do not repaint it
-  // automatically. Re-read the shared terminal palette after a theme change
-  // without recreating the PTY or losing its scrollback.
+  // xterm 绘制在画布上，CSS 变量变化不会自动重绘；主题切换后重新读取共享色板，
+  // 不重建 PTY，也不丢失滚动历史。
   useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;

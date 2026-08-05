@@ -1,28 +1,52 @@
 import {
-  parseGatewayApprovalEvent,
-  type GatewayApprovalEvent,
-} from './approvals';
-import {
   GatewayConnection,
   type GatewayCallbacks,
   type GatewayConnectionOptions,
 } from './Connection';
 
+export type GatewayApprovalEventKind = 'exec' | 'plugin';
+export type GatewayApprovalEventPhase = 'requested' | 'resolved';
+
+export interface GatewayApprovalEvent {
+  readonly kind: GatewayApprovalEventKind;
+  readonly phase: GatewayApprovalEventPhase;
+  readonly id: string;
+}
+
 export type GatewayApprovalEventListener = (event: GatewayApprovalEvent) => void;
 
 const listeners = new Set<GatewayApprovalEventListener>();
 
-/** Publish scope-filtered OpenClaw approval events without exposing raw frames to UI code. */
+const APPROVAL_EVENT_NAMES: Readonly<Record<string, Omit<GatewayApprovalEvent, 'id'>>> = {
+  'exec.approval.requested': { kind: 'exec', phase: 'requested' },
+  'exec.approval.resolved': { kind: 'exec', phase: 'resolved' },
+  'plugin.approval.requested': { kind: 'plugin', phase: 'requested' },
+  'plugin.approval.resolved': { kind: 'plugin', phase: 'resolved' },
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+/**
+ * Parse only the event identity used to invalidate the native approval snapshot.
+ * Gateway list/history/resolve responses remain the sole source of UI state.
+ */
+export function parseGatewayApprovalEvent(message: unknown): GatewayApprovalEvent | null {
+  const envelope = asRecord(message);
+  if (!envelope || envelope.type !== 'event' || typeof envelope.event !== 'string') return null;
+  const event = APPROVAL_EVENT_NAMES[envelope.event];
+  if (!event) return null;
+  const payload = asRecord(envelope.payload);
+  const id = typeof payload?.id === 'string' ? payload.id.trim() : '';
+  return id ? { ...event, id } : null;
+}
+
+/** Publish scope-filtered OpenClaw approval invalidations to the unified projection. */
 export function publishGatewayApprovalEvent(message: unknown): boolean {
-  if (message === null || typeof message !== 'object' || Array.isArray(message)) return false;
-  let candidate: GatewayApprovalEvent | null;
-  try {
-    candidate = parseGatewayApprovalEvent(message);
-  } catch {
-    // Approval event families are reserved for this bridge. A malformed frame
-    // must not fall through to transcript handling or break other listeners.
-    return true;
-  }
+  const candidate = parseGatewayApprovalEvent(message);
   if (!candidate) return false;
   for (const listener of [...listeners]) {
     try {

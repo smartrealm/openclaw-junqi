@@ -17,7 +17,7 @@ function identity(): RuntimeIdentity {
     connectionId,
     endpoint: gatewayUrl,
     gatewayVersion: '2026.8.0',
-    protocol: 3,
+    protocol: 4,
     stateDir: '/selected/state',
     configPath: '/selected/openclaw.json',
     localStateDir: '/selected/state',

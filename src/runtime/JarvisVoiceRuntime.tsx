@@ -1,8 +1,12 @@
-import { createContext, useCallback, useContext, useMemo, useRef, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
-import { VoiceWakeOverlay } from '@/components/Chat/message-input/VoiceWakeOverlay';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  type ReactNode,
+} from 'react';
+import { JarvisVoiceOverlay } from '@/components/Chat/JarvisVoiceOverlay';
 import { useComposerVoice } from '@/components/Chat/message-input/useComposerVoice';
-import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { debugError } from '@/utils/debugLog';
 
@@ -16,41 +20,26 @@ export function useJarvisVoiceRuntime(): JarvisVoiceController {
   return controller;
 }
 
-/**
- * The desktop-level owner for the native microphone, Talk relay and full-window
- * Jarvis surface. Chat controls consume this controller but never own capture.
- */
+/** 桌面级语音所有者统一管理麦克风、Talk 中继和全窗口界面。 */
 export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
-  const { language } = useSettingsStore();
-  const { t } = useTranslation();
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
-  const activeSessionId = useChatStore(
-    (state) => state.sessions.find((session) => session.key === state.activeSessionKey)?.sessionId,
+  const activeSession = useChatStore(
+    (state) => state.sessions.find((session) => session.key === state.activeSessionKey),
   );
   const connected = useChatStore((state) => state.connected);
   const messageCount = useChatStore((state) => state.messages.length);
   const historyLoading = useChatStore((state) => (
     state.connected && messageCount === 0 && Boolean(state.loadingHistoryBySession[state.activeSessionKey])
   ));
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const setText = useCallback((next: string | ((current: string) => string)) => {
-    const chat = useChatStore.getState();
-    const current = chat.drafts[activeSessionKey] || '';
-    chat.setDraft(activeSessionKey, typeof next === 'function' ? next(current) : next);
-  }, [activeSessionKey]);
   const reportAttachmentError = useCallback((error: unknown) => {
     debugError('media', '[JarvisVoiceRuntime] Unable to preserve captured audio:', error);
   }, []);
   const controller = useComposerVoice({
     activeSessionKey,
-    activeSessionId,
+    activeSessionId: activeSession?.sessionId,
     connected,
     historyLoading,
-    language: String(language),
-    textareaRef,
-    setText,
     setIsSending: useChatStore.getState().setIsSending,
-    closeMenu: () => undefined,
     reportAttachmentError,
   });
   const value = useMemo(() => controller, [controller]);
@@ -58,15 +47,13 @@ export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
   return (
     <JarvisVoiceContext.Provider value={value}>
       {children}
-      <VoiceWakeOverlay
+      <JarvisVoiceOverlay
         snapshot={controller.voiceMode}
-        talkPhase={controller.talkConversation.phase}
-        talkError={controller.talkConversation.error}
+        talk={controller.talkConversation}
+        inputLevel={controller.voiceCapture.inputLevel}
+        sessionLabel={activeSession?.label || activeSessionKey}
         onStop={controller.stopVoiceMode}
-        onConfirmDraft={controller.confirmVoiceDraft}
-        onDiscardDraft={controller.discardVoiceDraft}
-        onOpenSettings={() => { window.location.hash = '#/settings?tab=jarvis'; }}
-        settingsLabel={t('settings.tab.jarvis')}
+        onRetry={controller.startTalk}
       />
     </JarvisVoiceContext.Provider>
   );

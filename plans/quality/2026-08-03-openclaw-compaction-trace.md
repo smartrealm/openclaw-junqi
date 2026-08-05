@@ -1,19 +1,16 @@
-# OpenClaw 上下文压缩追溯实施计划
+# OpenClaw 压缩事件追溯计划
+
+日期：2026-08-03
 
 ## 实施顺序
 
-1. 核对当前 `SemanticBlock`、`ResponseGroup` 和追溯节点投影，确认压缩事件已有真实来源。
-2. 扩展追溯节点联合类型和节点卡，不增加 Gateway RPC 或本地压缩逻辑。
-3. 增加来源标识、顺序和多语言回归测试。
-4. 运行追溯定向测试、TypeScript 检查、边界检查和全量测试。
-5. 记录真实 Gateway、跨平台和视觉验收尚未覆盖的边界。
+1. 核对 OpenClaw 官方 compaction 文档与 JunQi SemanticBlock、RenderBlock、ResponseGroup 链路。
+2. 只修改 trace 领域投影和节点展示，保留现有 Gateway 解析边界。
+3. 补充 transcript 投影、UI 契约和三语言文案测试。
+4. 执行类型检查、定向测试、全量测试和差异扫描。
 
-## 文件范围
+## 不做的事情
 
-- `src/components/Chat/chatResponseTrace.ts`
-- `src/components/Chat/ChatResponseTraceNodeCard.tsx`
-- `src/components/Chat/chatResponseTrace.test.ts`
-- `src/locales/en.json`
-- `src/locales/zh.json`
-- `src/locales/zh-TW.json`
-- 对应 `docs/`、`specs/`、`plans/` 记录
+- 不新增 `/compact` 触发入口；手动压缩已有 Gateway facade，但不属于本项追溯修复。
+- 不修改 OpenClaw 配置或压缩 provider。
+- 不把 `session.operation` 当作 transcript compaction block；该官方 in-flight operation 事件由独立对齐记录负责本地状态投影。

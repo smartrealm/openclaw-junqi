@@ -19,7 +19,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, FileText, Folder, Sparkles, GripVertical, Square } from 'lucide-react';
 import clsx from 'clsx';
-import { useChatStore } from '@/stores/chatStore';
+import { selectSessionRequestActive, useChatStore } from '@/stores/chatStore';
 import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { useVoiceStore } from '@/stores/voiceStore';
@@ -45,6 +45,8 @@ import { findTraceSourceMessage, projectChatResponseTrace } from '@/components/C
 import { closeQuickChat, getQuickChatSeed } from '@/api/tauri-commands';
 import { ChatTraceSourceMessagePanel } from '@/components/Chat/ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from '@/components/Chat/useChatSidePanel';
+import { TaskExecutionRecoveryBanner } from '@/components/Chat/TaskExecutionRecoveryBanner';
+import { stopQuickChatRequest } from './quickChatStop';
 
 interface SeedFile {
   path: string;
@@ -96,8 +98,14 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   const [sendError, setSendError] = useState('');
   const [fallbackSessionKey] = useState(() => `quickchat:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`);
   const sessionKey = ownedSessionKey || fallbackSessionKey;
+  const sessionId = useChatStore((state) => state.sessions.find((session) => session.key === sessionKey)?.sessionId);
   const sidePanel = useChatSidePanel(sessionKey);
+  const loadTraceAuditEvents = useCallback(
+    (runId: string) => gateway.listAuditEvents({ runId, limit: 500 }),
+    [],
+  );
   const isTyping = useChatStore((state) => Boolean(state.typingBySession[sessionKey]));
+  const isRequestActive = useChatStore((state) => selectSessionRequestActive(state, sessionKey));
   const queue = useChatStore((state) => state.messageQueue[sessionKey] ?? EMPTY_QUEUE);
   const queueCount = queue.length;
   const failedQueuedMessage = queue.find((message) => message.failed);
@@ -208,8 +216,10 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
       const attachments = toGatewayAttachments(prepared);
       await chatSendCoordinator.send({
         sessionKey: key,
+        sessionId,
         message: fullMessage,
         clientMessageId,
+        source: 'quick_chat',
         attachments: attachments.length ? attachments : undefined,
         displayAttachments: displayAttachments(prepared),
       });
@@ -221,7 +231,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
       setSending(false);
       setTimeout(() => messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' }), 30);
     }
-  }, [text, sending, connected, files, sessionKey, t]);
+  }, [text, sending, connected, files, sessionId, sessionKey, t]);
 
   const handleRetryQueuedMessage = useCallback(async () => {
     if (!failedQueuedMessage) return;
@@ -231,16 +241,20 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
 
   const handleStop = useCallback(async () => {
     voiceRuntime.interruptGlobally(sessionKey);
-    useChatStore.getState().clearQueue(sessionKey);
-    if (!useChatStore.getState().typingBySession[sessionKey]) return;
     try {
-      await gateway.abortChat(sessionKey);
+      await stopQuickChatRequest(sessionKey, sessionId, useChatStore.getState(), gateway.abortChat);
     } catch (error) {
       setSendError(t('pet.quickChat.sendError', {
         error: error instanceof Error ? error.message : String(error),
       }));
     }
-  }, [sessionKey, t]);
+  }, [sessionId, sessionKey, t]);
+
+  const reconcileTask = useCallback(async () => {
+    if (!connected) return;
+    const result = await gateway.getHistory(sessionKey);
+    gateway.reconcileChatHistoryRunState(sessionKey, result);
+  }, [connected, sessionKey]);
 
   const handleStructuredChoice = useCallback(async (value: string) => {
     const message = value.trim();
@@ -251,8 +265,10 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     try {
       await chatSendCoordinator.send({
         sessionKey,
+        sessionId,
         message,
         clientMessageId: createClientMessageId(),
+        source: 'quick_chat',
       });
     } catch (error) {
       setSendError(t('pet.quickChat.sendError', {
@@ -261,7 +277,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     } finally {
       setSending(false);
     }
-  }, [connected, sending, sessionKey, t]);
+  }, [connected, sending, sessionId, sessionKey, t]);
 
   const renderQuickChatBlock = useCallback((block: RenderBlock) => {
     switch (block.type) {
@@ -459,6 +475,14 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         </div>
       )}
 
+      <TaskExecutionRecoveryBanner
+        sessionKey={sessionKey}
+        sessionId={sessionId}
+        connected={connected}
+        onReconcile={reconcileTask}
+        compact
+      />
+
       {/* Uses the same normalized response groups as the main chat. */}
       <div ref={messagesRef} className="flex-1 overflow-y-auto px-4 py-3 text-[13px] leading-relaxed">
         {quickChatResponseGroups.length === 0 && !isTyping && messages.length === 0 && files.length === 0 && (
@@ -533,7 +557,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
               : text.length > 0 && t('pet.quickChat.characterCount', { count: text.length })}
           </div>
           <div className="flex items-center gap-1.5">
-            {(isTyping || voiceOutputActive) && (
+            {(isRequestActive || voiceOutputActive) && (
               <button
                 onClick={() => { void handleStop(); }}
                 className="flex h-7 w-7 items-center justify-center rounded-md bg-aegis-danger/80 text-white transition-colors hover:bg-aegis-danger"
@@ -576,6 +600,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
             trace={projectChatResponseTrace(group)}
             onClose={sidePanel.closePanel}
             onOpenSourceMessage={(sourceMessageId) => sidePanel.openTraceSourceMessage(groupId, sourceMessageId)}
+            onLoadAuditEvents={loadTraceAuditEvents}
             overlay
           />
         ) : null;

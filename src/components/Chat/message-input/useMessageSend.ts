@@ -2,21 +2,27 @@ import { useCallback, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { showAlert } from '@/components/shared/AlertDialog';
 import { displayAttachments, toGatewayAttachments } from '@/services/chat/attachments';
-import { chatSendCoordinator } from '@/services/chat/sendTransaction';
+import {
+  chatSendCoordinator,
+  isChatSendDispatchCancelled,
+  type ChatSendRequest,
+} from '@/services/chat/sendTransaction';
 import type { PreparedAttachment } from '@/services/chat/types';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
-import { useChatStore } from '@/stores/chatStore';
+import { useChatStore, type HistoryLoaderOptions } from '@/stores/chatStore';
 import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { debugError } from '@/utils/debugLog';
+import { isOpenClawActiveLeafChangedError } from '@/services/gateway/activeLeafEntryId';
+import { readSessionCompanionCommand, requestSessionCompanionOpen } from '../sessionCompanionUi';
 
 interface UseMessageSendOptions {
   activeSessionKey: string;
   activeSessionId?: string;
   connected: boolean;
   historyLoading: boolean;
-  historyLoader?: (sessionKey: string) => Promise<unknown>;
+  historyLoader?: (sessionKey?: string, options?: HistoryLoaderOptions) => Promise<void>;
   isSending: boolean;
   messageCount: number;
   files: PreparedAttachment[];
@@ -24,6 +30,13 @@ interface UseMessageSendOptions {
   textareaRef: RefObject<HTMLTextAreaElement>;
   setIsSending: (sending: boolean, sessionKey?: string) => void;
   deliveryMode?: 'normal' | 'steer';
+}
+
+/** Normal Composer sends let the Gateway apply its current session queue mode. */
+export function composerDeliveryOptions(
+  deliveryMode: NonNullable<UseMessageSendOptions['deliveryMode']>,
+): Pick<ChatSendRequest, 'delivery'> {
+  return deliveryMode === 'steer' ? { delivery: 'steer' } : {};
 }
 
 export function useMessageSend({
@@ -68,8 +81,19 @@ export function useMessageSend({
     }
 
     const fullMessage = trimmed || t('input.attachmentsOnlyMessage', {
-      files: sendFiles.map((file) => file.fileName).join(', '),
+      files: sendFiles.map((file) => file.fileName ?? file.mimeType).join(', '),
     });
+    const companionQuestion = sendFiles.length === 0 ? readSessionCompanionCommand(fullMessage) : null;
+    if (companionQuestion !== null) {
+      requestSessionCompanionOpen(companionQuestion);
+      const state = useChatStore.getState();
+      state.consumeComposerSnapshot(sessionKey, {
+        text: rawText,
+        attachmentIds: [],
+      });
+      state.setQuickReplies([], sessionKey);
+      return;
+    }
     setIsSending(true, sessionKey);
 
     try {
@@ -88,7 +112,7 @@ export function useMessageSend({
       }
 
       voiceRuntime.interruptGlobally(sessionKey);
-      const delivery = chatSendCoordinator.send({
+      const delivery = await chatSendCoordinator.send({
         sessionKey,
         sessionId: activeSessionId,
         message: fullMessage,
@@ -96,17 +120,21 @@ export function useMessageSend({
         attachments: attachments.length ? attachments : undefined,
         displayAttachments: displayAttachments(sendFiles),
         optimisticMessage: { timestamp: new Date().toISOString() },
-        queueIfBusy: deliveryMode !== 'steer',
-        steer: deliveryMode === 'steer',
+        ...composerDeliveryOptions(deliveryMode),
       });
-      const state = useChatStore.getState();
-      state.consumeComposerSnapshot(sessionKey, {
-        text: rawText,
-        attachmentIds: sendFiles.map((file) => file.id),
-      });
-      state.setQuickReplies([], sessionKey);
-      await delivery;
+      if (!isChatSendDispatchCancelled(delivery)) {
+        const state = useChatStore.getState();
+        state.consumeComposerSnapshot(sessionKey, {
+          text: rawText,
+          attachmentIds: sendFiles.map((file) => file.id),
+        });
+        state.setQuickReplies([], sessionKey);
+      }
     } catch (error) {
+      if (isOpenClawActiveLeafChangedError(error)) {
+        void historyLoader?.(sessionKey, { force: true, background: true })
+          .catch((refreshError) => debugError('app', '[MessageSend] Active leaf refresh failed:', refreshError));
+      }
       debugError('app', '[MessageSend] Delivery failed:', error);
     } finally {
       setIsSending(false, sessionKey);

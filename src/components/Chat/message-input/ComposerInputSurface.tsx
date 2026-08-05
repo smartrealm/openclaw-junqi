@@ -20,10 +20,9 @@ interface ComposerInputSurfaceProps {
   attachments: ReturnType<typeof useComposerAttachments>;
   suggestions: ReturnType<typeof useComposerSuggestions>;
   menu: ReturnType<typeof useComposerMenu>;
-  dictationEnabled: boolean;
+  talkActive: boolean;
   onStartRecording: () => void;
-  onToggleDictation: () => void;
-  onRequestWakeWord: () => void;
+  onToggleTalk: () => void;
   onSend: () => Promise<void>;
   onSteer: () => Promise<void>;
   onStop: () => Promise<void>;
@@ -42,10 +41,9 @@ export function ComposerInputSurface({
   attachments,
   suggestions,
   menu,
-  dictationEnabled,
+  talkActive,
   onStartRecording,
-  onToggleDictation,
-  onRequestWakeWord,
+  onToggleTalk,
   onSend,
   onSteer,
   onStop,
@@ -138,7 +136,7 @@ export function ComposerInputSurface({
           <ComposerActionMenu
             open={menu.active === 'voice'}
             onOpenChange={(open) => {
-              if (!dictationEnabled) menu.setOpen('voice', open);
+              if (!talkActive) menu.setOpen('voice', open);
             }}
             dir={dir}
             align="end"
@@ -147,34 +145,31 @@ export function ComposerInputSurface({
               <button
                 type="button"
                 onClick={(event) => {
-                  if (!dictationEnabled) return;
+                  if (!talkActive) return;
                   event.preventDefault();
-                  onToggleDictation();
+                  onToggleTalk();
                 }}
                 disabled={disabled}
                 className={clsx(
                   'relative grid size-[34px] shrink-0 place-items-center rounded-lg transition-colors',
-                  dictationEnabled || menu.active === 'voice'
+                  talkActive || menu.active === 'voice'
                     ? 'bg-aegis-primary/12 text-aegis-primary hover:bg-aegis-primary/18'
                     : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.07)] hover:text-aegis-text',
                   'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-30',
                 )}
-                title={dictationEnabled ? t('input.stopDictation') : t('input.voiceInput')}
-                aria-label={dictationEnabled ? t('input.stopDictation') : t('input.voiceInput')}
+                title={talkActive ? t('input.jarvisStop') : t('input.voiceInput')}
+                aria-label={talkActive ? t('input.jarvisStop') : t('input.voiceInput')}
               >
                 <Mic size={16} />
-                {dictationEnabled && <span className="absolute end-1 top-1 size-1.5 rounded-full bg-aegis-primary ring-2 ring-aegis-surface" />}
+                {talkActive && <span className="absolute end-1 top-1 size-1.5 rounded-full bg-aegis-primary ring-2 ring-aegis-surface" />}
               </button>
             )}
           >
             <ComposerActionMenuItem icon={Mic} onSelect={onStartRecording}>
               {t('input.recordVoice')}
             </ComposerActionMenuItem>
-            <ComposerActionMenuItem icon={Radio} onSelect={onToggleDictation}>
-              {t('input.continuousDictation')}
-            </ComposerActionMenuItem>
-            <ComposerActionMenuItem icon={Radio} onSelect={onRequestWakeWord}>
-              {t('input.wakeWordMode')}
+            <ComposerActionMenuItem icon={Radio} onSelect={onToggleTalk}>
+              {t('input.jarvisTalk')}
             </ComposerActionMenuItem>
           </ComposerActionMenu>
 
@@ -189,8 +184,8 @@ export function ComposerInputSurface({
                 : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text',
               'disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none',
             )}
-            title={historyLoading ? t('input.historyLoading') : isTyping ? t('input.queue') : t('input.send')}
-            aria-label={historyLoading ? t('input.historyLoading') : isTyping ? t('input.queue') : t('input.send')}
+            title={historyLoading ? t('input.historyLoading') : t('input.send')}
+            aria-label={historyLoading ? t('input.historyLoading') : t('input.send')}
           >
             <Send size={16} className={dir === 'rtl' ? 'rotate-180' : ''} />
             {isTyping && pendingCount > 0 && (

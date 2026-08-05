@@ -2,9 +2,11 @@
 
 日期：2026-07-31
 
+状态注记（2026-08-03）：EXT-01 已按官方当前主线的 `audit.activity.list` 与兼容 `audit.list` 落地，EXT-06 的上游 compaction block 已恢复到结构化追溯，EXT-04 已按当前官方 `SessionOperationEventSchema` 接入本地事件投影；具体边界见 [OpenClaw 审计账本与 JunQi 追溯对齐](openclaw-audit-ledger-alignment-2026-08-03.md)、[OpenClaw 压缩事件追溯对齐](openclaw-compaction-trace-alignment-2026-08-03.md) 和 [OpenClaw 会话操作事件对齐](openclaw-session-operation-alignment-2026-08-03.md)。本文保留为 2026-07-31 的历史分析，不把当时的“未接入”结论当作当前实现状态。
+
 ## 依据
 
-本文只依据本机实际安装的 OpenClaw 版本及其随包发布的官方文档，不依据上游 `main`、非官方文章或界面推断。
+本文是 2026-07-31 的历史审计，只记录当时本机安装版本的复现证据；当前实现契约以 OpenClaw 官方文档、schema、handler 和协议定义为准，当前复核见文首链接。
 
 - 安装版本：`OpenClaw 2026.7.1-2 (0790d9f)`，路径 `~/.npm-global/lib/node_modules/openclaw`
 - 契约来源：`docs/gateway/protocol.md`、`docs/gateway/operator-scopes.md`、`docs/cli/audit.md`、`docs/concepts/usage-tracking.md`、`docs/concepts/compaction.md`、`docs/gateway/configuration-reference.md`
@@ -141,11 +143,11 @@ OpenClaw 提供两套并行的审批协议：
 
 > `session.message`、`session.operation`、`session.tool`：transcript、**in-flight session operation**、event-stream updates for a subscribed session。
 
-**当前行为**：JunQi 已处理 `session.message`、`session.tool`，并按当前安装版的 `compact` start/end 载荷处理 `session.operation`。压缩状态显示在 Chat 上下文栏，成功结束投影为压缩分隔线；实现记录见 [`OpenClaw session.operation 能力对齐`](openclaw-session-operation-parity-2026-08-03.md)。
+**审计时行为**：JunQi 只处理 `session.message` 与 `session.tool`，全仓检索 `session.operation` 命中 0 处。当前行为已由新的 [会话操作事件对齐记录](openclaw-session-operation-alignment-2026-08-03.md) 更新。
 
 **可拓展行为**：in-flight operation 是「当前正在做什么」的权威来源。目前追溯对进行中状态只能从 tool 事件的 `running` 状态反推，两者的语义粒度并不相同。接入后，追溯面板在响应进行中可以展示官方口径的当前操作，而不是前端推断。
 
-**待验证**：当前安装版运行时源码已确认 `compact` operation 的字段和 start/end 语义，但未连接真实 Gateway 取得跨连接广播样本；未来新增 operation 类型仍需重新核对协议后再接入。
+**历史待验证项已关闭**：当时随包文档没有完整 payload；2026-08-03 已从官方当前 [SessionOperationEventSchema](https://github.com/openclaw/openclaw/blob/main/packages/gateway-protocol/src/schema/sessions.ts)、compact handler 和广播源码确认字段并完成客户端 decoder。真实 Gateway 联机和跨平台真机验证仍待完成。
 
 ### EXT-05 · 每响应的模型与用量
 
@@ -224,14 +226,14 @@ context window 只有在当前消息契约和官方字段完成核对后才能�
 1. EXT-01 与 EXT-02 一起做。二者共用 `audit.list` 的接入，且不需要 scope 变更，是解除现有 spec 自我约束的最短路径。
 2. EXT-06 已完成；后续只在取得新的官方压缩字段证据后扩展。
 3. EXT-05 接入已有的 usage 数据。
-4. EXT-04 已按安装版 `compact` payload 接入；扩展到其他 operation 前先取得对应的官方 payload 证据。
+4. EXT-04 已按官方当前 schema 接入；真实 Gateway 联机验证单独记录在 [会话操作事件对齐记录](openclaw-session-operation-alignment-2026-08-03.md)。
 5. EXT-03 涉及权限提升与安全语义，独立立项，需要 spec 与 plan 三层记录。
 6. EXT-07 已完成低风险跨运行只读子集；EXT-08 仍需将 cron/task 的 runId 归属接入同一追溯视图。
 
 ## 未验证边界
 
-- 本文全部结论来自 OpenClaw `2026.7.1-2` 随包文档和运行时打包源码。未连接真实 Gateway 调用 `audit.list`、`exec.approval.list` 或订阅 `session.operation`，因此未取得实际响应体样本。
-- 安装包的 `src/` 目录仅含 `agents/`，运行时 JS 为打包产物；`session.operation` 的当前 `compact` 字段已从运行时实现确认，其他 operation 类型仍未确认。
+- 本文全部结论来自 2026-07-31 的随包文档静态阅读。未连接真实 Gateway 调用 `audit.list`、`exec.approval.list` 或订阅 `session.operation`，因此当时未取得响应体样本。
+- 2026-08-03 已从官方当前主线源码核对 `SessionOperationEventSchema`、`sessions.compact` handler 与 `emitSessionOperation`；本条只保留为历史限制，不代表当前实现契约。
 - 未验证 `audit.enabled` 在当前本机配置中的实际取值，也未验证本机账本中是否已有可查询记录。
 - 未评估接入 `audit.list` 后的性能影响，包括每次打开追溯面板发起查询的频率与缓存策略。
 - 状态词汇扩展会影响 `ResponseGroup` 的既有消费方，本文未清点全部调用点，实际改动前需要完整核对。

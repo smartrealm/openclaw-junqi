@@ -6,18 +6,21 @@ import {
   type VoiceWakeTriggerSnapshot,
 } from './voiceWakeTypes';
 
+export type VoiceWakeGatewayErrorReason =
+  | 'connection_unavailable'
+  | 'connection_changed'
+  | 'invalid_response';
+
 export class VoiceWakeGatewayUnavailableError extends Error {
   readonly code = 'VOICE_WAKE_GATEWAY_UNAVAILABLE';
 
-  constructor(message: string) {
+  constructor(
+    readonly reason: VoiceWakeGatewayErrorReason,
+    message: string,
+  ) {
     super(message);
     this.name = 'VoiceWakeGatewayUnavailableError';
   }
-}
-
-export interface VoiceWakeGatewayConfiguration {
-  triggers: VoiceWakeTriggerSnapshot;
-  routing: VoiceWakeRoutingConfig;
 }
 
 export interface VoiceWakeGatewayClientDependencies {
@@ -40,11 +43,17 @@ export class VoiceWakeGatewayClient {
   ): Promise<unknown> {
     const connectionId = this.dependencies.captureConnectionId();
     if (!connectionId) {
-      throw new VoiceWakeGatewayUnavailableError('No attested Gateway connection is available for voice wake');
+      throw new VoiceWakeGatewayUnavailableError(
+        'connection_unavailable',
+        'No attested Gateway connection is available for voice wake',
+      );
     }
     const response = await this.dependencies.requestFenced(method, params, connectionId);
     if (!this.dependencies.isConnectionCurrent(connectionId)) {
-      throw new VoiceWakeGatewayUnavailableError('Gateway connection changed while reading voice wake configuration');
+      throw new VoiceWakeGatewayUnavailableError(
+        'connection_changed',
+        'Gateway connection changed while reading voice wake configuration',
+      );
     }
     return response;
   }
@@ -53,7 +62,10 @@ export class VoiceWakeGatewayClient {
     const response = await this.request('voicewake.get', {});
     const snapshot = decodeVoiceWakeTriggerSnapshot(response);
     if (!snapshot) {
-      throw new VoiceWakeGatewayUnavailableError('Gateway returned an invalid voice wake trigger payload');
+      throw new VoiceWakeGatewayUnavailableError(
+        'invalid_response',
+        'Gateway returned an invalid voice wake trigger payload',
+      );
     }
     return snapshot;
   }
@@ -62,7 +74,10 @@ export class VoiceWakeGatewayClient {
     const response = await this.request('voicewake.set', { triggers: [...triggers] });
     const snapshot = decodeVoiceWakeTriggerSnapshot(response);
     if (!snapshot) {
-      throw new VoiceWakeGatewayUnavailableError('Gateway returned an invalid voice wake trigger update');
+      throw new VoiceWakeGatewayUnavailableError(
+        'invalid_response',
+        'Gateway returned an invalid voice wake trigger update',
+      );
     }
     return snapshot;
   }
@@ -71,7 +86,10 @@ export class VoiceWakeGatewayClient {
     const response = await this.request('voicewake.routing.get', {});
     const config = decodeVoiceWakeRoutingSnapshot(response);
     if (!config) {
-      throw new VoiceWakeGatewayUnavailableError('Gateway returned an invalid voice wake routing payload');
+      throw new VoiceWakeGatewayUnavailableError(
+        'invalid_response',
+        'Gateway returned an invalid voice wake routing payload',
+      );
     }
     return config;
   }
@@ -80,14 +98,12 @@ export class VoiceWakeGatewayClient {
     const response = await this.request('voicewake.routing.set', { config });
     const updated = decodeVoiceWakeRoutingSnapshot(response);
     if (!updated) {
-      throw new VoiceWakeGatewayUnavailableError('Gateway returned an invalid voice wake routing update');
+      throw new VoiceWakeGatewayUnavailableError(
+        'invalid_response',
+        'Gateway returned an invalid voice wake routing update',
+      );
     }
     return updated;
-  }
-
-  async getConfiguration(): Promise<VoiceWakeGatewayConfiguration> {
-    const [triggers, routing] = await Promise.all([this.getTriggers(), this.getRouting()]);
-    return { triggers, routing };
   }
 
   subscribe(listener: VoiceWakeGatewayEventListener): () => void {

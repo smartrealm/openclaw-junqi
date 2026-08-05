@@ -1,6 +1,9 @@
+import type { SessionEvent } from '@/types/RenderBlock';
+
 export type SessionOperationPhase = 'start' | 'end';
 
-export interface SessionOperationEvent {
+/** The current OpenClaw gateway-protocol SessionOperationEvent contract. */
+export interface OpenClawSessionOperationEvent {
   operationId: string;
   operation: 'compact';
   phase: SessionOperationPhase;
@@ -11,48 +14,97 @@ export interface SessionOperationEvent {
   reason?: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+export type SessionOperationEvent = OpenClawSessionOperationEvent;
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
-function requiredString(value: unknown): string | null {
+function nonEmptyString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
 }
 
-function optionalString(value: unknown): string | undefined {
-  if (value === undefined) return undefined;
-  return requiredString(value) ?? undefined;
-}
+const SESSION_OPERATION_FIELDS = new Set([
+  'operationId',
+  'operation',
+  'phase',
+  'sessionKey',
+  'agentId',
+  'ts',
+  'completed',
+  'reason',
+]);
 
-export function parseSessionOperationEvent(value: unknown): SessionOperationEvent | null {
-  if (!isRecord(value)) return null;
-  const operationId = requiredString(value.operationId);
-  const sessionKey = requiredString(value.sessionKey);
-  const agentId = optionalString(value.agentId);
-  const reason = optionalString(value.reason);
-  const ts = value.ts;
-  if (!operationId || value.operation !== 'compact' || !sessionKey
-    || (value.agentId !== undefined && !agentId)
-    || (value.reason !== undefined && !reason)
-    || typeof ts !== 'number' || !Number.isSafeInteger(ts) || ts < 0
-    || (value.phase !== 'start' && value.phase !== 'end')) {
+/** Decode only fields present in OpenClaw's official session.operation schema. */
+export function parseOpenClawSessionOperationEvent(value: unknown): OpenClawSessionOperationEvent | null {
+  const source = record(value);
+  if (!source) return null;
+  if (Object.keys(source).some((key) => !SESSION_OPERATION_FIELDS.has(key))) return null;
+
+  const operationId = nonEmptyString(source.operationId);
+  const sessionKey = nonEmptyString(source.sessionKey);
+  const agentId = source.agentId === undefined ? undefined : nonEmptyString(source.agentId);
+  const reason = source.reason === undefined
+    ? undefined
+    : typeof source.reason === 'string'
+      ? source.reason
+      : null;
+  if (
+    !operationId
+    || source.operation !== 'compact'
+    || (source.phase !== 'start' && source.phase !== 'end')
+    || !sessionKey
+    || (source.agentId !== undefined && !agentId)
+    || typeof source.ts !== 'number'
+    || !Number.isSafeInteger(source.ts)
+    || source.ts < 0
+    || reason === null
+    || (source.completed !== undefined && typeof source.completed !== 'boolean')
+  ) {
     return null;
   }
-  if (value.phase === 'start') {
-    if (value.completed !== undefined || value.reason !== undefined) return null;
-  } else if (typeof value.completed !== 'boolean') {
-    return null;
-  }
+
   return {
     operationId,
     operation: 'compact',
-    phase: value.phase,
+    phase: source.phase,
     sessionKey,
     ...(agentId ? { agentId } : {}),
-    ts,
-    ...(value.completed !== undefined ? { completed: value.completed } : {}),
-    ...(reason ? { reason } : {}),
+    ts: source.ts,
+    ...(source.completed !== undefined ? { completed: source.completed } : {}),
+    ...(reason !== undefined ? { reason } : {}),
   };
+}
+
+export const parseSessionOperationEvent = parseOpenClawSessionOperationEvent;
+
+export type SessionOperationTranslator = (
+  key: string,
+  options?: { reason: string },
+) => string;
+
+export function describeOpenClawSessionOperation(
+  operation: OpenClawSessionOperationEvent,
+  translate: SessionOperationTranslator,
+): { kind: SessionEvent['kind']; text: string } {
+  if (operation.phase === 'start') {
+    return { kind: 'compaction', text: translate('chat.sessionCompactionStarted') };
+  }
+  if (operation.completed === true) {
+    return { kind: 'compaction', text: translate('chat.sessionCompactionCompleted') };
+  }
+  if (operation.completed === false) {
+    const reason = operation.reason?.trim();
+    return reason
+      ? {
+          kind: 'compaction',
+          text: translate('chat.sessionCompactionFailedWithReason', { reason }),
+        }
+      : { kind: 'compaction', text: translate('chat.sessionCompactionFailed') };
+  }
+  return { kind: 'compaction', text: translate('chat.sessionCompactionEnded') };
 }

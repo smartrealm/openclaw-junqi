@@ -42,11 +42,11 @@ test('writer serializes generations and coalesces pending snapshots', async () =
   await Promise.resolve();
   assert.deepEqual(calls, [{ generation: 4, panel: 'files' }]);
   const secondWrite = writer.schedule(snapshot('search'));
-  const thirdWrite = writer.schedule(snapshot('vault'));
+  const thirdWrite = writer.schedule(snapshot('source'));
   first.resolve({ generation: 5, payloadHash: 'first', unchanged: false });
   await Promise.all([firstWrite, secondWrite, thirdWrite]);
   assert.deepEqual(calls, [
     { generation: 4, panel: 'files' },
-    { generation: 5, panel: 'vault' },
+    { generation: 5, panel: 'source' },
   ]);
 });

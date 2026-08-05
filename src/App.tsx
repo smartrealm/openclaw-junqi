@@ -15,6 +15,7 @@ const PairingScreen = lazy(() => import('@/components/PairingScreen').then(m => 
 const GatewayErrorScreen = lazy(() => import('@/components/GatewayErrorScreen').then(m => ({ default: m.GatewayErrorScreen })));
 const DragDropRuntime = lazy(() => import('@/runtime/DragDropRuntime'));
 const DynamicIslandRuntime = lazy(() => import('@/dynamic-island/DynamicIslandRuntime'));
+const OpenClawSessionViewerPresenceRuntime = lazy(() => import('@/runtime/OpenClawSessionViewerPresenceRuntime'));
 const NotificationPreferencesRuntime = lazy(() => import('@/runtime/NotificationPreferencesRuntime'));
 import { useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
@@ -44,6 +45,14 @@ import {
   type GatewayRecoveryProgress,
 } from '@/services/gateway/recoveryProgress';
 import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
+import { parseGatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
+import { parseGatewaySessionAgentStatus } from '@/services/gateway/sessionAgentStatus';
+import { parseGatewaySessionAbortedLastRun } from '@/services/gateway/sessionAbortedLastRun';
+import { parseGatewaySessionContextBudgetStatus } from '@/services/gateway/sessionContextBudgetStatus';
+import { parseGatewaySessionGoal } from '@/services/gateway/sessionGoal';
+import { parseGatewaySessionLastRunError } from '@/services/gateway/sessionLastRunError';
+import { parseGatewaySessionThinkingProfile } from '@/services/gateway/sessionThinkingProfile';
+import { parseOpenClawActiveLeafEntryId } from '@/services/gateway/activeLeafEntryId';
 import {
   OPENCLAW_UPDATE_MAINTENANCE_FINISHED,
   OPENCLAW_UPDATE_MAINTENANCE_STARTED,
@@ -57,18 +66,26 @@ import {
   isSessionDeleted,
   subscribeNativeSessionCommit,
 } from '@/utils/sessionLifecycle';
-import { sessionListMutationFence } from '@/utils/sessionListMutationFence';
+import {
+  classifySessionListLoadFailure,
+  sessionListMutationFence,
+} from '@/utils/sessionListMutationFence';
 import { startRecoverableTask } from '@/utils/recoverableTask';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import { readActiveOpenclawConfig } from '@/services/openclawConfigRuntime';
 import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
 import { approveSelectedGatewayDevice } from '@/api/tauri-commands';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
 import { JarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
+import {
+  describeOpenClawSessionOperation,
+  type OpenClawSessionOperationEvent,
+} from '@/services/gateway/sessionOperation';
 
 function ThemeRuntime() {
   useTheme();
@@ -316,7 +333,7 @@ export default function App() {
       if (!requestGate.isCurrent(requestId)) return 'superseded';
       const sessionListSnapshot = parseOpenClawSessionListSnapshot(result);
       const rawSessions = sessionListSnapshot.sessions;
-      // Gateway-level defaults (configured model, context window)
+      // Gateway 下发的默认模型与上下文窗口。
       const defaults = result?.defaults
         ? {
             model: resolveGatewaySessionModelId(
@@ -334,6 +351,9 @@ export default function App() {
             : '';
         if (!key) return [];
         const gatewayModel = resolveGatewaySessionModelId(s.modelProvider, s.model);
+        const agentRuntime = parseGatewaySessionAgentRuntime(s.agentRuntime);
+        const thinkingProfile = parseGatewaySessionThinkingProfile(s);
+        const activeLeafEntryId = parseOpenClawActiveLeafEntryId(s.activeLeafEntryId);
         return [{
           key,
           sessionId: typeof s.sessionId === 'string' ? s.sessionId : undefined,
@@ -352,23 +372,46 @@ export default function App() {
           spawnedBy: typeof s.spawnedBy === 'string' ? s.spawnedBy : undefined,
           parentSessionKey: typeof s.parentSessionKey === 'string' ? s.parentSessionKey : undefined,
           status: typeof s.status === 'string' ? s.status : undefined,
-          // Keep an omitted run field as unknown. Treating it as `false`
-          // races local streaming state on older Gateway versions.
+          agentStatus: parseGatewaySessionAgentStatus(s.agentStatus),
+          abortedLastRun: parseGatewaySessionAbortedLastRun(s.abortedLastRun),
+          contextBudgetStatus: parseGatewaySessionContextBudgetStatus(s.contextBudgetStatus),
+          goal: parseGatewaySessionGoal(s.goal),
+          lastRunError: parseGatewaySessionLastRunError(s.lastRunError),
+          ...(activeLeafEntryId !== undefined ? { activeLeafEntryId } : {}),
+          // 缺失运行字段时保持未知；将其视为 false 会与旧 Gateway 的本地流式状态竞争。
           hasActiveRun: typeof s.hasActiveRun === 'boolean' ? s.hasActiveRun : undefined,
           hasActiveSubagentRun: typeof s.hasActiveSubagentRun === 'boolean' ? s.hasActiveSubagentRun : undefined,
           subagentRunState: typeof s.subagentRunState === 'string' ? s.subagentRunState : undefined,
           systemSent: s.systemSent === true,
-          // Per-session metadata for TitleBar
+          // 供标题栏与会话控制使用的每会话元数据。
           model: gatewayModel,
-          thinkingLevel: s.thinkingLevel ?? null,
+          modelSelectionLocked: s.modelSelectionLocked === true,
+          agentRuntime,
+          thinkingLevel: thinkingProfile.level,
+          thinkingLevels: thinkingProfile.levels,
+          thinkingDefault: thinkingProfile.defaultLevel,
+          fastMode: s.fastMode === true || s.fastMode === false || s.fastMode === 'auto'
+            ? s.fastMode
+            : null,
+          verboseLevel: s.verboseLevel === 'on' || s.verboseLevel === 'full' || s.verboseLevel === 'off'
+            ? s.verboseLevel
+            : null,
+          traceLevel: typeof s.traceLevel === 'string' && s.traceLevel.trim()
+            ? s.traceLevel
+            : null,
+          responseUsage: typeof s.responseUsage === 'string' && s.responseUsage.trim()
+            ? s.responseUsage
+            : null,
+          reasoningLevel: s.reasoningLevel === 'on' || s.reasoningLevel === 'off' || s.reasoningLevel === 'stream'
+            ? s.reasoningLevel
+            : null,
           totalTokens: s.totalTokens,
           contextTokens: s.contextTokens,
           compactionCount: s.compactionCount,
           running: s.running ?? false,
         }];
       });
-      // Always sync sessions/defaults, even when the session list is currently empty.
-      // This keeps TitleBar model in sync from gateway defaults after config changes.
+      // 即使会话列表为空也同步会话与默认值，保证配置变化后标题栏模型保持一致。
       setSessions(sessions, defaults, {
         completeSnapshot: sessionListSnapshot.complete,
         sourceProjectionRevision,
@@ -380,9 +423,10 @@ export default function App() {
       }
       return 'loaded';
     } catch {
-      return requestGate.isCurrent(requestId) && sessionListMutationFence.isCurrent(mutationRevision)
-        ? 'failed'
-        : 'superseded';
+      return classifySessionListLoadFailure(
+        requestGate.isCurrent(requestId),
+        sessionListMutationFence.isCurrent(mutationRevision),
+      );
     }
   }, [setSessions]);
 
@@ -394,41 +438,22 @@ export default function App() {
   }), [loadSessions]);
 
   // ── Load Available Models from Gateway ──
-  // Uses Chain of Responsibility: models.list(WS) → config.get(WS) → openclaw.json(file) → agents+sessions.
-  // Each strategy returns models or null (delegate to next).
+  // The configured Gateway view is the only authority for selectable models.
   const loadAvailableModels = useCallback(async () => {
     const [
-      { ModelLoaderChain, GatewayModelsListLoader, ConfigGetLoader, FileReadLoader, AgentsSessionLoader },
+      { loadConfiguredGatewayModels },
       {
-        extractAvailableModelsFromConfig,
         extractAvailableModelsFromGatewayResult,
-        hasConfiguredModelProviders,
       },
     ] = await Promise.all([
       import('@/services/gateway/modelLoaders'),
       import('@/services/gateway/modelCatalog'),
     ]);
 
-    const ctx = {
-      hasProviders: hasConfiguredModelProviders,
-      extractModels: extractAvailableModelsFromConfig,
-      extractRuntimeModels: extractAvailableModelsFromGatewayResult,
-    };
-
-    // The configured runtime view applies OpenClaw's current policy, provider
-    // plugins, and `models.mode` semantics. File inference only protects a
-    // disconnected gateway during recovery.
-    const chain = new ModelLoaderChain([
-      new GatewayModelsListLoader((m, p) => gateway.call(m, p)),
-      new ConfigGetLoader((m, p) => gateway.call(m, p)),
-      new FileReadLoader(async () => {
-        const { data } = await readActiveOpenclawConfig();
-        return { data };
-      }),
-      new AgentsSessionLoader(() => gateway.getSessions(), () => gateway.getAgents()),
-    ]);
-
-    const models = await chain.load(ctx);
+    const models = await loadConfiguredGatewayModels(
+      (method, params) => gateway.call(method, params),
+      extractAvailableModelsFromGatewayResult,
+    );
     try {
       const { data } = await readActiveOpenclawConfig();
       const profiles = Object.keys(data?.auth?.profiles ?? {}).length;
@@ -716,6 +741,15 @@ export default function App() {
         );
       },
       onStreamEnd: (sessionKey, messageId, content, media, meta) => {
+        void taskExecutionCoordinator.settleRun({
+          sessionKey,
+          runId: meta?.runId,
+          terminalReason: meta?.state === 'aborted'
+            ? 'aborted'
+            : meta?.state === 'error'
+              ? 'error'
+              : 'final',
+        }).catch((error) => taskExecutionCoordinator.reportPersistenceFailure('settle Run checkpoint', error));
         if (sessionKey === useChatStore.getState().activeSessionKey) {
           voiceRuntime.finishStream(sessionKey, content, meta?.state ?? 'final', messageId, media?.mediaUrl);
         }
@@ -790,6 +824,20 @@ export default function App() {
       },
       onTranscriptChanged: (sessionKey) => {
         refreshDurableTranscript(sessionKey);
+      },
+      onSessionOperation: (operation: OpenClawSessionOperationEvent) => {
+        if (isSessionDeleted(operation.sessionKey)) return;
+        const presentation = describeOpenClawSessionOperation(operation, (key, options) => (
+          options ? t(key, options) : t(key)
+        ));
+        addMessage({
+          id: `session-operation-${operation.operationId}-${operation.phase}`,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(operation.ts).toISOString(),
+          responseState: 'final',
+          sessionEvents: [presentation],
+        }, operation.sessionKey);
       },
       onTranscriptMessage: (notice) => {
         if (notice.liveProjected || isSessionDeleted(notice.sessionKey)) return;
@@ -1103,6 +1151,7 @@ export default function App() {
       window.removeEventListener('aegis:sessions-changed', handleSessionsChanged);
       window.removeEventListener('aegis:manual-reconnect', handleManualReconnect);
       gateway.forgetSessionTranscript();
+      gateway.forgetSessionViewerPresence();
       gatewayManager.destroy();
     };
   }, [loadAvailableModels, setupComplete, cachedSetupValidationPending, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure, markInitialWorkspaceDataReady]);
@@ -1201,6 +1250,11 @@ export default function App() {
           <NotificationPreferencesRuntime />
         </Suspense>
         <LazyPetRuntimeHost />
+        {hasTauriEventBridge() && (
+          <Suspense fallback={null}>
+            <OpenClawSessionViewerPresenceRuntime setupComplete={setupComplete === true} />
+          </Suspense>
+        )}
         {hasTauriEventBridge() && (
           <Suspense fallback={null}>
             <DynamicIslandRuntime />

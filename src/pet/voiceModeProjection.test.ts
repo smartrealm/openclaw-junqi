@@ -1,17 +1,12 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { isVoiceInputCapturePhase } from '@/services/voice/VoiceModeCoordinator';
 
-const emitter = readFileSync(new URL('./usePetStateEmitter.ts', import.meta.url), 'utf8');
-
-test('pet maps only active voice capture phases into its existing non-text thinking cue', () => {
+test('萌宠只把 Talk 的采集和等待阶段映射为非文本思考提示', () => {
+  assert.equal(isVoiceInputCapturePhase('preparing'), false);
   assert.equal(isVoiceInputCapturePhase('listening'), true);
-  assert.equal(isVoiceInputCapturePhase('triggered'), true);
-  assert.equal(isVoiceInputCapturePhase('transcribing'), true);
-  assert.equal(isVoiceInputCapturePhase('ready_to_send'), false);
-  assert.equal(isVoiceInputCapturePhase('unavailable'), false);
-  assert.match(emitter, /voiceModeCoordinator\.getSnapshot\(\)/);
-  assert.match(emitter, /voiceModeCoordinator\.subscribe\(wake\)/);
-  assert.doesNotMatch(emitter, /voiceMode\.draft/);
+  assert.equal(isVoiceInputCapturePhase('hearing'), true);
+  assert.equal(isVoiceInputCapturePhase('thinking'), true);
+  assert.equal(isVoiceInputCapturePhase('speaking'), false);
+  assert.equal(isVoiceInputCapturePhase('error'), false);
 });

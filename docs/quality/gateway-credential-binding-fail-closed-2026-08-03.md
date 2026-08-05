@@ -17,6 +17,11 @@ resolveGatewayConnectionCredentialRuntimeKey。若 URL 与配置无法核对，�
 
 ## 当前行为
 
+- Gateway 设备身份的 Ed25519 私钥只保存在 macOS Keychain、Windows Credential Manager 或
+  Linux Secret Service；Tauri command 在原生侧生成身份并完成 challenge 签名，前端只接收
+  deviceId、公钥和签名。凭据库不可用时返回错误，不回退到 localStorage 或明文文件。
+- 旧的浏览器存储设备身份不再读取或迁移。安全存储首次生成的身份会被 OpenClaw 视为新设备，
+  用户必须按原生配对流程重新授权，JunQi 不伪造已有配对状态。
 - GatewayCredentialBinding 读取选中 runtime 配置失败时直接传播错误。
 - bindCredential 不会被调用，也不会写入实例凭据、持久化 alias 或删除源凭据。
 - 配置读取成功时，仍使用 credential_scope 生成 selected runtime source key，并由既有
@@ -38,3 +43,5 @@ resolveGatewayConnectionCredentialRuntimeKey。若 URL 与配置无法核对，�
   协作实例凭据提升。
 - 未改变系统凭据库不可用时的 session_only 语义；该语义仍由 credentialProvider 契约
   和已有测试覆盖。
+- 未在 Windows Credential Manager、macOS Keychain 或 Linux Secret Service 真机完成设备
+  challenge 与重新配对验收；自动化只验证私钥不离开 Rust 边界和签名参数校验。

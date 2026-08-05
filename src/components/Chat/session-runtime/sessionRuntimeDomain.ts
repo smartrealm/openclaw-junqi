@@ -1,16 +1,29 @@
 import type { ModelEntry } from '@/services/gateway/modelLoaders';
 import { canonicalProviderId } from '@/services/gateway/modelIdentity';
 
-export const SESSION_THINKING_LEVELS = [
-  'auto',
-  'high',
-  'medium',
-  'low',
-  'minimal',
-  'off',
-] as const;
+export const SESSION_FAST_MODES = ['inherit', 'auto', 'on', 'off'] as const;
 
-export type SessionThinkingLevel = (typeof SESSION_THINKING_LEVELS)[number];
+export type SessionFastMode = (typeof SESSION_FAST_MODES)[number];
+
+export const SESSION_VERBOSE_LEVELS = ['inherit', 'on', 'full', 'off'] as const;
+
+export type SessionVerboseLevel = (typeof SESSION_VERBOSE_LEVELS)[number];
+
+export const SESSION_TRACE_LEVELS = ['inherit', 'on', 'off'] as const;
+
+export type SessionTraceWriteLevel = (typeof SESSION_TRACE_LEVELS)[number];
+
+export type SessionTraceLevel = SessionTraceWriteLevel | 'unsupported';
+
+export const SESSION_RESPONSE_USAGE_LEVELS = ['inherit', 'off', 'tokens', 'full'] as const;
+
+export type SessionResponseUsageWriteLevel = (typeof SESSION_RESPONSE_USAGE_LEVELS)[number];
+
+export type SessionResponseUsageLevel = SessionResponseUsageWriteLevel | 'unsupported';
+
+export const SESSION_REASONING_LEVELS = ['inherit', 'on', 'off', 'stream'] as const;
+
+export type SessionReasoningLevel = (typeof SESSION_REASONING_LEVELS)[number];
 
 export interface SessionModelGroup {
   providerId: string;
@@ -44,12 +57,70 @@ export function groupSessionModels(models: readonly ModelEntry[]): SessionModelG
   }));
 }
 
-export function normalizeThinkingLevel(level: string | null): SessionThinkingLevel {
-  return SESSION_THINKING_LEVELS.includes(level as SessionThinkingLevel)
-    ? level as SessionThinkingLevel
-    : 'auto';
+/** 仅以 Gateway 会话行明确给出的锁定状态决定模型是否可改。 */
+export function canChangeSessionModel(modelSelectionLocked: boolean): boolean {
+  return !modelSelectionLocked;
 }
 
-export function thinkingLevelForGateway(level: SessionThinkingLevel): string | null {
-  return level === 'auto' ? null : level;
+/** null 是清除会话覆盖、继承 Gateway 已解析默认值的唯一客户端表示。 */
+export function normalizeThinkingLevel(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/** 仅允许写入 Gateway 当前 profile 明确声明的等级，继承仍需 profile 存在。 */
+export function canWriteThinkingLevel(
+  levels: readonly { id: string }[] | null | undefined,
+  level: string | null,
+): boolean {
+  return levels !== null && levels !== undefined
+    && (level === null || levels.some((option) => option.id === level));
+}
+
+export function normalizeFastMode(value: unknown): SessionFastMode {
+  if (value === 'auto') return 'auto';
+  if (value === true) return 'on';
+  if (value === false) return 'off';
+  return 'inherit';
+}
+
+export function fastModeForGateway(mode: SessionFastMode): boolean | 'auto' | null {
+  if (mode === 'auto') return 'auto';
+  if (mode === 'on') return true;
+  if (mode === 'off') return false;
+  return null;
+}
+
+export function normalizeVerboseLevel(value: unknown): SessionVerboseLevel {
+  return value === 'on' || value === 'full' || value === 'off' ? value : 'inherit';
+}
+
+export function verboseLevelForGateway(mode: SessionVerboseLevel): 'on' | 'full' | 'off' | null {
+  return mode === 'inherit' ? null : mode;
+}
+
+export function normalizeTraceLevel(value: unknown): SessionTraceLevel {
+  if (value === undefined || value === null) return 'inherit';
+  return value === 'on' || value === 'off' ? value : 'unsupported';
+}
+
+export function traceLevelForGateway(mode: SessionTraceWriteLevel): 'on' | 'off' | null {
+  return mode === 'inherit' ? null : mode;
+}
+
+export function normalizeResponseUsage(value: unknown): SessionResponseUsageLevel {
+  if (value === undefined || value === null) return 'inherit';
+  if (value === 'on') return 'tokens';
+  return value === 'off' || value === 'tokens' || value === 'full' ? value : 'unsupported';
+}
+
+export function responseUsageForGateway(mode: SessionResponseUsageWriteLevel): 'off' | 'tokens' | 'full' | null {
+  return mode === 'inherit' ? null : mode;
+}
+
+export function normalizeReasoningLevel(value: unknown): SessionReasoningLevel {
+  return value === 'on' || value === 'off' || value === 'stream' ? value : 'inherit';
+}
+
+export function reasoningLevelForGateway(mode: SessionReasoningLevel): 'on' | 'off' | 'stream' | null {
+  return mode === 'inherit' ? null : mode;
 }

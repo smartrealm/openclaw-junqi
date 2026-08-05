@@ -23,10 +23,10 @@ export type OpenClawChatSendAcknowledgement =
   | { state: 'settled'; runId: string }
   | { state: 'unknown' };
 
-export type OpenClawChatAbortAcknowledgement =
-  | { state: 'aborted'; runIds: string[] }
-  | { state: 'not_aborted'; runIds: [] }
-  | { state: 'unknown'; runIds: [] };
+export type OpenClawSessionAbortAcknowledgement =
+  | { state: 'aborted'; runId: string }
+  | { state: 'not_aborted' }
+  | { state: 'unknown' };
 
 export interface OpenClawSessionListSnapshot {
   sessions: unknown[];
@@ -65,25 +65,28 @@ export function classifyOpenClawChatSendAcknowledgement(
   return { state: 'unknown' };
 }
 
-/** Classify OpenClaw's official `chat.abort` result without inferring success. */
-export function classifyOpenClawChatAbortAcknowledgement(
+/** Classify the native session abort result without inferring a local run. */
+export function classifyOpenClawSessionAbortAcknowledgement(
   response: unknown,
-): OpenClawChatAbortAcknowledgement {
+): OpenClawSessionAbortAcknowledgement {
   if (!response || typeof response !== 'object' || Array.isArray(response)) {
-    return { state: 'unknown', runIds: [] };
+    return { state: 'unknown' };
   }
   const record = response as Record<string, unknown>;
-  if (record.ok !== true || typeof record.aborted !== 'boolean' || !Array.isArray(record.runIds)) {
-    return { state: 'unknown', runIds: [] };
+  if (record.ok !== true || (record.status !== 'aborted' && record.status !== 'no-active-run')) {
+    return { state: 'unknown' };
   }
-  const runIds = [...new Set(record.runIds.flatMap((runId) => {
-    const normalized = typeof runId === 'string' ? runId.trim() : '';
-    return normalized ? [normalized] : [];
-  }))];
-  if (!record.aborted) return { state: 'not_aborted', runIds: [] };
-  return runIds.length > 0
-    ? { state: 'aborted', runIds }
-    : { state: 'unknown', runIds: [] };
+  const rawRunId = record.abortedRunId;
+  if (rawRunId !== null && rawRunId !== undefined && typeof rawRunId !== 'string') {
+    return { state: 'unknown' };
+  }
+  const runId = typeof rawRunId === 'string' ? rawRunId.trim() : '';
+  if (record.status === 'no-active-run') {
+    return rawRunId === null || rawRunId === undefined
+      ? { state: 'not_aborted' }
+      : { state: 'unknown' };
+  }
+  return runId ? { state: 'aborted', runId } : { state: 'unknown' };
 }
 
 /** Preserve the pagination proof attached to an OpenClaw sessions.list result. */

@@ -36,8 +36,6 @@ const NODE_RUNTIME_PROBE_ATTEMPTS: usize = 3;
 pub struct PlatformInfo {
     pub os: String,
     pub arch: String,
-    pub home_dir: String,
-    pub desktop_dir: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -631,14 +629,9 @@ pub struct OpenclawStatus {
     pub path: Option<String>,
     pub source: Option<String>,
     pub binary_found: bool,
-    pub version_ok: bool,
     pub package_valid: bool,
     pub gateway_command_ok: bool,
     pub relocation_required: bool,
-    /// Set when the installed version is newer than the range this JunQi build
-    /// was verified against. Usable, but the user needs to know before a wizard
-    /// or protocol failure sends them looking in the wrong place.
-    pub version_beyond_verified_range: bool,
     pub error: Option<String>,
 }
 
@@ -1007,14 +1000,9 @@ pub(crate) fn npm_cli_for_node(node: &Path) -> Option<PathBuf> {
 
 #[tauri::command]
 pub async fn get_platform_info() -> Result<PlatformInfo, String> {
-    let home = dirs::home_dir().ok_or("Could not determine home directory")?;
-    let ma_dir = paths::desktop_dir();
-
     Ok(PlatformInfo {
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
-        home_dir: home.to_string_lossy().to_string(),
-        desktop_dir: ma_dir.to_string_lossy().to_string(),
     })
 }
 
@@ -1580,11 +1568,9 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
             path: None,
             source: None,
             binary_found: false,
-            version_ok: false,
             package_valid: false,
             gateway_command_ok: false,
             relocation_required: paths::openclaw_relocation_required(),
-            version_beyond_verified_range: false,
             error: Some(error),
         };
     }
@@ -1595,11 +1581,9 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
             path: None,
             source: None,
             binary_found: false,
-            version_ok: false,
             package_valid: false,
             gateway_command_ok: false,
             relocation_required: paths::openclaw_relocation_required(),
-            version_beyond_verified_range: false,
             error: Some(error),
         };
     }
@@ -1614,11 +1598,9 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
                 path: None,
                 source: None,
                 binary_found: false,
-                version_ok: false,
                 package_valid: false,
                 gateway_command_ok: false,
                 relocation_required,
-                version_beyond_verified_range: false,
                 error: Some(
                     if relocation_required {
                         "OpenClaw needs to be installed in the selected npm location before it can run"
@@ -1636,39 +1618,6 @@ pub(crate) async fn detect_openclaw() -> OpenclawStatus {
     status
 }
 
-/// The OpenClaw range this desktop build is verified against.
-///
-/// `packages/junqi-collab/package.json` already declares `>=2026.7.1 <2027.0.0`
-/// as its peer range. Install validation used to accept any parsable version,
-/// so the two halves of the product disagreed and a user who upgraded OpenClaw
-/// got no signal until the wizard failed for reasons that looked unrelated.
-pub(crate) const OPENCLAW_MIN_SUPPORTED_VERSION: (u32, u32, u32) = (2026, 7, 1);
-pub(crate) const OPENCLAW_VERIFIED_BELOW_MAJOR: u32 = 2027;
-
-/// Leading numeric triple of an OpenClaw version. Suffixes such as `-2` are
-/// revisions of the same contract and are deliberately ignored.
-pub(crate) fn parse_openclaw_version_triple(version: &str) -> Option<(u32, u32, u32)> {
-    let core = version.trim().trim_start_matches('v');
-    let core = core.split(['-', '+']).next()?;
-    let mut parts = core.split('.');
-    let major = parts.next()?.parse::<u32>().ok()?;
-    let minor = parts.next().unwrap_or("0").parse::<u32>().ok()?;
-    let patch = parts.next().unwrap_or("0").parse::<u32>().ok()?;
-    Some((major, minor, patch))
-}
-
-/// Below the floor the contract is known not to hold, so this blocks. Above the
-/// ceiling it only warns: refusing a normally upgraded OpenClaw would leave the
-/// user with no working desktop at all, which is worse than an untested pairing.
-pub(crate) fn openclaw_version_support(version: Option<&str>) -> (bool, bool) {
-    let Some(parsed) = version.and_then(parse_openclaw_version_triple) else {
-        return (false, false);
-    };
-    let supported = parsed >= OPENCLAW_MIN_SUPPORTED_VERSION;
-    let beyond = parsed.0 >= OPENCLAW_VERIFIED_BELOW_MAJOR;
-    (supported, beyond)
-}
-
 pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) -> OpenclawStatus {
     let path_string = path_for_display(path);
     let package_version = read_openclaw_pkg_version(path);
@@ -1679,7 +1628,6 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
     // The actual launcher contract is validated structurally, then runtime
     // commands resolve the package's `openclaw.mjs` entry through Node.
     let version = package_version;
-    let (version_ok, version_beyond_verified_range) = openclaw_version_support(version.as_deref());
     let entry_smoke_ok = if package_valid {
         // An unchanged payload that already passed the smoke probe stays
         // verified without re-running Node. This is the load-bearing guard
@@ -1699,19 +1647,8 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
         false
     };
     let gateway_command_ok = package_valid && entry_smoke_ok && !is_legacy_brand_wrapper(path);
-    let installed = version_ok && package_valid && gateway_command_ok;
+    let installed = package_valid && gateway_command_ok;
     let mut errors = Vec::new();
-    if version.is_none() {
-        errors.push("OpenClaw package version is missing or invalid".to_string());
-    } else if !version_ok {
-        errors.push(format!(
-            "OpenClaw {} is older than the minimum supported {}.{}.{}; update OpenClaw",
-            version.as_deref().unwrap_or("(unknown)"),
-            OPENCLAW_MIN_SUPPORTED_VERSION.0,
-            OPENCLAW_MIN_SUPPORTED_VERSION.1,
-            OPENCLAW_MIN_SUPPORTED_VERSION.2,
-        ));
-    }
     if !package_valid {
         errors.push(
             "OpenClaw package contract is incomplete (package.json, engines.node, and openclaw.mjs are required)"
@@ -1730,11 +1667,9 @@ pub(crate) async fn validate_openclaw_binary(path: &Path, _search_path: &str) ->
         path: Some(path_string),
         source: None,
         binary_found: true,
-        version_ok,
         package_valid,
         gateway_command_ok,
         relocation_required: paths::openclaw_relocation_required(),
-        version_beyond_verified_range,
         error: if installed {
             None
         } else {
@@ -2362,42 +2297,51 @@ pub async fn get_terminal_env(project_path: String) -> Result<TerminalEnvInfo, S
 
 #[cfg(test)]
 mod tests {
-    use super::{openclaw_version_support, parse_openclaw_version_triple};
+    use super::{OpenclawStatus, PlatformInfo};
 
-    // AUD-02: install validation accepted any parsable version while the collab
-    // plugin declared >=2026.7.1 <2027.0.0. The two halves must agree.
     #[test]
-    fn openclaw_version_support_matches_the_declared_peer_range() {
-        assert_eq!(openclaw_version_support(Some("2026.7.1")), (true, false));
-        // A revision suffix is the same contract, not a different version.
-        assert_eq!(openclaw_version_support(Some("2026.7.1-2")), (true, false));
-        assert_eq!(openclaw_version_support(Some("v2026.8.0")), (true, false));
-        // Below the floor the contract is known not to hold.
-        assert_eq!(openclaw_version_support(Some("2026.7.0")), (false, false));
-        assert_eq!(openclaw_version_support(Some("2025.12.31")), (false, false));
-        // Above the ceiling stays usable and only raises the flag: refusing a
-        // normally upgraded OpenClaw would leave no working desktop at all.
-        assert_eq!(openclaw_version_support(Some("2027.1.0")), (true, true));
-        // Unparsable is not silently treated as supported.
+    fn platform_info_serialization_does_not_expose_local_paths() {
+        let value = serde_json::to_value(PlatformInfo {
+            os: "linux".to_string(),
+            arch: "x86_64".to_string(),
+        })
+        .expect("platform info must serialize");
+
         assert_eq!(
-            openclaw_version_support(Some("not-a-version")),
-            (false, false)
+            value,
+            serde_json::json!({ "os": "linux", "arch": "x86_64" })
         );
-        assert_eq!(openclaw_version_support(None), (false, false));
     }
 
     #[test]
-    fn openclaw_version_triple_ignores_revision_and_build_suffixes() {
+    fn openclaw_status_serializes_version_as_information_not_policy() {
+        let status = OpenclawStatus {
+            installed: true,
+            version: Some("2027.1.0".to_string()),
+            path: Some("/runtime/openclaw".to_string()),
+            source: Some("test".to_string()),
+            binary_found: true,
+            package_valid: true,
+            gateway_command_ok: true,
+            relocation_required: false,
+            error: None,
+        };
+        let value = serde_json::to_value(status).expect("OpenClaw status must serialize");
+
         assert_eq!(
-            parse_openclaw_version_triple("2026.7.1-2"),
-            Some((2026, 7, 1))
+            value,
+            serde_json::json!({
+                "installed": true,
+                "version": "2027.1.0",
+                "path": "/runtime/openclaw",
+                "source": "test",
+                "binary_found": true,
+                "package_valid": true,
+                "gateway_command_ok": true,
+                "relocation_required": false,
+                "error": null,
+            })
         );
-        assert_eq!(
-            parse_openclaw_version_triple("v2026.7.1+build"),
-            Some((2026, 7, 1))
-        );
-        assert_eq!(parse_openclaw_version_triple("2026.7"), Some((2026, 7, 0)));
-        assert_eq!(parse_openclaw_version_triple(""), None);
     }
 
     use super::{

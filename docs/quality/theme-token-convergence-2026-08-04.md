@@ -33,7 +33,9 @@
 - `--aegis-pet-text-on-light`、`--aegis-pet-text-on-dark`；
 - `--aegis-status-*` 生命周期状态色。
 
-Tailwind 的 `--shadow-card`、`--shadow-float` 和 `--shadow-popover` 已桥接到上述 token。旧的 `red`、`blue`、`green`、`orange`、`yellow`、`cyan`、`emerald`、`slate` 语义色变量在 `[data-theme]` 边界重新绑定，迁移中的旧 utility 不再固定到某一个主题。
+Tailwind 的 `--shadow-card`、`--shadow-float` 和 `--shadow-popover` 已桥接到上述 token。业务组件逐项改用 `aegis-*` 语义色，不在 `[data-theme]` 全局重绑定 Tailwind 内置调色板，避免误改数据可视化、内容资产或未审查页面。
+
+遮罩色从每个主题的 `--aegis-shadow-color` 派生，不复用深色主题中用于浅色悬浮反馈的 `--aegis-overlay`，避免深色弹窗遮罩反向提亮背景。
 
 ### 组件迁移
 
@@ -47,7 +49,7 @@ Tailwind 的 `--shadow-card`、`--shadow-float` 和 `--shadow-popover` 已桥接
 ## 自动化验证
 
 - `src/theme/runtimeCoverage.test.ts` 检查四个具体主题的共享 chrome、状态和萌宠可读性 token；
-- `src/theme/tailwindThemeBridge.test.ts` 检查 Tailwind 语义变量、旧 palette 兼容桥和阴影映射；
+- `src/theme/tailwindThemeBridge.test.ts` 检查 Tailwind 语义变量和阴影映射，并确保实现不依赖旧调色板兼容桥；
 - `src/theme/productChromeColors.test.ts` 继续按逐文件审查预算阻止新增未分类 hex；
 - 萌宠对比度测试覆盖明暗、纹理背景和无原生采样回退。
 

@@ -8,11 +8,15 @@ export type DynamicIslandAction =
   | { type: 'voice-stop' }
   | { type: 'hide' };
 
-/** Hides immediately in the auxiliary window, then persists the user's intent in main. */
-export function hideDynamicIsland(
-  close: () => Promise<unknown>,
-  emitAction: (action: DynamicIslandAction) => void,
-): void {
-  void close().catch(() => undefined);
-  emitAction({ type: 'hide' });
+/** 先要求原生窗口立即隐藏，再将持久化意图交给主窗口所有者。 */
+export async function hideDynamicIsland(
+  requestNativeHide: () => Promise<unknown>,
+  emitAction: (action: DynamicIslandAction) => Promise<unknown>,
+): Promise<void> {
+  const [nativeResult, actionResult] = await Promise.allSettled([
+    requestNativeHide(),
+    emitAction({ type: 'hide' }),
+  ]);
+  if (nativeResult.status === 'rejected') throw nativeResult.reason;
+  if (actionResult.status === 'rejected') throw actionResult.reason;
 }

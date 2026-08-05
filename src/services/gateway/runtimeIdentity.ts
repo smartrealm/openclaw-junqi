@@ -12,6 +12,10 @@ type IdentityListener = (identity: RuntimeIdentity | null) => void;
 type IdentityResolver = (observation: GatewayHelloObservation) => Promise<RuntimeIdentity>;
 type IdentityClearer = (params: ClearRuntimeIdentityParams) => Promise<boolean>;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 let currentIdentity: RuntimeIdentity | null = null;
 let activeConnectionId: string | null = null;
 let observationGeneration = 0;
@@ -32,18 +36,18 @@ export function buildGatewayHelloObservation(
   response: unknown,
   observedAtMs = Date.now(),
 ): GatewayHelloObservation {
-  const envelope = response && typeof response === 'object'
-    ? response as Record<string, any>
-    : {};
-  const hello = envelope.payload?.type === 'hello-ok' ? envelope.payload : envelope;
-  const server = hello.server && typeof hello.server === 'object' ? hello.server : {};
-  const features = hello.features && typeof hello.features === 'object' ? hello.features : {};
-  const snapshot = hello.snapshot && typeof hello.snapshot === 'object' ? hello.snapshot : {};
-  const auth = hello.auth && typeof hello.auth === 'object' ? hello.auth : {};
+  const envelope = isRecord(response) ? response : {};
+  const payload = isRecord(envelope.payload) ? envelope.payload : null;
+  const hello = payload?.type === 'hello-ok' ? payload : envelope;
+  const server = isRecord(hello.server) ? hello.server : {};
+  const features = isRecord(hello.features) ? hello.features : {};
+  const snapshot = isRecord(hello.snapshot) ? hello.snapshot : {};
+  const auth = isRecord(hello.auth) ? hello.auth : {};
+  const protocol = hello.protocol;
 
   return {
     endpoint,
-    protocol: Number.isInteger(hello.protocol) && hello.protocol >= 0 ? hello.protocol : 0,
+    protocol: typeof protocol === 'number' && Number.isInteger(protocol) && protocol >= 0 ? protocol : 0,
     serverVersion: stringValue(server.version),
     connectionId: stringValue(server.connId),
     stateDir: nullableString(snapshot.stateDir),

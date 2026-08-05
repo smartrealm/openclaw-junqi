@@ -4,36 +4,64 @@
 
 ## 依据
 
-- 本机安装的 OpenClaw `2026.7.1-2`（源码目录 `/Users/wei/.npm-global/lib/node_modules/openclaw`）。
-- 随包 schema `dist/schema-DtyqV_v0.d.ts` 定义 `skills.upload.begin`、`skills.upload.chunk`、`skills.upload.commit`，并定义 `skills.install` 的 `source: "upload"` 分支。
-- 随包 handler `dist/skills-ieKSTXPw.js` 定义 256 MiB 归档上限、每块 4 MiB 解码上限、上传 TTL、顺序 offset、SHA-256 校验和 `skills.install.allowUploadedArchives` 配置门禁。
+本次能力以 OpenClaw 官方文档、公开 schema 和 handler 源码为契约。本机安装的 OpenClaw
+源码只用于复现请求和响应，不作为 JunQi 的版本开关、能力判断或兼容条件。
+
+- [`gateway/protocol.md`](https://github.com/openclaw/openclaw/blob/main/docs/gateway/protocol.md)
+  定义 `skills.upload.begin`、`skills.upload.chunk`、`skills.upload.commit` 与
+  `skills.install(source: "upload")` 的方法、参数和 `operator.admin` 权限。
+- [`tools/skills.md`](https://github.com/openclaw/openclaw/blob/main/docs/tools/skills.md)
+  说明归档上传是关闭状态下的私有技能安装路径，需要 Gateway 配置
+  `skills.install.allowUploadedArchives: true`。
+- [`agents-models-skills.ts`](https://raw.githubusercontent.com/openclaw/openclaw/main/packages/gateway-protocol/src/schema/agents-models-skills.ts)
+  定义上传 begin/chunk/commit 和 install upload 分支的字段。
+- [`skills-upload.ts`](https://raw.githubusercontent.com/openclaw/openclaw/main/src/gateway/server-methods/skills-upload.ts)、
+  [`upload-store.ts`](https://raw.githubusercontent.com/openclaw/openclaw/main/src/skills/lifecycle/upload-store.ts)
+  和 [`upload-install.ts`](https://raw.githubusercontent.com/openclaw/openclaw/main/src/skills/lifecycle/upload-install.ts)
+  定义管理员上传、临时归档、偏移、SHA-256、TTL、大小和安装回执行为。
+
+官方 handler 当前约束归档不超过 256 MiB，单个解码块不超过 4 MiB，上传由 Gateway 临时目录
+管理并在 TTL 到期后清理。JunQi 选择 3 MiB 客户端块，保持在官方上限内；这只是客户端传输
+策略，不改变 OpenClaw 的协议限制。
 
 ## 原问题
 
-JunQi 已经通过 `skills.status`、`skills.search`、`skills.detail` 和 ClawHub 形式的 `skills.install` 管理 Gateway 技能，但技能页没有官方归档上传入口。旧的本地 ZIP 导入语义不能直接写入当前 Gateway workspace，也不能据此声称远端安装成功。
+JunQi 已经通过 `skills.status`、`skills.search`、`skills.detail` 和 ClawHub 形式的
+`skills.install` 管理 Gateway 技能，但技能页没有官方归档上传入口。旧的本地 ZIP 导入
+语义不能直接写入当前 Gateway workspace，也不能据此声称远端安装成功。
 
-## 目标行为
+## 当前行为
 
-- 技能页的已安装视图提供 ZIP 归档上传入口，用户明确填写 Gateway 使用的 skill slug。
-- 客户端先用 SHA-256 和 `skills.upload.begin` 创建或恢复上传，再按 3 MiB 解码块调用 `skills.upload.chunk`，最后调用 `skills.upload.commit`。
-- commit 返回的 `uploadId`、`receivedBytes` 和 SHA-256 必须与本地归档一致；校验通过后才调用 `skills.install` 的 `source: "upload"` 分支。
-- 所有上传和安装变更均使用一次性 `callPrivileged`，不把归档内容、Gateway token 或凭据写入 localStorage、日志或 Markdown。
-- UI 显示阶段与进度，失败时显示真实 Gateway 错误；不把失败当成成功，也不伪造远端删除。当前协议没有上传删除 command，未完成或失败的临时归档由 OpenClaw 的 TTL 清理。
-- `force` 只在用户明确勾选时发送，slug 校验与 OpenClaw 当前规则一致：ASCII 字母、数字和连字符，且不能以连字符开头或结尾。
-
-## 实现位置
-
-- `src/services/openclawSkillsRuntime.ts`：上传分块、哈希、响应校验和 `source: "upload"` 安装。
-- `src/pages/SkillsPage/SkillArchiveUploadPanel.tsx`：ZIP 选择、slug、替换选项、进度和错误状态。
-- `src/pages/SkillsPage/index.tsx`：在已安装技能视图挂载上传入口。
-- `src/services/openclawSkillsRuntime.test.ts`：分块顺序、哈希确认、异常 offset 和非法 slug 回归测试。
+- `src/services/openclawSkillsRuntime.ts` 提供 `installArchive`，先在内存中计算 SHA-256，
+  依次调用官方 begin/chunk/commit，再只在 commit 回执完整且哈希一致时调用
+  `skills.install` 的 `source: "upload"` 分支。
+- 上传的所有阶段均通过 `callPrivileged` 发出；slug、uploadId、大小、偏移、哈希和安装回执
+  都严格校验，Gateway 返回错误或不一致时不显示成功。
+- `hello-ok.features.methods` 的遗漏不决定上传入口或调用资格；上传只在用户显式提交后按官方顺序真实请求，
+  Gateway 的正式错误决定是否可用，不把发现信息当成支持结论。
+- `src/pages/SkillsPage/SkillArchiveUploadPanel.tsx` 使用桌面 Tauri WebView 的文件选择器
+  读取 ZIP 字节，显示阶段进度、slug、显式替换选项和真实错误；不发起浏览器 HTTP 请求，
+  不写本地技能目录，也不持久化归档内容或凭据。
+- 成功后重新读取 `skills.status` 和 `skills.securityVerdicts`，已安装列表仍以 Gateway
+  的原生状态为准。
+- `/skill-hub` 继续表示 JunQi 本地目录和项目符号链接工具，与 Gateway 归档上传保持边界，
+  不作为上传失败时的替代安装路径。
 
 ## 验证结果
 
-本记录创建后需执行：技能运行时定向测试、TypeScript 检查、lint、生产构建和 `git diff --check`。当前没有在真实 Gateway 上上传归档，也没有在 Windows、Linux 或 macOS 真机上完成技能页手工验收。
+- `openclawSkillsRuntime.test.ts` 覆盖多块归档、管理员调用顺序、哈希确认、异常 offset、
+  非法 slug 和安装回执校验。
+- 已通过定向 TypeScript 检查、技能运行时定向测试、`pnpm lint`、`pnpm test`、`pnpm build`、
+  `pnpm verify:openclaw-docs` 和 `git diff --check`；完整测试结果为源代码 2380 项通过、脚本
+  233 项通过，构建产物生成成功。
+- 三套 locale JSON 可解析。
 
 ## 未验证边界
 
-- Gateway 配置未启用 `skills.install.allowUploadedArchives` 时，真实服务会拒绝安装；JunQi 只展示该错误，不代替用户修改配置。
-- 远端上传临时目录的 TTL 和重启后的恢复由 OpenClaw 管理，当前 JunQi 没有上传取消或删除 RPC，因此不能提供本地“清理远端归档”的假动作。
-- ZIP 内部必须满足 OpenClaw 的技能归档结构和安全策略，JunQi 不在上传前复制一套归档解析器。
+尚未连接真实 Gateway 执行上传，也没有在 Windows、Linux 或 macOS 真机上完成技能页手工
+验收。Gateway 未开启 `skills.install.allowUploadedArchives`、旧 Gateway 不声明上传方法、
+网络中断、管理员配对失败和安装策略拒绝时，JunQi 只展示原生错误，不代替用户修改配置或
+伪造成功。
+
+OpenClaw 当前没有上传取消或远端临时归档删除 RPC，JunQi 不提供对应的假动作。ZIP 内部结构、
+安全扫描和安装副作用由 OpenClaw 处理，JunQi 不复制一套解析器或安全判定。

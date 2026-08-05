@@ -3,19 +3,64 @@ import { useTranslation } from 'react-i18next';
 import { gateway } from '@/services/gateway';
 import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
 import {
+  parseGatewaySessionAgentRuntime,
+  type GatewaySessionAgentRuntime,
+} from '@/services/gateway/sessionAgentRuntime';
+import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
+import {
   SessionSettingsResponseError,
+  SessionSettingsTargetError,
   type SessionPatchResult,
 } from '@/services/gateway/SessionSettingsClient';
 import { useChatStore } from '@/stores/chatStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { debugError } from '@/utils/debugLog';
 import {
+  fastModeForGateway,
+  normalizeFastMode,
+  normalizeReasoningLevel,
+  normalizeResponseUsage,
+  normalizeTraceLevel,
   normalizeThinkingLevel,
-  thinkingLevelForGateway,
-  type SessionThinkingLevel,
+  normalizeVerboseLevel,
+  canChangeSessionModel,
+  canWriteThinkingLevel,
+  reasoningLevelForGateway,
+  responseUsageForGateway,
+  traceLevelForGateway,
+  verboseLevelForGateway,
+  type SessionFastMode,
+  type SessionReasoningLevel,
+  type SessionResponseUsageLevel,
+  type SessionTraceLevel,
+  type SessionVerboseLevel,
 } from './sessionRuntimeDomain';
 
-function settingErrorMessage(error: unknown, fallback: string, invalidResponse: string): string {
+export class SessionModelSelectionLockedError extends Error {
+  constructor() {
+    super();
+    this.name = 'SessionModelSelectionLockedError';
+  }
+}
+
+export function assertSessionModelSelectionAllowed(
+  modelSelectionLocked: boolean,
+  modelWillChange: boolean,
+): void {
+  if (modelWillChange && !canChangeSessionModel(modelSelectionLocked)) {
+    throw new SessionModelSelectionLockedError();
+  }
+}
+
+export function sessionSettingsErrorMessage(
+  error: unknown,
+  fallback: string,
+  invalidResponse: string,
+  modelSelectionLocked: string,
+  targetRequired: string,
+): string {
+  if (error instanceof SessionModelSelectionLockedError) return modelSelectionLocked;
+  if (error instanceof SessionSettingsTargetError) return targetRequired;
   if (
     error
     && typeof error === 'object'
@@ -29,17 +74,28 @@ function settingErrorMessage(error: unknown, fallback: string, invalidResponse: 
 
 export interface SessionRuntimeSnapshot {
   modelId: string | null;
-  thinking: SessionThinkingLevel;
+  thinking: string | null;
+  thinkingLevels: readonly GatewayThinkingLevelOption[] | null;
+  thinkingDefault: string | null;
+  fastMode: SessionFastMode;
+  verbose: SessionVerboseLevel;
+  trace: SessionTraceLevel;
+  responseUsage: SessionResponseUsageLevel;
+  reasoning: SessionReasoningLevel;
 }
+
+type SessionRuntimeDraft = Omit<SessionRuntimeSnapshot, 'thinkingLevels' | 'thinkingDefault'>;
 
 function commitSessionModel(
   sessionKey: string,
   effectiveModel: string | null,
   manualOverride: string | null,
   previousModel: string | null,
+  agentRuntime: GatewaySessionAgentRuntime | null,
 ): void {
   const state = useChatStore.getState();
   state.setSessionModel(sessionKey, effectiveModel);
+  if (agentRuntime) state.setSessionAgentRuntime(sessionKey, agentRuntime);
   if (state.activeSessionKey === sessionKey) {
     state.setManualModelOverride(manualOverride);
   }
@@ -63,19 +119,101 @@ function resolvedPatchModel(result: SessionPatchResult): string {
   return model;
 }
 
+export function resolveSessionAgentRuntimePatch(
+  result: SessionPatchResult,
+): GatewaySessionAgentRuntime | null {
+  return parseGatewaySessionAgentRuntime(result.resolved.agentRuntime);
+}
+
+function resolvedPatchFastMode(result: SessionPatchResult): boolean | 'auto' | null {
+  const value = result.entry.fastMode;
+  if (value === undefined || value === null || value === true || value === false || value === 'auto') {
+    return value ?? null;
+  }
+  throw new SessionSettingsResponseError('invalid-payload');
+}
+
+export function resolveSessionThinkingPatch(result: SessionPatchResult): string | null {
+  const value = result.entry.thinkingLevel;
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  throw new SessionSettingsResponseError('invalid-payload');
+}
+
+function resolvedPatchVerboseLevel(result: SessionPatchResult): 'on' | 'full' | 'off' | null {
+  const value = result.entry.verboseLevel;
+  if (value === undefined || value === null || value === 'on' || value === 'full' || value === 'off') {
+    return value ?? null;
+  }
+  throw new SessionSettingsResponseError('invalid-payload');
+}
+
+function resolvedPatchTraceLevel(result: SessionPatchResult): string | null {
+  const value = result.entry.traceLevel;
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string' && value.trim()) return value;
+  throw new SessionSettingsResponseError('invalid-payload');
+}
+
+function resolvedPatchResponseUsage(result: SessionPatchResult): string | null {
+  const value = result.entry.responseUsage;
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string' && value.trim()) return value;
+  throw new SessionSettingsResponseError('invalid-payload');
+}
+
+function resolvedPatchReasoningLevel(result: SessionPatchResult): 'on' | 'off' | 'stream' | null {
+  const value = result.entry.reasoningLevel;
+  if (value === undefined || value === null || value === 'on' || value === 'off' || value === 'stream') {
+    return value ?? null;
+  }
+  throw new SessionSettingsResponseError('invalid-payload');
+}
+
 export function useSessionRuntimeSettings() {
   const { t } = useTranslation();
   const addToast = useNotificationStore((state) => state.addToast);
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const currentModel = useChatStore((state) => state.currentModel);
   const currentThinking = useChatStore((state) => state.currentThinking);
+  const currentThinkingLevels = useChatStore((state) => (
+    state.sessions.find((entry) => entry.key === state.activeSessionKey)?.thinkingLevels ?? null
+  ));
+  const currentThinkingDefault = useChatStore((state) => (
+    state.sessions.find((entry) => entry.key === state.activeSessionKey)?.thinkingDefault ?? null
+  ));
   const manualModelOverride = useChatStore((state) => state.manualModelOverride);
+  const currentFastMode = useChatStore((state) => (
+    state.sessions.find((session) => session.key === state.activeSessionKey)?.fastMode ?? null
+  ));
+  const currentVerbose = useChatStore((state) => (
+    state.sessions.find((session) => session.key === state.activeSessionKey)?.verboseLevel ?? null
+  ));
+  const currentTrace = useChatStore((state) => (
+    state.sessions.find((session) => session.key === state.activeSessionKey)?.traceLevel ?? null
+  ));
+  const currentResponseUsage = useChatStore((state) => (
+    state.sessions.find((session) => session.key === state.activeSessionKey)?.responseUsage ?? null
+  ));
+  const currentReasoning = useChatStore((state) => (
+    state.sessions.find((session) => session.key === state.activeSessionKey)?.reasoningLevel ?? null
+  ));
+  const modelSelectionLocked = useChatStore((state) => (
+    state.sessions.find((session) => session.key === state.activeSessionKey)?.modelSelectionLocked === true
+  ));
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
 
   const committed: SessionRuntimeSnapshot = {
     modelId: manualModelOverride ?? currentModel,
     thinking: normalizeThinkingLevel(currentThinking),
+    thinkingLevels: currentThinkingLevels,
+    thinkingDefault: normalizeThinkingLevel(currentThinkingDefault),
+    fastMode: normalizeFastMode(currentFastMode),
+    verbose: normalizeVerboseLevel(currentVerbose),
+    trace: normalizeTraceLevel(currentTrace),
+    responseUsage: normalizeResponseUsage(currentResponseUsage),
+    reasoning: normalizeReasoningLevel(currentReasoning),
   };
 
   const runUpdate = useCallback(async (operation: () => Promise<void>): Promise<boolean> => {
@@ -90,10 +228,12 @@ export function useSessionRuntimeSettings() {
       addToast(
         'error',
         t('chat.sessionSettingsUpdateFailed'),
-        settingErrorMessage(
+        sessionSettingsErrorMessage(
           error,
           t('errors.occurred'),
           t('chat.sessionSettingsResponseInvalid'),
+          t('chat.sessionModelSelectionLocked'),
+          t('chat.sessionSettingsTargetRequired'),
         ),
       );
       return false;
@@ -103,22 +243,86 @@ export function useSessionRuntimeSettings() {
     }
   }, [addToast, t]);
 
-  const apply = useCallback(async (draft: SessionRuntimeSnapshot): Promise<boolean> => {
+  const apply = useCallback(async (draft: SessionRuntimeDraft): Promise<boolean> => {
     return runUpdate(async () => {
       const stateBefore = useChatStore.getState();
-      const sessionKey = stateBefore.activeSessionKey || 'agent:main:main';
+      const sessionKey = stateBefore.activeSessionKey;
       const previousModel = stateBefore.manualModelOverride ?? stateBefore.currentModel;
       const previousThinking = normalizeThinkingLevel(stateBefore.currentThinking);
-      if (draft.modelId && draft.modelId !== previousModel) {
-        const result = await gateway.setSessionModel(draft.modelId, sessionKey);
-        const effectiveModel = resolvedPatchModel(result);
-        commitSessionModel(sessionKey, effectiveModel, effectiveModel, previousModel);
+      const targetSession = stateBefore.sessions.find((session) => session.key === sessionKey);
+      const previousFastMode = normalizeFastMode(targetSession?.fastMode ?? null);
+      const previousVerbose = normalizeVerboseLevel(
+        targetSession?.verboseLevel ?? null,
+      );
+      const previousTrace = normalizeTraceLevel(
+        targetSession?.traceLevel ?? null,
+      );
+      const previousResponseUsage = normalizeResponseUsage(
+        targetSession?.responseUsage ?? null,
+      );
+      const previousReasoning = normalizeReasoningLevel(
+        targetSession?.reasoningLevel ?? null,
+      );
+      const modelWillChange = Boolean(draft.modelId && draft.modelId !== previousModel);
+      const thinkingWillChange = draft.thinking !== previousThinking;
+      const currentThinkingLevels = targetSession?.thinkingLevels;
+      assertSessionModelSelectionAllowed(targetSession?.modelSelectionLocked === true, modelWillChange);
+      // 新模型的 profile 只能由随后的权威会话刷新确认，不能拿旧模型的能力集写入。
+      if (
+        thinkingWillChange
+        && (modelWillChange || !canWriteThinkingLevel(currentThinkingLevels, draft.thinking))
+      ) {
+        throw new SessionSettingsResponseError('invalid-payload');
       }
 
-      if (draft.thinking !== previousThinking) {
-        const nextThinking = thinkingLevelForGateway(draft.thinking);
-        await gateway.setSessionThinking(nextThinking, sessionKey);
-        useChatStore.getState().setSessionThinking(sessionKey, nextThinking);
+      if (modelWillChange) {
+        const result = await gateway.setSessionModel(draft.modelId, sessionKey);
+        const effectiveModel = resolvedPatchModel(result);
+        commitSessionModel(
+          sessionKey,
+          effectiveModel,
+          effectiveModel,
+          previousModel,
+          resolveSessionAgentRuntimePatch(result),
+        );
+      }
+
+      if (thinkingWillChange) {
+        const result = await gateway.setSessionThinking(draft.thinking, sessionKey);
+        useChatStore.getState().setSessionThinking(sessionKey, resolveSessionThinkingPatch(result));
+      }
+
+      if (draft.fastMode !== previousFastMode) {
+        const result = await gateway.setSessionFastMode(fastModeForGateway(draft.fastMode), sessionKey);
+        useChatStore.getState().setSessionFastMode(sessionKey, resolvedPatchFastMode(result));
+      }
+
+      if (draft.verbose !== previousVerbose) {
+        const result = await gateway.setSessionVerbose(verboseLevelForGateway(draft.verbose), sessionKey);
+        useChatStore.getState().setSessionVerbose(sessionKey, resolvedPatchVerboseLevel(result));
+      }
+
+      if (draft.trace !== previousTrace) {
+        if (draft.trace === 'unsupported') throw new SessionSettingsResponseError('invalid-payload');
+        const result = await gateway.setSessionTrace(
+          traceLevelForGateway(draft.trace),
+          sessionKey,
+        );
+        useChatStore.getState().setSessionTrace(sessionKey, resolvedPatchTraceLevel(result));
+      }
+
+      if (draft.responseUsage !== previousResponseUsage) {
+        if (draft.responseUsage === 'unsupported') throw new SessionSettingsResponseError('invalid-payload');
+        const result = await gateway.setSessionResponseUsage(
+          responseUsageForGateway(draft.responseUsage),
+          sessionKey,
+        );
+        useChatStore.getState().setSessionResponseUsage(sessionKey, resolvedPatchResponseUsage(result));
+      }
+
+      if (draft.reasoning !== previousReasoning) {
+        const result = await gateway.setSessionReasoning(reasoningLevelForGateway(draft.reasoning), sessionKey);
+        useChatStore.getState().setSessionReasoning(sessionKey, resolvedPatchReasoningLevel(result));
       }
     });
   }, [runUpdate]);
@@ -126,13 +330,30 @@ export function useSessionRuntimeSettings() {
   const restoreDefaultModel = useCallback(async (): Promise<boolean> => {
     return runUpdate(async () => {
       const state = useChatStore.getState();
-      const sessionKey = state.activeSessionKey || 'agent:main:main';
+      const sessionKey = state.activeSessionKey;
       const previousModel = state.manualModelOverride ?? state.currentModel;
+      assertSessionModelSelectionAllowed(
+        state.sessions.find((session) => session.key === sessionKey)?.modelSelectionLocked === true,
+        true,
+      );
       const result = await gateway.setSessionModel(null, sessionKey);
       const effectiveModel = resolvedPatchModel(result);
-      commitSessionModel(sessionKey, effectiveModel, null, previousModel);
+      commitSessionModel(
+        sessionKey,
+        effectiveModel,
+        null,
+        previousModel,
+        resolveSessionAgentRuntimePatch(result),
+      );
     });
   }, [runUpdate]);
 
-  return { activeSessionKey, committed, saving, apply, restoreDefaultModel };
+  return {
+    activeSessionKey,
+    committed,
+    modelSelectionLocked,
+    saving,
+    apply,
+    restoreDefaultModel,
+  };
 }

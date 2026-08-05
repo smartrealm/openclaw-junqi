@@ -20,7 +20,7 @@ type HistoryLikeMessage = {
   isStreaming?: boolean;
   responseState?: 'streaming' | 'final' | 'error' | 'aborted';
   attachments?: unknown[];
-  outboundAttachments?: Array<{ fileName: string; mimeType: string }>;
+  outboundAttachments?: Array<{ fileName?: string; mimeType: string }>;
   retryPayload?: unknown;
 };
 

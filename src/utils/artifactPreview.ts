@@ -1,7 +1,7 @@
 import type { ArtifactDownloadResult, ArtifactSummary } from '@/services/gateway/artifacts';
 import type { ManagedFilePreview } from './filePreviewCapabilities';
 import { decodeBase64Utf8 } from '@/services/chat/filePreview';
-import { isJsonFileName } from './jsonPreview';
+import { fileExtension } from '@/workspace-files/domain/fileKinds';
 
 const MAX_INLINE_ARTIFACT_BYTES = 8 * 1024 * 1024;
 
@@ -31,7 +31,7 @@ function isMarkdownArtifact(artifact: ArtifactSummary): boolean {
 }
 
 function isJsonArtifact(artifact: ArtifactSummary): boolean {
-  return isJsonFileName(artifact.title) || normalizedMime(artifact) === 'application/json';
+  return fileExtension(artifact.title) === 'json' || normalizedMime(artifact) === 'application/json';
 }
 
 function isHtmlArtifact(artifact: ArtifactSummary): boolean {

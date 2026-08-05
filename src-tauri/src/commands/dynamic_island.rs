@@ -101,6 +101,11 @@ fn lifecycle_gate() -> &'static tokio::sync::Mutex<IslandLifecycle> {
     WINDOW_LIFECYCLE_GATE.get_or_init(|| tokio::sync::Mutex::new(IslandLifecycle::default()))
 }
 
+fn prepare_immediate_hide(lifecycle: &mut IslandLifecycle) {
+    lifecycle.expect_hidden();
+    ANIMATION_GENERATION.fetch_add(1, Ordering::SeqCst);
+}
+
 fn cache_geometry(geometry: MonitorGeometry) -> MonitorGeometry {
     if let Ok(mut cached) = monitor_cache().lock() {
         *cached = Some(geometry);
@@ -340,6 +345,17 @@ pub async fn close_dynamic_island(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 由辅助窗口请求立即隐藏自身；持久偏好仍由主窗口处理对应的 hide intent。
+#[tauri::command]
+pub async fn request_dynamic_island_hide(app: AppHandle) -> Result<(), String> {
+    let mut lifecycle = lifecycle_gate().lock().await;
+    prepare_immediate_hide(&mut lifecycle);
+    if let Some(window) = app.get_webview_window(DYNAMIC_ISLAND_LABEL) {
+        window.hide().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn toggle_dynamic_island(app: AppHandle) -> Result<bool, String> {
     if let Some(window) = app.get_webview_window(DYNAMIC_ISLAND_LABEL) {
@@ -433,6 +449,17 @@ mod tests {
         assert!(!expansion.is_finished());
         drop(closing);
         assert!(!expansion.await.expect("expansion task should complete"));
+    }
+
+    #[test]
+    fn immediate_hide_blocks_queued_expansion() {
+        let mut lifecycle = IslandLifecycle {
+            expected_visible: true,
+        };
+
+        prepare_immediate_hide(&mut lifecycle);
+
+        assert!(!lifecycle.allows_expansion());
     }
 
     #[test]

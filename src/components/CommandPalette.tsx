@@ -19,6 +19,11 @@ import { changeLanguage } from '@/i18n';
 import { nextPrimaryLanguage } from '@/i18n/languages';
 import { isFeatureEnabled, type EditionFeatureKey } from '@/config/edition';
 import { gateway } from '@/services/gateway';
+import {
+  notifyOpenClawSessionCompaction,
+  notifyOpenClawSessionCompactionFailure,
+  requireOpenClawSessionCompactionTarget,
+} from '@/services/gateway/sessionCompactionFeedback';
 import { useNotificationStore } from '@/stores/notificationStore';
 import clsx from 'clsx';
 
@@ -76,7 +81,7 @@ export function CommandPalette() {
     { id: 'nav-ai-workspace', feature: 'agentRun', icon: FolderKanban, name: t('nav.aiWorkspace', 'AI Workspace'), keywords: ['workspace', 'agent run', 'tasks', '工作台'], action: () => navigate('/ai-workspace') },
     { id: 'nav-settings', feature: 'settings', icon: Settings, name: t('nav.settings'), shortcut: 'Ctrl+,', keywords: ['settings', 'إعدادات'], action: () => navigate('/settings') },
 
-    // Actions
+    // 操作
     { id: 'act-heartbeat', icon: Heart, name: t('palette.heartbeat'), keywords: ['heartbeat', 'فحص', 'check'], action: () => {
       window.dispatchEvent(new CustomEvent('aegis:quick-action', { detail: { message: 'Run a quick heartbeat check — emails, calendar, anything urgent?', autoSend: true } }));
     }},
@@ -87,19 +92,13 @@ export function CommandPalette() {
       window.dispatchEvent(new CustomEvent('aegis:quick-action', { detail: { message: "What's on my calendar today and tomorrow?", autoSend: true } }));
     }},
     { id: 'act-compact', icon: RefreshCw, name: t('palette.compactContext'), keywords: ['compact', 'ضغط', 'context'], action: () => {
-      const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
-      void gateway.compactSession(sessionKey).then(() => {
-        useNotificationStore.getState().addToast(
-          'task_complete',
-          t('dashboard.compactQueuedTitle', 'Compaction requested'),
-          t('dashboard.compactQueuedBody', 'OpenClaw is compacting the current session context.'),
-        );
+      const sessionKey = useChatStore.getState().activeSessionKey;
+      void Promise.resolve().then(() => gateway.compactSession(
+        requireOpenClawSessionCompactionTarget(sessionKey),
+      )).then((result) => {
+        notifyOpenClawSessionCompaction(result, t, useNotificationStore.getState().addToast);
       }).catch((error) => {
-        useNotificationStore.getState().addToast(
-          'error',
-          t('dashboard.compactFailedTitle', 'Compaction failed'),
-          String(error),
-        );
+        notifyOpenClawSessionCompactionFailure(error, t, useNotificationStore.getState().addToast);
       });
     }},
 
@@ -114,7 +113,7 @@ export function CommandPalette() {
       action: () => navigate(`/agent-run?agent=${a.id}`),
     })),
     { id: 'agent-terminal', icon: Terminal, name: t('palette.openTerminal', 'Open Terminal'), keywords: ['terminal', 'shell', 'bash', 'zsh'], shortcut: 'Ctrl+T', action: () => navigate('/terminal') },
-    { id: 'nav-openclaw-commands', feature: 'tools', icon: BookOpenText, name: t('nav.openclawCommands', 'OpenClaw commands'), keywords: ['openclaw', 'cli', 'commands', 'reference', '命令', 'مرجع'], action: () => navigate('/openclaw-commands') },
+    { id: 'nav-openclaw-commands', feature: 'tools', icon: BookOpenText, name: t('nav.openclawCommands', 'OpenClaw commands'), keywords: ['openclaw', 'commands', 'runtime', '命令', '运行时', 'مرجع'], action: () => navigate('/openclaw-commands') },
     { id: 'agent-status', icon: Cpu, name: t('palette.systemStatus', 'System Status'), keywords: ['status', 'system', 'health'], action: () => navigate('/perf') },
 
     // Connection

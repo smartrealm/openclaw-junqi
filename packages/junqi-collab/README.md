@@ -6,7 +6,7 @@ exact transcript delivery. JunQi is a client of the `junqi.collab.*` Gateway
 RPC surface; it is not the workflow scheduler.
 
 Current package baseline: plugin `0.4.0`, SQLite schema `13`, OpenClaw
-`>=2026.7.1 <2027.0.0`.
+`>=2026.7.1`.
 
 ## Execution boundary
 
@@ -30,7 +30,7 @@ execution never calls `managedFlows.runTask()`.
 Requirements:
 
 - Node.js `>=22.22.3 <23`, `>=24.15.0 <25`, or `>=25.9.0`
-- OpenClaw `>=2026.7.1 <2027.0.0`
+- OpenClaw `>=2026.7.1`
 - A persistent Gateway runtime
 - Explicit `coordinatorAgentId` and `allowedAgentIds` plugin configuration
 

@@ -70,3 +70,13 @@
   均通过；模块边界检查覆盖 639 个文件，生产构建转换 8985 个模块。
 - 桌面边界：当前 `/Applications/JunQi Desktop.app` 仍是包含旧资源的已安装包。本轮没有覆盖安装包，
   也没有把生产前端构建描述为真实 Tauri 窗口验收。
+
+## 2026-08-04 Active Leaf 刷新补充修正
+
+- 复现证据：`CHAT-16` 守护测试发现 `refreshActiveLeaf` 仍以 `void loadHistory(...).catch(...)` 发起
+  后台刷新，与首次加载、缓存刷新和重试路径使用的 `startRecoverableTask` 不一致。
+- 根因：active leaf 冲突恢复是在后续消息发送流程加入的入口，没有纳入此前的后台历史 Promise 全量审查。
+- 修复：active leaf 刷新改为 `startRecoverableTask`，失败统一进入 `reportBackgroundHistoryFailure(sessionKey, error)`；
+  因而错误仍显示在对应会话的可恢复聊天表面，并不会泄漏为全局未处理拒绝。
+- 验证：定向回归 26 项、`pnpm lint`、`pnpm test`、`pnpm build`、`pnpm verify:openclaw-docs`
+  与 `git diff --check` 均通过。active leaf 的真实 Gateway 冲突恢复和 Tauri 真机交互未验证。

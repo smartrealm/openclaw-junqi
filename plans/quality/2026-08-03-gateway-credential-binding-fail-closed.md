@@ -7,7 +7,8 @@
 1. 复核 GatewayCredentialBinding、runtime key resolver 和协作凭据写入顺序。
 2. 删除配置探测失败到 null 的静默回退。
 3. 增加失败关闭回归测试并保留成功路径测试。
-4. 同步三层记录和索引，执行定向、全量与构建验证。
+4. 将 Gateway device challenge 私钥迁入系统凭据库，前端只经 Tauri command 获取签名结果。
+5. 同步三层记录和索引，执行定向、全量与构建验证。
 
 ## 完成状态
 

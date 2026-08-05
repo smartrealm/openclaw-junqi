@@ -2,14 +2,20 @@
 
 ## 依据
 
-本机已安装 OpenClaw `2026.7.1-2`。其 `docs/gateway/protocol.md` 与
-`dist/schema-DtyqV_v0.d.ts` 定义了以下契约：
+本机安装的 OpenClaw 版本只用于复现范围，不作为 JunQi 的能力开关或版本契约。
+契约以 OpenClaw 官方协议、源码和 schema 为准；本次技能目录字段对齐核对了
+[`gateway/protocol.md`](https://github.com/openclaw/openclaw/blob/main/docs/gateway/protocol.md)、
+[`agents-models-skills.ts`](https://raw.githubusercontent.com/openclaw/openclaw/main/packages/gateway-protocol/src/schema/agents-models-skills.ts)、
+[`skills.ts`](https://raw.githubusercontent.com/openclaw/openclaw/main/src/gateway/server-methods/skills.ts)
+与 [`clawhub-verdicts.ts`](https://raw.githubusercontent.com/openclaw/openclaw/main/src/skills/security/clawhub-verdicts.ts)：
 
 - `skills.status`、`skills.search`、`skills.detail` 是 `operator.read` 操作；
+- `skills.securityVerdicts` 是 `operator.read` 操作，只为已安装且带有 ClawHub 链接的技能生成安全判定；
 - `skills.update` 与 `skills.install` 是 `operator.admin` 操作；
+- `skills.upload.begin`、`skills.upload.chunk`、`skills.upload.commit` 与 `skills.install` 的 upload 分支是 `operator.admin` 操作，且归档安装受 `skills.install.allowUploadedArchives` 控制，默认关闭；
 - `skills.update` 的配置模式只接受 `skillKey`、`enabled`、`apiKey` 与 `env`；
 - `skills.install` 的 ClawHub 模式只接受 `source: "clawhub"`、`slug`、可选版本、强制安装与风险确认字段；
-- 在本记录基线版本中没有技能删除、目录导入、ZIP 导入、SkillHub CLI 安装或 ClawHub 登录 command；当前版本的官方 ZIP 归档上传已在独立记录中补齐。
+- 当前协议没有技能删除、上传取消、远端上传删除、目录导入、SkillHub CLI 安装或 ClawHub 登录 command；官方 ZIP 归档上传能力在独立记录中说明。
 
 ## 原问题
 
@@ -21,20 +27,40 @@ Tauri adapter 中固定返回失败或空结果，但页面仍向用户显示导
 ## 当前实现
 
 - `src/services/openclawSkillsRuntime.ts` 是 Gateway 技能域唯一运行时出口。它校验输入、
-  解析当前协议的 status/search/detail 返回，并让所有变更经 `callPrivileged` 发出。
+  严格解析当前协议的 status/search/detail/securityVerdicts 返回，并让所有变更经 `callPrivileged` 发出。
+  status 的名称、描述、source、disabled、eligible 与 userInvocable 缺失或类型错误时不再
+  用默认值补齐；技能版本只从官方 status 的 `clawhub.installedVersion` 读取。
 - `src/stores/skillsStore.ts` 复用该服务，供侧栏、Agent 页面和会话输入使用。
 - `src/pages/SkillsPage/index.tsx` 缩分为已安装技能和 Gateway 目录两个视图，只提供
   OpenClaw 已声明的启停、搜索、详情和安装能力。
+- `src/services/openclawSkillsRuntime.ts` 和已安装视图接入官方技能归档上传生命周期；只在
+  commit 回执与本地 SHA-256 一致后调用 `skills.install(source: "upload")`，入口、边界和
+  未验证项见 [技能归档上传能力对齐](openclaw-skills-upload-parity-2026-08-03.md)。
+- Gateway 目录详情只展示官方 `skills.search` / `skills.detail` 返回的 score、版本、时间、
+  owner、metadata、tags、channel 和 changelog。未返回的下载量、星标、安装量、README、
+  版本历史、CLI 命令与外部链接不再以零值、空值或猜测 URL 填充。
+- 已安装列表并行读取 `skills.securityVerdicts`。只有 verdict 的 `slug` 或
+  `requestedSlug` 与 status 的 `skillKey` 精确相等时才关联；只有官方 `securityPassed` 明确为
+  `true` 或 `false` 时显示图标，缺失、`null`、非 ClawHub 或匹配失败都保持未知。安全 RPC
+  失败只显示非阻断提示，不把技能列表标成失败。
+- 已安装列表同时读取只读的 `skills.curator.status`。只有 curator 的 `skillKey` 与 status
+  `skillKey` 精确相等时才显示 active、stale、archived、pinned 和使用次数；汇总和 overlap
+  candidates 均来自 Gateway，不执行 sweep 或 curator 管理动作。具体边界见
+  [OpenClaw 原生技能生命周期对齐](openclaw-native-skill-curator-alignment-2026-08-03.md)。
+- 技能页的“技能工作坊”标签只读取 `skills.proposals.list` 的默认 Gateway scope manifest，严格
+  保留原生 proposal lifecycle 与 scanner 状态。当前没有 agent-scope 选择器，因此不把该清单称为
+  当前会话或本地工作区，也不接入 inspect 与任何 proposal 动作；具体边界见
+  [OpenClaw 原生技能提案清单对齐](openclaw-native-skill-proposal-manifest-alignment-2026-08-03.md)。
 - `src/api/tauri-adapter.ts` 与 `src/types/global.d.ts` 删除了固定失败的 skills、
   skillshub、clawhub adapter 声明。
 - `/skill-hub` 保留为 JunQi 本地目录与项目符号链接工具，不成为 Gateway 技能安装的
-  伪替代品。
+  伪替代品；归档上传失败时不静默切换到该本地路径。
 
 ## 验证
 
 - `openclawSkillsRuntime.test.ts` 覆盖协议字段解析、异常条目拒绝和管理员变更出口。
-- `SkillsPage/components.test.ts` 通过。
-- `pnpm exec tsc --noEmit` 与 `git diff --check` 通过。
+- `SkillsPage/components.test.ts` 覆盖 README 清洗及伪造 marketplace 字段回归边界。
+- `pnpm exec tsc --noEmit`、定向测试与 `git diff --check` 通过。
 
 ## 后续归档上传增量
 
@@ -45,6 +71,10 @@ status/search/detail/update/install 运行时出口仍然有效；ZIP 归档上�
 
 ## 未验证边界
 
-尚未对当前运行中的 Gateway 执行目录搜索、ClawHub 详情或实际安装操作。桌面真机仍需
+尚未对当前运行中的 Gateway 执行目录搜索、ClawHub 详情、实际安装、安全判定或归档上传操作。桌面真机仍需
 验证管理员配对、网络失败、风险确认和安装后技能状态刷新；这些结果不能由本机协议源码
-或单元测试替代。
+或单元测试替代。`skills.skillCard` 已作为已安装技能的独立只读内容入口接入，具体边界见
+[OpenClaw 原生技能卡对齐](openclaw-native-skill-card-alignment-2026-08-03.md)。`skills.curator.status`
+已作为独立只读投影接入；`skills.bins`、curator 写操作及技能提案等其他能力尚未在此页面接入；
+`skills.securityVerdicts` 仅覆盖上述已安装 ClawHub 关联项，在取得其他能力的
+官方 handler、权限和交互边界前不做推断性扩展。

@@ -1,0 +1,49 @@
+export const DYNAMIC_ISLAND_PREVIEW_EVENT = 'dynamic-island:preview';
+export const DYNAMIC_ISLAND_PREVIEW_DURATION_MS = 5_400;
+
+interface DynamicIslandPreviewDependencies {
+  schedule: (callback: () => void, delayMs: number) => number;
+  clear: (timer: number) => void;
+  onChange: (active: boolean) => void;
+}
+
+/** 管理有时限的本地预览状态，不写入用户偏好。 */
+export class DynamicIslandPreview {
+  private timer: number | null = null;
+  private generation = 0;
+
+  constructor(private readonly dependencies: DynamicIslandPreviewDependencies) {}
+
+  start(): void {
+    const generation = ++this.generation;
+    this.clearTimer();
+    this.dependencies.onChange(true);
+    this.timer = this.dependencies.schedule(() => {
+      if (generation !== this.generation) return;
+      this.timer = null;
+      this.dependencies.onChange(false);
+    }, DYNAMIC_ISLAND_PREVIEW_DURATION_MS);
+  }
+
+  stop(): void {
+    this.generation += 1;
+    this.clearTimer();
+    this.dependencies.onChange(false);
+  }
+
+  dispose(): void {
+    this.stop();
+  }
+
+  private clearTimer(): void {
+    if (this.timer === null) return;
+    this.dependencies.clear(this.timer);
+    this.timer = null;
+  }
+}
+
+export function requestDynamicIslandPreview(
+  emit: (event: string) => Promise<unknown>,
+): Promise<unknown> {
+  return emit(DYNAMIC_ISLAND_PREVIEW_EVENT);
+}

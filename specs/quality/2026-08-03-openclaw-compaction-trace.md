@@ -1,20 +1,21 @@
-# OpenClaw 上下文压缩追溯规格
+# OpenClaw 压缩事件追溯规格
+
+日期：2026-08-03
 
 ## 目标
 
-让 Chat 执行追溯保留 Gateway 已确认的上下文压缩事件，使追溯时间线能够解释模型可见上下文发生变化的阶段。
+保留 OpenClaw transcript 已提供的 compaction 事件，使响应追溯能明确指出上下文边界发生过变化。
 
-## 验收条件
+## 约束
 
-1. 含 `compaction` 语义块的响应组必须产生一个 `compaction` 追溯节点。
-2. 节点必须保留语义块的 `sourceMessageId`、`sourceSequence`（如有）和时间戳。
-3. 节点必须位于原始响应组顺序中的对应位置，不得按节点类型重新排序。
-4. UI 不得显示上游未提供的压缩原因、token 数、摘要或成功结论。
-5. 主消息流现有压缩分隔线和追溯节点可以同时存在，但不得重复发起压缩操作。
-6. 简体中文、繁体中文和英文必须有对应节点文案。
+1. 只消费现有 `CompactionBlock`，不增加 JunQi 自定义的 Gateway 事件或摘要字段。
+2. 不把 system note、前端字符串匹配或本地计数转换成 OpenClaw compaction 事实。
+3. 不展示 OpenClaw 未提供的摘要正文、压缩原因、压缩模型或 memory flush 结果。
+4. compaction 仍作为独立 system group，不改变普通 Chat 的响应状态、Task/Session 关系或 Stop 语义。
 
-## 失败关闭
+## 验收
 
-- 未收到 `compaction` 语义块时不构造追溯节点。
-- 缺少来源序号时显示上游未提供，不生成替代序号。
-- 未验证的压缩元数据不进入前端持久化状态。
+- 上游 compaction block 在 trace 中产生一个可定位的节点。
+- 节点拥有上游 source message id、source sequence 和 transcript timestamp。
+- 没有 compaction block 时，追溯输出与原行为一致。
+- 三种已支持语言均有节点标题和说明。

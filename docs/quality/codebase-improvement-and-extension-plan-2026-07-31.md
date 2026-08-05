@@ -183,7 +183,7 @@
 
 ## B. 功能拓展计划
 
-以下全部基于 OpenClaw `2026.7.1-2` 已提供的官方能力，不含推测性设计。
+以下是审计时基于 OpenClaw `2026.7.1-2` 已提供能力整理的候选项，不含推测性设计；当前实现必须重新核对官方主线文档、源码、schema 和 handler。
 
 **总体缺口**：`docs/gateway/protocol.md` 中出现的 RPC 与事件标识共 221 个，JunQi 引用 49 个，未使用 172 个。其中相当一部分（node 配对、device 配对、`doctor.memory.*` 的修复类操作、`connect.params.*` 握手字段、`policy.*` 策略字段）对桌面 operator 客户端不适用。以下只列真正适用且有明确产品价值的部分。
 
@@ -213,11 +213,12 @@ scope 保持不变。第二阶段已补充活动中心 page-lifetime 的同 scop
 
 **可拓展**：
 
-- 用户在上下文接近上限时可以主动触发压缩，而不是等待自动压缩打断当前工作
-- `sessions.steer` 允许在排队任务执行前调整方向，这是 OpenClaw 的一等能力，当前 JunQi 完全没有对应入口
-- `sessions.preview` 与 `sessions.resolve` 可用于发送前确认目标会话
+- 用户可以通过 Dashboard 或命令面板主动触发 OpenClaw 原生压缩，而不是依赖文本指令路径
+- `sessions.steer` 允许在排队任务执行前调整方向，JunQi 已用于 Jarvis 语音抢话；2026-08-03 已完成普通文本路径的官方 queue mode 复核，活动 Run 的普通 `chat.send` 交由 Gateway，详见 [会话队列对齐记录](openclaw-native-session-queue-alignment-2026-08-03.md)
+- `sessions.abort` 为 Stop 提供当前 Run 的原生中止确认；普通请求省略 `clearQueued` 以保留 Gateway 队列
+- `sessions.preview` 已用于 Session Manager 的真实最近消息预览；`sessions.search` 已用于 Gateway 转录全文检索，具体见 [OpenClaw 原生会话检索对齐](openclaw-native-session-search-alignment-2026-08-03.md)。`sessions.resolve` 已核对但暂不接入：官方结果只返回 canonical key，而当前调用方已经持有 key 并需要 session id，增加该 RPC 不会提供新的有效能力
 
-**边界**：压缩会不可逆地改变上下文。触发入口必须有明确确认，且遵循 `docs/concepts/compaction.md` 中 `notifyUser` 的语义，包括 degraded 情形的提示。
+**边界**：压缩会改变模型可见上下文，且官方 `sessions.compact` 要求 `operator.admin`。触发入口必须保留已有管理员授权边界，不把 no-op 或授权失败当作成功；memory flush、degraded 情形和活动运行冲突由 Gateway 负责。
 
 2026-08-03 已将 Dashboard 现有压缩入口切换到 `sessions.compact`，严格校验返回的 session key 与 `compacted` 结果；Chat 输入区已增加 `sessions.steer` 的显式中断并发送入口；会话上下文入口已接入 checkpoint 的读取、分支和恢复。分支使用 `operator.write`，恢复使用一次性 `operator.admin`，两者都经 `SessionCommandCoordinator` 串行化并在响应身份确认后更新本地投影。
 
@@ -227,9 +228,9 @@ scope 保持不变。第二阶段已补充活动中心 page-lifetime 的同 scop
 
 **官方依据**：`protocol.md` 的 `tools.catalog`、`tools.effective`、`tools.invoke`
 
-**当前行为**：ConfigManager 通过 Runtime schema 编辑 `tools` 配置，并已接入官方只读 `tools.catalog` 展示当前 agent 的 core/plugin 目录、profiles、风险和默认 profile。Chat 上下文栏通过 `tools.effective` 展示当前会话实际生效工具，并提供受控的 `tools.invoke` 入口：只允许从当前投影选择工具、显式确认、绑定当前 session/agent，并把调用结果临时展示在面板中。真实外部效果工具、审批和 owner-only wrapper 仍待手工验收。
+**当前行为**：`tools.catalog` 已按 [OpenClaw 原生工具目录对齐](openclaw-native-tools-catalog-alignment-2026-08-03.md) 接入 Config Manager Tools 页面，按 agent 只读展示 Gateway 的 core/plugin 目录；`tools.effective` 已按 [OpenClaw 原生有效工具目录对齐](openclaw-native-tools-effective-alignment-2026-08-03.md) 展示指定 Session 的实际结果；`tools.invoke` 已按 [OpenClaw 原生工具调用对齐](openclaw-native-tools-invoke-alignment-2026-08-03.md) 提供受有效工具和运行时身份门禁保护的一次性调用入口。`src/services/gateway/OpenClawPlanToolSettings.ts:63` 的 `tools.experimental` 仍只是配置路径字符串，不能作为运行时工具目录。
 
-**可拓展**：`tools.effective` 返回当前 agent 实际生效的工具集。这直接回答用户的高频疑问——「这个 agent 现在到底能用哪些工具」。当前 JunQi 只能展示配置里写了什么，无法展示实际生效结果，两者在有 profile 覆盖或策略限制时并不一致。
+**可拓展**：`tools.catalog` 展示 agent 级可配置的 core/plugin 目录，`tools.effective` 展示 Session 级最终结果，`tools.invoke` 只在有效工具和运行时身份均可验证时透传用户显式调用。三者并列可以解释配置目录、实际权限与一次性执行的边界；JunQi 不本地推断策略、不写入聊天/Task 图，也不自动重试副作用调用。审批队列、工具 schema 编辑和真实 Gateway 现场验证仍按官方能力另行核对。
 
 这也与既有 `docs/quality/openclaw-config-authority-audit-2026-07-29.md` 的 BUG-OCA-02（Tools/provider/plugin 配置能力被整套硬编码）直接相关：目录展示现在消费 `tools.catalog` 权威来源，写入仍由 Runtime schema 负责，实际会话可用性仍以 `tools.effective` 为准。
 
@@ -237,20 +238,23 @@ scope 保持不变。第二阶段已补充活动中心 page-lifetime 的同 scop
 
 优先级：中
 
-**官方依据**：`protocol.md` 的 `skills.search`、`skills.detail`、`skills.install`、`skills.upload.begin` / `chunk` / `commit`、`skills.install.allowUploadedArchives`、`skills.bins`
+**官方依据**：`protocol.md` 的 `skills.search`、`skills.detail`、`skills.securityVerdicts`、
+`skills.install`、`skills.upload.begin` / `chunk` / `commit`、`skills.install.allowUploadedArchives`、`skills.bins`
 
-**当前行为**：JunQi 的 `src/services/openclawSkillsRuntime.ts` 已按当前协议调用
-`skills.status`、`skills.search`、`skills.detail`、`skills.update` 与 `skills.install`，Skills
-页面和配置入口消费这些结构化结果；本地 ClawHub / SkillsHub 安装记录仍保留在其既有边界内。
+**当前行为**：`src/services/openclawSkillsRuntime.ts` 已将 `skills.status`、`skills.search`、
+`skills.detail`、`skills.update`、`skills.install` 与官方技能归档上传生命周期接入 Gateway；`SkillsPage` 的 Gateway
+目录使用这些原生结果；status 只接受官方必需状态字段，不用默认值掩盖缺失状态。技能详情已按官方 schema 只展示真实的 score、版本、时间、owner、
+metadata、tags、channel 与 changelog，不再把下载量、星标、安装量、README、版本历史或
+外部链接猜测成数据。`/skill-hub` 仍是 JunQi 本地目录与项目符号链接工具，和 Gateway
+技能目录保持边界。
 
-**当前增量**：技能页已使用官方 `skills.upload.begin` / `chunk` / `commit` 和
-`skills.install(source: "upload")` 接收 ZIP 归档。客户端按 3 MiB 分块并校验
-`uploadId`、offset、大小和 SHA-256；上传与安装均走 `callPrivileged`。旧的本地 ZIP 导入
-不会被静默当作 Gateway 安装，详细边界见 `openclaw-skills-upload-parity-2026-08-03.md`。
+已安装列表另外读取 `skills.securityVerdicts`；只把与 status `skillKey` 精确匹配的
+`slug`/`requestedSlug` 关联到技能，并在官方 `securityPassed` 明确为布尔值时显示结果。安全
+RPC 不可用时保留技能列表并显示非阻断提示，未知状态不被改写成通过或失败。
 
-**可拓展**：改用官方 `skills.*` 协议后，技能安装状态与 Gateway 保持一致，不再需要 JunQi
-侧维护第二份安装账本。后续可在取得真实 Gateway 事件样本后补充安装进度的后台恢复，但当前
-协议没有上传取消或远端删除 command。
+**可拓展**：继续以 OpenClaw 官方协议、源码和 schema 为依据，优先评估只读的
+`skills.bins`、`skills.skillCard` 和提案协议；只有确认当前 Gateway 广告、权限和
+结果字段后才接入。归档上传已按独立规格接入，仍不覆盖官方未提供的取消、删除或本地回退。
 
 **边界**：这是一次协议迁移，涉及既有用户的本地安装记录。必须先确认官方协议能表达当前所有安装来源，否则会丢失能力。属于需要 spec 与 plan 三层记录的改动。
 
@@ -260,24 +264,19 @@ scope 保持不变。第二阶段已补充活动中心 page-lifetime 的同 scop
 
 **官方依据**：`protocol.md` 的 `artifacts.list`、`artifacts.get`、`artifacts.download`
 
-**当前行为**：JunQi 已通过 `src/services/gateway/artifacts.ts` 接入 `artifacts.list`、
-`artifacts.get` 与 `artifacts.download`，并在 Chat 会话上下文栏提供受限预览和下载；仍保留
-`<openclaw_artifact>` 的历史兼容解析。实现依据与未验证边界见
-[`OpenClaw 会话产物能力对齐`](openclaw-artifacts-parity-2026-08-03.md)。
+**当前行为**：JunQi 的消息内联产物仍由 `<openclaw_artifact>` XML 标签投影；三个原生 RPC 已按 [OpenClaw 原生产物协议对齐](openclaw-native-artifacts-alignment-2026-08-03.md) 接入 Chat 会话顶部的只读产物面板。XML transcript 投影与 Gateway artifact 摘要保持独立。
 
-**可拓展**：官方协议提供产物的列举与下载，不依赖标签出现在当前 transcript 中。这意味着历史产物可以被检索，而不是只能在产生它的那条消息里看到。
+**可拓展**：官方协议提供按 session、run 或 task 范围的产物列举与下载，不依赖标签出现在当前 transcript 中。当前 JunQi 首先使用真实 session scope，保留 run/task scope 作为客户端后续扩展边界；不把 XML、本地文件或 URL 猜测成原生产物。
 
 ### EXT-F · Memory 的官方来源
 
 优先级：中低
 
-**官方依据**：`protocol.md` 的 `doctor.memory.status`、`doctor.memory.remHarness`（后者明确标注 requires `operator.read`，返回 bounded read-only 预览）；`docs/concepts/memory.md`、`memory-builtin.md`、`memory-search.md`
+**官方依据**：`protocol.md` 的 `doctor.memory.status`、`doctor.memory.remHarness`（后者明确标注 requires `operator.read`，返回 bounded read-only 预览）；当前官方 `core-descriptors.ts`、`server-methods/memory-search.ts` 和 `memory-host-sdk/host/types.ts` 对 `memory.search` 的权限、请求和结果类型定义。
 
-**当前行为**：`Memory Explorer` 保留当前工作区的只读 `MEMORY.md` 与 `memory/` 文件视图，
-同时通过 `src/services/gateway/memoryDoctor.ts` 接入 `doctor.memory.status` 与
-`doctor.memory.remHarness` 的只读诊断。
+**当前行为**：`src/pages/memory-explorer/MemoryExplorerPage.tsx` 保留通过受保护桌面 IPC 浏览当前 OpenClaw 工作区 `MEMORY.md` 与 `memory/` Markdown 的只读视图，并增加显式 Gateway 检索和 Gateway diagnostics 视图。Gateway 视图只调用官方 `memory.search`；diagnostics 视图按能力广告、连接和最新请求栅栏调用只读的 `doctor.memory.status` 与 `doctor.memory.remHarness`，不接入修复类方法。具体见 [OpenClaw 原生记忆诊断对齐](openclaw-native-memory-diagnostics-alignment-2026-08-03.md)。
 
-**可拓展**：OpenClaw 自身就是 memory 的权威持有者。已接入 `doctor.memory.status` 与 `doctor.memory.remHarness`，页面不需要手工指定路径或搭建额外服务即可查看 Gateway 的 embedding、Dreaming 与 REM 只读状态，具体实现见 [`OpenClaw Memory 只读诊断能力对齐`](openclaw-memory-diagnostics-parity-2026-08-03.md)。
+**可拓展**：OpenClaw 自身就是 memory 的权威持有者。当前已接入 `memory.search`、`doctor.memory.status` 和 `doctor.memory.remHarness`，让 Gateway 返回持久记忆检索与显式只读诊断；后续只能在取得官方字段、权限和生命周期证据后继续扩展，不得把它们扩展成 JunQi 私有 CRUD。
 
 **边界**：`doctor.memory.*` 家族中大部分是修复类操作（`resetDreamDiary`、`repairDreamingArtifacts` 等），属于破坏性动作，只应接入只读的 `status` 与 `remHarness`，不应把修复操作放进浏览界面。
 
@@ -285,9 +284,9 @@ scope 保持不变。第二阶段已补充活动中心 page-lifetime 的同 scop
 
 优先级：中
 
-`session.operation` 当前已接入 `compact` 的 start/end 事件，并将压缩状态与分隔线投影到 Chat；实现边界见 [`OpenClaw session.operation 能力对齐`](openclaw-session-operation-parity-2026-08-03.md)。`session.ready` 与 `session.replaced` 已在 Talk 事件桥和语音会话协调器中按官方载荷处理；`session.replaced` 的具体边界与未验证项见 [`OpenClaw Talk 会话替换能力对齐`](openclaw-talk-session-replacement-parity-2026-08-03.md)。
+审计时 `session.operation`、`session.ready`、`session.replaced` 三个标识未在 JunQi 的通用 ChatHandler 中处理。当前 `session.operation` 已按官方 schema 接入本地压缩事件投影，具体见 [会话操作事件对齐](openclaw-session-operation-alignment-2026-08-03.md)。官方当前文档把 `session.ready` 与 `session.replaced` 定义为 managed-room `talk.session.join` 的 Talk 事件；JunQi 当前只创建 gateway-relay Talk session，不调用 managed-room join，因此不把这两个事件伪装成普通会话生命周期。
 
-**待验证**：随包文档对这三个事件只有一行描述，未给出 payload 结构。接入前需要真实 Gateway 抓包或从 `packages/gateway-protocol` schema 确认字段。
+**待验证**：如果未来接入官方 managed-room Talk，必须先取得其事件 payload 和连接所有权证据，再单独设计 join/replacement 状态；`session.operation` 的字段已由官方当前 schema 确认，不再属于待验证项。
 
 ### EXT-H · 任务与定时的完整视图
 
@@ -352,8 +351,8 @@ CodexLoom README 将稳定 Agent/Thread、全局 Activity、Needs You 和托管 
 
 ## 未验证边界
 
-- 全部外部契约结论来自 OpenClaw `2026.7.1-2` 随包文档的静态阅读。未连接真实 Gateway 调用过任何一个本文提到的 RPC，未取得响应体样本。
-- 安装包的 `src/` 目录仅含 `agents/`，运行时为打包产物；`tools.effective`、`session.operation` 的当前实现与 `artifacts.*` 已从本机 `2026.7.1-2` 的 schema、handler 与控制台调用确认。`AuditEvent` 的精确字段仍未从源码确认。
+- 本文是历史审计，外部契约结论主要来自当时的 OpenClaw `2026.7.1-2` 随包文档；新增或修改集成必须以 OpenClaw 当前官方文档、源码、schema 和 handler 为准，安装版本只记录复现范围。
+- 当时安装包的 `src/` 目录仅含 `agents/`，运行时为打包产物；因此历史审计没有确认 `AuditEvent`、`session.operation`、`tools.effective`、`artifacts.*` 的精确字段。当前 `session.operation` 已在独立对齐记录中由官方主线 schema 确认。
 - 172 个未使用 RPC 的「不适用」判断基于文档描述与 JunQi 产品形态推断，未逐个验证。
 - 测试覆盖缺口的判定基于「同名测试文件」与「文件名在测试正文中出现」两个信号。通过间接依赖被覆盖的文件可能被误判为无覆盖，159 这个数字是上界。
 - 61 个大文件仅按结构阅读，未逐行通读，不排除其中存在本文未发现的缺陷。

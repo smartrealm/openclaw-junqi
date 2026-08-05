@@ -3,11 +3,16 @@ import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { useChatStore, type ChatMessage } from '@/stores/chatStore';
 import type { GatewayAttachment, QueuedChatMessage } from './types';
 import { sessionMutationGate } from './sessionMutationGate';
+import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
+import type { TaskExecutionSource } from '@/task-execution/types';
+import { requireOpenClawSessionTarget } from '@/services/gateway/OpenClawSessionTarget';
 
 interface ChatSendGateway {
   sendMessage: typeof gateway.sendMessage;
-  steerMessage?: typeof gateway.steerMessage;
 }
+
+type TaskExecutionPort = Pick<typeof taskExecutionCoordinator,
+  'prepareSend' | 'prepareSteer' | 'isRunStopRequested' | 'settleRun' | 'reportPersistenceFailure'>;
 
 interface ChatSendState {
   addMessage: (message: ChatMessage, sessionKey?: string) => void;
@@ -15,6 +20,13 @@ interface ChatSendState {
   setIsTyping: (typing: boolean, sessionKey?: string) => void;
   typingBySession: Record<string, boolean>;
   enqueueMessage: (sessionKey: string, message: QueuedChatMessage) => void;
+  sessions?: Array<{
+    key: string;
+    model?: string | null;
+    activeLeafEntryId?: string | null;
+  }>;
+  activeSessionKey?: string;
+  currentModel?: string | null;
 }
 
 export interface ChatSendRequest {
@@ -25,9 +37,21 @@ export interface ChatSendRequest {
   displayAttachments?: ChatMessage['attachments'];
   clientMessageId?: string;
   optimisticMessage?: Partial<ChatMessage> | false;
-  queueIfBusy?: boolean;
-  /** Use OpenClaw's interrupt-and-steer session RPC instead of chat.send. */
-  steer?: boolean;
+  delivery?: 'steer';
+  source?: TaskExecutionSource;
+  model?: string | null;
+}
+
+export interface ChatSendDispatchCancelled {
+  cancelled: true;
+  clientMessageId: string;
+}
+
+export function isChatSendDispatchCancelled(value: unknown): value is ChatSendDispatchCancelled {
+  return typeof value === 'object'
+    && value !== null
+    && (value as { cancelled?: unknown }).cancelled === true
+    && typeof (value as { clientMessageId?: unknown }).clientMessageId === 'string';
 }
 
 function errorMessage(error: unknown): string {
@@ -40,14 +64,14 @@ export class ChatSendCoordinator {
   constructor(
     private readonly gatewayPort: ChatSendGateway,
     private readonly state: () => ChatSendState,
+    private readonly taskExecutionPort: TaskExecutionPort = taskExecutionCoordinator,
   ) {}
 
   async send(request: ChatSendRequest): Promise<unknown> {
+    const sessionKey = requireOpenClawSessionTarget(request.sessionKey);
     const clientMessageId = request.clientMessageId ?? createClientMessageId();
     const state = this.state();
-    const optimisticPatch = request.optimisticMessage === false
-      ? undefined
-      : request.optimisticMessage;
+    const optimisticPatch = request.optimisticMessage === false ? undefined : request.optimisticMessage;
     const timestamp = optimisticPatch
       ? optimisticPatch.timestamp ?? new Date().toISOString()
       : new Date().toISOString();
@@ -60,16 +84,17 @@ export class ChatSendCoordinator {
         : {}),
     };
 
-    const sessionCannotSend = state.typingBySession[request.sessionKey]
-      || sessionMutationGate.isBlocked(request.sessionKey);
-    if (request.steer && sessionMutationGate.isBlocked(request.sessionKey)) {
-      throw new Error('Session control is busy with a maintenance operation');
-    }
-    if (request.queueIfBusy !== false && sessionCannotSend) {
+    const activeGatewayRun = state.typingBySession[sessionKey] === true;
+    const sessionMutationBlocked = sessionMutationGate.isBlocked(sessionKey);
+    // OpenClaw 是运行中任务队列语义的权威；本地队列只保护破坏性会话变更的交接窗口。
+    const queueLocally = request.delivery !== 'steer'
+      && sessionMutationBlocked;
+    if (queueLocally) {
       try {
-        state.enqueueMessage(request.sessionKey, {
+        state.enqueueMessage(sessionKey, {
           id: clientMessageId,
           timestamp,
+          ...(request.source && request.source !== 'chat' ? { source: request.source } : {}),
           ...retryPayload,
         });
       } catch (error) {
@@ -79,7 +104,7 @@ export class ChatSendCoordinator {
           retryPayload,
         };
         if (request.optimisticMessage === false) {
-          state.updateMessage(request.sessionKey, clientMessageId, failure);
+          state.updateMessage(sessionKey, clientMessageId, failure);
         } else {
           state.addMessage({
             ...optimisticPatch,
@@ -100,12 +125,12 @@ export class ChatSendCoordinator {
                   })),
                 }
               : {}),
-          }, request.sessionKey);
+          }, sessionKey);
         }
         throw error;
       }
       if (request.optimisticMessage === false) {
-        state.updateMessage(request.sessionKey, clientMessageId, {
+        state.updateMessage(sessionKey, clientMessageId, {
           status: 'queued',
           deliveryError: undefined,
           retryPayload,
@@ -133,46 +158,104 @@ export class ChatSendCoordinator {
               retryPayload,
             }
           : {}),
-      }, request.sessionKey);
+      }, sessionKey);
     }
-    state.updateMessage(request.sessionKey, clientMessageId, {
+    state.updateMessage(sessionKey, clientMessageId, {
       status: 'pending',
       deliveryError: undefined,
       retryPayload,
     });
-    state.setIsTyping(true, request.sessionKey);
+    state.setIsTyping(true, sessionKey);
+    let taskRunId = clientMessageId;
+    let taskRunCreated = false;
 
     try {
-      const result = (request.steer
-        ? await (this.gatewayPort.steerMessage?.(
-          request.message,
-          request.attachments,
-          request.sessionKey,
-          { clientMessageId },
-        ) ?? Promise.reject(new Error('Session steering is unavailable')))
-        : await this.gatewayPort.sendMessage(
-          request.message,
-          request.attachments,
-          request.sessionKey,
-          { clientMessageId, sessionId: request.sessionId },
-        )) as { queued?: boolean } | undefined;
+      const session = state.sessions?.find((candidate) => candidate.key === sessionKey);
+      const observedModel = request.model
+        ?? session?.model
+        ?? (state.activeSessionKey === sessionKey ? state.currentModel : null)
+        ?? null;
+      let supersededRunId: string | null = null;
+      if (request.delivery === 'steer') {
+        const prepared = await this.taskExecutionPort.prepareSteer({
+          sessionKey,
+          sessionId: request.sessionId,
+          runId: clientMessageId,
+          source: request.source ?? 'chat',
+          model: observedModel,
+        });
+        supersededRunId = prepared.supersededRunId;
+        taskRunCreated = prepared.created;
+      } else {
+        const prepared = await this.taskExecutionPort.prepareSend({
+          sessionKey,
+          sessionId: request.sessionId,
+          runId: clientMessageId,
+          source: request.source ?? 'chat',
+          model: observedModel,
+          // UI 已观察到 Gateway 运行时，须等待 OpenClaw 确认队列模式，
+          // 不能提前创建本地 Run。
+          allowCreate: !activeGatewayRun,
+        });
+        taskRunId = prepared.runId ?? clientMessageId;
+        taskRunCreated = prepared.created;
+      }
+      if (taskRunCreated && await this.taskExecutionPort.isRunStopRequested({
+        sessionKey,
+        sessionId: request.sessionId,
+        runId: taskRunId,
+      })) {
+        state.updateMessage(sessionKey, clientMessageId, {
+          status: 'cancelled',
+          deliveryError: undefined,
+          retryPayload,
+        });
+        state.setIsTyping(false, sessionKey);
+        return { cancelled: true, clientMessageId };
+      }
+      const result = await this.gatewayPort.sendMessage(
+        request.message,
+        request.attachments,
+        sessionKey,
+        {
+          clientMessageId,
+          sessionId: request.sessionId,
+          ...(request.delivery !== 'steer' && session?.activeLeafEntryId !== undefined
+            ? { expectedLeafEntryId: session.activeLeafEntryId }
+            : {}),
+          ...(request.delivery === 'steer' ? { delivery: 'steer' as const } : {}),
+          ...(supersededRunId ? { supersededRunId } : {}),
+        },
+      ) as { queued?: boolean } | undefined;
       const deliveryUncertain = isGatewayChatSendDeliveryUncertain(result);
       if (!deliveryUncertain) {
-        state.updateMessage(request.sessionKey, clientMessageId, {
+        state.updateMessage(sessionKey, clientMessageId, {
           status: result?.queued ? 'queued' : 'sent',
           deliveryError: undefined,
           retryPayload: result?.queued ? retryPayload : undefined,
         });
       }
-      if (result?.queued) state.setIsTyping(false, request.sessionKey);
+      if (result?.queued) state.setIsTyping(false, sessionKey);
       return result;
     } catch (error) {
-      state.updateMessage(request.sessionKey, clientMessageId, {
+      state.updateMessage(sessionKey, clientMessageId, {
         status: 'failed',
         deliveryError: errorMessage(error),
         retryPayload,
       });
-      state.setIsTyping(false, request.sessionKey);
+      state.setIsTyping(false, sessionKey);
+      if (error instanceof Error && (
+        error.name === 'GatewayDisconnectedError'
+        || error.name === 'GatewayRpcError'
+        || error.message === 'Gateway is not connected'
+      ) && taskRunCreated) {
+        await this.taskExecutionPort.settleRun({
+          sessionKey,
+          sessionId: request.sessionId,
+          runId: taskRunId,
+          terminalReason: 'error',
+        }).catch((settleError) => this.taskExecutionPort.reportPersistenceFailure('settle rejected send checkpoint', settleError));
+      }
       throw error;
     }
   }

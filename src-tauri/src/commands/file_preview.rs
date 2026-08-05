@@ -391,15 +391,19 @@ mod tests {
     use super::*;
     use std::{
         fs,
+        sync::atomic::{AtomicU64, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
+
+    static TEMP_PREVIEW_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     fn temp_preview_dir() -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock before epoch")
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("junqi-preview-{unique}"));
+        let sequence = TEMP_PREVIEW_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("junqi-preview-{unique}-{sequence}"));
         fs::create_dir_all(dir.join("assets")).expect("create temp preview directory");
         dir
     }

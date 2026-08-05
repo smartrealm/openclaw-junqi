@@ -5,22 +5,36 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Users, RefreshCw, Zap, Clock, Bot, Activity, Search, Pencil, Trash2, Check, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Users, RefreshCw, Zap, Clock, Bot, Activity, Search, Pencil, Trash2, Check, X, MessageSquare, History } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
-import { useGatewayDataStore, refreshGroup } from '@/stores/gatewayDataStore';
+import {
+  ensureSessionPreviewsFresh,
+  refreshGroup,
+  refreshSessionPreviews,
+  searchOpenClawSessions,
+  useGatewayDataStore,
+} from '@/stores/gatewayDataStore';
+import { useChatStore } from '@/stores/chatStore';
 import { formatTokens } from '@/utils/format';
+import { toSafeIsoTimestamp } from '@/utils/isoTimestamp';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { isAgentMainSession } from '@/utils/sessionLifecycle';
 import { isSubagentSessionKey } from '@/utils/sessionPresentation';
-import { isJarvisSessionCategory } from '@/services/voice/JarvisSessionCategory';
 import { showConfirm } from '@/components/shared/AlertDialog';
-import type { AgentInfo, SessionInfo } from '@/stores/gatewayDataStore';
+import type {
+  AgentInfo,
+  OpenClawSessionPreviewEntry,
+  OpenClawSessionSearchHit,
+  SessionInfo,
+} from '@/stores/gatewayDataStore';
 import clsx from 'clsx';
 import { Badge, StatusDot } from '@/components/shared/badge';
 import { IconButton } from '@/components/shared/button';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { useOpenClawSessionCompactionCheckpoints } from '@/hooks/useOpenClawSessionCompactionCheckpoints';
 
 // ═══════════════════════════════════════════════════════════
 // Helpers
@@ -63,14 +77,13 @@ const fmtTokens = (n?: number): string => n == null ? '—' : formatTokens(n);
 // Filter types
 // ═══════════════════════════════════════════════════════════
 
-type FilterType = 'all' | 'running' | 'idle' | 'subagent' | 'jarvis';
+type FilterType = 'all' | 'running' | 'idle' | 'subagent';
 
 const FILTERS: { id: FilterType; labelKey: string; fallback: string }[] = [
   { id: 'all',      labelKey: 'sessions.filterAll',      fallback: 'All'        },
   { id: 'running',  labelKey: 'sessions.filterRunning',  fallback: 'Running'    },
   { id: 'idle',     labelKey: 'sessions.filterIdle',     fallback: 'Idle'       },
   { id: 'subagent', labelKey: 'sessions.filterSubagent', fallback: 'Sub-agents' },
-  { id: 'jarvis',   labelKey: 'sessions.filterJarvis',   fallback: 'Jarvis' },
 ];
 
 
@@ -92,6 +105,23 @@ function shortModel(model?: string): string | undefined {
   return String(model).split('/').pop() || model;
 }
 
+function latestPreviewText(preview: OpenClawSessionPreviewEntry | undefined): string | null {
+  if (!preview || preview.status !== 'ok') return null;
+  for (let index = preview.items.length - 1; index >= 0; index -= 1) {
+    const text = preview.items[index]?.text.trim();
+    if (text) return text;
+  }
+  return null;
+}
+
+function formatSearchTimestamp(
+  timestamp: number,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  const isoTimestamp = toSafeIsoTimestamp(timestamp);
+  return isoTimestamp ? formatTimeAgo(isoTimestamp, t) : '—';
+}
+
 // ═══════════════════════════════════════════════════════════
 // SessionCard
 // ═══════════════════════════════════════════════════════════
@@ -99,21 +129,25 @@ function shortModel(model?: string): string | undefined {
 interface SessionCardProps {
   session: SessionInfo;
   agentNameById: Record<string, string>;
+  preview?: OpenClawSessionPreviewEntry;
 }
 
-function SessionCard({ session, agentNameById }: SessionCardProps) {
+function SessionCard({ session, agentNameById, preview }: SessionCardProps) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
   const [draftLabel, setDraftLabel] = useState('');
   const [savingRename, setSavingRename] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [checkpointsOpen, setCheckpointsOpen] = useState(false);
+  const { checkpoints, clear: clearCheckpoints, failure: checkpointsFailure, load: loadCheckpoints, loading: checkpointsLoading } = useOpenClawSessionCompactionCheckpoints(session.key);
   const isRunning = session.running === true;
   const kind = getSessionKind(session);
   const isSubAgent = kind === 'subagent';
   const agentId = getAgentId(session);
   const agentName = agentId ? (agentNameById[agentId] || agentId) : undefined;
   const pct = tokenPercent(session.contextTokens, session.maxTokens);
+  const previewText = latestPreviewText(preview);
 
   const displayName = getSessionDisplayLabel(session, {
     mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
@@ -183,6 +217,16 @@ function SessionCard({ session, agentNameById }: SessionCardProps) {
       },
     );
   }, [session.key, t]);
+
+  const toggleCheckpoints = useCallback(() => {
+    if (checkpointsOpen) {
+      setCheckpointsOpen(false);
+      clearCheckpoints();
+      return;
+    }
+    setCheckpointsOpen(true);
+    void loadCheckpoints();
+  }, [checkpointsOpen, clearCheckpoints, loadCheckpoints]);
 
   return (
     <div
@@ -355,7 +399,58 @@ function SessionCard({ session, agentNameById }: SessionCardProps) {
             {session.compactions}
           </Badge>
         )}
+        <button
+          type="button"
+          onClick={toggleCheckpoints}
+          className={clsx(
+            'inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[9px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40',
+            checkpointsOpen
+              ? 'border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
+              : 'border-aegis-border text-aegis-text-dim hover:border-aegis-primary/25 hover:text-aegis-text-secondary',
+          )}
+          aria-expanded={checkpointsOpen}
+          aria-label={t('sessions.compactionCheckpoints')}
+        >
+          <History size={10} aria-hidden="true" />
+          {t('sessions.compactionCheckpoints')}
+        </button>
       </div>
+
+      {checkpointsOpen && (
+        <section className="space-y-2 rounded-lg border border-aegis-border bg-aegis-overlay/[0.02] p-2.5" aria-live="polite" aria-busy={checkpointsLoading}>
+          {checkpointsLoading ? (
+            <div className="flex items-center gap-2 text-[10px] text-aegis-text-dim"><LoadingIndicator size={12} />{t('sessions.compactionCheckpointsLoading')}</div>
+          ) : checkpointsFailure ? (
+            <p className="text-[10px] leading-4 text-aegis-text-dim">{t(checkpointsFailure === 'unavailable' ? 'sessions.compactionCheckpointsUnavailable' : 'sessions.compactionCheckpointsInvalid')}</p>
+          ) : checkpoints.length === 0 ? (
+            <p className="text-[10px] leading-4 text-aegis-text-dim">{t('sessions.compactionCheckpointsEmpty')}</p>
+          ) : (
+            <div className="space-y-2">
+              {checkpoints.map((checkpoint) => (
+                <div key={checkpoint.checkpointId} className="min-w-0 border-s border-aegis-primary/35 ps-2 text-[10px] text-aegis-text-secondary">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="font-medium text-aegis-text">{t(`sessions.compactionCheckpointReasons.${checkpoint.reason}`)}</span>
+                    <span className="font-mono text-aegis-text-dim">{formatSearchTimestamp(checkpoint.createdAt, t)}</span>
+                    {checkpoint.tokensBefore !== undefined && checkpoint.tokensAfter !== undefined && (
+                      <span className="font-mono text-aegis-text-dim">{fmtTokens(checkpoint.tokensBefore)} to {fmtTokens(checkpoint.tokensAfter)}</span>
+                    )}
+                  </div>
+                  {checkpoint.summary && <p className="mt-1 line-clamp-3 break-words leading-4 text-aegis-text-dim">{checkpoint.summary}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {(previewText || preview?.status === 'empty') && (
+        <div className="flex min-h-7 items-start gap-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.06)] bg-[rgb(var(--aegis-overlay)/0.02)] px-2 py-1.5 text-[10px] text-aegis-text-muted">
+          <MessageSquare size={11} className="mt-0.5 shrink-0 text-aegis-primary/70" aria-hidden="true" />
+          <span className="line-clamp-2 min-w-0 break-words">
+            {previewText || t('sessions.previewEmpty', 'No recent messages')}
+          </span>
+        </div>
+      )}
 
       {/* ── Row 3: token usage bar ── */}
       {session.maxTokens ? (
@@ -399,6 +494,55 @@ function SessionCard({ session, agentNameById }: SessionCardProps) {
   );
 }
 
+interface SessionSearchHitCardProps {
+  hit: OpenClawSessionSearchHit;
+}
+
+function SessionSearchHitCard({ hit }: SessionSearchHitCardProps) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const roleLabel = hit.role === 'user'
+    ? t('sessions.transcriptSearchRoleUser', 'User')
+    : t('sessions.transcriptSearchRoleAssistant', 'Assistant');
+
+  const openSession = useCallback(() => {
+    useChatStore.getState().openTab(hit.sessionKey);
+    navigate('/chat');
+  }, [hit.sessionKey, navigate]);
+
+  return (
+    <button
+      type="button"
+      onClick={openSession}
+      className="flex min-w-0 flex-col gap-2 rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.02)] p-3 text-left transition-colors hover:border-aegis-primary/30 hover:bg-aegis-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50"
+      aria-label={t('sessions.transcriptSearchOpen', { sessionKey: hit.sessionKey, defaultValue: `Open session ${hit.sessionKey}` })}
+    >
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Badge tone={hit.role === 'user' ? 'info' : 'ok'} size="sm" variant="soft">
+            {roleLabel}
+          </Badge>
+          <span className="truncate font-mono text-[10px] text-aegis-text-dim" title={hit.sessionKey}>
+            {hit.sessionKey}
+          </span>
+        </div>
+        <span className="shrink-0 text-[10px] text-aegis-text-dim">
+          {formatSearchTimestamp(hit.timestamp, t)}
+        </span>
+      </div>
+      <p className="line-clamp-3 min-h-[3.75rem] break-words text-[11px] leading-5 text-aegis-text-secondary">
+        {hit.snippet || t('sessions.transcriptSearchNoSnippet', 'Gateway returned an empty snippet')}
+      </p>
+      <div className="flex items-center justify-between gap-2 text-[9px] text-aegis-text-dim">
+        <span className="truncate font-mono" title={hit.messageId}>{hit.messageId}</span>
+        <span className="shrink-0">
+          {t('sessions.transcriptSearchScore', { score: hit.score.toFixed(2), defaultValue: `Score ${hit.score.toFixed(2)}` })}
+        </span>
+      </div>
+    </button>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════
 // SessionManagerPage
 // ═══════════════════════════════════════════════════════════
@@ -412,6 +556,47 @@ export function SessionManagerPage() {
   const sessions = useGatewayDataStore((s) => s.sessions);
   const agents = useGatewayDataStore((s) => s.agents) as AgentInfo[];
   const loading   = useGatewayDataStore((s) => s.loading.sessions);
+  const sessionPreviews = useGatewayDataStore((s) => s.sessionPreviews);
+  const previewLoading = useGatewayDataStore((s) => s.sessionPreviewsLoading);
+  const previewError = useGatewayDataStore((s) => s.sessionPreviewsError);
+  const sessionSearch = useGatewayDataStore((s) => s.sessionSearch);
+  const sessionSearchLoading = useGatewayDataStore((s) => s.sessionSearchLoading);
+  const sessionSearchError = useGatewayDataStore((s) => s.sessionSearchError);
+
+  const sessionPreviewSignature = useMemo(
+    () => JSON.stringify(sessions.map((session) => ({
+      key: session.key,
+      sessionId: session.sessionId,
+      lastActive: session.lastActive,
+    }))),
+    [sessions],
+  );
+
+  useEffect(() => {
+    const keys = JSON.parse(sessionPreviewSignature) as Array<{ key: string }>;
+    void ensureSessionPreviewsFresh(keys.map((session) => session.key));
+  }, [sessionPreviewSignature]);
+
+  useEffect(() => {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) {
+      void searchOpenClawSessions('');
+      return undefined;
+    }
+    // Invalidate an earlier Gateway request immediately so an old response cannot
+    // remain visible while the debounce window waits for the new query.
+    void searchOpenClawSessions('');
+    const timer = window.setTimeout(() => {
+      void searchOpenClawSessions(normalizedQuery);
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  const handleRefresh = useCallback(async () => {
+    await refreshGroup('sessions');
+    const currentKeys = useGatewayDataStore.getState().sessions.map((session) => session.key);
+    await refreshSessionPreviews(currentKeys);
+  }, []);
 
   const agentNameById = useMemo(() => Object.fromEntries(agents.map((a) => [a.id, a.name || a.id])), [agents]);
 
@@ -425,8 +610,6 @@ export function SessionManagerPage() {
           return sessions.filter((s) => s.running !== true);
         case 'subagent':
           return sessions.filter((s) => getSessionKind(s) === 'subagent');
-        case 'jarvis':
-          return sessions.filter((s) => isJarvisSessionCategory(s.category));
         default:
           return sessions;
       }
@@ -452,8 +635,22 @@ export function SessionManagerPage() {
     running:  sessions.filter((s) => s.running === true).length,
     idle:     sessions.filter((s) => s.running !== true).length,
     subagent: sessions.filter((s) => getSessionKind(s) === 'subagent').length,
-    jarvis:   sessions.filter((s) => isJarvisSessionCategory(s.category)).length,
   }), [sessions]);
+
+  const previewStatusMessage = previewError === 'OPENCLAW_SESSIONS_PREVIEW_UNSUPPORTED'
+    ? t('sessions.previewUnavailable', 'Recent messages unavailable')
+    : previewError
+      ? t('sessions.previewError', 'Recent messages could not be loaded')
+      : null;
+
+  const transcriptSearchErrorMessage = sessionSearchError === 'OPENCLAW_SESSIONS_SEARCH_UNSUPPORTED'
+    ? t('sessions.transcriptSearchUnsupported', 'This Gateway does not support transcript search.')
+    : sessionSearchError === 'OPENCLAW_SESSIONS_SEARCH_UNAVAILABLE'
+      ? t('sessions.transcriptSearchUnavailable', 'Transcript search is unavailable while Gateway is disconnected.')
+      : sessionSearchError
+        ? t('sessions.transcriptSearchError', 'Gateway transcript search failed.')
+        : null;
+  const transcriptSearchActive = query.trim().length > 0;
 
   // ═══ RENDER ═══
   return (
@@ -481,16 +678,16 @@ export function SessionManagerPage() {
 
         {/* Refresh button */}
         <button
-          onClick={() => refreshGroup('sessions')}
-          disabled={loading}
+          onClick={() => void handleRefresh()}
+          disabled={loading || previewLoading}
           className={clsx(
             'flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[11px] font-semibold transition-colors',
             'border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-muted hover:text-aegis-text-secondary',
             'bg-[rgb(var(--aegis-overlay)/0.02)] hover:bg-[rgb(var(--aegis-overlay)/0.04)]',
-            loading && 'opacity-50 pointer-events-none',
+            (loading || previewLoading) && 'opacity-50 pointer-events-none',
           )}
         >
-          {loading ? (
+          {loading || previewLoading ? (
             <LoadingIndicator size={13} />
           ) : (
             <RefreshCw size={13} />
@@ -498,6 +695,12 @@ export function SessionManagerPage() {
           {t('sessions.refresh', 'Refresh')}
         </button>
       </div>
+
+      {previewStatusMessage && (
+        <p className="-mt-3 text-[10px] text-aegis-text-dim" role="status">
+          {previewStatusMessage}
+        </p>
+      )}
 
       {/* ── Filter bar ── */}
       <div className="flex items-center gap-1.5">
@@ -547,6 +750,59 @@ export function SessionManagerPage() {
         )}
       </div>
 
+      {transcriptSearchActive && (
+        <section className="space-y-2" aria-live="polite" aria-busy={sessionSearchLoading}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <MessageSquare size={14} className="shrink-0 text-aegis-primary" aria-hidden="true" />
+              <h2 className="truncate text-[12px] font-bold text-aegis-text">
+                {t('sessions.transcriptSearchMatches', 'Gateway transcript matches')}
+              </h2>
+              {sessionSearch && (
+                <span className="shrink-0 rounded-md bg-aegis-primary/10 px-1.5 py-0.5 text-[9px] font-bold text-aegis-primary">
+                  {sessionSearch.results.length}
+                </span>
+              )}
+            </div>
+            {sessionSearchLoading && <LoadingIndicator size={14} />}
+          </div>
+
+          {transcriptSearchErrorMessage ? (
+            <p className="rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] px-3 py-2 text-[10px] text-aegis-text-dim" role="status">
+              {transcriptSearchErrorMessage}
+            </p>
+          ) : sessionSearchLoading && !sessionSearch ? (
+            <p className="text-[10px] text-aegis-text-dim" role="status">
+              {t('sessions.transcriptSearchLoading', 'Searching Gateway-owned transcripts…')}
+            </p>
+          ) : sessionSearch ? (
+            <>
+              {sessionSearch.indexing === true && (
+                <p className="text-[10px] text-aegis-text-dim" role="status">
+                  {t('sessions.transcriptSearchIndexing', 'Gateway is still indexing transcripts; results may be incomplete.')}
+                </p>
+              )}
+              {sessionSearch.truncated === true && (
+                <p className="text-[10px] text-aegis-text-dim" role="status">
+                  {t('sessions.transcriptSearchTruncated', 'Gateway limited the returned matches.')}
+                </p>
+              )}
+              {sessionSearch.results.length === 0 ? (
+                <p className="text-[10px] text-aegis-text-dim" role="status">
+                  {t('sessions.transcriptSearchEmpty', 'No transcript matches returned by Gateway.')}
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                  {sessionSearch.results.map((hit) => (
+                    <SessionSearchHitCard key={`${hit.sessionKey}:${hit.messageId}`} hit={hit} />
+                  ))}
+                </div>
+              )}
+            </>
+          ) : null}
+        </section>
+      )}
+
       {/* ── Content ── */}
       {loading && sessions.length === 0 ? (
         /* Initial loading state */
@@ -579,7 +835,12 @@ export function SessionManagerPage() {
         /* Sessions grid — 2 columns */
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 auto-rows-max overflow-y-auto pb-2">
           {filtered.map((session) => (
-            <SessionCard key={session.key} session={session} agentNameById={agentNameById} />
+            <SessionCard
+              key={session.key}
+              session={session}
+              agentNameById={agentNameById}
+              preview={sessionPreviews[session.key]}
+            />
           ))}
         </div>
       )}

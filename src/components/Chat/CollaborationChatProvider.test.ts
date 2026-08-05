@@ -28,7 +28,7 @@ function runtimeIdentity(overrides: Partial<RuntimeIdentity> = {}): RuntimeIdent
     connectionId: 'connection-a',
     endpoint: 'ws://127.0.0.1:18789',
     gatewayVersion: '2026.7.1',
-    protocol: 3,
+    protocol: 4,
     stateDir: '/tmp/openclaw',
     configPath: '/tmp/openclaw/config.json',
     localStateDir: '/tmp/openclaw',

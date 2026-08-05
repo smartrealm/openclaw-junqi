@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { selectActiveSessionTyping, useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
+import { AssistantResponseAvatar } from './MessageBubble';
 
 // ═══════════════════════════════════════════════════════════
 // Typing Indicator — smooth animated dots + elapsed-time chip
@@ -14,20 +14,11 @@ import { getDirection } from '@/i18n';
 export function TypingIndicator() {
   const { t } = useTranslation();
   const { language } = useSettingsStore();
-  const agents = useGatewayDataStore((s) => s.agents);
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const isTyping = useChatStore(selectActiveSessionTyping);
   const typingStartedAt = useChatStore((s) => s.typingStartedAtBySession[s.activeSessionKey]);
+  const gatewayTiming = useChatStore((s) => s.chatSendTimingBySession[s.activeSessionKey]);
   const dir = getDirection(language);
-  const activeAgentId = (() => {
-    if (!activeSessionKey) return 'main';
-    const parts = activeSessionKey.split(':');
-    return parts[0] === 'agent' && parts[1] ? parts[1] : 'main';
-  })();
-  const activeAgentName =
-    agents.find((a) => a.id === activeAgentId)?.name
-    || (activeAgentId === 'main' ? t('agents.mainAgent') : activeAgentId);
-  const activeAgentLetter = activeAgentName.charAt(0) || 'M';
 
   // The store owns the start instant. This keeps elapsed time truthful when
   // the footer remounts while a response is still running.
@@ -58,13 +49,13 @@ export function TypingIndicator() {
     return `${m}:${String(s).padStart(2, '0')}`;
   };
 
+  const timingPhase = gatewayTiming ? t(`chat.responseTiming.${gatewayTiming.phase}`) : null;
+  const timingMs = gatewayTiming ? Math.round(gatewayTiming.receivedToPhaseMs) : null;
+
   return (
     <div className="group flex gap-2.5 items-start mx-1 mr-4 mb-2.5 animate-fade-in" dir={dir}>
       {/* Avatar — identical size/style to MessageBubble assistant avatar */}
-      <div className="w-8 h-8 rounded-full bg-gradient-to-br flex items-center justify-center shrink-0 mt-0.5 shadow-sm ring-1 ring-aegis-primary/20"
-        style={{ backgroundImage: 'linear-gradient(135deg, rgb(var(--aegis-primary)), rgb(var(--aegis-primary-deep)))' }}>
-        <span className="text-[10px] font-bold text-white">{activeAgentLetter}</span>
-      </div>
+      <AssistantResponseAvatar sessionKey={activeSessionKey} />
 
       {/* Indicator + timer row — same width column + border treatment as
           the assistant bubble so the indicator visually reads as a
@@ -105,6 +96,11 @@ export function TypingIndicator() {
             </div>
           )}
         </div>
+        {timingPhase && timingMs !== null && (
+          <div className="mt-1.5 px-1 text-[10px] text-aegis-text-dim" aria-live="polite">
+            {t('chat.responseTiming.detail', { phase: timingPhase, ms: timingMs })}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -47,6 +47,7 @@ import { ManagedRuntimeSettingsPanel } from '@/components/settings/ManagedRuntim
 import { FontPanel } from '@/components/settings/FontPanel';
 import { SettingsSwitch } from '@/components/settings/SettingsSwitch';
 import { JarvisVoiceSettingsPanel } from '@/components/settings/JarvisVoiceSettingsPanel';
+import { OpenClawTtsStatusPanel } from '@/components/settings/OpenClawTtsStatusPanel';
 import {
   clearPetAsset,
   clearPetPackage,
@@ -55,16 +56,18 @@ import {
   listPetPackages,
   loadPetPackage,
   installBuiltinSkillForChat,
-  openDynamicIsland,
   openPetWindow,
   savePetAsset,
 } from '@/api/tauri-commands';
 import { StructuredPlanSettingsPanel } from '@/components/settings/StructuredPlanSettingsPanel';
 import { useJarvisVoiceSettings } from '@/hooks/useJarvisVoiceSettings';
+import { useOpenClawTtsStatus } from '@/hooks/useOpenClawTtsStatus';
 import { useOpenClawPlanToolSetting } from '@/hooks/useOpenClawPlanToolSetting';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
+import { emitTauriEvent } from '@/utils/tauriEvents';
+import { requestDynamicIslandPreview } from '@/dynamic-island/DynamicIslandPreview';
 import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
@@ -89,6 +92,7 @@ export function SettingsPageFull() {
     dndMode, setDndMode,
     dynamicIslandEnabled, setDynamicIslandEnabled,
     dynamicIslandAutoExpand, setDynamicIslandAutoExpand,
+    openClawSessionObserverEnabled, setOpenClawSessionObserverEnabled,
     gatewayUrl, setGatewayUrl,
     budgetLimit, setBudgetLimit,
     setGatewayToken,
@@ -213,6 +217,7 @@ export function SettingsPageFull() {
     : 'appearance';
   const jarvisVoiceSettings = useJarvisVoiceSettings(activeTab === 'jarvis');
   const structuredPlans = useOpenClawPlanToolSetting(activeTab === 'connect' && connected);
+  const openClawTtsStatus = useOpenClawTtsStatus(activeTab === 'notify' && connected);
 
   useEffect(() => {
     if (activeTab !== 'connect') return;
@@ -254,7 +259,7 @@ export function SettingsPageFull() {
 
   useEffect(() => {
     window.aegis?.app?.versions()
-      .then((v) => setOpenclawVersion(v.openclaw ?? (v as any).runtime ?? null))
+      .then((v) => setOpenclawVersion(v.openclaw))
       .catch(() => {});
     window.aegis?.app?.platformInfo?.().then(setPlatformLabel).catch(() => {});
   }, []);
@@ -665,6 +670,19 @@ export function SettingsPageFull() {
             }} />
           </div>
 
+          <OpenClawTtsStatusPanel
+            status={openClawTtsStatus.status}
+            loading={openClawTtsStatus.loading}
+            failure={openClawTtsStatus.failure}
+            mutation={openClawTtsStatus.mutation}
+            mutationFailure={openClawTtsStatus.mutationFailure}
+            connected={connected}
+            onRefresh={() => { void openClawTtsStatus.refresh(); }}
+            onSetEnabled={(enabled) => { void openClawTtsStatus.setEnabled(enabled); }}
+            onSetProvider={(provider) => { void openClawTtsStatus.setProvider(provider); }}
+            onSetPersona={(persona) => { void openClawTtsStatus.setPersona(persona); }}
+          />
+
           <div className="flex items-center justify-between">
             <div>
               <div className="text-[13px] text-aegis-text flex items-center gap-2">
@@ -672,7 +690,7 @@ export function SettingsPageFull() {
                 {t('settings.voiceAutoSpeak', '自动语音回复')}
               </div>
               <div className="text-[11px] text-aegis-text-dim">
-                {t('settings.voiceAutoSpeakDesc', '用系统语音朗读当前会话的助手回复，可随时打断。')}
+                {t('settings.voiceAutoSpeakDesc', '用 OpenClaw TTS 朗读当前会话的助手回复，可随时打断。')}
               </div>
             </div>
             <SettingsSwitch checked={voiceAutoSpeak} label={t('settings.voiceAutoSpeak', '自动语音回复')} onCheckedChange={(enabled) => {
@@ -726,11 +744,19 @@ export function SettingsPageFull() {
             <SettingsSwitch checked={dynamicIslandAutoExpand} onCheckedChange={setDynamicIslandAutoExpand} disabled={!dynamicIslandEnabled} label={t('settings.dynamicIslandAutoExpand', '重要状态自动展开')} />
           </div>
 
+          <div className="flex items-center justify-between gap-5">
+            <div>
+              <div className="text-[13px] text-aegis-text">{t('settings.openClawSessionObserverEnabled', '使用 OpenClaw 会话观察')}</div>
+              <div className="text-[11px] leading-5 text-aegis-text-dim">{t('settings.openClawSessionObserverDesc', '主窗口最小化时，允许 Gateway 提供原生会话摘要。该能力可能使用 Gateway 配置的 utility model。')}</div>
+            </div>
+            <SettingsSwitch checked={openClawSessionObserverEnabled} onCheckedChange={setOpenClawSessionObserverEnabled} disabled={!dynamicIslandEnabled} label={t('settings.openClawSessionObserverEnabled', '使用 OpenClaw 会话观察')} />
+          </div>
+
           <button
             type="button"
             disabled={!dynamicIslandEnabled}
             onClick={() => {
-              void openDynamicIsland().catch((error) => {
+              void requestDynamicIslandPreview(emitTauriEvent).catch((error) => {
                 notifyError(
                   t('settings.dynamicIslandPreview', '预览灵动岛'),
                   error instanceof Error ? error.message : String(error),

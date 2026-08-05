@@ -7,6 +7,7 @@ import {
   type SessionsCompactionGetResult,
   type SessionsCompactionRestoreResult,
 } from './sessionInspection';
+import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
 
 export type SessionCompactionRequester = (
   method: string,
@@ -25,44 +26,47 @@ export interface SessionCompactionClientDependencies {
 }
 
 /**
- * Keeps checkpoint reads and mutations on their protocol-owned connection lanes.
- * The Gateway remains the source of truth for transcript identity and lifecycle.
+ * 检查点读取和写入保留在其协议所属的连接通道。
+ * Gateway 始终是转录身份与生命周期的唯一事实来源。
  */
 export class SessionCompactionClient {
   constructor(private readonly deps: SessionCompactionClientDependencies) {}
 
-  get(sessionKey: string, checkpointId: string, agentId?: string): Promise<SessionsCompactionGetResult> {
+  async get(sessionKey: string, checkpointId: string, agentId?: string): Promise<SessionsCompactionGetResult> {
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
     return this.deps.request(
       'sessions.compaction.get',
-      { ...buildSessionsCompactionCheckpointParams(sessionKey, checkpointId, agentId) },
-    ).then((result) => parseSessionsCompactionGetResult(result, sessionKey));
+      { ...buildSessionsCompactionCheckpointParams(targetSessionKey, checkpointId, agentId) },
+    ).then((result) => parseSessionsCompactionGetResult(result, targetSessionKey));
   }
 
-  branch(
+  async branch(
     sessionKey: string,
     checkpointId: string,
     agentId?: string,
   ): Promise<SessionsCompactionBranchResult> {
-    return this.deps.runMutation(sessionKey, async () => parseSessionsCompactionBranchResult(
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    return this.deps.runMutation(targetSessionKey, async () => parseSessionsCompactionBranchResult(
       await this.deps.request(
         'sessions.compaction.branch',
-        { ...buildSessionsCompactionCheckpointParams(sessionKey, checkpointId, agentId) },
+        { ...buildSessionsCompactionCheckpointParams(targetSessionKey, checkpointId, agentId) },
       ),
-      sessionKey,
+      targetSessionKey,
     ));
   }
 
-  restore(
+  async restore(
     sessionKey: string,
     checkpointId: string,
     agentId?: string,
   ): Promise<SessionsCompactionRestoreResult> {
-    return this.deps.runMutation(sessionKey, async () => parseSessionsCompactionRestoreResult(
+    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    return this.deps.runMutation(targetSessionKey, async () => parseSessionsCompactionRestoreResult(
       await this.deps.requestPrivileged(
         'sessions.compaction.restore',
-        { ...buildSessionsCompactionCheckpointParams(sessionKey, checkpointId, agentId) },
+        { ...buildSessionsCompactionCheckpointParams(targetSessionKey, checkpointId, agentId) },
       ),
-      sessionKey,
+      targetSessionKey,
     ));
   }
 }

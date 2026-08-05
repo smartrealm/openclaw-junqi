@@ -23,6 +23,12 @@ export type VoiceGlobalControl =
   | { type: 'release'; claim: VoiceGlobalClaim }
   | { type: 'stop'; claim: VoiceGlobalClaim };
 
+export interface VoiceInterruptControl {
+  sessionKey: string | null;
+  /** Whether the Talk session owner must request Gateway output cancellation. */
+  cancelTalk: boolean;
+}
+
 export interface VoiceRuntimeSnapshot {
   phase: VoicePhase;
   sessionKey: string | null;

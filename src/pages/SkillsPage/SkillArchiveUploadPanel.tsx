@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Archive, CheckCircle2, LoaderCircle, Upload, X, XCircle } from 'lucide-react';
 import clsx from 'clsx';
@@ -29,7 +29,10 @@ function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
-function phaseLabel(t: (key: string, defaultValue: string) => string, phase: SkillArchiveUploadPhase | null): string {
+function phaseLabel(
+  t: (key: string, defaultValue: string) => string,
+  phase: SkillArchiveUploadPhase | null,
+): string {
   if (phase === 'starting') return t('skills.uploadStarting', 'Preparing upload');
   if (phase === 'uploading') return t('skills.uploading', 'Uploading archive');
   if (phase === 'committing') return t('skills.uploadCommitting', 'Verifying archive');
@@ -56,10 +59,12 @@ export function SkillArchiveUploadPanel({ connected, onInstalled }: SkillArchive
     setFile(null);
     setSlug('');
     setCompletedBytes(0);
+    setError(null);
+    setSuccess(null);
     if (inputRef.current) inputRef.current.value = '';
   };
 
-  const onFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const next = event.target.files?.[0] ?? null;
     setFile(next);
     setSlug(next ? suggestedSlug(next.name) : '');
@@ -78,6 +83,9 @@ export function SkillArchiveUploadPanel({ connected, onInstalled }: SkillArchive
       if (!/\.zip$/i.test(file.name)) {
         throw new Error(t('skills.uploadZipOnly', 'Choose a ZIP archive.'));
       }
+      if (file.size > MAX_SKILL_ARCHIVE_BYTES) {
+        throw new Error(t('skills.uploadTooLarge', 'Skill archive exceeds the OpenClaw upload limit.'));
+      }
       const bytes = new Uint8Array(await file.arrayBuffer());
       const result = await openClawSkillsRuntime.installArchive({
         slug,
@@ -88,7 +96,7 @@ export function SkillArchiveUploadPanel({ connected, onInstalled }: SkillArchive
           setCompletedBytes(nextCompleted);
         },
       });
-      setSuccess(result.message || t('skills.uploadDone', 'Skill installed'));
+      setSuccess(result.message || t('skills.uploadDone', 'Skill installed.'));
       await onInstalled();
     } catch (reason) {
       setSuccess(null);
@@ -104,12 +112,15 @@ export function SkillArchiveUploadPanel({ connected, onInstalled }: SkillArchive
     : 0;
 
   return (
-    <section className="mb-5 overflow-hidden rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)]" aria-label={t('skills.uploadTitle', 'Upload skill archive')}>
+    <section
+      className="mb-5 overflow-hidden rounded-xl border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)]"
+      aria-label={t('skills.uploadTitle', 'Upload skill archive')}
+    >
       <div className="flex items-start gap-3 border-b border-[rgb(var(--aegis-overlay)/0.06)] px-4 py-3">
         <Archive size={16} className="mt-0.5 shrink-0 text-aegis-primary" aria-hidden="true" />
         <div className="min-w-0">
           <h2 className="text-[12px] font-semibold text-aegis-text">{t('skills.uploadTitle', 'Upload skill archive')}</h2>
-          <p className="mt-0.5 text-[10.5px] text-aegis-text-dim">{t('skills.uploadHint', 'Upload a ZIP archive through the selected OpenClaw Gateway.')}</p>
+          <p className="mt-0.5 text-[10.5px] text-aegis-text-dim">{t('skills.uploadHint', 'Send a ZIP archive through the selected OpenClaw Gateway.')}</p>
         </div>
       </div>
 
@@ -132,8 +143,8 @@ export function SkillArchiveUploadPanel({ connected, onInstalled }: SkillArchive
                 type="button"
                 onClick={clearFile}
                 disabled={busy}
-                title={t('common.clear', 'Clear')}
-                aria-label={t('common.clear', 'Clear')}
+                title={t('skills.clearArchive', 'Clear selected archive')}
+                aria-label={t('skills.clearArchive', 'Clear selected archive')}
                 className="grid size-7 place-items-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-danger/[0.08] hover:text-aegis-danger disabled:opacity-50"
               >
                 <X size={13} aria-hidden="true" />
@@ -169,7 +180,10 @@ export function SkillArchiveUploadPanel({ connected, onInstalled }: SkillArchive
         {busy && file && (
           <div className="space-y-1.5" role="status" aria-live="polite">
             <div className="flex items-center justify-between gap-2 text-[10px] text-aegis-text-dim">
-              <span className="inline-flex items-center gap-1.5"><LoaderCircle size={12} className="animate-spin" aria-hidden="true" />{phaseLabel(t, phase)}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
+                {phaseLabel(t, phase)}
+              </span>
               <span className="font-mono tabular-nums">{progress}%</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-[rgb(var(--aegis-overlay)/0.08)]">
@@ -192,7 +206,9 @@ export function SkillArchiveUploadPanel({ connected, onInstalled }: SkillArchive
         )}
 
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[9.5px] text-aegis-text-dim">{t('skills.uploadLimit', 'ZIP only, up to {{size}}.', { size: formatBytes(MAX_SKILL_ARCHIVE_BYTES) })}</span>
+          <span className="text-[9.5px] text-aegis-text-dim">
+            {t('skills.uploadLimit', 'ZIP only, up to {{size}}.', { size: formatBytes(MAX_SKILL_ARCHIVE_BYTES) })}
+          </span>
           <button
             type="button"
             onClick={() => void install()}

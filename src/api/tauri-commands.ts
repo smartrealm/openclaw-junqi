@@ -1,6 +1,13 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from '@tauri-apps/api/window';
-import { presentVoiceWakeWindow } from '@/services/voice/VoiceWakeWindowPresenter';
+import {
+  decodeVoiceCaptureCommandResult,
+  type VoiceCaptureCommandResult,
+} from './voiceCaptureContract';
+import { decodeVoiceTalkPlaybackAppendResult } from './voiceTalkPlaybackContract';
+import {
+  parseTauriPlatformInfo,
+  type TauriPlatformInfo,
+} from './tauriAdapterContracts';
 import type {
   ClearRuntimeIdentityParams,
   GatewayHelloObservation,
@@ -25,114 +32,49 @@ import type { GatewayRuntimeConfig } from '@/types/openclawConfig';
 
 export { Channel };
 
-export type VoiceWakeCaptureMode = 'dictation' | 'wake_word';
+export type NativePlatformInfo = TauriPlatformInfo;
 
-export interface VoiceWakeStatus {
-  listening: boolean;
-  mode: VoiceWakeCaptureMode | null;
-}
+export const getNativePlatformInfo = async (): Promise<NativePlatformInfo> => (
+  parseTauriPlatformInfo(await invoke<unknown>('get_platform_info'))
+);
 
-export interface VoiceWakeDetectorStatus {
-  available: boolean;
-  modelId: string | null;
-  directory: string | null;
-  keywords: string[];
-  reason: string | null;
-}
-
-function voiceWakeContractError(command: string): Error {
-  return new Error(`${command} returned an invalid native contract`);
-}
-
-function optionalString(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'string') throw new Error('invalid optional string');
-  return value;
-}
-
-function nonEmptyStringArray(value: unknown): string[] {
-  if (!Array.isArray(value) || value.length > 32) throw new Error('invalid string array');
-  const result: string[] = [];
-  for (const entry of value) {
-    if (typeof entry !== 'string' || entry.trim().length === 0 || entry.length > 128) {
-      throw new Error('invalid string array entry');
-    }
-    result.push(entry);
-  }
+export const startVoiceCapture = async (
+  ownerId: string,
+  format: { sampleRateHz: number; channels: number },
+): Promise<VoiceCaptureCommandResult> => {
+  if (!ownerId.trim()) throw new Error('voice capture owner is required');
+  const result = decodeVoiceCaptureCommandResult(
+    await invoke<unknown>('voice_capture_start', { ownerId, ...format }),
+  );
+  if (!result || result.ownerId !== ownerId) throw new Error('原生语音采集启动响应无效');
   return result;
-}
+};
 
-function parseVoiceWakeStatus(command: string, value: unknown): VoiceWakeStatus {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw voiceWakeContractError(command);
-  const record = value as Record<string, unknown>;
-  if (typeof record.listening !== 'boolean') throw voiceWakeContractError(command);
-  const mode = optionalString(record.mode);
-  if (mode !== null && mode !== 'dictation' && mode !== 'wake_word') throw voiceWakeContractError(command);
-  return { listening: record.listening, mode };
-}
+export const stopVoiceCapture = async (ownerId: string): Promise<VoiceCaptureCommandResult> => {
+  if (!ownerId.trim()) throw new Error('voice capture owner is required');
+  const result = decodeVoiceCaptureCommandResult(
+    await invoke<unknown>('voice_capture_stop', { ownerId }),
+  );
+  if (!result || result.ownerId !== ownerId) throw new Error('原生语音采集停止响应无效');
+  return result;
+};
 
-function parseVoiceWakeDetectorStatus(command: string, value: unknown): VoiceWakeDetectorStatus {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw voiceWakeContractError(command);
-  const record = value as Record<string, unknown>;
-  if (typeof record.available !== 'boolean') throw voiceWakeContractError(command);
-  try {
-    return {
-      available: record.available,
-      modelId: optionalString(record.modelId),
-      directory: optionalString(record.directory),
-      keywords: nonEmptyStringArray(record.keywords),
-      reason: optionalString(record.reason),
-    };
-  } catch {
-    throw voiceWakeContractError(command);
-  }
-}
-
-export const getVoiceWakeStatus = async (): Promise<VoiceWakeStatus> => (
-  parseVoiceWakeStatus('voice_wake_status', await invoke<unknown>('voice_wake_status'))
-);
-
-export const startVoiceWake = async (
-  mode: VoiceWakeCaptureMode,
-  options: { streamPcm?: boolean } = {},
-): Promise<VoiceWakeStatus> => (
-  parseVoiceWakeStatus('voice_wake_start', await invoke<unknown>('voice_wake_start', {
-    mode,
-    streamPcm: options.streamPcm ?? false,
-  }))
-);
-
-export const stopVoiceWake = async (): Promise<VoiceWakeStatus> => (
-  parseVoiceWakeStatus('voice_wake_stop', await invoke<unknown>('voice_wake_stop'))
-);
-
-export const playTalkPcm = (audioBase64: string) => invoke<void>('voice_talk_play_pcm', {
-  audioBase64,
-  sampleRateHz: 24_000,
-  channels: 1,
-});
+export const playTalkPcm = async (
+  audioBase64: string,
+  format: { sampleRateHz: number; channels: number },
+): Promise<'queued' | 'overflow'> => {
+  const result = decodeVoiceTalkPlaybackAppendResult(await invoke<unknown>('voice_talk_play_pcm', {
+    audioBase64,
+    ...format,
+  }));
+  if (!result) throw new Error('原生 Talk 播放响应无效');
+  return result.queued ? 'queued' : 'overflow';
+};
 
 export const stopTalkPlayback = () => invoke<void>('voice_talk_stop_playback');
 
 export const finishTalkPlayback = () => invoke<void>('voice_talk_finish_playback');
 
-export const getVoiceWakeDetectorStatus = async (): Promise<VoiceWakeDetectorStatus> => (
-  parseVoiceWakeDetectorStatus(
-    'voice_wake_detector_status',
-    await invoke<unknown>('voice_wake_detector_status'),
-  )
-);
-
-export const setVoiceWakeModelDirectory = async (directory: string): Promise<VoiceWakeDetectorStatus> => (
-  parseVoiceWakeDetectorStatus(
-    'voice_wake_set_model_directory',
-    await invoke<unknown>('voice_wake_set_model_directory', { directory }),
-  )
-);
-
-export const presentCurrentWindowForVoiceWake = () => (
-  presentVoiceWakeWindow(getCurrentWindow())
-);
 
 export type RuntimeToolSource = 'system' | 'custom';
 export interface NodeStatus { available: boolean; version: string | null; path: string | null; source: RuntimeToolSource | null; }
@@ -144,12 +86,9 @@ export interface OpenclawStatus {
   path: string | null;
   source: string | null;
   binary_found: boolean;
-  version_ok: boolean;
   package_valid: boolean;
   gateway_command_ok: boolean;
   relocation_required: boolean;
-  /** Newer than the range this JunQi build was verified against; usable, but flagged. */
-  version_beyond_verified_range: boolean;
   error: string | null;
 }
 export interface DockerStatus { available: boolean; version: string | null; daemon_running: boolean; unsupported_reason: string | null; image_available: boolean; }
@@ -598,10 +537,16 @@ export const inspectSharePackage = (sourcePath: string) => invoke<SharePackageIn
 export const previewSharePackageImport = (request: SharePackageImportPreviewRequest) => invoke<SharePackageImportPreview>('preview_share_package_import', { request });
 export const importSharePackage = (request: SharePackageImportRequest) => invoke<SharePackageImportResult>('import_share_package', { request });
 
-export interface VoiceRecordingStartResult { success: boolean; error?: string; }
+export interface VoiceRecordingStartResult {
+  success: boolean;
+  recordingId?: string;
+  error?: string;
+}
 export interface VoiceRecordingStopResult { success: boolean; data?: string; duration?: number; error?: string; }
 export const startVoiceRecording = () => invoke<VoiceRecordingStartResult>('voice_start_recording');
-export const stopVoiceRecording = () => invoke<VoiceRecordingStopResult>('voice_stop_recording');
+export const stopVoiceRecording = (recordingId: string) => (
+  invoke<VoiceRecordingStopResult>('voice_stop_recording', { recordingId })
+);
 
 export interface ActiveOpenClawModelProbe {
   ready: boolean;
@@ -864,6 +809,34 @@ export const deleteGatewayCredential = (params: GatewayCredentialKeyParams) =>
 export const migrateGatewayCredential = (params: MigrateGatewayCredentialParams) =>
   invoke<GatewayCredentialResult>('migrate_gateway_credential', { params });
 
+export interface GatewayDeviceIdentityReference {
+  deviceId: string;
+  publicKey: string;
+}
+
+export interface GatewayDeviceChallengeParams {
+  nonce: string;
+  signedAt: number;
+  clientId: string;
+  clientMode: string;
+  role: string;
+  scopes: readonly string[];
+  token: string;
+  platform: string;
+  deviceFamily: string | null;
+}
+
+export interface GatewayDeviceChallengeSignature extends GatewayDeviceIdentityReference {
+  signature: string;
+  signedAt: number;
+  nonce: string;
+}
+
+export const getGatewayDeviceIdentityReference = () =>
+  invoke<GatewayDeviceIdentityReference>('get_gateway_device_identity_reference');
+
+export const signGatewayDeviceChallenge = (params: GatewayDeviceChallengeParams) =>
+  invoke<GatewayDeviceChallengeSignature>('sign_gateway_device_challenge', { params });
 // ── Page-facing native runtime commands ────────────────────────────────────
 // Keep page code independent from Tauri's raw invoke surface. These wrappers
 // mirror the Rust command names and serde field casing so IPC drift is found
@@ -1142,6 +1115,7 @@ export const installBuiltinSkillForChat = (skillId: string) => (
 export const clearPetAsset = () => invoke<void>('clear_pet_asset');
 export const clearPetPackage = () => invoke<void>('clear_pet_package');
 export const openDynamicIsland = () => invoke<void>('open_dynamic_island');
+export const requestDynamicIslandHide = () => invoke<void>('request_dynamic_island_hide');
 export const openPetWindow = () => invoke<void>('open_pet_window');
 export const closePetWindow = () => invoke<void>('close_pet_window');
 export const closeQuickChat = () => invoke<void>('close_quickchat');

@@ -6,6 +6,7 @@ import type {
 } from './Connection';
 import {
   GatewayApprovalEventSubscription,
+  parseGatewayApprovalEvent,
   subscribeGatewayApprovalEvents,
 } from './approvalEventBridge';
 
@@ -80,7 +81,7 @@ test('keeps a page-lifetime approval socket on the dedicated scope', () => {
   });
   const received: string[] = [];
   const unsubscribe = subscribeGatewayApprovalEvents((event) => {
-    if (event.phase === 'requested') received.push(event.record.id);
+    if (event.phase === 'requested') received.push(event.id);
   });
 
   subscription.start();
@@ -110,7 +111,7 @@ test('drops events after the attested source connection changes', () => {
   });
   const received: string[] = [];
   const unsubscribe = subscribeGatewayApprovalEvents((event) => {
-    if (event.phase === 'requested') received.push(event.record.id);
+    if (event.phase === 'requested') received.push(event.id);
   });
 
   subscription.start();
@@ -121,4 +122,31 @@ test('drops events after the attested source connection changes', () => {
   assert.equal(fake.disconnectCalls, 1);
   unsubscribe();
   subscription.stop();
+});
+
+test('recognizes only official approval event names with a non-empty approval ID', () => {
+  assert.deepEqual(parseGatewayApprovalEvent(requestedEvent()), {
+    kind: 'exec',
+    phase: 'requested',
+    id: 'approval-1',
+  });
+  assert.deepEqual(parseGatewayApprovalEvent({
+    type: 'event',
+    event: 'plugin.approval.resolved',
+    payload: { id: ' plugin-1 ' },
+  }), {
+    kind: 'plugin',
+    phase: 'resolved',
+    id: 'plugin-1',
+  });
+  assert.equal(parseGatewayApprovalEvent({
+    type: 'event',
+    event: 'system-agent.approval.requested',
+    payload: { id: 'system-1' },
+  }), null);
+  assert.equal(parseGatewayApprovalEvent({
+    type: 'event',
+    event: 'exec.approval.requested',
+    payload: { id: ' ' },
+  }), null);
 });

@@ -49,6 +49,15 @@ test('managed JSON files format valid content and preserve invalid source', () =
   );
   assert.match(invalid, /Invalid JSON\. Showing the original content\./);
   assert.match(invalid, /\{&quot;enabled&quot;:/);
+
+  const truncated = renderPreview(
+    <ManagedFilePreview
+      fileName="config.json"
+      preview={{ kind: 'json', content: '{"enabled":', truncated: true }}
+    />,
+  );
+  assert.doesNotMatch(truncated, /Invalid JSON/);
+  assert.match(truncated, /This preview is truncated/);
 });
 
 test('managed HTML keeps interactive scripts scoped and static HTML scriptless', () => {

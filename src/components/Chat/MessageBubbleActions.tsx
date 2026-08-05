@@ -7,10 +7,9 @@ interface MessageBubbleActionsProps {
   previewable: boolean;
   onCopy: () => void;
   onPreview: () => void;
-  transcriptActions?: {
-    fork?: () => void;
-    rewind?: () => void;
-  };
+  onRewind?: () => void;
+  onFork?: () => void;
+  messageCutDisabled?: boolean;
 }
 
 export function MessageBubbleActions({
@@ -18,7 +17,9 @@ export function MessageBubbleActions({
   previewable,
   onCopy,
   onPreview,
-  transcriptActions,
+  onRewind,
+  onFork,
+  messageCutDisabled = false,
 }: MessageBubbleActionsProps) {
   const { t } = useTranslation();
   const buttonClass = [
@@ -30,24 +31,26 @@ export function MessageBubbleActions({
 
   return (
     <div className="flex shrink-0 items-center gap-0.5" data-message-actions>
-      {transcriptActions?.fork && (
+      {onRewind && (
         <ChatIconButton
           type="button"
-          onClick={transcriptActions.fork}
+          onClick={onRewind}
+          disabled={messageCutDisabled}
           className={buttonClass}
-          label={t('chat.sessionTranscript.forkAtMessage')}
-        >
-          <GitFork size={14} />
-        </ChatIconButton>
-      )}
-      {transcriptActions?.rewind && (
-        <ChatIconButton
-          type="button"
-          onClick={transcriptActions.rewind}
-          className={buttonClass}
-          label={t('chat.sessionTranscript.rewindToMessage')}
+          label={t('chat.messageCut.rewind')}
         >
           <RotateCcw size={14} />
+        </ChatIconButton>
+      )}
+      {onFork && (
+        <ChatIconButton
+          type="button"
+          onClick={onFork}
+          disabled={messageCutDisabled}
+          className={buttonClass}
+          label={t('chat.messageCut.fork')}
+        >
+          <GitFork size={14} />
         </ChatIconButton>
       )}
       {previewable && (

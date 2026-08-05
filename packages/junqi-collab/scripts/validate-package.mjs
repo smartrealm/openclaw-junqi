@@ -27,8 +27,8 @@ assert.deepEqual(packageJson.exports, {
   },
 });
 assert.equal(packageJson.engines?.node, ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0");
-// OpenClaw's plugin API parser requires a fully-qualified upper comparator.
-const supportedOpenClawRange = ">=2026.7.1 <2027.0.0";
+// OpenClaw uses this semantic-version floor for external plugin API compatibility.
+const supportedOpenClawRange = ">=2026.7.1";
 assert.equal(packageJson.peerDependencies?.openclaw, supportedOpenClawRange);
 assert.equal(packageJson.openclaw?.compat?.pluginApi, supportedOpenClawRange);
 assert.equal(packageJson.openclaw?.compat?.minGatewayVersion, "2026.7.1");

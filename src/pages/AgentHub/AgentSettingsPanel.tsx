@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { gateway } from '@/services/gateway';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
+import { readOpenClawConfigSnapshot } from '@/services/gateway/OpenClawConfigSnapshot';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { themeHex, themeAlpha } from '@/utils/theme-colors';
@@ -39,6 +40,8 @@ import {
   type ChannelGroupView,
 } from '@/services/channelConfig';
 import type { AgentWorkspaceSkill } from './agentWorkspaceSkills';
+import { AgentBootstrapFilesPanel } from './AgentBootstrapFilesPanel';
+import type { OpenClawAgentBootstrapFile, OpenClawAgentBootstrapFileGet } from '@/services/gateway';
 import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import {
@@ -86,10 +89,15 @@ interface AgentSettingsPanelProps {
   agentSkills: AgentWorkspaceSkill[];
   loadingAgentSkills: boolean;
   agentSkillsError: string | null;
+  agentBootstrapFiles: readonly OpenClawAgentBootstrapFile[];
+  loadingAgentBootstrapFiles: boolean;
+  agentBootstrapFilesError: string | null;
   workspaceOpen: boolean;
   onClose: () => void;
-  onOpenWorkspace: (agent: AgentForPanel, workspace?: string) => void;
+  onOpenWorkspace: (agent: AgentForPanel) => void;
   onRetryAgentSkills: () => void;
+  onRetryAgentBootstrapFiles: () => void;
+  onGetAgentBootstrapFile: (agentId: string, name: string) => Promise<OpenClawAgentBootstrapFileGet>;
   onSaved: (patch?: Partial<AgentForPanel>) => void;
 }
 
@@ -107,14 +115,6 @@ interface ConfigAgent {
     context1m?: boolean;
   };
   [k: string]: unknown;
-}
-
-// Shape of the config.get response
-interface ConfigGetResponse {
-  baseHash?: string;
-  hash?: string;
-  config?: GatewayRuntimeConfig;
-  agents?: GatewayRuntimeConfig['agents'];
 }
 
 type ChannelGroupForPanel = ChannelGroupView & { name: string };
@@ -336,10 +336,15 @@ export function AgentSettingsPanel({
   agentSkills,
   loadingAgentSkills,
   agentSkillsError,
+  agentBootstrapFiles,
+  loadingAgentBootstrapFiles,
+  agentBootstrapFilesError,
   workspaceOpen,
   onClose,
   onOpenWorkspace,
   onRetryAgentSkills,
+  onRetryAgentBootstrapFiles,
+  onGetAgentBootstrapFile,
   onSaved,
 }: AgentSettingsPanelProps) {
   const { t } = useTranslation();
@@ -501,8 +506,8 @@ export function AgentSettingsPanel({
       .then((res: unknown) => {
         if (cancelled) return;
 
-        const snap = res as ConfigGetResponse;
-        const runtimeConfig = snap.config ?? (snap.agents ? snap as GatewayRuntimeConfig : undefined);
+        const snapshot = readOpenClawConfigSnapshot(res);
+        const runtimeConfig = snapshot.config;
 
         // Find this agent's entry in config.agents.list
         const agentConfig = runtimeConfig?.agents?.list?.find(
@@ -538,8 +543,8 @@ export function AgentSettingsPanel({
         setStoredModelConfig(rawModel);
         setSelectedFallbacks(getModelFallbacks(rawModel));
         setFallbackCandidate('');
-        setConfigSnapshot(runtimeConfig ?? null);
-        setConfigBaseHash(snap.baseHash ?? snap.hash);
+        setConfigSnapshot(runtimeConfig);
+        setConfigBaseHash(snapshot.hash);
         setModelInherited(!cfgModel && !!defaultModel);
         setInitializedForId(currentAgent.id);
       })
@@ -653,9 +658,8 @@ export function AgentSettingsPanel({
           // list with a base-hash guard when an existing fallback chain must be
           // retained.
           await gateway.callPrivileged('config.patch', {
-            raw: JSON.stringify({ agents: { list } }),
+            raw: JSON.stringify({ agents: { list: [nextEntry] } }),
             ...(configBaseHash ? { baseHash: configBaseHash } : {}),
-            replacePaths: ['agents.list'],
           });
           setStoredModelConfig(nextModel);
           setSelectedFallbacks(getModelFallbacks(nextModel));
@@ -1089,7 +1093,7 @@ export function AgentSettingsPanel({
                         />
                         <button
                           type="button"
-                          onClick={() => onOpenWorkspace(agent, trimmedWorkspace || undefined)}
+                          onClick={() => onOpenWorkspace(agent)}
                           className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-aegis-border px-2.5 py-1.5 text-[10px] font-bold text-aegis-text-muted hover:border-aegis-primary/35 hover:bg-aegis-primary/10 hover:text-aegis-primary transition-colors"
                         >
                           <FolderOpen size={12} />
@@ -1335,6 +1339,15 @@ export function AgentSettingsPanel({
                       )}
                     </div>
                   </div>
+
+                  <AgentBootstrapFilesPanel
+                    agentId={agent.id}
+                    files={agentBootstrapFiles}
+                    loading={loadingAgentBootstrapFiles}
+                    error={agentBootstrapFilesError}
+                    onRetry={onRetryAgentBootstrapFiles}
+                    getFile={onGetAgentBootstrapFile}
+                  />
 
                   {/* ── Section: Agent-owned workspace skills ── */}
                   <div>

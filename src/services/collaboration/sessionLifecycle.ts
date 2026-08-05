@@ -1,5 +1,5 @@
 import { assertVerifiedSessionMutationResult, gateway } from '@/services/gateway';
-import { useChatStore } from '@/stores/chatStore';
+import { selectSessionRequestActive, useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import type { CollaborationCapabilities } from './types';
@@ -29,6 +29,7 @@ interface SessionLifecycleDependencies {
   listSessions(): Promise<unknown>;
   deleteSession(sessionKey: string, deleteTranscript: true, expectedSessionId: string): Promise<unknown>;
   resetSession(sessionKey: string): Promise<unknown>;
+  abortChat(sessionKey: string, sessionId?: string): Promise<unknown>;
 }
 
 const defaultDependencies: SessionLifecycleDependencies = {
@@ -39,6 +40,7 @@ const defaultDependencies: SessionLifecycleDependencies = {
     gateway.deleteSession(sessionKey, deleteTranscript, expectedSessionId)
   ),
   resetSession: (sessionKey) => gateway.resetSession(sessionKey),
+  abortChat: (sessionKey, sessionId) => gateway.abortChat(sessionKey, sessionId),
 };
 
 let dependencies = defaultDependencies;
@@ -158,8 +160,8 @@ async function executeNativeSessionMutation(
   action: SessionMutationAction,
   sessionId: string | null,
 ): Promise<SessionLifecycleMutationOutcome> {
-  if (useChatStore.getState().typingBySession[sessionKey]) {
-    await gateway.abortChat(sessionKey);
+  if (selectSessionRequestActive(useChatStore.getState(), sessionKey)) {
+    await dependencies.abortChat(sessionKey, sessionId ?? undefined);
   }
   if (action === 'delete' && !sessionId) {
     throw new Error('The native OpenClaw session identity is unavailable. Refresh sessions and try again.');

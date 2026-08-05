@@ -4,10 +4,11 @@
 import { lazy, Suspense, useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArchiveRestore, Plus, MessageSquare, BookOpenText, Blocks, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, Ellipsis, Pin, Pencil, type LucideIcon } from 'lucide-react';
+import { ArchiveRestore, Plus, MessageSquare, BookOpenText, Blocks, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, Ellipsis, Pin, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
 import { useChatStore, type Session } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showConfirm } from '@/components/shared/alertStore';
@@ -41,7 +42,6 @@ import { resolveSessionChannelPresentation } from '@/utils/sessionChannelPresent
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
 import { SessionChannelIcon } from '@/components/shared/SessionChannelIcon';
 import { SessionActionsMenu } from '@/components/Chat/session-actions/SessionActionsMenu';
-import type { SessionGroup } from '@/services/chat/sessionOrganization';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
 const BusinessApplicationsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.BusinessApplicationsPanel })));
@@ -358,91 +358,17 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
   );
 }
 
-function SessionGroupHeader({ group, count }: { group: SessionGroup; count: number }) {
-  const { t } = useTranslation();
-  const renameSessionGroup = useChatStore((state) => state.renameSessionGroup);
-  const deleteSessionGroup = useChatStore((state) => state.deleteSessionGroup);
-  const [editing, setEditing] = useState(false);
-  const [label, setLabel] = useState(group.label);
-  const runGroupAction = (action: () => Promise<unknown>) => {
-    void action().catch((error: unknown) => {
-      useNotificationStore.getState().addToast(
-        'error',
-        t('chat.sessionActions'),
-        error instanceof Error ? error.message : String(error),
-      );
-    });
-  };
+interface SessionCategory {
+  readonly id: string;
+  readonly label: string;
+}
 
-  if (editing) {
-    return (
-      <div className="flex items-center gap-1 px-3 py-1.5">
-        <Folder size={11} className="shrink-0 opacity-70" aria-hidden="true" />
-        <input
-          value={label}
-          onChange={(event) => setLabel(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              runGroupAction(() => renameSessionGroup(group.id, label));
-              setEditing(false);
-            }
-            if (event.key === 'Escape') {
-              setLabel(group.label);
-              setEditing(false);
-            }
-          }}
-          className="h-6 min-w-0 flex-1 rounded border border-aegis-primary/50 bg-aegis-bg px-1.5 text-[11px] text-aegis-text outline-none"
-          autoFocus
-        />
-        <button
-          type="button"
-          onClick={() => { runGroupAction(() => renameSessionGroup(group.id, label)); setEditing(false); }}
-          className="flex h-6 w-6 items-center justify-center rounded text-aegis-primary hover:bg-aegis-primary/10"
-          title={t('common.save')}
-          aria-label={t('common.save')}
-        >
-          <Check size={11} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          onClick={() => { setLabel(group.label); setEditing(false); }}
-          className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-muted hover:bg-aegis-hover/40"
-          title={t('common.cancel')}
-          aria-label={t('common.cancel')}
-        >
-          <X size={11} aria-hidden="true" />
-        </button>
-      </div>
-    );
-  }
-
+function SessionCategoryHeader({ category, count }: { category: SessionCategory; count: number }) {
   return (
-    <div className="group/session-group flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-aegis-text-dim">
+    <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-aegis-text-dim">
       <Folder size={11} className="opacity-70" aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate">{group.label}</span>
+      <span className="min-w-0 flex-1 truncate">{category.label}</span>
       <span className="text-[10.5px] font-mono text-aegis-text-dim/70">{count}</span>
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        className="flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-aegis-hover/40 hover:text-aegis-text group-hover/session-group:opacity-100 focus-visible:opacity-100"
-        title={t('chat.renameSessionGroup')}
-        aria-label={t('chat.renameSessionGroup')}
-      >
-        <Pencil size={10} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        onClick={() => showConfirm(
-          t('chat.deleteSessionGroup'),
-          t('chat.deleteSessionGroupConfirm'),
-          () => { runGroupAction(() => deleteSessionGroup(group.id)); },
-        )}
-        className="flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-aegis-danger/10 hover:text-aegis-danger group-hover/session-group:opacity-100 focus-visible:opacity-100"
-        title={t('chat.deleteSessionGroup')}
-        aria-label={t('chat.deleteSessionGroup')}
-      >
-        <Trash2 size={10} aria-hidden="true" />
-      </button>
     </div>
   );
 }
@@ -465,14 +391,6 @@ function WorkbenchPanel() {
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [preferredBucket, setPreferredBucket] = useState<SessionBucketKey>(readPreferredSessionBucket);
   const setSessionArchived = useChatStore((state) => state.setSessionArchived);
-  const sessionGroups = useChatStore((state) => state.sessionGroups);
-  const refreshSessionGroups = useChatStore((state) => state.refreshSessionGroups);
-
-  useEffect(() => {
-    void refreshSessionGroups().catch(() => {
-      // The store retains its identity-bound desktop fallback for legacy Gateway versions.
-    });
-  }, [refreshSessionGroups]);
 
   // Per-session first user message, keyed for O(1) lookups during render.
   // Without this we'd have to walk messagesPerSession on every session row.
@@ -498,10 +416,18 @@ function WorkbenchPanel() {
     () => sortSessionsByActivity(visibleSessions.filter((session) => session.pinned)),
     [visibleSessions],
   );
-  const groupedSessions = useMemo(() => new Map(sessionGroups.map((group) => [
-    group.id,
-    sortSessionsByActivity(visibleSessions.filter((session) => !session.pinned && session.groupId === group.id)),
-  ])), [sessionGroups, visibleSessions]);
+  const sessionCategories = useMemo(() => {
+    const categories = new Map<string, SessionCategory>();
+    for (const session of visibleSessions) {
+      const category = typeof session.category === 'string' ? session.category.trim() : '';
+      if (category) categories.set(category, { id: category, label: category });
+    }
+    return [...categories.values()];
+  }, [visibleSessions]);
+  const groupedSessions = useMemo(() => new Map(sessionCategories.map((category) => [
+    category.id,
+    sortSessionsByActivity(visibleSessions.filter((session) => !session.pinned && session.category === category.id)),
+  ])), [sessionCategories, visibleSessions]);
   const ungroupedSessions = useMemo(
     () => visibleSessions.filter((session) => !session.pinned && !session.groupId),
     [visibleSessions],
@@ -692,12 +618,12 @@ function WorkbenchPanel() {
           </div>
         )}
 
-        {sessionGroups.map((group) => {
-          const groupSessions = groupedSessions.get(group.id) ?? [];
+        {sessionCategories.map((category) => {
+          const groupSessions = groupedSessions.get(category.id) ?? [];
           if (groupSessions.length === 0) return null;
           return (
-            <div key={group.id} className="mb-2">
-              <SessionGroupHeader group={group} count={groupSessions.length} />
+            <div key={category.id} className="mb-2">
+              <SessionCategoryHeader category={category} count={groupSessions.length} />
               {groupSessions.map(renderRow)}
             </div>
           );
@@ -990,7 +916,7 @@ function miniItemsFor(
       { to: '/briefs', icon: <BookOpenText size={20} />, label: t('nav.taskBriefs'), feature: 'agentRun' },
       { to: '/terminal', icon: <Terminal size={20} />, label: t('nav.terminal', 'Terminal'), feature: 'terminal' },
       { to: '/files', icon: <Folder size={20} />, label: t('nav.files', 'Files'), feature: 'files' },
-      { to: '/tools', icon: <Cpu size={20} />, label: t('nav.mcpTools', 'MCP Tools'), feature: 'tools' },
+      { to: OPENCLAW_TOOLS_ROUTE, icon: <Cpu size={20} />, label: t('nav.openClawTools', 'OpenClaw Tools'), feature: 'configManager' },
     ];
     case 'commands': return [
       { to: '/openclaw-commands', icon: <BookOpenText size={20} />, label: t('nav.openclawCommands', 'OpenClaw commands'), feature: 'tools' },

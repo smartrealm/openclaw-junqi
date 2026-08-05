@@ -44,6 +44,15 @@ OpenClaw 向 JunQi 发送累计流快照。`ChatHandler` 已合并双文本流�
 - 工具边界和 transcript 权威收敛；
 - 流式纯文本与终态 Markdown 的现有切换。
 
+### STREAM-PERF-04 Gateway 响应阶段
+
+对官方 `chat.send_timing` 事件：
+
+- 仅接受完整、非负有限耗时和当前官方已定义阶段；未知字段或阶段不推断。
+- 仅当 `sessionKey` 和 `runId` 与当前活动 OpenClaw Run 精确一致时才投影。
+- 只在当前响应的临时 UI 中呈现 Gateway 报告的阶段与耗时；不得持久化或用于 Stop、重试、队列和 Task 状态转换。
+- Run 结算、会话删除、重置或 identity 轮换必须清除该投影。
+
 ## Acceptance
 
 - [ ] 常规尾部流更新只替换最后一个 ResponseGroup。
@@ -53,3 +62,4 @@ OpenClaw 向 JunQi 发送累计流快照。`ChatHandler` 已合并双文本流�
 - [ ] final、error、abort、工具流、双流兼容快照和 chat replace 回归测试通过。
 - [ ] TypeScript、边界检查、完整前端测试和构建通过。
 - [ ] 真实 Tauri 长会话性能仍明确标记为未验证，除非实际完成录制。
+- [ ] `chat.send_timing` 的畸形、过期或错 Run 事件不会改变当前响应视图。

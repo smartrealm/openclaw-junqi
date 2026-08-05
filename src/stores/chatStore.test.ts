@@ -3,17 +3,18 @@ import assert from 'node:assert/strict';
 import {
   selectActiveSessionThinking,
   selectActiveSessionTyping,
+  selectSessionRequestActive,
   useChatStore,
   type Session,
 } from './chatStore';
 import { normalizeHistoryMessage } from '@/processing/normalizeHistoryMessage';
 import { gateway } from '@/services/gateway';
+import { OpenClawSessionGroupsUnsupportedError } from '@/services/gateway/OpenClawSessionGroupsClient';
 import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIdentityTransition';
 import {
   __resetSessionOrganizationForTests,
-  projectSessionOrganization,
-  setSessionOrganizationFlag,
 } from '@/services/chat/sessionOrganization';
+import { markSessionDeleted, restoreSessionKey } from '@/utils/sessionLifecycle';
 
 const MAIN_KEY = 'agent:main:main';
 const OTHER_KEY = 'agent:worker:main';
@@ -32,6 +33,17 @@ function seedSessions(activeSessionKey = MAIN_KEY) {
   });
 }
 
+test('only a Gateway-owned request is eligible for a native Stop', () => {
+  const sessionKey = 'agent:main:pending-send';
+  const inactive = { typingBySession: {}, sendingBySession: {} };
+  const sending = { typingBySession: {}, sendingBySession: { [sessionKey]: true } };
+  const streaming = { typingBySession: { [sessionKey]: true }, sendingBySession: {} };
+
+  assert.equal(selectSessionRequestActive(inactive, sessionKey), false);
+  assert.equal(selectSessionRequestActive(sending, sessionKey), false);
+  assert.equal(selectSessionRequestActive(streaming, sessionKey), true);
+});
+
 test('setSessionModel updates the session row and active currentModel', () => {
   seedSessions(MAIN_KEY);
 
@@ -42,6 +54,42 @@ test('setSessionModel updates the session row and active currentModel', () => {
   assert.equal(
     state.sessions.find((session) => session.key === MAIN_KEY)?.model,
     'google/gemini-2.5-pro',
+  );
+});
+
+test('active transcript leaf 只由 Gateway 投影更新，身份轮换时清除', () => {
+  seedSessions(MAIN_KEY);
+  useChatStore.getState().setSessionIdentity(MAIN_KEY, 'session-before');
+  useChatStore.getState().setSessionActiveLeafEntryId(MAIN_KEY, 'leaf-before');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.activeLeafEntryId,
+    'leaf-before',
+  );
+
+  useChatStore.getState().setSessionIdentity(MAIN_KEY, 'session-after');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.activeLeafEntryId,
+    undefined,
+  );
+});
+
+test('setSessionAgentRuntime updates only an existing matching session', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionAgentRuntime(OTHER_KEY, { id: 'codex' });
+  assert.deepEqual(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.agentRuntime,
+    { id: 'codex' },
+  );
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.agentRuntime,
+    undefined,
+  );
+
+  useChatStore.getState().setSessionAgentRuntime('agent:removed:main', { id: 'openclaw' });
+  assert.equal(
+    useChatStore.getState().sessions.some((session) => session.key === 'agent:removed:main'),
+    false,
   );
 });
 
@@ -57,6 +105,106 @@ test('setSessionThinking updates only the matching session and active title stat
 
   useChatStore.getState().setSessionThinking(MAIN_KEY, 'xhigh');
   assert.equal(useChatStore.getState().currentThinking, 'xhigh');
+});
+
+test('setSessionFastMode updates only the matching session', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionFastMode(OTHER_KEY, 'auto');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.fastMode,
+    'auto',
+  );
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.fastMode,
+    undefined,
+  );
+
+  useChatStore.getState().setSessionFastMode(MAIN_KEY, false);
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.fastMode,
+    false,
+  );
+});
+
+test('setSessionVerbose updates only the matching session', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionVerbose(OTHER_KEY, 'full');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.verboseLevel,
+    'full',
+  );
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.verboseLevel,
+    undefined,
+  );
+
+  useChatStore.getState().setSessionVerbose(MAIN_KEY, 'off');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.verboseLevel,
+    'off',
+  );
+});
+
+test('setSessionTrace preserves an unrecognized Gateway value on the matching session', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionTrace(OTHER_KEY, 'raw');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.traceLevel,
+    'raw',
+  );
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.traceLevel,
+    undefined,
+  );
+
+  useChatStore.getState().setSessionTrace(MAIN_KEY, 'off');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.traceLevel,
+    'off',
+  );
+});
+
+test('setSessionResponseUsage preserves the legacy alias and updates only the matching session', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionResponseUsage(OTHER_KEY, 'on');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.responseUsage,
+    'on',
+  );
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.responseUsage,
+    undefined,
+  );
+
+  useChatStore.getState().setSessionResponseUsage(MAIN_KEY, 'full');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.responseUsage,
+    'full',
+  );
+});
+
+test('setSessionReasoning updates only the matching session', () => {
+  seedSessions(MAIN_KEY);
+
+  useChatStore.getState().setSessionReasoning(OTHER_KEY, 'stream');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === OTHER_KEY)?.reasoningLevel,
+    'stream',
+  );
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.reasoningLevel,
+    undefined,
+  );
+
+  useChatStore.getState().setSessionReasoning(MAIN_KEY, 'off');
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.reasoningLevel,
+    'off',
+  );
 });
 
 test('setSessionModel does not overwrite currentModel for inactive sessions', () => {
@@ -106,6 +254,99 @@ test('setSessions follows the Gateway session list after a deletion', () => {
   assert.equal(state.sessions.some((session) => session.key === MAIN_KEY), true);
   assert.deepEqual(state.openTabs, [MAIN_KEY]);
   assert.equal(state.activeSessionKey, MAIN_KEY);
+});
+
+test('完整 Gateway 会话快照清除已消失的最近运行错误', () => {
+  useChatStore.setState({
+    sessions: [{ key: MAIN_KEY, label: 'Main', lastRunError: 'provider timeout' }],
+    openTabs: [MAIN_KEY],
+    activeSessionKey: MAIN_KEY,
+  });
+
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main', lastRunError: null },
+  ]);
+
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.lastRunError,
+    null,
+  );
+});
+
+test('完整 Gateway 会话快照清除已消失的 Agent 状态说明', () => {
+  useChatStore.setState({
+    sessions: [{ key: MAIN_KEY, label: 'Main', agentStatus: { note: 'waiting for review' } }],
+    openTabs: [MAIN_KEY],
+    activeSessionKey: MAIN_KEY,
+  });
+
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main', agentStatus: null },
+  ]);
+
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.agentStatus,
+    null,
+  );
+});
+
+test('完整 Gateway 会话快照清除已消失的最近中止运行标记', () => {
+  useChatStore.setState({
+    sessions: [{ key: MAIN_KEY, label: 'Main', abortedLastRun: true }],
+    openTabs: [MAIN_KEY],
+    activeSessionKey: MAIN_KEY,
+  });
+
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main', abortedLastRun: null },
+  ]);
+
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.abortedLastRun,
+    null,
+  );
+});
+
+test('完整 Gateway 会话快照清除已消失的上下文预算状态', () => {
+  useChatStore.setState({
+    sessions: [{
+      key: MAIN_KEY,
+      label: 'Main',
+      contextBudgetStatus: { route: 'compact_only', shouldCompact: true },
+    }],
+    openTabs: [MAIN_KEY],
+    activeSessionKey: MAIN_KEY,
+  });
+
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main', contextBudgetStatus: null },
+  ]);
+
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.contextBudgetStatus,
+    null,
+  );
+});
+
+test('完整 Gateway 会话快照清除已消失的原生会话目标', () => {
+  useChatStore.setState({
+    sessions: [{
+      key: MAIN_KEY,
+      label: 'Main',
+      goal: { id: 'goal-1', objective: 'Keep state', status: 'active' },
+    }],
+    openTabs: [MAIN_KEY],
+    activeSessionKey: MAIN_KEY,
+  });
+
+  useChatStore.getState().setSessions([
+    { key: MAIN_KEY, label: 'Main', goal: null },
+  ]);
+
+  assert.equal(
+    useChatStore.getState().sessions.find((session) => session.key === MAIN_KEY)?.goal,
+    null,
+  );
 });
 
 test('a partial sessions.list page preserves sessions outside the current page', () => {
@@ -291,6 +532,15 @@ test('sessionId rotation atomically replaces transcript state and resets identit
       [OTHER_KEY]: [{ id: 'old', role: 'assistant', content: 'old', timestamp: '2026-01-01' }],
     },
     typingBySession: { [OTHER_KEY]: true },
+    chatSendTimingBySession: {
+      [OTHER_KEY]: {
+        sessionKey: OTHER_KEY,
+        runId: 'run-old',
+        phase: 'agent-run-started',
+        ackToPhaseMs: 12,
+        receivedToPhaseMs: 18,
+      },
+    },
     thinkingBySession: { [OTHER_KEY]: { runId: 'run-old', text: 'old thought' } },
     messageQueue: { [OTHER_KEY]: [{ id: 'queued-old', text: 'old', timestamp: '2026-01-01' }] },
     drafts: { [OTHER_KEY]: 'keep this draft' },
@@ -305,11 +555,12 @@ test('sessionId rotation atomically replaces transcript state and resets identit
   const state = useChatStore.getState();
   assert.equal(state.messagesPerSession[OTHER_KEY], undefined);
   assert.equal(state.typingBySession[OTHER_KEY], undefined);
+  assert.equal(state.chatSendTimingBySession[OTHER_KEY], undefined);
   assert.equal(state.thinkingBySession[OTHER_KEY], undefined);
   assert.equal(state.messageQueue[OTHER_KEY], undefined);
   assert.deepEqual(state.messages, []);
   assert.equal(state.drafts[OTHER_KEY], 'keep this draft');
-  assert.equal(state.sessions.find((session) => session.key === OTHER_KEY)?.pinned, false);
+  assert.equal(state.sessions.find((session) => session.key === OTHER_KEY)?.pinned, undefined);
   assert.equal(state.sessions.find((session) => session.key === OTHER_KEY)?.sessionId, 'new-id');
   assert.deepEqual(transitions, [{
     sessionKey: OTHER_KEY,
@@ -323,6 +574,22 @@ test('settleSessionRunUi atomically clears one session without disturbing anothe
   useChatStore.setState({
     typingBySession: { [MAIN_KEY]: true, [OTHER_KEY]: true },
     typingStartedAtBySession: { [MAIN_KEY]: 1_000, [OTHER_KEY]: 2_000 },
+    chatSendTimingBySession: {
+      [MAIN_KEY]: {
+        sessionKey: MAIN_KEY,
+        runId: 'run-main',
+        phase: 'agent-run-started',
+        ackToPhaseMs: 10,
+        receivedToPhaseMs: 14,
+      },
+      [OTHER_KEY]: {
+        sessionKey: OTHER_KEY,
+        runId: 'run-other',
+        phase: 'model-selected',
+        ackToPhaseMs: 16,
+        receivedToPhaseMs: 21,
+      },
+    },
     thinkingBySession: {
       [MAIN_KEY]: { runId: 'run-main', text: 'main thinking' },
       [OTHER_KEY]: { runId: 'run-other', text: 'other thinking' },
@@ -336,9 +603,11 @@ test('settleSessionRunUi atomically clears one session without disturbing anothe
   assert.equal(selectActiveSessionTyping(state), false);
   assert.deepEqual(selectActiveSessionThinking(state), { runId: null, text: '' });
   assert.equal(state.typingStartedAtBySession[MAIN_KEY], undefined);
+  assert.equal(state.chatSendTimingBySession[MAIN_KEY], undefined);
   assert.equal(state.sendingBySession[MAIN_KEY], false);
   assert.equal(state.typingBySession[OTHER_KEY], true);
   assert.equal(state.typingStartedAtBySession[OTHER_KEY], 2_000);
+  assert.equal(state.chatSendTimingBySession[OTHER_KEY]?.runId, 'run-other');
   assert.deepEqual(state.thinkingBySession[OTHER_KEY], { runId: 'run-other', text: 'other thinking' });
   assert.equal(state.sendingBySession[OTHER_KEY], true);
 });
@@ -399,12 +668,11 @@ test('removeSession closes the tab, switches active session, and persists tab or
   assert.equal(localStorage.getItem('aegis-open-tabs'), JSON.stringify([MAIN_KEY]));
 });
 
-test('opening or replacing the active tab clears the persisted unread marker', () => {
+test('opening or replacing the active tab does not create a local unread marker', () => {
   const unreadKey = 'agent:worker:unread-target';
   const unreadSession = { key: unreadKey, sessionId: 'gateway-session-id', label: 'Unread target' };
   const mainSession = { key: MAIN_KEY, sessionId: 'main-gateway-session-id', label: 'Main' };
   __resetSessionOrganizationForTests();
-  setSessionOrganizationFlag(unreadSession, 'unread', true);
   useChatStore.setState({
     sessions: [mainSession, unreadSession],
     openTabs: [MAIN_KEY],
@@ -413,12 +681,96 @@ test('opening or replacing the active tab clears the persisted unread marker', (
 
   useChatStore.getState().openTab(unreadKey);
 
-  assert.equal(projectSessionOrganization(unreadSession).unread, false);
+  assert.equal(localStorage.getItem('junqi:session-organization:v1'), null);
 
-  setSessionOrganizationFlag(mainSession, 'unread', true);
   useChatStore.getState().closeTab(unreadKey);
-  assert.equal(projectSessionOrganization(mainSession).unread, false);
+  assert.equal(localStorage.getItem('junqi:session-organization:v1'), null);
   __resetSessionOrganizationForTests();
+});
+
+test('session category updates only after Gateway confirms the patched entry', async () => {
+  const setSessionCategory = gateway.setSessionCategory;
+  const sessionKey = 'agent:main:project-alpha';
+  Object.assign(gateway, {
+    setSessionCategory: async () => 'Projects',
+  });
+  useChatStore.setState({
+    sessions: [{ key: sessionKey, label: 'Project session' }],
+  });
+
+  try {
+    await useChatStore.getState().setSessionCategory(sessionKey, 'Projects');
+    assert.deepEqual(useChatStore.getState().sessions, [{
+      key: sessionKey,
+      label: 'Project session',
+      groupId: 'Projects',
+      category: 'Projects',
+    }]);
+  } finally {
+    Object.assign(gateway, { setSessionCategory });
+  }
+});
+
+test('native session group catalog stays transient and preserves Gateway display order', async () => {
+  const listSessionGroups = gateway.listSessionGroups;
+  Object.assign(gateway, {
+    listSessionGroups: async () => [
+      { name: 'Operations', position: 0 },
+      { name: 'Projects', position: 1 },
+    ],
+  });
+  useChatStore.setState({
+    sessionGroupCatalog: [],
+    sessionGroupCatalogAvailability: 'unknown',
+  });
+
+  try {
+    await useChatStore.getState().refreshSessionGroupCatalog();
+    assert.deepEqual(useChatStore.getState().sessionGroupCatalog, ['Operations', 'Projects']);
+    assert.equal(useChatStore.getState().sessionGroupCatalogAvailability, 'ready');
+    useChatStore.getState().setConnectionStatus({ connected: false, connecting: false });
+    assert.deepEqual(useChatStore.getState().sessionGroupCatalog, []);
+    assert.equal(useChatStore.getState().sessionGroupCatalogAvailability, 'unknown');
+  } finally {
+    Object.assign(gateway, { listSessionGroups });
+  }
+});
+
+test('会话组仅在 Gateway 确认后写入瞬态目录', async () => {
+  const ensureSessionGroup = gateway.ensureSessionGroup;
+  Object.assign(gateway, {
+    ensureSessionGroup: async () => [
+      { name: 'Existing', position: 0 },
+      { name: 'Projects', position: 1 },
+    ],
+  });
+
+  try {
+    await useChatStore.getState().ensureSessionGroup('Projects');
+    assert.deepEqual(useChatStore.getState().sessionGroupCatalog, ['Existing', 'Projects']);
+    assert.equal(useChatStore.getState().sessionGroupCatalogAvailability, 'ready');
+  } finally {
+    Object.assign(gateway, { ensureSessionGroup });
+  }
+});
+
+test('unsupported native group catalog does not create a local catalog', async () => {
+  const listSessionGroups = gateway.listSessionGroups;
+  Object.assign(gateway, {
+    listSessionGroups: async () => { throw new OpenClawSessionGroupsUnsupportedError(); },
+  });
+  useChatStore.setState({
+    sessionGroupCatalog: ['stale local value'],
+    sessionGroupCatalogAvailability: 'unknown',
+  });
+
+  try {
+    await useChatStore.getState().refreshSessionGroupCatalog();
+    assert.deepEqual(useChatStore.getState().sessionGroupCatalog, []);
+    assert.equal(useChatStore.getState().sessionGroupCatalogAvailability, 'unavailable');
+  } finally {
+    Object.assign(gateway, { listSessionGroups });
+  }
 });
 
 test('history cache preserves structured Gateway blocks through ChatStore projection', () => {
@@ -834,6 +1186,116 @@ test('a cached terminal acknowledgement re-arms the queue pump after its guard r
     assert.deepEqual(delivered, ['first', 'second']);
     assert.deepEqual(useChatStore.getState().messageQueue[MAIN_KEY], []);
   } finally {
+    gateway.sendMessage = originalSend;
+  }
+});
+
+test('CHAT-02 clearing a local queue cannot cancel an item already claimed for Gateway delivery', async () => {
+  seedSessions(MAIN_KEY);
+  const secondMessage = {
+    id: 'clear-race-second',
+    role: 'user' as const,
+    content: 'second',
+    timestamp: new Date(1).toISOString(),
+    status: 'queued' as const,
+    retryPayload: { text: 'second' },
+  };
+  useChatStore.setState({
+    messages: [secondMessage],
+    messagesPerSession: { [MAIN_KEY]: [secondMessage] },
+    renderBlocks: [],
+    responseGroups: [],
+    _blocksCache: {},
+    _groupsCache: {},
+    typingBySession: { [MAIN_KEY]: false },
+    connected: true,
+    messageQueue: {
+      [MAIN_KEY]: [
+        { id: 'clear-race-first', text: 'first', timestamp: new Date(0).toISOString() },
+        { id: 'clear-race-second', text: 'second', timestamp: new Date(1).toISOString() },
+      ],
+    },
+  });
+
+  const originalSend = gateway.sendMessage;
+  const delivered: string[] = [];
+  let releaseDelivery!: () => void;
+  let enteredGateway!: () => void;
+  const deliveryStarted = new Promise<void>((resolve) => { enteredGateway = resolve; });
+  try {
+    gateway.sendMessage = async (message) => {
+      delivered.push(message);
+      enteredGateway();
+      await new Promise<void>((resolve) => { releaseDelivery = resolve; });
+      return { runId: 'clear-race-first', status: 'started' };
+    };
+
+    const draining = useChatStore.getState().drainQueue(MAIN_KEY);
+    await deliveryStarted;
+
+    let state = useChatStore.getState();
+    assert.deepEqual(state.messageQueue[MAIN_KEY].map((item) => item.id), ['clear-race-second']);
+
+    state.clearQueue(MAIN_KEY);
+    state = useChatStore.getState();
+    assert.deepEqual(state.messageQueue[MAIN_KEY], []);
+    assert.equal(
+      state.messagesPerSession[MAIN_KEY]?.find((message) => message.id === 'clear-race-first')?.status,
+      'pending',
+    );
+    assert.equal(state.messages.find((message) => message.id === 'clear-race-second')?.status, 'cancelled');
+
+    releaseDelivery();
+    await draining;
+
+    state = useChatStore.getState();
+    assert.deepEqual(delivered, ['first']);
+    assert.equal(
+      state.messagesPerSession[MAIN_KEY]?.find((message) => message.id === 'clear-race-first')?.status,
+      'sent',
+    );
+  } finally {
+    gateway.sendMessage = originalSend;
+  }
+});
+
+test('CHAT-02 failed claimed delivery does not restore a deleted session queue', async () => {
+  const sessionKey = 'agent:worker:deleted-queue';
+  seedSessions(sessionKey);
+  useChatStore.setState({
+    messages: [],
+    messagesPerSession: { [sessionKey]: [] },
+    renderBlocks: [],
+    responseGroups: [],
+    _blocksCache: {},
+    _groupsCache: {},
+    typingBySession: { [sessionKey]: false },
+    connected: true,
+    messageQueue: {
+      [sessionKey]: [{ id: 'deleted-during-send', text: 'do not restore', timestamp: new Date(0).toISOString() }],
+    },
+  });
+
+  const originalSend = gateway.sendMessage;
+  let releaseDelivery!: () => void;
+  let enteredGateway!: () => void;
+  const deliveryStarted = new Promise<void>((resolve) => { enteredGateway = resolve; });
+  try {
+    gateway.sendMessage = async () => {
+      enteredGateway();
+      await new Promise<void>((resolve) => { releaseDelivery = resolve; });
+      throw new Error('network failed');
+    };
+
+    const draining = useChatStore.getState().drainQueue(sessionKey);
+    await deliveryStarted;
+    markSessionDeleted(sessionKey, 'worker-session-id');
+    releaseDelivery();
+    await draining;
+
+    assert.deepEqual(useChatStore.getState().messageQueue[sessionKey], []);
+  } finally {
+    restoreSessionKey(sessionKey);
     gateway.sendMessage = originalSend;
   }
 });

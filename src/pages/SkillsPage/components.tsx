@@ -5,12 +5,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
-import { X, Copy, ExternalLink, Download, MessageSquare, FileText, Key, Settings2, BadgeCheck, BookOpenText, CheckCircle2, Wrench, Star } from 'lucide-react';
+import { X, Copy, ExternalLink, Download, MessageSquare, FileText, BadgeCheck, BookOpenText, CheckCircle2, ShieldAlert, ShieldCheck, Star, Pin } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 import clsx from 'clsx';
 import type { SkillPersona, SkillPersonaFields } from '@/types/skills';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -25,6 +34,15 @@ export interface MySkill extends SkillPersonaFields {
   enabled: boolean;
   /** Raw source string from the gateway (e.g. "openclaw-bundled", "openclaw-managed", "openclaw-extra") */
   source: string;
+  security?: {
+    passed: boolean | null | undefined;
+    decision: string;
+  };
+  curator?: {
+    state: 'active' | 'stale' | 'archived';
+    pinned: boolean;
+    useCount: number;
+  };
 }
 
 /** Map raw gateway source to a display group */
@@ -39,30 +57,39 @@ export interface HubSkill extends SkillPersonaFields {
   name: string;
   emoji: React.ReactNode;
   summary: string;
-  owner: string;
-  ownerAvatar: string;
-  stars: number;
-  downloads: number;
-  installs: number;
-  version: string;
+  score: number;
+  owner?: string;
+  ownerAvatar?: string;
+  version?: string;
+  updatedAt?: number;
   badge?: 'official' | 'featured';
-  /** Direct URL to the skill's page on its source hub (used as externalUrl in the detail panel). */
   homepage?: string;
 }
 
 export interface SkillDetail extends HubSkill {
-  readme: string;
-  requirements: { env: string[]; bin: string[] };
-  versions: Array<{ version: string; date: string; changelog: string; latest: boolean }>;
+  readme?: string;
+  createdAt?: number;
+  latestVersion?: {
+    version: string;
+    createdAt: number;
+    changelog?: string;
+  };
+  metadata?: {
+    os?: string[] | null;
+    systems?: string[] | null;
+  };
+  tags?: Record<string, string>;
+  channel?: string | null;
 }
 
 // ═══════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════
 
-function formatNum(n: number): string {
-  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-  return String(n);
+function formatDate(timestamp: number | undefined): string | null {
+  if (timestamp === undefined) return null;
+  const date = new Date(timestamp);
+  return Number.isFinite(date.getTime()) ? date.toLocaleDateString() : null;
 }
 
 /**
@@ -93,6 +120,29 @@ function SourceBadge({ source }: { source: string }) {
     group === 'installed' ? 'Installed' : group === 'extra' ? 'Extra' : 'Built-In';
   return (
     <span className={clsx('inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold border', style)}>
+      {label}
+    </span>
+  );
+}
+
+function CuratorBadge({ curator }: { curator: NonNullable<MySkill['curator']> }) {
+  const { t } = useTranslation();
+  const style = curator.state === 'active'
+    ? 'border-aegis-success/20 bg-aegis-success/[0.07] text-aegis-success'
+    : curator.state === 'stale'
+      ? 'border-aegis-warning/20 bg-aegis-warning/[0.07] text-aegis-warning'
+      : 'border-aegis-text-dim/20 bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-dim';
+  const label = curator.state === 'active'
+    ? t('skillsExtra.curatorActive', 'Active')
+    : curator.state === 'stale'
+      ? t('skillsExtra.curatorStale', 'Stale')
+      : t('skillsExtra.curatorArchived', 'Archived');
+  return (
+    <span
+      className={clsx('inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-semibold', style)}
+      title={t('skillsExtra.curatorUseCount', '{{count}} uses', { count: curator.useCount })}
+    >
+      {curator.pinned && <Pin size={9} aria-hidden="true" />}
       {label}
     </span>
   );
@@ -137,9 +187,10 @@ function HubBadge({ badge }: { badge?: 'official' | 'featured' }) {
 // MySkillRow — Installed skill (clean list item)
 // ═══════════════════════════════════════════════════════════
 
-export function MySkillRow({ skill, onToggle, index = 0 }: {
+export function MySkillRow({ skill, onToggle, onViewCard, index = 0 }: {
   skill: MySkill;
   onToggle: () => void;
+  onViewCard?: () => void;
   index?: number;
 }) {
   const { t } = useTranslation();
@@ -174,6 +225,25 @@ export function MySkillRow({ skill, onToggle, index = 0 }: {
         <div className="text-[10px] text-aegis-text-muted flex items-center gap-2 flex-wrap">
           <span className="truncate max-w-[260px]">{skill.description}</span>
           <SourceBadge source={skill.source} />
+          {skill.curator && <CuratorBadge curator={skill.curator} />}
+          {skill.security?.passed === true && (
+            <span
+              className="inline-flex items-center text-aegis-success"
+              title={t('skillsExtra.securityPassed', 'Security check passed')}
+              aria-label={t('skillsExtra.securityPassed', 'Security check passed')}
+            >
+              <ShieldCheck size={12} aria-hidden="true" />
+            </span>
+          )}
+          {skill.security?.passed === false && (
+            <span
+              className="inline-flex items-center text-aegis-danger"
+              title={t('skillsExtra.securityFailed', 'Security check failed')}
+              aria-label={t('skillsExtra.securityFailed', 'Security check failed')}
+            >
+              <ShieldAlert size={12} aria-hidden="true" />
+            </span>
+          )}
         </div>
       </div>
 
@@ -189,6 +259,17 @@ export function MySkillRow({ skill, onToggle, index = 0 }: {
 
       {/* Actions — toggle + optional persona chat */}
       <div className="flex items-center gap-1.5 pe-3 shrink-0">
+        {onViewCard && (
+          <button
+            type="button"
+            onClick={onViewCard}
+            title={t('skillsExtra.viewSkillCard', 'View skill card')}
+            aria-label={t('skillsExtra.viewSkillCard', 'View skill card')}
+            className="flex size-7 items-center justify-center rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim transition-all hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.04] hover:text-aegis-primary"
+          >
+            <BookOpenText size={12} aria-hidden="true" />
+          </button>
+        )}
         {(() => {
           const persona = resolvePersona(skill.persona);
           if (!persona) return null;
@@ -227,11 +308,281 @@ export function MySkillRow({ skill, onToggle, index = 0 }: {
   );
 }
 
+export function SkillCardDialog({
+  open,
+  card,
+  loading,
+  error,
+  onClose,
+}: {
+  open: boolean;
+  card: { skillKey: string; sizeBytes: number; content: string } | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[min(680px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden border-aegis-border bg-aegis-card-solid p-0 text-aegis-text shadow-2xl sm:rounded-lg">
+        <DialogHeader className="border-b border-aegis-border px-5 py-4 pe-12 text-start">
+          <DialogTitle className="text-sm font-bold text-aegis-text">
+            {t('skillsExtra.skillCardTitle', 'Skill card')}
+          </DialogTitle>
+          <DialogDescription className="mt-1 truncate font-mono text-[11px] text-aegis-text-dim">
+            {card?.skillKey ?? t('skillsExtra.skillCardPending', 'Waiting for OpenClaw response')}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto px-5 py-4">
+          {loading && (
+            <div className="flex min-h-40 items-center justify-center">
+              <LoadingIndicator size={20} className="text-aegis-text-dim" />
+            </div>
+          )}
+          {!loading && error && (
+            <div className="border-s-2 border-aegis-danger/60 bg-aegis-danger/[0.04] px-3 py-2.5 text-[12px] leading-relaxed text-aegis-text-secondary">
+              {error}
+            </div>
+          )}
+          {!loading && !error && card && (
+            <div>
+              <p className="mb-3 text-[10px] text-aegis-text-dim">
+                {t('skillsExtra.skillCardSize', '{{size}} bytes', { size: card.sizeBytes })}
+              </p>
+              <pre className="max-h-[min(60dvh,580px)] overflow-auto whitespace-pre-wrap break-words rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] p-3 font-mono text-[11px] leading-5 text-aegis-text-secondary">
+                {card.content}
+              </pre>
+            </div>
+          )}
+        </div>
+        <DialogFooter className="border-t border-aegis-border bg-[rgb(var(--aegis-overlay)/0.02)] px-5 py-3">
+          <DialogClose className="w-full rounded-lg border border-aegis-border px-3 py-2 text-[11px] font-medium text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40 sm:w-auto">
+            {t('common.close', 'Close')}
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function SkillProposalDialog({
+  open,
+  proposal,
+  loading,
+  error,
+  onClose,
+}: {
+  open: boolean;
+  proposal: {
+    id: string;
+    title: string;
+    description: string;
+    skillKey: string;
+    status: 'pending' | 'applied' | 'rejected' | 'quarantined' | 'stale';
+    revisionHash?: string;
+    content: string;
+  } | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[min(760px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden border-aegis-border bg-aegis-card-solid p-0 text-aegis-text shadow-2xl sm:rounded-lg">
+        <DialogHeader className="border-b border-aegis-border px-5 py-4 pe-12 text-start">
+          <DialogTitle className="truncate text-sm font-bold text-aegis-text">
+            {proposal?.title ?? t('skillsExtra.proposalInspectTitle', 'Proposal draft')}
+          </DialogTitle>
+          <DialogDescription className="mt-1 truncate font-mono text-[11px] text-aegis-text-dim">
+            {proposal?.skillKey ?? t('skillsExtra.proposalInspectPending', 'Waiting for OpenClaw response')}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto px-5 py-4">
+          {loading && (
+            <div className="flex min-h-40 items-center justify-center">
+              <LoadingIndicator size={20} className="text-aegis-text-dim" />
+            </div>
+          )}
+          {!loading && error && (
+            <div className="border-s-2 border-aegis-danger/60 bg-aegis-danger/[0.04] px-3 py-2.5 text-[12px] leading-relaxed text-aegis-text-secondary">
+              {error}
+            </div>
+          )}
+          {!loading && !error && proposal && (
+            <div>
+              <p className="mb-3 text-[10px] text-aegis-text-dim">
+                {proposal.revisionHash
+                  ? t('skillsExtra.proposalRevision', 'Revision {{hash}}', { hash: proposal.revisionHash })
+                  : t('skillsExtra.proposalRevisionUnavailable', 'Revision unavailable')}
+              </p>
+              <pre className="max-h-[min(60dvh,580px)] overflow-auto whitespace-pre-wrap break-words rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] p-3 font-mono text-[11px] leading-5 text-aegis-text-secondary">
+                {proposal.content}
+              </pre>
+            </div>
+          )}
+        </div>
+        <DialogFooter className="border-t border-aegis-border bg-[rgb(var(--aegis-overlay)/0.02)] px-5 py-3">
+          <DialogClose className="w-full rounded-lg border border-aegis-border px-3 py-2 text-[11px] font-medium text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40 sm:w-auto">
+            {t('common.close', 'Close')}
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type SkillProposalLifecycleEvent = {
+  sequence: number;
+  type: 'created' | 'revised' | 'evaluation_completed' | 'applied' | 'rejected' | 'quarantined' | 'stale';
+  occurredAt: string;
+  actorType: 'agent' | 'gateway' | 'plugin' | 'system';
+};
+
+function proposalEventDate(value: string): string {
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString() : value;
+}
+
+function proposalEventTypeLabel(
+  type: SkillProposalLifecycleEvent['type'],
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (type === 'created') return t('skillsExtra.proposalEventCreated', 'Created');
+  if (type === 'revised') return t('skillsExtra.proposalEventRevised', 'Revised');
+  if (type === 'evaluation_completed') return t('skillsExtra.proposalEventEvaluationCompleted', 'Evaluation completed');
+  if (type === 'applied') return t('skillsExtra.proposalEventApplied', 'Applied');
+  if (type === 'rejected') return t('skillsExtra.proposalEventRejected', 'Rejected');
+  if (type === 'quarantined') return t('skillsExtra.proposalEventQuarantined', 'Quarantined');
+  return t('skillsExtra.proposalEventStale', 'Stale');
+}
+
+function proposalEventActorLabel(
+  actorType: SkillProposalLifecycleEvent['actorType'],
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  if (actorType === 'agent') return t('skillsExtra.proposalEventActorAgent', 'Agent');
+  if (actorType === 'gateway') return t('skillsExtra.proposalEventActorGateway', 'Gateway');
+  if (actorType === 'plugin') return t('skillsExtra.proposalEventActorPlugin', 'Plugin');
+  return t('skillsExtra.proposalEventActorSystem', 'System');
+}
+
+export function SkillProposalEventsContent({
+  events,
+  loading,
+  error,
+  onLoadMore,
+}: {
+  events: SkillProposalLifecycleEvent[];
+  loading: boolean;
+  error: string | null;
+  onLoadMore?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {loading && events.length === 0 && (
+        <div className="flex min-h-40 items-center justify-center">
+          <LoadingIndicator size={20} className="text-aegis-text-dim" />
+        </div>
+      )}
+      {!loading && error && events.length === 0 && (
+        <div className="border-s-2 border-aegis-danger/60 bg-aegis-danger/[0.04] px-3 py-2.5 text-[12px] leading-relaxed text-aegis-text-secondary">
+          {error}
+        </div>
+      )}
+      {events.length > 0 && (
+        <div className="divide-y divide-[rgb(var(--aegis-overlay)/0.07)] border-y border-[rgb(var(--aegis-overlay)/0.07)]">
+          {events.map((event) => (
+            <div key={event.sequence} className="grid grid-cols-[auto_1fr] gap-x-3 px-1 py-3">
+              <span className="pt-0.5 font-mono text-[10px] text-aegis-text-dim">{event.sequence}</span>
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-aegis-text-secondary">
+                  {proposalEventTypeLabel(event.type, t)}
+                </p>
+                <p className="mt-1 text-[10px] text-aegis-text-dim">
+                  {proposalEventDate(event.occurredAt)} · {proposalEventActorLabel(event.actorType, t)}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!loading && !error && events.length === 0 && (
+        <p className="py-12 text-center text-[12px] text-aegis-text-dim">
+          {t('skillsExtra.proposalEventsEmpty', 'No lifecycle events')}
+        </p>
+      )}
+      {error && events.length > 0 && (
+        <p className="mt-3 break-words text-[11px] text-aegis-warning">{error}</p>
+      )}
+      {onLoadMore && (
+        <button
+          type="button"
+          onClick={onLoadMore}
+          disabled={loading}
+          className="mt-4 w-full rounded-lg border border-aegis-border px-3 py-2 text-[11px] font-medium text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text disabled:cursor-wait disabled:opacity-50"
+        >
+          {loading ? t('common.loading', 'Loading') : t('skillsExtra.proposalEventsLoadMore', 'Load more')}
+        </button>
+      )}
+    </>
+  );
+}
+
+export function SkillProposalEventsDialog({
+  open,
+  proposal,
+  events,
+  loading,
+  error,
+  onClose,
+  onLoadMore,
+}: {
+  open: boolean;
+  proposal: { title: string; skillKey: string } | null;
+  events: SkillProposalLifecycleEvent[];
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+  onLoadMore?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[min(680px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden border-aegis-border bg-aegis-card-solid p-0 text-aegis-text shadow-2xl sm:rounded-lg">
+        <DialogHeader className="border-b border-aegis-border px-5 py-4 pe-12 text-start">
+          <DialogTitle className="truncate text-sm font-bold text-aegis-text">
+            {proposal?.title ?? t('skillsExtra.proposalEventsTitle', 'Proposal activity')}
+          </DialogTitle>
+          <DialogDescription className="mt-1 truncate font-mono text-[11px] text-aegis-text-dim">
+            {proposal?.skillKey ?? t('skillsExtra.proposalEventsPending', 'Waiting for OpenClaw response')}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto px-5 py-4">
+          <SkillProposalEventsContent
+            events={events}
+            loading={loading}
+            error={error}
+            {...(onLoadMore ? { onLoadMore } : {})}
+          />
+        </div>
+        <DialogFooter className="border-t border-aegis-border bg-[rgb(var(--aegis-overlay)/0.02)] px-5 py-3">
+          <DialogClose className="w-full rounded-lg border border-aegis-border px-3 py-2 text-[11px] font-medium text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40 sm:w-auto">
+            {t('common.close', 'Close')}
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════
 // HubSkillRow — Marketplace result row
 // ═══════════════════════════════════════════════════════════
 
 export function HubSkillRow({ skill, onClick }: { skill: HubSkill; onClick: () => void }) {
+  const { t } = useTranslation();
   return (
     <div
       onClick={onClick}
@@ -250,9 +601,9 @@ export function HubSkillRow({ skill, onClick }: { skill: HubSkill; onClick: () =
         <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
           <span className="text-[13px] font-semibold">{skill.name}</span>
           <HubBadge badge={skill.badge} />
-          {skill.ownerAvatar && (
+          {skill.owner && (
             <span className="flex items-center gap-1 text-[10.5px] text-aegis-text-dim">
-              <img src={skill.ownerAvatar} alt="" className="w-[13px] h-[13px] rounded-full" loading="lazy" />
+              {skill.ownerAvatar && <img src={skill.ownerAvatar} alt="" className="w-[13px] h-[13px] rounded-full" loading="lazy" />}
               {skill.owner}
             </span>
           )}
@@ -262,10 +613,10 @@ export function HubSkillRow({ skill, onClick }: { skill: HubSkill; onClick: () =
 
       {/* Stats */}
       <div className="flex items-center gap-3.5 shrink-0 text-[11px] text-aegis-text-dim">
-        <span className="flex items-center gap-1 min-w-[56px]">
-          <Download size={11} /> {formatNum(skill.downloads)}
+        <span className="text-[10px] font-mono" title={t('skillsExtra.score', 'Search score')}>
+          {skill.score.toFixed(2)}
         </span>
-        <span className="text-[10px] font-mono">{skill.version ? `v${skill.version}` : '—'}</span>
+        {skill.version && <span className="text-[10px] font-mono">v{skill.version}</span>}
       </div>
     </div>
   );
@@ -297,7 +648,7 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
   errorLabel?: string;
   externalUrl?: string;
   externalLabel?: string;
-  /** Override the CLI command shown in the code block (defaults to "clawhub install {slug}"). */
+  /** Optional runtime-provided command shown in the code block. */
   installCmd?: string;
   errorText?: string;
   secondaryActionLabel?: string;
@@ -309,12 +660,16 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
 }) {
   const { t } = useTranslation();
   const isRed = accentColor === 'red';
-  const [activePane, setActivePane] = useState<'overview' | 'readme' | 'versions'>('overview');
+  const [activePane, setActivePane] = useState<'overview' | 'readme' | 'version'>('overview');
   useEffect(() => {
     setActivePane('overview');
   }, [skill?.slug]);
   const hasReadme = Boolean(skill?.readme);
-  const hasVersions = Boolean(skill?.versions.length);
+  const hasLatestVersion = Boolean(skill?.latestVersion);
+  const updatedAt = formatDate(skill?.updatedAt);
+  const latestVersionCreatedAt = formatDate(skill?.latestVersion?.createdAt);
+  const hasMetadata = Boolean(skill?.metadata?.os?.length || skill?.metadata?.systems?.length);
+  const hasCatalogFields = Boolean(skill?.channel || Object.keys(skill?.tags ?? {}).length > 0);
   const safeReadme = useMemo(
     () => DOMPurify.sanitize(skill?.readme ?? ''),
     [skill?.readme],
@@ -376,9 +731,9 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               </div>
               <div className="flex items-center gap-1" role="tablist" aria-label={t('skills.skillDetails', 'Skill details')}>
                 {([
-                  { id: 'overview' as const, label: 'Overview', visible: true },
-                  { id: 'readme' as const, label: 'Readme', visible: hasReadme },
-                  { id: 'versions' as const, label: 'Versions', visible: hasVersions },
+                  { id: 'overview' as const, label: t('skills.overview', 'Overview'), visible: true },
+                  { id: 'readme' as const, label: t('skills.readme', 'Readme'), visible: hasReadme },
+                  { id: 'version' as const, label: t('skills.latestVersion', 'Latest version'), visible: hasLatestVersion },
                 ]).filter((tab) => tab.visible).map((tab) => (
                   <button
                     key={tab.id}
@@ -409,21 +764,21 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
             <AnimatedTabPanel transitionKey={activePane}>
             {activePane === 'overview' && <>
             <div className="px-4 py-4">
-              {skill.ownerAvatar && (
+              {skill.owner && (
                 <div className="mb-2 flex items-center gap-1.5 text-[10.5px] text-aegis-text-muted">
-                  <img src={skill.ownerAvatar} alt="" className="size-4 rounded-full" />
+                  {skill.ownerAvatar && <img src={skill.ownerAvatar} alt="" className="size-4 rounded-full" />}
                   <span className="truncate">{skill.owner}</span>
                 </div>
               )}
               <p className="max-w-[48ch] text-[12px] leading-5 text-aegis-text-secondary">{skill.summary}</p>
             </div>
 
-            {/* Stats */}
+            {/* Facts from the native catalog response. */}
             <div className="grid grid-cols-3 divide-x divide-[rgb(var(--aegis-overlay)/0.06)] border-y border-[rgb(var(--aegis-overlay)/0.08)]">
               {[
-                { value: formatNum(skill.downloads), label: t('skillsExtra.downloads', 'Downloads') },
-                { value: String(skill.stars), label: t('skillsExtra.stars', 'Stars') },
-                { value: formatNum(skill.installs), label: t('skillsExtra.installs') },
+                { value: skill.score.toFixed(2), label: t('skillsExtra.score', 'Search score') },
+                ...(skill.version ? [{ value: `v${skill.version}`, label: t('skillsExtra.version', 'Version') }] : []),
+                ...(updatedAt ? [{ value: updatedAt, label: t('skillsExtra.updated', 'Updated') }] : []),
               ].map(s => (
                 <div key={s.label} className="py-2.5 text-center">
                   <div className="text-[15px] font-semibold tabular-nums">{s.value}</div>
@@ -432,21 +787,22 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               ))}
             </div>
 
-            {/* Install command */}
-            <div className="border-b border-[rgb(var(--aegis-overlay)/0.08)] px-4 py-3">
-              <div className="flex items-center gap-2 border-s-2 border-aegis-primary/50 bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2 font-mono text-[11px] text-aegis-primary">
-                <code className="flex-1 truncate">{installCmd ?? `openclaw skills install ${skill.slug}`}</code>
-                <button
-                  type="button"
-                  onClick={() => navigator.clipboard.writeText(installCmd ?? `openclaw skills install ${skill.slug}`)}
-                  title={t('common.copy', 'Copy')}
-                  aria-label={t('common.copy', 'Copy')}
-                  className="text-aegis-text-dim hover:text-aegis-primary transition-colors shrink-0"
-                >
-                  <Copy size={13} />
-                </button>
+            {installCmd && (
+              <div className="border-b border-[rgb(var(--aegis-overlay)/0.08)] px-4 py-3">
+                <div className="flex items-center gap-2 border-s-2 border-aegis-primary/50 bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2 font-mono text-[11px] text-aegis-primary">
+                  <code className="flex-1 truncate">{installCmd}</code>
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(installCmd)}
+                    title={t('common.copy', 'Copy')}
+                    aria-label={t('common.copy', 'Copy')}
+                    className="text-aegis-text-dim hover:text-aegis-primary transition-colors shrink-0"
+                  >
+                    <Copy size={13} />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {installState === 'error' && errorText && (
               <div className="mx-4 mt-3 border-s-2 border-aegis-danger/60 bg-aegis-danger/[0.04] px-3 py-2.5 text-[11.5px] leading-relaxed text-aegis-text-secondary">
@@ -454,21 +810,40 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               </div>
             )}
 
-            {(skill.requirements.env.length > 0 || skill.requirements.bin.length > 0) && (
+            {hasMetadata && (
               <div className="px-4 py-4">
                 <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
-                  <Wrench size={13} aria-hidden="true" />
-                  {t('skillsExtra.requirements')}
+                  {t('skillsExtra.metadata', 'Gateway metadata')}
                 </h3>
                 <div className="flex flex-wrap gap-1.5">
-                  {skill.requirements.env.map(e => (
-                    <span key={e} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
-                      <Key size={12} strokeWidth={1.75} /> {e}
+                  {skill.metadata?.os?.map(value => (
+                    <span key={`os:${value}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
+                      {t('skillsExtra.os', 'OS')}: {value}
                     </span>
                   ))}
-                  {skill.requirements.bin.map(b => (
-                    <span key={b} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
-                      <Settings2 size={12} strokeWidth={1.75} /> {b}
+                  {skill.metadata?.systems?.map(value => (
+                    <span key={`system:${value}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-mono bg-aegis-primary/[0.06] border border-aegis-primary/10 text-aegis-primary">
+                      {t('skillsExtra.systems', 'Systems')}: {value}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {hasCatalogFields && (
+              <div className="border-t border-[rgb(var(--aegis-overlay)/0.08)] px-4 py-4">
+                <h3 className="mb-2 text-[11px] font-semibold text-aegis-text-muted">
+                  {t('skillsExtra.catalogFields', 'Catalog fields')}
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {skill.channel && (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-aegis-primary/10 bg-aegis-primary/[0.06] px-2 py-1 text-[10.5px] font-mono text-aegis-primary">
+                      {t('skillsExtra.channel', 'Channel')}: {skill.channel}
+                    </span>
+                  )}
+                  {Object.entries(skill.tags ?? {}).map(([key, value]) => (
+                    <span key={`tag:${key}`} className="inline-flex items-center gap-1 rounded-md border border-aegis-primary/10 bg-aegis-primary/[0.06] px-2 py-1 text-[10.5px] font-mono text-aegis-primary">
+                      {key}: {value}
                     </span>
                   ))}
                 </div>
@@ -489,21 +864,18 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
               </div>
             )}
 
-            {activePane === 'versions' && skill.versions.length > 0 && (
+            {activePane === 'version' && skill.latestVersion && (
               <div className="px-4 py-4">
                 <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold text-aegis-text-muted">
-                  <FileText size={14} strokeWidth={1.75} /> {t('skills.versions', 'Versions')}
+                  <FileText size={14} strokeWidth={1.75} /> {t('skills.latestVersion', 'Latest version')}
                 </h3>
-                <ul className="space-y-0">
-                  {skill.versions.map(v => (
-                    <li key={v.version} className="flex items-center gap-2 border-b border-[rgb(var(--aegis-overlay)/0.06)] py-2.5 text-[11.5px] last:border-0">
-                      <span className="rounded bg-aegis-primary/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-aegis-primary">v{v.version}</span>
-                      {v.latest && <span className="rounded bg-aegis-success px-1.5 py-0.5 text-[9px] font-bold text-aegis-btn-primary-text">latest</span>}
-                      <span className="min-w-0 flex-1 truncate text-aegis-text-secondary">{v.changelog}</span>
-                      <span className="shrink-0 text-[10px] text-aegis-text-dim">{v.date}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="flex items-center gap-2 border-b border-[rgb(var(--aegis-overlay)/0.06)] py-2.5 text-[11.5px]">
+                  <span className="rounded bg-aegis-primary/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-aegis-primary">v{skill.latestVersion.version}</span>
+                  {skill.latestVersion.changelog && (
+                    <span className="min-w-0 flex-1 text-aegis-text-secondary">{skill.latestVersion.changelog}</span>
+                  )}
+                  {latestVersionCreatedAt && <span className="shrink-0 text-[10px] text-aegis-text-dim">{latestVersionCreatedAt}</span>}
+                </div>
               </div>
             )}
             </AnimatedTabPanel>
@@ -555,15 +927,17 @@ export function SkillDetailPanel({ open, skill, loading, onClose, onInstall, ins
                     <MessageSquare size={14} />
                   </button>
               )}
-              <button
-                type="button"
-                onClick={() => window.open(externalUrl ?? `https://clawhub.ai/skills/${skill.slug}`, '_blank')}
-                title={externalLabel ?? t('skillsExtra.viewOnClawHub', 'View on ClawHub')}
-                aria-label={externalLabel ?? t('skillsExtra.viewOnClawHub', 'View on ClawHub')}
-                className="grid size-9 shrink-0 place-items-center rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted transition-colors hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.06] hover:text-aegis-primary"
-              >
-                <ExternalLink size={14} />
-              </button>
+              {externalUrl && (
+                <button
+                  type="button"
+                  onClick={() => window.open(externalUrl, '_blank')}
+                  title={externalLabel ?? t('skillsExtra.viewExternal', 'Open source page')}
+                  aria-label={externalLabel ?? t('skillsExtra.viewExternal', 'Open source page')}
+                  className="grid size-9 shrink-0 place-items-center rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted transition-colors hover:border-aegis-primary/30 hover:bg-aegis-primary/[0.06] hover:text-aegis-primary"
+                >
+                  <ExternalLink size={14} />
+                </button>
+              )}
               </div>
               {installState === 'done' && doneHint && <p className="mt-2 text-center text-[10px] text-aegis-text-dim">{doneHint}</p>}
               {installState === 'error' && secondaryActionLabel && onSecondaryAction && (

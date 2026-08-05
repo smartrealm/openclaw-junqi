@@ -68,40 +68,55 @@ test('voice activity peeks once when capture or playback starts', () => {
   assert.equal(shouldPeekForSnapshot(listening, { ...listening, autoExpand: false }), false);
 });
 
-test('voice input projection excludes transcript, audio, target, and turn identifiers', () => {
+test('语音投影只包含非敏感的 Talk 模式状态', () => {
   const projection = projectDynamicIslandVoiceInput({
-    mode: 'dictation',
-    phase: 'ready_to_send',
-    draft: {
-      kind: 'transcript',
-      text: 'private transcript',
-      createdAt: 1,
-      turnId: 'voice-turn-17',
-    },
+    mode: 'talk',
+    phase: 'thinking',
     error: null,
   });
 
   assert.deepEqual(projection, {
-    mode: 'dictation',
-    phase: 'ready_to_send',
-    requiresConfirmation: true,
+    mode: 'talk',
+    phase: 'thinking',
     error: null,
   });
   assert.equal(isDynamicIslandVoiceInputActive(projection), true);
   assert.equal(isDynamicIslandVoiceInputActive(EMPTY_DYNAMIC_ISLAND_SNAPSHOT.voiceInput), false);
 });
 
-test('a voice draft asks the island to peek without exposing its contents', () => {
-  const draftReady = {
+test('Talk 启动只触发一次灵动岛展开', () => {
+  const preparing = {
     ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
     voiceInput: {
-      mode: 'dictation' as const,
-      phase: 'ready_to_send' as const,
-      requiresConfirmation: true,
+      mode: 'talk' as const,
+      phase: 'preparing' as const,
       error: null,
     },
   };
-  assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, draftReady), true);
+  assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, preparing), true);
+  assert.equal(shouldPeekForSnapshot(preparing, { ...preparing, revision: 2 }), false);
+});
+
+test('a newly blocked native observer digest peeks once without becoming a task', () => {
+  const blocked = {
+    ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
+    sessionRunning: true,
+    sessionActivities: [{
+      id: 'observer:agent:main:main',
+      sessionKey: 'agent:main:main',
+      agentName: 'main',
+      sessionTitle: 'OpenClaw observation',
+      phase: 'observing' as const,
+      startedAt: 1,
+      observer: {
+        headline: 'Waiting for a decision.',
+        health: 'waiting-on-user' as const,
+      },
+    }],
+  };
+  assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, blocked), true);
+  assert.equal(shouldPeekForSnapshot(blocked, { ...blocked, revision: 2 }), false);
+  assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, { ...blocked, autoExpand: false }), false);
 });
 
 test('remaining time freezes while paused and uses stable tabular format', () => {
@@ -134,6 +149,7 @@ test('the island is conditional unless a file drag needs immediate feedback', ()
     terminalPulse: false,
   };
   assert.equal(shouldShowDynamicIsland(base), false);
+  assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], preview: true }), true);
   assert.equal(shouldShowDynamicIsland({ ...base, mainMinimized: true }), true);
   assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], mainMinimized: true }), false);
   assert.equal(shouldShowDynamicIsland({
@@ -158,6 +174,7 @@ test('the island is conditional unless a file drag needs immediate feedback', ()
     resourceDrop: { phase: 'dragging', count: 1, labels: ['brief.pdf'] },
   }), true);
   assert.equal(shouldShowDynamicIsland({ ...base, enabled: false, mainMinimized: true }), false);
+  assert.equal(shouldShowDynamicIsland({ ...base, enabled: false, preview: true }), false);
 });
 
 test('a plan advancing to the next step earns one peek', () => {
@@ -170,7 +187,7 @@ test('a plan advancing to the next step earns one peek', () => {
     executionPlan: { currentStep: 2, totalSteps: 5, stepTitle: 'Locate entry points' },
   };
   assert.equal(shouldPeekForSnapshot(atStepOne, atStepTwo), true);
-  // Replanning alone must not reopen the island: only forward step motion does.
+  // 仅重新规划不能再次展开灵动岛，只有步骤向前推进才允许展开。
   assert.equal(shouldPeekForSnapshot(atStepOne, {
     ...atStepOne,
     executionPlan: { currentStep: 1, totalSteps: 7, stepTitle: 'Inspect protocol' },
@@ -187,4 +204,11 @@ test('the island plan projection carries no transcript content', () => {
   );
   assert.deepEqual(keys.sort(), ['currentStep', 'stepTitle', 'totalSteps']);
   assert.equal(EMPTY_DYNAMIC_ISLAND_SNAPSHOT.executionPlan, null);
+});
+
+test('native observer projection is limited to display-safe state', () => {
+  const keys = Object.keys({ headline: 'Waiting for a decision.', health: 'waiting-on-user' } satisfies NonNullable<
+    typeof EMPTY_DYNAMIC_ISLAND_SNAPSHOT.sessionActivities[number]['observer']
+  >);
+  assert.deepEqual(keys.sort(), ['headline', 'health']);
 });

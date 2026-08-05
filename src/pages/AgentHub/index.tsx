@@ -3,7 +3,7 @@
 // Dynamic from Gateway API with animated SVG connections
 // ═══════════════════════════════════════════════════════════
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
@@ -19,7 +19,11 @@ import { StatusDot } from '@/components/shared/badge';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshAll, refreshGroup } from '@/stores/gatewayDataStore';
 import { useSkillsStore } from '@/stores/skillsStore';
-import { gateway, GatewayAgentDisplayNameUpdateError } from '@/services/gateway';
+import {
+  gateway,
+  GatewayAgentDisplayNameUpdateError,
+  type OpenClawAgentBootstrapFile,
+} from '@/services/gateway';
 import { cleanupDeletedAgentChannelBindings } from '@/services/channelConfig';
 import { deleteAgentProfile } from '@/services/agentProfiles';
 import { isChannelConfigurationMetadataKey } from '@/services/channelConfigMerge';
@@ -38,9 +42,10 @@ import {
   findCanonicalAgentMainSession,
   type AgentSessionKind,
 } from '@/utils/sessionPresentation';
-import { WorkspacePanel } from '@/components/Workspace/WorkspacePanel';
+import { OpenClawAgentWorkspacePanel } from '@/components/Workspace/OpenClawAgentWorkspacePanel';
 import { parseAgentWorkspaceSkills, type AgentWorkspaceSkill } from './agentWorkspaceSkills';
 import { persistAgentCreationOverrides } from './agentCreationConfig';
+import { readOpenClawConfigSnapshot } from '@/services/gateway/OpenClawConfigSnapshot';
 import { ModelDropdown } from '@/components/shared/ModelDropdown';
 import {
   buildAgentShareMetadata,
@@ -50,6 +55,11 @@ import {
 } from './agentShareDefinition';
 import { ExportSharePackageDialog, ImportSharePackageDialog, type SharePackageManifest, type SharePackageSubject } from '@/components/shared/SharePackageDialog';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import {
+  AgentHubViewPanel,
+  hasAgentHubSnapshot,
+  shouldShowAgentHubInitialLoading,
+} from './viewStability';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -715,10 +725,10 @@ export function AgentHubPage() {
   const runningSubAgents = useGatewayDataStore((s) => s.runningSubAgents);
   const loading = useGatewayDataStore((s) => s.loading.sessions || s.loading.agents);
   const hasHydratedAgentData = useGatewayDataStore(
-    (s) => s.lastFetch.sessions > 0 && s.lastFetch.agents > 0,
+    (s) => hasAgentHubSnapshot(s.lastFetch),
   );
   const dataError = useGatewayDataStore((s) => s.errors.agents || s.errors.sessions);
-  const initialLoading = loading && !hasHydratedAgentData;
+  const initialLoading = shouldShowAgentHubInitialLoading(loading, hasHydratedAgentData);
   const skillList = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);
 
@@ -736,13 +746,17 @@ export function AgentHubPage() {
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [agentFormError, setAgentFormError] = useState<string | null>(null);
   const [settingsAgent, setSettingsAgent] = useState<AgentInfo | null>(null);
-  const [workspaceView, setWorkspaceView] = useState<{ agent: AgentInfo; root?: string } | null>(null);
+  const [workspaceView, setWorkspaceView] = useState<AgentInfo | null>(null);
   const [shareExportAgent, setShareExportAgent] = useState<AgentInfo | null>(null);
   const [shareImportOpen, setShareImportOpen] = useState(false);
   const [newAgentSkillKeys, setNewAgentSkillKeys] = useState<string[]>([]);
   const [agentWorkspaceSkills, setAgentWorkspaceSkills] = useState<Record<string, AgentWorkspaceSkill[]>>({});
   const [loadingAgentSkills, setLoadingAgentSkills] = useState<Record<string, boolean>>({});
   const [agentSkillErrors, setAgentSkillErrors] = useState<Record<string, string | null>>({});
+  const [agentBootstrapFiles, setAgentBootstrapFiles] = useState<Record<string, readonly OpenClawAgentBootstrapFile[]>>({});
+  const [loadingAgentBootstrapFiles, setLoadingAgentBootstrapFiles] = useState<Record<string, boolean>>({});
+  const [agentBootstrapFileErrors, setAgentBootstrapFileErrors] = useState<Record<string, string | null>>({});
+  const agentBootstrapFileRequestRef = useRef<Record<string, number>>({});
 
   // ── Stable model map from config.get (agents.list never returns models) ──
   // Stored in local state so polling refreshes of agents.list can't overwrite it.
@@ -755,9 +769,9 @@ export function AgentHubPage() {
 
   const loadAgentConfigMeta = useCallback(() => {
     if (!connected) return Promise.resolve();
-    return gateway.call('config.get', {}).then((snap: any) => {
-      const config = snap?.config ?? snap;
-      const cfgList: any[] = config?.agents?.list ?? [];
+    return gateway.call('config.get', {}).then((response: unknown) => {
+      const config = readOpenClawConfigSnapshot(response).config;
+      const cfgList = config.agents?.list ?? [];
       const models: Record<string, string> = {};
       const explicit: Record<string, boolean> = {};
       const definitions: Record<string, Record<string, unknown>> = {};
@@ -825,10 +839,36 @@ export function AgentHubPage() {
     }
   }, []);
 
+  const loadAgentBootstrapFiles = useCallback(async (agentId: string) => {
+    const requestId = (agentBootstrapFileRequestRef.current[agentId] ?? 0) + 1;
+    agentBootstrapFileRequestRef.current[agentId] = requestId;
+    setLoadingAgentBootstrapFiles((current) => ({ ...current, [agentId]: true }));
+    setAgentBootstrapFileErrors((current) => ({ ...current, [agentId]: null }));
+    try {
+      const response = await gateway.listAgentBootstrapFiles(agentId);
+      if (agentBootstrapFileRequestRef.current[agentId] !== requestId) return;
+      setAgentBootstrapFiles((current) => ({ ...current, [agentId]: response.files }));
+    } catch (error) {
+      if (agentBootstrapFileRequestRef.current[agentId] !== requestId) return;
+      setAgentBootstrapFileErrors((current) => ({
+        ...current,
+        [agentId]: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      if (agentBootstrapFileRequestRef.current[agentId] !== requestId) return;
+      setLoadingAgentBootstrapFiles((current) => ({ ...current, [agentId]: false }));
+    }
+  }, []);
+
   useEffect(() => {
     const agentId = settingsAgent?.id || selectedAgentId;
     if (agentId) void loadAgentWorkspaceSkills(agentId);
   }, [settingsAgent?.id, selectedAgentId, loadAgentWorkspaceSkills]);
+
+  useEffect(() => {
+    const agentId = settingsAgent?.id || selectedAgentId;
+    if (agentId) void loadAgentBootstrapFiles(agentId);
+  }, [settingsAgent?.id, selectedAgentId, loadAgentBootstrapFiles]);
 
   useEffect(() => {
     const onConfigSaved = () => { void loadAgentConfigMeta(); };
@@ -912,20 +952,16 @@ export function AgentHubPage() {
     imported: ImportedAgentShareDefinition,
     targetPath: string,
   ) => {
-    const snap: any = await gateway.call('config.get', {});
-    const config = snap?.config ?? snap;
-    const currentList = Array.isArray(config?.agents?.list)
-      ? [...config.agents.list]
-      : [];
-    if (currentList.some((entry: any) => String(entry?.id ?? '').trim().toLowerCase() === imported.id.toLowerCase())) {
+    const snapshot = readOpenClawConfigSnapshot(await gateway.call('config.get', {}));
+    const currentList = snapshot.config.agents?.list ?? [];
+    if (currentList.some((entry) => entry.id.trim().toLowerCase() === imported.id.toLowerCase())) {
       throw new Error(`An Agent named "${imported.id}" already exists.`);
     }
 
     const entry = buildImportedAgentConfigEntry(imported, targetPath);
     await gateway.callPrivileged('config.patch', {
-      raw: JSON.stringify({ agents: { list: [...currentList, entry] } }),
-      ...(snap?.baseHash || snap?.hash ? { baseHash: snap.baseHash ?? snap.hash } : {}),
-      replacePaths: ['agents.list'],
+      raw: JSON.stringify({ agents: { list: [entry] } }),
+      ...(snapshot.hash ? { baseHash: snapshot.hash } : {}),
     });
     return entry;
   }, []);
@@ -1072,8 +1108,27 @@ export function AgentHubPage() {
         setDeletingAgentId(null);
         if (selectedAgentId === agentId) setSelectedAgentId(null);
         setSettingsAgent((prev) => prev?.id === agentId ? null : prev);
-        setWorkspaceView((current) => current?.agent.id === agentId ? null : current);
+        setWorkspaceView((current) => current?.id === agentId ? null : current);
         setAgentChannels((prev) => {
+          if (!prev[agentId]) return prev;
+          const next = { ...prev };
+          delete next[agentId];
+          return next;
+        });
+        agentBootstrapFileRequestRef.current[agentId] = (agentBootstrapFileRequestRef.current[agentId] ?? 0) + 1;
+        setAgentBootstrapFiles((prev) => {
+          if (!prev[agentId]) return prev;
+          const next = { ...prev };
+          delete next[agentId];
+          return next;
+        });
+        setLoadingAgentBootstrapFiles((prev) => {
+          if (!prev[agentId]) return prev;
+          const next = { ...prev };
+          delete next[agentId];
+          return next;
+        });
+        setAgentBootstrapFileErrors((prev) => {
           if (!prev[agentId]) return prev;
           const next = { ...prev };
           delete next[agentId];
@@ -1235,9 +1290,10 @@ export function AgentHubPage() {
     <PageTransition className={workspaceView ? 'h-full min-h-0' : 'p-6 space-y-6 max-w-[1200px] mx-auto'}>
       {workspaceView ? (
         <div className={clsx('h-full min-h-0', settingsAgent && 'pe-[340px]')}>
-          <WorkspacePanel
-            agentId={workspaceView.agent.id}
-            rootOverride={workspaceView.root}
+          <OpenClawAgentWorkspacePanel
+            agentId={workspaceView.id}
+            listWorkspace={gateway.listAgentWorkspace}
+            getWorkspaceFile={gateway.getAgentWorkspaceFile}
             onClose={() => setWorkspaceView(null)}
           />
         </div>
@@ -1306,30 +1362,30 @@ export function AgentHubPage() {
       ) : (
         <>
           {/* ══════════════════════════════════════════════ */}
-          {/* TREE VIEW                                     */}
+          {/* 树状视图 */}
           {/* ══════════════════════════════════════════════ */}
-          <div hidden={viewMode !== 'tree'} aria-hidden={viewMode !== 'tree'}>
+          <AgentHubViewPanel active={viewMode === 'tree'}>
             <TreeView mainSession={mainSession} registeredAgents={registeredAgents} workers={workers} agents={enrichedAgents} onAgentClick={setSettingsAgent} />
-          </div>
+          </AgentHubViewPanel>
 
           {/* ══════════════════════════════════════════════ */}
-          {/* ACTIVITY VIEW                                 */}
+          {/* 活动视图 */}
           {/* ══════════════════════════════════════════════ */}
-          <div hidden={viewMode !== 'activity'} aria-hidden={viewMode !== 'activity'}>
+          <AgentHubViewPanel active={viewMode === 'activity'}>
             <GlassCard delay={0}>
               <div className="text-[10px] text-aegis-text-dim uppercase tracking-widest font-bold mb-2 px-3 pt-2">
                 {t('agentHub.liveActivityFeed', 'Live Activity Feed')}
               </div>
               <ActivityFeed sessions={sessions} agents={enrichedAgents} />
             </GlassCard>
-          </div>
+          </AgentHubViewPanel>
 
           {/* ══════════════════════════════════════════════ */}
-          {/* GRID VIEW (original layout)                   */}
+          {/* 原有网格视图 */}
           {/* ══════════════════════════════════════════════ */}
-          <div hidden={viewMode !== 'grid'} aria-hidden={viewMode !== 'grid'}>
+          <AgentHubViewPanel active={viewMode === 'grid'}>
             <div className="space-y-8">
-              {/* Section 1: Main Agent Hero */}
+              {/* 主智能体 */}
               <div>
                 <div className="text-[11px] text-aegis-text-muted uppercase tracking-wider font-semibold mb-3">{t('agents.mainAgent', 'Main Agent')}</div>
                 {mainSession ? (
@@ -1380,7 +1436,7 @@ export function AgentHubPage() {
                 )}
               </div>
 
-              {/* Section 2: Registered Agents */}
+              {/* 已注册智能体 */}
               <div>
                   <div className="flex items-center justify-between mb-3">
                     <div className="text-[11px] text-aegis-text-muted uppercase tracking-wider font-semibold">
@@ -1403,7 +1459,7 @@ export function AgentHubPage() {
                     </button>
                   </div>
 
-                  {/* Add form */}
+                  {/* 新增表单 */}
                   <AnimatePresence>
                     {showAddForm && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-3">
@@ -1887,28 +1943,26 @@ export function AgentHubPage() {
                                 <div className="mt-1 text-[11px] font-semibold text-aegis-text truncate">{previewLast ? timeAgo(previewLast) : t('agentHub.idle', 'Idle')}</div>
                               </div>
                             </div>
-                            {selectedAgent.workspace && (
-                              <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
-                                    <FolderOpen size={11} />
-                                    {t('agentSettings.workspace', 'Workspace')}
-                                  </div>
-                                  <div className="mt-1 text-[10px] text-aegis-text-dim font-mono truncate">
-                                    {selectedAgent.workspace}
-                                  </div>
+                            <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
+                                  <FolderOpen size={11} />
+                                  {t('agentSettings.workspace', 'Workspace')}
                                 </div>
-                                <button
-                                  onClick={() => {
-                                    setWorkspaceView({ agent: selectedAgent, root: selectedAgent.workspace });
-                                    setSettingsAgent(selectedAgent);
-                                  }}
-                                  className="shrink-0 px-3 py-1.5 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-[11px] font-bold text-aegis-primary"
-                                >
-                                  {t('agentSettings.showWorkspaceFiles', 'Open workspace files')}
-                                </button>
+                                <div className="mt-1 text-[10px] text-aegis-text-dim">
+                                  {t('agentWorkspaceBrowser.readOnly', 'Read-only Gateway view')}
+                                </div>
                               </div>
-                            )}
+                              <button
+                                onClick={() => {
+                                  setWorkspaceView(selectedAgent);
+                                  setSettingsAgent(selectedAgent);
+                                }}
+                                className="shrink-0 px-3 py-1.5 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-[11px] font-bold text-aegis-primary"
+                              >
+                                {t('agentSettings.showWorkspaceFiles', 'Open workspace files')}
+                              </button>
+                            </div>
                             <div className="mt-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
                               <div className="flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-aegis-text-muted uppercase tracking-wider">
@@ -2032,7 +2086,7 @@ export function AgentHubPage() {
                                   )}
                                   {lastActive > 0 && <><span className="text-aegis-text-dim">·</span><span>{timeAgo(lastActive)}</span></>}
                                 </div>
-                                {/* Task label when spawned */}
+                                {/* 派生任务标签 */}
                                 {spawned && spawnedLabel && (
                                   <div className="mt-1.5 flex max-w-[200px] items-center gap-1 text-[9px] text-aegis-primary/70" title={spawnedLabel}>
                                     <ClipboardList size={10} className="shrink-0" aria-hidden="true" />
@@ -2106,7 +2160,7 @@ export function AgentHubPage() {
                   </div>
               </div>
 
-              {/* Section 3: Workers */}
+              {/* 工作智能体 */}
               <div>
                 <div className="text-[11px] text-aegis-text-muted uppercase tracking-wider font-semibold mb-3">
                   {t('agents.workers', 'Active Workers')}
@@ -2125,7 +2179,7 @@ export function AgentHubPage() {
                 )}
               </div>
             </div>
-          </div>
+          </AgentHubViewPanel>
         </>
       )}
 
@@ -2174,6 +2228,9 @@ export function AgentHubPage() {
         agentSkills={settingsAgent ? agentWorkspaceSkills[settingsAgent.id] ?? [] : []}
         loadingAgentSkills={settingsAgent ? loadingAgentSkills[settingsAgent.id] ?? false : false}
         agentSkillsError={settingsAgent ? agentSkillErrors[settingsAgent.id] ?? null : null}
+        agentBootstrapFiles={settingsAgent ? agentBootstrapFiles[settingsAgent.id] ?? [] : []}
+        loadingAgentBootstrapFiles={settingsAgent ? loadingAgentBootstrapFiles[settingsAgent.id] ?? false : false}
+        agentBootstrapFilesError={settingsAgent ? agentBootstrapFileErrors[settingsAgent.id] ?? null : null}
         workspaceOpen={workspaceView !== null}
         agentSessions={
           settingsAgent
@@ -2181,10 +2238,14 @@ export function AgentHubPage() {
             : []
         }
         onClose={() => setSettingsAgent(null)}
-        onOpenWorkspace={(agent, root) => setWorkspaceView({ agent: agent as AgentInfo, root })}
+        onOpenWorkspace={(agent) => setWorkspaceView(agent as AgentInfo)}
         onRetryAgentSkills={() => {
           if (settingsAgent) void loadAgentWorkspaceSkills(settingsAgent.id);
         }}
+        onRetryAgentBootstrapFiles={() => {
+          if (settingsAgent) void loadAgentBootstrapFiles(settingsAgent.id);
+        }}
+        onGetAgentBootstrapFile={gateway.getAgentBootstrapFile}
         onSaved={(patch) => {
           if (settingsAgent && patch) {
             setSettingsAgent((prev) => prev ? { ...prev, ...patch } : prev);

@@ -1,8 +1,13 @@
 import type { Session, TokenUsage } from '@/stores/chatStore';
+import type { GatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
+import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
 
 export interface AgentStatusSnapshot {
   tokenUsage: TokenUsage | null;
+  agentRuntime: GatewaySessionAgentRuntime | null;
   thinkingLevel: string | null;
+  thinkingLevels: readonly GatewayThinkingLevelOption[] | null;
+  thinkingDefault: string | null;
 }
 
 interface ResolveAgentStatusSnapshotOptions {
@@ -26,13 +31,22 @@ export function resolveAgentStatusSnapshot({
   defaultContextTokens,
 }: ResolveAgentStatusSnapshotOptions): AgentStatusSnapshot {
   if (!session) {
-    return { tokenUsage: null, thinkingLevel: null };
+    return {
+      tokenUsage: null,
+      agentRuntime: null,
+      thinkingLevel: null,
+      thinkingLevels: null,
+      thinkingDefault: null,
+    };
   }
 
   if (session.key === activeSessionKey && activeTokenUsage) {
     return {
       tokenUsage: activeTokenUsage,
+      agentRuntime: session.agentRuntime ?? null,
       thinkingLevel: session.thinkingLevel ?? activeThinkingLevel,
+      thinkingLevels: session.thinkingLevels ?? null,
+      thinkingDefault: session.thinkingDefault ?? null,
     };
   }
 
@@ -47,6 +61,9 @@ export function resolveAgentStatusSnapshot({
           compactions: session.compactionCount ?? 0,
         }
       : null,
+    agentRuntime: session.agentRuntime ?? null,
     thinkingLevel: session.thinkingLevel ?? null,
+    thinkingLevels: session.thinkingLevels ?? null,
+    thinkingDefault: session.thinkingDefault ?? null,
   };
 }

@@ -2,6 +2,10 @@ export interface VoiceWakeTriggerSnapshot {
   triggers: string[];
 }
 
+export const MAX_VOICE_WAKE_TRIGGERS = 32;
+export const MAX_VOICE_WAKE_TRIGGER_LENGTH = 64;
+const OPENCLAW_AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
+
 export type VoiceWakeRouteTarget =
   | { mode: 'current' }
   | { agentId: string }
@@ -19,8 +23,8 @@ export interface VoiceWakeRoutingConfig {
   updatedAtMs: number;
 }
 
-/** Match the installed Gateway's route-key normalization exactly. */
-export function normalizeVoiceWakeTrigger(value: string): string {
+/** 与 Gateway 的路由键规范化保持一致。 */
+export function normalizeVoiceWakeRouteTrigger(value: string): string {
   return value
     .toLowerCase()
     .split(/\s+/)
@@ -29,38 +33,45 @@ export function normalizeVoiceWakeTrigger(value: string): string {
     .join(' ');
 }
 
-export function includesVoiceWakeTrigger(
-  triggers: readonly string[],
-  recognizedTrigger: string,
-): boolean {
-  const normalized = normalizeVoiceWakeTrigger(recognizedTrigger);
-  return normalized.length > 0 && triggers.some((trigger) => (
-    normalizeVoiceWakeTrigger(trigger) === normalized
-  ));
-}
-
-export function resolveVoiceWakeRoute(
-  config: VoiceWakeRoutingConfig,
-  recognizedTrigger: string,
-): VoiceWakeRouteTarget {
-  const normalized = normalizeVoiceWakeTrigger(recognizedTrigger);
-  return config.routes.find((route) => (
-    normalizeVoiceWakeTrigger(route.trigger) === normalized
-  ))?.target ?? config.defaultTarget;
+/** 全局触发词仅裁剪首尾空白，保留原始拼写。 */
+export function normalizeVoiceWakeListTrigger(value: string): string {
+  return value.trim();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function nonEmptyString(value: unknown, maxLength = 64): string | null {
+function nonEmptyString(value: unknown, maxLength?: number): string | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim();
-  return normalized.length > 0 && normalized.length <= maxLength ? normalized : null;
+  return normalized.length > 0
+    && (maxLength === undefined || normalized.length <= maxLength)
+    ? normalized
+    : null;
 }
 
 function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+/** 对齐 OpenClaw 标准化核心中的智能体标识输入约束。 */
+export function isValidVoiceWakeAgentId(value: string): boolean {
+  return value.trim().length > 0 && OPENCLAW_AGENT_ID_PATTERN.test(value.trim());
+}
+
+/** 对齐 OpenClaw 语音唤醒路由对规范智能体会话键的校验。 */
+export function isCanonicalVoiceWakeSessionKey(value: string): boolean {
+  const parts = value.trim().split(':');
+  return parts.length >= 3
+    && parts[0].toLowerCase() === 'agent'
+    && !parts.some((part) => part.length === 0);
+}
+
+export function isValidVoiceWakeRouteTarget(target: VoiceWakeRouteTarget): boolean {
+  if ('mode' in target) return target.mode === 'current';
+  if ('agentId' in target) return isValidVoiceWakeAgentId(target.agentId);
+  return isCanonicalVoiceWakeSessionKey(target.sessionKey);
 }
 
 export function decodeVoiceWakeRouteTarget(value: unknown): VoiceWakeRouteTarget | null {
@@ -76,21 +87,25 @@ export function decodeVoiceWakeRouteTarget(value: unknown): VoiceWakeRouteTarget
 
   if (hasAgentId) {
     const agentId = nonEmptyString(record.agentId);
-    return agentId ? { agentId } : null;
+    return agentId && isValidVoiceWakeAgentId(agentId) ? { agentId } : null;
   }
 
-  const sessionKey = nonEmptyString(record.sessionKey, 512);
-  return sessionKey ? { sessionKey } : null;
+  const sessionKey = nonEmptyString(record.sessionKey);
+  return sessionKey && isCanonicalVoiceWakeSessionKey(sessionKey) ? { sessionKey } : null;
 }
 
 export function decodeVoiceWakeTriggerSnapshot(value: unknown): VoiceWakeTriggerSnapshot | null {
   if (!isRecord(value)) return null;
   const rawTriggers = value.triggers;
-  if (!Array.isArray(rawTriggers) || rawTriggers.length === 0 || rawTriggers.length > 32) return null;
+  if (
+    !Array.isArray(rawTriggers)
+    || rawTriggers.length === 0
+    || rawTriggers.length > MAX_VOICE_WAKE_TRIGGERS
+  ) return null;
 
   const triggers: string[] = [];
   for (const entry of rawTriggers) {
-    const trigger = nonEmptyString(entry);
+    const trigger = nonEmptyString(entry, MAX_VOICE_WAKE_TRIGGER_LENGTH);
     if (!trigger) return null;
     triggers.push(trigger);
   }
@@ -103,8 +118,8 @@ export function decodeVoiceWakeRoutingConfig(value: unknown): VoiceWakeRoutingCo
   }
   const record = value;
   const rawRoutes = record.routes;
-  if (!Array.isArray(rawRoutes) || rawRoutes.length > 32) return null;
-  if (typeof record.updatedAtMs !== 'number' || !Number.isFinite(record.updatedAtMs) || record.updatedAtMs < 0) {
+  if (!Array.isArray(rawRoutes) || rawRoutes.length > MAX_VOICE_WAKE_TRIGGERS) return null;
+  if (typeof record.updatedAtMs !== 'number' || !Number.isSafeInteger(record.updatedAtMs) || record.updatedAtMs < 0) {
     return null;
   }
 
@@ -112,11 +127,16 @@ export function decodeVoiceWakeRoutingConfig(value: unknown): VoiceWakeRoutingCo
   if (!defaultTarget) return null;
 
   const routes: VoiceWakeRoute[] = [];
+  const normalizedTriggers = new Set<string>();
   for (const entry of rawRoutes) {
     const route = isRecord(entry) ? entry : null;
-    const trigger = nonEmptyString(route?.trigger);
+    const trigger = nonEmptyString(route?.trigger, MAX_VOICE_WAKE_TRIGGER_LENGTH);
     const target = decodeVoiceWakeRouteTarget(route?.target);
-    if (!trigger || !target) return null;
+    const normalizedTrigger = trigger ? normalizeVoiceWakeRouteTrigger(trigger) : '';
+    if (!trigger || !target || normalizedTrigger !== trigger || normalizedTriggers.has(normalizedTrigger)) {
+      return null;
+    }
+    normalizedTriggers.add(normalizedTrigger);
     routes.push({ trigger, target });
   }
 

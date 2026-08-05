@@ -7,7 +7,6 @@ import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { notifyNativeSessionCommit } from '@/utils/sessionLifecycle';
-import { SessionBranchesControl } from './SessionBranchesControl';
 import type {
   SessionCompactionCheckpoint,
   SessionPreviewItem,
@@ -277,8 +276,6 @@ export function SessionInspectionControl({ sessionKey, agentId }: SessionInspect
                     {resolvedKey || t('chat.sessionInspection.notResolved')}
                   </div>
                 </section>
-
-                <SessionBranchesControl sessionKey={sessionKey} agentId={agentId} enabled={open} />
 
                 <section className="pt-3">
                   <div className="mb-2 flex items-center gap-2">

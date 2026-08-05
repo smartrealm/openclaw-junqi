@@ -34,7 +34,12 @@ test('creation overrides use a base-hash guarded Gateway patch', async () => {
   const gateway = {
     async call(method: string, params: Record<string, unknown>) {
       calls.push({ method, params });
-      return { baseHash: 'fresh', config: { agents: { list: [{ id: 'worker' }] } } };
+      return {
+        exists: true,
+        valid: true,
+        hash: 'fresh',
+        config: { agents: { list: [{ id: 'worker' }] } },
+      };
     },
     async callPrivileged(method: string, params: Record<string, unknown>) {
       calls.push({ method, params });
@@ -47,8 +52,27 @@ test('creation overrides use a base-hash guarded Gateway patch', async () => {
   assert.equal(calls[0].method, 'config.get');
   assert.equal(calls[1].method, 'config.patch');
   assert.equal(calls[1].params.baseHash, 'fresh');
-  assert.deepEqual(calls[1].params.replacePaths, ['agents.list']);
   assert.deepEqual(JSON.parse(String(calls[1].params.raw)), {
     agents: { list: [{ id: 'worker', skills: ['review-contract'] }] },
   });
+});
+
+test('creation overrides reject an invalid snapshot before issuing a privileged patch', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const gateway = {
+    async call(method: string, params: Record<string, unknown>) {
+      calls.push({ method, params });
+      return { exists: true, valid: false, config: {} };
+    },
+    async callPrivileged(method: string, params: Record<string, unknown>) {
+      calls.push({ method, params });
+      return { ok: true };
+    },
+  };
+
+  await assert.rejects(
+    persistAgentCreationOverrides(gateway, 'worker', { skills: ['review-contract'] }),
+    /OpenClaw config snapshot is unavailable/,
+  );
+  assert.deepEqual(calls.map((call) => call.method), ['config.get']);
 });

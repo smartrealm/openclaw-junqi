@@ -22,7 +22,6 @@ export function detectAppPlatform(currentNavigator: PlatformNavigator | undefine
 }
 
 export const APP_PLATFORM = detectAppPlatform();
-export const ENABLE_USAGE_INSIGHTS = APP_PLATFORM !== "windows";
 
 export function isAppleWebKit(currentNavigator: PlatformNavigator | undefined = globalThis.navigator): boolean {
   return currentNavigator?.userAgent.includes("AppleWebKit") ?? false;

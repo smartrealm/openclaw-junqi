@@ -116,6 +116,8 @@ pub fn run() {
             commands::gateway_credentials::store_gateway_credential,
             commands::gateway_credentials::delete_gateway_credential,
             commands::gateway_credentials::migrate_gateway_credential,
+            commands::device_identity::get_gateway_device_identity_reference,
+            commands::device_identity::sign_gateway_device_challenge,
             commands::secret_store::store_provider_secret,
             commands::secret_store::get_provider_secret,
             commands::secret_store::delete_provider_secret,
@@ -158,11 +160,8 @@ pub fn run() {
             commands::voice_talk_playback::voice_talk_play_pcm,
             commands::voice_talk_playback::voice_talk_finish_playback,
             commands::voice_talk_playback::voice_talk_stop_playback,
-            commands::voice_wake::voice_wake_start,
-            commands::voice_wake::voice_wake_stop,
-            commands::voice_wake::voice_wake_status,
-            commands::voice_wake_model::voice_wake_detector_status,
-            commands::voice_wake_model::voice_wake_set_model_directory,
+            commands::voice_capture::voice_capture_start,
+            commands::voice_capture::voice_capture_stop,
             // Setup
             commands::setup::install_node,
             commands::setup::cancel_setup_operation,
@@ -227,6 +226,7 @@ pub fn run() {
             // Dynamic Island — top-center agent status and quick actions
             commands::dynamic_island::open_dynamic_island,
             commands::dynamic_island::close_dynamic_island,
+            commands::dynamic_island::request_dynamic_island_hide,
             commands::dynamic_island::toggle_dynamic_island,
             commands::dynamic_island::get_dynamic_island_visible,
             commands::dynamic_island::set_dynamic_island_expanded,
@@ -362,8 +362,6 @@ pub fn run() {
             commands::skills::install_skill,
             commands::skills::uninstall_skill,
             commands::skills::delete_skill,
-            commands::browser_provider::probe_browser_providers,
-            commands::browser_provider::open_ego_lite,
             // Selective Agent / Skill share packages
             commands::share_packages::scan_share_package_source,
             commands::share_packages::export_share_package,
@@ -378,8 +376,6 @@ pub fn run() {
             commands::notification::mark_notification_read,
             commands::notification::mark_all_notifications_read,
             commands::notification::clear_notifications,
-            // Claude OAuth and persistent Codex app-server usage snapshots
-            commands::usage::read_usage_snapshot,
             // Agent task PTY (PR-0.3 — minimal port)
             commands::agent_task_pty::run_task,
             commands::agent_task_pty::agent_send_input,

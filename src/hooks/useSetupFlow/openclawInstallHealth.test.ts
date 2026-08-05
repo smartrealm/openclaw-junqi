@@ -18,11 +18,9 @@ function status(overrides: Partial<OpenclawStatus> = {}): OpenclawStatus {
     path: '/usr/local/bin/openclaw',
     source: 'npm-global',
     binary_found: true,
-    version_ok: true,
     package_valid: true,
     gateway_command_ok: true,
     relocation_required: false,
-    version_beyond_verified_range: false,
     error: null,
     ...overrides,
   };
@@ -35,11 +33,11 @@ test('a healthy install has no defects and needs no repair', () => {
   assert.equal(describeOpenclawInstallFailure(status(), echo), null);
 });
 
-// The regression this closes: a repair was triggered on any of the three
+// The regression this closes: a repair was triggered on any of the two
 // checks, but success only required `installed`. A half-applied reinstall
 // therefore passed here and failed later at gateway startup.
 test('every check that triggers a repair also blocks success', () => {
-  for (const broken of ['version_ok', 'package_valid', 'gateway_command_ok'] as const) {
+  for (const broken of ['package_valid', 'gateway_command_ok'] as const) {
     const candidate = status({ [broken]: false } as Partial<OpenclawStatus>);
     assert.equal(requiresOpenclawRepair(candidate), true, `${broken} should request a repair`);
     assert.equal(isOpenclawInstallUsable(candidate), false, `${broken} must not pass as usable`);
@@ -75,21 +73,23 @@ test('a missing install reports the upstream error when present', () => {
 
 // A binary that was never found is a fresh-install case, not a repair case.
 test('an absent binary does not request an in-place repair', () => {
-  assert.equal(requiresOpenclawRepair(status({ binary_found: false, version_ok: false })), false);
+  assert.equal(requiresOpenclawRepair(status({ binary_found: false, package_valid: false })), false);
 });
 
-test('the installer flow uses the shared criteria at both sites', () => {
-  const source = readFileSync('src/hooks/useSetupFlow/useSetupInstallers.ts', 'utf8');
-  assert.match(source, /requiresOpenclawRepair\(openclaw\)/);
-  assert.match(source, /describeOpenclawInstallFailure\(installed, t\)/);
-  assert.doesNotMatch(source, /if \(!installed\.installed\)/);
+test('informational version text is never an installation repair defect', () => {
+  for (const version of ['2025.12.31', '2027.1.0', 'not-semver', null]) {
+    const candidate = status({ version });
+    assert.deepEqual(openclawInstallDefects(candidate), []);
+    assert.equal(requiresOpenclawRepair(candidate), false);
+    assert.equal(isOpenclawInstallUsable(candidate), true);
+  }
 });
 
-test('all three locales carry the defect copy', () => {
+test('all three locales carry the remaining defect copy', () => {
   for (const locale of ['zh', 'zh-TW', 'en']) {
     const bundle = JSON.parse(readFileSync(`src/locales/${locale}.json`, 'utf8'));
     assert.equal(typeof bundle.setup?.openclawInstallIncomplete, 'string', `${locale} missing incomplete copy`);
-    for (const key of ['versionUnsupported', 'packageInvalid', 'gatewayCommandMissing']) {
+    for (const key of ['packageInvalid', 'gatewayCommandMissing']) {
       assert.equal(typeof bundle.setup?.openclawDefect?.[key], 'string', `${locale} missing ${key}`);
     }
   }
@@ -115,26 +115,4 @@ test('reinstall and relocate stop the selected service before touching the tree'
   assert.match(service, /fn stop_is_permitted_for_reinstall\(inspection: GatewayServiceInspection\) -> bool \{\n\s+inspection\.installed && belongs_to_selected_state\(inspection\.ownership\)/);
   // Docker does not run from the host npm prefix, so it is a no-op, not a failure.
   assert.match(service, /OpenClawRuntimeMode::Native\n\s+\) \{\n\s+return Ok\(false\);/);
-});
-
-// AUD-02: a version past the verified range stays usable, so the only thing
-// standing between the user and a confusing wizard failure is this notice.
-test('a version beyond the verified range is surfaced, not just recorded', () => {
-  const panel = readFileSync('src/components/setup/SetupFlowPanels.tsx', 'utf8');
-  assert.match(panel, /status\?\.version_beyond_verified_range && \(/);
-  assert.match(panel, /versionBeyondVerified/);
-  // The version row itself must also carry the warning tone, so the notice is
-  // not the only thing a user could scroll past.
-  assert.match(panel, /status\.version_beyond_verified_range \? "warn" : "neutral"/);
-});
-
-test('the Rust contract and the frontend type stay in step', () => {
-  const rust = readFileSync('src-tauri/src/commands/system.rs', 'utf8');
-  const api = readFileSync('src/api/tauri-commands.ts', 'utf8');
-  assert.match(rust, /pub version_beyond_verified_range: bool/);
-  assert.match(api, /version_beyond_verified_range: boolean/);
-  // The floor must match the peer range the collaboration plugin declares.
-  const collab = JSON.parse(readFileSync('packages/junqi-collab/package.json', 'utf8'));
-  assert.match(collab.peerDependencies.openclaw, /2026\.7\.1/);
-  assert.match(rust, /OPENCLAW_MIN_SUPPORTED_VERSION: \(u32, u32, u32\) = \(2026, 7, 1\)/);
 });

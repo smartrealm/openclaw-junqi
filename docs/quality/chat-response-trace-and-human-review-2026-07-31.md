@@ -25,7 +25,7 @@
 - 普通 Chat 的人工选择请求标记为 transcript-only，不声明存在正式审批记录。
 - OpenClaw exec/plugin approval 已单独接入活动中心。它使用 `operator.approvals` 临时连接并
   保留 Gateway 的正式解析边界；这不会改变 Chat 内联按钮的 transcript-only 语义。实现与验证
-  记录见 [`OpenClaw 审批控制能力对齐`](openclaw-approval-controls-parity-2026-08-03.md)。
+  记录见 [`OpenClaw 审批界面与事件收敛`](openclaw-approval-surface-convergence-2026-08-04.md)。
 - 正式审核继续使用 Collaboration Run 的 `plan_revisions`、`decisions`、`interventions` 与 `collaboration_events`，Chat 追溯面板只提供进入协作历史的入口，不复制第二套数据库。
 - 消息预览与执行追溯共用一个 Chat 侧边面板状态和外壳，同一时刻只打开一种详情。
 

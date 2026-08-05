@@ -1,6 +1,11 @@
-import type { ModelReferenceConfig } from '@/types/openclawConfig';
+import type { AgentConfig, GatewayRuntimeConfig, ModelReferenceConfig } from '@/types/openclawConfig';
+import { readOpenClawConfigSnapshot } from '@/services/gateway/OpenClawConfigSnapshot';
 
-type AgentConfigEntry = Record<string, unknown> & { id?: unknown };
+type AgentConfigEntry = AgentConfig;
+
+export type AgentCreationConfig = GatewayRuntimeConfig & {
+  agents: NonNullable<GatewayRuntimeConfig['agents']> & { list: AgentConfigEntry[] };
+};
 
 export interface AgentCreationOverrides {
   skills?: string[];
@@ -33,11 +38,11 @@ function normalizedModelOverride(model: ModelReferenceConfig | undefined): Model
 }
 
 export function applyAgentCreationOverrides(
-  config: Record<string, any>,
+  config: GatewayRuntimeConfig,
   agentId: string,
   overrides: AgentCreationOverrides,
-): Record<string, any> {
-  const list = Array.isArray(config.agents?.list) ? config.agents.list as AgentConfigEntry[] : [];
+): AgentCreationConfig {
+  const list = config.agents?.list ?? [];
   const normalizedId = agentId.trim().toLowerCase();
   const index = list.findIndex((entry) => String(entry.id ?? '').trim().toLowerCase() === normalizedId);
   if (index < 0) throw new Error(`Agent "${agentId}" was created but is missing from config`);
@@ -49,12 +54,13 @@ export function applyAgentCreationOverrides(
 
   const nextList = [...list];
   nextList[index] = nextAgent;
+  const agents: AgentCreationConfig['agents'] = {
+    ...(config.agents ?? {}),
+    list: nextList,
+  };
   return {
     ...config,
-    agents: {
-      ...(config.agents ?? {}),
-      list: nextList,
-    },
+    agents,
   };
 }
 
@@ -68,12 +74,15 @@ export async function persistAgentCreationOverrides(
   agentId: string,
   overrides: AgentCreationOverrides,
 ): Promise<void> {
-  const snapshot: any = await gateway.call('config.get', {});
-  const config = snapshot?.config ?? snapshot;
-  const next = applyAgentCreationOverrides(config as Record<string, any>, agentId, overrides);
+  const snapshot = readOpenClawConfigSnapshot(await gateway.call('config.get', {}));
+  const next = applyAgentCreationOverrides(snapshot.config, agentId, overrides);
+  const updatedAgent = next.agents?.list?.find(
+    (entry) => entry.id.trim().toLowerCase() === agentId.trim().toLowerCase(),
+  );
+  if (!updatedAgent) throw new Error(`Agent "${agentId}" was created but is missing from config`);
+
   await gateway.callPrivileged('config.patch', {
-    raw: JSON.stringify({ agents: { list: next.agents.list } }),
-    ...(snapshot?.baseHash || snapshot?.hash ? { baseHash: snapshot.baseHash ?? snapshot.hash } : {}),
-    replacePaths: ['agents.list'],
+    raw: JSON.stringify({ agents: { list: [updatedAgent] } }),
+    ...(snapshot.hash ? { baseHash: snapshot.hash } : {}),
   });
 }

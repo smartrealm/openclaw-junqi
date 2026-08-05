@@ -7,6 +7,9 @@ import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { normalizeHistoryMessages } from '@/processing/normalizeHistoryMessage';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
 import { useTheme } from '@/theme/useTheme';
+import { describeOpenClawSessionOperation } from '@/services/gateway/sessionOperation';
+import i18n from '@/i18n';
+import { stopQuickChatRequest } from './quickChatStop';
 
 /** Quick Chat owns one generated session and must not speak main-window events. */
 export function isOwnedQuickChatSession(sessionKey: string, ownedSessionKey: string): boolean {
@@ -100,6 +103,20 @@ export default function QuickChatRoot() {
         if (!isOwnedQuickChatSession(eventSessionKey, sessionKey)) return;
         void refreshHistory().catch(() => undefined);
       },
+      onSessionOperation: (operation) => {
+        if (!isOwnedQuickChatSession(operation.sessionKey, sessionKey)) return;
+        const presentation = describeOpenClawSessionOperation(operation, (key, options) => (
+          options ? i18n.t(key, options) : i18n.t(key)
+        ));
+        useChatStore.getState().addMessage({
+          id: `session-operation-${operation.operationId}-${operation.phase}`,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(operation.ts).toISOString(),
+          responseState: 'final',
+          sessionEvents: [presentation],
+        }, operation.sessionKey);
+      },
       onStatusChange: (status) => {
         if (!status.connected && !status.connecting) {
           voiceRuntime.interruptAll({ broadcast: false, preserveRemote: true });
@@ -147,13 +164,10 @@ export default function QuickChatRoot() {
       voiceRuntime.interrupt(sessionKey);
       const store = useChatStore.getState();
       store.clearQueue(sessionKey);
-      if (store.typingBySession[sessionKey]) {
-        void gateway.abortChat(sessionKey)
-          .catch(() => undefined)
-          .finally(() => lease.release());
-      } else {
-        lease.release();
-      }
+      const sessionId = store.sessions.find((session) => session.key === sessionKey)?.sessionId;
+      void stopQuickChatRequest(sessionKey, sessionId, store, gateway.abortChat)
+        .catch(() => undefined)
+        .finally(() => lease.release());
     };
   }, [sessionKey]);
 

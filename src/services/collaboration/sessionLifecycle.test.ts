@@ -55,6 +55,8 @@ function completed(request: SessionMutationRequest): SessionMutationExecutionRes
 beforeEach(() => {
   useChatStore.setState({
     sessions: [{ key: KEY, sessionId: 'session-1', label: 'Lifecycle' }],
+    typingBySession: {},
+    sendingBySession: {},
   });
   useGatewayDataStore.setState({ sessions: [] });
   setSessionLifecycleDependenciesForTests();
@@ -120,6 +122,31 @@ test('uses the official native deletion RPC when collaboration is not installed'
   assert.equal(result.success, true);
   assert.equal(result.coordinated, false);
   assert.deepEqual(calls, [[KEY, true, 'session-1']]);
+});
+
+test('stops a pending Gateway send before a native session reset', async () => {
+  const steps: string[] = [];
+  useChatStore.setState({ typingBySession: { [KEY]: true } });
+  setSessionLifecycleDependenciesForTests({
+    bootstrapCollaboration: async () => {
+      throw { code: 'METHOD_NOT_FOUND', message: 'unknown method junqi.collab.capabilities' };
+    },
+    abortChat: async (sessionKey, sessionId) => {
+      steps.push(`abort:${sessionKey}:${sessionId}`);
+    },
+    resetSession: async (sessionKey) => {
+      steps.push(`reset:${sessionKey}`);
+      return { success: true, key: sessionKey, entry: { sessionId: 'session-2' } };
+    },
+  });
+
+  const result = await executeSessionLifecycleMutation(KEY, 'reset');
+
+  assert.equal(result.success, true);
+  assert.deepEqual(steps, [
+    `abort:${KEY}:session-1`,
+    `reset:${KEY}`,
+  ]);
 });
 
 test('coordinates reset through the installed collaboration runtime without requiring a nonstandard CAS flag', async () => {

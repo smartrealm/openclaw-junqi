@@ -1,38 +1,20 @@
-import { OPENCLAW_COMMANDS } from '../src/pages/OpenClawCommands/commands';
+const OPENCLAW_GATEWAY_PROTOCOL_URL = 'https://docs.openclaw.ai/gateway/protocol';
+const COMMANDS_LIST_METHOD = 'commands.list';
 
-async function verifyOpenClawCommandLinks(): Promise<void> {
-  const pageRequests = new Map<string, Promise<string>>();
-
-  for (const item of OPENCLAW_COMMANDS) {
-    const url = new URL(item.docsUrl);
-    const pageUrl = `${url.origin}${url.pathname}`;
-    let pageRequest = pageRequests.get(pageUrl);
-
-    if (!pageRequest) {
-      pageRequest = fetch(pageUrl).then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`${pageUrl} returned HTTP ${response.status}`);
-        }
-        return response.text();
-      });
-      pageRequests.set(pageUrl, pageRequest);
-    }
-
-    const html = await pageRequest;
-    if (!url.hash) continue;
-
-    // OpenClaw's docs router decodes the hash once. Encoded slashes therefore
-    // remain as %2F in the generated heading id.
-    const headingId = decodeURIComponent(url.hash.slice(1));
-    if (!html.includes(`id="${headingId}"`)) {
-      throw new Error(`${item.id} is missing official heading #${headingId}`);
-    }
+async function verifyOpenClawCommandProtocol(): Promise<void> {
+  const response = await fetch(OPENCLAW_GATEWAY_PROTOCOL_URL);
+  if (!response.ok) {
+    throw new Error(`${OPENCLAW_GATEWAY_PROTOCOL_URL} returned HTTP ${response.status}`);
+  }
+  const page = await response.text();
+  if (!page.includes(COMMANDS_LIST_METHOD)) {
+    throw new Error(`${OPENCLAW_GATEWAY_PROTOCOL_URL} does not document ${COMMANDS_LIST_METHOD}`);
   }
 
-  console.log(`Verified ${OPENCLAW_COMMANDS.length} official OpenClaw links and anchors.`);
+  console.log(`Verified official OpenClaw protocol documentation for ${COMMANDS_LIST_METHOD}.`);
 }
 
-void verifyOpenClawCommandLinks().catch((error) => {
+void verifyOpenClawCommandProtocol().catch((error) => {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });

@@ -11,6 +11,8 @@ import { useVoiceStore } from '@/stores/voiceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import type { DynamicIslandAction } from './DynamicIslandActions';
+import { DYNAMIC_ISLAND_PREVIEW_EVENT, DynamicIslandPreview } from './DynamicIslandPreview';
+import { DynamicIslandVisibilityController } from './DynamicIslandVisibilityController';
 import { voiceModeCoordinator } from '@/services/voice/VoiceModeCoordinator';
 import { useVoiceMode } from '@/hooks/useVoiceMode';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
@@ -19,6 +21,8 @@ import { projectSessionActivity } from '@/utils/sessionPresentation';
 import { selectActiveExecutionPlan } from '@/components/Chat/executionPlanPlacement';
 import { prepareFocusNavigation } from '@/focus/openFocus';
 import { useFocusProjection } from '@/focus/useFocusProjection';
+import { useOpenClawSessionObserver } from '@/hooks/useOpenClawSessionObserver';
+import type { OpenClawSessionObserverDigest } from '@/services/gateway';
 import {
   isVoiceActivePhase,
   isDynamicIslandVoiceInputActive,
@@ -30,11 +34,15 @@ import {
   type DynamicIslandSnapshot,
 } from './model';
 
+function observerDigestKey(digest: Pick<OpenClawSessionObserverDigest, 'sessionKey' | 'agentId'>): string {
+  return `${digest.sessionKey}\u0000${digest.agentId ?? ''}`;
+}
 
 export default function DynamicIslandRuntime() {
   const { t } = useTranslation();
   const enabled = useSettingsStore((state) => state.dynamicIslandEnabled);
   const autoExpand = useSettingsStore((state) => state.dynamicIslandAutoExpand);
+  const openClawSessionObserverEnabled = useSettingsStore((state) => state.openClawSessionObserverEnabled);
   const dndMode = useSettingsStore((state) => state.dndMode);
   const connected = useChatStore((state) => state.connected);
   const connecting = useChatStore((state) => state.connecting);
@@ -59,13 +67,36 @@ export default function DynamicIslandRuntime() {
   const latestToast = useNotificationStore((state) => state.toasts.at(-1) ?? null);
   const revisionRef = useRef(0);
   const [mainMinimized, setMainMinimized] = useState(false);
+  const [previewActive, setPreviewActive] = useState(false);
   const [resourceDrop, setResourceDrop] = useState<DynamicIslandDrop | null>(null);
   const [terminalPulse, setTerminalPulse] = useState(false);
   const resourceDropRef = useRef(resourceDrop);
   const resourceDropTimerRef = useRef<number | null>(null);
+  const previewRef = useRef<DynamicIslandPreview | null>(null);
+  const visibilityControllerRef = useRef<DynamicIslandVisibilityController<DynamicIslandSnapshot> | null>(null);
+  if (!previewRef.current) {
+    previewRef.current = new DynamicIslandPreview({
+      schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
+      clear: (timer) => window.clearTimeout(timer),
+      onChange: setPreviewActive,
+    });
+  }
+  if (!visibilityControllerRef.current) {
+    visibilityControllerRef.current = new DynamicIslandVisibilityController({
+      open: () => invoke('open_dynamic_island'),
+      close: () => invoke('close_dynamic_island'),
+      synchronize: async (nextSnapshot, ignorePointerEvents) => {
+        await invoke('set_dynamic_island_click_through', { ignore: ignorePointerEvents }).catch(() => undefined);
+        await emitTauriEvent('dynamic-island:update', nextSnapshot);
+      },
+    });
+  }
   const terminalPulseTimerRef = useRef<number | null>(null);
   const previousTaskStatusesRef = useRef<Map<string, string> | null>(null);
   resourceDropRef.current = resourceDrop;
+
+  const observerVisible = enabled && openClawSessionObserverEnabled && mainMinimized && connected;
+  const observerDigests = useOpenClawSessionObserver(observerVisible);
 
   const visibleTasks = useMemo(() => selectDynamicIslandTasks(tasks), [tasks]);
   const activityProjection = useMemo(() => projectSessionActivity({
@@ -78,7 +109,8 @@ export default function DynamicIslandRuntime() {
   }), [activeSessionKey, chatSessions, sendingBySession, thinkingBySession, typingBySession, typingStartedAtBySession]);
   const sessionActivities = useMemo<DynamicIslandSessionActivity[]>(() => {
     const observedAt = Date.now();
-    return activityProjection.active.map((activity) => {
+    const consumedObserverDigests = new Set<string>();
+    const localActivities = activityProjection.active.map((activity) => {
       const { sessionKey, session } = activity;
       const agentId = session?.agentId || sessionKey.split(':')[1] || 'main';
       const agentName = gatewayAgents.find((agent) => agent.id === agentId)?.name || agentId;
@@ -90,16 +122,49 @@ export default function DynamicIslandRuntime() {
       const phase: DynamicIslandSessionActivity['phase'] = activity.phase === 'thinking'
         ? 'thinking'
         : 'generating';
+      const observer = observerDigests.find((digest) => (
+        digest.sessionKey === sessionKey && (!digest.agentId || digest.agentId === agentId)
+      ));
+      if (observer) consumedObserverDigests.add(observerDigestKey(observer));
       return {
+        id: `session:${sessionKey}`,
         sessionKey,
         agentName,
         sessionTitle: title,
         phase,
         startedAt: activity.startedAt ?? observedAt,
+        ...(observer ? {
+          observer: {
+            headline: observer.headline,
+            health: observer.health,
+          },
+        } : {}),
       };
     });
-  }, [activityProjection, gatewayAgents, t]);
-  const sessionRunning = activityProjection.active.length > 0;
+    const observerActivities = observerDigests
+      .filter((digest) => digest.health !== 'done' && digest.health !== 'failed')
+      .filter((digest) => !consumedObserverDigests.has(observerDigestKey(digest)))
+      .map((digest) => {
+        const agentId = digest.agentId;
+        const agentName = agentId
+          ? gatewayAgents.find((agent) => agent.id === agentId)?.name || agentId
+          : t('dynamicIsland.openclaw');
+        return {
+          id: `observer:${observerDigestKey(digest)}`,
+          sessionKey: digest.sessionKey,
+          agentName,
+          sessionTitle: t('dynamicIsland.observer'),
+          phase: 'observing' as const,
+          startedAt: digest.updatedAt,
+          observer: {
+            headline: digest.headline,
+            health: digest.health,
+          },
+        };
+      });
+    return [...localActivities, ...observerActivities];
+  }, [activityProjection, gatewayAgents, observerDigests, t]);
+  const sessionRunning = sessionActivities.length > 0;
   const responseGroups = useChatStore((state) => state.responseGroups);
   const executionPlan = useMemo(() => {
     const plan = selectActiveExecutionPlan(responseGroups);
@@ -114,6 +179,7 @@ export default function DynamicIslandRuntime() {
   const voiceActive = isVoiceActivePhase(voicePhase) || isDynamicIslandVoiceInputActive(voiceInput);
   const shouldShow = shouldShowDynamicIsland({
     enabled,
+    preview: previewActive,
     mainMinimized,
     sessionRunning,
     voiceActive,
@@ -142,6 +208,7 @@ export default function DynamicIslandRuntime() {
 
   const snapshot = useMemo<DynamicIslandSnapshot>(() => ({
     revision: ++revisionRef.current,
+    preview: previewActive,
     sessionKey: activeSessionKey,
     connected,
     connecting,
@@ -171,21 +238,16 @@ export default function DynamicIslandRuntime() {
       body: latestToast.body,
     } : null,
     resourceDrop,
-  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, executionPlan, focus, latestToast, petEnabled, pomodoro, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voiceInput, voicePhase, voiceQueueLength]);
+  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, executionPlan, focus, latestToast, petEnabled, pomodoro, previewActive, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voiceInput, voicePhase, voiceQueueLength]);
   const latestSnapshotRef = useRef(snapshot);
   latestSnapshotRef.current = snapshot;
 
   useEffect(() => {
-    if (shouldShow) {
-      const openAndSynchronize = async () => {
-        await invoke('open_dynamic_island');
-        await invoke('set_dynamic_island_click_through', { ignore: resourceDropRef.current?.phase === 'dragging' }).catch(() => undefined);
-        await emitTauriEvent('dynamic-island:update', latestSnapshotRef.current);
-      };
-      void openAndSynchronize().catch(() => undefined);
-    } else {
-      void invoke('close_dynamic_island').catch(() => undefined);
-    }
+    visibilityControllerRef.current?.reconcile({
+      visible: shouldShow,
+      snapshot: latestSnapshotRef.current,
+      ignorePointerEvents: resourceDropRef.current?.phase === 'dragging',
+    });
   }, [shouldShow]);
 
   useEffect(() => {
@@ -221,6 +283,10 @@ export default function DynamicIslandRuntime() {
   useEffect(() => combineUnlisteners([
     subscribeTauriEvent('dynamic-island:ready', () => {
       void emitTauriEvent('dynamic-island:update', latestSnapshotRef.current).catch(() => undefined);
+    }),
+    subscribeTauriEvent(DYNAMIC_ISLAND_PREVIEW_EVENT, () => {
+      if (!useSettingsStore.getState().dynamicIslandEnabled) return;
+      previewRef.current?.start();
     }),
     subscribeTauriEvent<string>('dynamic-island:navigate', (event) => {
       if (event.payload.startsWith('/') && !event.payload.includes('..')) {
@@ -261,11 +327,20 @@ export default function DynamicIslandRuntime() {
           stopPomodoro();
           break;
         case 'voice-stop':
-          void voiceModeCoordinator.stopAndReleaseCapture();
+          void voiceModeCoordinator.stopAndReleaseResources();
           voiceRuntime.interruptAll();
           break;
         case 'hide':
-          useSettingsStore.getState().setDynamicIslandEnabled(false);
+          if (latestSnapshotRef.current.preview) {
+            previewRef.current?.stop();
+          } else {
+            useSettingsStore.getState().setDynamicIslandEnabled(false);
+          }
+          visibilityControllerRef.current?.reconcile({
+            visible: false,
+            snapshot: latestSnapshotRef.current,
+            ignorePointerEvents: false,
+          });
           break;
       }
     }),
@@ -295,6 +370,8 @@ export default function DynamicIslandRuntime() {
 
   useEffect(() => () => {
     if (resourceDropTimerRef.current !== null) window.clearTimeout(resourceDropTimerRef.current);
+    previewRef.current?.dispose();
+    visibilityControllerRef.current?.dispose();
     if (terminalPulseTimerRef.current !== null) window.clearTimeout(terminalPulseTimerRef.current);
   }, []);
 

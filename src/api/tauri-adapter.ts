@@ -4,37 +4,21 @@
 // Requires @tauri-apps/api externalized in vite.config.ts
 // ═══════════════════════════════════════════════════════════
 
-export interface SystemMetricsPayload {
-  cpu: number;
-  cpu_count: number;
-  mem_used: number;
-  mem_total: number;
-  disk_used: number;
-  disk_total: number;
-  net_up_speed: number;
-  net_down_speed: number;
-  uptime: number;
-  load1: number;
-  load5: number;
-  load15: number;
-  platform: string;
-  platform_version: string;
-  arch: string;
-}
-
 import { invoke } from "@tauri-apps/api/core";
-import {
-  checkOpenclaw,
-} from './tauri-commands';
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { checkOpenclaw } from './tauri-commands';
+import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
-import {
-  loadOrCreateDeviceIdentity,
-  buildDeviceAuthPayload,
-  signDevicePayload,
-} from "./device-identity";
-import type { DeviceIdentity } from "./device-identity";
 import { APP_VERSION } from '../version';
+import type { AegisAPI } from '@/types/global';
+import {
+  parseStorageRuntimePaths,
+  parseSystemMetricsPayload,
+  parseTauriPlatformInfo,
+  type SystemMetricsPayload,
+} from './tauriAdapterContracts';
+import { debugWarn } from '@/utils/debugLog';
+
+export type { SystemMetricsPayload } from './tauriAdapterContracts';
 
 const LEGACY_CONFIG_BACKUPS_STORAGE_KEY = 'aegis-config-backups';
 
@@ -49,30 +33,8 @@ function clearLegacyOpenClawConfigBackups(): void {
 
 clearLegacyOpenClawConfigBackups();
 
-interface PlatformInfoPayload {
-  os: string;
-  arch: string;
-  home_dir: string;
-  desktop_dir: string;
-}
-
-interface DeviceSignParams {
-  nonce?: string;
-  clientId: string;
-  clientMode: string;
-  role: string;
-  scopes: string[];
-  token: string;
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-let _deviceIdentity: DeviceIdentity | null = null;
-async function deviceIdentity() {
-  if (!_deviceIdentity) _deviceIdentity = await loadOrCreateDeviceIdentity();
-  return _deviceIdentity;
 }
 
 function detectPlatform(): string {
@@ -83,17 +45,9 @@ function detectPlatform(): string {
   return "unknown";
 }
 
-interface StorageRuntimePaths {
-  stateDir: string;
-  workspaceDir: string;
-}
-
-async function readStorageRuntimePaths(): Promise<StorageRuntimePaths | null> {
+async function readStorageRuntimePaths() {
   try {
-    const status = await invoke<Partial<StorageRuntimePaths>>('get_storage_setup_status');
-    if (typeof status.stateDir !== 'string' || !status.stateDir.trim()) return null;
-    if (typeof status.workspaceDir !== 'string' || !status.workspaceDir.trim()) return null;
-    return { stateDir: status.stateDir, workspaceDir: status.workspaceDir };
+    return parseStorageRuntimePaths(await invoke<unknown>('get_storage_setup_status'));
   } catch {
     return null;
   }
@@ -101,14 +55,14 @@ async function readStorageRuntimePaths(): Promise<StorageRuntimePaths | null> {
 
 // Guard: in a plain browser (no Tauri runtime, e.g. headless screenshots),
 // getCurrentWindow()/listen() throw at module load. Wrap so the adapter boots.
-let appWindow: ReturnType<typeof getCurrentWindow> | null = null;
+let appWindow: TauriWindow | null = null;
 try {
   appWindow = getCurrentWindow();
 } catch {
   appWindow = null;
 }
 
-window.aegis = {
+const aegisBridge: AegisAPI = {
   platform: detectPlatform(),
 
   app: {
@@ -128,64 +82,17 @@ window.aegis = {
     },
     platformInfo: async () => {
       try {
-        const info = await invoke<PlatformInfoPayload>("get_platform_info");
+        const info = parseTauriPlatformInfo(await invoke<unknown>("get_platform_info"));
         return `${info.os} (${info.arch})`;
       } catch { return `${navigator.platform}`; }
     },
   },
 
   window: {
-    minimize: async () => { await appWindow?.minimize(); },
+    minimize: async () => { if (appWindow) await appWindow.minimize(); },
     maximize: async () => { if (!appWindow) return false; await appWindow.toggleMaximize(); return await appWindow.isMaximized(); },
-    close: async () => { await appWindow?.close(); },
+    close: async () => { if (appWindow) await appWindow.close(); },
     isMaximized: async () => appWindow ? appWindow.isMaximized() : false,
-  },
-
-  device: {
-    getIdentity: async () => { const id = await deviceIdentity(); return { deviceId: id.deviceId, publicKey: id.publicKey }; },
-    sign: async (params: DeviceSignParams) => {
-      const id = await deviceIdentity();
-      const signedAtMs = Date.now();
-      const nonce = params.nonce ?? "";
-      const payload = buildDeviceAuthPayload({ deviceId: id.deviceId, clientId: params.clientId, clientMode: params.clientMode, role: params.role, scopes: params.scopes, signedAtMs, token: params.token, nonce });
-      const signature = await signDevicePayload(id.privateKey, payload);
-      return { deviceId: id.deviceId, publicKey: id.publicKey, signature, signedAt: signedAtMs, nonce: params.nonce };
-    },
-  },
-
-
-  terminal: {
-    // portable-pty backed PTY multiplexer in Rust. Each create() spawns a
-    // login shell; stdout arrives via the "terminal-data" event, exits via
-    // "terminal-exit". onData/onExit return unlisten functions that match
-    // the Electron preload contract in src/types/global.d.ts.
-    create: async (opts?: { cols?: number; rows?: number; cwd?: string }) => {
-      try {
-        const r = await invoke<{ id: string; pid: number }>("terminal_create", {
-          cols: opts?.cols,
-          rows: opts?.rows,
-          cwd: opts?.cwd ?? null,
-        });
-        return { id: r.id, pid: r.pid };
-      } catch (error: unknown) {
-        return { id: "", pid: 0, error: errorMessage(error) };
-      }
-    },
-    write: (id: string, data: string) => invoke<void>("terminal_write", { id, data }),
-    resize: (id: string, cols: number, rows: number) => invoke<void>("terminal_resize", { id, cols, rows }),
-    kill: (id: string) => invoke<void>("terminal_kill", { id }),
-    onData: (callback: (id: string, data: string) => void) => {
-      return subscribeTauriEvent<{ id: string; data: string }>(
-        "terminal-data",
-        (event) => callback(event.payload.id, event.payload.data),
-      );
-    },
-    onExit: (callback: (id: string, exitCode: number, signal?: number) => void) => {
-      return subscribeTauriEvent<{ id: string; exit_code: number }>(
-        "terminal-exit",
-        (event) => callback(event.payload.id, event.payload.exit_code),
-      );
-    },
   },
   notify: async (t: string, b: string) => { if ("Notification" in window && Notification.permission === "granted") new Notification(t, { body: b }); },
   runtimeData: { openStateDirectory: async () => {
@@ -201,7 +108,16 @@ window.aegis = {
   // JunQi-style system metrics event stream (background thread emits every 1s)
   systemMetrics: {
     onMetrics: (cb: (metrics: SystemMetricsPayload) => void) => {
-      return subscribeTauriEvent<SystemMetricsPayload>("system-metrics", (event) => cb(event.payload));
+      return subscribeTauriEvent<unknown>("system-metrics", (event) => {
+        const metrics = parseSystemMetricsPayload(event.payload);
+        if (!metrics) {
+          debugWarn('app', '[Tauri] Ignored invalid system metrics event');
+          return;
+        }
+        cb(metrics);
+      });
     },
   },
 };
+
+window.aegis = aegisBridge;

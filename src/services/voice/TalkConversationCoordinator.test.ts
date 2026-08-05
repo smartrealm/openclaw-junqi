@@ -1,360 +1,573 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { TalkConversationCoordinator } from './TalkConversationCoordinator';
-import type { TalkGatewayEvent } from '@/services/gateway/talkEventBridge';
+import type {
+  TalkGatewayEvent,
+  TalkRelayEvent,
+} from '@/services/gateway/talkEventBridge';
+import type { TalkSession } from '@/services/gateway/talkTypes';
+import type { TalkGatewayConnectionClient } from '@/services/gateway/TalkGatewayClient';
+import {
+  TalkConversationCoordinator,
+  shouldCancelTalkOutput,
+  type TalkConversationDependencies,
+} from './TalkConversationCoordinator';
 
-test('Talk conversation serializes PCM frames on its attested session', async () => {
-  const calls: string[] = [];
-  const listeners = new Set<(event: TalkGatewayEvent) => void>();
-  const coordinator = new TalkConversationCoordinator({
-    client: {
-      createRealtimeRelay: async () => ({ sessionId: 'talk-1', provider: 'relay' }),
-      appendAudio: async (_sessionId, audioBase64) => { calls.push(audioBase64); },
-      cancelOutput: async () => undefined,
-      close: async () => undefined,
-      subscribe: (next) => { listeners.add(next); return () => listeners.delete(next); },
-    },
-    captureConnectionId: () => 'connection-a',
-    isConnectionCurrent: () => true,
-    interruptLocalOutput: () => undefined,
-    playOutput: () => undefined,
-    finishOutput: () => undefined,
-    stopOutput: () => undefined,
-    now: () => 100,
-  });
-  await coordinator.start('agent:main:main');
-  coordinator.appendPcm({ data: 'first', sampleRateHz: 24_000, channels: 1 });
-  coordinator.appendPcm({ data: 'second', sampleRateHz: 24_000, channels: 1 });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(calls, ['first', 'second']);
-  for (const listener of listeners) {
-    listener({
-      id: 'event-1', sessionId: 'talk-1', type: 'output.audio.started', seq: 1,
-      turnId: null, mode: 'realtime', transport: 'gateway-relay', brain: 'agent-consult', payload: {},
-      audioBase64: null, relayType: null,
-    });
-  }
-  assert.equal(coordinator.getSnapshot().phase, 'speaking');
-  assert.equal(coordinator.getSnapshot().sessionKey, 'agent:main:main');
-});
+const INPUT_FORMAT = { encoding: 'pcm16' as const, sampleRateHz: 24_000, channels: 1 };
+const OUTPUT_FORMAT = { encoding: 'pcm16' as const, sampleRateHz: 48_000, channels: 2 };
 
-test('Talk interruption stops local output before requesting Gateway cancellation', async () => {
-  const calls: string[] = [];
-  const coordinator = new TalkConversationCoordinator({
-    client: {
-      createRealtimeRelay: async () => ({ sessionId: 'talk-1', provider: 'relay' }),
-      appendAudio: async () => undefined,
-      cancelOutput: async () => { calls.push('gateway'); },
-      close: async () => undefined,
-      subscribe: () => () => undefined,
-    },
-    captureConnectionId: () => 'connection-a',
-    isConnectionCurrent: () => true,
-    interruptLocalOutput: () => { calls.push('local'); },
-    playOutput: () => undefined,
-    finishOutput: () => undefined,
-    stopOutput: () => undefined,
-  });
-  await coordinator.start('agent:main:main');
-  await coordinator.interrupt();
-  assert.deepEqual(calls, ['local', 'gateway']);
-});
-
-test('Talk session replacement fences the previous client and queued audio', async () => {
-  const calls: string[] = [];
-  const listeners = new Set<(event: TalkGatewayEvent) => void>();
-  const coordinator = new TalkConversationCoordinator({
-    client: {
-      createRealtimeRelay: async () => ({ sessionId: 'talk-replaced', provider: 'relay' }),
-      appendAudio: async (_sessionId, audioBase64) => { calls.push(`append:${audioBase64}`); },
-      cancelOutput: async () => undefined,
-      close: async () => { calls.push('close'); },
-      subscribe: (next) => { listeners.add(next); return () => listeners.delete(next); },
-    },
-    captureConnectionId: () => 'connection-a',
-    isConnectionCurrent: () => true,
-    interruptLocalOutput: () => undefined,
-    playOutput: () => undefined,
-    finishOutput: () => undefined,
-    stopOutput: () => { calls.push('stop'); },
-  });
-
-  await coordinator.start('agent:main:main');
-  calls.length = 0;
-  for (const listener of listeners) {
-    listener({
-      id: 'replacement-1',
-      sessionId: 'talk-replaced',
-      type: 'session.replaced',
-      seq: 2,
-      turnId: null,
-      mode: 'realtime',
-      transport: 'gateway-relay',
-      brain: 'agent-consult',
-      payload: {
-        handoffId: 'handoff-1',
-        roomId: 'room-1',
-        previousClientId: 'client-old',
-        nextClientId: 'client-new',
-      },
-      audioBase64: null,
-      relayType: null,
-    });
-  }
-
-  assert.equal(coordinator.getSnapshot().phase, 'error');
-  assert.equal(coordinator.getSnapshot().error, 'talk_session_replaced');
-  assert.equal(coordinator.getSnapshot().sessionId, null);
-  assert.deepEqual(calls, ['stop']);
-  coordinator.appendPcm({ data: 'stale', sampleRateHz: 24_000, channels: 1 });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(calls, ['stop']);
-  assert.equal(listeners.size, 0);
-});
-
-test('Talk replacement cancels Gateway output after local stop and before closing the prior relay', async () => {
-  const calls: string[] = [];
-  let count = 0;
-  const coordinator = new TalkConversationCoordinator({
-    client: {
-      createRealtimeRelay: async () => ({ sessionId: `talk-${++count}`, provider: 'relay' }),
-      appendAudio: async () => undefined,
-      cancelOutput: async (sessionId) => { calls.push(`cancel:${sessionId}`); },
-      close: async (sessionId) => { calls.push(`close:${sessionId}`); },
-      subscribe: () => () => undefined,
-    },
-    captureConnectionId: () => 'connection-a',
-    isConnectionCurrent: () => true,
-    interruptLocalOutput: () => { calls.push('local'); },
-    playOutput: () => undefined,
-    finishOutput: () => undefined,
-    stopOutput: () => { calls.push('output'); },
-  });
-  await coordinator.start('agent:main:main');
-  calls.length = 0;
-  await coordinator.start('agent:main:main');
-  assert.ok(calls.indexOf('local') >= 0);
-  assert.ok(calls.indexOf('output') > calls.indexOf('local'));
-  assert.ok(calls.indexOf('cancel:talk-1') > calls.indexOf('output'));
-  assert.ok(calls.indexOf('close:talk-1') > calls.indexOf('cancel:talk-1'));
-});
-
-test('Talk conversation retains bounded PCM while the relay session is connecting', async () => {
-  let resolveSession: ((value: { sessionId: string; provider: string }) => void) | undefined;
-  const appended: string[] = [];
-  const coordinator = new TalkConversationCoordinator({
-    client: {
-      createRealtimeRelay: () => new Promise((resolve) => { resolveSession = resolve; }),
-      appendAudio: async (_sessionId, audioBase64) => { appended.push(audioBase64); },
-      cancelOutput: async () => undefined,
-      close: async () => undefined,
-      subscribe: () => () => undefined,
-    },
-    captureConnectionId: () => 'connection-a',
-    isConnectionCurrent: () => true,
-    interruptLocalOutput: () => undefined,
-    playOutput: () => undefined,
-    finishOutput: () => undefined,
-    stopOutput: () => undefined,
-  });
-  const start = coordinator.start('agent:main:main');
-  // Capture can begin in the same event turn as a verified keyword. It must
-  // survive the output cleanup that runs before relay creation.
-  coordinator.appendPcm({ data: 'opening', sampleRateHz: 24_000, channels: 1 });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.ok(resolveSession);
-  resolveSession({ sessionId: 'talk-1', provider: 'relay' });
-  await start;
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(appended, ['opening']);
-});
-
-test('Talk opening can be awaited before choosing the WAV fallback path', async () => {
-  let resolveSession: ((value: { sessionId: string; provider: string }) => void) | undefined;
-  const coordinator = new TalkConversationCoordinator({
-    client: {
-      createRealtimeRelay: () => new Promise((resolve) => { resolveSession = resolve; }),
-      appendAudio: async () => undefined,
-      cancelOutput: async () => undefined,
-      close: async () => undefined,
-      subscribe: () => () => undefined,
-    },
-    captureConnectionId: () => 'connection-a',
-    isConnectionCurrent: () => true,
-    interruptLocalOutput: () => undefined,
-    playOutput: () => undefined,
-    finishOutput: () => undefined,
-    stopOutput: () => undefined,
-  });
-  const opening = coordinator.start('agent:main:main');
-  const waiting = coordinator.waitForOpening();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.ok(resolveSession);
-  resolveSession({ sessionId: 'talk-1', provider: 'relay' });
-
-  assert.equal((await waiting)?.sessionId, 'talk-1');
-  assert.equal((await opening).sessionId, 'talk-1');
-});
-
-test('stopping an opening relay discards its buffered PCM before any later session', async () => {
-  let resolveSession: ((value: { sessionId: string; provider: string }) => void) | undefined;
-  const appended: string[] = [];
-  let createCount = 0;
-  const coordinator = new TalkConversationCoordinator({
-    client: {
-      createRealtimeRelay: () => {
-        createCount += 1;
-        if (createCount === 1) return new Promise((resolve) => { resolveSession = resolve; });
-        return Promise.resolve({ sessionId: 'talk-new', provider: 'relay' });
-      },
-      appendAudio: async (_sessionId, audioBase64) => { appended.push(audioBase64); },
-      cancelOutput: async () => undefined,
-      close: async () => undefined,
-      subscribe: () => () => undefined,
-    },
-    captureConnectionId: () => 'connection-a',
-    isConnectionCurrent: () => true,
-    interruptLocalOutput: () => undefined,
-    playOutput: () => undefined,
-    finishOutput: () => undefined,
-    stopOutput: () => undefined,
-  });
-  const first = coordinator.start('agent:main:main');
-  coordinator.appendPcm({ data: 'discard-me', sampleRateHz: 24_000, channels: 1 });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.ok(resolveSession);
-  await coordinator.stop();
-  resolveSession({ sessionId: 'talk-old', provider: 'relay' });
-  await first;
-
-  await coordinator.start('agent:main:main');
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(appended, []);
-});
-
-test('a stale Talk session creation cannot replace a newer trigger', async () => {
-  const resolvers: Array<(value: { sessionId: string; provider: string }) => void> = [];
-  const closed: string[] = [];
-  const coordinator = new TalkConversationCoordinator({
-    client: {
-      createRealtimeRelay: () => new Promise((resolve) => resolvers.push(resolve)),
-      appendAudio: async () => undefined,
-      cancelOutput: async () => undefined,
-      close: async (sessionId) => { closed.push(sessionId); },
-      subscribe: () => () => undefined,
-    },
-    captureConnectionId: () => 'connection-a',
-    isConnectionCurrent: () => true,
-    interruptLocalOutput: () => undefined,
-    playOutput: () => undefined,
-    finishOutput: () => undefined,
-    stopOutput: () => undefined,
-  });
-  const first = coordinator.start('agent:main:main');
-  const second = coordinator.start('agent:main:main');
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(resolvers.length, 2);
-  resolvers[1]({ sessionId: 'talk-new', provider: 'relay' });
-  await second;
-  resolvers[0]({ sessionId: 'talk-old', provider: 'relay' });
-  await first;
-  assert.equal(coordinator.getSnapshot().sessionId, 'talk-new');
-  assert.deepEqual(closed, ['talk-old']);
-});
-
-test('Talk output serializes PCM playback and waits for the native queue to drain', async () => {
-  const calls: string[] = [];
-  const listeners = new Set<(event: TalkGatewayEvent) => void>();
-  const resolvers = new Map<string, () => void>();
-  const coordinator = new TalkConversationCoordinator({
-    client: {
-      createRealtimeRelay: async () => ({ sessionId: 'talk-1', provider: 'relay' }),
-      appendAudio: async () => undefined,
-      cancelOutput: async () => undefined,
-      close: async () => undefined,
-      subscribe: (next) => { listeners.add(next); return () => listeners.delete(next); },
-    },
-    captureConnectionId: () => 'connection-a',
-    isConnectionCurrent: () => true,
-    interruptLocalOutput: () => undefined,
-    playOutput: (audioBase64) => new Promise<void>((resolve) => {
-      calls.push(audioBase64);
-      resolvers.set(audioBase64, resolve);
-    }),
-    finishOutput: () => { calls.push('finish'); },
-    stopOutput: () => undefined,
-  });
-  const emit = (event: TalkGatewayEvent) => {
-    for (const listener of listeners) listener(event);
+function session(sessionId = 'talk-1'): TalkSession {
+  return {
+    sessionId,
+    provider: 'relay-provider',
+    inputAudioFormat: { ...INPUT_FORMAT },
+    outputAudioFormat: { ...OUTPUT_FORMAT },
   };
-  const outputEvent = (type: TalkGatewayEvent['type'], audioBase64: string | null): TalkGatewayEvent => ({
-    id: `event-${type}`, sessionId: 'talk-1', type, seq: 1, turnId: null,
-    mode: 'realtime', transport: 'gateway-relay', brain: 'agent-consult', payload: {}, audioBase64, relayType: null,
-  });
+}
 
-  await coordinator.start('agent:main:main');
-  emit(outputEvent('output.audio.delta', 'first'));
-  emit(outputEvent('output.audio.delta', 'second'));
-  emit(outputEvent('output.audio.done', null));
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(calls, ['first']);
-  assert.equal(coordinator.getSnapshot().phase, 'speaking');
+function event(
+  type: TalkGatewayEvent['type'],
+  seq: number,
+  options: {
+    sessionId?: string;
+    turnId?: string | null;
+    payload?: unknown;
+  } = {},
+): TalkGatewayEvent {
+  return {
+    id: `event-${seq}`,
+    type,
+    sessionId: options.sessionId ?? 'talk-1',
+    turnId: options.turnId === undefined ? 'turn-1' : options.turnId,
+    seq,
+    mode: 'realtime',
+    transport: 'gateway-relay',
+    brain: 'agent-consult',
+    payload: options.payload ?? {},
+  };
+}
 
-  const first = resolvers.get('first');
-  assert.ok(first);
-  first();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(calls, ['first', 'second']);
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((next) => { resolve = next; });
+  return { promise, resolve };
+}
 
-  const second = resolvers.get('second');
-  assert.ok(second);
-  second();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(calls, ['first', 'second', 'finish']);
-  assert.equal(coordinator.getSnapshot().phase, 'listening');
-});
-
-test('stopping Talk output fences PCM that was queued behind an interrupted frame', async () => {
+function createHarness(
+  clientOverrides: Partial<Omit<TalkGatewayConnectionClient, 'connectionId'>> = {},
+  dependencyOverrides: Partial<Omit<TalkConversationDependencies, 'client'>> = {},
+) {
+  let listener: ((value: TalkGatewayEvent) => void) | null = null;
+  let relayListener: ((value: TalkRelayEvent) => void) | null = null;
   const calls: string[] = [];
-  const listeners = new Set<(event: TalkGatewayEvent) => void>();
-  let resolveFirst: (() => void) | undefined;
-  const coordinator = new TalkConversationCoordinator({
-    client: {
-      createRealtimeRelay: async () => ({ sessionId: 'talk-1', provider: 'relay' }),
-      appendAudio: async () => undefined,
-      cancelOutput: async () => undefined,
-      close: async () => undefined,
-      subscribe: (next) => { listeners.add(next); return () => listeners.delete(next); },
+  const connectionOperations: Omit<TalkGatewayConnectionClient, 'connectionId'> = {
+    createRealtimeRelay: async () => session(),
+    appendAudio: async (_sessionId, _audioBase64, timestamp, signal) => {
+      calls.push(`append:${timestamp}:${signal?.aborted === false ? 'active' : 'missing'}`);
     },
+    acknowledgeMark: async (_sessionId, markName) => { calls.push(`ack-mark:${markName}`); },
+    cancelOutput: async (_sessionId, turnId, reason) => {
+      calls.push(`cancel-output:${turnId ?? ''}:${reason ?? 'barge-in'}`);
+    },
+    cancelTurn: async (_sessionId, turnId) => { calls.push(`cancel-turn:${turnId ?? ''}`); },
+    close: async (sessionId) => { calls.push(`close:${sessionId}`); },
+    startAgentConsult: async (_sessionKey, _sessionId, callId) => {
+      calls.push(`start-consult:${callId}`);
+      return { runId: `run-${callId}`, idempotencyKey: `idem-${callId}` };
+    },
+    waitForAgentConsult: async (runId) => {
+      calls.push(`wait-consult:${runId}`);
+      return `result-${runId}`;
+    },
+    steerAgent: async (_sessionId, _sessionKey, input) => {
+      calls.push(`steer:${input.mode ?? ''}:${input.text}`);
+      return { ok: true, mode: input.mode, message: '已处理' };
+    },
+    submitToolResult: async (_sessionId, callId, result, options) => {
+      calls.push(`submit-tool:${callId}:${JSON.stringify(result)}:${options?.willContinue === true ? 'continue' : 'final'}`);
+    },
+    abortAgentConsult: async (sessionKey, runId) => {
+      calls.push(`abort-consult:${sessionKey}:${runId}`);
+    },
+    ...clientOverrides,
+  };
+  const client: TalkConversationDependencies['client'] = {
+    bindConnection: (connectionId) => ({ connectionId, ...connectionOperations }),
+    subscribe: (next) => {
+      listener = next;
+      return () => { if (listener === next) listener = null; };
+    },
+    subscribeRelay: (next) => {
+      relayListener = next;
+      return () => { if (relayListener === next) relayListener = null; };
+    },
+  };
+  const dependencies: TalkConversationDependencies = {
+    client,
     captureConnectionId: () => 'connection-a',
-    isConnectionCurrent: () => true,
-    interruptLocalOutput: () => undefined,
-    playOutput: (audioBase64) => new Promise<void>((resolve) => {
-      calls.push(audioBase64);
-      if (audioBase64 === 'first') resolveFirst = resolve;
-    }),
-    finishOutput: () => { calls.push('finish'); },
-    stopOutput: () => { calls.push('stop'); },
-  });
-  const emit = (audioBase64: string) => {
-    for (const listener of listeners) {
-      listener({
-        id: `event-${audioBase64}`, sessionId: 'talk-1', type: 'output.audio.delta', seq: 1,
-        turnId: null, mode: 'realtime', transport: 'gateway-relay', brain: 'agent-consult', payload: {},
-        audioBase64, relayType: null,
+    isConnectionCurrent: (connectionId) => connectionId === 'connection-a',
+    interruptLocalOutput: () => { calls.push('interrupt-local'); },
+    playOutput: async () => {
+      calls.push('play-output');
+      return 'queued' as const;
+    },
+    finishOutput: async () => { calls.push('finish-output'); },
+    stopOutput: async () => { calls.push('stop-output'); },
+    now: () => 1_234,
+    ...dependencyOverrides,
+  };
+  const coordinator = new TalkConversationCoordinator(dependencies);
+  return {
+    calls,
+    coordinator,
+    emit: (value: TalkGatewayEvent) => listener?.(value),
+    emitRelay: (value: TalkRelayEvent) => relayListener?.(value),
+    emitAudio: (seq: number, audioBase64 = 'AA==') => {
+      relayListener?.({
+        type: 'audio',
+        relaySessionId: 'talk-1',
+        turnId: 'turn-1',
+        audioBase64,
       });
-    }
+      listener?.(event('output.audio.delta', seq));
+    },
   };
+}
 
-  await coordinator.start('agent:main:main');
-  calls.length = 0;
-  emit('first');
-  emit('second');
+async function flush(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(calls, ['first']);
-  await coordinator.stop();
-  assert.ok(resolveFirst);
-  resolveFirst();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(calls, ['first', 'stop']);
+}
+
+test('Talk 会话保留 Gateway 确认的音频格式并发送匹配的 PCM', async () => {
+  const harness = createHarness();
+  const opened = await harness.coordinator.acceptInput('agent:main:main');
+  assert.equal(opened.snapshot.phase, 'listening');
+  assert.deepEqual(opened.snapshot.inputAudioFormat, INPUT_FORMAT);
+  assert.deepEqual(opened.snapshot.outputAudioFormat, OUTPUT_FORMAT);
+  assert.equal(harness.coordinator.appendPcm({ data: 'AA==', sampleRateHz: 24_000, channels: 1 }), true);
+  await flush();
+  assert.ok(harness.calls.includes('append:1234:active'));
+});
+
+test('Talk 输入只保留四个在途请求并丢弃已经过期的新帧', async () => {
+  const pending: Array<ReturnType<typeof deferred<void>>> = [];
+  const harness = createHarness({
+    appendAudio: async () => {
+      const request = deferred<void>();
+      pending.push(request);
+      return request.promise;
+    },
+  });
+  await harness.coordinator.acceptInput('agent:main:main');
+  const frame = { data: 'AA==', sampleRateHz: 24_000, channels: 1 };
+  assert.deepEqual([0, 1, 2, 3].map(() => harness.coordinator.appendPcm(frame)), [true, true, true, true]);
+  assert.equal(harness.coordinator.appendPcm(frame), false);
+  assert.equal(harness.coordinator.getSnapshot().phase, 'listening');
+  pending.forEach((request) => request.resolve());
+  await flush();
+});
+
+test('Stop 会中止当前 Talk 会话尚未完成的音频追加请求', async () => {
+  let appendSignal: AbortSignal | undefined;
+  const harness = createHarness({
+    appendAudio: async (_sessionId, _audioBase64, _timestamp, signal) => {
+      appendSignal = signal;
+      await new Promise<void>((resolve) => signal?.addEventListener('abort', () => resolve(), { once: true }));
+    },
+  });
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.coordinator.appendPcm({ data: 'AA==', sampleRateHz: 24_000, channels: 1 });
+  assert.equal(appendSignal?.aborted, false);
+  await harness.coordinator.stop();
+  assert.equal(appendSignal?.aborted, true);
+});
+
+test('说话打断会先停止本地播放再调用官方输出取消', async () => {
+  const harness = createHarness();
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.calls.length = 0;
+  harness.emit(event('output.audio.started', 1));
+  await harness.coordinator.interrupt();
+  assert.deepEqual(harness.calls, ['interrupt-local', 'stop-output', 'cancel-output:turn-1:barge-in']);
+  assert.equal(harness.coordinator.getSnapshot().phase, 'listening');
+});
+
+test('并发说话打断只向当前 Talk 会话发送一次输出取消', async () => {
+  const cancellation = deferred<void>();
+  let cancellationCount = 0;
+  const harness = createHarness({
+    cancelOutput: async () => {
+      cancellationCount += 1;
+      await cancellation.promise;
+    },
+  });
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.emit(event('output.audio.started', 1));
+  const first = harness.coordinator.interrupt();
+  const second = harness.coordinator.interrupt();
+  assert.equal(cancellationCount, 0);
+  await flush();
+  assert.equal(cancellationCount, 1);
+  cancellation.resolve();
+  await Promise.all([first, second]);
+  assert.equal(cancellationCount, 1);
+});
+
+test('Stop 停止当前 Talk 轮次并关闭中继但不修改 OpenClaw 会话身份', async () => {
+  const harness = createHarness();
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.emit(event('turn.started', 1));
+  harness.calls.length = 0;
+  await harness.coordinator.stop();
+  assert.deepEqual(harness.calls, ['stop-output', 'cancel-turn:turn-1', 'close:talk-1']);
+  assert.equal(harness.coordinator.getSnapshot().phase, 'idle');
+  assert.equal(harness.coordinator.getSnapshot().sessionKey, null);
+});
+
+test('转写增量按轮次累积而最终文本替换临时内容', async () => {
+  const harness = createHarness();
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.emit(event('turn.started', 1));
+  harness.emit(event('transcript.delta', 2, { payload: { text: '你好' } }));
+  harness.emit(event('transcript.delta', 3, { payload: { text: '，世界' } }));
+  assert.equal(harness.coordinator.getSnapshot().userTranscript, '你好，世界');
+  harness.emit(event('transcript.done', 4, { payload: { text: '你好，世界。' } }));
+  harness.emit(event('output.text.delta', 5, { payload: { text: '正在' } }));
+  harness.emit(event('output.text.delta', 6, { payload: { text: '处理' } }));
+  assert.equal(harness.coordinator.getSnapshot().assistantText, '正在处理');
+  harness.emit(event('output.text.done', 7, { payload: { text: '已经处理完成。' } }));
+  assert.equal(harness.coordinator.getSnapshot().assistantText, '已经处理完成。');
+});
+
+test('官方 Talk consult 在同一会话启动 run 并回传最终结果', async () => {
+  const harness = createHarness();
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.calls.length = 0;
+  harness.emitRelay({
+    type: 'toolCall',
+    relaySessionId: 'talk-1',
+    callId: 'call-1',
+    name: 'openclaw_agent_consult',
+    args: { question: '检查状态' },
+    forced: false,
+  });
+  await flush();
+  await flush();
+  assert.deepEqual(harness.calls, [
+    'start-consult:call-1',
+    'wait-consult:run-call-1',
+    'submit-tool:call-1:{"result":"result-run-call-1"}:final',
+  ]);
+});
+
+test('Talk consult 最终结果等待原生输出排空后再交给 provider', async () => {
+  const finished = deferred<void>();
+  const harness = createHarness({}, {
+    finishOutput: async () => finished.promise,
+  });
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.calls.length = 0;
+  harness.emitAudio(1);
+  harness.emit(event('output.audio.done', 2));
+  harness.emitRelay({
+    type: 'toolCall',
+    relaySessionId: 'talk-1',
+    callId: 'call-delayed',
+    name: 'openclaw_agent_consult',
+    args: { question: '等待播报' },
+    forced: false,
+  });
+  await flush();
+  assert.equal(harness.calls.some((call) => call.startsWith('submit-tool:call-delayed:')), false);
+  finished.resolve();
+  await flush();
+  await flush();
+  assert.equal(harness.calls.some((call) => call.startsWith('submit-tool:call-delayed:')), true);
+});
+
+test('provider 取消工具调用时按精确 runId 中止且不提交迟到结果', async () => {
+  const harness = createHarness({
+    waitForAgentConsult: async (_runId, signal) => new Promise<string>((_resolve, reject) => {
+      const abort = () => reject(new Error('aborted'));
+      if (signal?.aborted) abort();
+      else signal?.addEventListener('abort', abort, { once: true });
+    }),
+  });
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.calls.length = 0;
+  harness.emitRelay({
+    type: 'toolCall',
+    relaySessionId: 'talk-1',
+    callId: 'call-cancelled',
+    name: 'openclaw_agent_consult',
+    args: { question: '长任务' },
+    forced: false,
+  });
+  await flush();
+  harness.emitRelay({
+    type: 'toolCallCancelled',
+    relaySessionId: 'talk-1',
+    callId: 'call-cancelled',
+  });
+  await flush();
+  await flush();
+  assert.ok(harness.calls.includes('abort-consult:agent:main:main:run-call-cancelled'));
+  assert.equal(harness.calls.some((call) => call.startsWith('submit-tool:call-cancelled:')), false);
+});
+
+test('Stop 在 consult 启动确认迟到时仍中止确认返回的精确 run', async () => {
+  const start = deferred<{ runId: string; idempotencyKey: string }>();
+  const harness = createHarness({
+    startAgentConsult: async () => start.promise,
+  });
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.calls.length = 0;
+  harness.emitRelay({
+    type: 'toolCall',
+    relaySessionId: 'talk-1',
+    callId: 'call-late',
+    name: 'openclaw_agent_consult',
+    args: { question: '长任务' },
+    forced: false,
+  });
+  await flush();
+  await harness.coordinator.stop();
+  start.resolve({ runId: 'run-late', idempotencyKey: 'idem-late' });
+  await flush();
+  await flush();
+  assert.ok(harness.calls.includes('abort-consult:agent:main:main:run-late'));
+  assert.equal(harness.calls.some((call) => call.startsWith('submit-tool:call-late:')), false);
+});
+
+test('强制 consult 先提交官方继续状态再提交最终结果', async () => {
+  const harness = createHarness();
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.calls.length = 0;
+  harness.emitRelay({
+    type: 'toolCall',
+    relaySessionId: 'talk-1',
+    callId: 'call-forced',
+    name: 'openclaw_agent_consult',
+    args: { question: '强制检查' },
+    forced: true,
+  });
+  await flush();
+  await flush();
+  const submissions = harness.calls.filter((call) => call.startsWith('submit-tool:call-forced:'));
+  assert.equal(submissions.length, 2);
+  assert.match(submissions[0] ?? '', /"status":"working".*:continue$/);
+  assert.match(submissions[1] ?? '', /"result":"result-run-call-forced".*:final$/);
+});
+
+test('官方 Talk control 由 Gateway steer 执行并回传原生结果', async () => {
+  const harness = createHarness();
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.calls.length = 0;
+  harness.emitRelay({
+    type: 'toolCall',
+    relaySessionId: 'talk-1',
+    callId: 'control-1',
+    name: 'openclaw_agent_control',
+    args: { text: '报告状态', mode: 'status' },
+    forced: false,
+  });
+  await flush();
+  await flush();
+  assert.ok(harness.calls.includes('steer:status:报告状态'));
+  assert.ok(harness.calls.some((call) => call.startsWith('submit-tool:control-1:{"ok":true')));
+});
+
+test('输出 PCM 串行进入原生队列并在播放完成后恢复监听', async () => {
+  const firstPlayback = deferred<'queued' | 'overflow'>();
+  const formats: unknown[] = [];
+  let finishes = 0;
+  const harness = createHarness({}, {
+    playOutput: async (_audio, format) => {
+      formats.push(format);
+      return firstPlayback.promise;
+    },
+    finishOutput: async () => { finishes += 1; },
+  });
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.emit(event('output.audio.started', 1));
+  harness.emitAudio(2);
+  harness.emit(event('output.audio.done', 3));
+  await flush();
+  assert.equal(finishes, 0);
+  assert.deepEqual(formats, [OUTPUT_FORMAT]);
+  firstPlayback.resolve('queued');
+  await flush();
+  assert.equal(finishes, 1);
+  assert.equal(harness.coordinator.getSnapshot().phase, 'listening');
+});
+
+test('官方播放标记只在原生输出真正排空后确认', async () => {
+  const finished = deferred<void>();
+  const operations: string[] = [];
+  const harness = createHarness({
+    acknowledgeMark: async (_sessionId, markName) => { operations.push(`ack:${markName}`); },
+  }, {
+    finishOutput: async () => {
+      operations.push('finish:start');
+      await finished.promise;
+      operations.push('finish:end');
+    },
+  });
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.emitAudio(1);
+  await flush();
+  harness.emitRelay({
+    type: 'mark',
+    relaySessionId: 'talk-1',
+    turnId: 'turn-1',
+    markName: 'mark-1',
+  });
+  harness.emit(event('output.audio.done', 2, { payload: { markName: 'mark-1' } }));
+  await flush();
+  assert.deepEqual(operations, ['finish:start']);
+  finished.resolve();
+  await flush();
+  await flush();
+  assert.deepEqual(operations, ['finish:start', 'finish:end', 'ack:mark-1']);
+});
+
+test('官方 clear 立即停止原生输出并围栏同一轮次的迟到音频', async () => {
+  let finishes = 0;
+  let stops = 0;
+  let plays = 0;
+  const harness = createHarness({}, {
+    playOutput: async () => {
+      plays += 1;
+      return 'queued' as const;
+    },
+    finishOutput: async () => { finishes += 1; },
+    stopOutput: async () => { stops += 1; },
+  });
+  await harness.coordinator.acceptInput('agent:main:main');
+  stops = 0;
+  harness.emitAudio(1);
+  await flush();
+  assert.equal(plays, 1);
+  harness.emitRelay({
+    type: 'clear',
+    relaySessionId: 'talk-1',
+    turnId: 'turn-1',
+  });
+  harness.emit(event('output.audio.done', 2, { payload: { reason: 'clear' } }));
+  await flush();
+  assert.equal(stops, 1);
+  assert.equal(finishes, 0);
+  assert.equal(harness.coordinator.getSnapshot().phase, 'listening');
+
+  harness.emitAudio(3);
+  await flush();
+  assert.equal(plays, 1);
+});
+
+test('当前会话收到畸形中继事件时关闭 Talk 而不继续消费', async () => {
+  const harness = createHarness();
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.calls.length = 0;
+  harness.emitRelay({
+    type: 'protocolError',
+    relaySessionId: 'talk-1',
+    issue: 'mark',
+  });
+  await flush();
+  assert.equal(harness.coordinator.getSnapshot().phase, 'error');
+  assert.equal(harness.coordinator.getSnapshot().error, 'talk_session_error');
+  assert.ok(harness.calls.includes('cancel-turn:'));
+  assert.ok(harness.calls.includes('close:talk-1'));
+});
+
+test('轮次先结束时仍等待原生音频队列完成后恢复监听', async () => {
+  const playback = deferred<'queued' | 'overflow'>();
+  const harness = createHarness({}, {
+    playOutput: async () => playback.promise,
+  });
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.emitAudio(1);
+  harness.emit(event('turn.ended', 2));
+  harness.emit(event('output.audio.done', 3));
+  assert.equal(harness.coordinator.getSnapshot().phase, 'speaking');
+  playback.resolve('queued');
+  await flush();
+  assert.equal(harness.coordinator.getSnapshot().phase, 'listening');
+});
+
+test('原生播放队列溢出时取消当前输出并继续监听', async () => {
+  const harness = createHarness({}, { playOutput: async () => 'overflow' as const });
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.calls.length = 0;
+  harness.emitAudio(1);
+  await flush();
+  await flush();
+  assert.ok(harness.calls.includes('cancel-output:turn-1:playback-overflow'));
+  assert.equal(harness.coordinator.getSnapshot().phase, 'listening');
+});
+
+test('会话被替换后立即围栏旧事件并保留可诊断错误', async () => {
+  const harness = createHarness();
+  await harness.coordinator.acceptInput('agent:main:main');
+  harness.emit(event('session.replaced', 1, { turnId: null, payload: {} }));
+  await flush();
+  assert.equal(harness.coordinator.getSnapshot().phase, 'error');
+  assert.equal(harness.coordinator.getSnapshot().error, 'talk_session_replaced');
+  harness.emit(event('transcript.done', 2, { payload: { text: '过期内容' } }));
+  assert.equal(harness.coordinator.getSnapshot().userTranscript, '');
+});
+
+test('并发启动只允许最新目标接管并关闭过期候选会话', async () => {
+  const openings = new Map<string, ReturnType<typeof deferred<TalkSession>>>();
+  const closed: string[] = [];
+  const harness = createHarness({
+    createRealtimeRelay: async (sessionKey) => {
+      const request = deferred<TalkSession>();
+      openings.set(sessionKey, request);
+      return request.promise;
+    },
+    close: async (sessionId) => { closed.push(sessionId); },
+  });
+  const first = harness.coordinator.acceptInput('agent:main:first');
+  await flush();
+  const second = harness.coordinator.acceptInput('agent:main:second');
+  await flush();
+  openings.get('agent:main:second')?.resolve(session('talk-2'));
+  const secondAcceptance = await second;
+  openings.get('agent:main:first')?.resolve(session('talk-1'));
+  const firstAcceptance = await first;
+  assert.equal(harness.coordinator.getSnapshot().sessionKey, 'agent:main:second');
+  assert.equal(harness.coordinator.getSnapshot().sessionId, 'talk-2');
+  assert.deepEqual(closed, ['talk-1']);
+  assert.equal(harness.coordinator.ownsLease(firstAcceptance.lease), false);
+  assert.equal(await harness.coordinator.stopOwnedLease(firstAcceptance.lease), false);
+  assert.equal(harness.coordinator.ownsLease(secondAcceptance.lease), true);
+  assert.equal(harness.coordinator.getSnapshot().sessionId, 'talk-2');
+});
+
+test('空会话键不会覆盖或释放已经建立的 Talk 会话', async () => {
+  const harness = createHarness();
+  const active = await harness.coordinator.acceptInput('agent:main:main');
+  const rejected = await harness.coordinator.acceptInput('  ');
+  assert.equal(rejected.snapshot.phase, 'error');
+  assert.equal(rejected.lease, null);
+  assert.equal(harness.coordinator.ownsLease(active.lease), true);
+  assert.equal(harness.coordinator.getSnapshot().sessionId, 'talk-1');
+});
+
+test('外部中断只命中当前正在播报且允许取消的会话', () => {
+  const snapshot = {
+    phase: 'speaking' as const,
+    sessionId: 'talk-1',
+    sessionKey: 'agent:main:main',
+    connectionId: 'connection-a',
+    inputAudioFormat: INPUT_FORMAT,
+    outputAudioFormat: OUTPUT_FORMAT,
+    userTranscript: '',
+    assistantText: '',
+    error: null,
+    errorDetail: null,
+  };
+  assert.equal(shouldCancelTalkOutput(snapshot, { cancelTalk: true, sessionKey: 'agent:main:main' }), true);
+  assert.equal(shouldCancelTalkOutput(snapshot, { cancelTalk: false, sessionKey: 'agent:main:main' }), false);
+  assert.equal(shouldCancelTalkOutput(snapshot, { cancelTalk: true, sessionKey: 'agent:other:main' }), false);
 });

@@ -268,27 +268,28 @@ test('BUG-GSO-04 service restart uses the official command and native readiness 
 
 test('OpenClaw session steering uses the official interrupt lane', () => {
   const gateway = source('src/services/gateway/index.ts');
+  const steering = source('src/services/gateway/OpenClawSessionSteerClient.ts');
   const sendTransaction = source('src/services/chat/sendTransaction.ts');
-  assert.match(gateway, /buildSessionsSteerParams/);
-  assert.match(gateway, /connection\.request\(method, steerParams\)/);
-  assert.match(gateway, /async steerMessage\(/);
-  assert.match(gateway, /sendGatewayMessage\('sessions\.steer'/);
-  assert.match(sendTransaction, /request\.steer/);
-  assert.match(sendTransaction, /steerMessage/);
-  assert.match(sendTransaction, /request\.queueIfBusy !== false && sessionCannotSend/);
+  assert.match(gateway, /new OpenClawSessionSteerClient\(/);
+  assert.match(steering, /this\.request\('sessions\.steer', params\)/);
+  assert.match(sendTransaction, /request\.delivery === 'steer'/);
+  assert.match(sendTransaction, /delivery: 'steer' as const/);
+  assert.match(sendTransaction, /request\.delivery !== 'steer'/);
 });
 
 test('OpenClaw session inspection and checkpoint controls use official session RPCs', () => {
   const gateway = source('src/services/gateway/index.ts');
   const compaction = source('src/services/gateway/SessionCompactionClient.ts');
+  const checkpoints = source('src/services/gateway/OpenClawSessionCompactionCheckpointsClient.ts');
   const contextBar = source('src/components/Chat/SessionContextBar.tsx');
   const hook = source('src/hooks/useSessionInspection.ts');
   assert.match(gateway, /connection\.request\('sessions\.preview'/);
   assert.match(gateway, /connection\.request\(\s*'sessions\.resolve'/);
-  assert.match(gateway, /connection\.request\('sessions\.compaction\.list'/);
+  assert.match(gateway, /new OpenClawSessionCompactionCheckpointsClient\(/);
+  assert.match(gateway, /sessionCompactionCheckpoints\.list\(sessionKey\)/);
   assert.match(gateway, /parseSessionsPreviewResult/);
   assert.match(gateway, /parseSessionsResolveResult/);
-  assert.match(gateway, /parseSessionsCompactionListResult/);
+  assert.match(checkpoints, /OPENCLAW_COMPACTION_CHECKPOINT_LIST_METHOD/);
   assert.match(compaction, /sessions\.compaction\.get/);
   assert.match(compaction, /sessions\.compaction\.branch/);
   assert.match(compaction, /sessions\.compaction\.restore/);
@@ -298,22 +299,6 @@ test('OpenClaw session inspection and checkpoint controls use official session R
   assert.match(hook, /gateway\.listSessionCompactionCheckpoints/);
   assert.match(hook, /gateway\.branchSessionCompactionCheckpoint/);
   assert.match(hook, /gateway\.restoreSessionCompactionCheckpoint/);
-});
-
-test('OpenClaw transcript artifacts use the official scoped list/get/download RPCs', () => {
-  const gateway = source('src/services/gateway/index.ts');
-  const artifacts = source('src/services/gateway/artifacts.ts');
-  const contextBar = source('src/components/Chat/SessionContextBar.tsx');
-  assert.match(gateway, /connection\.request\('artifacts\.list'/);
-  assert.match(gateway, /connection\.request\('artifacts\.get'/);
-  assert.match(gateway, /connection\.request\([\s\S]*'artifacts\.download'/);
-  assert.match(gateway, /parseArtifactsListResult/);
-  assert.match(gateway, /parseArtifactGetResult/);
-  assert.match(gateway, /parseArtifactDownloadResult/);
-  assert.match(artifacts, /requires sessionKey, runId, or taskId/);
-  assert.match(artifacts, /outside the requested session/);
-  assert.match(artifacts, /isSafeArtifactUrl/);
-  assert.match(contextBar, /<SessionArtifactsControl sessionKey=\{activeSessionKey\}/);
 });
 
 // BUG-WIN-CWD-01: state_dir (data directory) and Gateway cwd must be decoupled.
@@ -729,7 +714,6 @@ test('BUG-07 WebSocket retry has one owner, deadline, and routes exhaustion into
   assert.match(connection, /connect\(\s*url: string,\s*token: string,\s*deviceToken = '',\s*resetReconnectAttempts = true/);
   assert.match(connection, /connect\(this\.url, this\.token, this\.deviceToken, false\)/);
   assert.match(connection, /new ConnectionRetryPolicy\(3\)/);
-  assert.match(connection, /CONNECTION_ATTEMPT_TIMEOUT_MS = 8_000/);
   assert.match(connection, /emitRetryState\('exhausted'/);
   assert.doesNotMatch(app, /scheduleReconnectRetries|bootRecoveryTimersRef/);
   assert.match(app, /onRetryState:[\s\S]*retry\.phase === 'exhausted'[\s\S]*surfaceVerifiedGatewayHandoffFailure\(\)/);

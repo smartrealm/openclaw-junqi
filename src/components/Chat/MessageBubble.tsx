@@ -8,8 +8,8 @@ import {
   Kanban, Wrench, Brain, CheckCircle2, Info, GitFork, History,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
+import { useOpenClawAgentIdentity } from '@/hooks/useOpenClawAgentIdentity';
 import { getDirection } from '@/i18n';
 import type { MessageBlock, Artifact, MetaItem } from '@/types/RenderBlock';
 import type { ResponseGroupMessagePosition } from '@/processing/buildResponseGroups';
@@ -23,6 +23,7 @@ import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { createChatMessagePreview, type ChatMessagePreview } from './chatMessagePreview';
 import { ChatMarkdownRenderer, ChatMediaFallback } from './ChatMarkdownRenderer';
 import { ChatIconButton } from './ChatIconButton';
+import { resolveAssistantPresentation } from './assistantPresentation';
 
 const ChatImage = lazy(() => import('./ChatImage').then((m) => ({ default: m.ChatImage })));
 const AudioPlayer = lazy(() => import('./AudioPlayer').then((m) => ({ default: m.AudioPlayer })));
@@ -191,34 +192,25 @@ interface MessageBubbleProps {
   onErrorAction?: (action: string) => void;
   deliveryStatus?: 'pending' | 'sent' | 'queued' | 'failed' | 'cancelled';
   deliveryError?: string;
-  outboundAttachments?: Array<{ fileName: string; mimeType: string }>;
+  outboundAttachments?: Array<{ fileName?: string; mimeType: string }>;
   historyTruncated?: boolean;
   historyTruncationReason?: string;
   onLoadFullMessage?: () => Promise<void>;
   onOpenPreview?: (preview: ChatMessagePreview) => void;
-  transcriptActions?: {
-    fork?: () => void;
-    rewind?: () => void;
-  };
+  onRewind?: () => void;
+  onFork?: () => void;
+  messageCutDisabled?: boolean;
   collaborationAction?: {
     state: 'confirming' | 'ready' | 'active';
     onClick?: () => void;
   };
 }
 
-function agentIdFromSessionKey(sessionKey?: string | null): string {
-  if (!sessionKey) return 'main';
-  const parts = sessionKey.split(':');
-  return parts[0] === 'agent' && parts[1] ? parts[1] : 'main';
-}
-
 function useAgentPresentation(sessionKey?: string | null) {
   const { t } = useTranslation();
-  const agents = useGatewayDataStore((state) => state.agents);
-  const agentId = agentIdFromSessionKey(sessionKey);
-  const name = agents.find((agent) => agent.id === agentId)?.name
-    || (agentId === 'main' ? t('agents.mainAgent') : agentId);
-  return { name, letter: name.charAt(0) || 'M' };
+  const connected = useChatStore((state) => state.connected);
+  const identity = useOpenClawAgentIdentity(sessionKey, connected);
+  return resolveAssistantPresentation(identity.identity, t('chat.assistant'));
 }
 
 export function AssistantResponseAvatar({
@@ -238,7 +230,9 @@ export function AssistantResponseAvatar({
       style={{ backgroundImage: 'linear-gradient(135deg, rgb(var(--aegis-primary)), rgb(var(--aegis-primary-deep)))' }}
       aria-label={agent.name}
     >
-      {agent.name === 'Claude Code' ? (
+      {agent.marker ? (
+        <span className="max-w-5 overflow-hidden text-ellipsis whitespace-nowrap text-sm leading-none" aria-hidden>{agent.marker}</span>
+      ) : agent.name === 'Claude Code' ? (
         <Sparkles size={14} className="text-white" />
       ) : agent.name === 'Codex' ? (
         <Bot size={14} className="text-white" />
@@ -439,8 +433,8 @@ function ActionBtn({ icon, label, onClick, disabled, danger = false }: {
 export const MessageBubble = memo(function MessageBubble({
   block, sessionKey, onEdit, onDelete, onRetry, onErrorAction, collaborationAction,
   deliveryStatus, deliveryError, outboundAttachments,
-  historyTruncated, historyTruncationReason, onLoadFullMessage, onOpenPreview,
-  transcriptActions,
+  historyTruncated, historyTruncationReason, onLoadFullMessage, onOpenPreview, onRewind, onFork,
+  messageCutDisabled,
   groupPosition = 'standalone',
 }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
@@ -509,7 +503,9 @@ function stripInlineCodeTicks(md: string): string {
       onPreview={() => {
         if (messagePreview) onOpenPreview?.(messagePreview);
       }}
-      transcriptActions={isUser ? transcriptActions : undefined}
+      onRewind={isUser ? onRewind : undefined}
+      onFork={isUser ? onFork : undefined}
+      messageCutDisabled={messageCutDisabled}
     />
   ) : null;
   const hasBubbleActions = !isUser && Boolean(messageActions);
@@ -626,12 +622,12 @@ function stripInlineCodeTicks(md: string): string {
                 .filter((attachment) => !attachment.mimeType.startsWith('image/'))
                 .map((attachment) => (
                   <span
-                    key={`${attachment.fileName}:${attachment.mimeType}`}
+                    key={`${attachment.fileName ?? attachment.mimeType}:${attachment.mimeType}`}
                     className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] px-2 py-1 text-[10.5px] text-aegis-text-muted"
-                    title={attachment.fileName}
+                    title={attachment.fileName ?? attachment.mimeType}
                   >
                     <FileText size={11} className="shrink-0 text-aegis-primary" />
-                    <span className="truncate">{attachment.fileName}</span>
+                    <span className="truncate">{attachment.fileName ?? attachment.mimeType}</span>
                   </span>
                 ))}
             </div>

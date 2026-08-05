@@ -34,7 +34,7 @@ export function ComposerAttachmentTray({ files, onPreview, onRemove }: ComposerA
         >
           {file.isImage && file.preview ? (
             <>
-              <img src={file.preview} alt={file.fileName} className="size-full object-cover" />
+              <img src={file.preview} alt={file.fileName ?? file.mimeType} className="size-full object-cover" />
               <button
                 type="button"
                 onClick={() => onPreview(file.preview as string)}
@@ -46,7 +46,7 @@ export function ComposerAttachmentTray({ files, onPreview, onRemove }: ComposerA
           ) : (
             <div className="flex size-full flex-col items-center justify-center p-1">
               <span className="text-xl">{attachmentIcon(file.mimeType)}</span>
-              <span className="mt-0.5 w-full truncate text-center text-[8px] text-aegis-text-dim">{file.fileName}</span>
+              <span className="mt-0.5 w-full truncate text-center text-[8px] text-aegis-text-dim">{file.fileName ?? file.mimeType}</span>
             </div>
           )}
           <button

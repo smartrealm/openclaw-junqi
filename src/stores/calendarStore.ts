@@ -16,11 +16,6 @@ import { debugError } from '@/utils/debugLog';
 const EVENTS_KEY = 'aegis-calendar-events';
 const SETTINGS_KEY = 'aegis-calendar-settings';
 
-interface CronCreateResponse extends Record<string, unknown> {
-  id?: string;
-  jobId?: string;
-}
-
 function persistEvents(events: CalendarEvent[]): void {
   try { localStorage.setItem(EVENTS_KEY, JSON.stringify(events)); } catch { /* quota exceeded */ }
 }
@@ -57,7 +52,7 @@ async function createCronReminder(event: CalendarEvent): Promise<string | null> 
   const isRecurring = !!event.recurrence;
 
   try {
-    const result = await gateway.call<CronCreateResponse>('cron.add', buildCronAgentTurnAddParams({
+    const result = await gateway.addCronAgentTurn(buildCronAgentTurnAddParams({
       name: `Calendar: ${event.title}`,
       schedule: isRecurring
         ? { kind: 'cron', expr: buildCronExpr(event), tz: getLocalTimezone() }
@@ -66,18 +61,28 @@ async function createCronReminder(event: CalendarEvent): Promise<string | null> 
       deleteAfterRun: !isRecurring,
       enabled: true,
     }));
-    return result?.id || result?.jobId || null;
+    return result.id;
   } catch (err) {
     debugError('app', '[Calendar] Failed to create cron reminder:', err);
     return null;
   }
 }
 
-async function removeCronReminder(jobId: string): Promise<void> {
+type CronReminderRemoval =
+  | { readonly removed: true }
+  | { readonly removed: false; readonly error: string };
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function removeCronReminder(jobId: string): Promise<CronReminderRemoval> {
   try {
-    await gateway.call('cron.remove', { jobId });
+    await gateway.removeCronJob(jobId);
+    return { removed: true };
   } catch (err) {
     debugError('app', '[Calendar] Failed to remove cron reminder:', err);
+    return { removed: false, error: errorMessage(err) };
   }
 }
 
@@ -204,11 +209,12 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
   addEvent: async (data) => {
     const now = new Date().toISOString();
+    const reminderCanBeScheduled = data.reminderMinutes > 0 && !data.allDay && Boolean(data.startTime);
     const event: CalendarEvent = {
       ...data,
       id: generateEventId(),
       source: 'local',
-      reminderStatus: data.reminderMinutes > 0 ? 'pending' : 'none',
+      reminderStatus: reminderCanBeScheduled ? 'pending' : 'none',
       reminderCronJobId: undefined,
       createdAt: now,
       updatedAt: now,
@@ -219,7 +225,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     persistEvents(get().events);
 
     // 2. Create cron reminder (if possible)
-    if (event.reminderMinutes > 0) {
+    if (reminderCanBeScheduled) {
       const cronId = await createCronReminder(event);
       if (cronId) {
         set((s) => ({
@@ -242,22 +248,44 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
     const updated = { ...old, ...updates, updatedAt: new Date().toISOString() };
 
-    set((s) => ({ events: s.events.map((e) => (e.id === id ? updated : e)) }));
-    persistEvents(get().events);
-
     // Update cron if reminder changed
     const reminderChanged =
       updates.reminderMinutes !== undefined ||
       updates.startTime !== undefined ||
       updates.date !== undefined ||
-      updates.title !== undefined;
+      updates.title !== undefined ||
+      updates.endTime !== undefined ||
+      updates.location !== undefined ||
+      updates.notes !== undefined ||
+      updates.allDay !== undefined ||
+      updates.recurrence !== undefined ||
+      updates.deliveryChannel !== undefined;
 
     if (reminderChanged && old.reminderCronJobId) {
-      await removeCronReminder(old.reminderCronJobId);
+      const removal = await removeCronReminder(old.reminderCronJobId);
+      if (!removal.removed) {
+        set({ error: removal.error });
+        return;
+      }
     }
 
-    if (reminderChanged && updated.reminderMinutes > 0) {
-      const cronId = await createCronReminder(updated);
+    const replacementPending = reminderChanged
+      && updated.reminderMinutes > 0
+      && !updated.allDay
+      && Boolean(updated.startTime);
+    const localUpdated: CalendarEvent = reminderChanged
+      ? {
+        ...updated,
+        reminderCronJobId: undefined,
+        reminderStatus: replacementPending ? 'pending' : 'none',
+      }
+      : updated;
+
+    set((s) => ({ events: s.events.map((e) => (e.id === id ? localUpdated : e)), error: null }));
+    persistEvents(get().events);
+
+    if (replacementPending) {
+      const cronId = await createCronReminder(localUpdated);
       set((s) => ({
         events: s.events.map((e) =>
           e.id === id
@@ -275,10 +303,14 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
     // Remove cron job if exists
     if (event.reminderCronJobId) {
-      await removeCronReminder(event.reminderCronJobId);
+      const removal = await removeCronReminder(event.reminderCronJobId);
+      if (!removal.removed) {
+        set({ error: removal.error });
+        return;
+      }
     }
 
-    set((s) => ({ events: s.events.filter((e) => e.id !== id) }));
+    set((s) => ({ events: s.events.filter((e) => e.id !== id), error: null }));
     persistEvents(get().events);
   },
 

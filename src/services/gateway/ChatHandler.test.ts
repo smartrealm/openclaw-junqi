@@ -23,6 +23,7 @@ function resetChatStore() {
     typingBySession: {},
     compactionStatusBySession: {},
     typingStartedAtBySession: {},
+    chatSendTimingBySession: {},
   });
 }
 
@@ -127,39 +128,90 @@ test('chat.final replaces a longer streamed draft with OpenClaw canonical text',
   assert.equal(streamEnds[0].meta?.runId, runId);
 });
 
-test('official session.operation compaction events inject one divider per session', async () => {
+test('session.operation forwards only the official compact operation projection', async () => {
   installWindowMock();
   const { ChatHandler, useChatStore } = await loadDeps();
   resetChatStore();
+
+  const operations: Array<{
+    operationId: string;
+    operation: string;
+    phase: string;
+    sessionKey: string;
+    ts: number;
+    completed?: boolean;
+  }> = [];
   const handler = new ChatHandler({
     callbacks: {
       onStreamChunk: () => {},
       onStreamEnd: () => {},
+      onSessionOperation: (operation: {
+        operationId: string;
+        operation: string;
+        phase: string;
+        sessionKey: string;
+        ts: number;
+        completed?: boolean;
+      }) => operations.push(operation),
     },
   } as any);
-  const sessionKey = 'agent:main:operation-compaction';
-  const start = {
+  const sessionKey = 'agent:main:operation-forwarded';
+
+  handler.handleEvent({ event: 'session.operation', payload: {
+    operationId: 'operation-forwarded',
     operation: 'compact',
     phase: 'start',
     sessionKey,
-    ts: Date.now(),
-  };
-  handler.handleEvent({ event: 'session.operation', payload: { ...start, operationId: 'operation-1' } });
+    ts: 9,
+  } });
   assert.equal(useChatStore.getState().compactionStatusBySession[sessionKey]?.phase, 'active');
 
-  const end = {
+  handler.handleEvent({ event: 'session.operation', payload: {
+    operationId: 'operation-forwarded',
     operation: 'compact',
     phase: 'end',
     sessionKey,
-    ts: Date.now(),
+    ts: 10,
     completed: true,
-  };
-  handler.handleEvent({ event: 'session.operation', payload: { ...end, operationId: 'operation-1' } });
-  handler.handleEvent({ event: 'session.operation', payload: { ...end, operationId: 'operation-1' } });
+  } });
+  handler.handleEvent({ event: 'session.operation', payload: {
+    operationId: 'operation-invalid',
+    operation: 'reset',
+    phase: 'end',
+    sessionKey,
+    ts: 11,
+  } });
+
+  handler.handleEvent({ event: 'session.operation', payload: {
+    operationId: 'operation-forwarded',
+    operation: 'compact',
+    phase: 'end',
+    sessionKey,
+    ts: 10,
+    completed: true,
+  } });
   handler.handleEvent({
     event: 'agent',
     payload: { sessionKey, runId: 'run-compaction', seq: 1, stream: 'compaction', data: { phase: 'end' } },
   });
+
+  assert.deepEqual(operations, [
+    {
+      operationId: 'operation-forwarded',
+      operation: 'compact',
+      phase: 'start',
+      sessionKey,
+      ts: 9,
+    },
+    {
+      operationId: 'operation-forwarded',
+      operation: 'compact',
+      phase: 'end',
+      sessionKey,
+      ts: 10,
+      completed: true,
+    },
+  ]);
 
   assert.equal(
     useChatStore.getState().messagesPerSession[sessionKey]
@@ -280,7 +332,7 @@ test('agent replace=true supersedes a non-prefix draft in the same response', as
   assert.equal(streamEnds[0].content, 'Corrected answer.');
 });
 
-test('chat.abort settles only run ids explicitly confirmed by OpenClaw', async () => {
+test('sessions.abort settles only the exact run explicitly confirmed by OpenClaw', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();
   resetChatStore();
@@ -301,14 +353,14 @@ test('chat.abort settles only run ids explicitly confirmed by OpenClaw', async (
     sessionKey, runId, state: 'delta', message: { content: 'Partial answer.' },
   } });
 
-  assert.equal(handler.reconcileAbortAcknowledgement(
+  assert.equal(handler.reconcileSessionAbortAcknowledgement(
     sessionKey,
-    { ok: true, aborted: false, runIds: [] },
+    { ok: true, status: 'no-active-run', abortedRunId: null },
   ), false);
   assert.equal(streamEnds.length, 0);
-  assert.equal(handler.reconcileAbortAcknowledgement(
+  assert.equal(handler.reconcileSessionAbortAcknowledgement(
     sessionKey,
-    { ok: true, aborted: true, runIds: [runId] },
+    { ok: true, status: 'aborted', abortedRunId: runId },
   ), true);
   assert.equal(streamEnds.length, 1);
   assert.equal(streamEnds[0].meta?.state, 'aborted');
@@ -449,7 +501,43 @@ test('history confirms an uncertain send only from its exact idempotency identit
   assert.equal(useChatStore.getState().getCachedMessages(sessionKey)[0]?.status, 'sent');
 });
 
-test('an exact abort acknowledgement settles a send before chat.send acknowledgement', async () => {
+test('an exact terminal agent.wait result settles only the current uncertain send', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+  const { useChatStore } = (globalThis as any).__chatDeps as { useChatStore: any };
+  const reconciliations: string[] = [];
+  const sessionKey = 'agent:main:uncertain-agent-wait';
+  const runId = 'run-uncertain-agent-wait';
+  useChatStore.getState().addMessage({
+    id: runId,
+    clientMessageId: runId,
+    role: 'user',
+    content: 'Persist me.',
+    timestamp: new Date().toISOString(),
+    status: 'pending',
+  }, sessionKey);
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onSessionRunReconciliation: (resolution: { state: string }) => reconciliations.push(resolution.state),
+      onSessionRunReconciliationNeeded: () => {},
+    },
+  } as any);
+  handler.beginPendingSend(sessionKey, runId);
+  handler.markPendingSendUncertain(sessionKey, runId);
+  const observation = handler.captureSessionRunObservation(sessionKey);
+
+  assert.equal(handler.reconcilePendingRunWaitTerminal(sessionKey, runId, observation), true);
+  assert.equal(useChatStore.getState().getCachedMessages(sessionKey)[0]?.status, 'sent');
+  assert.deepEqual(reconciliations, ['settled']);
+
+  handler.beginPendingSend(sessionKey, 'run-newer');
+  assert.equal(handler.reconcilePendingRunWaitTerminal(sessionKey, runId, observation), false);
+});
+
+test('an exact sessions.abort acknowledgement settles a send before chat.send acknowledgement', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();
   resetChatStore();
@@ -475,9 +563,9 @@ test('an exact abort acknowledgement settles a send before chat.send acknowledge
   } as any);
   handler.beginPendingSend(sessionKey, runId);
 
-  assert.equal(handler.reconcileAbortAcknowledgement(
+  assert.equal(handler.reconcileSessionAbortAcknowledgement(
     sessionKey,
-    { ok: true, aborted: true, runIds: [runId] },
+    { ok: true, status: 'aborted', abortedRunId: runId },
   ), true);
   assert.equal(streamEnds[0]?.meta?.state, 'aborted');
   assert.equal(useChatStore.getState().getCachedMessages(sessionKey)[0]?.status, 'sent');
@@ -857,6 +945,33 @@ test('session.tool renders the official late-subscriber tool lifecycle exactly o
   assert.equal(toolMessages[0]?.toolStatus, 'done');
   assert.equal(useChatStore.getState().typingBySession[sessionKey], true);
   assert.deepEqual(reconciliationRequests, []);
+});
+
+test('a delayed tool update cannot reopen a finalized tool card', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const handler = new ChatHandler({
+    callbacks: { onStreamChunk: () => {}, onStreamEnd: () => {} },
+  } as any);
+  const sessionKey = 'agent:main:tool-terminal-fence';
+  const runId = 'run-tool-terminal-fence';
+  const toolCallId = 'tool-terminal-fence';
+
+  handler.handleToolStream({ sessionKey, runId, ts: 1_000, data: {
+    phase: 'result', name: 'exec', toolCallId, result: 'complete output',
+  } });
+  handler.handleToolStream({ sessionKey, runId, ts: 1_100, data: {
+    phase: 'update', name: 'exec', toolCallId, partialResult: 'late partial output',
+  } });
+
+  const { useChatStore } = (globalThis as any).__chatDeps as { useChatStore: any };
+  const tool = (useChatStore.getState().messagesPerSession[sessionKey] ?? [])
+    .find((message: any) => message.id === `tool-live-${runId}-${toolCallId}`);
+  assert.equal(tool?.toolStatus, 'done');
+  assert.equal(tool?.toolOutput, 'complete output');
+  assert.equal(tool?.responseState, 'final');
 });
 
 test('agent item keeps tool identity, input, failed output, and source timing through the live projection', async () => {
@@ -1800,6 +1915,47 @@ test('a cached terminal chat.send acknowledgement settles without waiting for re
   handler.reconcileSendAcknowledgement(sessionKey, runId, { runId, status: 'ok' });
 
   assert.deepEqual(reconciliations, [{ sessionKey, state: 'settled', activeRunIds: [] }]);
+});
+
+test('chat.send_timing decorates only the exact active OpenClaw run', async () => {
+  installWindowMock();
+  const { ChatHandler, useChatStore } = await loadDeps();
+  resetChatStore();
+
+  const handler = new ChatHandler({ callbacks: { onStreamChunk: () => {}, onStreamEnd: () => {} } } as any);
+  const sessionKey = 'agent:main:timing';
+  const runId = 'run-timing';
+  handler.reconcileSendAcknowledgement(sessionKey, runId, { runId, status: 'started' });
+
+  handler.handleEvent({ event: 'chat.send_timing', payload: {
+    sessionKey,
+    runId,
+    phase: 'agent-run-started',
+    ackToPhaseMs: 12.25,
+    receivedToPhaseMs: 18.5,
+    dispatchStartedToPhaseMs: 8,
+  } });
+
+  assert.deepEqual(useChatStore.getState().chatSendTimingBySession[sessionKey], {
+    sessionKey,
+    runId,
+    phase: 'agent-run-started',
+    ackToPhaseMs: 12.25,
+    receivedToPhaseMs: 18.5,
+    dispatchStartedToPhaseMs: 8,
+  });
+
+  handler.handleEvent({ event: 'chat.send_timing', payload: {
+    sessionKey,
+    runId: 'run-stale',
+    phase: 'model-selected',
+    ackToPhaseMs: 20,
+    receivedToPhaseMs: 25,
+  } });
+
+  assert.equal(useChatStore.getState().chatSendTimingBySession[sessionKey]?.runId, runId);
+  useChatStore.getState().settleSessionRunUi(sessionKey);
+  assert.equal(useChatStore.getState().chatSendTimingBySession[sessionKey], undefined);
 });
 
 test('a delayed send acknowledgement cannot settle a newer observed run', async () => {

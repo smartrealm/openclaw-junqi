@@ -12,14 +12,12 @@ import { debugWarn } from "@/utils/debugLog";
 // xterm 6 的自绘滚动条宽度由 overviewRuler.width 复用控制；FitAddon 会用它
 // 计算可用列数，因此必须和 App.css 中的滚动条槽宽保持一致。
 
-// ── Theme ────────────────────────────────────────────────────────────────────
+// ── 主题 ────────────────────────────────────────────────────────────────────
 //
-// ANSI palette is now read from the --ansi-* CSS custom properties defined in
-// terminal.css. This ensures the 16-color table stays aligned with aegis tokens
-// across theme changes without duplicating hex values in JS.
+// ANSI 色板从 terminal.css 定义的 --ansi-* CSS 自定义属性读取，确保十六色表随
+// aegis 主题令牌切换，同时避免在 JavaScript 中重复维护十六进制颜色。
 //
-// Fallback values match the dark aegis-native palette; LIGHT/MIDNIGHT/EYECARE
-// variants read the same ANSI aliases (terminals are always dark).
+// 回退值与原生深色 aegis 色板一致；各主题变体都从同一组 ANSI 别名读取。
 
 function readAnsiColor(name: string, fallback: string): string {
   try {
@@ -55,17 +53,13 @@ export function buildDarkTerminalTheme() {
 }
 
 export function themeFor(_variant: ThemeVariant) {
-  // The active document theme is the single source of truth. A fresh object
-  // is required because xterm snapshots its palette when options are set.
+  // 当前文档主题是唯一来源；xterm 设置选项时会固化色板，因此每次返回新对象。
   return buildDarkTerminalTheme();
 }
 
 export function minimumContrastRatioFor(variant: ThemeVariant): number {
-  // Dark-family variants (dark / midnight) ship a hand-tuned palette already
-  // readable on their backgrounds, so we skip xterm's auto contrast lift to
-  // preserve the original ANSI hues. Light-family variants (light / eyecare)
-  // pair light surfaces with high-saturation ANSI defaults that fall below
-  // WCAG AA — there we let xterm bump foregrounds until they hit 4.5:1.
+  // 深色主题使用已调校的可读色板，跳过 xterm 自动提亮以保留 ANSI 色相；
+  // 亮色主题让 xterm 将前景对比度提升到 WCAG AA 的 4.5:1。
   return variant === "dark" || variant === "midnight" ? 1 : 4.5;
 }
 
@@ -77,9 +71,7 @@ function themeOnPanel(variant: ThemeVariant, container: HTMLElement) {
   const theme = themeFor(variant);
   const styles = window.getComputedStyle(container);
   const color = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
-  // Read the mounted pane rather than :root. Kooky makes the terminal theme
-  // the authority for the surrounding chrome; JunQi's terminal workbench
-  // follows the same rule without recoloring unrelated product routes.
+  // 从已挂载面板而不是 :root 读取，避免终端工作台改色影响其他产品页面。
   return {
     ...theme,
     background: color('--terminal-bg', theme.background),
@@ -159,9 +151,8 @@ function setMacWebKitTextareaAttrs(term: Terminal): void {
 // - 曾用 textarea.blur()。2026-05-27 用户 A/B 实测拼音卡 / 英文不卡，印证 IME
 //   路径是真因；blur 后 textarea 仍 focusable（可能被 RAF / 内部回调夺回焦点），
 //   改为 disabled 是硬性禁用，更彻底。
-// - 曾叠加 user-select:none 抑制 + window.getSelection().removeAllRanges() +
-//   TERMINAL_SELECTION_ACTIVE_EVENT 广播给 RunningView/useUsageSnapshot 暂停
-//   IPC 轮询。2026-05-27 disabled 升级实测拼音不卡，旁支防御全部移除。
+// - 曾叠加 user-select:none 抑制和 window.getSelection().removeAllRanges()；
+//   2026-05-27 disabled 升级实测拼音不卡，旁支防御全部移除。
 export function attachMacWebKitTerminalGuard({
   term,
   container,

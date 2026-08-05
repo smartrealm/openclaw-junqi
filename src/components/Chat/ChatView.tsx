@@ -14,11 +14,21 @@ import { useAppStore } from '@/stores/app-store';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { gateway } from '@/services/gateway';
+import {
+  isOpenClawActiveLeafChangedError,
+  parseOpenClawActiveLeafEntryId,
+} from '@/services/gateway/activeLeafEntryId';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
-import { showConfirm } from '@/components/shared/AlertDialog';
+import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { chatSendCoordinator } from '@/services/chat/sendTransaction';
+import { restoreOpenClawEditorImages } from '@/services/chat/attachments';
+import { sessionMutationGate } from '@/services/chat/sessionMutationGate';
+import {
+  OpenClawSessionTargetError,
+  requireOpenClawSessionTarget,
+} from '@/services/gateway/OpenClawSessionTarget';
 import { resolveHistoryPageMetadata } from '@/services/chat/historyPagination';
 import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
@@ -50,6 +60,7 @@ import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import { isSessionDeleted } from '@/utils/sessionLifecycle';
 import { resetSessionEverywhere } from '@/utils/sessionReset';
 import { startRecoverableTask } from '@/utils/recoverableTask';
+import { scheduleRecoverableSessionHistoryRefresh } from '@/services/chat/recoverableHistoryRefresh';
 import {
   buildCollaborationChatTimeline,
   type ChatTimelineItem,
@@ -73,7 +84,10 @@ import { findTraceSourceMessage, projectChatResponseTrace } from './chatResponse
 import { ChatTraceSourceMessagePanel } from './ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from './useChatSidePanel';
 import { getToolLabelKey } from './toolCallPresentation';
-import { useGatewaySessionCapabilities } from '@/hooks/useGatewaySessionCapabilities';
+import { TaskExecutionRecoveryBanner } from './TaskExecutionRecoveryBanner';
+import { SessionCompanionPanel } from './SessionCompanionPanel';
+import { subscribeSessionCompanionOpen } from './sessionCompanionUi';
+import { useGatewaySessionHistoryCapabilities } from '@/hooks/useGatewaySessionHistoryCapabilities';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -242,6 +256,7 @@ function ChatViewContent() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const collaboration = useCollaborationChat();
+  const sessionHistoryCapabilities = useGatewaySessionHistoryCapabilities();
 
   // ── Store selectors (split to minimize re-renders) ──
   const renderBlocks = useChatStore((s) => s.renderBlocks);
@@ -256,8 +271,14 @@ function ChatViewContent() {
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
-  const sessionCapabilities = useGatewaySessionCapabilities();
   const sidePanel = useChatSidePanel(activeSessionKey);
+  const [sessionCompanion, setSessionCompanion] = useState<{ open: boolean; question?: string }>({ open: false });
+  useEffect(() => subscribeSessionCompanionOpen((question) => setSessionCompanion({ open: true, ...(question ? { question } : {}) })), []);
+  useEffect(() => setSessionCompanion({ open: false }), [activeSessionKey]);
+  const loadTraceAuditEvents = useCallback(
+    (runId: string) => gateway.listAuditEvents({ runId, limit: 500 }),
+    [],
+  );
   const isLoadingHistory = useChatStore(
     (s) => Boolean(s.loadingHistoryBySession[activeSessionKey]),
   );
@@ -266,6 +287,9 @@ function ChatViewContent() {
   );
   const activeAgentId = useChatStore(
     (s) => s.sessions.find((session) => session.key === activeSessionKey)?.agentId,
+  );
+  const activeSessionHasRun = useChatStore(
+    (s) => s.sessions.find((session) => session.key === activeSessionKey)?.hasActiveRun === true,
   );
   const agents = useGatewayDataStore((s) => s.agents);
   const messageQueue = useChatStore((s) => s.messageQueue);
@@ -286,6 +310,10 @@ function ChatViewContent() {
   const setHistoryLoader = useChatStore((s) => s.setHistoryLoader);
   const setQuickReplies = useChatStore((s) => s.setQuickReplies);
   const setSessionIdentity = useChatStore((s) => s.setSessionIdentity);
+  const setSessionActiveLeafEntryId = useChatStore((s) => s.setSessionActiveLeafEntryId);
+  const clearSessionMessages = useChatStore((s) => s.clearSessionMessages);
+  const setDraft = useChatStore((s) => s.setDraft);
+  const setPreparedAttachments = useChatStore((s) => s.setPreparedAttachments);
 
   const { timelineItems, anchoredRunIds } = useMemo(
     () => buildCollaborationChatTimeline(responseGroups, messages, collaboration.runs),
@@ -563,6 +591,8 @@ function ChatViewContent() {
             ? result.sessionInfo.agentId
             : undefined;
           if (historySessionId) setSessionIdentity(sessionKey, historySessionId, historyAgentId);
+          const activeLeafEntryId = parseOpenClawActiveLeafEntryId(result?.sessionInfo?.activeLeafEntryId);
+          setSessionActiveLeafEntryId(sessionKey, activeLeafEntryId);
           const { hasMore, nextOffset } = resolveHistoryPageMetadata(result, 0);
           const mappedMessages = normalizeHistoryMessages(rawMessages);
           const canonicalMessages = dedupeHistoryMessages(mappedMessages);
@@ -724,6 +754,7 @@ function ChatViewContent() {
       setIsLoadingHistory,
       setMessages,
       setSessionIdentity,
+      setSessionActiveLeafEntryId,
       t,
     ],
   );
@@ -847,13 +878,21 @@ function ChatViewContent() {
     return () => window.removeEventListener('aegis:refresh', handler);
   }, [handleRefresh]);
 
-  // Quick actions from Dashboard / CommandPalette → gateway chat
+  const refreshActiveLeaf = useCallback((sessionKey: string) => {
+    scheduleRecoverableSessionHistoryRefresh(
+      sessionKey,
+      loadHistory,
+      reportBackgroundHistoryFailure,
+    );
+  }, [loadHistory, reportBackgroundHistoryFailure]);
+
+  // 仪表盘和命令面板的快捷指令统一发送到当前活动会话。
   const handleQuickAction = useCallback(async (e: Event) => {
     const detail = (e as CustomEvent<{ message: string; autoSend?: boolean }>).detail;
     if (!detail?.message) return;
-    const key = activeSessionKey || 'agent:main:main';
-    const clientMessageId = createClientMessageId();
     try {
+      const key = requireOpenClawSessionTarget(activeSessionKey);
+      const clientMessageId = createClientMessageId();
       voiceRuntime.interruptGlobally(key);
       await chatSendCoordinator.send({
         sessionKey: key,
@@ -862,9 +901,14 @@ function ChatViewContent() {
         sessionId: activeSessionId,
       });
     } catch (error) {
+      if (error instanceof OpenClawSessionTargetError) {
+        showAlert(t('chat.sendError'), t('chat.sessionTargetRequired'), 'error');
+        return;
+      }
+      if (isOpenClawActiveLeafChangedError(error)) refreshActiveLeaf(activeSessionKey);
       debugError('app', '[Quick action] Send error:', error);
     }
-  }, [activeSessionKey, activeSessionId]);
+  }, [activeSessionKey, activeSessionId, refreshActiveLeaf, t]);
   useEffect(() => {
     window.addEventListener('aegis:quick-action', handleQuickAction as EventListener);
     return () => window.removeEventListener('aegis:quick-action', handleQuickAction as EventListener);
@@ -903,9 +947,10 @@ function ChatViewContent() {
     try {
       await retryMessageDelivery(sourceMessage);
     } catch (error) {
+      if (isOpenClawActiveLeafChangedError(error)) refreshActiveLeaf(activeSessionKey);
       debugError('app', '[Retry] Send error:', error);
     }
-  }, [retryMessageDelivery]);
+  }, [activeSessionKey, refreshActiveLeaf, retryMessageDelivery]);
 
   const handleEditFailedMessage = useCallback(async (
     sourceMessage: ChatMessage,
@@ -916,8 +961,13 @@ function ChatViewContent() {
       content: edited.content,
       retryPayload: edited.retryPayload,
     });
-    await retryMessageDelivery(edited);
-  }, [activeSessionKey, retryMessageDelivery]);
+    try {
+      await retryMessageDelivery(edited);
+    } catch (error) {
+      if (isOpenClawActiveLeafChangedError(error)) refreshActiveLeaf(activeSessionKey);
+      throw error;
+    }
+  }, [activeSessionKey, refreshActiveLeaf, retryMessageDelivery]);
 
   const handleDeleteLocalMessage = useCallback((sourceMessage: ChatMessage) => {
     showConfirm(
@@ -934,42 +984,6 @@ function ChatViewContent() {
     );
   }, [activeSessionKey, t]);
 
-  const handleForkAtMessage = useCallback((sourceMessage: ChatMessage) => {
-    if (!sourceMessage.nativeMessageId) return;
-    showConfirm(
-      t('chat.sessionTranscript.forkConfirmTitle'),
-      t('chat.sessionTranscript.forkConfirmMessage'),
-      async () => {
-        await gateway.forkSessionAtMessage(
-          activeSessionKey,
-          sourceMessage.nativeMessageId!,
-          activeAgentId || undefined,
-        );
-        window.dispatchEvent(new CustomEvent('aegis:sessions-changed', {
-          detail: { reason: 'fork', sessionKey: activeSessionKey },
-        }));
-      },
-    );
-  }, [activeAgentId, activeSessionKey, t]);
-
-  const handleRewindToMessage = useCallback((sourceMessage: ChatMessage) => {
-    if (!sourceMessage.nativeMessageId) return;
-    showConfirm(
-      t('chat.sessionTranscript.rewindConfirmTitle'),
-      t('chat.sessionTranscript.rewindConfirmMessage'),
-      async () => {
-        await gateway.rewindSessionToMessage(
-          activeSessionKey,
-          sourceMessage.nativeMessageId!,
-          activeAgentId || undefined,
-        );
-        window.dispatchEvent(new CustomEvent('aegis:session-reset', {
-          detail: { sessionKey: activeSessionKey },
-        }));
-      },
-    );
-  }, [activeAgentId, activeSessionKey, t]);
-
   // ── Error Action Handler — called by MessageBubble when user clicks an error action button ──
   const handleErrorAction = useCallback(async (action: string) => {
     if (action === 'reset-session') {
@@ -983,6 +997,62 @@ function ChatViewContent() {
     }
   }, [activeSessionKey, t]);
 
+  const handleRewindMessage = useCallback((sourceMessage: ChatMessage) => {
+    const entryId = sourceMessage.nativeMessageId;
+    if (!entryId) return;
+    const sessionKey = activeSessionKey;
+    showConfirm(
+      t('chat.messageCut.rewindConfirmTitle'),
+      t('chat.messageCut.rewindConfirmMessage'),
+      async () => {
+        try {
+          await sessionMutationGate.run(sessionKey, async () => {
+            const result = await gateway.rewindSessionAtMessage(sessionKey, entryId, activeAgentId);
+            sessionTranscriptFence.invalidate(sessionKey);
+            clearSessionMessages(sessionKey);
+            setDraft(sessionKey, result.editorText ?? '');
+            setPreparedAttachments(sessionKey, restoreOpenClawEditorImages(result.editorAttachments));
+            await loadHistory(sessionKey, { force: true });
+          });
+        } catch (cause) {
+          const detail = cause instanceof Error && cause.message ? cause.message : String(cause);
+          showAlert(t('chat.messageCut.rewindFailedTitle'), detail, 'error');
+        }
+      },
+    );
+  }, [activeAgentId, activeSessionKey, clearSessionMessages, loadHistory, setDraft, setPreparedAttachments, t]);
+
+  const handleForkMessage = useCallback((sourceMessage: ChatMessage) => {
+    const entryId = sourceMessage.nativeMessageId;
+    if (!entryId) return;
+    const sourceSessionKey = activeSessionKey;
+    showConfirm(
+      t('chat.messageCut.forkConfirmTitle'),
+      t('chat.messageCut.forkConfirmMessage'),
+      async () => {
+        try {
+          const result = await sessionMutationGate.run(
+            sourceSessionKey,
+            () => gateway.forkSessionAtMessage(sourceSessionKey, entryId, activeAgentId),
+          );
+          if (useChatStore.getState().activeSessionKey !== sourceSessionKey) return;
+          const state = useChatStore.getState();
+          state.addNativeSession({
+            key: result.sessionKey,
+            label: result.sessionKey,
+            ...(activeAgentId ? { agentId: activeAgentId } : {}),
+          });
+          setDraft(result.sessionKey, result.editorText ?? '');
+          setPreparedAttachments(result.sessionKey, restoreOpenClawEditorImages(result.editorAttachments));
+          await loadHistory(result.sessionKey, { force: true });
+        } catch (cause) {
+          const detail = cause instanceof Error && cause.message ? cause.message : String(cause);
+          showAlert(t('chat.messageCut.forkFailedTitle'), detail, 'error');
+        }
+      },
+    );
+  }, [activeAgentId, activeSessionKey, loadHistory, setDraft, setPreparedAttachments, t]);
+
   const handleInlineButtonClick = useCallback(async (callbackData: string) => {
     const text = callbackData;
     voiceRuntime.interruptGlobally(activeSessionKey);
@@ -995,9 +1065,10 @@ function ChatViewContent() {
         sessionId: activeSessionId,
       });
     } catch (err) {
+      if (isOpenClawActiveLeafChangedError(err)) refreshActiveLeaf(activeSessionKey);
       debugError('app', '[InlineButtons] Send error:', err);
     }
-  }, [activeSessionKey, activeSessionId]);
+  }, [activeSessionKey, activeSessionId, refreshActiveLeaf]);
 
   const handleDecisionSelect = useCallback(async (value: string) => {
     const text = value;
@@ -1012,9 +1083,10 @@ function ChatViewContent() {
         sessionId: activeSessionId,
       });
     } catch (err) {
+      if (isOpenClawActiveLeafChangedError(err)) refreshActiveLeaf(activeSessionKey);
       debugError('app', '[DecisionCard] Send error:', err);
     }
-  }, [activeSessionKey, activeSessionId, setQuickReplies]);
+  }, [activeSessionKey, activeSessionId, refreshActiveLeaf, setQuickReplies]);
 
   const handleLoadFullMessage = useCallback(async (sourceMessage: ChatMessage) => {
     if (!sourceMessage.nativeMessageId) {
@@ -1140,6 +1212,12 @@ function ChatViewContent() {
       case 'message':
         const sourceMessage = messages.find((message) => message.id === block.id);
         const messageCapabilities = localUserMessageCapabilities(sourceMessage);
+        const canCutAtMessage = sourceMessage?.role === 'user' && Boolean(sourceMessage.nativeMessageId);
+        const messageCutDisabled = !connected
+          || isTyping
+          || activeSessionHasRun
+          || isLoadingHistory
+          || sessionMutationGate.isBlocked(activeSessionKey);
         return (
           <Suspense fallback={<MessageBubbleFallback block={block} groupPosition={groupPosition} />}>
             <MessageBubble
@@ -1165,16 +1243,13 @@ function ChatViewContent() {
                 ? () => handleLoadFullMessage(sourceMessage)
                 : undefined}
               onOpenPreview={sidePanel.openMessagePreview}
-              transcriptActions={sourceMessage?.role === 'user' && sourceMessage.nativeMessageId
-                ? {
-                    ...(sessionCapabilities.forkAtMessage
-                      ? { fork: () => handleForkAtMessage(sourceMessage) }
-                      : {}),
-                    ...(sessionCapabilities.rewind
-                      ? { rewind: () => handleRewindToMessage(sourceMessage) }
-                      : {}),
-                  }
+              onRewind={canCutAtMessage && sessionHistoryCapabilities.rewind && sourceMessage
+                ? () => handleRewindMessage(sourceMessage)
                 : undefined}
+              onFork={canCutAtMessage && sessionHistoryCapabilities.forkAtMessage && sourceMessage
+                ? () => handleForkMessage(sourceMessage)
+                : undefined}
+              messageCutDisabled={messageCutDisabled}
               collaborationAction={block.role === 'user'
                 ? collaboration.getMessageAction(sourceMessage)
                 : undefined}
@@ -1187,22 +1262,26 @@ function ChatViewContent() {
     }
   }, [
     collaboration,
+    connected,
+    activeSessionHasRun,
+    isLoadingHistory,
+    isTyping,
     handleDeleteLocalMessage,
     handleEditFailedMessage,
+    handleForkMessage,
+    handleRewindMessage,
     handleRetryMessage,
     handleInlineButtonClick,
     handleDecisionSelect,
     handleErrorAction,
-    handleForkAtMessage,
     handleLoadFullMessage,
-    handleRewindToMessage,
     activeSessionKey,
     messages,
+    sessionHistoryCapabilities.forkAtMessage,
+    sessionHistoryCapabilities.rewind,
     sidePanel.openMessagePreview,
     sidePanel.openResponseTrace,
     workspaceForSession,
-    sessionCapabilities.forkAtMessage,
-    sessionCapabilities.rewind,
   ]);
 
   const renderGroup = useCallback((index: number, group: ResponseGroup) => {
@@ -1393,6 +1472,13 @@ function ChatViewContent() {
         </div>
       )}
 
+      <TaskExecutionRecoveryBanner
+        sessionKey={activeSessionKey}
+        sessionId={activeSessionId}
+        connected={connected}
+        onReconcile={handleRefresh}
+      />
+
       <CollaborationUnanchoredBanner anchoredRunIds={anchoredRunIds} />
       <CollaborationSessionDock />
 
@@ -1412,7 +1498,7 @@ function ChatViewContent() {
         }}
       >
         {timelineItems.length === 0 ? (
-          <div className="flex-1 h-full" />
+          <div className="flex h-full flex-col justify-end" />
         ) : (
           <Virtuoso
             ref={virtuosoRef}
@@ -1498,6 +1584,7 @@ function ChatViewContent() {
                   sessionId: activeSessionId,
                 });
               } catch (err) {
+                if (isOpenClawActiveLeafChangedError(err)) refreshActiveLeaf(activeSessionKey);
                 debugError('app', '[QuickReplyBar] Send error:', err);
               }
             }}
@@ -1537,6 +1624,7 @@ function ChatViewContent() {
             trace={projectChatResponseTrace(group)}
             onClose={sidePanel.closePanel}
             onOpenSourceMessage={(sourceMessageId) => sidePanel.openTraceSourceMessage(groupId, sourceMessageId)}
+            onLoadAuditEvents={loadTraceAuditEvents}
           />
         ) : null;
       })()}
@@ -1552,6 +1640,14 @@ function ChatViewContent() {
           />
         ) : null;
       })()}
+      {sessionCompanion.open && (
+        <SessionCompanionPanel
+          sessionKey={activeSessionKey}
+          connected={connected}
+          initialQuestion={sessionCompanion.question}
+          onClose={() => setSessionCompanion({ open: false })}
+        />
+      )}
   </div>
   );
 }

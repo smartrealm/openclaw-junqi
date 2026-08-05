@@ -9,21 +9,20 @@ import {
   type KeyboardEvent,
   type SetStateAction,
 } from 'react';
-import { useTranslation } from 'react-i18next';
-import { showConfirm } from '@/components/shared/AlertDialog';
 import type { SlashCommand } from '@/data/slashCommands';
 import { gateway } from '@/services/gateway';
-import { useChatStore } from '@/stores/chatStore';
+import { useOpenClawCommands } from '@/hooks/useOpenClawCommands';
 import { debugError } from '@/utils/debugLog';
-import { resetSessionEverywhere } from '@/utils/sessionReset';
+import { agentIdFromSessionKey } from '@/utils/sessionPresentation';
 import {
   buildArgumentCompletions,
   buildMentionItems,
   buildUserMessageHistory,
-  COMPOSER_SLASH_COMMANDS,
   filterSlashCommands,
   groupSlashCommands,
   parseGatewaySkills,
+  replaceCommandArgumentCompletion,
+  toComposerSlashCommands,
   type ArgumentCompletion,
   type ComposerMessage,
   type GatewaySkill,
@@ -38,6 +37,7 @@ export interface PickerState {
 
 export interface ArgumentPickerState extends PickerState {
   cmd: string;
+  argumentIndex: number;
 }
 
 interface UseComposerSuggestionsOptions {
@@ -49,7 +49,7 @@ interface UseComposerSuggestionsOptions {
 }
 
 const CLOSED_PICKER: PickerState = { open: false, query: '', idx: 0 };
-const CLOSED_ARGUMENT_PICKER: ArgumentPickerState = { ...CLOSED_PICKER, cmd: '' };
+const CLOSED_ARGUMENT_PICKER: ArgumentPickerState = { ...CLOSED_PICKER, cmd: '', argumentIndex: 0 };
 
 export function useComposerSuggestions({
   activeSessionKey,
@@ -58,10 +58,8 @@ export function useComposerSuggestions({
   text,
   setText,
 }: UseComposerSuggestionsOptions) {
-  const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
-  const availableModels = useChatStore((state) => state.availableModels);
   const [slashPicker, setSlashPicker] = useState<PickerState>(CLOSED_PICKER);
   const [mentionPicker, setMentionPicker] = useState<PickerState>(CLOSED_PICKER);
   const [argumentPicker, setArgumentPicker] = useState<ArgumentPickerState>(CLOSED_ARGUMENT_PICKER);
@@ -69,6 +67,20 @@ export function useComposerSuggestions({
   const [workspaceFiles, setWorkspaceFiles] = useState<Array<{ name: string; path: string }>>([]);
   const [workspaceFilesLoaded, setWorkspaceFilesLoaded] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const agentId = agentIdFromSessionKey(activeSessionKey) ?? undefined;
+  const {
+    commands: runtimeCommands,
+    loading: slashCommandsLoading,
+    failure: slashCommandsFailure,
+  } = useOpenClawCommands(connected, {
+    agentId,
+    scope: 'text',
+    includeArgs: true,
+  });
+  const slashCommands = useMemo(
+    () => toComposerSlashCommands(runtimeCommands),
+    [runtimeCommands],
+  );
   useEffect(() => {
     if (!connected) return;
     void gateway.getSkills()
@@ -114,8 +126,8 @@ export function useComposerSuggestions({
   }, []);
 
   const matchedSlash = useMemo(
-    () => slashPicker.open ? filterSlashCommands(slashPicker.query) : [],
-    [slashPicker.open, slashPicker.query],
+    () => slashPicker.open ? filterSlashCommands(slashPicker.query, slashCommands) : [],
+    [slashCommands, slashPicker.open, slashPicker.query],
   );
   const groupedSlash = useMemo(() => groupSlashCommands(matchedSlash), [matchedSlash]);
   const mentionItems = useMemo<MentionItem[]>(
@@ -124,9 +136,14 @@ export function useComposerSuggestions({
   );
   const argumentCompletions = useMemo<ArgumentCompletion[]>(
     () => argumentPicker.open
-      ? buildArgumentCompletions(argumentPicker.cmd, argumentPicker.query, availableModels)
+      ? buildArgumentCompletions(
+        argumentPicker.cmd,
+        argumentPicker.query,
+        slashCommands,
+        argumentPicker.argumentIndex,
+      )
       : [],
-    [argumentPicker, availableModels],
+    [argumentPicker, slashCommands],
   );
 
   useEffect(() => {
@@ -142,26 +159,9 @@ export function useComposerSuggestions({
   const userMessageHistory = useMemo(() => buildUserMessageHistory(messages), [messages]);
   const pickSlash = useCallback((command: SlashCommand) => {
     setSlashPicker(CLOSED_PICKER);
-    if (!command.local) {
-      setText(`${command.cmd} `);
-      textareaRef.current?.focus();
-      return;
-    }
-    setText('');
-    if (command.localAction === 'clear') {
-      showConfirm(
-        t('chat.resetSession'),
-        t('chat.resetSessionConfirm'),
-        () => { void resetSessionEverywhere(activeSessionKey); },
-      );
-    } else if (command.localAction === 'compress') {
-      void gateway.compactSession(activeSessionKey)
-        .catch((error) => debugError('gateway', '[ComposerSuggestions] Session compaction failed:', error));
-    } else if (command.localAction === 'new') {
-      window.dispatchEvent(new Event('aegis:open-new-session-picker'));
-    }
+    setText(`${command.cmd} `);
     textareaRef.current?.focus();
-  }, [activeSessionKey, setText, t]);
+  }, [setText]);
 
   const closeSlashPicker = useCallback(() => setSlashPicker(CLOSED_PICKER), []);
   const closeMentionPicker = useCallback(() => setMentionPicker(CLOSED_PICKER), []);
@@ -182,12 +182,14 @@ export function useComposerSuggestions({
   const pickArgument = useCallback((completion: ArgumentCompletion) => {
     const textarea = textareaRef.current;
     const cursor = textarea?.selectionStart ?? 0;
-    const before = text.slice(0, cursor);
-    const after = text.slice(cursor);
-    const commandStart = before.lastIndexOf(argumentPicker.cmd);
-    if (commandStart >= 0) {
-      setText(`${before.slice(0, commandStart)}${argumentPicker.cmd} ${completion.value} ${after}`);
-    }
+    const next = replaceCommandArgumentCompletion({
+      text,
+      cursor,
+      command: argumentPicker.cmd,
+      argumentIndex: argumentPicker.argumentIndex,
+      value: completion.value,
+    });
+    if (next !== null) setText(next);
     setArgumentPicker(CLOSED_ARGUMENT_PICKER);
     textarea?.focus();
   }, [argumentPicker.cmd, setText, text]);
@@ -220,12 +222,13 @@ export function useComposerSuggestions({
     }
     if (currentLine.startsWith('/') && parts.length >= 2 && parts[0]) {
       const commandName = parts[0];
-      const command = COMPOSER_SLASH_COMMANDS.find((candidate) => candidate.cmd === commandName);
-      const hasCompletions = commandName === '/model' ? availableModels.length > 0 : Boolean(command?.argChoices?.length);
+      const argumentIndex = Math.max(0, parts.length - 2);
+      const argument = slashCommands.find((candidate) => candidate.cmd === commandName)?.args?.[argumentIndex];
+      const hasCompletions = argument?.dynamic !== true && Boolean(argument?.choices?.length);
       setSlashPicker(CLOSED_PICKER);
       setMentionPicker(CLOSED_PICKER);
       setArgumentPicker(hasCompletions
-        ? { open: true, cmd: commandName, query: parts.slice(1).join(' '), idx: 0 }
+        ? { open: true, cmd: commandName, argumentIndex, query: parts.slice(-1)[0] ?? '', idx: 0 }
         : CLOSED_ARGUMENT_PICKER);
       return;
     }
@@ -238,7 +241,7 @@ export function useComposerSuggestions({
     setSlashPicker(CLOSED_PICKER);
     setMentionPicker(CLOSED_PICKER);
     setArgumentPicker(CLOSED_ARGUMENT_PICKER);
-  }, [availableModels.length, historyIndex, setText]);
+  }, [historyIndex, setText, slashCommands]);
 
   const onKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>, send: () => void) => {
     const move = <T,>(state: PickerState, setState: (value: SetStateAction<T>) => void, length: number) => {
@@ -328,6 +331,8 @@ export function useComposerSuggestions({
     textareaRef,
     composingRef,
     skills,
+    slashCommandsLoading,
+    slashCommandsFailure,
     workspaceFiles,
     slashPicker,
     setSlashPicker,

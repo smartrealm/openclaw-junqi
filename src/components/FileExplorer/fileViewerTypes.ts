@@ -1,8 +1,6 @@
 export interface OpenFileTab {
   path: string;
   name: string;
-  /** Temporary tabs are replaced by the next preview in the same workspace scope. */
-  isPreview?: boolean;
 }
 
 export interface FileViewerHandle {

@@ -147,6 +147,8 @@
      interaction above legacy local overlays, while global toasts remain free
      to report an outcome above a modal when needed. */
   --z-application-overlay: 2147482500;
+  /* 语音模式覆盖普通应用弹窗、菜单和通知，致命错误诊断层仍保持最高优先级。 */
+  --z-voice-overlay:       2147483500;
 
   /* ═══════════════════════════════════════
      Typography Scale

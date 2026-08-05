@@ -7,45 +7,41 @@ import { fileURLToPath } from 'node:url';
 const srcRoot = fileURLToPath(new URL('../', import.meta.url));
 
 /**
- * Hex colors are valid only where color is the content itself or where a
- * pre-theme bootstrap/fatal surface cannot consume application tokens.
- * Product chrome must use --aegis-* semantic tokens.
+ * 十六进制颜色只允许用于颜色本身就是内容，或主题初始化前无法读取应用令牌的致命错误界面。
+ * 产品界面必须使用 --aegis-* 语义令牌。
  */
-// Exact reviewed occurrence budgets. Unlike a file-only allowlist this rejects
-// adding another literal to a mixed content/chrome file; changing the budget
-// requires reviewing the actual diff and its semantic justification.
+// 精确记录已审查的出现次数，避免混合文件在未复核语义的情况下继续增加颜色字面量。
 const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
-  'components/Chat/MessageBubble.tsx': 1, // sandboxed HTML preview paper
-  'components/FileExplorer/fileViewerCapabilities.ts': 15, // language/file identity palette
-  'components/Git/DiffFileBlock.tsx': 0, // diff semantic palette
+  'components/Chat/MessageBubble.tsx': 1, // 沙箱 HTML 预览纸张色
+  'components/FileExplorer/fileViewerCapabilities.ts': 15, // 语言与文件类型标识色
+  'components/Git/DiffFileBlock.tsx': 0, // 差异语义色
   'components/Git/GitDiffViewer.tsx': 0,
   'components/Git/GitFileBrowser.tsx': 0,
   'components/Git/GitHistory.tsx': 0,
   'components/Git/types.ts': 7,
-  'components/Terminal/PaneSearchBar.tsx': 0, // xterm search decorations resolve from the active theme
-  'components/Terminal/terminalShared.ts': 20, // xterm fallback contract
-  'components/settings/ThemePicker.tsx': 11, // renders theme swatches and preview canvases
+  'components/Terminal/PaneSearchBar.tsx': 0, // xterm 搜索装饰色从当前主题解析
+  'components/Terminal/terminalShared.ts': 20, // xterm 回退契约
+  'components/settings/ThemePicker.tsx': 11, // 主题色板和预览画布
   'pages/AgentRunView.tsx': 0,
-  'pages/OpenClawCommands/commands-core.ts': 1, // URL fragment syntax, not a color
-  'pages/SetupPage/WizardScreen.tsx': 2, // generated QR bitmap foreground/background
-  'pages/SetupPage/shared.tsx': 10, // renders theme swatches
+  'pages/SetupPage/WizardScreen.tsx': 2, // 生成二维码位图的前景色和背景色
+  'pages/SetupPage/shared.tsx': 10, // 主题色板
   'pet/PetBubble.tsx': 0,
   'pet/PetCharacter.tsx': 3,
   'pet/backdropContrast.ts': 0,
   'pet/effects.tsx': 1,
   'pet/petTheme.ts': 44,
   'pet/pomodoroView.ts': 4,
-  'pet/skins/index.tsx': 13, // mascot artwork palette
-  'runtime/fatalErrorOverlay.ts': 3, // pre-React emergency surface
-  'styles/index.css': 6, // CSS mask sentinel colors; not rendered chrome
-  'styles/primitives.css': 10, // fixed data-visualization primitives
-  'styles/terminal-kooky.css': 0, // terminal chrome must consume semantic theme tokens
-  'styles/terminal.css': 0, // terminal/ANSI theme aliases
+  'pet/skins/index.tsx': 13, // 萌宠绘图色板
+  'runtime/fatalErrorOverlay.ts': 3, // React 启动前的紧急错误界面
+  'styles/index.css': 6, // CSS 遮罩哨兵色，不用于产品界面
+  'styles/primitives.css': 10, // 固定的数据可视化基础色
+  'styles/terminal-kooky.css': 0, // 终端界面必须使用语义主题令牌
+  'styles/terminal.css': 0, // 终端与 ANSI 主题别名
   'styles/themes/aegis-dark.css': 30,
   'styles/themes/aegis-eyecare.css': 30,
   'styles/themes/aegis-light.css': 24,
-  'styles/themes/aegis-midnight.css': 33, // semantic token definitions
-  'utils/theme-colors.ts': 1, // token conversion fallback and documentation
+  'styles/themes/aegis-midnight.css': 33, // 语义令牌定义
+  'utils/theme-colors.ts': 1, // 令牌转换回退值和说明
   'workbench/components/WorkbenchTerminalPane.tsx': 0,
 };
 

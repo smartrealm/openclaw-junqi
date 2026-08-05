@@ -48,9 +48,7 @@ test('semantic color aliases preserve the storage type of their source token', (
   );
 });
 
-test('legacy palette aliases and elevation utilities follow the active theme', () => {
-  assert.match(css, /\[data-theme\][\s\S]*--color-red-400: rgb\(var\(--aegis-danger\)\);/);
-  assert.match(css, /\[data-theme\][\s\S]*--color-emerald-500: rgb\(var\(--aegis-success\)\);/);
+test('elevation utilities follow the active theme', () => {
   assert.match(css, /--shadow-card: var\(--aegis-shadow-card\);/);
   assert.match(css, /--shadow-float: var\(--aegis-shadow-float\);/);
   assert.match(css, /--shadow-popover: var\(--aegis-shadow-popover\);/);

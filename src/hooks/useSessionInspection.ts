@@ -52,13 +52,13 @@ export function useSessionInspection(
       const [preview, resolved, checkpoints] = await Promise.all([
         gateway.getSessionPreview(normalizedSessionKey, { limit: 12, maxChars: 240 }),
         gateway.resolveSessionKey(normalizedSessionKey, normalizedAgentId || undefined),
-        gateway.listSessionCompactionCheckpoints(normalizedSessionKey, normalizedAgentId || undefined),
+        gateway.listSessionCompactionCheckpoints(normalizedSessionKey),
       ]);
       if (requestId.current !== currentRequest) return;
       setState({
         preview,
         resolvedKey: resolved.ok ? resolved.key : null,
-        checkpoints,
+        checkpoints: [...checkpoints],
         loading: false,
         error: null,
       });

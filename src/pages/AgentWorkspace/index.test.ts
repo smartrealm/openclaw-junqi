@@ -49,3 +49,12 @@ test('prototype has no browser-only preview entry or Tauri storage bypass', () =
   assert.doesNotMatch(source, /__TAURI_INTERNALS__/);
   assert.doesNotMatch(source, /无法读取存储配置/);
 });
+
+test('AI workspace does not expose unimplemented adapters as product panels', () => {
+  assert.match(source, /id: 'files'/);
+  assert.match(source, /id: 'search'/);
+  assert.match(source, /id: 'source'/);
+  assert.doesNotMatch(source, /BrowserPreview|Browser Pane|AgentTerminal/);
+  assert.doesNotMatch(source, /ChecksPanel|PortsPanel|VaultPanel/);
+  assert.doesNotMatch(source, /Hosted Review Adapter|端口发现 Adapter|AI Vault/);
+});

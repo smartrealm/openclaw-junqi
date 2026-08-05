@@ -3,19 +3,25 @@ import { describe, it } from 'node:test';
 import { GatewayRpcError } from './Connection';
 import {
   OpenClawSessionOrganizationClient,
+  SessionOrganizationResponseError,
   SessionOrganizationProtocolUnsupportedError,
 } from './OpenClawSessionOrganizationClient';
+import { OpenClawSessionTargetError } from './OpenClawSessionTarget';
 
 const SESSION_KEY = 'agent:main:main';
 
 describe('OpenClawSessionOrganizationClient', () => {
-  it('uses the native sessions.patch fields through the privileged mutation lane', async () => {
+  it('uses the native sessions.patch fields through the regular mutation lane', async () => {
     const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
     const client = new OpenClawSessionOrganizationClient({
       runMutation: (_key, operation) => operation(),
-      requestPrivileged: async (method, params) => {
+      request: async (method, params) => {
         calls.push({ method, params });
-        return { ok: true, key: SESSION_KEY, entry: {} } as never;
+        return {
+          ok: true,
+          key: SESSION_KEY,
+          entry: method === 'sessions.patch' && params.category === 'Finance' ? { category: 'Finance' } : {},
+        } as never;
       },
     });
 
@@ -32,35 +38,42 @@ describe('OpenClawSessionOrganizationClient', () => {
     ]);
   });
 
-  it('preserves the existing native group catalog when creating a group', async () => {
-    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  it('在进入 mutation coordinator 或发起 Gateway 请求前拒绝缺失会话目标', async () => {
+    let mutationStarted = false;
+    let requestStarted = false;
     const client = new OpenClawSessionOrganizationClient({
-      runMutation: (_key, operation) => operation(),
-      requestPrivileged: async (method, params) => {
-        calls.push({ method, params });
-        if (method === 'sessions.groups.list') {
-          return { groups: [{ name: 'Legal', position: 0 }] } as never;
-        }
-        return { ok: true, groups: [] } as never;
+      runMutation: async (_key, operation) => {
+        mutationStarted = true;
+        return operation();
+      },
+      request: async () => {
+        requestStarted = true;
+        return {} as never;
       },
     });
+    const missingTarget = '   ';
 
-    await client.putGroup('Finance');
-    await client.renameGroup('Finance', 'Credit');
-    await client.deleteGroup('Credit');
-
-    assert.deepEqual(calls, [
-      { method: 'sessions.groups.list', params: {} },
-      { method: 'sessions.groups.put', params: { names: ['Legal', 'Finance'] } },
-      { method: 'sessions.groups.rename', params: { name: 'Finance', to: 'Credit' } },
-      { method: 'sessions.groups.delete', params: { name: 'Credit' } },
-    ]);
+    await assert.rejects(client.setPinned(missingTarget, true), OpenClawSessionTargetError);
+    await assert.rejects(client.setUnread(missingTarget, true), OpenClawSessionTargetError);
+    await assert.rejects(client.setArchived(missingTarget, true), OpenClawSessionTargetError);
+    await assert.rejects(client.setCategory(missingTarget, 'Finance'), OpenClawSessionTargetError);
+    assert.equal(mutationStarted, false);
+    assert.equal(requestStarted, false);
   });
 
-  it('identifies only explicit protocol incompatibility as a legacy fallback condition', async () => {
+  it('requires the returned entry to confirm a requested category', async () => {
     const client = new OpenClawSessionOrganizationClient({
       runMutation: (_key, operation) => operation(),
-      requestPrivileged: async () => {
+      request: async () => ({ ok: true, key: SESSION_KEY, entry: { category: 'Other' } } as never),
+    });
+
+    await assert.rejects(client.setCategory(SESSION_KEY, 'Finance'), SessionOrganizationResponseError);
+  });
+
+  it('identifies only explicit protocol incompatibility for capability reporting', async () => {
+    const client = new OpenClawSessionOrganizationClient({
+      runMutation: (_key, operation) => operation(),
+      request: async () => {
         throw new GatewayRpcError('unknown field: pinned', 'INVALID_PARAMS');
       },
     });
@@ -68,8 +81,8 @@ describe('OpenClawSessionOrganizationClient', () => {
 
     const deniedClient = new OpenClawSessionOrganizationClient({
       runMutation: (_key, operation) => operation(),
-      requestPrivileged: async () => {
-        throw new GatewayRpcError('missing scope: operator.admin', 'UNAUTHORIZED');
+      request: async () => {
+        throw new GatewayRpcError('missing scope: operator.write', 'UNAUTHORIZED');
       },
     });
     await assert.rejects(deniedClient.setPinned(SESSION_KEY, true), GatewayRpcError);

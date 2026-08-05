@@ -36,6 +36,7 @@ import {
 } from './model';
 import './dynamic-island.css';
 import { useTheme } from '@/theme/useTheme';
+import { requestDynamicIslandHide } from '@/api/tauri-commands';
 import { hideDynamicIsland, type DynamicIslandAction } from './DynamicIslandActions';
 
 const COLLAPSE_DELAY_MS = 5_200;
@@ -50,18 +51,11 @@ function statusTone(status: DynamicIslandTask['status']) {
 }
 
 function voiceInputTitleKey(input: DynamicIslandVoiceInput): string {
-  if (input.requiresConfirmation) return 'dynamicIsland.voiceDraftReady';
-  if (input.phase === 'unavailable') return 'dynamicIsland.voiceInputUnavailable';
   if (input.phase === 'error') return 'dynamicIsland.voiceInputError';
-  return input.phase === 'transcribing'
-    ? 'dynamicIsland.processingVoice'
-    : 'dynamicIsland.listening';
-}
-
-function voiceInputDetailKey(input: DynamicIslandVoiceInput): string {
-  if (input.requiresConfirmation) return 'dynamicIsland.returnToChatToConfirm';
-  if (input.phase === 'unavailable' || input.phase === 'error') return 'dynamicIsland.returnToChatToControlVoice';
-  return 'dynamicIsland.returnToChatToControlVoice';
+  if (input.phase === 'preparing') return 'dynamicIsland.voicePreparing';
+  if (input.phase === 'thinking') return 'dynamicIsland.processingVoice';
+  if (input.phase === 'speaking') return 'dynamicIsland.speaking';
+  return 'dynamicIsland.listening';
 }
 
 function StatusGlyph({ task }: { task: DynamicIslandTask }) {
@@ -170,6 +164,14 @@ export default function DynamicIsland() {
     void emitTauriEvent('dynamic-island:action', payload).catch(() => undefined);
   }, []);
 
+  const requestHide = useCallback(
+    () => hideDynamicIsland(
+      requestDynamicIslandHide,
+      (payload) => emitTauriEvent('dynamic-island:action', payload),
+    ),
+    [],
+  );
+
   const primarySessionActivity = snapshot.sessionActivities[0];
   const runningCount = snapshot.tasks.filter((task) => task.status === 'running').length;
   const attentionTasks = snapshot.tasks.filter((task) => (
@@ -194,6 +196,7 @@ export default function DynamicIsland() {
     if (inputVoiceActive) return t(voiceInputTitleKey(snapshot.voiceInput));
     if (runningCount === 1 && primaryRunningTask) return primaryRunningTask.title;
     if (runningCount > 0) return t('dynamicIsland.agentsRunning', { count: runningCount });
+    if (primarySessionActivity?.observer) return primarySessionActivity.observer.headline;
     if (primarySessionActivity) {
       return t(`dynamicIsland.agent.${primarySessionActivity.phase}`, { agent: primarySessionActivity.agentName });
     }
@@ -206,6 +209,9 @@ export default function DynamicIsland() {
     if (task) return `${task.agent} · ${statusLabel(task.status)}`;
     if (snapshot.pomodoro.running) {
       return t(snapshot.pomodoro.phase === 'work' ? 'dynamicIsland.focusSession' : 'dynamicIsland.breakSession');
+    }
+    if (primarySessionActivity?.observer) {
+      return `${primarySessionActivity.agentName} · ${t(`dynamicIsland.observerHealth.${primarySessionActivity.observer.health}`)}`;
     }
     if (primarySessionActivity) {
       return t(`dynamicIsland.elapsed.${primarySessionActivity.phase}`, {
@@ -221,7 +227,7 @@ export default function DynamicIsland() {
         : t('dynamicIsland.voiceOutput');
     }
     if (outputVoiceActive && (snapshot.voicePhase === 'listening' || snapshot.voicePhase === 'transcribing')) return t('dynamicIsland.voiceInput');
-    if (inputVoiceActive) return t(voiceInputDetailKey(snapshot.voiceInput));
+    if (inputVoiceActive) return t('dynamicIsland.returnToChatToControlVoice');
     return t(snapshot.connected ? 'dynamicIsland.openclawOnline' : 'dynamicIsland.openclawStandby');
   }, [attentionTasks, inputVoiceActive, now, outputVoiceActive, primaryRunningTask, primarySessionActivity, snapshot.connected, snapshot.focus, snapshot.pomodoro.phase, snapshot.pomodoro.running, snapshot.voiceInput, snapshot.voicePhase, snapshot.voiceQueueLength, statusLabel, t]);
 
@@ -301,17 +307,16 @@ export default function DynamicIsland() {
                 <span><strong>{headline}</strong><small>{snapshot.resourceDrop
                   ? t(snapshot.resourceDrop.phase === 'dragging' ? 'dynamicIsland.releaseFiles' : 'dynamicIsland.quickChatReady')
                   : inputVoiceActive
-                    ? t(voiceInputDetailKey(snapshot.voiceInput))
+                    ? t('dynamicIsland.returnToChatToControlVoice')
+                    : primarySessionActivity?.observer
+                      ? t(`dynamicIsland.observerHealth.${primarySessionActivity.observer.health}`)
                     : snapshot.notice?.body || t('dynamicIsland.currentActivity')}</small></span>
               </div>
               <div className="junqi-island-window-actions">
                 <button type="button" onClick={() => setIslandExpanded(false)} title={t('dynamicIsland.collapse')}><ChevronUp size={15} /></button>
                 <button
                   type="button"
-                  onClick={() => hideDynamicIsland(
-                    () => invoke('close_dynamic_island'),
-                    action,
-                  )}
+                  onClick={() => { void requestHide().catch(() => undefined); }}
                   title={t('dynamicIsland.hide')}
                 ><X size={15} /></button>
               </div>
@@ -363,11 +368,13 @@ export default function DynamicIsland() {
                       </button>
                     )}
                     {snapshot.sessionActivities.slice(0, 2).map((activity) => (
-                      <button key={activity.sessionKey} type="button" className="junqi-island-task is-session" onClick={() => action({ type: 'open-session', sessionKey: activity.sessionKey })}>
+                      <button key={activity.id} type="button" className="junqi-island-task is-session" onClick={() => action({ type: 'open-session', sessionKey: activity.sessionKey })}>
                         <span className="junqi-island-task-icon is-running"><span className="junqi-island-spinner" /></span>
                         <span className="junqi-island-task-copy">
-                          <strong>{t(`dynamicIsland.agent.${activity.phase}`, { agent: activity.agentName })}</strong>
-                          <small>{activity.sessionTitle} · {t(`dynamicIsland.elapsed.${activity.phase}`, { elapsed: formatElapsedTime(activity.startedAt, now) })}</small>
+                          <strong>{activity.observer?.headline ?? t(`dynamicIsland.agent.${activity.phase}`, { agent: activity.agentName })}</strong>
+                          <small>{activity.observer
+                            ? `${activity.agentName} · ${t(`dynamicIsland.observerHealth.${activity.observer.health}`)}`
+                            : `${activity.sessionTitle} · ${t(`dynamicIsland.elapsed.${activity.phase}`, { elapsed: formatElapsedTime(activity.startedAt, now) })}`}</small>
                         </span>
                         <ChevronUp size={13} className="junqi-island-task-open" />
                       </button>
@@ -399,7 +406,7 @@ export default function DynamicIsland() {
                 ) : inputVoiceActive ? (
                   <div className="junqi-island-empty">
                     <Radio size={18} />
-                    <span><strong>{t(voiceInputTitleKey(snapshot.voiceInput))}</strong><small>{t(voiceInputDetailKey(snapshot.voiceInput))}</small></span>
+                    <span><strong>{t(voiceInputTitleKey(snapshot.voiceInput))}</strong><small>{t('dynamicIsland.returnToChatToControlVoice')}</small></span>
                   </div>
                 ) : outputVoiceActive ? (
                   <div className="junqi-island-empty">

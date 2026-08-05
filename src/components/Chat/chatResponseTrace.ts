@@ -20,6 +20,50 @@ export interface ChatResponseTraceContext {
   model?: string;
 }
 
+export type ChatResponseTraceAuditStatus =
+  | 'started'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'timed_out'
+  | 'blocked'
+  | 'unknown';
+
+export interface ChatResponseTraceAuditEvent {
+  eventType?: 'agent_run' | 'tool_action' | 'inbound_message' | 'outbound_message';
+  eventId: string;
+  sequence: number;
+  sourceSequence: number;
+  occurredAt: number;
+  kind: 'agent_run' | 'tool_action' | 'message';
+  action: string;
+  status: ChatResponseTraceAuditStatus;
+  actor: { type: string; id: string };
+  redaction: 'metadata_only';
+  agentId?: string;
+  sessionKey?: string;
+  sessionId?: string;
+  runId?: string;
+  toolCallId?: string;
+  toolName?: string;
+  direction?: 'inbound' | 'outbound';
+  channel?: string;
+  conversationKind?: 'direct' | 'group' | 'channel' | 'unknown';
+  outcome?: string;
+  reasonCode?: string;
+  errorCode?: string;
+  failureStage?: 'platform_send' | 'queue' | 'unknown';
+  deliveryKind?: 'text' | 'media' | 'other';
+  durationMs?: number;
+  resultCount?: number;
+}
+
+export interface ChatResponseTraceAuditPage {
+  events: readonly ChatResponseTraceAuditEvent[];
+  nextCursor?: string;
+  source: 'activity' | 'legacy';
+}
+
 export type ChatResponseTraceNode =
   | (TraceNodeBase & { kind: 'plan'; snapshot: ExecutionPlanSnapshot; snapshotNumber: number })
   | (TraceNodeBase & { kind: 'thinking'; content: string })
@@ -29,7 +73,7 @@ export type ChatResponseTraceNode =
       toolCallId?: string;
       input?: Record<string, unknown>;
       output?: string;
-      status: 'running' | 'done' | 'error';
+      status: 'running' | 'done' | 'error' | 'cancelled' | 'verification_required';
       durationMs?: number;
       error?: string;
       outputTruncated?: boolean;
@@ -45,9 +89,9 @@ export type ChatResponseTraceNode =
   | (TraceNodeBase & { kind: 'file-output'; files: FileRef[] })
   | (TraceNodeBase & { kind: 'workshop-event'; events: WorkshopEvent[] })
   | (TraceNodeBase & { kind: 'session-event'; event: SessionEvent })
+  | (TraceNodeBase & { kind: 'compaction' })
   | (TraceNodeBase & { kind: 'action'; actions: Array<{ text: string; callbackData: string }> })
-  | (TraceNodeBase & { kind: 'artifact'; artifactType: string; title: string })
-  | (TraceNodeBase & { kind: 'compaction' });
+  | (TraceNodeBase & { kind: 'artifact'; artifactType: string; title: string });
 
 export interface ChatResponseTrace {
   id: string;
@@ -168,6 +212,8 @@ export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrac
         return [{ ...base, kind: 'workshop-event', events: block.events }];
       case 'session-event':
         return [{ ...base, kind: 'session-event', event: block.event }];
+      case 'compaction':
+        return [{ ...base, kind: 'compaction' }];
       case 'inline-buttons':
         return [{
           ...base,
@@ -184,8 +230,6 @@ export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrac
           artifactType: block.artifact.type,
           title: block.artifact.title,
         }];
-      case 'compaction':
-        return [{ ...base, kind: 'compaction' }];
       case 'system-note':
         return [];
     }
