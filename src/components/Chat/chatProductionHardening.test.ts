@@ -10,12 +10,12 @@ function source(path: string): string {
 test('CHAT-01 generated artifacts stay scriptless while local file previews use the scoped protocol', () => {
   const bubble = source('src/components/Chat/MessageBubble.tsx');
   const resultCards = source('src/components/Chat/ResultCards.tsx');
-  const managedPreview = source('src/components/FileExplorer/ManagedFilePreview.tsx');
+  const previewSurface = source('src/components/FileExplorer/FilePreviewSurface.tsx');
   const previewProtocol = source('src-tauri/src/commands/file_preview.rs');
   assert.doesNotMatch(bubble, /sandbox=["']allow-scripts/);
   assert.match(bubble, /srcDoc=\{artifact\.content\}[\s\S]*?sandbox=""/);
-  assert.match(managedPreview, /src=\{preview\.mode === 'interactive' \? preview\.url/);
-  assert.match(managedPreview, /sandbox=\{preview\.mode === 'interactive' \? 'allow-scripts' : ''\}/);
+  assert.match(previewSurface, /src=\{content\.mode === 'interactive' \? content\.url/);
+  assert.match(previewSurface, /sandbox=\{content\.mode === 'interactive' \? 'allow-scripts' : ''\}/);
   assert.match(resultCards, /loadLocalFilePreview\(path, name, workspaceRoot\)/);
   assert.match(previewProtocol, /PREVIEW_GRANT_TTL/);
   assert.match(previewProtocol, /resolve_granted_path/);

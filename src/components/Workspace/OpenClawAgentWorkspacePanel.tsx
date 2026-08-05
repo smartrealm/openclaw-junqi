@@ -2,6 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, File, Folder, FolderOpen, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { FilePreviewSurface } from '@/components/FileExplorer/FilePreviewSurface';
+import {
+  gatewayImagePreviewContent,
+  textFilePreviewContent,
+  type FilePreviewContent,
+} from '@/file-preview/content';
 import { formatBytes } from '@/utils/format';
 
 export interface AgentWorkspaceEntry {
@@ -108,8 +114,11 @@ export function OpenClawAgentWorkspacePanel({
     setPath(listing?.parentPath ?? '');
   }, [listing?.parentPath]);
 
-  const imageSource = selectedFile?.encoding === 'base64'
-    ? `data:${selectedFile.mimeType};base64,${selectedFile.content}`
+  const selectedPreview: FilePreviewContent | null = selectedFile
+    ? selectedFile.encoding === 'base64'
+      ? gatewayImagePreviewContent(selectedFile.mimeType, selectedFile.content)
+        ?? { kind: 'binary', byteLength: selectedFile.size }
+      : textFilePreviewContent(selectedFile.name, selectedFile.content)
     : null;
 
   return (
@@ -203,14 +212,8 @@ export function OpenClawAgentWorkspacePanel({
             <p className="mt-1 break-words text-aegis-text-dim">{fileError}</p>
           </div>
         )}
-        {selectedFile && !loadingFile && (
-          imageSource ? (
-            <div className="min-h-0 flex flex-1 items-center justify-center overflow-auto p-6">
-              <img src={imageSource} alt={selectedFile.name} className="max-h-full max-w-full object-contain" />
-            </div>
-          ) : (
-            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-[12px] leading-5 text-aegis-text">{selectedFile.content}</pre>
-          )
+        {selectedFile && selectedPreview && !loadingFile && (
+          <FilePreviewSurface content={selectedPreview} fileName={selectedFile.name} />
         )}
         {!selectedFile && !loadingFile && !fileError && (
           <div className="flex min-h-0 flex-1 items-center justify-center px-8 text-center">

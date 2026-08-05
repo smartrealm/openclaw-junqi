@@ -26,8 +26,10 @@ test('agent workspace panel discards superseded listing and preview responses', 
 test('agent workspace panel previews only Gateway text or base64 image content', async () => {
   const source = await read('./OpenClawAgentWorkspacePanel.tsx');
 
-  assert.match(source, /selectedFile\?\.encoding === 'base64'/);
-  assert.match(source, /<img src=\{imageSource\}/);
-  assert.match(source, /<pre[^>]*>\{selectedFile\.content\}<\/pre>/);
+  assert.match(source, /selectedFile\.encoding === 'base64'/);
+  assert.match(source, /gatewayImagePreviewContent\(selectedFile\.mimeType, selectedFile\.content\)/);
+  assert.match(source, /textFilePreviewContent\(selectedFile\.name, selectedFile\.content\)/);
+  assert.match(source, /<FilePreviewSurface content=\{selectedPreview\}/);
+  assert.doesNotMatch(source, /data:\$\{selectedFile\.mimeType\}/);
   assert.doesNotMatch(source, /dangerouslySetInnerHTML/);
 });

@@ -18,6 +18,7 @@ test('bootstrap file panel preserves expected absence and fences superseded file
   assert.match(source, /file\.expectedAbsent/);
   assert.match(source, /const requestIdRef = useRef\(0\)/);
   assert.match(source, /if \(nextRequestId === requestIdRef\.current\) setSelected\(result\.file\)/);
-  assert.match(source, /<pre[^>]*>\{selected\.content\}<\/pre>/);
+  assert.match(source, /textFilePreviewContent\(selected\.name, selected\.content\)/);
+  assert.match(source, /<FilePreviewSurface/);
   assert.doesNotMatch(source, /dangerouslySetInnerHTML/);
 });

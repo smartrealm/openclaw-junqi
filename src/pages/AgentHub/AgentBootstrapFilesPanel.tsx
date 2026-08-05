@@ -5,7 +5,9 @@ import type {
   OpenClawAgentBootstrapFile,
   OpenClawAgentBootstrapFileGet,
 } from '@/services/gateway';
+import { FilePreviewSurface } from '@/components/FileExplorer/FilePreviewSurface';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { textFilePreviewContent } from '@/file-preview/content';
 import { formatBytes } from '@/utils/format';
 
 interface AgentBootstrapFilesPanelProps {
@@ -140,8 +142,17 @@ export function AgentBootstrapFilesPanel({
                   ? t('agentSettings.bootstrapFileExpectedAbsentHint', 'This optional file has not been created by OpenClaw.')
                   : t('agentSettings.bootstrapFileMissingHint', 'OpenClaw reported that this file is missing.')}
               </p>
+            ) : selected.content !== undefined ? (
+              <FilePreviewSurface
+                content={textFilePreviewContent(selected.name, selected.content)}
+                fileName={selected.name}
+                compact
+              />
             ) : (
-              <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words px-3.5 py-3 font-mono text-[10px] leading-5 text-aegis-text">{selected.content}</pre>
+              <div className="flex items-center gap-2 px-3.5 py-3 text-[10px] text-aegis-danger">
+                <AlertCircle size={13} />
+                {t('agentSettings.bootstrapFileUnavailable', 'File preview is unavailable')}
+              </div>
             )
           )}
         </div>

@@ -17,6 +17,12 @@ import {
   type OpenClawSessionFile,
   type OpenClawSessionFilesList,
 } from '@/services/gateway';
+import {
+  gatewayImagePreviewContent,
+  textFilePreviewContent,
+  type FilePreviewContent,
+} from '@/file-preview/content';
+import { FilePreviewSurface } from '@/components/FileExplorer/FilePreviewSurface';
 import { SessionFileCodeEditor } from './SessionFileCodeEditor';
 import {
   canEditSessionFile,
@@ -44,19 +50,14 @@ interface ActiveSessionFile {
   readonly saveOutcome: SaveOutcome;
 }
 
-const SESSION_FILE_IMAGE_MIME_TYPES = new Set([
-  'image/avif', 'image/gif', 'image/jpeg', 'image/png', 'image/webp',
-]);
-
-function imageSource(file: OpenClawSessionFile): string | null {
-  if (
-    file.previewKind !== 'image'
-    || file.contentEncoding !== 'base64'
-    || !file.mimeType
-    || !SESSION_FILE_IMAGE_MIME_TYPES.has(file.mimeType)
-    || !file.content
-  ) return null;
-  return `data:${file.mimeType};base64,${file.content}`;
+function sessionFilePreviewContent(file: OpenClawSessionFile): FilePreviewContent | null {
+  if (file.previewKind === 'image' && file.contentEncoding === 'base64') {
+    return gatewayImagePreviewContent(file.mimeType, file.content);
+  }
+  if (file.previewKind === 'text' && file.contentEncoding === 'utf8' && file.content !== undefined) {
+    return textFilePreviewContent(file.name, file.content);
+  }
+  return null;
 }
 
 function sameScope(left: SessionFileScope, right: SessionFileScope): boolean {
@@ -250,7 +251,7 @@ export function SessionFilesControl({ sessionKey, agentId }: SessionFilesControl
 
   const browser = snapshot?.browser;
   const selected = active?.file ?? null;
-  const image = selected ? imageSource(selected) : null;
+  const preview = selected ? sessionFilePreviewContent(selected) : null;
   const editor = active?.draft && selected && canEditSessionFile(selected)
     ? { active, draft: active.draft }
     : null;
@@ -326,7 +327,7 @@ export function SessionFilesControl({ sessionKey, agentId }: SessionFilesControl
               {!loading && error && <div className="space-y-2 rounded-md border border-aegis-danger/25 bg-aegis-danger/5 p-2.5 text-[11px] text-aegis-text-muted"><div className="flex items-start gap-2"><AlertCircle size={14} className="shrink-0 text-aegis-danger" aria-hidden="true" />{t('chat.sessionFiles.error')}</div><div className="break-words font-mono text-[10px] text-aegis-text-dim">{error}</div></div>}
               {!loading && !error && !hasTouchedFiles && !hasBrowserEntries && <p className="py-5 text-center text-[11px] text-aegis-text-dim">{t('chat.sessionFiles.empty')}</p>}
               {!loading && !error && !selected && (hasTouchedFiles || hasBrowserEntries) && <p className="py-5 text-center text-[11px] text-aegis-text-dim">{t('chat.sessionFiles.select')}</p>}
-              {selected && !loading && !error && (image ? <img src={image} alt={selected.name} className="max-h-80 max-w-full object-contain" /> : editor ? <div className="flex min-h-full flex-col gap-2"><SessionFileCodeEditor documentId={editorDocumentId} name={selected.name} content={editor.draft.content} readOnly={saving} onChange={updateDraft} onSave={() => { void saveActiveFile(); }} /><div className="flex items-center justify-between gap-2"><div className="min-w-0 text-[10px] text-aegis-text-dim">{editor.active.saveOutcome === 'saved' ? t('chat.sessionFiles.saved') : editor.active.saveOutcome === 'conflict' ? t('chat.sessionFiles.conflict') : editor.active.saveOutcome === 'error' ? t('chat.sessionFiles.saveFailed') : null}</div><div className="flex shrink-0 items-center gap-1"><button type="button" onClick={reloadActiveFile} disabled={saving} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.07)] disabled:opacity-50"><RefreshCw size={11} aria-hidden="true" />{t('chat.sessionFiles.reload')}</button><button type="button" onClick={() => { void saveActiveFile(); }} disabled={saving} className="inline-flex items-center gap-1 rounded-md bg-aegis-primary px-2 py-1 text-[10px] text-white hover:opacity-90 disabled:cursor-wait disabled:opacity-50">{saving ? <LoaderCircle size={11} className="animate-spin" aria-hidden="true" /> : <Save size={11} aria-hidden="true" />}{saving ? t('chat.sessionFiles.saving') : t('chat.sessionFiles.save')}</button></div></div></div> : selected.previewKind === 'text' && selected.contentEncoding === 'utf8' && selected.content !== undefined ? <pre className="whitespace-pre-wrap break-words font-mono text-[10px] text-aegis-text-secondary">{selected.content}</pre> : <div className="flex items-center gap-2 py-5 text-[11px] text-aegis-text-dim"><Image size={14} aria-hidden="true" />{t('chat.sessionFiles.previewUnavailable')}</div>)}
+              {selected && !loading && !error && (editor ? <div className="flex min-h-full flex-col gap-2"><SessionFileCodeEditor documentId={editorDocumentId} name={selected.name} content={editor.draft.content} readOnly={saving} onChange={updateDraft} onSave={() => { void saveActiveFile(); }} /><div className="flex items-center justify-between gap-2"><div className="min-w-0 text-[10px] text-aegis-text-dim">{editor.active.saveOutcome === 'saved' ? t('chat.sessionFiles.saved') : editor.active.saveOutcome === 'conflict' ? t('chat.sessionFiles.conflict') : editor.active.saveOutcome === 'error' ? t('chat.sessionFiles.saveFailed') : null}</div><div className="flex shrink-0 items-center gap-1"><button type="button" onClick={reloadActiveFile} disabled={saving} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.07)] disabled:opacity-50"><RefreshCw size={11} aria-hidden="true" />{t('chat.sessionFiles.reload')}</button><button type="button" onClick={() => { void saveActiveFile(); }} disabled={saving} className="inline-flex items-center gap-1 rounded-md bg-aegis-primary px-2 py-1 text-[10px] text-white hover:opacity-90 disabled:cursor-wait disabled:opacity-50">{saving ? <LoaderCircle size={11} className="animate-spin" aria-hidden="true" /> : <Save size={11} aria-hidden="true" />}{saving ? t('chat.sessionFiles.saving') : t('chat.sessionFiles.save')}</button></div></div></div> : preview ? <FilePreviewSurface content={preview} fileName={selected.name} compact /> : <div className="flex items-center gap-2 py-5 text-[11px] text-aegis-text-dim"><Image size={14} aria-hidden="true" />{t('chat.sessionFiles.previewUnavailable')}</div>)}
             </div>
           </div>
         </div>
