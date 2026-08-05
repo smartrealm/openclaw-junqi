@@ -54,6 +54,10 @@ impl ResourceDropCoordinator {
     }
 
     pub fn drop(app: &AppHandle, paths: &[PathBuf]) {
+        if crate::commands::privacy_lock::ensure_unlocked(app).is_err() {
+            Self::leave(app);
+            return;
+        }
         let paths = Self::stringify(paths);
         let _ = app.emit("aegis:file-dropped", &paths);
         spawn_quickchat_for_paths(app, paths);
@@ -64,6 +68,7 @@ impl ResourceDropCoordinator {
 /// Open (or refocus) the QuickChatWindow, optionally seeding it with file paths.
 #[tauri::command]
 pub async fn open_quickchat_with_files(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
+    crate::commands::privacy_lock::ensure_unlocked(&app)?;
     if !paths.is_empty() {
         *QUICKCHAT_SEED.lock().unwrap() = paths.clone();
     }

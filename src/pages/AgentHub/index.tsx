@@ -55,6 +55,7 @@ import {
 } from './agentShareDefinition';
 import { ExportSharePackageDialog, ImportSharePackageDialog, type SharePackageManifest, type SharePackageSubject } from '@/components/shared/SharePackageDialog';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { AgentActivityIndicator } from '@/components/shared/AgentActivityIndicator';
 import {
   AgentHubViewPanel,
   hasAgentHubSnapshot,
@@ -525,7 +526,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
                           {isRunning ? (
                             <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded font-bold"
                               style={{ background: `${cfg.color}12`, color: cfg.color }}>
-                              <LoadingIndicator size={9} /> {t('agentHub.running', 'Running')}
+                              <AgentActivityIndicator activity="working" size={20} decorative className="-m-[5px]" /> {t('agentHub.running', 'Running')}
                             </span>
                           ) : (
                             <span className="text-[9px] px-1.5 py-0.5 rounded bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-dim font-bold">
@@ -2072,7 +2073,7 @@ export function AgentHubPage() {
                                 <div className="flex items-center gap-3 mt-2 text-[10px] text-aegis-text-muted">
                                   {isRunning ? (
                                     <span className="flex items-center gap-1 text-aegis-primary">
-                                      <LoadingIndicator size={9} />
+                                      <AgentActivityIndicator activity="working" size={20} decorative className="-m-[5px]" />
                                       {activeSessions.length > 0
                                         ? t('agentHub.card.runningSessions', { count: activeSessions.length, defaultValue: '{{count}} running' })
                                         : t('agentHub.card.working', 'Working…')}

@@ -37,6 +37,70 @@ fn default_terminal_scrollback() -> u32 {
     1000
 }
 
+fn default_privacy_lock_auto_lock_seconds() -> u64 {
+    300
+}
+
+fn default_privacy_lock_shortcut() -> String {
+    "CommandOrControl+Shift+L".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivacyLockSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_privacy_lock_auto_lock_seconds")]
+    pub auto_lock_seconds: u64,
+    #[serde(default = "default_true")]
+    pub lock_on_resume: bool,
+    #[serde(default = "default_true")]
+    pub lock_on_startup: bool,
+    #[serde(default = "default_true")]
+    pub global_shortcut_enabled: bool,
+    #[serde(default = "default_privacy_lock_shortcut")]
+    pub global_shortcut: String,
+}
+
+impl Default for PrivacyLockSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            auto_lock_seconds: default_privacy_lock_auto_lock_seconds(),
+            lock_on_resume: true,
+            lock_on_startup: true,
+            global_shortcut_enabled: true,
+            global_shortcut: default_privacy_lock_shortcut(),
+        }
+    }
+}
+
+fn normalize_privacy_lock_settings(mut settings: PrivacyLockSettings) -> PrivacyLockSettings {
+    if settings.enabled {
+        // An enabled privacy lock must survive process termination, renderer
+        // reload, and system resume. These are security invariants rather than
+        // optional convenience preferences.
+        settings.lock_on_startup = true;
+        settings.lock_on_resume = true;
+    }
+    settings.auto_lock_seconds = if settings.auto_lock_seconds == 0 {
+        0
+    } else {
+        settings.auto_lock_seconds.clamp(60, 3_600)
+    };
+    let shortcut = settings.global_shortcut.trim();
+    settings.global_shortcut = if shortcut.is_empty() {
+        default_privacy_lock_shortcut()
+    } else {
+        shortcut.chars().take(128).collect()
+    };
+    settings
+}
+
 const FALLBACK_APPLICATION_LANGUAGE: &str = "en";
 
 fn normalize_application_language(value: &str) -> Option<&'static str> {
@@ -178,6 +242,10 @@ pub struct AppSettings {
     pub terminal_scrollback: u32,
     #[serde(default)]
     pub agent_profiles: BTreeMap<String, AgentProfileMetadata>,
+    #[serde(default)]
+    pub privacy_lock: PrivacyLockSettings,
+    #[serde(default)]
+    pub privacy_lock_session_armed: bool,
 }
 
 impl Default for AppSettings {
@@ -191,6 +259,8 @@ impl Default for AppSettings {
             claude_force_default_tui: default_claude_force_default_tui(),
             terminal_scrollback: default_terminal_scrollback(),
             agent_profiles: BTreeMap::new(),
+            privacy_lock: PrivacyLockSettings::default(),
+            privacy_lock_session_armed: false,
         }
     }
 }
@@ -294,6 +364,8 @@ fn load_settings_unlocked() -> AppSettings {
             claude_force_default_tui: default_claude_force_default_tui(),
             terminal_scrollback: default_terminal_scrollback(),
             agent_profiles: BTreeMap::new(),
+            privacy_lock: PrivacyLockSettings::default(),
+            privacy_lock_session_armed: false,
         };
         let _ = persist_settings(&settings);
         return settings;
@@ -305,6 +377,7 @@ fn load_settings_unlocked() -> AppSettings {
     };
     let mut settings = serde_json::from_str::<AppSettings>(&raw).unwrap_or_default();
     settings.send_shortcut = normalize_send_shortcut(settings.send_shortcut);
+    settings.privacy_lock = normalize_privacy_lock_settings(settings.privacy_lock);
     settings
 }
 
@@ -327,6 +400,39 @@ pub fn get_agent_program(agent: &str) -> String {
 
 pub fn claude_force_default_tui() -> bool {
     load_settings_unlocked().claude_force_default_tui
+}
+
+pub fn privacy_lock_settings() -> PrivacyLockSettings {
+    load_settings_unlocked().privacy_lock
+}
+
+pub fn privacy_lock_session_armed() -> bool {
+    load_settings_unlocked().privacy_lock_session_armed
+}
+
+pub fn set_privacy_lock_session_armed(armed: bool) -> Result<(), String> {
+    let _guard = settings_lock()
+        .lock()
+        .map_err(|_| "settings lock poisoned".to_string())?;
+    let mut settings = load_settings_unlocked();
+    settings.privacy_lock_session_armed = armed;
+    persist_settings(&settings)
+}
+
+pub fn save_privacy_lock_settings(
+    settings: PrivacyLockSettings,
+) -> Result<PrivacyLockSettings, String> {
+    let _guard = settings_lock()
+        .lock()
+        .map_err(|_| "settings lock poisoned".to_string())?;
+    let mut app_settings = load_settings_unlocked();
+    let settings = normalize_privacy_lock_settings(settings);
+    app_settings.privacy_lock = settings.clone();
+    if !settings.enabled {
+        app_settings.privacy_lock_session_armed = false;
+    }
+    persist_settings(&app_settings)?;
+    Ok(settings)
 }
 
 pub fn application_language() -> String {
@@ -411,6 +517,9 @@ pub fn save_app_settings(mut settings: AppSettings) -> Result<(), String> {
     // Agent profiles have their own command boundary. Preserve them when an
     // older settings writer sends an AppSettings payload without that field.
     settings.agent_profiles = load_settings_unlocked().agent_profiles;
+    let current = load_settings_unlocked();
+    settings.privacy_lock = current.privacy_lock;
+    settings.privacy_lock_session_armed = current.privacy_lock_session_armed;
     settings.language = normalize_application_language(&settings.language)
         .unwrap_or(FALLBACK_APPLICATION_LANGUAGE)
         .to_string();
@@ -558,6 +667,30 @@ mod tests {
     fn app_settings_keep_agent_profiles_backward_compatible() {
         let settings: AppSettings = serde_json::from_str(r#"{"send_shortcut":"enter"}"#).unwrap();
         assert!(settings.agent_profiles.is_empty());
+    }
+
+    #[test]
+    fn enabled_privacy_lock_forces_startup_and_resume_fences() {
+        let normalized = normalize_privacy_lock_settings(PrivacyLockSettings {
+            enabled: true,
+            lock_on_startup: false,
+            lock_on_resume: false,
+            ..PrivacyLockSettings::default()
+        });
+        assert!(normalized.lock_on_startup);
+        assert!(normalized.lock_on_resume);
+    }
+
+    #[test]
+    fn privacy_lock_settings_are_backward_compatible_and_camel_case() {
+        let settings: AppSettings = serde_json::from_str(r#"{"send_shortcut":"enter"}"#).unwrap();
+        assert!(!settings.privacy_lock.enabled);
+        assert_eq!(settings.privacy_lock.auto_lock_seconds, 300);
+        assert!(settings.privacy_lock.lock_on_resume);
+        assert!(!settings.privacy_lock_session_armed);
+        let encoded = serde_json::to_value(settings.privacy_lock).unwrap();
+        assert_eq!(encoded["autoLockSeconds"], 300);
+        assert!(encoded.get("auto_lock_seconds").is_none());
     }
 
     #[test]

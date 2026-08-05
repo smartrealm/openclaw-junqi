@@ -495,6 +495,32 @@ fn voice_capture_start_blocking(
     }
 }
 
+pub fn stop_active_capture_for_privacy_lock(app: &AppHandle) -> Result<(), String> {
+    let _control = CAPTURE_CONTROL
+        .lock()
+        .map_err(|error| format!("语音采集控制锁失败: {error}"))?;
+    let state = ACTIVE_CAPTURE
+        .lock()
+        .map_err(|error| format!("语音采集状态锁失败: {error}"))?
+        .take();
+    let Some(mut state) = state else {
+        return Ok(());
+    };
+    let owner_id = state.owner_id.clone();
+    stop_capture_worker(
+        &mut state,
+        Duration::from_millis(CAPTURE_SHUTDOWN_TIMEOUT_MS),
+    )?;
+    let _ = app.emit(
+        "voice-capture",
+        scope_capture_event(
+            &owner_id,
+            serde_json::json!({ "state": "stopped", "reason": "privacy_lock" }),
+        ),
+    );
+    Ok(())
+}
+
 fn stop_worker_by_id(worker_id: u64) {
     let state = {
         let mut guard = match ACTIVE_CAPTURE.lock() {

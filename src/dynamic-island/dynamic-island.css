@@ -46,6 +46,14 @@
   -webkit-backdrop-filter: blur(26px) saturate(1.18);
 }
 
+.junqi-island-shell.has-agent-activity .junqi-island-compact {
+  border-color: rgb(var(--aegis-primary) / 0.38);
+  box-shadow:
+    var(--aegis-shadow-float),
+    inset 0 1px 0 rgb(var(--aegis-overlay) / 0.06),
+    0 0 18px rgb(var(--aegis-primary) / 0.12);
+}
+
 .junqi-island-compact {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto;
@@ -109,6 +117,16 @@
   object-fit: contain;
 }
 
+.junqi-island-primary-activity {
+  color: var(--island-primary);
+  transform: scale(1.22);
+}
+
+.junqi-island-activity-glyph {
+  color: currentColor;
+  transform: scale(0.82);
+}
+
 .junqi-island-brand-emblem {
   width: 23px;
   height: 23px;
@@ -169,21 +187,6 @@
 .junqi-island-connection.is-online {
   background: var(--island-primary);
   box-shadow: 0 0 8px var(--aegis-primary-glow);
-}
-
-.junqi-island-spinner {
-  display: inline-block;
-  width: 11px;
-  height: 11px;
-  flex: 0 0 auto;
-  border: 1.5px solid rgb(var(--aegis-primary) / 0.24);
-  border-top-color: var(--island-primary);
-  border-radius: 50%;
-  animation: junqi-island-spin 0.8s linear infinite;
-}
-
-@keyframes junqi-island-spin {
-  to { transform: rotate(360deg); }
 }
 
 .junqi-island-panel {
