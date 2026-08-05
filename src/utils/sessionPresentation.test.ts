@@ -137,6 +137,23 @@ test('thinking and sending are first-class local activity signals', () => {
   assert.equal(projection.bySessionKey.get(sending)?.phase, 'sending');
 });
 
+test('compaction is a first-class local activity with its Gateway timestamp', () => {
+  const sessionKey = 'agent:main:desktop-compacting';
+  const projection = projectSessionActivity({
+    sessions: [session({ key: sessionKey })],
+    typingBySession: { [sessionKey]: false },
+    compactionStatusBySession: {
+      [sessionKey]: { operationId: 'compact-1', phase: 'active', startedAt: 1_725_000_000_000 },
+    },
+  });
+
+  const activity = projection.bySessionKey.get(sessionKey);
+  assert.equal(activity?.state, 'running');
+  assert.equal(activity?.phase, 'compacting');
+  assert.equal(activity?.startedAt, 1_725_000_000_000);
+  assert.equal(projection.workingDisplayKey, sessionKey);
+});
+
 test('background subagent and cron state remains authoritative without local chat signals', () => {
   const cron = 'agent:main:cron:job-1:run:run-1';
   const subagent = 'agent:writer:subagent:run-2';
@@ -193,6 +210,7 @@ test('session activity surfaces consume the shared projection contract', () => {
   for (const relativePath of consumers) {
     const source = readFileSync(new URL(relativePath, import.meta.url), 'utf8');
     assert.match(source, /projectSessionActivity\(/, relativePath);
+    assert.match(source, /compactionStatusBySession/, relativePath);
   }
 
   const topBar = readFileSync(new URL('../components/Layout/TopBar.tsx', import.meta.url), 'utf8');

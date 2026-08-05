@@ -328,6 +328,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
   const typingStartedAtBySession = useChatStore((s) => s.typingStartedAtBySession);
   const thinkingBySession = useChatStore((s) => s.thinkingBySession);
   const sendingBySession = useChatStore((s) => s.sendingBySession);
+  const compactionStatusBySession = useChatStore((s) => s.compactionStatusBySession);
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const sessions = useChatStore((s) => s.sessions);
   const agents = useGatewayDataStore((s) => s.agents);
@@ -340,7 +341,8 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     typingStartedAtBySession,
     thinkingBySession,
     sendingBySession,
-  }), [activeSessionKey, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
+    compactionStatusBySession,
+  }), [activeSessionKey, compactionStatusBySession, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
   const workingKeys = activityProjection.active.map((activity) => activity.sessionKey);
   const workingCount = workingKeys.length;
   // Setup already authenticated this Gateway — App.tsx trusts that handoff

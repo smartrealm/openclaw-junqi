@@ -117,6 +117,7 @@ export function DashboardPage() {
     typingStartedAtBySession,
     thinkingBySession,
     sendingBySession,
+    compactionStatusBySession,
   } = useChatStore();
   const budgetLimit = useSettingsStore((s) => s.budgetLimit);
   const hasProviders = availableModels.length > 0;
@@ -193,9 +194,11 @@ export function DashboardPage() {
     typingStartedAtBySession,
     thinkingBySession,
     sendingBySession,
+    compactionStatusBySession,
   }), [
     activeSessionKey,
     activitySessions,
+    compactionStatusBySession,
     sendingBySession,
     thinkingBySession,
     typingBySession,

@@ -65,6 +65,7 @@ export function AgentsPanel() {
   const typingStartedAtBySession = useChatStore((st) => st.typingStartedAtBySession);
   const thinkingBySession = useChatStore((st) => st.thinkingBySession);
   const sendingBySession = useChatStore((st) => st.sendingBySession);
+  const compactionStatusBySession = useChatStore((st) => st.compactionStatusBySession);
   const skillList = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);
 
@@ -79,7 +80,8 @@ export function AgentsPanel() {
     typingStartedAtBySession,
     thinkingBySession,
     sendingBySession,
-  }), [activeSessionKey, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
+    compactionStatusBySession,
+  }), [activeSessionKey, compactionStatusBySession, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
   const runningIds = useMemo(() => {
     const set = new Set<string>();
     for (const activity of activityProjection.active) {

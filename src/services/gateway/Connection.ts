@@ -25,7 +25,6 @@ import {
 } from './runtimeIdentity';
 import { storeGatewayConnectionDeviceCredential } from './GatewayConnectionTargetResolver';
 import { signGatewayDeviceChallenge } from './deviceAuthentication';
-import type { OpenClawSessionOperationEvent } from './sessionOperation';
 import { getNativePlatformInfo } from '@/api/tauri-commands';
 
 // OpenClaw reserves protocol v3 compatibility for node/probe clients. JunQi
@@ -269,8 +268,6 @@ export interface GatewayCallbacks {
   onTranscriptChanged?: (sessionKey: string) => void;
   /** Typed durable message notice for unread and notification projection only. */
   onTranscriptMessage?: (notice: GatewayTranscriptMessageNotice) => void;
-  /** Official in-flight session operation event for the selected transcript. */
-  onSessionOperation?: (operation: OpenClawSessionOperationEvent) => void;
   onStatusChange: (status: { connected: boolean; connecting: boolean; error?: string }) => void;
   onRetryState?: (state: GatewayRetryState) => void;
   /** Structured authorization failure from the Gateway protocol. */

@@ -24,7 +24,7 @@ export interface DynamicIslandSessionActivity {
   sessionKey: string;
   agentName: string;
   sessionTitle: string;
-  phase: 'thinking' | 'generating' | 'observing';
+  phase: 'compacting' | 'thinking' | 'generating' | 'observing';
   startedAt: number;
   observer?: {
     headline: string;
@@ -130,7 +130,7 @@ export function resolveDynamicIslandAgentActivity(input: {
   if (input.voicePhase === 'speaking' || input.voicePhase === 'queued') return 'generating';
   if (input.sessionPhase === 'thinking') return 'thinking';
   if (input.sessionPhase === 'generating') return 'generating';
-  if (input.runningTaskCount > 0 || input.sessionPhase === 'observing') return 'working';
+  if (input.runningTaskCount > 0 || input.sessionPhase === 'observing' || input.sessionPhase === 'compacting') return 'working';
   return null;
 }
 

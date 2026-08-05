@@ -7,8 +7,6 @@ import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { normalizeHistoryMessages } from '@/processing/normalizeHistoryMessage';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
 import { useTheme } from '@/theme/useTheme';
-import { describeOpenClawSessionOperation } from '@/services/gateway/sessionOperation';
-import i18n from '@/i18n';
 import { stopQuickChatRequest } from './quickChatStop';
 
 /** Quick Chat owns one generated session and must not speak main-window events. */
@@ -102,20 +100,6 @@ export default function QuickChatRoot() {
       onTranscriptChanged: (eventSessionKey) => {
         if (!isOwnedQuickChatSession(eventSessionKey, sessionKey)) return;
         void refreshHistory().catch(() => undefined);
-      },
-      onSessionOperation: (operation) => {
-        if (!isOwnedQuickChatSession(operation.sessionKey, sessionKey)) return;
-        const presentation = describeOpenClawSessionOperation(operation, (key, options) => (
-          options ? i18n.t(key, options) : i18n.t(key)
-        ));
-        useChatStore.getState().addMessage({
-          id: `session-operation-${operation.operationId}-${operation.phase}`,
-          role: 'assistant',
-          content: '',
-          timestamp: new Date(operation.ts).toISOString(),
-          responseState: 'final',
-          sessionEvents: [presentation],
-        }, operation.sessionKey);
       },
       onStatusChange: (status) => {
         if (!status.connected && !status.connecting) {

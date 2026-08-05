@@ -222,6 +222,7 @@ export function ActivityCenterPage() {
   const typingStartedAtBySession = useChatStore((state) => state.typingStartedAtBySession);
   const thinkingBySession = useChatStore((state) => state.thinkingBySession);
   const sendingBySession = useChatStore((state) => state.sendingBySession);
+  const compactionStatusBySession = useChatStore((state) => state.compactionStatusBySession);
   const gatewaySessions = useGatewayDataStore((state) => state.sessions);
   const agents = useGatewayDataStore((state) => state.agents);
   const sessionsUsage = useGatewayDataStore((state) => state.sessionsUsage);
@@ -261,7 +262,8 @@ export function ActivityCenterPage() {
     typingStartedAtBySession,
     thinkingBySession,
     sendingBySession,
-  }), [activeSessionKey, sendingBySession, sessionRecords, thinkingBySession, typingBySession, typingStartedAtBySession]);
+    compactionStatusBySession,
+  }), [activeSessionKey, compactionStatusBySession, sendingBySession, sessionRecords, thinkingBySession, typingBySession, typingStartedAtBySession]);
 
   const collaborationNeedsYou = useMemo(() => {
     const deletedRunIds = new Set(collaborationTombstones.map((tombstone) => tombstone.runId));

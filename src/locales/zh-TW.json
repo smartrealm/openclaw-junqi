@@ -1662,11 +1662,6 @@
     "agentRuntime": "智能體運行時",
     "thinking": "思考",
     "contextCompactedLabel": "上下文已壓縮",
-    "sessionCompactionStarted": "上下文壓縮已開始",
-    "sessionCompactionCompleted": "上下文壓縮已完成",
-    "sessionCompactionFailed": "上下文壓縮失敗",
-    "sessionCompactionFailedWithReason": "上下文壓縮失敗：{{reason}}",
-    "sessionCompactionEnded": "上下文壓縮已結束，但 OpenClaw 未回報完成狀態",
     "searchMessages": "搜索消息...",
     "noSearchResults": "無結果",
     "regenerate": "重新生成",
@@ -5305,6 +5300,7 @@
     "muted": "靜音",
     "alerts": "通知",
     "agent": {
+      "compacting": "{{agent}} 正在壓縮上下文",
       "thinking": "{{agent}} 正在思考",
       "generating": "{{agent}} 正在回覆",
       "observing": "{{agent}} 狀態更新"
@@ -5319,6 +5315,7 @@
       "failed": "失敗"
     },
     "elapsed": {
+      "compacting": "已回應 {{elapsed}} · 正在壓縮",
       "thinking": "已回應 {{elapsed}} · 思考中",
       "generating": "已回應 {{elapsed}} · 生成中"
     },

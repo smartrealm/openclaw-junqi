@@ -1695,11 +1695,6 @@
     "agentRuntime": "Agent runtime",
     "thinking": "Thinking",
     "contextCompactedLabel": "Context Compacted",
-    "sessionCompactionStarted": "Context compaction started",
-    "sessionCompactionCompleted": "Context compaction completed",
-    "sessionCompactionFailed": "Context compaction failed",
-    "sessionCompactionFailedWithReason": "Context compaction failed: {{reason}}",
-    "sessionCompactionEnded": "Context compaction ended without a reported completion status",
     "searchMessages": "Search messages...",
     "noSearchResults": "No results",
     "regenerate": "Regenerate",
@@ -5738,6 +5733,7 @@
     "muted": "Muted",
     "alerts": "Alerts",
     "agent": {
+      "compacting": "{{agent}} is compacting context",
       "thinking": "{{agent}} is thinking",
       "generating": "{{agent}} is responding",
       "observing": "{{agent}} status update"
@@ -5752,6 +5748,7 @@
       "failed": "Failed"
     },
     "elapsed": {
+      "compacting": "{{elapsed}} · COMPACTING",
       "thinking": "{{elapsed}} · THINKING",
       "generating": "{{elapsed}} · GENERATING"
     },

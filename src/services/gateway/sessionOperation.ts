@@ -1,5 +1,3 @@
-import type { SessionEvent } from '@/types/RenderBlock';
-
 export type SessionOperationPhase = 'start' | 'end';
 
 /** The current OpenClaw gateway-protocol SessionOperationEvent contract. */
@@ -13,8 +11,6 @@ export interface OpenClawSessionOperationEvent {
   completed?: boolean;
   reason?: string;
 }
-
-export type SessionOperationEvent = OpenClawSessionOperationEvent;
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -78,33 +74,4 @@ export function parseOpenClawSessionOperationEvent(value: unknown): OpenClawSess
     ...(source.completed !== undefined ? { completed: source.completed } : {}),
     ...(reason !== undefined ? { reason } : {}),
   };
-}
-
-export const parseSessionOperationEvent = parseOpenClawSessionOperationEvent;
-
-export type SessionOperationTranslator = (
-  key: string,
-  options?: { reason: string },
-) => string;
-
-export function describeOpenClawSessionOperation(
-  operation: OpenClawSessionOperationEvent,
-  translate: SessionOperationTranslator,
-): { kind: SessionEvent['kind']; text: string } {
-  if (operation.phase === 'start') {
-    return { kind: 'compaction', text: translate('chat.sessionCompactionStarted') };
-  }
-  if (operation.completed === true) {
-    return { kind: 'compaction', text: translate('chat.sessionCompactionCompleted') };
-  }
-  if (operation.completed === false) {
-    const reason = operation.reason?.trim();
-    return reason
-      ? {
-          kind: 'compaction',
-          text: translate('chat.sessionCompactionFailedWithReason', { reason }),
-        }
-      : { kind: 'compaction', text: translate('chat.sessionCompactionFailed') };
-  }
-  return { kind: 'compaction', text: translate('chat.sessionCompactionEnded') };
 }

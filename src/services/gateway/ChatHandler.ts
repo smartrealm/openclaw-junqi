@@ -40,7 +40,6 @@ import {
 import { parseOpenClawChatSendTiming } from './chatSendTiming';
 import {
   parseOpenClawSessionOperationEvent,
-  type OpenClawSessionOperationEvent,
 } from './sessionOperation';
 
 // ── Workshop Command Parser ──
@@ -155,7 +154,7 @@ export class ChatHandler {
 
   private rememberSessionOperationEvent(
     sessionKey: string,
-    operation: OpenClawSessionOperationEvent,
+    operation: NonNullable<ReturnType<typeof parseOpenClawSessionOperationEvent>>,
   ): boolean {
     const marker = JSON.stringify([
       sessionKey,
@@ -1368,10 +1367,6 @@ export class ChatHandler {
       const operationSessionKey = this.resolveSessionKey(operation.sessionKey);
       if (!operationSessionKey || isIsolatedExecutionSessionKey(operationSessionKey)) return;
       if (!this.rememberSessionOperationEvent(operationSessionKey, operation)) return;
-      this.conn.callbacks?.onSessionOperation?.({
-        ...operation,
-        sessionKey: operationSessionKey,
-      });
       const store = useChatStore.getState();
       const current = store.compactionStatusBySession[operationSessionKey];
       if (operation.phase === 'start') {
