@@ -1513,6 +1513,50 @@ test('durable session.message recognizes a completed live run despite a differen
   assert.equal(notices[0]?.liveProjected, true);
 });
 
+test('assistant idempotency key reconciles a transformed durable mirror with its live run', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const notices: Array<{ liveProjected: boolean }> = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onTranscriptMessage: (notice: { liveProjected: boolean }) => notices.push(notice),
+    },
+  } as any);
+  const sessionKey = 'agent:main:assistant-idempotency-notification';
+  const runId = 'run-assistant-idempotency-notification';
+  const durableText = 'Choose a direction. [[button:Continue]]';
+
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey,
+    runId,
+    state: 'delta',
+    message: { content: durableText },
+  } });
+  handler.handleEvent({ event: 'chat', payload: {
+    sessionKey,
+    runId,
+    state: 'final',
+    message: { content: durableText },
+  } });
+  handler.handleEvent({ event: 'session.message', payload: {
+    sessionKey,
+    messageSeq: 1,
+    message: {
+      role: 'assistant',
+      content: durableText,
+      idempotencyKey: `${runId}:assistant`,
+      __openclaw: { id: 'durable-transformed-message' },
+    },
+  } });
+
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0]?.liveProjected, true);
+});
+
 test('durable session.message without a run id recognizes its immediate live terminal mirror', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();

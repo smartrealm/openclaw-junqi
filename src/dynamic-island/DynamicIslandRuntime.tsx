@@ -5,7 +5,6 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
-import { useNotificationStore } from '@/stores/notificationStore';
 import { usePetStore } from '@/stores/petStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -65,7 +64,6 @@ export default function DynamicIslandRuntime() {
   const focus = useFocusProjection();
   const pomodoro = usePetStore((state) => state.pomodoro);
   const petEnabled = usePetStore((state) => state.enabled);
-  const latestToast = useNotificationStore((state) => state.toasts.at(-1) ?? null);
   const revisionRef = useRef(0);
   const [mainMinimized, setMainMinimized] = useState(false);
   const [previewActive, setPreviewActive] = useState(false);
@@ -235,14 +233,8 @@ export default function DynamicIslandRuntime() {
       endsAt: pomodoro.endsAt,
       pausedRemainingMs: pomodoro.pausedRemainingMs,
     },
-    notice: latestToast ? {
-      id: latestToast.id,
-      type: latestToast.type,
-      title: latestToast.title,
-      body: latestToast.body,
-    } : null,
     resourceDrop,
-  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, executionPlan, focus, latestToast, petEnabled, pomodoro, previewActive, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voiceInput, voicePhase, voiceQueueLength]);
+  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, executionPlan, focus, petEnabled, pomodoro, previewActive, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voiceInput, voicePhase, voiceQueueLength]);
   const latestSnapshotRef = useRef(snapshot);
   latestSnapshotRef.current = snapshot;
 

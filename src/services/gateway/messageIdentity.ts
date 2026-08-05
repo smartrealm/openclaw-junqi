@@ -26,6 +26,12 @@ export function normalizeTranscriptClientMessageId(value: string, role?: unknown
   if (role === 'user' && value.endsWith(':user')) {
     return value.slice(0, -':user'.length);
   }
+  if (role === 'assistant' && value.endsWith(':assistant')) {
+    return value.slice(0, -':assistant'.length);
+  }
+  if (role === 'assistant' && value.startsWith('cli-assistant:')) {
+    return value.slice('cli-assistant:'.length);
+  }
   return value;
 }
 

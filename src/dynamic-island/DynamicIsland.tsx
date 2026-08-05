@@ -196,7 +196,6 @@ export default function DynamicIsland() {
       return t('dynamicIsland.readyForFiles', { count: snapshot.resourceDrop.count });
     }
     if (snapshot.resourceDrop?.phase === 'received') return t('dynamicIsland.filesSent');
-    if (snapshot.notice) return snapshot.notice.title;
     if (attentionCount === 1) return attentionTasks[0].title;
     if (attentionCount > 0) return t('dynamicIsland.needsAttention', { count: attentionCount });
     if (outputVoiceActive && (snapshot.voicePhase === 'speaking' || snapshot.voicePhase === 'queued')) return t('dynamicIsland.speaking');
@@ -211,7 +210,7 @@ export default function DynamicIsland() {
     if (snapshot.focus) return snapshot.focus.title;
     if (snapshot.connected) return t('dynamicIsland.ready');
     return snapshot.connecting ? t('dynamicIsland.connecting') : t('dynamicIsland.offline');
-  }, [attentionCount, attentionTasks, inputVoiceActive, outputVoiceActive, primaryRunningTask, primarySessionActivity, runningCount, snapshot.connected, snapshot.connecting, snapshot.focus, snapshot.notice, snapshot.resourceDrop, snapshot.voiceInput, snapshot.voicePhase, t]);
+  }, [attentionCount, attentionTasks, inputVoiceActive, outputVoiceActive, primaryRunningTask, primarySessionActivity, runningCount, snapshot.connected, snapshot.connecting, snapshot.focus, snapshot.resourceDrop, snapshot.voiceInput, snapshot.voicePhase, t]);
   const compactMeta = useMemo(() => {
     const task = attentionTasks[0] ?? primaryRunningTask;
     if (task) return `${task.agent} · ${statusLabel(task.status)}`;
@@ -327,7 +326,7 @@ export default function DynamicIsland() {
                     ? t('dynamicIsland.returnToChatToControlVoice')
                     : primarySessionActivity?.observer
                       ? t(`dynamicIsland.observerHealth.${primarySessionActivity.observer.health}`)
-                    : snapshot.notice?.body || t('dynamicIsland.currentActivity')}</small></span>
+                      : t('dynamicIsland.currentActivity')}</small></span>
               </div>
               <div className="junqi-island-window-actions">
                 <button type="button" onClick={() => setIslandExpanded(false)} title={t('dynamicIsland.collapse')}><ChevronUp size={15} /></button>
