@@ -519,7 +519,6 @@ export class GatewayConnection {
 
   subscribeHello(listener: (observation: GatewayHelloObservation | null) => void): () => void {
     this.helloListeners.add(listener);
-    listener(this.helloObservation);
     return () => this.helloListeners.delete(listener);
   }
 

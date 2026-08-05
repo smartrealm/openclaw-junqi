@@ -12,6 +12,12 @@ JunQi already uses native OpenClaw session creation, organization, transcript su
 
 This change adds a strict transcript-history client and message-level controls for the latter methods. It also preserves the Gateway handshake's advertised method list for the lifetime of the authenticated socket. New controls are not rendered when the Gateway omits or does not advertise their methods. This avoids treating an older installed Gateway as compatible merely because a newer upstream source contains the method.
 
+## Subscription Boundary
+
+The authenticated hello observation is an external React store. Its subscription now publishes only actual handshake or disconnect changes; `useSyncExternalStore` reads the current snapshot itself and must not receive an artificial callback during subscription. The subscription and snapshot functions are stable across React renders.
+
+WebSocket callbacks and the Gateway connection manager can report the same connection facts. `chatStore.setConnectionStatus` therefore preserves the existing state object when all visible connection fields are unchanged. A genuine disconnect still clears the transient session-group catalog. This removes repeated global renders without changing Gateway reconnect policy, RPC capability discovery, or the current command catalog contract.
+
 ## Permission Model
 
 - `sessions.branches.list` and `sessions.fork` use the ordinary authenticated request lane.
@@ -34,6 +40,7 @@ This change is limited to the official transcript-DAG methods. Existing file, wo
 
 - `pnpm lint`
 - `node --import ./test-setup.ts --import tsx --test src/services/gateway/sessionCapabilities.test.ts src/services/gateway/SessionTranscriptHistoryClient.test.ts src/services/gateway/gatewayCredentialSecurity.test.ts`
+- `node --import ./test-setup.ts --import tsx --test src/stores/chatStore.test.ts`
 - `git diff --check`
 
 The change has not been exercised against a live Gateway that advertises these methods in this repository. Live permissions, transcript mutation results, and server-emitted invalidation events remain target-runtime verification items.
