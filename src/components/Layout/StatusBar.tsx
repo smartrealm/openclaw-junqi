@@ -32,6 +32,7 @@ export function StatusBar() {
   const typingStartedAtBySession = useChatStore((st) => st.typingStartedAtBySession);
   const thinkingBySession = useChatStore((st) => st.thinkingBySession);
   const sendingBySession = useChatStore((st) => st.sendingBySession);
+  const compactionStatusBySession = useChatStore((st) => st.compactionStatusBySession);
   const uiScale = useSettingsStore((st) => st.uiScale);
   const resolvedTheme = useResolvedTheme();
   const petEnabled = usePetStore((st) => st.enabled);
@@ -53,8 +54,10 @@ export function StatusBar() {
     typingStartedAtBySession,
     thinkingBySession,
     sendingBySession,
+    compactionStatusBySession,
   }), [
     activeSessionKey,
+    compactionStatusBySession,
     sendingBySession,
     sessions,
     thinkingBySession,

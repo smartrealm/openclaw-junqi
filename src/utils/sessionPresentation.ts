@@ -1,11 +1,11 @@
-import type { Session } from '@/stores/chatStore';
+import type { Session, SessionCompactionStatus } from '@/stores/chatStore';
 import { isAgentMainSession } from '@/utils/sessionLifecycle';
 
 export type BackgroundActivityKind = 'dreaming' | 'cron' | 'subagent' | 'system';
 export type SessionPresentationKind = 'conversation' | BackgroundActivityKind;
 export type AgentSessionKind = 'main' | 'cron' | 'subagent' | 'conversation';
 export type SessionExecutionState = 'running' | 'done' | 'failed' | 'stopped' | 'unknown';
-export type SessionActivityPhase = 'thinking' | 'sending' | 'generating' | 'background';
+export type SessionActivityPhase = 'compacting' | 'thinking' | 'sending' | 'generating' | 'background';
 
 export interface SessionThinkingSignal {
   readonly runId: string | null;
@@ -17,6 +17,7 @@ export interface SessionActivitySignals {
   typingStartedAtBySession?: Readonly<Record<string, number>>;
   thinkingBySession?: Readonly<Record<string, SessionThinkingSignal | undefined>>;
   sendingBySession?: Readonly<Record<string, boolean>>;
+  compactionStatusBySession?: Readonly<Record<string, SessionCompactionStatus | undefined>>;
 }
 
 export interface SessionActivity {
@@ -237,6 +238,7 @@ function localPhase(
   sessionKey: string,
   signals: SessionActivitySignals,
 ): SessionActivityPhase | null {
+  if (signals.compactionStatusBySession?.[sessionKey]) return 'compacting';
   if (hasThinkingSignal(signals.thinkingBySession?.[sessionKey])) return 'thinking';
   if (signals.typingBySession?.[sessionKey]) return 'generating';
   if (signals.sendingBySession?.[sessionKey]) return 'sending';
@@ -265,10 +267,11 @@ function projectedState(
 }
 
 const SESSION_ACTIVITY_PHASE_PRIORITY: Readonly<Record<SessionActivityPhase, number>> = {
-  thinking: 0,
-  generating: 1,
-  sending: 2,
-  background: 3,
+  compacting: 0,
+  thinking: 1,
+  generating: 2,
+  sending: 3,
+  background: 4,
 };
 
 function compareActiveSessions(
@@ -302,10 +305,11 @@ export function projectSessionActivity({
   typingStartedAtBySession = {},
   thinkingBySession = {},
   sendingBySession = {},
+  compactionStatusBySession = {},
 }: SessionActivityProjectionInput): SessionActivityProjection {
   const sessionByKey = new Map(sessions.map((session) => [session.key, session]));
   const allKeys = new Set(sessionByKey.keys());
-  for (const source of [typingBySession, thinkingBySession, sendingBySession]) {
+  for (const source of [typingBySession, thinkingBySession, sendingBySession, compactionStatusBySession]) {
     for (const sessionKey of Object.keys(source)) allKeys.add(sessionKey);
   }
 
@@ -324,6 +328,7 @@ export function projectSessionActivity({
       typingBySession,
       thinkingBySession,
       sendingBySession,
+      compactionStatusBySession,
     });
     const localActive = phase !== null;
     const chatObserved = Object.prototype.hasOwnProperty.call(typingBySession, sessionKey);
@@ -337,7 +342,9 @@ export function projectSessionActivity({
       active,
       localActive,
       phase: active ? phase ?? 'background' : null,
-      startedAt: localActive ? validStartedAt(typingStartedAtBySession[sessionKey]) : null,
+      startedAt: phase === 'compacting'
+        ? validStartedAt(compactionStatusBySession[sessionKey]?.startedAt)
+        : localActive ? validStartedAt(typingStartedAtBySession[sessionKey]) : null,
     });
   }
 

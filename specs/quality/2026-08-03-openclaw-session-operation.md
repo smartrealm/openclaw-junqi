@@ -20,5 +20,5 @@
 - `completed` 缺失时 UI 不显示成功。
 - 非法 operation、隔离会话和无效身份不会污染其他事件处理。
 - 完全相同的官方 operation 重放只投影一次；同一 operation 的 start/end 仍分别投影。
-- 主窗口与 Quick Chat 使用相同的本地事件语义和国际化文案。
+- 主窗口与 Quick Chat 不把操作事件写入本地聊天消息；共享 Gateway 状态投影。
 - 文档记录真实 Gateway 与跨平台真机验收仍待完成。

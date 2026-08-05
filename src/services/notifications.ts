@@ -1,10 +1,10 @@
-// ═══════════════════════════════════════════════════════════
-// Notification Service — Sound + visual toast notifications
-// No OS notifications, no Electron IPC, no Web Notification API
-// ═══════════════════════════════════════════════════════════
-
 import { useNotificationStore, type NotificationType } from '@/stores/notificationStore';
-import { debugLog, debugWarn } from '@/utils/debugLog';
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from '@tauri-apps/plugin-notification';
+import { debugWarn } from '@/utils/debugLog';
 import { isPrivacyLocked } from '@/privacy-lock/store';
 import {
   notifyPersistentNotificationsChanged,
@@ -17,6 +17,15 @@ export interface NotifyOptions {
   body: string;
   /** Stable upstream event identity. Optional for notifications without one. */
   dedupeKey?: string;
+  /** 通知中心点击后打开的内部或外部目标。 */
+  url?: string | null;
+}
+
+export function notificationTypeFromPersistentLevel(level: string): NotificationType {
+  if (level === 'error' || level === 'warning') return 'error';
+  if (level === 'attention') return 'message';
+  if (level === 'completed') return 'task_complete';
+  return 'info';
 }
 
 class NotificationService {
@@ -24,7 +33,7 @@ class NotificationService {
   private _enabled = true;
   private _soundEnabled = true;
   private _dndMode = false;
-  private permissionRequested = false;
+  private nativePermissionRequested = false;
   private readonly deliveredDedupeKeys = new Set<string>();
 
   private audioCtx: AudioContext | null = null;
@@ -79,14 +88,6 @@ class NotificationService {
 
   // ── Core notify ──────────────────────────────────────────
 
-  /**
-   * Play chime and show visual notification.
-   * - Window focused → in-app toast (rendered in React)
-   * - Window NOT focused (minimized/background) → Web Notification API
-   *   (Chromium throttles React renders when page is hidden, so toasts won't appear.
-   *    Web Notification API works from the renderer — same approach as v4.0 which worked reliably.)
-   * Both gates respect `enabled` and `dndMode`.
-   */
   notify(options: NotifyOptions): void {
     if (!this._enabled) return;
     if (options.dedupeKey && !this.rememberDedupeKey(options.dedupeKey)) return;
@@ -96,16 +97,7 @@ class NotificationService {
       : options;
     const present = () => {
       if (this._dndMode || locked) return;
-      this.playChime();
-      if (document.hasFocus()) {
-      // Window visible — in-app toast works fine
-        useNotificationStore.getState().addToast(protectedOptions.type, protectedOptions.title, protectedOptions.body);
-      } else {
-      // Window minimized/background — try both methods for maximum reliability:
-      // 1. Web Notification API (worked in v4 dev mode)
-      // 2. Electron IPC fallback (works in production where file:// may block Web API)
-        this.showOSNotification(protectedOptions.title, protectedOptions.body);
-      }
+      this.present(protectedOptions);
     };
 
     void this.persist(protectedOptions).then((inserted) => {
@@ -115,6 +107,12 @@ class NotificationService {
       // visible notification rather than silently discarding the event.
       present();
     });
+  }
+
+  /** 后端已持久化的事件只负责呈现，避免再次写入同一条通知。 */
+  presentPersisted(level: string, title: string, body: string): void {
+    if (!this._enabled || this._dndMode || isPrivacyLocked()) return;
+    this.present({ type: notificationTypeFromPersistentLevel(level), title, body });
   }
 
   private rememberDedupeKey(dedupeKey: string): boolean {
@@ -130,12 +128,16 @@ class NotificationService {
   private persist(options: NotifyOptions): Promise<boolean> {
     const host = window as Window & { __TAURI_INTERNALS__?: unknown };
     if (!host.__TAURI_INTERNALS__) return Promise.resolve(true);
-    const level = options.type === 'error' ? 'error' : 'info';
+    const level = options.type === 'error'
+      ? 'error'
+      : options.type === 'task_complete'
+        ? 'completed'
+        : 'info';
     return persistentNotificationRepository.push({
       level,
       title: options.title,
       body: options.body,
-      url: null,
+      url: options.url ?? null,
       dedupeKey: options.dedupeKey ?? null,
     }).then((result) => {
       notifyPersistentNotificationsChanged();
@@ -146,53 +148,34 @@ class NotificationService {
     });
   }
 
-  /**
-   * Show OS notification — tries Web API first, falls back to Electron IPC.
-   * Belt-and-suspenders: dev mode uses Web API (http://localhost),
-   * production may need IPC (file:// origin can block Web Notifications).
-   */
-  private showOSNotification(title: string, body: string): void {
-    // Method 1: Electron IPC → Main Process Notification (no permission needed, instant)
-    const hasIPC = !!(window as any).aegis?.notify;
-    if (hasIPC) {
-      try {
-        (window as any).aegis.notify(title, body);
-        debugLog('notifications', '[Notify] IPC — sent');
-        return;
-      } catch (err) {
-        debugWarn('notifications', '[Notify] IPC failed:', err);
-      }
+  private present(options: Pick<NotifyOptions, 'type' | 'title' | 'body'>): void {
+    if (document.hasFocus()) {
+      this.playChime();
+      useNotificationStore.getState().addToast(options.type, options.title, options.body);
+      return;
     }
+    void this.showNativeNotification(options.title, options.body);
+  }
 
-    // Method 2: Web Notification API fallback (dev mode where IPC may not exist)
+  /** 仅在后台通知或用户主动测试时向系统申请原生通知权限。 */
+  private async showNativeNotification(title: string, body: string): Promise<void> {
     try {
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(title, { body, silent: true });
-        debugLog('notifications', '[Notify] Web API — shown');
-      } else {
-        debugLog('notifications', '[Notify] Web API — permission:', 'Notification' in window ? Notification.permission : 'unavailable');
+      let granted = await isPermissionGranted();
+      if (!granted) {
+        if (this.nativePermissionRequested) return;
+        this.nativePermissionRequested = true;
+        granted = (await requestPermission()) === 'granted';
       }
-    } catch (err) {
-      debugWarn('notifications', '[Notify] Web API failed:', err);
+      if (granted) sendNotification({ title, body });
+    } catch (error) {
+      debugWarn('notifications', '[Notify] Native delivery failed:', error);
     }
   }
 
-  /** Request Web Notification permission (call once at app startup). */
-  requestPermission(): void {
-    if (this.permissionRequested) return;
-    this.permissionRequested = true;
-    try {
-      if ('Notification' in window) {
-        debugLog('notifications', '[Notify] Current permission:', Notification.permission);
-        if (Notification.permission === 'default') {
-          Notification.requestPermission().then((result) => {
-            debugLog('notifications', '[Notify] Permission result:', result);
-          });
-        }
-      }
-    } catch {
-      // Silent — may not be available
-    }
+  /** 设置页的主动测试可明确请求系统权限。 */
+  testSystemNotification(title: string, body: string): void {
+    if (!this._enabled || this._dndMode || isPrivacyLocked()) return;
+    void this.showNativeNotification(title, body);
   }
 
   // ── Conditional helpers ──────────────────────────────────

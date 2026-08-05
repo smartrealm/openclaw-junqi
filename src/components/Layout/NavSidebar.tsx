@@ -379,6 +379,7 @@ function WorkbenchPanel() {
   const typingStartedAtBySession = useChatStore((st) => st.typingStartedAtBySession);
   const thinkingBySession = useChatStore((st) => st.thinkingBySession);
   const sendingBySession = useChatStore((st) => st.sendingBySession);
+  const compactionStatusBySession = useChatStore((st) => st.compactionStatusBySession);
   const [nowMs, setNowMs] = useState(Date.now());
   const [backgroundUserOpen, setBackgroundUserOpen] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
@@ -437,7 +438,8 @@ function WorkbenchPanel() {
     typingStartedAtBySession,
     thinkingBySession,
     sendingBySession,
-  }), [activeKey, cronJobs, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
+    compactionStatusBySession,
+  }), [activeKey, compactionStatusBySession, cronJobs, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
   const backgroundTotal = Object.values(presentation.background)
     .reduce((total, group) => total + group.length, 0);
   const backgroundRunning = Object.values(presentation.background)

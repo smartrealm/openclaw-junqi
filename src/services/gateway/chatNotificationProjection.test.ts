@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { projectChatNotification } from './chatNotificationProjection';
+import { chatNotificationTarget, projectChatNotification } from './chatNotificationProjection';
 
 const baseEvent = {
   sessionKey: 'agent:main:main',
@@ -25,6 +25,13 @@ test('chat notification projection shares one run identity across live and durab
 
   assert.equal(live?.dedupeKey, 'chat:assistant:agent:main:main:run-42');
   assert.equal(durable?.dedupeKey, live?.dedupeKey);
+});
+
+test('chat notification target preserves the full OpenClaw session key', () => {
+  assert.equal(
+    chatNotificationTarget('agent:research/main?draft'),
+    '/chat?session=agent%3Aresearch%2Fmain%3Fdraft',
+  );
 });
 
 test('chat notification projection rejects ambiguous or already live-projected sources', () => {
@@ -63,5 +70,6 @@ test('chat notification projection classifies durable user messages without conf
     kind: 'message',
     body: 'Completed response.',
     dedupeKey: 'chat:user:agent:main:main:client-message-7',
+    url: '/chat?session=agent%3Amain%3Amain',
   });
 });

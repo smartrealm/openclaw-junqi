@@ -311,6 +311,17 @@ export function SessionContextBar() {
       </span>
       <WorkspacePicker agentId={agentId} current={agent?.workspace} />
       <SessionRuntimeControl />
+      {compactionActive && (
+        <span
+          role="status"
+          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-aegis-warning/10 px-1.5 py-0.5 text-[10px] text-aegis-warning"
+          title={t('chat.compactionInProgress')}
+          aria-label={t('chat.compactionInProgress')}
+        >
+          <RotateCcw size={11} className="animate-spin" aria-hidden="true" />
+          <span>{t('chat.compactionInProgress')}</span>
+        </span>
+      )}
       {activeSession?.agentStatus && (
         <span
           role="status"
@@ -445,16 +456,6 @@ export function SessionContextBar() {
         {maxTokens > 0 && (
           <span className="text-[10px] text-aegis-text-muted font-mono hidden lg:inline" title={`${usedK}K / ${maxLabel} (${Math.round((usedTokens / maxTokens) * 100)}%)`}>
             {usedK}K/{maxLabel}
-          </span>
-        )}
-        {compactionActive && (
-          <span
-            className="inline-flex items-center gap-1 text-[10px] text-aegis-warning"
-            title={t('chat.compactionInProgress')}
-            aria-label={t('chat.compactionInProgress')}
-          >
-            <RotateCcw size={11} className="animate-spin" />
-            <span className="hidden xl:inline">{t('chat.compactionInProgress')}</span>
           </span>
         )}
         {renderBlocks.length > 0 && (

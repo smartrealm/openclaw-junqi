@@ -862,7 +862,7 @@
     "language": "语言",
     "notifications": "通知",
     "enableNotifications": "启用通知",
-    "notificationsDesc": "收到消息时显示桌面通知",
+    "notificationsDesc": "前台显示应用内提示；切到后台时显示系统通知",
     "sound": "提示音",
     "soundDesc": "通知时播放提示音",
     "audioAutoPlay": "自动播放实时回复音频",
@@ -922,6 +922,7 @@
     "dnd": "请勿打扰",
     "dndDesc": "临时静音所有通知",
     "testNotification": "这是一条来自 JunQi Desktop 的测试通知",
+    "testSystemNotification": "测试系统通知",
     "testSound": "测试通知",
     "dynamicIsland": "灵动岛",
     "dynamicIslandEnabled": "启用灵动岛",
@@ -1732,11 +1733,6 @@
     "agentRuntime": "智能体运行时",
     "thinking": "思考",
     "contextCompactedLabel": "上下文已压缩",
-    "sessionCompactionStarted": "上下文压缩已开始",
-    "sessionCompactionCompleted": "上下文压缩已完成",
-    "sessionCompactionFailed": "上下文压缩失败",
-    "sessionCompactionFailedWithReason": "上下文压缩失败：{{reason}}",
-    "sessionCompactionEnded": "上下文压缩已结束，但 OpenClaw 未报告完成状态",
     "searchMessages": "搜索消息...",
     "noSearchResults": "无结果",
     "regenerate": "重新生成",
@@ -5775,6 +5771,7 @@
     "muted": "静音",
     "alerts": "通知",
     "agent": {
+      "compacting": "{{agent}} 正在压缩上下文",
       "thinking": "{{agent}} 正在思考",
       "generating": "{{agent}} 正在回复",
       "observing": "{{agent}} 状态更新"
@@ -5789,6 +5786,7 @@
       "failed": "失败"
     },
     "elapsed": {
+      "compacting": "已响应 {{elapsed}} · 正在压缩",
       "thinking": "已响应 {{elapsed}} · 思考中",
       "generating": "已响应 {{elapsed}} · 生成中"
     },

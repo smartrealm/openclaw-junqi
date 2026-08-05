@@ -717,11 +717,11 @@ export function SettingsPageFull() {
           <button
             type="button"
             disabled={!notificationsEnabled || dndMode}
-            onClick={() => notifications.notify({ type: 'info', title: t('app.name'), body: t('settings.testNotification') })}
+            onClick={() => notifications.testSystemNotification(t('app.name'), t('settings.testNotification'))}
             className="inline-flex items-center gap-1.5 rounded-xl border border-aegis-border/20 px-4 py-2 text-[12px] text-aegis-text-dim transition-colors hover:border-aegis-border/40 hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Bell size={13} aria-hidden="true" />
-            {t('settings.testSound')}
+            {t('settings.testSystemNotification', '测试系统通知')}
           </button>
         </div>
       </GlassCard>

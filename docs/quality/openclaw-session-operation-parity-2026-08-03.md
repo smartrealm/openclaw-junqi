@@ -25,14 +25,14 @@ JunQi 在 `src/services/gateway/sessionOperation.ts` 中严格解析当前版本
 - 成功 `end`：清除临时状态，并插入一次上下文压缩分隔线；
 - 失败 `end`：只清除临时状态，不伪造压缩成功；
 - 按 sessionKey、operationId、阶段、时间戳和官方终态字段去重。完全相同的
-  `session.operation` 重放不会重复触发外部回调、更新状态或插入两个分隔线；不同阶段
+  `session.operation` 重放不会重复更新状态或插入两个分隔线；不同阶段
   或不同操作仍会保留；
 - cron 和 sub-agent 隔离会话不投影到主聊天。
 
 ## 验证结果
 
 - `sessionOperation.test.ts` 覆盖 start、end、失败和非法操作；
-- `ChatHandler.test.ts` 覆盖状态进入、成功结束、重复事件不会重复回调，以及旧 agent
+- `ChatHandler.test.ts` 覆盖状态进入、成功结束、重复事件不会重复投影，以及旧 agent
   流去重；
 - TypeScript 类型检查与 `git diff --check` 通过。
 

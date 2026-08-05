@@ -43,6 +43,7 @@ specs/
 
 ## Quality
 
+- [桌面原生通知投递](quality/2026-08-05-native-notification-delivery.md)
 - [统一文件预览呈现](quality/2026-08-05-unified-file-preview-surface.md)
 - [工作区首屏数据就绪](quality/2026-08-05-workspace-bootstrap-readiness.md)
 - [OpenClaw 浏览器控制](quality/2026-08-05-openclaw-browser-control.md)
@@ -129,6 +130,7 @@ specs/
 - [OpenClaw 工具入口权威对齐](quality/2026-08-03-openclaw-tools-route-authority.md)
 - [OpenClaw 会话用量范围对齐](quality/2026-08-03-openclaw-sessions-usage-range.md)
 - [OpenClaw 会话操作事件对齐](quality/2026-08-03-openclaw-session-operation.md)
+- [OpenClaw 会话操作展示规格](quality/2026-08-05-openclaw-session-operation-presentation.md)
 - [OpenClaw 原生会话压缩对齐](quality/2026-08-04-openclaw-native-session-compaction.md)
 - [OpenClaw 会话压缩异步反馈](quality/2026-08-04-openclaw-session-compaction-feedback.md)
 - [OpenClaw 原生压缩检查点只读](quality/2026-08-03-openclaw-native-compaction-checkpoint-read.md)

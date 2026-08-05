@@ -128,31 +128,15 @@ test('chat.final replaces a longer streamed draft with OpenClaw canonical text',
   assert.equal(streamEnds[0].meta?.runId, runId);
 });
 
-test('session.operation forwards only the official compact operation projection', async () => {
+test('session.operation projects only official compact lifecycle state', async () => {
   installWindowMock();
   const { ChatHandler, useChatStore } = await loadDeps();
   resetChatStore();
 
-  const operations: Array<{
-    operationId: string;
-    operation: string;
-    phase: string;
-    sessionKey: string;
-    ts: number;
-    completed?: boolean;
-  }> = [];
   const handler = new ChatHandler({
     callbacks: {
       onStreamChunk: () => {},
       onStreamEnd: () => {},
-      onSessionOperation: (operation: {
-        operationId: string;
-        operation: string;
-        phase: string;
-        sessionKey: string;
-        ts: number;
-        completed?: boolean;
-      }) => operations.push(operation),
     },
   } as any);
   const sessionKey = 'agent:main:operation-forwarded';
@@ -194,24 +178,6 @@ test('session.operation forwards only the official compact operation projection'
     event: 'agent',
     payload: { sessionKey, runId: 'run-compaction', seq: 1, stream: 'compaction', data: { phase: 'end' } },
   });
-
-  assert.deepEqual(operations, [
-    {
-      operationId: 'operation-forwarded',
-      operation: 'compact',
-      phase: 'start',
-      sessionKey,
-      ts: 9,
-    },
-    {
-      operationId: 'operation-forwarded',
-      operation: 'compact',
-      phase: 'end',
-      sessionKey,
-      ts: 10,
-      completed: true,
-    },
-  ]);
 
   assert.equal(
     useChatStore.getState().messagesPerSession[sessionKey]

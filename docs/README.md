@@ -125,6 +125,7 @@ docs/
 
 目录：[`quality/`](quality/)
 
+- [桌面原生通知投递修复](quality/native-notification-delivery-2026-08-05.md)
 - [统一文件预览呈现审计](quality/unified-file-preview-surface-audit-2026-08-05.md)
 - [工作区首屏数据就绪记录](quality/workspace-bootstrap-readiness-2026-08-05.md)
 - [OpenClaw 浏览器控制记录](quality/openclaw-browser-control-2026-08-05.md)
@@ -259,6 +260,7 @@ docs/
 - [OpenClaw 运行时命令目录对齐](quality/openclaw-runtime-command-catalog-alignment-2026-08-03.md)
 - [OpenClaw 会话用量范围对齐](quality/openclaw-sessions-usage-range-alignment-2026-08-03.md)
 - [OpenClaw 会话操作事件对齐](quality/openclaw-session-operation-alignment-2026-08-03.md)
+- [OpenClaw 会话操作展示归属](quality/openclaw-session-operation-presentation-2026-08-05.md)
 - [OpenClaw 原生会话压缩对齐](quality/openclaw-native-session-compaction-alignment-2026-08-04.md)
 - [OpenClaw 会话压缩异步反馈审计](quality/openclaw-session-compaction-feedback-audit-2026-08-04.md)
 - [OpenClaw 原生压缩检查点只读对齐](quality/openclaw-native-compaction-checkpoint-read-alignment-2026-08-03.md)

@@ -19,9 +19,9 @@ JunQi 现在消费 OpenClaw 官方 `session.operation` 事件，并把压缩操�
 
 - 已有 `sessions.messages.subscribe` 连接订阅继续作为事件来源；不创建第二条 WebSocket 或浏览器媒体链路。
 - `ChatHandler` 对 `session.operation` 执行严格字段解码。非法事件、缺少会话身份的事件和隔离执行会话事件被丢弃，并保留连接继续处理其他事件。
-- 主窗口和 Quick Chat 对合法事件创建稳定的本地消息 ID，使用三种语言的 `sessionEvents` 展示开始、完成、失败或未报告完成状态。
-- `completed` 缺失时显示“状态未报告”，不把事件当作成功；`reason` 只展示 OpenClaw 原文，不作为 JunQi 业务状态。
-- 本地展示不会触发语音播报、未读计数或 Gateway 写入，也不会把 operation 当作新的 Task 或 Session。
+- 合法 start 写入按会话隔离的临时压缩状态，当前会话上下文栏展示运行中状态；匹配的 end 清除该状态。
+- `completed` 缺失或为 false 时不显示成功，也不把 `reason` 投影为本地消息。
+- 本地展示不会触发语音播报、未读计数、Gateway 写入或聊天消息，也不会把 operation 当作新的 Task 或 Session。
 
 ## JunQi 边界
 
@@ -32,7 +32,7 @@ OpenClaw 负责压缩生命周期、操作 ID、会话身份和终态字段。Ju
 ## 验证结果
 
 - `sessionOperation.test.ts`：官方 start/end 字段、非法 payload、缺少终态标记均有回归覆盖。
-- `ChatHandler.test.ts`：合法事件转发，非官方 operation 被拒绝。
+- `ChatHandler.test.ts`：合法事件状态投影、重复事件和非官方 operation 均有覆盖。
 - `pnpm exec tsc --noEmit` 通过。
 
 ## 未验证边界

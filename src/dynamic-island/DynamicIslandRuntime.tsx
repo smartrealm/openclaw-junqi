@@ -52,6 +52,7 @@ export default function DynamicIslandRuntime() {
   const typingStartedAtBySession = useChatStore((state) => state.typingStartedAtBySession);
   const thinkingBySession = useChatStore((state) => state.thinkingBySession);
   const sendingBySession = useChatStore((state) => state.sendingBySession);
+  const compactionStatusBySession = useChatStore((state) => state.compactionStatusBySession);
   const gatewayAgents = useGatewayDataStore((state) => state.agents);
   const localVoicePhase = useVoiceStore((state) => state.phase);
   const localVoiceQueueLength = useVoiceStore((state) => state.queueLength);
@@ -106,7 +107,8 @@ export default function DynamicIslandRuntime() {
     typingStartedAtBySession,
     thinkingBySession,
     sendingBySession,
-  }), [activeSessionKey, chatSessions, sendingBySession, thinkingBySession, typingBySession, typingStartedAtBySession]);
+    compactionStatusBySession,
+  }), [activeSessionKey, chatSessions, compactionStatusBySession, sendingBySession, thinkingBySession, typingBySession, typingStartedAtBySession]);
   const sessionActivities = useMemo<DynamicIslandSessionActivity[]>(() => {
     const observedAt = Date.now();
     const consumedObserverDigests = new Set<string>();
@@ -119,9 +121,11 @@ export default function DynamicIslandRuntime() {
         || (agentId === 'main'
           ? t('chat.currentSession')
           : t('chat.agentSession', { agent: agentName }));
-      const phase: DynamicIslandSessionActivity['phase'] = activity.phase === 'thinking'
-        ? 'thinking'
-        : 'generating';
+      const phase: DynamicIslandSessionActivity['phase'] = activity.phase === 'compacting'
+        ? 'compacting'
+        : activity.phase === 'thinking'
+          ? 'thinking'
+          : 'generating';
       const observer = observerDigests.find((digest) => (
         digest.sessionKey === sessionKey && (!digest.agentId || digest.agentId === agentId)
       ));

@@ -94,7 +94,6 @@ const aegisBridge: AegisAPI = {
     close: async () => { if (appWindow) await appWindow.close(); },
     isMaximized: async () => appWindow ? appWindow.isMaximized() : false,
   },
-  notify: async (t: string, b: string) => { if ("Notification" in window && Notification.permission === "granted") new Notification(t, { body: b }); },
   runtimeData: { openStateDirectory: async () => {
     const paths = await readStorageRuntimePaths();
     if (!paths?.stateDir) return { success: false, error: 'Storage location is unavailable' };

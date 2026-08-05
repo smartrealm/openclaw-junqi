@@ -29,6 +29,7 @@ const wizardClient = readFileSync(new URL('../services/openclawWizard.ts', impor
 const adapter = readFileSync(new URL('../api/tauri-adapter.ts', import.meta.url), 'utf8');
 const settingsStore = readFileSync(new URL('../stores/settingsStore.ts', import.meta.url), 'utf8');
 const settingsPage = readFileSync(new URL('../pages/SettingsPage.tsx', import.meta.url), 'utf8');
+const notificationService = readFileSync(new URL('../services/notifications.ts', import.meta.url), 'utf8');
 const setupCommand = readdirSync(new URL('../../src-tauri/src/commands/setup/', import.meta.url))
   .filter((entry) => entry.endsWith('.rs'))
   .sort()
@@ -167,15 +168,10 @@ test('autostart preferences use one stable switch row while status is loading or
   assert.doesNotMatch(readyFile, /<SettingsSwitch/);
 });
 
-test('BUG-ONB-35 notification permission waits until onboarding is complete', () => {
-  const notificationPermission = app.slice(
-    app.indexOf('// ── Request notification permission'),
-    app.indexOf('// OpenClaw exposes durable transcript updates'),
-  );
-
-  assert.match(notificationPermission, /if \(setupComplete !== true\) return/);
-  assert.match(notificationPermission, /notifications\.requestPermission\(\)/);
-  assert.match(notificationPermission, /\}, \[setupComplete\]\)/);
+test('notification permission is never requested by onboarding', () => {
+  assert.doesNotMatch(app, /requestPermission/);
+  assert.match(settingsPage, /notifications\.testSystemNotification/);
+  assert.match(notificationService, /requestPermission/);
 });
 
 test('BUG-WFR-01 privileged pairing retries can resolve or be cancelled by the host', () => {

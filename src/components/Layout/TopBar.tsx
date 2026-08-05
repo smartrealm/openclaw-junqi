@@ -41,7 +41,6 @@ import {
 } from '@/components/Terminal/terminalOpenInPreferences';
 import { TerminalKookyMenuItem } from '@/components/Terminal/KookyMenu';
 import { TerminalOpenInAppIcon, type TerminalOpenInApp } from '@/components/Terminal/TerminalOpenInAppIcon';
-import { isTerminalAgentId } from '@/components/Terminal/terminalAgentCatalog';
 import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspaceTree';
 import { resolveNotificationTarget } from '@/utils/notificationTarget';
 import { projectSessionActivity } from '@/utils/sessionPresentation';
@@ -222,13 +221,6 @@ export function toNotificationPanelItem(
   };
 }
 
-/** Kooky's terminal inbox is fed exclusively by a real terminal agent. */
-export function terminalInboxItems(
-  items: readonly NotificationPanelItem[],
-): NotificationPanelItem[] {
-  return items.filter((item) => isTerminalAgentId(item.agent ?? ''));
-}
-
 /**
  * TopBar — custom window-chrome strip (macOS Overlay title bar).
  *
@@ -328,6 +320,7 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
   const typingStartedAtBySession = useChatStore((s) => s.typingStartedAtBySession);
   const thinkingBySession = useChatStore((s) => s.thinkingBySession);
   const sendingBySession = useChatStore((s) => s.sendingBySession);
+  const compactionStatusBySession = useChatStore((s) => s.compactionStatusBySession);
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const sessions = useChatStore((s) => s.sessions);
   const agents = useGatewayDataStore((s) => s.agents);
@@ -340,7 +333,8 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     typingStartedAtBySession,
     thinkingBySession,
     sendingBySession,
-  }), [activeSessionKey, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
+    compactionStatusBySession,
+  }), [activeSessionKey, compactionStatusBySession, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
   const workingKeys = activityProjection.active.map((activity) => activity.sessionKey);
   const workingCount = workingKeys.length;
   // Setup already authenticated this Gateway — App.tsx trusts that handoff
@@ -421,13 +415,10 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
     )),
     [language, persistentNotifications?.notifications],
   );
-  const terminalInbox = useMemo(() => terminalInboxItems(history), [history]);
-  const notificationItems = terminalChrome ? terminalInbox : history;
+  const notificationItems = history;
   const dndMode = useSettingsStore((s) => s.dndMode);
   const setDndMode = useSettingsStore((s) => s.setDndMode);
-  const unread = terminalChrome
-    ? terminalInbox.filter((item) => !item.read).length
-    : persistentNotifications?.unreadCount ?? 0;
+  const unread = persistentNotifications?.unreadCount ?? 0;
 
   const toggleDnd = useCallback(() => {
     const next = !dndMode;

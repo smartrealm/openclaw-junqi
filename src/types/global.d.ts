@@ -14,7 +14,6 @@ export interface AegisAPI {
     close: () => Promise<void>;
     isMaximized: () => Promise<boolean>;
   };
-  notify: (title: string, body: string) => Promise<void>;
   runtimeData?: {
     openStateDirectory: () => Promise<{ success: boolean; path?: string; error?: string }>;
   };

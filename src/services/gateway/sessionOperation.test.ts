@@ -1,13 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  describeOpenClawSessionOperation,
-  parseOpenClawSessionOperationEvent,
-} from './sessionOperation';
-
-const translate = (key: string, options?: { reason: string }): string => (
-  options ? `${key}:${options.reason}` : key
-);
+import { parseOpenClawSessionOperationEvent } from './sessionOperation';
 
 test('decodes the official session.operation compact start and end fields', () => {
   const start = parseOpenClawSessionOperationEvent({
@@ -74,7 +67,7 @@ test('rejects malformed or non-official operation payloads', () => {
   }), null);
 });
 
-test('does not claim success when OpenClaw omits the terminal completion flag', () => {
+test('preserves an omitted terminal completion flag without inferring success', () => {
   const operation = parseOpenClawSessionOperationEvent({
     operationId: 'op-2',
     operation: 'compact',
@@ -83,8 +76,5 @@ test('does not claim success when OpenClaw omits the terminal completion flag', 
     ts: 2,
   });
   assert.ok(operation);
-  assert.deepEqual(describeOpenClawSessionOperation(operation, translate), {
-    kind: 'compaction',
-    text: 'chat.sessionCompactionEnded',
-  });
+  assert.equal(operation.completed, undefined);
 });

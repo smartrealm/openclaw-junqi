@@ -67,6 +67,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // The plugin uses a LaunchAgent on macOS, the current-user Run entry
         // on Windows, and the XDG autostart entry on Linux. The launcher
