@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { DEFAULT_PRIVACY_LOCK_SETTINGS } from './types';
+import { isValidJunQiPin } from './pinPolicy';
 
 const source = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 
@@ -9,6 +10,14 @@ test('privacy lock defaults use a cross-platform global shortcut and startup fen
   assert.equal(DEFAULT_PRIVACY_LOCK_SETTINGS.globalShortcut, 'CommandOrControl+Shift+L');
   assert.equal(DEFAULT_PRIVACY_LOCK_SETTINGS.lockOnStartup, true);
   assert.equal(DEFAULT_PRIVACY_LOCK_SETTINGS.lockOnResume, true);
+});
+
+test('privacy lock uses a bounded numeric JunQi PIN and exposes optional system verification', () => {
+  assert.equal(isValidJunQiPin('1234'), true);
+  assert.equal(isValidJunQiPin('123456'), true);
+  assert.equal(isValidJunQiPin('password'), false);
+  assert.match(source('src-tauri/src/lib.rs'), /verify_privacy_system_authentication/);
+  assert.match(source('src/privacy-lock/api.ts'), /verify_privacy_system_authentication/);
 });
 
 test('every auxiliary React root is wrapped before its business component mounts', () => {

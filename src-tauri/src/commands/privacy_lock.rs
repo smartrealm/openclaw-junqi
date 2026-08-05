@@ -273,7 +273,7 @@ fn retry_delay(failed_attempts: u32) -> Option<Duration> {
 fn validate_pin(pin: &str) -> Result<(), String> {
     let length = pin.chars().count();
     let numeric = pin.chars().all(|character| character.is_ascii_digit());
-    if (numeric && length >= 6) || (!numeric && length >= 8) {
+    if numeric && (4..=6).contains(&length) {
         Ok(())
     } else {
         Err("pin_policy".to_string())
@@ -591,6 +591,11 @@ pub async fn refresh_privacy_system_authentication(
 }
 
 #[tauri::command]
+pub async fn verify_privacy_system_authentication(reason: String) -> Result<(), String> {
+    platform_authentication::authenticate(&reason).await
+}
+
+#[tauri::command]
 pub async fn unlock_privacy_with_system_authentication(
     app: AppHandle,
     state: State<'_, PrivacyLockState>,
@@ -838,11 +843,12 @@ mod tests {
     }
 
     #[test]
-    fn pin_policy_accepts_six_digit_pin_or_eight_character_password() {
+    fn pin_policy_accepts_four_to_six_digit_pin_only() {
+        assert!(validate_pin("1234").is_ok());
         assert!(validate_pin("123456").is_ok());
-        assert!(validate_pin("correct horse").is_ok());
-        assert!(validate_pin("12345").is_err());
-        assert!(validate_pin("short").is_err());
+        assert!(validate_pin("123").is_err());
+        assert!(validate_pin("1234567").is_err());
+        assert!(validate_pin("correct horse").is_err());
     }
 
     #[test]

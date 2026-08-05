@@ -88,6 +88,8 @@ PIN 使用 Argon2id PHC 字符串保存到系统凭据库。不存在明文文�
 
 ### 认证策略
 
+启用隐私锁采用两步设置流程：第一步设置并确认 4 至 6 位纯数字 JunQi PIN；第二步展示实时系统身份验证能力，用户可以调用原生系统界面现场验证，也可以跳过并完成启用。JunQi PIN 是独立回退凭据，不是 Windows 或 macOS 登录 PIN。日常解锁只需在系统身份验证和 JunQi PIN 中选择一种，不执行双重验证。
+
 - macOS：优先 LocalAuthentication `DeviceOwnerAuthentication`。
 - Windows：优先 `UserConsentVerifier`。
 - Linux：系统认证能力明确返回不可用，使用用户主动设置的 Native PIN。

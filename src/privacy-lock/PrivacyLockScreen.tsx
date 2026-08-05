@@ -3,6 +3,7 @@ import { LockKeyhole, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { normalizeJunQiPin } from './pinPolicy';
 import {
   focusPrivacyUnlock,
   unlockPrivacyLock,
@@ -130,6 +131,26 @@ export function PrivacyLockScreen({ compact = false }: PrivacyLockScreenProps) {
           <p className="mt-2 text-[12px] leading-relaxed text-aegis-text-muted">{t('privacyLock.backgroundRunning')}</p>
         </div>
 
+        {snapshot.systemAuthentication === 'available' && (
+          <>
+            <button
+              type="button"
+              disabled={busy || snapshot.retryAfterMs > 0}
+              onClick={() => void unlockWithSystem()}
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-aegis-primary text-[13px] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 disabled:cursor-wait disabled:opacity-50"
+            >
+              {busy && <LoadingIndicator variant="spinner" size={14} className="text-white" />}
+              <ShieldCheck size={15} aria-hidden="true" />
+              {t('privacyLock.useSystemAuthentication')}
+            </button>
+            <div className="my-4 flex items-center gap-3" aria-hidden="true">
+              <span className="h-px flex-1 bg-aegis-border" />
+              <span className="text-[11px] text-aegis-text-dim">{t('privacyLock.or')}</span>
+              <span className="h-px flex-1 bg-aegis-border" />
+            </div>
+          </>
+        )}
+
         <form onSubmit={unlockWithPin} className="space-y-3">
           <label htmlFor="privacy-lock-pin" className="block text-[12px] font-medium text-aegis-text-muted">
             {t('privacyLock.pinLabel')}
@@ -138,10 +159,13 @@ export function PrivacyLockScreen({ compact = false }: PrivacyLockScreenProps) {
             ref={inputRef}
             id="privacy-lock-pin"
             type="password"
+            inputMode="numeric"
+            pattern="[0-9]{4,6}"
+            maxLength={6}
             autoComplete="current-password"
             value={pin}
             disabled={busy || snapshot.retryAfterMs > 0}
-            onChange={(event) => setPin(event.target.value)}
+            onChange={(event) => setPin(normalizeJunQiPin(event.target.value))}
             aria-invalid={Boolean(error)}
             aria-describedby={error ? 'privacy-lock-error' : undefined}
             className="h-11 w-full rounded-xl border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.04)] px-3 text-[14px] text-aegis-text outline-none transition-colors focus:border-aegis-primary/60 focus-visible:ring-2 focus-visible:ring-aegis-primary/30 disabled:cursor-wait disabled:opacity-60"
@@ -166,17 +190,6 @@ export function PrivacyLockScreen({ compact = false }: PrivacyLockScreenProps) {
           </button>
         </form>
 
-        {snapshot.systemAuthentication === 'available' && (
-          <button
-            type="button"
-            disabled={busy || snapshot.retryAfterMs > 0}
-            onClick={() => void unlockWithSystem()}
-            className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-aegis-border text-[12px] font-medium text-aegis-text transition-colors hover:border-aegis-primary/40 hover:text-aegis-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 disabled:cursor-wait disabled:opacity-50"
-          >
-            <ShieldCheck size={15} aria-hidden="true" />
-            {t('privacyLock.useSystemAuthentication')}
-          </button>
-        )}
       </div>
     </main>
   );

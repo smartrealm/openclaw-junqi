@@ -154,6 +154,7 @@ pub fn run() {
             commands::privacy_lock::lock_privacy_now,
             commands::privacy_lock::unlock_privacy_lock,
             commands::privacy_lock::refresh_privacy_system_authentication,
+            commands::privacy_lock::verify_privacy_system_authentication,
             commands::privacy_lock::unlock_privacy_with_system_authentication,
             commands::session_labels::load_legacy_session_labels,
             commands::session_labels::remove_legacy_session_labels,

@@ -25,6 +25,9 @@ export const unlockPrivacyLock = (revision: number, pin: string) =>
 export const refreshPrivacySystemAuthentication = () =>
   invoke<PrivacyLockSnapshot>('refresh_privacy_system_authentication');
 
+export const verifyPrivacySystemAuthentication = (reason: string) =>
+  invoke<void>('verify_privacy_system_authentication', { reason });
+
 export const unlockPrivacyWithSystemAuthentication = (revision: number, reason: string) =>
   invoke<PrivacyLockSnapshot>('unlock_privacy_with_system_authentication', { revision, reason });
 

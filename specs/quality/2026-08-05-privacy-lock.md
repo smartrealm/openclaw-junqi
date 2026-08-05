@@ -24,8 +24,10 @@ JunQi 提供完整隐私锁闭环。Native 层拥有锁定状态和认证门禁�
 
 ### PIN 与认证
 
-- [ ] PIN 至少 6 位数字，密码至少 8 个字符；设置和修改需要确认输入一致。
-- [ ] PIN 使用 Argon2id 和随机盐验证，敏感输入在 Native 使用后清零。
+- [x] JunQi PIN 仅允许 4 至 6 位 ASCII 数字；设置和修改需要确认输入一致，不接受字母密码。
+- [x] 启用流程分两步：先设置 JunQi PIN，再展示系统身份验证能力；用户可现场验证或跳过。
+- [x] 日常解锁在系统身份验证与 JunQi PIN 中任选一种，不要求双重验证，也不收集系统登录 PIN。
+- [x] PIN 使用 Argon2id 和随机盐验证，敏感输入在 Native 使用后清零。
 - [ ] 连续失败触发基于单调时钟的退避；重载和旧 revision 不能绕过。
 - [ ] macOS 使用 LocalAuthentication `DeviceOwnerAuthentication`。
 - [ ] Windows 使用 `UserConsentVerifier`。
