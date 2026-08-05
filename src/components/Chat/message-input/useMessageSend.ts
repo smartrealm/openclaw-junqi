@@ -15,6 +15,7 @@ import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore
 import { useSettingsStore } from '@/stores/settingsStore';
 import { debugError } from '@/utils/debugLog';
 import { isOpenClawActiveLeafChangedError } from '@/services/gateway/activeLeafEntryId';
+import { shouldWarmUpHistoryBeforeFirstSend } from '@/utils/confirmedEmptyTranscript';
 import { readSessionCompanionCommand, requestSessionCompanionOpen } from '../sessionCompanionUi';
 
 interface UseMessageSendOptions {
@@ -22,6 +23,7 @@ interface UseMessageSendOptions {
   activeSessionId?: string;
   connected: boolean;
   historyLoading: boolean;
+  isConfirmedEmptyTranscript: () => boolean;
   historyLoader?: (sessionKey?: string, options?: HistoryLoaderOptions) => Promise<void>;
   isSending: boolean;
   messageCount: number;
@@ -44,6 +46,7 @@ export function useMessageSend({
   activeSessionId,
   connected,
   historyLoading,
+  isConfirmedEmptyTranscript,
   historyLoader,
   isSending,
   messageCount,
@@ -62,7 +65,10 @@ export function useMessageSend({
     const trimmed = rawText.trim();
     if ((!trimmed && sendFiles.length === 0) || isSending || !connected || historyLoading) return;
 
-    if (messageCount === 0 && historyLoader) {
+    if (historyLoader && shouldWarmUpHistoryBeforeFirstSend({
+      messageCount,
+      confirmedEmptyTranscript: isConfirmedEmptyTranscript(),
+    })) {
       try {
         await historyLoader(sessionKey);
       } catch (error) {
@@ -146,6 +152,7 @@ export function useMessageSend({
     files,
     historyLoader,
     historyLoading,
+    isConfirmedEmptyTranscript,
     isSending,
     messageCount,
     setIsSending,

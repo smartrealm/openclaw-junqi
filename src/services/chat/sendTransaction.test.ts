@@ -201,6 +201,37 @@ test('普通发送使用当前 Gateway transcript leaf，steer 不伪造该围�
   assert.equal(identities[1]?.expectedLeafEntryId, undefined);
 });
 
+test('已确认空 transcript 的首发传递 null leaf，并在 Gateway 受理后失效本地事实', async () => {
+  const identities: Array<Record<string, unknown> | undefined> = [];
+  const invalidatedLeaves: Array<string | null | undefined> = [];
+  const coordinator = new ChatSendCoordinator(
+    {
+      sendMessage: async (_message, _attachments, _sessionKey, identity) => {
+        identities.push(identity);
+        return { runId: identity?.clientMessageId, status: 'started' };
+      },
+    },
+    () => ({
+      addMessage() {},
+      updateMessage() {},
+      setIsTyping() {},
+      setSessionActiveLeafEntryId(_sessionKey, activeLeafEntryId) {
+        invalidatedLeaves.push(activeLeafEntryId);
+      },
+      typingBySession: {},
+      enqueueMessage() {},
+      sessions: [{ key: 'session-a', activeLeafEntryId: null }],
+    }),
+  );
+
+  await coordinator.send({
+    sessionKey: 'session-a', message: 'start', clientMessageId: 'empty-leaf',
+  });
+
+  assert.equal(identities[0]?.expectedLeafEntryId, null);
+  assert.deepEqual(invalidatedLeaves, [undefined]);
+});
+
 test('native session steering bypasses the visible queue and calls the interrupt-and-steer lane', async () => {
   const messages = new Map<string, ChatMessage>();
   const typing: boolean[] = [];

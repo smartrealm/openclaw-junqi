@@ -87,6 +87,10 @@ import { getToolLabelKey } from './toolCallPresentation';
 import { TaskExecutionRecoveryBanner } from './TaskExecutionRecoveryBanner';
 import { SessionCompanionPanel } from './SessionCompanionPanel';
 import { subscribeSessionCompanionOpen } from './sessionCompanionUi';
+import {
+  hasConfirmedEmptyTranscript,
+  shouldLoadActiveSessionHistory,
+} from '@/utils/confirmedEmptyTranscript';
 
 const HISTORY_LIMIT = 500;
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
@@ -286,6 +290,9 @@ function ChatViewContent() {
   const activeAgentId = useChatStore(
     (s) => s.sessions.find((session) => session.key === activeSessionKey)?.agentId,
   );
+  const activeSessionHasConfirmedEmptyTranscript = useChatStore((s) => (
+    hasConfirmedEmptyTranscript(s.sessions.find((session) => session.key === activeSessionKey))
+  ));
   const activeSessionHasRun = useChatStore(
     (s) => s.sessions.find((session) => session.key === activeSessionKey)?.hasActiveRun === true,
   );
@@ -855,14 +862,26 @@ function ChatViewContent() {
   useEffect(() => {
     if (!connected) return;
     // Load on first connect, or whenever the active session changes.
-    if (prevSessionRef.current !== activeSessionKey || messages.length === 0) {
+    if (shouldLoadActiveSessionHistory({
+      previousSessionKey: prevSessionRef.current,
+      activeSessionKey,
+      messageCount: messages.length,
+      confirmedEmptyTranscript: activeSessionHasConfirmedEmptyTranscript,
+    })) {
       prevSessionRef.current = activeSessionKey;
       startRecoverableTask(
         () => loadHistory(),
         (error) => reportBackgroundHistoryFailure(activeSessionKey, error),
       );
     }
-  }, [connected, activeSessionKey, messages.length, loadHistory, reportBackgroundHistoryFailure]);
+  }, [
+    activeSessionHasConfirmedEmptyTranscript,
+    activeSessionKey,
+    connected,
+    loadHistory,
+    messages.length,
+    reportBackgroundHistoryFailure,
+  ]);
 
   // Register loadHistory in store so MessageInput can trigger it before first send
   useEffect(() => {

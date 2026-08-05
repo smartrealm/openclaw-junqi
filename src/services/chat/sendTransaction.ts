@@ -18,6 +18,10 @@ interface ChatSendState {
   addMessage: (message: ChatMessage, sessionKey?: string) => void;
   updateMessage: (sessionKey: string, messageId: string, patch: Partial<ChatMessage>) => void;
   setIsTyping: (typing: boolean, sessionKey?: string) => void;
+  setSessionActiveLeafEntryId?: (
+    sessionKey: string,
+    activeLeafEntryId: string | null | undefined,
+  ) => void;
   typingBySession: Record<string, boolean>;
   enqueueMessage: (sessionKey: string, message: QueuedChatMessage) => void;
   sessions?: Array<{
@@ -171,6 +175,9 @@ export class ChatSendCoordinator {
 
     try {
       const session = state.sessions?.find((candidate) => candidate.key === sessionKey);
+      const expectedLeafEntryId = request.delivery === 'steer'
+        ? undefined
+        : session?.activeLeafEntryId;
       const observedModel = request.model
         ?? session?.model
         ?? (state.activeSessionKey === sessionKey ? state.currentModel : null)
@@ -220,13 +227,16 @@ export class ChatSendCoordinator {
         {
           clientMessageId,
           sessionId: request.sessionId,
-          ...(request.delivery !== 'steer' && session?.activeLeafEntryId !== undefined
-            ? { expectedLeafEntryId: session.activeLeafEntryId }
+          ...(expectedLeafEntryId !== undefined
+            ? { expectedLeafEntryId }
             : {}),
           ...(request.delivery === 'steer' ? { delivery: 'steer' as const } : {}),
           ...(supersededRunId ? { supersededRunId } : {}),
         },
       ) as { queued?: boolean } | undefined;
+      if (expectedLeafEntryId === null) {
+        state.setSessionActiveLeafEntryId?.(sessionKey, undefined);
+      }
       const deliveryUncertain = isGatewayChatSendDeliveryUncertain(result);
       if (!deliveryUncertain) {
         state.updateMessage(sessionKey, clientMessageId, {

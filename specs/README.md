@@ -74,6 +74,7 @@ specs/
 - [OpenClaw 原生会话体验对齐](quality/2026-08-02-openclaw-native-session-experience.md)
 - [原生新建会话列表竞态修复](quality/2026-08-03-native-session-list-race.md)
 - [新建会话生命周期加固](quality/2026-08-03-new-session-lifecycle-hardening.md)
+- [OpenClaw 已确认空会话首发](quality/2026-08-05-openclaw-confirmed-empty-session.md)
 - [Chat production hardening](quality/2026-07-21-chat-production-hardening.md)
 - [Chat 流式渲染性能](quality/2026-08-03-chat-stream-rendering-performance.md)
 - [JunQi namespace](quality/2026-07-21-junqi-namespace-bugfix.md)

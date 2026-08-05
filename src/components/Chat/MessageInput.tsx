@@ -13,6 +13,10 @@ import { useComposerMenu } from './message-input/useComposerMenu';
 import { useComposerSuggestions } from './message-input/useComposerSuggestions';
 import { useJarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
 import { useMessageSend } from './message-input/useMessageSend';
+import {
+  hasConfirmedEmptyTranscript,
+  shouldWarmUpHistoryBeforeFirstSend,
+} from '@/utils/confirmedEmptyTranscript';
 
 export function MessageInput() {
   const { language } = useSettingsStore();
@@ -28,11 +32,16 @@ export function MessageInput() {
   const isSending = useChatStore((state) => Boolean(state.sendingBySession[activeSessionKey]));
   const isLoadingHistory = useChatStore((state) => Boolean(state.loadingHistoryBySession[activeSessionKey]));
   const pendingCount = useChatStore((state) => state.messageQueue[activeSessionKey]?.length ?? 0);
-  const activeSessionId = useChatStore(
-    (state) => state.sessions.find((session) => session.key === activeSessionKey)?.sessionId,
+  const activeSession = useChatStore(
+    (state) => state.sessions.find((session) => session.key === activeSessionKey),
   );
+  const activeSessionId = activeSession?.sessionId;
+  const activeSessionHasConfirmedEmptyTranscript = hasConfirmedEmptyTranscript(activeSession);
   const text = useChatStore((state) => state.drafts[activeSessionKey] || '');
-  const historyLoading = connected && messages.length === 0 && isLoadingHistory;
+  const historyLoading = connected && isLoadingHistory && shouldWarmUpHistoryBeforeFirstSend({
+    messageCount: messages.length,
+    confirmedEmptyTranscript: activeSessionHasConfirmedEmptyTranscript,
+  });
   const setText = useCallback((next: SetStateAction<string>) => {
     const state = useChatStore.getState();
     const current = state.drafts[activeSessionKey] || '';
@@ -54,6 +63,12 @@ export function MessageInput() {
     activeSessionId,
     connected,
     historyLoading,
+    isConfirmedEmptyTranscript: () => {
+      const current = useChatStore.getState().sessions.find((session) => session.key === activeSessionKey);
+      return current?.sessionId === activeSessionId
+        && current?.agentId === activeSession?.agentId
+        && hasConfirmedEmptyTranscript(current);
+    },
     historyLoader: historyLoader ?? undefined,
     isSending,
     messageCount: messages.length,
@@ -67,6 +82,12 @@ export function MessageInput() {
     activeSessionId,
     connected,
     historyLoading,
+    isConfirmedEmptyTranscript: () => {
+      const current = useChatStore.getState().sessions.find((session) => session.key === activeSessionKey);
+      return current?.sessionId === activeSessionId
+        && current?.agentId === activeSession?.agentId
+        && hasConfirmedEmptyTranscript(current);
+    },
     historyLoader: historyLoader ?? undefined,
     isSending,
     messageCount: messages.length,

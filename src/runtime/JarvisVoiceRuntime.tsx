@@ -9,6 +9,10 @@ import { JarvisVoiceOverlay } from '@/components/Chat/JarvisVoiceOverlay';
 import { useComposerVoice } from '@/components/Chat/message-input/useComposerVoice';
 import { useChatStore } from '@/stores/chatStore';
 import { debugError } from '@/utils/debugLog';
+import {
+  hasConfirmedEmptyTranscript,
+  shouldWarmUpHistoryBeforeFirstSend,
+} from '@/utils/confirmedEmptyTranscript';
 
 type JarvisVoiceController = ReturnType<typeof useComposerVoice>;
 
@@ -29,7 +33,14 @@ export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
   const connected = useChatStore((state) => state.connected);
   const messageCount = useChatStore((state) => state.messages.length);
   const historyLoading = useChatStore((state) => (
-    state.connected && messageCount === 0 && Boolean(state.loadingHistoryBySession[state.activeSessionKey])
+    state.connected
+      && Boolean(state.loadingHistoryBySession[state.activeSessionKey])
+      && shouldWarmUpHistoryBeforeFirstSend({
+        messageCount,
+        confirmedEmptyTranscript: hasConfirmedEmptyTranscript(
+          state.sessions.find((session) => session.key === state.activeSessionKey),
+        ),
+      })
   ));
   const reportAttachmentError = useCallback((error: unknown) => {
     debugError('media', '[JarvisVoiceRuntime] Unable to preserve captured audio:', error);

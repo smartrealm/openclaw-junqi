@@ -28,7 +28,10 @@ function errorMessage(error: unknown): string {
   return 'Gateway rejected session creation';
 }
 
-function projectSession(created: OpenClawCreatedSession, input: CreateNativeSessionInput): Session {
+export function projectCreatedNativeSession(
+  created: OpenClawCreatedSession,
+  input: CreateNativeSessionInput,
+): Session {
   const entry = created.entry;
   const createdAt = typeof entry.createdAt === 'number'
     ? entry.createdAt
@@ -41,6 +44,7 @@ function projectSession(created: OpenClawCreatedSession, input: CreateNativeSess
     label: entry.label ?? input.label,
     agentId: input.agentId,
     createdAt,
+    ...(input.fork === true ? {} : { activeLeafEntryId: null }),
     ...(entry.model ? { model: entry.model } : {}),
     ...(entry.parentSessionKey ? { parentSessionKey: entry.parentSessionKey } : {}),
   };
@@ -53,6 +57,7 @@ function projectGatewaySession(session: Session): SessionInfo {
     label: session.label,
     agentId: session.agentId,
     createdAt: session.createdAt,
+    activeLeafEntryId: session.activeLeafEntryId,
     ...(session.model ? { model: session.model } : {}),
     ...(session.parentSessionKey ? { parentSessionKey: session.parentSessionKey } : {}),
   };
@@ -61,7 +66,7 @@ function projectGatewaySession(session: Session): SessionInfo {
 const defaultDependencies: SessionCreateDependencies = {
   createRemote: (input) => gateway.createSession(input),
   commit: (created, input) => {
-    const session = projectSession(created, input);
+    const session = projectCreatedNativeSession(created, input);
     useChatStore.getState().addNativeSession(session);
     const gatewayState = useGatewayDataStore.getState();
     gatewayState.setSessions([

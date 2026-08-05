@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import {
   createNativeSession,
+  projectCreatedNativeSession,
   setSessionCreateDependenciesForTests,
   type CreateNativeSessionInput,
 } from './sessionCreate';
@@ -17,6 +18,35 @@ const CREATED: OpenClawCreatedSession = {
 afterEach(() => setSessionCreateDependenciesForTests());
 
 describe('createNativeSession', () => {
+  it('将非 fork 的确认创建绑定到目标 Agent 并投影权威空 transcript leaf', () => {
+    const session = projectCreatedNativeSession(CREATED, {
+      agentId: 'architect',
+      label: 'Created',
+    });
+    const fork = projectCreatedNativeSession(CREATED, {
+      agentId: 'architect',
+      label: 'Forked',
+      parentSessionKey: 'agent:architect:parent',
+      fork: true,
+    });
+
+    assert.deepEqual(
+      {
+        key: session.key,
+        sessionId: session.sessionId,
+        agentId: session.agentId,
+        activeLeafEntryId: session.activeLeafEntryId,
+      },
+      {
+        key: CREATED.key,
+        sessionId: CREATED.sessionId,
+        agentId: 'architect',
+        activeLeafEntryId: null,
+      },
+    );
+    assert.equal(fork.activeLeafEntryId, undefined);
+  });
+
   it('does not commit a renderer session until Gateway confirms its identity', async () => {
     let resolveRemote!: (value: OpenClawCreatedSession) => void;
     const remote = new Promise<OpenClawCreatedSession>((resolve) => { resolveRemote = resolve; });
