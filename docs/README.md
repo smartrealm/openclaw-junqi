@@ -153,6 +153,7 @@ docs/
 - [本地 main 对齐与客户端边界审计](quality/local-main-alignment-and-client-boundary-audit-2026-08-04.md)
 - [OpenClaw Agent 配置快照与并发写入对齐](quality/openclaw-agent-config-snapshot-alignment-2026-08-04.md)
 - [OpenClaw Gateway 挑战与策略对齐](quality/openclaw-gateway-challenge-policy-alignment-2026-08-04.md)
+- [Gateway 设备身份与工作区启动恢复](quality/gateway-device-identity-startup-recovery-2026-08-05.md)
 - [OpenClaw 会话快速模式对齐](quality/openclaw-session-fast-mode-alignment-2026-08-04.md)
 - [OpenClaw 会话推理可见性对齐](quality/openclaw-session-reasoning-visibility-alignment-2026-08-04.md)
 - [OpenClaw 会话详细工具输出对齐](quality/openclaw-session-verbose-alignment-2026-08-04.md)

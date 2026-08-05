@@ -11,6 +11,13 @@ export interface WorkspaceBootstrapReadiness {
   reset(): void;
 }
 
+export function shouldReleaseWorkspaceAfterGatewayRetryExhaustion(
+  setupComplete: boolean,
+  setupValidationPending: boolean,
+): boolean {
+  return setupComplete && !setupValidationPending;
+}
+
 export function createWorkspaceBootstrapReadiness(): WorkspaceBootstrapReadiness {
   let gatewayDataReady = false;
   let workspaceDataReady = false;

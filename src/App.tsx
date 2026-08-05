@@ -82,7 +82,10 @@ import { validateCachedSetupInstallation } from '@/services/setupInstallationHea
 import { approveSelectedGatewayDevice } from '@/api/tauri-commands';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
 import { JarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
-import { createWorkspaceBootstrapReadiness } from '@/runtime/workspaceBootstrapReadiness';
+import {
+  createWorkspaceBootstrapReadiness,
+  shouldReleaseWorkspaceAfterGatewayRetryExhaustion,
+} from '@/runtime/workspaceBootstrapReadiness';
 import {
   describeOpenClawSessionOperation,
   type OpenClawSessionOperationEvent,
@@ -877,6 +880,16 @@ export default function App() {
         }
         if (retry.phase === 'exhausted') {
           surfaceVerifiedGatewayHandoffFailure();
+          if (shouldReleaseWorkspaceAfterGatewayRetryExhaustion(
+            setupComplete,
+            cachedSetupValidationPending,
+          )) {
+            useBootSequenceStore.getState().markStageError(
+              'connection',
+              'Gateway connection attempts exhausted',
+            );
+            markInitialWorkspaceDataReady(true);
+          }
         }
         if (coldStartRecoveryCompletedRef.current) return;
         if (retry.phase === 'attempting') {

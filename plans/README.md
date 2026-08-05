@@ -54,6 +54,7 @@ plans/
 - [本地 main 对齐与客户端边界](quality/2026-08-04-local-main-alignment-and-client-boundary.md)
 - [OpenClaw Agent 配置快照与并发写入对齐](quality/2026-08-04-openclaw-agent-config-snapshot-alignment.md)
 - [OpenClaw Gateway 挑战与策略对齐](quality/2026-08-04-openclaw-gateway-challenge-policy-alignment.md)
+- [Gateway 设备身份与工作区启动恢复](quality/2026-08-05-gateway-device-identity-startup-recovery.md)
 - [OpenClaw 会话 Companion 控制台对齐计划](quality/2026-08-04-openclaw-session-companion-control-ui.md)
 - [OpenClaw 桌面语音与 Jarvis 实施计划](quality/2026-08-04-openclaw-desktop-voice-wake-boundary.md)
 - [OpenClaw 会话快速模式对齐](quality/2026-08-04-openclaw-session-fast-mode.md)
