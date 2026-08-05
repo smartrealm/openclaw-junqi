@@ -82,6 +82,7 @@ import { validateCachedSetupInstallation } from '@/services/setupInstallationHea
 import { approveSelectedGatewayDevice } from '@/api/tauri-commands';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
 import { JarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
+import { createWorkspaceBootstrapReadiness } from '@/runtime/workspaceBootstrapReadiness';
 import {
   describeOpenClawSessionOperation,
   type OpenClawSessionOperationEvent,
@@ -184,7 +185,7 @@ export default function App() {
     () => setupComplete === true && hasTauriEventBridge(),
   );
   const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
-  const initialWorkspaceDataReadyRef = useRef(false);
+  const workspaceBootstrapReadinessRef = useRef(createWorkspaceBootstrapReadiness());
   const initialSessionSnapshotSettledRef = useRef(false);
   const gatewayBootstrapDataReady = useGatewayDataStore((state) => (
     (state.lastFetch.sessions > 0 || state.errors.sessions !== null)
@@ -247,24 +248,24 @@ export default function App() {
 
   useEffect(() => {
     if (setupComplete !== true) {
-      initialWorkspaceDataReadyRef.current = false;
+      workspaceBootstrapReadinessRef.current.reset();
       initialSessionSnapshotSettledRef.current = false;
       setWorkspaceDataReady(false);
       return;
     }
-    if (!cachedSetupValidationPending && !initialWorkspaceDataReadyRef.current) {
+    if (!cachedSetupValidationPending && !workspaceBootstrapReadinessRef.current.isWorkspaceDataReady()) {
       setWorkspaceDataReady(false);
     }
   }, [cachedSetupValidationPending, setupComplete]);
 
   const markInitialWorkspaceDataReady = useCallback((allowIncompleteData = false) => {
-    if (initialWorkspaceDataReadyRef.current) return;
-    if (!allowIncompleteData && !gatewayBootstrapDataReady) return;
-    initialWorkspaceDataReadyRef.current = true;
-    setWorkspaceDataReady(true);
-  }, [gatewayBootstrapDataReady]);
+    if (workspaceBootstrapReadinessRef.current.markInitialWorkspaceDataReady(allowIncompleteData)) {
+      setWorkspaceDataReady(true);
+    }
+  }, []);
 
   useEffect(() => {
+    workspaceBootstrapReadinessRef.current.updateGatewayDataReady(gatewayBootstrapDataReady);
     if (!initialSessionSnapshotSettledRef.current) return;
     markInitialWorkspaceDataReady();
   }, [gatewayBootstrapDataReady, markInitialWorkspaceDataReady]);
