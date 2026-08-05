@@ -21,7 +21,11 @@ import { useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
-import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { refreshGroup, useGatewayDataStore } from '@/stores/gatewayDataStore';
+import {
+  hasCurrentWorkspaceBootstrapData,
+  hasCurrentWorkspaceBootstrapFailure,
+} from '@/services/gateway/workspaceBootstrapReadiness';
 import {
   gateway,
   subscribePrivilegedAuthorizationIssues,
@@ -184,12 +188,11 @@ export default function App() {
     () => setupComplete === true && hasTauriEventBridge(),
   );
   const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
+  const [workspaceStartupFailed, setWorkspaceStartupFailed] = useState(false);
   const initialWorkspaceDataReadyRef = useRef(false);
   const initialSessionSnapshotSettledRef = useRef(false);
-  const gatewayBootstrapDataReady = useGatewayDataStore((state) => (
-    (state.lastFetch.sessions > 0 || state.errors.sessions !== null)
-    && (state.lastFetch.agents > 0 || state.errors.agents !== null)
-  ));
+  const gatewayBootstrapDataReady = useGatewayDataStore(hasCurrentWorkspaceBootstrapData);
+  const gatewayBootstrapDataFailed = useGatewayDataStore(hasCurrentWorkspaceBootstrapFailure);
   const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
   const gatewayOptionalRoute = isGatewayOptionalPath(routePath);
   const [coldStartRecoveryActive, setColdStartRecoveryActive] = useState(true);
@@ -250,6 +253,7 @@ export default function App() {
       initialWorkspaceDataReadyRef.current = false;
       initialSessionSnapshotSettledRef.current = false;
       setWorkspaceDataReady(false);
+      setWorkspaceStartupFailed(false);
       return;
     }
     if (!cachedSetupValidationPending && !initialWorkspaceDataReadyRef.current) {
@@ -257,17 +261,19 @@ export default function App() {
     }
   }, [cachedSetupValidationPending, setupComplete]);
 
-  const markInitialWorkspaceDataReady = useCallback((allowIncompleteData = false) => {
+  const markInitialWorkspaceDataReady = useCallback(() => {
     if (initialWorkspaceDataReadyRef.current) return;
-    if (!allowIncompleteData && !gatewayBootstrapDataReady) return;
+    if (!gatewayBootstrapDataReady) return;
     initialWorkspaceDataReadyRef.current = true;
+    setWorkspaceStartupFailed(false);
     setWorkspaceDataReady(true);
   }, [gatewayBootstrapDataReady]);
 
   useEffect(() => {
     if (!initialSessionSnapshotSettledRef.current) return;
     markInitialWorkspaceDataReady();
-  }, [gatewayBootstrapDataReady, markInitialWorkspaceDataReady]);
+    if (gatewayBootstrapDataFailed) setWorkspaceStartupFailed(true);
+  }, [gatewayBootstrapDataFailed, gatewayBootstrapDataReady, markInitialWorkspaceDataReady]);
 
   useEffect(() => {
     const updateRoutePath = () => setRoutePath(routePathFromLocation(window.location));
@@ -463,6 +469,76 @@ export default function App() {
     } catch {}
     setAvailableModels(models);
   }, [setAvailableModels]);
+
+  const startInitialWorkspaceLoad = useCallback(() => {
+    const boot = useBootSequenceStore.getState();
+    setWorkspaceStartupFailed(false);
+    boot.markStageRunning('config', 'Loading sessions');
+    void loadSessions({ reconcileChatRuns: true }).then((sessionLoadResult) => {
+      if (sessionLoadResult === 'superseded') return;
+      if (sessionLoadResult === 'failed') {
+        boot.markStageError('config', 'Session load failed');
+        setWorkspaceStartupFailed(true);
+        return;
+      }
+      queueMicrotask(() => {
+        const chat = useChatStore.getState();
+        for (const [sessionKey, queue] of Object.entries(chat.messageQueue)) {
+          if (queue.length > 0 && !chat.typingBySession[sessionKey]) {
+            void chat.drainQueue(sessionKey).catch(() => undefined);
+          }
+        }
+      });
+      boot.markStageCompleted('config', 'Sessions ready');
+      initialSessionSnapshotSettledRef.current = true;
+      markInitialWorkspaceDataReady();
+      boot.markStageRunning('conversation', 'Warming recent conversation');
+      const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
+      void gateway.getHistory(sessionKey, 20, 8_000).then((result) => {
+        const stage = useBootSequenceStore.getState().stages.conversation;
+        if (stage.status !== 'pending' && stage.status !== 'running') return;
+        const messages = Array.isArray(result?.messages) ? result.messages : [];
+        useBootSequenceStore.getState().markStageCompleted(
+          'conversation',
+          messages.length > 0
+            ? `Recent conversation warmed (${messages.length} messages)`
+            : 'Recent conversation warmed',
+        );
+      }).catch((err) => {
+        const stage = useBootSequenceStore.getState().stages.conversation;
+        if (stage.status !== 'pending' && stage.status !== 'running') return;
+        const errText = String(err);
+        const isHistoryUnavailableDuringStartup =
+          /chat\.history/i.test(errText) && /(unavailable|not available|not ready|warming|startup)/i.test(errText);
+        useBootSequenceStore.getState().markStageCompleted(
+          'conversation',
+          isHistoryUnavailableDuringStartup || errText.includes('Request timeout')
+            ? 'Recent conversation is syncing in the background.'
+            : 'Recent conversation will load after startup.',
+        );
+      });
+      boot.markStageRunning('background', 'Models will sync in the background');
+      if (deferredModelSyncTimerRef.current) clearTimeout(deferredModelSyncTimerRef.current);
+      deferredModelSyncTimerRef.current = setTimeout(() => {
+        deferredModelSyncTimerRef.current = null;
+        void loadAvailableModels().catch(() => undefined).finally(() => {
+          useBootSequenceStore.getState().markStageCompleted('background', 'Models synced');
+        });
+      }, 1_500);
+    }).catch(() => {
+      boot.markStageError('config', 'Session load failed');
+      setWorkspaceStartupFailed(true);
+    });
+  }, [loadAvailableModels, loadSessions, markInitialWorkspaceDataReady]);
+
+  const retryWorkspaceStartup = useCallback(() => {
+    initialWorkspaceDataReadyRef.current = false;
+    initialSessionSnapshotSettledRef.current = false;
+    setWorkspaceDataReady(false);
+    setWorkspaceStartupFailed(false);
+    void Promise.allSettled([refreshGroup('sessions'), refreshGroup('agents')]);
+    startInitialWorkspaceLoad();
+  }, [startInitialWorkspaceLoad]);
 
   // ── Request notification permission (Web Notification API) ──
   // Notification access is not an onboarding prerequisite. Defer the prompt
@@ -925,73 +1001,7 @@ export default function App() {
           pairingTriggeredRef.current = false;
           const boot = useBootSequenceStore.getState();
           boot.markStageCompleted('connection', 'WebSocket handshake complete');
-          boot.markStageRunning('config', 'Loading sessions');
-          void loadSessions({ reconcileChatRuns: true }).then((sessionLoadResult) => {
-            if (sessionLoadResult === 'superseded') return;
-            if (sessionLoadResult === 'failed') {
-              boot.markStageError('config', 'Session load failed');
-              // A failed authoritative read is terminal for this startup pass.
-              // Release the shell so its recoverable Gateway surfaces remain reachable.
-              markInitialWorkspaceDataReady(true);
-              return;
-            }
-            queueMicrotask(() => {
-              const chat = useChatStore.getState();
-              for (const [sessionKey, queue] of Object.entries(chat.messageQueue)) {
-                if (queue.length > 0 && !chat.typingBySession[sessionKey]) {
-                  void chat.drainQueue(sessionKey).catch(() => undefined);
-                }
-              }
-            });
-            boot.markStageCompleted('config', 'Sessions ready');
-            initialSessionSnapshotSettledRef.current = true;
-            markInitialWorkspaceDataReady();
-            boot.markStageRunning('conversation', 'Warming recent conversation');
-            const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
-            void gateway.getHistory(sessionKey, 20, 8_000).then((result) => {
-              const stage = useBootSequenceStore.getState().stages.conversation;
-              if (stage.status !== 'pending' && stage.status !== 'running') return;
-              const messages = Array.isArray(result?.messages) ? result.messages : [];
-              useBootSequenceStore.getState().markStageCompleted(
-                'conversation',
-                messages.length > 0
-                  ? `Recent conversation warmed (${messages.length} messages)`
-                  : 'Recent conversation warmed',
-              );
-            }).catch((err) => {
-              const stage = useBootSequenceStore.getState().stages.conversation;
-              if (stage.status !== 'pending' && stage.status !== 'running') return;
-              const errText = String(err);
-              const isHistoryUnavailableDuringStartup =
-                /chat\.history/i.test(errText) &&
-                /(unavailable|not available|not ready|warming|startup)/i.test(errText);
-              if (isHistoryUnavailableDuringStartup || errText.includes('Request timeout')) {
-                useBootSequenceStore.getState().markStageCompleted(
-                  'conversation',
-                  'Recent conversation is syncing in the background.',
-                );
-                return;
-              }
-              useBootSequenceStore.getState().markStageCompleted(
-                'conversation',
-                'Recent conversation will load after startup.',
-              );
-            });
-
-            boot.markStageRunning('background', 'Models will sync in the background');
-            if (deferredModelSyncTimerRef.current) {
-              clearTimeout(deferredModelSyncTimerRef.current);
-            }
-            deferredModelSyncTimerRef.current = setTimeout(() => {
-              deferredModelSyncTimerRef.current = null;
-              void loadAvailableModels().catch(() => undefined).finally(() => {
-                useBootSequenceStore.getState().markStageCompleted('background', 'Models synced');
-              });
-            }, 1_500);
-          }).catch(() => {
-            boot.markStageError('config', 'Session load failed');
-            markInitialWorkspaceDataReady(true);
-          });
+          startInitialWorkspaceLoad();
         }
       },
       onAuthorizationIssue: (issue) => {
@@ -1154,7 +1164,7 @@ export default function App() {
       gateway.forgetSessionViewerPresence();
       gatewayManager.destroy();
     };
-  }, [loadAvailableModels, setupComplete, cachedSetupValidationPending, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure, markInitialWorkspaceDataReady]);
+  }, [setupComplete, cachedSetupValidationPending, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure, startInitialWorkspaceLoad]);
 
 
   // ── Pairing Handlers ──
@@ -1237,7 +1247,12 @@ export default function App() {
     return (
       <>
         <ThemeRuntime />
-        <AppLoadingFallback label={t('app.loadingWorkspace')} />
+        <AppLoadingFallback
+          label={t('app.loadingWorkspace')}
+          errorLabel={workspaceStartupFailed ? t('app.workspaceLoadFailed') : undefined}
+          retryLabel={workspaceStartupFailed ? t('app.retry') : undefined}
+          onRetry={workspaceStartupFailed ? retryWorkspaceStartup : undefined}
+        />
       </>
     );
   }

@@ -10,9 +10,7 @@ const fallbackSource = readFileSync(
 
 test('the first workspace render waits for the authoritative session snapshot', () => {
   assert.match(appSource, /const \[workspaceDataReady, setWorkspaceDataReady\] = useState\(false\)/);
-  assert.match(appSource, /const gatewayBootstrapDataReady = useGatewayDataStore/);
-  assert.match(appSource, /state\.lastFetch\.sessions > 0 \|\| state\.errors\.sessions !== null/);
-  assert.match(appSource, /state\.lastFetch\.agents > 0 \|\| state\.errors\.agents !== null/);
+  assert.match(appSource, /useGatewayDataStore\(hasCurrentWorkspaceBootstrapData\)/);
   assert.match(appSource, /void loadSessions\(\{ reconcileChatRuns: true \}\)\.then/);
   assert.match(appSource, /type SessionLoadResult = 'loaded' \| 'failed' \| 'superseded'/);
   assert.match(appSource, /if \(sessionLoadResult === 'superseded'\) return/);
@@ -20,7 +18,12 @@ test('the first workspace render waits for the authoritative session snapshot', 
   assert.match(appSource, /if \(!workspaceDataReady && !gatewayOptionalRoute\)/);
 });
 
-test('workspace loading has a localized shared fallback and cannot wait forever after a session error', () => {
-  assert.match(appSource, /boot\.markStageError\('config', 'Session load failed'\);\s+markInitialWorkspaceDataReady\(true\)/);
+test('workspace startup failure remains gated and offers a localized retry', () => {
+  assert.match(appSource, /const \[workspaceStartupFailed, setWorkspaceStartupFailed\] = useState\(false\)/);
+  assert.match(appSource, /useGatewayDataStore\(hasCurrentWorkspaceBootstrapFailure\)/);
+  assert.match(appSource, /boot\.markStageError\('config', 'Session load failed'\);\s+setWorkspaceStartupFailed\(true\)/);
+  assert.doesNotMatch(appSource, /markInitialWorkspaceDataReady\(true\)/);
+  assert.match(appSource, /onRetry=\{workspaceStartupFailed \? retryWorkspaceStartup : undefined\}/);
   assert.match(fallbackSource, /t\('app\.loadingWorkspace'\)/);
+  assert.match(fallbackSource, /role="alert"/);
 });

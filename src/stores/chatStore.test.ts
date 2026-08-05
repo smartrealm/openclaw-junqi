@@ -711,6 +711,33 @@ test('session category updates only after Gateway confirms the patched entry', a
   }
 });
 
+test('explicit unread state follows the confirmed native session patch in both directions', async () => {
+  const setSessionUnread = gateway.setSessionUnread;
+  const sessionKey = 'agent:main:unread-session';
+  const calls: boolean[] = [];
+  Object.assign(gateway, {
+    setSessionUnread: async (unread: boolean) => { calls.push(unread); },
+  });
+  useChatStore.setState({
+    sessions: [{ key: sessionKey, label: 'Unread session', unread: 2, hasPendingCompletion: true }],
+  });
+
+  try {
+    await useChatStore.getState().setSessionUnread(sessionKey, false);
+    assert.deepEqual(useChatStore.getState().sessions, [{
+      key: sessionKey,
+      label: 'Unread session',
+      unread: 0,
+      hasPendingCompletion: false,
+    }]);
+    await useChatStore.getState().setSessionUnread(sessionKey, true);
+    assert.equal(useChatStore.getState().sessions[0]?.unread, 1);
+    assert.deepEqual(calls, [false, true]);
+  } finally {
+    Object.assign(gateway, { setSessionUnread });
+  }
+});
+
 test('native session group catalog stays transient and preserves Gateway display order', async () => {
   const listSessionGroups = gateway.listSessionGroups;
   Object.assign(gateway, {

@@ -17,8 +17,8 @@ The installed `react-virtuoso` 4.18.7 type contract exposes both `followOutput` 
 
 - Before an execution group changes height, capture the scroller offset, temporarily disable tail following, and restore that offset over the next two animation frames. The execution details expand below their own summary without moving the current reading position.
 - Keep initial-history positioning separate from streamed-output following. Once the active history is hydrated, position it at the final item regardless of temporary virtual-list bottom state; reset that one-time position when the active session changes. Subsequent user scrolling still locks tail following.
-- After cached setup validation, show the shared full-window loading surface until the first `sessions.list` snapshot has been reconciled into `chatStore` and the shared dashboard `sessions` plus `agents` groups have each reached a success or error terminal state. This is data readiness, not a timer.
-- A failed first session read completes the loading phase as an error terminal state so the existing recoverable Gateway surfaces remain available. Optional Gateway-independent routes remain reachable.
+- After cached setup validation, show the shared full-window loading surface until the first `sessions.list` snapshot has been reconciled into `chatStore` and the shared dashboard `sessions` plus `agents` groups have each successfully completed after the current Gateway connection started. This is data readiness, not a timer.
+- A failed first session or shared-data read keeps the workbench behind a global retry surface. Optional Gateway-independent routes remain reachable.
 - Session loading distinguishes `loaded`, `failed`, and `superseded`. Only the latest request can complete or fail the first-data gate; a superseded request leaves the loading surface in place for its replacement.
 - Recent transcript and model catalog loading stay background work because their existing contracts support later refresh and retry; they are not misrepresented as complete during the first session snapshot gate.
 

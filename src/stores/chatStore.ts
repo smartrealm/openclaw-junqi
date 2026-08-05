@@ -506,7 +506,8 @@ interface ChatState {
   togglePinSession: (key: string) => Promise<void>;
   /** Archive/restore through the native Gateway protocol, with a legacy fallback. */
   setSessionArchived: (key: string, archived: boolean) => Promise<void>;
-  markSessionUnread: (key: string) => Promise<void>;
+  /** Update the Gateway-owned explicit unread marker and local projection. */
+  setSessionUnread: (key: string, unread: boolean) => Promise<void>;
   setSessionCategory: (key: string, category: string | null) => Promise<void>;
   /** 确认 Gateway 会话组目录包含名称，不持久化客户端副本。 */
   ensureSessionGroup: (name: string) => Promise<void>;
@@ -1708,14 +1709,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({ sessions: updateSession(state.sessions, key, (item) => ({ ...item, archived })) }));
   },
 
-  markSessionUnread: async (key) => {
+  setSessionUnread: async (key, unread) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
     if (!session) return;
-    await gateway.setSessionUnread(true, key);
+    await gateway.setSessionUnread(unread, key);
     set((state) => ({
       sessions: updateSession(state.sessions, key, (item) => ({
         ...item,
-        unread: Math.max(1, unreadCount(item.unread)),
+        unread: unread ? Math.max(1, unreadCount(item.unread)) : 0,
         hasPendingCompletion: false,
       })),
     }));

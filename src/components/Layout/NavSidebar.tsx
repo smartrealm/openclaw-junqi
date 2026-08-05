@@ -2,7 +2,6 @@
 // 每个 Panel 是真 React 组件，hooks 各自管理。Registry 按 tab 分发。
 
 import { lazy, Suspense, useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ArchiveRestore, Plus, MessageSquare, BookOpenText, Blocks, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, Ellipsis, Pin, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -42,6 +41,7 @@ import { resolveSessionChannelPresentation } from '@/utils/sessionChannelPresent
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
 import { SessionChannelIcon } from '@/components/shared/SessionChannelIcon';
 import { SessionActionsMenu } from '@/components/Chat/session-actions/SessionActionsMenu';
+import { FloatingMenuPortal } from '@/components/shared/FloatingMenuPortal';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
 const BusinessApplicationsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.BusinessApplicationsPanel })));
@@ -115,7 +115,6 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
   const [renamingInFlight, setRenamingInFlight] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const actionsMenuRef = useRef<HTMLDivElement>(null);
   const agentId = sessionAgentId(session, sessionKey);
   const agentFallbackName = agentId === 'main' ? t('agents.mainAgent', 'Main Agent') : agentId;
   const agentName = getAgentDisplayName(agents.find((agent: any) => agent?.id === agentId), agentFallbackName);
@@ -146,15 +145,6 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
     useChatStore.getState().openTab(sessionKey);
     navigate('/chat');
   };
-
-  useEffect(() => {
-    if (!actionsPosition) return;
-    const dismiss = (event: MouseEvent) => {
-      if (!actionsMenuRef.current?.contains(event.target as Node)) setActionsPosition(null);
-    };
-    document.addEventListener('mousedown', dismiss);
-    return () => document.removeEventListener('mousedown', dismiss);
-  }, [actionsPosition]);
 
   const startRename = useCallback(() => {
     setRenameValue(currentTitle);
@@ -330,7 +320,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
           onClick={(event) => {
             event.stopPropagation();
             const rect = event.currentTarget.getBoundingClientRect();
-            setActionsPosition({ x: rect.right - 204, y: rect.bottom + 4 });
+            setActionsPosition({ x: rect.right, y: rect.bottom + 4 });
           }}
           onDoubleClick={(e) => e.stopPropagation()}
           className="flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-aegis-hover/55 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/45"
@@ -340,8 +330,12 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
           <Ellipsis size={14} aria-hidden="true" />
         </button>
       </span>
-      {actionsPosition && createPortal(
-        <div ref={actionsMenuRef} className="fixed z-[9999]" style={{ left: actionsPosition.x, top: actionsPosition.y }}>
+      {actionsPosition && (
+        <FloatingMenuPortal
+          point={actionsPosition}
+          origin="top-end"
+          onDismiss={() => setActionsPosition(null)}
+        >
           <SessionActionsMenu
             session={session}
             onDismiss={() => setActionsPosition(null)}
@@ -351,8 +345,7 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
               navigate('/chat');
             }}
           />
-        </div>,
-        document.body,
+        </FloatingMenuPortal>
       )}
     </div>
   );

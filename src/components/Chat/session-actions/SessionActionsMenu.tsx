@@ -1,17 +1,15 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 import {
   Archive,
-  Check,
   ChevronRight,
+  Circle,
+  Eye,
   Folder,
   GitFork,
-  Mail,
   Pencil,
   Pin,
   PinOff,
-  RefreshCw,
   Trash2,
-  X,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
@@ -21,15 +19,15 @@ import { useChatStore } from '@/stores/chatStore';
 import { isAgentMainSession } from '@/utils/sessionLifecycle';
 import { createNativeSession } from '@/utils/sessionCreate';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
-import { resetSessionEverywhere } from '@/utils/sessionReset';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { SessionGroupCreateDialog } from './SessionGroupCreateDialog';
+import { SessionGroupSubmenu } from './SessionGroupSubmenu';
 
 export interface SessionActionsMenuProps {
   readonly session: Session;
   readonly onDismiss: () => void;
   readonly onRequestRename: () => void;
   readonly onOpenSession?: (sessionKey: string) => void;
-  readonly onCloseTab?: () => void;
   readonly className?: string;
 }
 
@@ -38,21 +36,41 @@ function agentIdForSession(session: Session): string {
   return /^agent:([^:]+):/.exec(session.key)?.[1] ?? 'main';
 }
 
+function isUnread(session: Session): boolean {
+  return (session.unread ?? 0) > 0;
+}
+
 function MenuButton({
   children,
   danger = false,
+  disabled = false,
   onClick,
+  onFocus,
+  onMouseEnter,
+  hasPopup = false,
+  buttonRef,
 }: {
   readonly children: ReactNode;
   readonly danger?: boolean;
+  readonly disabled?: boolean;
   readonly onClick: () => void;
+  readonly onFocus?: () => void;
+  readonly onMouseEnter?: () => void;
+  readonly hasPopup?: boolean;
+  readonly buttonRef?: Ref<HTMLButtonElement>;
 }) {
   return (
     <button
+      ref={buttonRef}
       type="button"
+      role="menuitem"
+      disabled={disabled}
+      aria-haspopup={hasPopup ? 'menu' : undefined}
       onClick={onClick}
+      onFocus={onFocus}
+      onMouseEnter={onMouseEnter}
       className={clsx(
-        'flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors',
+        'flex min-h-8 w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors disabled:cursor-not-allowed disabled:opacity-45',
         danger
           ? 'text-aegis-danger hover:bg-aegis-danger/10'
           : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text',
@@ -63,27 +81,35 @@ function MenuButton({
   );
 }
 
+/**
+ * Shared session action menu for sidebar and tabs.
+ *
+ * The action order and nested group interaction match OpenClaw's native
+ * SessionMenu. Opening a session remains the responsibility of its row/tab,
+ * keeping navigation separate from session organization actions.
+ */
 export function SessionActionsMenu({
   session,
   onDismiss,
   onRequestRename,
   onOpenSession,
-  onCloseTab,
   className,
 }: SessionActionsMenuProps) {
   const { t } = useTranslation();
   const {
     sessions,
     togglePinSession,
-    markSessionUnread,
+    setSessionUnread,
     setSessionArchived,
     setSessionCategory,
     ensureSessionGroup,
     sessionGroupCatalog,
     refreshSessionGroupCatalog,
   } = useChatStore();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const groupTriggerRef = useRef<HTMLButtonElement>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
-  const [newCategory, setNewCategory] = useState('');
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const isMainSession = isAgentMainSession(session.key);
   const sessionCategories = useMemo(() => {
     const categories = new Map<string, string>();
@@ -108,6 +134,13 @@ export function SessionActionsMenu({
     });
   };
 
+  const openGroups = () => {
+    if (!groupsOpen) {
+      setGroupsOpen(true);
+      void refreshSessionGroupCatalog().catch(() => undefined);
+    }
+  };
+
   const forkSession = async () => {
     const result = await createNativeSession({
       agentId: agentIdForSession(session),
@@ -117,135 +150,93 @@ export function SessionActionsMenu({
     });
     if (result.ok) {
       onOpenSession?.(result.session.key);
-    } else {
-      useNotificationStore.getState().addToast('error', t('chat.forkSession'), result.error);
+      return;
     }
+    useNotificationStore.getState().addToast('error', t('chat.forkSession'), result.error);
   };
 
-  const createCategory = async () => {
-    try {
-      const category = newCategory.trim();
-      if (!category) return;
-      await ensureSessionGroup(category);
-      await setSessionCategory(session.key, category);
-      setNewCategory('');
-      onDismiss();
-    } catch (error) {
-      useNotificationStore.getState().addToast(
-        'error',
-        t('chat.setSessionCategory'),
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+  const createGroup = async (name: string) => {
+    await ensureSessionGroup(name);
+    await setSessionCategory(session.key, name);
   };
 
   return (
-    <div className={clsx('min-w-[204px] rounded-lg border border-aegis-menu-border bg-aegis-menu-bg py-1 text-[12px] shadow-[var(--aegis-menu-shadow)]', className)}>
+    <div
+      ref={menuRef}
+      role="menu"
+      aria-label={t('chat.sessionActions')}
+      className={clsx(
+        'relative min-w-[228px] rounded-lg border border-aegis-menu-border bg-aegis-menu-bg py-1 text-[12px] shadow-[var(--aegis-menu-shadow)]',
+        className,
+      )}
+    >
+      <MenuButton
+        disabled={session.archived === true}
+        onClick={() => finish(() => togglePinSession(session.key))}
+      >
+        {session.pinned ? <PinOff size={13} aria-hidden="true" /> : <Pin size={13} aria-hidden="true" />}
+        {session.pinned ? t('chat.unpinSession') : t('chat.pinSession')}
+      </MenuButton>
+      <MenuButton onClick={() => finish(() => setSessionUnread(session.key, !isUnread(session)))}>
+        {isUnread(session) ? <Eye size={13} aria-hidden="true" /> : <Circle size={13} aria-hidden="true" />}
+        {isUnread(session) ? t('chat.markSessionRead') : t('chat.markSessionUnread')}
+      </MenuButton>
       <MenuButton onClick={() => { onRequestRename(); onDismiss(); }}>
         <Pencil size={13} aria-hidden="true" />
         {t('chat.renameSession')}
       </MenuButton>
-
-      <>
-          <MenuButton onClick={() => finish(() => togglePinSession(session.key))}>
-            {session.pinned ? <PinOff size={13} aria-hidden="true" /> : <Pin size={13} aria-hidden="true" />}
-            {session.pinned ? t('chat.unpinSession') : t('chat.pinSession')}
-          </MenuButton>
-          <MenuButton onClick={() => finish(() => markSessionUnread(session.key))}>
-            <Mail size={13} aria-hidden="true" />
-            {t('chat.markSessionUnread')}
-          </MenuButton>
-          <MenuButton onClick={() => { onDismiss(); void forkSession(); }}>
-            <GitFork size={13} aria-hidden="true" />
-            {t('chat.forkSession')}
-          </MenuButton>
-          <MenuButton onClick={() => {
-            const nextOpen = !groupsOpen;
-            setGroupsOpen(nextOpen);
-            if (nextOpen) void refreshSessionGroupCatalog().catch(() => undefined);
-          }}>
-            <Folder size={13} aria-hidden="true" />
-            <span className="min-w-0 flex-1">{t('chat.setSessionCategory')}</span>
-            <ChevronRight size={13} className={clsx('transition-transform', groupsOpen && 'rotate-90')} aria-hidden="true" />
-          </MenuButton>
-          {groupsOpen && (
-            <div className="mx-2 mb-1 rounded-md border border-aegis-border/70 bg-aegis-elevated/60 py-1">
-              <MenuButton onClick={() => finish(() => setSessionCategory(session.key, null))}>
-                {t('chat.clearSessionCategory')}
-              </MenuButton>
-              {sessionCategories.map((category) => (
-                <MenuButton key={category} onClick={() => finish(() => setSessionCategory(session.key, category))}>
-                  <Folder size={12} aria-hidden="true" />
-                  <span className="truncate">{category}</span>
-                  {session.category === category && <Check size={12} className="ml-auto" aria-hidden="true" />}
-                </MenuButton>
-              ))}
-              <div className="mx-2 my-1 border-t border-aegis-border/70" />
-              <div className="flex gap-1 px-2 pb-1">
-                <input
-                  value={newCategory}
-                  onChange={(event) => setNewCategory(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') void createCategory();
-                    if (event.key === 'Escape') setNewCategory('');
-                  }}
-                  placeholder={t('chat.newSessionCategoryPlaceholder')}
-                  className="h-7 min-w-0 flex-1 rounded border border-aegis-border bg-aegis-bg px-2 text-[11px] text-aegis-text outline-none focus:border-aegis-primary"
-                />
-                <button
-                  type="button"
-                  onClick={() => void createCategory()}
-                  disabled={!newCategory.trim()}
-                  className="flex h-7 w-7 items-center justify-center rounded border border-aegis-border text-aegis-text-muted hover:border-aegis-primary hover:text-aegis-primary disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label={t('chat.setSessionCategory')}
-                  title={t('chat.setSessionCategory')}
-                >
-                  <Check size={12} aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-          )}
-          <MenuButton onClick={() => finish(async () => {
-            await setSessionArchived(session.key, !session.archived);
-            if (!session.archived) onCloseTab?.();
-          })}>
-            <Archive size={13} aria-hidden="true" />
-            {session.archived ? t('chat.restoreSession') : t('chat.archiveSession')}
-          </MenuButton>
-          <div className="my-1 border-t border-aegis-border/70" />
-      </>
-
-      {onCloseTab && !isMainSession && (
-        <MenuButton onClick={() => { onCloseTab(); onDismiss(); }}>
-          <X size={13} aria-hidden="true" />
-          {t('chat.closeTab')}
-        </MenuButton>
-      )}
-      <MenuButton onClick={() => {
-        showConfirm(t('chat.resetSession'), t('chat.resetSessionConfirm'), async () => {
-          await resetSessionEverywhere(session.key);
-        });
-        onDismiss();
-      }}>
-        <RefreshCw size={13} aria-hidden="true" />
-        {t('chat.resetSession')}
+      <MenuButton onClick={() => { onDismiss(); void forkSession(); }}>
+        <GitFork size={13} aria-hidden="true" />
+        {t('chat.forkSession')}
+      </MenuButton>
+      <MenuButton
+        buttonRef={groupTriggerRef}
+        hasPopup
+        onClick={openGroups}
+        onFocus={openGroups}
+        onMouseEnter={openGroups}
+      >
+        <Folder size={13} aria-hidden="true" />
+        <span className="min-w-0 flex-1">{t('chat.moveSessionToGroup')}</span>
+        <ChevronRight size={13} aria-hidden="true" />
+      </MenuButton>
+      <SessionGroupSubmenu
+        open={groupsOpen}
+        parentMenuRef={menuRef}
+        triggerRef={groupTriggerRef}
+        category={session.category}
+        groups={sessionCategories}
+        onSelect={(category) => finish(() => setSessionCategory(session.key, category))}
+        onRequestCreate={() => {
+          setGroupsOpen(false);
+          setCreateGroupOpen(true);
+        }}
+      />
+      <div className="my-1 border-t border-aegis-border/70" role="separator" />
+      <MenuButton onClick={() => finish(() => setSessionArchived(session.key, !session.archived))}>
+        <Archive size={13} aria-hidden="true" />
+        {session.archived ? t('chat.restoreSession') : t('chat.archiveSession')}
       </MenuButton>
       {!isMainSession && (
-        <>
-          <div className="my-1 border-t border-aegis-border/70" />
-          <MenuButton
-            danger
-            onClick={() => {
-              showConfirm(t('chat.deleteSession'), t('chat.deleteSessionConfirm'), async () => {
-                await deleteSessionEverywhere(session.key);
-              });
-              onDismiss();
-            }}
-          >
-            <Trash2 size={13} aria-hidden="true" />
-            {t('chat.deleteSession')}
-          </MenuButton>
-        </>
+        <MenuButton
+          danger
+          onClick={() => {
+            showConfirm(t('chat.deleteSession'), t('chat.deleteSessionConfirm'), async () => {
+              await deleteSessionEverywhere(session.key);
+            });
+            onDismiss();
+          }}
+        >
+          <Trash2 size={13} aria-hidden="true" />
+          {t('chat.deleteSession')}
+        </MenuButton>
+      )}
+      {createGroupOpen && (
+        <SessionGroupCreateDialog
+          onDismiss={() => setCreateGroupOpen(false)}
+          onCreate={createGroup}
+          onCreated={onDismiss}
+        />
       )}
     </div>
   );

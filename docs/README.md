@@ -122,6 +122,8 @@ docs/
 目录：[`quality/`](quality/)
 
 - [统一文件预览呈现审计](quality/unified-file-preview-surface-audit-2026-08-05.md)
+- [工作区首屏数据就绪记录](quality/workspace-bootstrap-readiness-2026-08-05.md)
+- [OpenClaw 浏览器控制记录](quality/openclaw-browser-control-2026-08-05.md)
 - [Orca 文件工作区体验审计](quality/orca-file-workspace-experience-audit-2026-08-05.md)
 - [Agent Workspace 能力权威性收敛](quality/agent-workspace-capability-authority-2026-08-04.md)
 - [OpenClaw Agent 工作区只读投影](quality/openclaw-agent-workspace-readonly-projection-2026-08-04.md)

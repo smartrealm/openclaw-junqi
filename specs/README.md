@@ -44,6 +44,8 @@ specs/
 ## Quality
 
 - [统一文件预览呈现](quality/2026-08-05-unified-file-preview-surface.md)
+- [工作区首屏数据就绪](quality/2026-08-05-workspace-bootstrap-readiness.md)
+- [OpenClaw 浏览器控制](quality/2026-08-05-openclaw-browser-control.md)
 - [Orca 文件工作区体验](quality/2026-08-05-orca-file-workspace-experience.md)
 - [Agent Workspace 能力权威性收敛规格](quality/2026-08-04-agent-workspace-capability-authority.md)
 - [OpenClaw Agent 工作区只读投影规格](quality/2026-08-04-openclaw-agent-workspace-readonly-projection.md)

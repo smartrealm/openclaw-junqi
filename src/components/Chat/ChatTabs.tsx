@@ -30,6 +30,7 @@ import { useOptionalCollaborationChat } from './CollaborationChatProvider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SessionActionsMenu } from './session-actions/SessionActionsMenu';
 import { ActiveTabIndicator } from '@/components/shared/TabMotion';
+import { FloatingMenuPortal } from '@/components/shared/FloatingMenuPortal';
 
 // ═══════════════════════════════════════════════════════════
 // ChatTabs — Browser-style tab bar
@@ -1099,20 +1100,10 @@ export function ChatTabs() {
 
   // ── Right-click context menu ──
   const [ctxMenu, setCtxMenu] = useState<{ key: string; x: number; y: number } | null>(null);
-  const ctxMenuRef = useRef<HTMLDivElement>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (ctxMenuRef.current && !ctxMenuRef.current.contains(e.target as Node)) setCtxMenu(null);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [ctxMenu]);
 
   const handleTabContextMenu = useCallback((e: React.MouseEvent, key: string) => {
     e.preventDefault();
@@ -1451,11 +1442,10 @@ export function ChatTabs() {
       {ctxMenu && (() => {
         const session = sessions.find((candidate) => candidate.key === ctxMenu.key);
         if (!session) return null;
-        return createPortal(
-          <div
-            ref={ctxMenuRef}
-            className="fixed z-[9999]"
-            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        return (
+          <FloatingMenuPortal
+            point={ctxMenu}
+            onDismiss={() => setCtxMenu(null)}
           >
             <SessionActionsMenu
               session={session}
@@ -1467,10 +1457,8 @@ export function ChatTabs() {
                 );
               }}
               onOpenSession={(key) => openTab(key)}
-              onCloseTab={() => closeTab(session.key)}
             />
-          </div>,
-          document.body,
+          </FloatingMenuPortal>
         );
       })()}
 

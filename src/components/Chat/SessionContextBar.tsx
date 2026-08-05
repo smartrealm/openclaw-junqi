@@ -19,6 +19,7 @@ import { useFocusContextStore } from '@/stores/focusContextStore';
 import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
 import { SessionRuntimeControl } from './session-runtime/SessionRuntimeControl';
 import { EffectiveToolsControl } from './EffectiveToolsControl';
+import { BrowserControlCenter } from './BrowserControlCenter';
 import { SessionInspectionControl } from './SessionInspectionControl';
 import { SessionBranchesControl } from './SessionBranchesControl';
 import { SessionArtifactsControl } from './SessionArtifactsControl';
@@ -425,6 +426,7 @@ export function SessionContextBar() {
             agentId={agentId}
             onOpenConfiguration={() => navigate('/tools')}
           />
+          <BrowserControlCenter />
           <SessionBranchesControl sessionKey={activeSessionKey} agentId={agentId} />
           <SessionInspectionControl sessionKey={activeSessionKey} agentId={agentId} />
           <SessionArtifactsControl sessionKey={activeSessionKey} agentId={agentId} />

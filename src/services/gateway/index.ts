@@ -100,6 +100,7 @@ import {
   type OpenClawAgentsWorkspaceListInput,
 } from './OpenClawAgentsWorkspaceClient';
 import { OpenClawAgentWaitClient } from './OpenClawAgentWaitClient';
+import { OpenClawBrowserClient } from './OpenClawBrowserClient';
 import { OpenClawPendingRunWaitReconciler } from './OpenClawPendingRunWaitReconciler';
 import {
   OpenClawCommandsClient,
@@ -1102,6 +1103,9 @@ export function createApprovalRequester(
 
 const requestPrivileged = createPrivilegedRequester(connection);
 const requestApprovals = createApprovalRequester(connection);
+export const openClawBrowserClient = new OpenClawBrowserClient({
+  request: (method, params, timeoutMs) => requestPrivileged(method, params, timeoutMs),
+});
 const sessionFiles = new OpenClawSessionFilesClient({
   captureConnectionId: () => connection.getAttestedConnectionId(),
   isConnectionCurrent: (connectionId) => (
@@ -1835,6 +1839,23 @@ export const gateway = {
   async updateAgentParams(agentId: string, params: Record<string, unknown>) {
     return requestPrivileged('agents.update', { agentId, params });
   },
+
+  // Browser control uses the OpenClaw browser.request admin-scoped protocol.
+  async getBrowserStatus(profile?: string) { return openClawBrowserClient.status(profile); },
+  async getBrowserProfiles() { return openClawBrowserClient.profiles(); },
+  async getBrowserTabs(profile?: string) { return openClawBrowserClient.tabs(profile); },
+  async startBrowser(profile?: string) { return openClawBrowserClient.start(profile); },
+  async stopBrowser(profile?: string) { return openClawBrowserClient.stop(profile); },
+  async openBrowserTab(url: string, profile?: string, label?: string) {
+    return openClawBrowserClient.openTab(url, profile, label);
+  },
+  async focusBrowserTab(targetId: string, profile?: string) {
+    return openClawBrowserClient.focusTab(targetId, profile);
+  },
+  async closeBrowserTab(targetId: string, profile?: string) {
+    return openClawBrowserClient.closeTab(targetId, profile);
+  },
+  async captureBrowserSnapshot(profile?: string) { return openClawBrowserClient.snapshot(profile); },
 
   // Models
   async getAvailableModels(view: 'default' | 'configured' | 'all' = 'configured') {
