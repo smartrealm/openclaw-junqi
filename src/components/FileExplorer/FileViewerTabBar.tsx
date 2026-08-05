@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -102,6 +102,7 @@ export function FileViewerTabBar({
             <button
               key={tab.path}
               type="button"
+              className={`file-viewer-tab${active ? ' is-active' : ''}`}
               onClick={() => onSelect(tab.path)}
               onContextMenu={(event) => {
                 event.preventDefault();
@@ -109,33 +110,17 @@ export function FileViewerTabBar({
                 setMenu({ x: event.clientX, y: event.clientY, path: tab.path });
               }}
               title={tab.path}
-              style={{
-                height: "100%",
-                maxWidth: 220,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "0 10px 0 12px",
-                border: "none",
-                borderRight: "1px solid var(--aegis-border)",
-                borderTop: active ? "2px solid var(--aegis-primary)" : "2px solid transparent",
-                background: active ? "var(--aegis-elevated)" : "transparent",
-                color: active ? "var(--aegis-text)" : "var(--aegis-text-secondary)",
-                fontSize: 12.5,
-                cursor: "pointer",
-                flexShrink: 0,
-              }}
             >
-              <span style={{ width: 5, height: 14, borderRadius: 2, background: fileTabColor(tab.name), flexShrink: 0 }} />
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tab.name}</span>
+              <span className="file-viewer-tab-marker" style={{ '--file-tab-color': fileTabColor(tab.name) } as CSSProperties} />
+              <span className="file-viewer-tab-label">{tab.name}</span>
               <span
+                className="file-viewer-tab-close"
                 role="button"
                 aria-label={t("file.closeTab", { name: tab.name })}
                 onClick={(event) => {
                   event.stopPropagation();
                   onClosePaths([tab.path], () => onCloseTab(tab.path));
                 }}
-                style={{ display: "flex", padding: 2, color: "var(--aegis-text-dim)" }}
               >
                 <X size={12} />
               </span>

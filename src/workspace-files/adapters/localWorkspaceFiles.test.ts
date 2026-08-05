@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { localWorkspaceFiles } from './localWorkspaceFiles';
+import { localWorkspaceFiles, mapNativeFileSearchEntry } from './localWorkspaceFiles';
 import type { WorkspaceFileScope } from '../domain/types';
 
 const scope: WorkspaceFileScope = {
@@ -30,5 +30,12 @@ test('local adapter rejects mismatched owners before invoking native IO', async 
   await assert.rejects(
     localWorkspaceFiles.readText({ ...scope, hostRevision: Number.NaN }, '/repo/file.ts'),
     /finite owner revisions/,
+  );
+});
+
+test('local adapter preserves native file search metadata', () => {
+  assert.deepEqual(
+    mapNativeFileSearchEntry({ path: '/repo/src/app.ts', name: 'app.ts', dir: 'src', extension: 'ts' }),
+    { path: '/repo/src/app.ts', name: 'app.ts', directory: 'src', extension: 'ts' },
   );
 });

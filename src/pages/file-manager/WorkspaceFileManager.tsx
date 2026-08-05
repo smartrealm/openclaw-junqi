@@ -13,6 +13,8 @@ import { parseFilePreviewRoute } from '@/components/FileExplorer/filePreviewRout
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
 import { useTheme } from '@/theme/useTheme';
+import { localWorkspaceFiles } from '@/workspace-files/adapters/localWorkspaceFiles';
+import type { WorkspaceFileScope } from '@/workspace-files/domain/types';
 
 const FileExplorer = lazy(() => import('@/components/FileExplorer/FileExplorer').then((module) => ({ default: module.FileExplorer })));
 const FileViewer = lazy(() => import('@/components/FileExplorer/FileViewer').then((module) => ({ default: module.FileViewer })));
@@ -42,6 +44,14 @@ export function WorkspaceFileManager() {
     setTabs((current) => current.some((tab) => tab.path === path) ? current : [...current, { path, name }]);
     setActivePath(path);
   }, []);
+
+  const searchFiles = useCallback((query: string) => {
+    const scope: WorkspaceFileScope = {
+      hostId: 'local', hostRevision: 0, workspaceId: projectPath,
+      rootPath: projectPath, rootRevision: 0, policy: 'workspace',
+    };
+    return localWorkspaceFiles.search(scope, { query, maxResults: 200 });
+  }, [projectPath]);
 
   const closeTab = useCallback((path: string) => {
     setTabs((current) => {
@@ -99,6 +109,7 @@ export function WorkspaceFileManager() {
           projectPath={projectPath}
           projectName={projectPath.split(/[\\/]/).pop() || 'project'}
           onFileSelect={openFile}
+          onSearchFiles={searchFiles}
           onPathRenamed={onPathRenamed}
           onPathDeleted={onPathDeleted}
           onBeforePathMutation={(path, isDirectory) => viewerRef.current?.flushPath(path, isDirectory) ?? Promise.resolve()}

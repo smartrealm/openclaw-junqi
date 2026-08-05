@@ -7,15 +7,18 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
-import { AlertCircle, ChevronsUpDown, FilePlus, FolderOpen, FolderPlus, RotateCcw, X } from "lucide-react";
+import { AlertCircle, ChevronsUpDown, FilePlus, FolderOpen, FolderPlus, RotateCcw, Search, X } from "lucide-react";
 import { FileExplorerContextMenu } from "./ContextMenu";
 import { CreateInputRow } from "./CreateInputRow";
 import { TreeItem } from "./TreeItem";
+import { WorkspaceFileQuickOpen } from "./WorkspaceFileQuickOpen";
 import { writeClipboardText } from "./clipboard";
 import { debugError } from "@/utils/debugLog";
 import { showAlert } from "@/components/shared/alertStore";
 import { dispatchFileTreePointerDrag } from "./pathDrag";
 import { subscribeLocalWorkspacePath } from "@/workspace-files/services/localWatchCoordinator";
+import type { WorkspaceFileSearchResult } from "@/workspace-files/domain/types";
+import { shouldOpenWorkspaceFileQuickOpen } from "./workspaceFileQuickOpenModel";
 import {
   AUTO_REFRESH_MS,
   ROW_HEIGHT,
@@ -42,6 +45,7 @@ export function FileExplorer({
   onPathRenamed,
   onPathDeleted,
   onBeforePathMutation,
+  onSearchFiles,
   active = true,
   width = 260,
 }: {
@@ -51,6 +55,7 @@ export function FileExplorer({
   onPathRenamed?: (oldPath: string, newPath: string, isDirectory: boolean) => void;
   onPathDeleted?: (path: string, isDirectory: boolean) => void;
   onBeforePathMutation?: (path: string, isDirectory: boolean) => Promise<void>;
+  onSearchFiles?: (query: string) => Promise<WorkspaceFileSearchResult>;
   active?: boolean;
   width?: number;
 }) {
@@ -67,6 +72,7 @@ export function FileExplorer({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [creating, setCreating] = useState<{
     parentPath: string;
     kind: CreateKind;
@@ -105,6 +111,28 @@ export function FileExplorer({
   );
 
   const isCancelled = useCallback(() => cancelledRef.current, []);
+
+  useEffect(() => {
+    if (!active || !onSearchFiles) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const targetIsEditable = target?.isContentEditable === true
+        || target?.tagName === 'INPUT'
+        || target?.tagName === 'TEXTAREA'
+        || target?.tagName === 'SELECT';
+      if (!shouldOpenWorkspaceFileQuickOpen({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        targetIsEditable,
+      })) return;
+      event.preventDefault();
+      setQuickOpenVisible(true);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [active, onSearchFiles]);
 
   // ── Context menu handlers ──
   const handleContextMenu = useCallback((e: React.MouseEvent, node: TreeNode) => {
@@ -704,6 +732,18 @@ export function FileExplorer({
           onCopyPath={(path, withAt) => void copyPath(path, withAt)}
         />
       )}
+      {onSearchFiles ? (
+        <WorkspaceFileQuickOpen
+          open={quickOpenVisible}
+          projectName={projectName}
+          onClose={() => setQuickOpenVisible(false)}
+          onOpenFile={(path, name) => {
+            setSelectedPath(path);
+            onFileSelect(path, name);
+          }}
+          onSearch={onSearchFiles}
+        />
+      ) : null}
 
       {/* Header */}
       <div
@@ -728,6 +768,17 @@ export function FileExplorer({
         >
           {t("file.files", "Files")}
         </span>
+        {onSearchFiles ? (
+          <button
+            type="button"
+            onClick={() => setQuickOpenVisible(true)}
+            title={t('file.quickOpen', 'Quick open')}
+            aria-label={t('file.quickOpen', 'Quick open')}
+            className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text"
+          >
+            <Search size={13} />
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => startCreateAtRoot("file")}

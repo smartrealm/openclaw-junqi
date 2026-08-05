@@ -49,7 +49,7 @@ import { FileExplorer } from '@/components/FileExplorer/FileExplorer';
 import { FileViewer, type OpenFileTab } from '@/components/FileExplorer/FileViewer';
 import { GitChanges, GitDiffViewer } from '@/components/Git';
 import { localWorkspaceFiles } from '@/workspace-files/adapters/localWorkspaceFiles';
-import type { WorkspaceFileScope } from '@/workspace-files/domain/types';
+import type { WorkspaceFileScope, WorkspaceFileSearchEntry } from '@/workspace-files/domain/types';
 import { useFocusContextStore } from '@/stores/focusContextStore';
 import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 import './workbench.css';
@@ -373,6 +373,13 @@ function FilesPanel({ projectPath, projectName, onFileSelect }: {
   onFileSelect: (path: string, name: string) => void;
 }) {
   if (!projectPath) return <div className="junqi-wb-empty-panel">选择一个本机 Worktree 后浏览文件</div>;
+  const searchFiles = (query: string) => {
+    const scope: WorkspaceFileScope = {
+      hostId: 'local', hostRevision: 0, workspaceId: projectPath,
+      rootPath: projectPath, rootRevision: 0, policy: 'workspace',
+    };
+    return localWorkspaceFiles.search(scope, { query, maxResults: 200 });
+  };
   return (
     <div className="junqi-wb-panel-content">
       <PanelTitle>资源管理器</PanelTitle>
@@ -380,6 +387,7 @@ function FilesPanel({ projectPath, projectName, onFileSelect }: {
         projectPath={projectPath}
         projectName={projectName}
         onFileSelect={onFileSelect}
+        onSearchFiles={searchFiles}
         width={350}
       />
     </div>
@@ -405,7 +413,7 @@ function SearchPanel({ projectPath, onFileSelect }: {
   onFileSelect: (path: string, name: string) => void;
 }) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<string[]>([]);
+  const [results, setResults] = useState<WorkspaceFileSearchEntry[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const generationRef = useRef(0);
 
@@ -431,7 +439,7 @@ function SearchPanel({ projectPath, onFileSelect }: {
       setStatus('loading');
       void localWorkspaceFiles.search(scope, { query: value, maxResults: 200 }).then((response) => {
         if (generation !== generationRef.current) return;
-        setResults(response.paths);
+        setResults(response.entries);
         setStatus('idle');
       }).catch(() => {
         if (generation !== generationRef.current) return;
@@ -454,9 +462,9 @@ function SearchPanel({ projectPath, onFileSelect }: {
       {status === 'error' ? <div className="junqi-wb-empty-panel">搜索不可用</div> : null}
       {projectPath && status === 'idle' && query.trim() && results.length === 0 ? <div className="junqi-wb-empty-panel">没有匹配文件</div> : null}
       <div className="junqi-wb-search-results">
-        {results.map((path) => (
-          <button type="button" key={path} onClick={() => onFileSelect(path, pathLabel(path))}>
-            <FileCode size={13} /><span>{pathLabel(path)}</span><small>{path}</small>
+        {results.map((entry) => (
+          <button type="button" key={entry.path} onClick={() => onFileSelect(entry.path, entry.name)}>
+            <FileCode size={13} /><span>{entry.name}</span><small>{entry.directory || 'Worktree 根目录'}</small>
           </button>
         ))}
       </div>

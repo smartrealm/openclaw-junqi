@@ -46,6 +46,7 @@ plans/
 ## Quality
 
 - [统一文件预览呈现实施计划](quality/2026-08-05-unified-file-preview-surface.md)
+- [Orca 文件工作区体验实施计划](quality/2026-08-05-orca-file-workspace-experience.md)
 - [Agent Workspace 能力权威性收敛计划](quality/2026-08-04-agent-workspace-capability-authority.md)
 - [OpenClaw Agent 工作区只读投影计划](quality/2026-08-04-openclaw-agent-workspace-readonly-projection.md)
 - [OpenClaw Agent 引导文件只读投影计划](quality/2026-08-04-openclaw-agent-bootstrap-files-readonly-projection.md)

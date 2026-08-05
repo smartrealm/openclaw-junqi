@@ -49,7 +49,13 @@ export interface WorkspaceFileSearchRequest {
   maxResults?: number;
 }
 
+export interface WorkspaceFileSearchEntry {
+  path: string;
+  name: string;
+  directory: string;
+  extension: string | null;
+}
+
 export interface WorkspaceFileSearchResult {
-  paths: string[];
-  truncated: boolean;
+  entries: WorkspaceFileSearchEntry[];
 }
