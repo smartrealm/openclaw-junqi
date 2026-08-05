@@ -5,6 +5,7 @@
 
 import { useNotificationStore, type NotificationType } from '@/stores/notificationStore';
 import { debugLog, debugWarn } from '@/utils/debugLog';
+import { isPrivacyLocked } from '@/privacy-lock/store';
 import {
   notifyPersistentNotificationsChanged,
   persistentNotificationRepository,
@@ -89,21 +90,25 @@ class NotificationService {
   notify(options: NotifyOptions): void {
     if (!this._enabled) return;
     if (options.dedupeKey && !this.rememberDedupeKey(options.dedupeKey)) return;
+    const locked = isPrivacyLocked();
+    const protectedOptions = locked
+      ? { ...options, title: 'JunQi', body: '' }
+      : options;
     const present = () => {
-      if (this._dndMode) return;
+      if (this._dndMode || locked) return;
       this.playChime();
       if (document.hasFocus()) {
       // Window visible — in-app toast works fine
-        useNotificationStore.getState().addToast(options.type, options.title, options.body);
+        useNotificationStore.getState().addToast(protectedOptions.type, protectedOptions.title, protectedOptions.body);
       } else {
       // Window minimized/background — try both methods for maximum reliability:
       // 1. Web Notification API (worked in v4 dev mode)
       // 2. Electron IPC fallback (works in production where file:// may block Web API)
-        this.showOSNotification(options.title, options.body);
+        this.showOSNotification(protectedOptions.title, protectedOptions.body);
       }
     };
 
-    void this.persist(options).then((inserted) => {
+    void this.persist(protectedOptions).then((inserted) => {
       if (inserted) present();
     }).catch(() => {
       // Persistence is unavailable in browser-only development. Preserve the

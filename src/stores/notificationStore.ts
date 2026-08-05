@@ -24,6 +24,8 @@ interface NotificationState {
   addToast: (type: NotificationType, title: string, body: string) => void;
   /** Remove a toast by id (called on dismiss or auto-expire). */
   removeToast: (id: string) => void;
+  /** Remove every visible toast when a native privacy lock engages. */
+  clearToasts: () => void;
 }
 
 export const useNotificationStore = create<NotificationState>((set) => ({
@@ -41,4 +43,6 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   removeToast: (id) => set((state) => ({
     toasts: state.toasts.filter((t) => t.id !== id),
   })),
+
+  clearToasts: () => set({ toasts: [] }),
 }));

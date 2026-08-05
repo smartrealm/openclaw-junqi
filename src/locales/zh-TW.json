@@ -708,8 +708,8 @@
     "noJobsHint": "添加定時任務以自動化工作流程，或從下面的模板開始",
     "nextRun": "下次運行",
     "nextWake": "下次喚醒",
-    "schedulerEnabled": "排程器已啟用",
-    "schedulerDisabled": "排程器已停用",
+    "schedulerEnabled": "調度器運行中",
+    "schedulerDisabled": "調度器已停用",
     "schedulerJobs": "{{count}} 個任務",
     "schedulerStatusLoading": "正在讀取排程器狀態",
     "schedulerStatusUnsupported": "此 Gateway 未提供排程器狀態",
@@ -760,8 +760,6 @@
     "templatesSubtitle": "一鍵添加預配置任務",
     "schedulerLoading": "正在讀取調度器狀態",
     "schedulerUnavailable": "調度器狀態不可用",
-    "schedulerEnabled": "調度器運行中",
-    "schedulerDisabled": "調度器已停用",
     "nextWakeIn": "下次喚醒 {{time}}",
     "jobDetailLoading": "正在讀取 OpenClaw 任務詳情",
     "jobDetailUnavailable": "任務詳情暫不可用，目前顯示列表快照"
@@ -829,7 +827,8 @@
       "connect": "連接",
       "storage": "儲存",
       "maintenance": "檢修",
-      "about": "關於"
+      "about": "關於",
+      "privacy": "安全與隱私"
     },
     "language": "語言",
     "notifications": "通知",
@@ -1611,7 +1610,10 @@
       "conflict": "檔案已在 Gateway 中變更；保留本機草稿，請重新讀取後再處理。",
       "reload": "重新讀取並取代草稿",
       "saveFailed": "Gateway 未確認檔案已儲存。",
-      "kind": { "modified": "修改", "read": "讀取" }
+      "kind": {
+        "modified": "修改",
+        "read": "讀取"
+      }
     },
     "messageCount": "{{count}} 條消息",
     "refresh": "刷新",
@@ -1861,7 +1863,6 @@
       "compactionDescription": "OpenClaw 在對話記錄中報告了一次上下文壓縮事件。",
       "structuredAction": "結構化操作",
       "artifact": "產物",
-      "compaction": "上下文壓縮",
       "sequence": "序號",
       "toolCall": "工具調用",
       "toolDetails": "查看工具輸入與輸出",
@@ -5530,6 +5531,83 @@
         "title": "開啟工作區",
         "description": "選擇專案並開啟它的終端工作區。"
       }
+    }
+  },
+  "privacyLock": {
+    "lockedTitle": "JunQi 已鎖定",
+    "unlockInMain": "請在主視窗完成身份驗證。",
+    "openMain": "開啟主視窗",
+    "backgroundRunning": "正在執行的智能體和 Gateway 會繼續在背景工作。",
+    "pinLabel": "JunQi PIN",
+    "unlock": "使用 JunQi PIN 解鎖",
+    "or": "或",
+    "systemPrompt": "驗證身份以解鎖 JunQi",
+    "systemSetupPrompt": "驗證系統身份驗證可用於 JunQi 快速解鎖",
+    "useSystemAuthentication": "使用系統身份驗證",
+    "retryAfter": "嘗試次數過多，請在 {{seconds}} 秒後重試。",
+    "currentPin": "目前 JunQi PIN",
+    "newPin": "新 JunQi PIN",
+    "confirmPin": "確認新 JunQi PIN",
+    "settings": {
+      "title": "JunQi 隱私鎖",
+      "description": "離席時隱藏所有 JunQi 視窗中的敏感內容，但保持背景任務執行。",
+      "lockNow": "立即鎖定",
+      "changePin": "修改 PIN",
+      "autoLock": "自動鎖定",
+      "idleDelay": "無操作後鎖定",
+      "idleUnavailable": "目前平台無法提供可靠的系統閒置時間，自動離席鎖定不可用。",
+      "lockOnResume": "系統恢復後鎖定",
+      "lockOnStartup": "應用程式啟動時鎖定",
+      "shortcut": "全域鎖定快捷鍵",
+      "enableShortcut": "啟用全域快捷鍵",
+      "shortcutValue": "快捷鍵組合",
+      "systemAuthentication": "系統身份驗證",
+      "delays": {
+        "0": "永不",
+        "60": "1 分鐘",
+        "300": "5 分鐘",
+        "600": "10 分鐘",
+        "1800": "30 分鐘",
+        "3600": "1 小時"
+      },
+      "mandatoryFence": "啟用隱私鎖後，應用程式啟動和系統恢復鎖定是不可關閉的安全門禁。"
+    },
+    "actions": {
+      "enableTitle": "開啟隱私鎖",
+      "enableDescription": "設定 4 至 6 位 JunQi PIN。這不是電腦登入 PIN，僅在系統身份驗證不可用時使用。",
+      "enableSystemDescription": "系統身份驗證可用於快速解鎖。你可以現在驗證，也可以跳過並完成設定。",
+      "step": "第 {{current}} 步，共 {{total}} 步",
+      "nextStep": "下一步",
+      "finishEnable": "完成開啟",
+      "trySystemAuthentication": "試用系統身份驗證",
+      "systemVerified": "系統身份驗證已驗證，可以用於快速解鎖。",
+      "changeTitle": "修改 JunQi PIN",
+      "changeDescription": "先驗證目前 JunQi PIN，再設定新的 4 至 6 位數字 PIN。",
+      "disableTitle": "關閉隱私鎖",
+      "disableDescription": "關閉後，應用程式啟動和離席時將不再要求解鎖。"
+    },
+    "errors": {
+      "retryLater": "請等待重試時間結束。",
+      "stateChanged": "鎖定狀態已變更，請重試。",
+      "credentialUnavailable": "系統憑據庫暫不可用。",
+      "cancelled": "系統身份驗證已取消。",
+      "timeout": "系統身份驗證逾時。",
+      "busy": "系統身份驗證裝置正忙。",
+      "systemUnavailable": "系統身份驗證不可用，請使用 JunQi PIN。",
+      "incorrectPin": "JunQi PIN 不正確。",
+      "pinPolicy": "請使用 4 至 6 位數字 PIN。",
+      "pinMismatch": "兩次輸入不一致。",
+      "shortcutConflict": "快捷鍵註冊失敗，可能已被系統或其他應用程式佔用。",
+      "operationFailed": "操作未完成，請重試。"
+    },
+    "systemStatus": {
+      "available": "系統身份驗證可用，解鎖時可以優先使用。",
+      "device_not_present": "裝置不支援系統身份驗證。",
+      "not_configured": "系統身份驗證尚未設定。",
+      "disabled_by_policy": "系統身份驗證被系統策略停用。",
+      "busy": "系統身份驗證裝置正忙。",
+      "unsupported": "目前平台不支援統一的系統身份驗證，仍可使用 PIN。",
+      "unavailable": "暫時無法讀取系統身份驗證狀態。"
     }
   }
 }

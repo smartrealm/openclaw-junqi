@@ -279,6 +279,10 @@ pub async fn voice_talk_play_pcm(
     .map_err(|error| format!("Talk 播放任务异常结束: {error}"))?
 }
 
+pub fn stop_playback_for_privacy_lock() -> Result<(), String> {
+    voice_talk_stop_playback_blocking()
+}
+
 fn voice_talk_stop_playback_blocking() -> Result<(), String> {
     // 持有单例锁直到旧输出确认停止，避免并发追加提前创建第二个物理输出线程。
     let mut slot = PLAYBACK

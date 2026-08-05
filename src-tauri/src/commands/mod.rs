@@ -52,6 +52,8 @@ pub mod openclaw_update;
 pub mod pet;
 pub mod pet_backdrop;
 pub mod plugin_recovery;
+pub mod privacy_lock;
+pub mod privacy_shortcut;
 pub mod process_control;
 pub mod project_config;
 pub mod provider_oauth;

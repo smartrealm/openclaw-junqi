@@ -1,7 +1,7 @@
-//! Gateway device signing backed by the operating-system credential store.
+//! 由操作系统凭据库支持的 Gateway 设备签名。
 //!
-//! The renderer never receives the private key. A newly created identity is a
-//! new OpenClaw device and therefore may require normal OpenClaw pairing.
+//! 渲染进程永远不会取得私钥。新建身份代表一个新的 OpenClaw 设备，仍可能需要
+//! 按 OpenClaw 的正常流程完成配对。
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use ring::{
@@ -10,7 +10,7 @@ use ring::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::sync::OnceLock;
+use std::{future::Future, sync::OnceLock};
 
 use crate::commands::secret_store::{get_system_credential, store_system_credential};
 
@@ -53,9 +53,25 @@ pub struct GatewayDeviceChallengeSignature {
     pub nonce: String,
 }
 
-fn identity_operation() -> &'static tokio::sync::Mutex<()> {
-    static OPERATION: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
-    OPERATION.get_or_init(|| tokio::sync::Mutex::new(()))
+struct DeviceIdentityCache {
+    key_pair: tokio::sync::OnceCell<Ed25519KeyPair>,
+}
+
+impl DeviceIdentityCache {
+    async fn load_or_try_initialize<F, Fut>(&self, initialize: F) -> Result<&Ed25519KeyPair, String>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<Ed25519KeyPair, String>>,
+    {
+        self.key_pair.get_or_try_init(initialize).await
+    }
+}
+
+fn device_identity_cache() -> &'static DeviceIdentityCache {
+    static CACHE: OnceLock<DeviceIdentityCache> = OnceLock::new();
+    CACHE.get_or_init(|| DeviceIdentityCache {
+        key_pair: tokio::sync::OnceCell::new(),
+    })
 }
 
 fn validate_text(value: &str, field: &str, max_bytes: usize) -> Result<String, String> {
@@ -132,8 +148,7 @@ fn load_key_pair(encoded: &str) -> Result<Ed25519KeyPair, String> {
     Ed25519KeyPair::from_pkcs8(&pkcs8).map_err(|error| format!("read device identity: {error}"))
 }
 
-async fn load_or_create_key_pair() -> Result<Ed25519KeyPair, String> {
-    let _guard = identity_operation().lock().await;
+async fn load_or_create_key_pair_from_system_store() -> Result<Ed25519KeyPair, String> {
     if let Some(encoded) =
         get_system_credential(DEVICE_IDENTITY_SERVICE, DEVICE_IDENTITY_ACCOUNT).await?
     {
@@ -151,6 +166,12 @@ async fn load_or_create_key_pair() -> Result<Ed25519KeyPair, String> {
     )
     .await?;
     load_key_pair(&encoded)
+}
+
+async fn load_or_create_key_pair() -> Result<&'static Ed25519KeyPair, String> {
+    device_identity_cache()
+        .load_or_try_initialize(load_or_create_key_pair_from_system_store)
+        .await
 }
 
 fn identity_reference(key_pair: &Ed25519KeyPair) -> GatewayDeviceIdentityReference {
@@ -183,7 +204,7 @@ fn build_gateway_device_auth_payload_v3(
 #[tauri::command]
 pub async fn get_gateway_device_identity_reference(
 ) -> Result<GatewayDeviceIdentityReference, String> {
-    Ok(identity_reference(&load_or_create_key_pair().await?))
+    Ok(identity_reference(load_or_create_key_pair().await?))
 }
 
 #[tauri::command]
@@ -192,7 +213,7 @@ pub async fn sign_gateway_device_challenge(
 ) -> Result<GatewayDeviceChallengeSignature, String> {
     let params = validate_params(params)?;
     let key_pair = load_or_create_key_pair().await?;
-    let identity = identity_reference(&key_pair);
+    let identity = identity_reference(key_pair);
     let payload = build_gateway_device_auth_payload_v3(&identity.device_id, &params);
     let signature = URL_SAFE_NO_PAD.encode(key_pair.sign(payload.as_bytes()).as_ref());
     Ok(GatewayDeviceChallengeSignature {
@@ -207,6 +228,38 @@ pub async fn sign_gateway_device_challenge(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn successful_device_identity_load_is_reused_within_the_process() {
+        let cache = DeviceIdentityCache {
+            key_pair: tokio::sync::OnceCell::new(),
+        };
+        let calls = AtomicUsize::new(0);
+
+        let first = cache
+            .load_or_try_initialize(|| async {
+                calls.fetch_add(1, Ordering::SeqCst);
+                let pkcs8 = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
+                    .map_err(|error| format!("generate test device identity: {error}"))?;
+                Ed25519KeyPair::from_pkcs8(pkcs8.as_ref())
+                    .map_err(|error| format!("read test device identity: {error}"))
+            })
+            .await
+            .expect("first identity load succeeds");
+        let first_public_key = first.public_key().as_ref().to_vec();
+
+        let second = cache
+            .load_or_try_initialize(|| async {
+                calls.fetch_add(1, Ordering::SeqCst);
+                unreachable!("已成功加载的身份不得再次访问凭据库")
+            })
+            .await
+            .expect("cached identity load succeeds");
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(second.public_key().as_ref(), first_public_key.as_slice());
+    }
 
     #[test]
     fn validation_rejects_empty_or_controlled_challenge_fields() {

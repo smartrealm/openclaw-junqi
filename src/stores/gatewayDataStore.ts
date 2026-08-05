@@ -417,6 +417,15 @@ interface GatewayDataState {
   getMainSession: () => SessionInfo | undefined;
 }
 
+const EMPTY_SESSION_ARTIFACTS: readonly OpenClawArtifactSummary[] = Object.freeze([]);
+
+export function selectSessionArtifacts(
+  state: Pick<GatewayDataState, 'sessionArtifacts'>,
+  sessionKey: string,
+): readonly OpenClawArtifactSummary[] {
+  return state.sessionArtifacts[sessionKey] ?? EMPTY_SESSION_ARTIFACTS;
+}
+
 // ── Store ────────────────────────────────────────────────
 
 export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({

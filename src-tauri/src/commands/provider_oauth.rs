@@ -204,6 +204,7 @@ pub async fn start_provider_oauth(
     account_id: String,
     label: String,
 ) -> Result<(), String> {
+    crate::commands::privacy_lock::ensure_unlocked(&app)?;
     let configs = oauth_configs();
     let cfg = configs
         .get(provider.as_str())

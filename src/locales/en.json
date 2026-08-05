@@ -193,14 +193,9 @@
     "noResults": "No skills found",
     "installedCount": "{{count}} skills installed",
     "uploadTitle": "Upload skill archive",
-    "uploadHint": "Send a ZIP archive through the selected OpenClaw Gateway.",
-    "chooseArchive": "Choose ZIP archive",
-    "clearArchive": "Clear selected archive",
-    "uploadSlug": "Skill slug",
-    "uploadSlugPlaceholder": "skill-name",
-    "uploadForce": "Replace existing skill",
     "uploadHint": "Upload a ZIP archive through the selected OpenClaw Gateway.",
     "chooseArchive": "Choose ZIP archive",
+    "clearArchive": "Clear selected archive",
     "uploadSlug": "Skill slug",
     "uploadSlugPlaceholder": "skill-name",
     "uploadForce": "Replace existing skill",
@@ -211,11 +206,7 @@
     "uploading": "Uploading archive",
     "uploadCommitting": "Verifying archive",
     "uploadInstalling": "Installing skill",
-    "uploadZipOnly": "Choose a ZIP archive.",
     "uploadTooLarge": "Skill archive exceeds the OpenClaw upload limit.",
-    "uploadDone": "Skill installed.",
-    "uploadLimit": "ZIP only, up to {{size}}.",
-    "uploadInstall": "Upload and install",
     "uploadDone": "Skill installed",
     "importSharePackage": "Import package",
     "addLocalSkill": "Add local skill",
@@ -746,7 +737,7 @@
     "noJobsHint": "Add cron jobs to automate your workflow — or start with a template below",
     "nextRun": "Next",
     "nextWake": "Next wake",
-    "schedulerEnabled": "Scheduler enabled",
+    "schedulerEnabled": "Scheduler running",
     "schedulerDisabled": "Scheduler disabled",
     "schedulerJobs": "{{count}} jobs",
     "schedulerStatusLoading": "Loading scheduler status",
@@ -798,8 +789,6 @@
     "templatesSubtitle": "Add a pre-configured job with one click",
     "schedulerLoading": "Reading scheduler status",
     "schedulerUnavailable": "Scheduler status unavailable",
-    "schedulerEnabled": "Scheduler running",
-    "schedulerDisabled": "Scheduler disabled",
     "nextWakeIn": "Next wake {{time}}",
     "jobDetailLoading": "Reading OpenClaw job details",
     "jobDetailUnavailable": "Job details unavailable; showing the list snapshot"
@@ -867,7 +856,8 @@
       "connect": "Connection",
       "storage": "Storage",
       "maintenance": "Maintenance",
-      "about": "About"
+      "about": "About",
+      "privacy": "Security & Privacy"
     },
     "language": "Language",
     "notifications": "Notifications",
@@ -1651,7 +1641,10 @@
       "conflict": "The file changed in Gateway. Your local draft is retained; reload before deciding how to proceed.",
       "reload": "Reload and replace draft",
       "saveFailed": "Gateway did not confirm that the file was saved.",
-      "kind": { "modified": "Modified", "read": "Read" }
+      "kind": {
+        "modified": "Modified",
+        "read": "Read"
+      }
     },
     "messageCount": "{{count}} messages",
     "refresh": "Refresh",
@@ -1903,7 +1896,6 @@
       "compactionDescription": "OpenClaw reported a context compaction event in the transcript.",
       "structuredAction": "Structured action",
       "artifact": "Artifact",
-      "compaction": "Context compaction",
       "sequence": "Sequence",
       "toolCall": "Tool call",
       "toolDetails": "View tool input and output",
@@ -2767,7 +2759,6 @@
     "noDreamingStatus": "Gateway did not return Dreaming status",
     "remHarnessPreview": "REM read-only preview",
     "remCandidateCount": "{{count}} candidates",
-    "remTruths": "Candidate truths",
     "noRemTruths": "No candidate truths",
     "deepCandidates": "Deep candidates",
     "recallCount": "{{count}} recalls",
@@ -5973,6 +5964,83 @@
         "title": "Open a workspace",
         "description": "Choose a project and open its terminal workspace."
       }
+    }
+  },
+  "privacyLock": {
+    "lockedTitle": "JunQi is locked",
+    "unlockInMain": "Complete authentication in the main window.",
+    "openMain": "Open main window",
+    "backgroundRunning": "Running agents and the Gateway continue working in the background.",
+    "pinLabel": "JunQi PIN",
+    "unlock": "Unlock with JunQi PIN",
+    "or": "or",
+    "systemPrompt": "Verify your identity to unlock JunQi",
+    "systemSetupPrompt": "Verify that system authentication can unlock JunQi",
+    "useSystemAuthentication": "Use system authentication",
+    "retryAfter": "Too many attempts. Try again in {{seconds}} seconds.",
+    "currentPin": "Current JunQi PIN",
+    "newPin": "New JunQi PIN",
+    "confirmPin": "Confirm new JunQi PIN",
+    "settings": {
+      "title": "JunQi Privacy Lock",
+      "description": "Hide sensitive content in every JunQi window while you are away without stopping background work.",
+      "lockNow": "Lock now",
+      "changePin": "Change PIN",
+      "autoLock": "Automatic locking",
+      "idleDelay": "Lock after inactivity",
+      "idleUnavailable": "Reliable system idle time is unavailable on this platform, so idle auto-lock is disabled.",
+      "lockOnResume": "Lock after system resume",
+      "lockOnStartup": "Lock when the app starts",
+      "shortcut": "Global lock shortcut",
+      "enableShortcut": "Enable global shortcut",
+      "shortcutValue": "Shortcut",
+      "systemAuthentication": "System authentication",
+      "delays": {
+        "0": "Never",
+        "60": "1 minute",
+        "300": "5 minutes",
+        "600": "10 minutes",
+        "1800": "30 minutes",
+        "3600": "1 hour"
+      },
+      "mandatoryFence": "When Privacy Lock is enabled, startup and system-resume locking are mandatory security fences."
+    },
+    "actions": {
+      "enableTitle": "Enable Privacy Lock",
+      "enableDescription": "Set a 4 to 6 digit JunQi PIN. This is not your computer login PIN and is used when system authentication is unavailable.",
+      "enableSystemDescription": "System authentication provides quick unlocking. You can verify it now or skip and finish setup.",
+      "step": "Step {{current}} of {{total}}",
+      "nextStep": "Next",
+      "finishEnable": "Finish enabling",
+      "trySystemAuthentication": "Try system authentication",
+      "systemVerified": "System authentication was verified and can be used for quick unlocking.",
+      "changeTitle": "Change JunQi PIN",
+      "changeDescription": "Verify the current PIN before setting a new 4 to 6 digit PIN.",
+      "disableTitle": "Disable Privacy Lock",
+      "disableDescription": "JunQi will no longer require unlocking at startup or after inactivity."
+    },
+    "errors": {
+      "retryLater": "Wait until the retry period ends.",
+      "stateChanged": "The lock state changed. Try again.",
+      "credentialUnavailable": "The system credential vault is unavailable.",
+      "cancelled": "System authentication was cancelled.",
+      "timeout": "System authentication timed out.",
+      "busy": "The system authentication device is busy.",
+      "systemUnavailable": "System authentication is unavailable. Use your JunQi PIN.",
+      "incorrectPin": "The JunQi PIN is incorrect.",
+      "pinPolicy": "Use a numeric PIN of 4 to 6 digits.",
+      "pinMismatch": "The two entries do not match.",
+      "shortcutConflict": "The shortcut could not be registered. It may be reserved by the system or another app.",
+      "operationFailed": "The operation did not complete. Try again."
+    },
+    "systemStatus": {
+      "available": "System authentication is available and can be used first when unlocking.",
+      "device_not_present": "This device does not support system authentication.",
+      "not_configured": "System authentication is not configured.",
+      "disabled_by_policy": "System authentication is disabled by system policy.",
+      "busy": "The system authentication device is busy.",
+      "unsupported": "This platform has no supported unified system authentication path. PIN unlock remains available.",
+      "unavailable": "System authentication status is temporarily unavailable."
     }
   }
 }
