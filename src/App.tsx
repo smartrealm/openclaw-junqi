@@ -63,7 +63,6 @@ import {
 } from '@/services/openclawUpdateLifecycle';
 import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIdentityTransition';
 import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
-import { migrateLegacySessionLabelsOnce } from '@/utils/sessionLabelMigration';
 import { applyConfirmedSessionDeletion } from '@/utils/sessionDelete';
 import {
   createLatestRequestGate,
@@ -326,13 +325,6 @@ export default function App() {
     const sourceProjectionRevision = useChatStore.getState().sessionProjectionRevision;
     const mutationRevision = sessionListMutationFence.capture();
     try {
-      // Compatibility only: prior Desktop builds wrote labels to a local JSON
-      // file. Copy confirmed entries to OpenClaw before this read, then let
-      // Gateway labels remain the sole source of truth.
-      await migrateLegacySessionLabelsOnce();
-      if (!requestGate.isCurrent(requestId) || !sessionListMutationFence.isCurrent(mutationRevision)) {
-        return 'superseded';
-      }
       const runObservations = options.reconcileChatRuns
         ? gateway.capturePendingChatSessionRunObservations()
         : undefined;
