@@ -56,6 +56,7 @@ specs/
 - [OpenClaw Agent 配置快照与并发写入对齐](quality/2026-08-04-openclaw-agent-config-snapshot-alignment.md)
 - [OpenClaw Gateway 挑战与策略对齐](quality/2026-08-04-openclaw-gateway-challenge-policy-alignment.md)
 - [Gateway 设备身份与工作区启动恢复](quality/2026-08-05-gateway-device-identity-startup-recovery.md)
+- [Gateway 设备身份钥匙串提示去重](quality/2026-08-06-gateway-device-identity-keychain-prompt-dedup.md)
 - [OpenClaw 会话 Companion 控制台对齐规格](quality/2026-08-04-openclaw-session-companion-control-ui.md)
 - [OpenClaw 桌面语音与 Jarvis 边界规格](quality/2026-08-04-openclaw-desktop-voice-wake-boundary.md)
 - [OpenClaw 会话快速模式对齐](quality/2026-08-04-openclaw-session-fast-mode.md)

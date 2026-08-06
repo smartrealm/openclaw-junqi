@@ -9,8 +9,8 @@ import {
   type MigrateGatewayCredentialParams,
   type StoreGatewayCredentialParams,
 } from '@/api/tauri-commands';
-import { getGatewayDeviceIdentityReference } from '@/api/tauri-commands';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
+import { getGatewayDeviceIdentityReference } from './deviceAuthentication';
 
 export const LEGACY_GATEWAY_TOKEN_KEY = 'aegis-gateway-token';
 export const LEGACY_GATEWAY_CONFIG_KEY = 'aegis-config';

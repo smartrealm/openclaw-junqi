@@ -159,6 +159,7 @@ docs/
 - [OpenClaw Agent 配置快照与并发写入对齐](quality/openclaw-agent-config-snapshot-alignment-2026-08-04.md)
 - [OpenClaw Gateway 挑战与策略对齐](quality/openclaw-gateway-challenge-policy-alignment-2026-08-04.md)
 - [Gateway 设备身份与工作区启动恢复](quality/gateway-device-identity-startup-recovery-2026-08-05.md)
+- [Gateway 设备身份钥匙串提示去重](quality/gateway-device-identity-keychain-prompt-dedup-2026-08-06.md)
 - [会话产物选择器稳定性修复](quality/session-artifact-selector-stability-2026-08-05.md)
 - [OpenClaw 会话快速模式对齐](quality/openclaw-session-fast-mode-alignment-2026-08-04.md)
 - [OpenClaw 会话推理可见性对齐](quality/openclaw-session-reasoning-visibility-alignment-2026-08-04.md)
