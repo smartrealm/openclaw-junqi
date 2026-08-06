@@ -36,15 +36,18 @@ describe('createNativeSession', () => {
         sessionId: session.sessionId,
         agentId: session.agentId,
         activeLeafEntryId: session.activeLeafEntryId,
+        initialLabel: session.initialLabel,
       },
       {
         key: CREATED.key,
         sessionId: CREATED.sessionId,
         agentId: 'architect',
         activeLeafEntryId: null,
+        initialLabel: 'Created',
       },
     );
     assert.equal(fork.activeLeafEntryId, undefined);
+    assert.equal(fork.initialLabel, undefined);
   });
 
   it('does not commit a renderer session until Gateway confirms its identity', async () => {

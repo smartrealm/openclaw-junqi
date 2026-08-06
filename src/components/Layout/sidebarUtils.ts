@@ -95,34 +95,30 @@ export function resolveExpandedSessionBuckets(
 }
 
 export function sessionTitle(sx: Session, firstUserMessage?: string): string {
-  // 1. User-set label wins ONLY for explicit renames — we treat the
-  //    gateway-default placeholder ("Main Session", "新会话", "Default
-  //    Session", etc.) as if the user never set a title, so the first
-  //    real user message becomes the natural label once sent.
-  if (sx.label && sx.label.trim().length > 0) {
-    const trimmed = sx.label.trim();
-    const isGatewayPlaceholder = /^(main session|新会话|default session|untitled)$/i.test(trimmed);
-    if (!isGatewayPlaceholder) return trimmed;
+  // Gateway label 是会话权威名称。仅 JunQi 创建的默认名称可在首条提示后
+  // 用消息摘要展示；手动重命名和 Gateway 标签变化均会清除该标记。
+  if (sx.label && sx.label.trim().length > 0 && sx.label !== sx.initialLabel) {
+    return sx.label.trim();
   }
-  // 2. First user message — the most direct preview of what this session is
-  //    about. Capped at 30 chars with ellipsis to keep sidebar rows uniform.
-  //    We take only the first sentence/line so a long pasted prompt doesn't
-  //    blow out the row height.
+  // Gateway 未提供 label 时，首条用户消息可作为只读展示回退。
+  // 该回退不会写回或覆盖 Gateway 会话条目。
+  // 首条用户消息是会话主题的直接摘要，截断以保持侧边栏行高稳定。
+  // 只取首句或首行，避免长粘贴内容撑高行高。
   if (firstUserMessage && firstUserMessage.trim().length > 0) {
     const trimmed = firstUserMessage.replace(/\s+/g, ' ').trim();
     if (trimmed) {
-      // Cut at the first natural break: period, newline, or hard char cap.
+      // 在首个自然断句处或长度上限处截断。
       const breakIdx = trimmed.search(/[。.!?！？\n]/);
       const firstChunk = breakIdx > 0 ? trimmed.slice(0, breakIdx) : trimmed;
       return firstChunk.length > 30 ? `${firstChunk.slice(0, 29)}…` : firstChunk;
     }
   }
-  // 3. Topic > key-derived sub > agent name.
+  // 依次使用 topic、会话 key 子段和智能体名称。
   if (typeof sx.topic === 'string' && sx.topic.trim()) return sx.topic;
   const parts = String(sx.key || '').split(':');
   const agentId = parts.length >= 2 ? parts[1] : '';
   const sub = parts.length >= 4 ? parts.slice(3).join(':') : '';
   if (sub) return sub.length > 30 ? `${sub.slice(0, 28)}…` : sub;
   if (agentId && agentId !== 'main') return agentId;
-  return '新对话';
+  return sx.key;
 }

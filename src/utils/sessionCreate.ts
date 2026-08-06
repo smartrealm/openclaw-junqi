@@ -42,6 +42,7 @@ export function projectCreatedNativeSession(
     key: created.key,
     sessionId: created.sessionId,
     label: entry.label ?? input.label,
+    ...(input.fork !== true && entry.label === input.label ? { initialLabel: input.label } : {}),
     agentId: input.agentId,
     createdAt,
     ...(input.fork === true ? {} : { activeLeafEntryId: null }),
