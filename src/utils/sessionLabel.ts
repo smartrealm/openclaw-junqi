@@ -6,25 +6,11 @@ type SessionLike = {
   topic?: string;
   lastMessage?: string | { content?: string };
   label?: string;
+  initialLabel?: string;
 };
 
 function normalizeText(value?: string): string {
   return String(value ?? '').trim();
-}
-
-/**
- * Returns true when `session.label` looks like a gateway default (i.e. the
- * openclaw side stamped it on a fresh session, the user never edited it).
- * Used to short-circuit auto-derived labels so a real rename isn't
- * shadowed by a stale placeholder.
- */
-function isGatewayDefaultLabel(label: string, key: string): boolean {
-  if (!label || !key) return true;
-  if (label === key) return true;
-  if (/^desktop-[a-z0-9-]+$/i.test(label)) return true;
-  // English / Chinese / Arabic gateway defaults
-  if (/^(main session|主智能体|new session|新会话|default session|untitled)$/i.test(label)) return true;
-  return false;
 }
 
 export function getSessionDisplayLabel(
@@ -37,13 +23,13 @@ export function getSessionDisplayLabel(
 
   if (!key) return genericSessionLabel;
 
-  // The main session is identified by key, not by label. We still allow
-  // user renames to surface here so "我的主会话" doesn't get clobbered
-  // by the gateway's hardcoded "Main Session" placeholder.
+  // Gateway label 是会话权威名称。仅 JunQi 创建时留下的默认名称在首条
+  // 消息出现后让位给消息主题；手动重命名和 Gateway 标签变化都会清除标记。
   const label = normalizeText(session?.label);
-  if (label && !isGatewayDefaultLabel(label, key)) return label;
+  const initialLabel = normalizeText(session?.initialLabel);
+  if (label && (!initialLabel || label !== initialLabel)) return label;
 
-  // Auto-derived fallbacks only kick in when the user hasn't renamed.
+  // 只有 Gateway 未提供 label 时才使用展示回退。
   if (isAgentMainSession(key)) return mainSessionLabel;
 
   const topic = normalizeText(session?.topic);

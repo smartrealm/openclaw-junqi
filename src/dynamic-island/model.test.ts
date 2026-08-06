@@ -33,7 +33,7 @@ test('attention tasks sort ahead of recent running and completed tasks', () => {
   assert.deepEqual(selected.map((item) => item.id), ['attention', 'running', 'done']);
 });
 
-test('auto peek only reacts to a new notice or meaningful status transition', () => {
+test('auto peek only reacts to meaningful status transitions', () => {
   const running = { ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT, tasks: [selectDynamicIslandTasks([task('a', 'running', 1)])[0]] };
   assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, running), false);
   const attention = { ...running, tasks: [selectDynamicIslandTasks([task('a', 'input_required', 2)])[0]] };

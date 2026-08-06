@@ -218,158 +218,11 @@ fn append_notification(
             return (previous.clone(), false);
         }
     }
-    if let Some(previous) = existing
-        .iter()
-        .rev()
-        .find(|candidate| is_recent_chat_transport_duplicate(candidate, &item))
-    {
-        return (previous.clone(), false);
-    }
     if existing.len() >= 50 {
         existing.drain(0..existing.len() - 49);
     }
     existing.push(item.clone());
     (item, true)
-}
-
-/// Repairs only historical records with the exact same upstream identity.
-/// Records without an identity deliberately remain distinct: matching their
-/// display text would hide real independent events.
-// Match the Gateway terminal/transcript mirror fence. Historical records do
-// not carry the upstream run identity, so this is intentionally the only
-// text-based repair we perform and only for immediately adjacent records.
-const LEGACY_UNIDENTIFIED_DUPLICATE_WINDOW_MS: i64 = 120_000;
-
-fn chat_notification_scope(item: &NotificationItem) -> Option<(&str, &str)> {
-    let key = item.dedupe_key.as_deref()?;
-    let (role, remainder) = key.strip_prefix("chat:")?.split_once(':')?;
-    if !matches!(role, "assistant" | "user") {
-        return None;
-    }
-    let (session_key, identity) = remainder.rsplit_once(':')?;
-    if session_key.trim().is_empty() || identity.trim().is_empty() {
-        return None;
-    }
-    Some((role, session_key))
-}
-
-fn notification_elapsed_millis(
-    previous: &NotificationItem,
-    candidate: &NotificationItem,
-) -> Option<i64> {
-    let previous_at = chrono::DateTime::parse_from_rfc3339(&previous.created_at).ok()?;
-    let candidate_at = chrono::DateTime::parse_from_rfc3339(&candidate.created_at).ok()?;
-    Some(
-        candidate_at
-            .signed_duration_since(previous_at)
-            .num_milliseconds(),
-    )
-}
-
-/// Handles a narrow Gateway compatibility gap: older event transports can
-/// describe one reply with different native and client message identifiers.
-/// Identity remains the normal contract; this only rejects an immediate,
-/// semantically identical chat mirror in the same session and role.
-fn is_recent_chat_transport_duplicate(
-    previous: &NotificationItem,
-    candidate: &NotificationItem,
-) -> bool {
-    let (previous_role, previous_session) = match chat_notification_scope(previous) {
-        Some(scope) => scope,
-        None => return false,
-    };
-    let (candidate_role, candidate_session) = match chat_notification_scope(candidate) {
-        Some(scope) => scope,
-        None => return false,
-    };
-    previous_role == candidate_role
-        && previous_session == candidate_session
-        && previous.title == candidate.title
-        && previous.body == candidate.body
-        && previous.body_zh == candidate.body_zh
-        && notification_elapsed_millis(previous, candidate)
-            .is_some_and(|elapsed| (0..=LEGACY_UNIDENTIFIED_DUPLICATE_WINDOW_MS).contains(&elapsed))
-}
-
-fn is_legacy_unidentified_duplicate(
-    previous: &NotificationItem,
-    candidate: &NotificationItem,
-) -> bool {
-    if previous.dedupe_key.is_some()
-        || candidate.dedupe_key.is_some()
-        || previous.level != candidate.level
-        || previous.title != candidate.title
-        || previous.body != candidate.body
-        || previous.body_zh != candidate.body_zh
-        || previous.agent != candidate.agent
-        || previous.url != candidate.url
-    {
-        return false;
-    }
-
-    notification_elapsed_millis(previous, candidate)
-        .is_some_and(|elapsed| (0..=LEGACY_UNIDENTIFIED_DUPLICATE_WINDOW_MS).contains(&elapsed))
-}
-
-/// Repairs persisted records written before chat notification identity existed.
-///
-/// This migration is deliberately narrower than normal notification delivery:
-/// only adjacent, fully identical records created within the same immediate
-/// delivery window can be replaced. All current and future delivery continues
-/// to rely on the authoritative upstream identity in `dedupe_key`.
-fn deduplicate_persisted_notifications(items: &mut Vec<NotificationItem>) -> bool {
-    let previous_len = items.len();
-    let mut seen_keys = HashSet::new();
-    let mut retained = Vec::with_capacity(items.len());
-
-    // Storage is chronological. Keep the newest version of an identity when
-    // cleaning records produced by an older client implementation.
-    for item in items.drain(..).rev() {
-        let is_duplicate = item
-            .dedupe_key
-            .as_deref()
-            .is_some_and(|key| !seen_keys.insert(key.to_string()));
-        if !is_duplicate {
-            retained.push(item);
-        }
-    }
-    retained.reverse();
-    *items = retained;
-
-    let mut chat_retained = Vec::with_capacity(items.len());
-    for item in items.drain(..) {
-        if let Some(index) = chat_retained
-            .iter()
-            .rposition(|previous| is_recent_chat_transport_duplicate(previous, &item))
-        {
-            // The more recent item owns both the display content and its
-            // chronological position, even when an unrelated notification
-            // arrived between the two Gateway transport projections.
-            chat_retained.remove(index);
-        }
-        chat_retained.push(item);
-    }
-    *items = chat_retained;
-
-    let mut legacy_retained = Vec::with_capacity(items.len());
-    for item in items.drain(..) {
-        if legacy_retained
-            .last()
-            .is_some_and(|previous| is_legacy_unidentified_duplicate(previous, &item))
-        {
-            // The repository is chronological. Preserve the newer historical
-            // record so read state and order agree with normal keyed cleanup.
-            if let Some(previous) = legacy_retained.last_mut() {
-                *previous = item;
-            } else {
-                legacy_retained.push(item);
-            }
-        } else {
-            legacy_retained.push(item);
-        }
-    }
-    *items = legacy_retained;
-    items.len() != previous_len
 }
 
 /// Pure helper: read a store from the given path. Missing/empty file
@@ -453,10 +306,6 @@ pub async fn get_notifications() -> Result<NotificationResult, String> {
         let repository = NotificationRepository::discover()?;
         let mut all = repository.load_items();
         let mut store = repository.load_store();
-        let items_changed = deduplicate_persisted_notifications(&mut all);
-        if items_changed {
-            repository.save_items(&all)?;
-        }
         if prune_read_state(&mut store, &all) {
             repository.save_store(&store)?;
         }
@@ -685,145 +534,12 @@ mod tests {
     }
 
     #[test]
-    fn immediate_chat_transport_mirrors_with_different_ids_are_not_persisted_twice() {
-        let mut first = item("first");
-        first.created_at = "2026-08-02T08:00:00Z".to_string();
-        first.dedupe_key = Some("chat:assistant:agent:main:main:live-message".to_string());
-
-        let mut mirror = item("durable");
-        mirror.created_at = "2026-08-02T08:01:00Z".to_string();
-        mirror.dedupe_key = Some("chat:assistant:agent:main:main:durable-message".to_string());
-
-        let mut items = vec![first];
-        let (stored, inserted) = append_notification(&mut items, mirror);
-
-        assert!(!inserted);
-        assert_eq!(stored.id, "first");
-        assert_eq!(items.len(), 1);
-    }
-
-    #[test]
-    fn chat_transport_fallback_does_not_merge_another_session_or_later_reply() {
-        let mut first = item("first");
-        first.created_at = "2026-08-02T08:00:00Z".to_string();
-        first.dedupe_key = Some("chat:assistant:agent:main:first:live-message".to_string());
-
-        let mut another_session = item("second");
-        another_session.created_at = "2026-08-02T08:01:00Z".to_string();
-        another_session.dedupe_key =
-            Some("chat:assistant:agent:main:second:durable-message".to_string());
-        let mut items = vec![first.clone()];
-        assert!(append_notification(&mut items, another_session).1);
-
-        let mut later = item("later");
-        later.created_at = "2026-08-02T08:02:01Z".to_string();
-        later.dedupe_key = Some("chat:assistant:agent:main:first:later-message".to_string());
-        let mut items = vec![first];
-        assert!(append_notification(&mut items, later).1);
-    }
-
-    #[test]
-    fn persisted_notification_cleanup_keeps_the_newest_duplicate_identity() {
-        let mut first = item("first");
-        first.dedupe_key = Some("chat:assistant:agent:main:main:run-42".to_string());
-        let mut latest = item("latest");
-        latest.dedupe_key = Some("chat:assistant:agent:main:main:run-42".to_string());
-        let without_identity = item("independent");
-        let mut items = vec![first, without_identity, latest];
-
-        assert!(deduplicate_persisted_notifications(&mut items));
-        assert_eq!(
-            items
-                .iter()
-                .map(|item| item.id.as_str())
-                .collect::<Vec<_>>(),
-            ["independent", "latest"]
-        );
-        assert!(!deduplicate_persisted_notifications(&mut items));
-    }
-
-    #[test]
-    fn persisted_cleanup_repairs_recent_chat_transport_mirrors_with_different_ids() {
-        let mut live = item("live");
-        live.created_at = "2026-08-02T08:00:00Z".to_string();
-        live.dedupe_key = Some("chat:assistant:agent:main:main:live-message".to_string());
-        let mut durable = item("durable");
-        durable.created_at = "2026-08-02T08:01:00Z".to_string();
-        durable.dedupe_key = Some("chat:assistant:agent:main:main:durable-message".to_string());
-        let mut items = vec![live, durable];
-
-        assert!(deduplicate_persisted_notifications(&mut items));
-        assert_eq!(
-            items
-                .iter()
-                .map(|item| item.id.as_str())
-                .collect::<Vec<_>>(),
-            ["durable"]
-        );
-    }
-
-    #[test]
-    fn persisted_cleanup_repairs_chat_transport_mirrors_separated_by_another_notification() {
-        let mut live = item("live");
-        live.created_at = "2026-08-02T08:00:00Z".to_string();
-        live.dedupe_key = Some("chat:assistant:agent:main:main:live-message".to_string());
-        let mut unrelated = item("unrelated");
-        unrelated.created_at = "2026-08-02T08:00:30Z".to_string();
-        unrelated.dedupe_key = Some("task:agent:main:run-1".to_string());
-        let mut durable = item("durable");
-        durable.created_at = "2026-08-02T08:01:00Z".to_string();
-        durable.dedupe_key = Some("chat:assistant:agent:main:main:durable-message".to_string());
-        let mut items = vec![live, unrelated, durable];
-
-        assert!(deduplicate_persisted_notifications(&mut items));
-        assert_eq!(
-            items
-                .iter()
-                .map(|item| item.id.as_str())
-                .collect::<Vec<_>>(),
-            ["unrelated", "durable"],
-        );
-    }
-
-    #[test]
     fn notifications_without_identity_are_kept_as_distinct_events() {
         let mut items = vec![item("first")];
         let (stored, inserted) = append_notification(&mut items, item("second"));
 
         assert!(inserted);
         assert_eq!(stored.id, "second");
-        assert_eq!(items.len(), 2);
-    }
-
-    #[test]
-    fn cleanup_repairs_legacy_terminal_transcript_mirror_notifications() {
-        let mut first = item("first");
-        first.created_at = "2026-08-01T15:37:01.967983+00:00".to_string();
-        let mut duplicate = item("duplicate");
-        duplicate.created_at = "2026-08-01T15:39:01.084481+00:00".to_string();
-        let mut independent = item("independent");
-        independent.created_at = "2026-08-01T15:41:02.000000+00:00".to_string();
-        let mut items = vec![first, duplicate, independent];
-
-        assert!(deduplicate_persisted_notifications(&mut items));
-        assert_eq!(
-            items
-                .iter()
-                .map(|item| item.id.as_str())
-                .collect::<Vec<_>>(),
-            ["duplicate", "independent"]
-        );
-    }
-
-    #[test]
-    fn cleanup_keeps_legacy_notifications_with_distinct_delivery_times() {
-        let mut first = item("first");
-        first.created_at = "2026-08-01T15:37:01+00:00".to_string();
-        let mut later = item("later");
-        later.created_at = "2026-08-01T15:39:02+00:00".to_string();
-        let mut items = vec![first, later];
-
-        assert!(!deduplicate_persisted_notifications(&mut items));
         assert_eq!(items.len(), 2);
     }
 

@@ -28,7 +28,7 @@ test('falls back to legacy ids and rejects malformed identity values', () => {
   assert.deepEqual(readGatewayMessageIdentity(null), {});
 });
 
-test('CHAT-05 normalizes OpenClaw persisted user idempotency suffix', () => {
+test('normalizes OpenClaw persisted user and assistant run identities', () => {
   assert.deepEqual(readGatewayMessageIdentity({
     role: 'user',
     idempotencyKey: 'junqi-command-1:user',
@@ -38,7 +38,15 @@ test('CHAT-05 normalizes OpenClaw persisted user idempotency suffix', () => {
     clientMessageId: 'junqi-command-1',
   });
   assert.equal(
-    readGatewayMessageIdentity({ role: 'assistant', idempotencyKey: 'run:user' }).clientMessageId,
-    'run:user',
+    readGatewayMessageIdentity({ role: 'assistant', idempotencyKey: 'run-2:assistant' }).clientMessageId,
+    'run-2',
+  );
+  assert.equal(
+    readGatewayMessageIdentity({ role: 'assistant', idempotencyKey: 'cli-assistant:run-3' }).clientMessageId,
+    'run-3',
+  );
+  assert.equal(
+    readGatewayMessageIdentity({ role: 'assistant', idempotencyKey: 'run-4:assistant-media' }).clientMessageId,
+    'run-4:assistant-media',
   );
 });

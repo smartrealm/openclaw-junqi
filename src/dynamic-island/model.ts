@@ -1,5 +1,4 @@
 import type { AgentWorkspaceTask, AgentWorkspaceTaskStatus } from '@/stores/agentWorkspaceStore';
-import type { NotificationType } from '@/stores/notificationStore';
 import type { PomodoroState } from '@/stores/petStore';
 import type { VoicePhase } from '@/services/voice/types';
 import type {
@@ -43,13 +42,6 @@ export type DynamicIslandSessionObserverHealth =
   | 'done'
   | 'failed';
 
-export interface DynamicIslandNotice {
-  id: string;
-  type: NotificationType;
-  title: string;
-  body: string;
-}
-
 export interface DynamicIslandDrop {
   phase: 'dragging' | 'received';
   count: number;
@@ -88,7 +80,6 @@ export interface DynamicIslandSnapshot {
   tasks: DynamicIslandTask[];
   focus: FocusProjection | null;
   pomodoro: Pick<PomodoroState, 'enabled' | 'running' | 'paused' | 'phase' | 'endsAt' | 'pausedRemainingMs'>;
-  notice: DynamicIslandNotice | null;
   resourceDrop: DynamicIslandDrop | null;
 }
 
@@ -163,7 +154,6 @@ export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
     endsAt: null,
     pausedRemainingMs: null,
   },
-  notice: null,
   resourceDrop: null,
 };
 
@@ -248,7 +238,6 @@ export function shouldPeekForSnapshot(
     || next.resourceDrop.phase !== previous.resourceDrop.phase
     || next.resourceDrop.count !== previous.resourceDrop.count
   )) return true;
-  if (next.notice && next.notice.id !== previous.notice?.id) return true;
   // 只有当前步骤前进才短暂展开；重新规划导致的步骤数量变化不能反复打开窗口。
   if (
     next.executionPlan

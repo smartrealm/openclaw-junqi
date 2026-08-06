@@ -126,6 +126,7 @@ docs/
 目录：[`quality/`](quality/)
 
 - [桌面原生通知投递修复](quality/native-notification-delivery-2026-08-05.md)
+- [通知单一呈现与身份收敛](quality/notification-single-presentation-and-identity-2026-08-06.md)
 - [统一文件预览呈现审计](quality/unified-file-preview-surface-audit-2026-08-05.md)
 - [工作区首屏数据就绪记录](quality/workspace-bootstrap-readiness-2026-08-05.md)
 - [OpenClaw 浏览器控制记录](quality/openclaw-browser-control-2026-08-05.md)
@@ -205,6 +206,7 @@ docs/
 - [OpenClaw 官方会话历史能力对齐](quality/openclaw-official-session-parity-2026-08-05.md)
 - [原生新建会话列表竞态修复验证](quality/native-session-list-race-validation-2026-08-03.md)
 - [OpenClaw 已确认空会话首发审计](quality/openclaw-confirmed-empty-session-audit-2026-08-05.md)
+- [OpenClaw 会话标签权威性记录](quality/openclaw-session-label-authority-2026-08-06.md)
 - [Chat 响应追溯与人工审核](quality/chat-response-trace-and-human-review-2026-07-31.md)
 - [OpenClaw 审批界面与事件收敛](quality/openclaw-approval-surface-convergence-2026-08-04.md)
 - [安装、仪表盘、聊天、模型与渠道运行时边界修复](quality/installation-dashboard-chat-provider-channel-runtime-boundary-remediation-2026-07-31.md)
