@@ -50,6 +50,13 @@ export interface WizardSessionPorts {
   navigationLeavingRef: RefObject<boolean>;
 }
 
+class OpenClawWizardGatewayConnectionTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OpenClawWizardGatewayConnectionTimeoutError";
+  }
+}
+
 export function useWizardSession({
   setupStep,
   report,
@@ -93,7 +100,7 @@ export function useWizardSession({
     if (error instanceof GatewayPrivilegedAuthorizationError) {
       return diagnostic;
     }
-    if (diagnostic === t("setup.wizard.connectionTimeout", "Gateway 已启动，但配置向导连接超时。")) {
+    if (error instanceof OpenClawWizardGatewayConnectionTimeoutError) {
       return diagnostic;
     }
     switch (classifyOpenClawWizardFailure(error)) {
@@ -128,18 +135,13 @@ export function useWizardSession({
   }, []);
 
   const beginWizardOperation = useCallback(() => {
-    // The admin RPC lane is serialized. Supersede any old Wizard-owned
-    // transient request before queueing the replacement, otherwise an
-    // interrupted no-answer poll can keep the new operation behind it.
+    // 管理 RPC 通道串行执行；先废弃旧的临时请求，避免被中断的轮询阻塞新的向导操作。
     wizardClientRef.current?.invalidatePendingOperations();
     gateway.cancelActivePrivilegedRequest();
     const operationId = wizardOperationRef.current + 1;
     wizardOperationRef.current = operationId;
-    // A superseded submit never reaches the branch that releases its re-entry
-    // guard, because that branch is gated on still being the current operation.
-    // The guard belongs to whichever operation is current, so taking over also
-    // takes it over. `submitWizardStep` reads the guard before calling this, so
-    // its own protection against double submits is unaffected.
+    // 被替代的提交不会进入释放重入锁的分支；锁属于当前操作，因此接管时同步接管该锁。
+    // `submitWizardStep` 会先读取此锁，双击保护不会受影响。
     wizardSubmitInFlightRef.current = false;
     wizardNavigationInFlightRef.current = null;
     wizardRecoveryInFlightRef.current = null;
@@ -185,9 +187,8 @@ export function useWizardSession({
         return false;
       }
       const gatewayWsUrl = target.ws_url;
-      // The official wizard writes the final Gateway token before installing or
-      // restarting its service. Re-read it instead of retaining the bootstrap
-      // process' stale in-memory credential.
+      // 官方向导可能在安装或重启服务前写入最终 Gateway token，必须重新读取，不能沿用
+      // 启动进程的内存凭据。
       const token = String(await getGatewayToken().catch(() => target.token || "")).trim();
       const deviceToken = (await getGatewayDeviceCredentialForUrl(gatewayWsUrl)).token ?? '';
       gatewayManager.connect(gatewayWsUrl, token, deviceToken);
@@ -209,7 +210,10 @@ export function useWizardSession({
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     assertWizardOperationCurrent(operationId);
-    throw new Error(t("setup.wizard.connectionTimeout", "Gateway 已启动，但配置向导连接超时。"));
+    throw new OpenClawWizardGatewayConnectionTimeoutError(t(
+      "setup.wizard.connectionTimeout",
+      "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成经认证的 Gateway 连接。",
+    ));
   }, [assertWizardOperationCurrent, refreshGatewayConnectionTarget, refreshWizardSessionScope, t]);
 
   const applyWizardResult = useCallback(async (
@@ -243,12 +247,10 @@ export function useWizardSession({
       throw new OpenClawWizardCancelledError();
     }
     if (result.done || result.status === "done") {
-      // The official session is terminal even when the lifecycle handoff below
-      // fails. Do not replay accepted model credentials on recovery; recover
-      // only the Gateway owner and verify the selected config identity.
-      // OpenClaw's official wizard may install its platform service by
-      // default. Reconcile ownership before declaring setup complete so the
-      // foreground bootstrap child and Scheduled Task never race on one port.
+      // 官方会话已经终态，即使下方运行时交接失败也不能重放已接受的凭据；恢复只能重新
+      // 核验 Gateway 所有权与所选配置身份。
+      // 官方向导可能默认安装平台服务，宣布完成前必须收敛所有权，避免前台子进程与系统服务
+      // 争用同一端口。
       try {
         await handoffGatewayToOfficialService();
         assertWizardOperationCurrent(operationId);
@@ -261,9 +263,8 @@ export function useWizardSession({
           ));
         }
       } catch (handoffError) {
-        // A completed Rust handoff may outlive renderer navigation. It is safe
-        // to observe on the next connection, but this obsolete operation must
-        // not mutate setup UI or launch subsequent probes.
+        // Rust 侧已完成的交接可能晚于渲染层导航；后续连接可继续观测，但已废弃的操作不能
+        // 修改引导界面或启动后续探测。
         assertWizardOperationCurrent(operationId);
         const message = sanitizeSetupDiagnostic(
           handoffError instanceof Error ? handoffError.message : handoffError,
@@ -282,8 +283,11 @@ export function useWizardSession({
       assertWizardOperationCurrent(operationId);
       if (!modelProbe.ready) {
         const message = t(
-          "setup.wizard.modelNotReady",
-          "所选模型尚未通过实时验证，请继续完成 OpenClaw 配置。",
+          modelProbe.detail ? "setup.wizard.modelNotReadyWithDetail" : "setup.wizard.modelNotReady",
+          modelProbe.detail
+            ? "所选模型尚未通过实时验证：{{detail}}"
+            : "所选模型尚未通过实时验证，请继续完成 OpenClaw 配置。",
+          modelProbe.detail ? { detail: modelProbe.detail } : undefined,
         );
         updateOnboardingRequirement(true);
         setWizardStep(null);
@@ -424,10 +428,8 @@ export function useWizardSession({
   }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, replaceSetupStep, setSetupError, showWizardActivity, t, waitForGatewayConnection, wizardFailureMessage]);
 
   const submitWizardStep = useCallback(async (stepId: string, value?: unknown) => {
-    // React state updates are asynchronous. A final note can receive two click
-    // events before `wizardSubmitting` reaches the button, causing the second
-    // request to race the official terminal response and report "wizard not
-    // found" after onboarding already completed.
+    // React 状态更新异步。终态说明在按钮进入提交态前可能收到双击，第二个请求会与官方
+    // 终态响应竞争并在完成后得到 "wizard not found"。
     if (wizardNavigationInFlightRef.current) return null;
     const operationId = beginWizardOperation();
     wizardSubmitInFlightRef.current = true;
@@ -442,19 +444,14 @@ export function useWizardSession({
       return await applyWizardResult(result, operationId);
     } catch (error) {
       if (error instanceof OpenClawWizardOperationSupersededError) return null;
-      const connectionTimedOut = (
-        error instanceof Error
-        && error.message === t("setup.wizard.connectionTimeout", "Gateway 已启动，但配置向导连接超时。")
-      );
+      const connectionTimedOut = error instanceof OpenClawWizardGatewayConnectionTimeoutError;
       if (
         connectionTimedOut
         && isOpenClawWizardCompletionStep(wizardClientRef.current?.currentStepView)
       ) {
-        // The official final note can be visible before its service handoff
-        // replaces the Gateway process. If the acknowledgement loses that
-        // connection, recover only from provider-neutral terminal semantics;
-        // applyWizardResult still verifies the selected Gateway identity and
-        // performs a live model probe before Ready is committed.
+        // 官方终态说明可能先于服务交接替换 Gateway 进程出现。确认请求丢失连接时，只能
+        // 根据与提供方无关的终态语义恢复；`applyWizardResult` 仍会在进入就绪前核验所选
+        // Gateway 身份并执行实时模型探测。
         const structurallyIncomplete = await resolveActiveRuntimeOnboardingRequirement();
         assertWizardOperationCurrent(operationId);
         if (!structurallyIncomplete) {
@@ -511,7 +508,15 @@ export function useWizardSession({
     setWizardSubmitting(true);
     try {
       await waitForGatewayConnection(operationId);
-      const result = await wizardClientRef.current!.retry();
+      let result: OpenClawWizardResult;
+      try {
+        result = await wizardClientRef.current!.retry();
+      } catch (error) {
+        if (!isOpenClawWizardSessionLost(error)) throw error;
+        // 官方终态与服务交接会清除进程内向导会话。重试时先从当前运行时的持久化配置和
+        // 实时模型状态恢复，不能把已回收的 sessionId 当作新的用户错误。
+        result = await recoverLostWizardSession(wizardClientRef.current!);
+      }
       assertWizardOperationCurrent(operationId);
       return await applyWizardResult(result, operationId);
     } catch (error) {

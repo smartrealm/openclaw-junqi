@@ -596,11 +596,25 @@ test('BUG-ONB-45 a terminal note survives the final Gateway restart without a fa
   const wizard = screen('WizardScreen');
 
   assert.match(submit, /connectionTimedOut/);
+  assert.match(submit, /OpenClawWizardGatewayConnectionTimeoutError/);
   assert.match(submit, /isOpenClawWizardCompletionStep\(wizardClientRef\.current\?\.currentStepView\)/);
   assert.match(submit, /resolveActiveRuntimeOnboardingRequirement\(\)/);
   assert.match(submit, /applyWizardResult\(\{ done: true, status: "done" \}, operationId\)/);
   assert.match(wizard, /isOpenClawWizardNonBlockingProbeFailure\(presentedStep\)/);
   assert.match(wizard, /setup\.wizard\.nonBlockingProbeFailure/);
+  assert.match(wizard, /setup\.wizard\.completionVerification/);
+});
+
+test('BUG-ONB-50 retry recovers an upstream-reaped Wizard session instead of surfacing wizard not found', () => {
+  const wizardHook = hookFile('useWizardSession');
+  const retry = wizardHook.slice(
+    wizardHook.indexOf('const retryOfficialOnboarding'),
+    wizardHook.indexOf('const pollOfficialOnboarding'),
+  );
+
+  assert.match(retry, /wizardClientRef\.current!\.retry\(\)/);
+  assert.match(retry, /isOpenClawWizardSessionLost\(error\)/);
+  assert.match(retry, /recoverLostWizardSession\(wizardClientRef\.current!\)/);
 });
 
 test('BUG-ONB-46 Gateway-owned progress is polled and local QR capture survives it', () => {

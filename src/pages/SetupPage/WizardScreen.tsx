@@ -396,6 +396,14 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
                 )}
               </p>
             )}
+            {completionStep && (
+              <p className="mt-3 border-t border-aegis-border pt-3 text-xs leading-5 text-aegis-text-muted">
+                {t(
+                  "setup.wizard.completionVerification",
+                  "OpenClaw 向导已结束。点击完成后，JunQi 仍会验证当前 Gateway 连接和所选模型；验证未通过时不会进入工作台。",
+                )}
+              </p>
+            )}
             {wizardScanQrUrl && <WizardStepQrHint url={wizardScanQrUrl} />}
             {terminalQrFallback && (
               <div className="mt-4 space-y-3 border-t border-aegis-border pt-4">
