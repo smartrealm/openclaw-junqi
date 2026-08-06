@@ -57,6 +57,13 @@ test('同一 Gateway 身份的稀疏列表行保留已确认空 leaf', () => {
     preserveConfirmedEmptyTranscriptLeaf(EMPTY_SESSION, incoming),
     { ...incoming, activeLeafEntryId: null },
   );
+  assert.deepEqual(
+    preserveConfirmedEmptyTranscriptLeaf(EMPTY_SESSION, {
+      key: EMPTY_SESSION.key,
+      sessionId: EMPTY_SESSION.sessionId,
+    }),
+    { key: EMPTY_SESSION.key, sessionId: EMPTY_SESSION.sessionId, activeLeafEntryId: null },
+  );
 });
 
 test('明确 leaf 或任何身份差异都覆盖本地空 leaf 投影', () => {

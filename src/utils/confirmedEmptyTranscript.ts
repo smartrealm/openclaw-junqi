@@ -1,3 +1,5 @@
+import { agentIdFromSessionKey } from './sessionPresentation';
+
 export interface ConfirmedEmptyTranscriptSession {
   readonly key?: string;
   readonly sessionId?: string;
@@ -17,22 +19,23 @@ export function hasConfirmedEmptyTranscript(
 }
 
 /**
- * A sessions.list row can omit the leaf while the just-created session is
- * already known to be empty. Keep that creation fact only for the exact same
- * Gateway identity; an explicit leaf or any identity uncertainty remains
- * authoritative and replaces the local projection.
+ * sessions.list 行可以省略 leaf 和 agentId；前者保留创建确认，后者由官方
+ * session key 的 agent 段核对。Gateway 明确返回 leaf 或身份确实变化时，仍以
+ * Gateway 投影覆盖本地创建事实。
  */
 export function preserveConfirmedEmptyTranscriptLeaf<T extends ConfirmedEmptyTranscriptSession>(
   previous: ConfirmedEmptyTranscriptSession | undefined,
   incoming: T,
 ): T {
+  const previousAgentId = previous?.agentId?.trim() || (previous?.key ? agentIdFromSessionKey(previous.key) : null);
+  const incomingAgentId = incoming.agentId?.trim() || (incoming.key ? agentIdFromSessionKey(incoming.key) : null);
   if (
     !previous
     || !hasConfirmedEmptyTranscript(previous)
     || incoming.activeLeafEntryId !== undefined
     || incoming.key !== previous.key
     || incoming.sessionId !== previous.sessionId
-    || incoming.agentId !== previous.agentId
+    || incomingAgentId !== previousAgentId
   ) {
     return incoming;
   }

@@ -23,13 +23,14 @@ JunQi 的 `sessionCreate` 在 Gateway 返回 `key`、`sessionId` 和 entry 后�
 - 在 UI 仅根据 `sessionId`、`agentId` 与 `activeLeafEntryId === null` 的确认会话跳过首发历史预热。没有该事实的任何会话继续读取权威历史。
 - 发送事务已经在普通发送中传递非 `undefined` 的 active leaf，因此 `null` 将原样成为 Gateway CAS 参数。Gateway 成功受理后清除本地 null，后续 leaf 只接受 Gateway 历史或会话投影。
 - Gateway 返回 active-leaf 变化错误时，保留既有后台 `chat.history` 刷新；不在客户端合成 leaf 或消息。
+- `SessionRowSchema` 允许 `agentId` 缺省；JunQi 使用官方 `agent:<agentId>:...` session key 仅作身份投影，不能把缺省字段误判为身份变化。
 
 ## 验证状态
 
 - [x] 已完成源码与协议核对。
 - [x] 已完成实现与 19 个定向回归测试。
 - [x] `pnpm lint`、生产构建、`git diff --check` 与本次修改文件 Emoji 扫描通过。
-- [ ] `pnpm test` 未通过：未修改的 `src/theme/tailwindThemeBridge.test.ts` 在“semantic color aliases preserve the storage type of their source token”失败；本次 diff 未包含主题 CSS 或该测试，待独立处理。
+- [x] `pnpm test`：全套前端与脚本测试通过。
 - [ ] macOS、Windows、Ubuntu、CentOS 真实 Gateway 桌面验收待执行。
 
 ## 后续协调修复（2026-08-05）
@@ -52,3 +53,15 @@ Gateway 明确返回 leaf、identity 变化或 identity 缺失时不保留，继
 - [x] `pnpm lint`：模块边界、版本一致性与 TypeScript 检查通过。
 - [x] `git diff --check` 与全仓 Emoji 扫描通过。
 - [ ] macOS、Windows、Ubuntu、CentOS 真实 Gateway 桌面验收仍待执行。
+
+## 当前复核（2026-08-07）
+
+复核发现新建会话在 `sessions.list` 回刷后重新进入历史加载门禁：官方稀疏列表行没有 `agentId`，JunQi 旧合并逻辑将其与创建时身份视为不一致，抹除了已确认的 `activeLeafEntryId: null`。
+
+修复为：会话投影从官方 session key 的 agent 段补齐身份；创建确认与稀疏列表合并也以该派生身份核对。这样不会新增 OpenClaw 字段或本地会话语义，只恢复同一官方会话的创建确认事实。
+
+### 当前复核验证
+
+- [x] `confirmedEmptyTranscript` 与 `openClawSessionProjection` 定向回归测试通过。
+- [x] `pnpm lint` 通过。
+- [ ] 完整前端测试、Rust 测试、生产构建和桌面安装包验证待本次复核完成。
