@@ -45,10 +45,13 @@ function parsePage(value: unknown, expectedOffset: number): {
   const offset = response.offset;
   const totalCount = response.totalCount;
   const nextOffset = response.nextOffset;
-  if (offset !== expectedOffset || !Number.isSafeInteger(totalCount) || Number(totalCount) < 0) {
+  if (!Number.isSafeInteger(totalCount) || Number(totalCount) < 0) {
     throw new Error('sessions.list returned invalid pagination metadata');
   }
   if (response.hasMore === true) {
+    if (offset !== expectedOffset) {
+      throw new Error('sessions.list returned invalid pagination metadata');
+    }
     if (!Number.isSafeInteger(nextOffset) || Number(nextOffset) <= expectedOffset) {
       throw new Error('sessions.list returned an invalid next offset');
     }
@@ -59,6 +62,10 @@ function parsePage(value: unknown, expectedOffset: number): {
       nextOffset: Number(nextOffset),
       totalCount: Number(totalCount),
     };
+  }
+  // OpenClaw 的首个终止页可以省略 offset；后续页必须保留位置证明。
+  if ((offset === undefined && expectedOffset !== 0) || (offset !== undefined && offset !== expectedOffset)) {
+    throw new Error('sessions.list returned invalid pagination metadata');
   }
   if (nextOffset !== null) throw new Error('sessions.list returned an invalid terminal offset');
   return {
