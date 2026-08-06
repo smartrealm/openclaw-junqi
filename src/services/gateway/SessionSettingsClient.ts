@@ -93,11 +93,17 @@ export class SessionSettingsClient {
     sessionKey: string,
     patch: Record<string, unknown>,
     privileged: boolean,
+    expectedSessionId?: string,
   ): Promise<SessionPatchResult> {
     const key = requireSessionSettingsTarget(sessionKey);
+    const identity = expectedSessionId?.trim();
     return this.deps.runMutation(key, async () => {
       const request = privileged ? this.deps.requestPrivileged : this.deps.request;
-      const result = await request<unknown>('sessions.patch', { key, ...patch });
+      const result = await request<unknown>('sessions.patch', {
+        key,
+        ...(identity ? { expectedSessionId: identity } : {}),
+        ...patch,
+      });
       return confirmedPatchResult(result, key);
     });
   }
@@ -130,7 +136,8 @@ export class SessionSettingsClient {
     return this.patch(sessionKey, { reasoningLevel }, true);
   }
 
-  setLabel(sessionKey: string, label: string | null): Promise<SessionPatchResult> {
-    return this.patch(sessionKey, { label }, true);
+  setLabel(sessionKey: string, expectedSessionId: string, label: string | null): Promise<SessionPatchResult> {
+    if (!expectedSessionId.trim()) throw new SessionSettingsTargetError();
+    return this.patch(sessionKey, { label }, true, expectedSessionId);
   }
 }

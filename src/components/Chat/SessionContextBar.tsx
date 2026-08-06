@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, AlertCircle, Check, ChevronDown, CircleStop, Crosshair, Download, FileDown, FileText, Folder, Gauge, ListTodo, MessageSquareText, Plus, Puzzle, RefreshCw, RotateCcw, Wrench, X } from 'lucide-react';
+import { Activity, AlertCircle, Check, ChevronDown, CircleStop, Download, FileDown, FileText, Folder, Gauge, ListTodo, MessageSquareText, Plus, Puzzle, RefreshCw, RotateCcw, Wrench, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -16,7 +16,6 @@ import { exportChatMarkdown } from '@/utils/exportChat';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { debugError } from '@/utils/debugLog';
 import { useSkillsStore } from '@/stores/skillsStore';
-import { useFocusContextStore } from '@/stores/focusContextStore';
 import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
 import { SessionRuntimeControl } from './session-runtime/SessionRuntimeControl';
 import { EffectiveToolsControl } from './EffectiveToolsControl';
@@ -270,7 +269,7 @@ export function SessionContextBar() {
 
   // Parse agentId from session key (same logic as ChatTabs)
   const keyParts = activeSessionKey.split(':');
-  const agentId = keyParts.length >= 3 ? (keyParts[1] ?? 'main') : 'main';
+  const agentId = keyParts.length >= 3 ? (keyParts[1] ?? '') : '';
   const agent = agents.find((a) => a.id === agentId);
   const mainAgentName = getAgentDisplayName(agents.find((a) => a.id === 'main'), t('agents.mainAgent'));
   const agentDisplayName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
@@ -389,24 +388,6 @@ export function SessionContextBar() {
       )}
       <div className="ms-auto flex items-center gap-2 pl-2 border-l border-[rgb(var(--aegis-overlay)/0.06)]">
         <div className="hidden items-center gap-0.5 lg:flex">
-          <button
-            type="button"
-            onClick={() => useFocusContextStore.getState().setFocus({
-              schemaVersion: 1,
-              target: { kind: 'chat-session', id: activeSessionKey },
-              title: activeSession?.topic?.trim()
-                || activeSession?.label?.trim()
-                || t('chat.currentSession'),
-              detail: agentDisplayName,
-              route: `/chat?session=${encodeURIComponent(activeSessionKey)}`,
-              focusedAt: Date.now(),
-            })}
-            className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
-            title={t('focus.set')}
-            aria-label={t('focus.set')}
-          >
-            <Crosshair size={11} />
-          </button>
           <SessionArtifactsButton sessionKey={activeSessionKey} agentId={agentId} />
           <button
             type="button"

@@ -3,6 +3,9 @@ import { isAgentMainSession } from '@/utils/sessionLifecycle';
 
 type SessionLike = {
   key?: string;
+  derivedTitle?: string;
+  displayName?: string;
+  lastMessagePreview?: string;
   topic?: string;
   lastMessage?: string | { content?: string };
   label?: string;
@@ -38,11 +41,20 @@ export function getSessionDisplayLabel(
   const label = normalizeText(session?.label);
   if (label) return label;
 
+  const derivedTitle = normalizeText(session?.derivedTitle);
+  if (derivedTitle) return derivedTitle;
+
+  const displayName = normalizeText(session?.displayName);
+  if (displayName) return displayName;
+
   const topic = normalizeText(session?.topic);
   if (topic && !isWeakSessionTopic(topic)) return topic;
 
   const explicitFallback = summarizeFallback(normalizeText(messageFallback));
   if (explicitFallback) return explicitFallback;
+
+  const officialPreview = summarizeFallback(normalizeText(session?.lastMessagePreview));
+  if (officialPreview) return officialPreview;
 
   const rawLastMessage = session?.lastMessage;
   const lastMessage = summarizeFallback(normalizeText(

@@ -10,12 +10,11 @@ import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dn
 import { CSS } from '@dnd-kit/utilities';
 import { isWeakSessionTopic, useChatStore, Session } from '@/stores/chatStore';
 import { useGatewayDataStore, type AgentInfo } from '@/stores/gatewayDataStore';
-import { gateway } from '@/services/gateway';
 import { themeHex, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
-import { coalesceSessionsByKey, isAgentMainSession, resolveNewSessionAgentId } from '@/utils/sessionLifecycle';
+import { isAgentMainSession, resolveNewSessionAgentId } from '@/utils/sessionLifecycle';
 import { createNativeSession } from '@/utils/sessionCreate';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
@@ -127,7 +126,7 @@ function formatSessionPreview(text?: unknown, max = 48): string {
 
 function getSessionPreview(
   displayLabel: string,
-  session: Session,
+  session: Session | undefined,
   cachedMessages?: Array<{ role: string; content: unknown }>,
 ): string {
   const normalizedLabel = displayLabel.trim();
@@ -140,7 +139,7 @@ function getSessionPreview(
 
   if (cachedPreview) return cachedPreview;
 
-  const lastMessagePreview = formatSessionPreview(session.lastMessage);
+  const lastMessagePreview = formatSessionPreview(session?.lastMessage);
   if (lastMessagePreview && lastMessagePreview !== normalizedLabel) {
     return lastMessagePreview;
   }
@@ -151,10 +150,10 @@ function getSessionPreview(
 /** Parse sessionKey: agentId, is main session (agent:X:main), is desktop session (agent:X:desktop-*) */
 function parseSessionKey(key: string): { agentId: string; isMainSession: boolean; isDesktopSession: boolean } {
   if (!key.startsWith('agent:')) {
-    return { agentId: 'main', isMainSession: false, isDesktopSession: false };
+    return { agentId: '', isMainSession: false, isDesktopSession: false };
   }
   const parts = key.split(':');
-  const agentId = parts[1] ?? 'main';
+  const agentId = parts[1] ?? '';
   const rest = parts.slice(2).join(':');
   const isMainSession = isAgentMainSession(key);
   const isDesktopSession = rest.startsWith('desktop-');
@@ -173,7 +172,7 @@ function resolveSessionAgentId(session: Session): string {
   if (typeof raw.agent === 'string' && raw.agent) return raw.agent;
   if (typeof raw.agent === 'object' && raw.agent?.id) return raw.agent.id;
   const meta = raw.metadata;
-  if (meta?.agentId || meta?.agent_id) return meta.agentId || meta.agent_id || 'main';
+  if (meta?.agentId || meta?.agent_id) return meta.agentId || meta.agent_id || '';
   if (typeof meta?.agent === 'string' && meta.agent) return meta.agent;
   if (typeof meta?.agent === 'object' && meta.agent?.id) return meta.agent.id;
   return parseSessionKey(session.key).agentId;
@@ -405,29 +404,29 @@ function NewSessionPicker({
 }) {
   const { t } = useTranslation();
 
-  const hasMain = agents.some((a) => a.id === 'main');
+  const defaultAgentId = useGatewayDataStore((state) => state.defaultAgentId);
+  const defaultAgent = agents.find((agent) => agent.id === defaultAgentId);
   const mainDisplayName = getAgentDisplayName(
-    agents.find((a) => a.id === 'main'),
+    defaultAgent,
     t('agents.mainAgent'),
   );
-  const agentList: AgentInfo[] =
-    agents.length === 0
-      ? [{ id: 'main', name: t('agents.mainAgent') }]
-      : hasMain
-        ? agents
-        : [{ id: 'main', name: mainDisplayName }, ...agents];
+  const agentList = agents;
   // Seeded from the session in view rather than from list order: `agents` is a
   // gateway-ordered list, so `agentList[0]` picked an arbitrary agent whenever
   // the list had already loaded, and stayed stuck on the mount-time value
   // because nothing re-synced it once the list arrived.
-  const seedAgentId = resolveNewSessionAgentId(activeSessionKey, agentList.map((a) => a.id));
-  const [selectedAgentId, setSelectedAgentId] = useState(seedAgentId);
+  const seedAgentId = resolveNewSessionAgentId(
+    activeSessionKey,
+    agentList.map((agent) => agent.id),
+    defaultAgentId,
+  );
+  const [selectedAgentId, setSelectedAgentId] = useState(seedAgentId ?? '');
   const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
   const wasOpenRef = useRef(false);
   useEffect(() => {
     // Re-seed on each open so a picker mounted before `agents.list` returned,
     // or opened from a different session, still starts on the right agent.
-    if (open && !wasOpenRef.current) setSelectedAgentId(seedAgentId);
+    if (open && !wasOpenRef.current) setSelectedAgentId(seedAgentId ?? '');
     wasOpenRef.current = open;
   }, [open, seedAgentId]);
   const agentDropdownRef = useRef<HTMLDivElement>(null);
@@ -509,14 +508,14 @@ function NewSessionPicker({
     );
   }, [t, onClose]);
 
-  const selectedAgent = agentList.find((a) => a.id === selectedAgentId) ?? agentList[0];
+  const selectedAgent = agentList.find((agent) => agent.id === selectedAgentId);
 
   // Skill-carried persona wins; otherwise fall back to the selected agent's default.
   // memoized so the localStorage read doesn't repeat on every render — the
   // picker re-renders frequently when typing in the rename input, and the
   // default lookup is a JSON.parse on the persisted map.
   const { effectivePersona, personaSource } = useMemo(() => {
-    const def = defaultPersonaFor ? defaultPersonaFor(selectedAgentId) : null;
+    const def = selectedAgentId && defaultPersonaFor ? defaultPersonaFor(selectedAgentId) : null;
     const eff = personaCleared ? null : (initialPersona ?? def);
     const src: 'skill' | 'default' | null = personaCleared
       ? null
@@ -555,6 +554,8 @@ function NewSessionPicker({
             </div>
             <div ref={agentDropdownRef} className="relative mb-2">
               <button
+                type="button"
+                disabled={!selectedAgent}
                 onClick={() => setAgentDropdownOpen((v) => !v)}
                 className={clsx(
                   'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-all duration-150',
@@ -567,7 +568,7 @@ function NewSessionPicker({
                 <span className="flex-1 text-start truncate">
                   {getAgentDisplayName(
                     selectedAgent,
-                    selectedAgent?.id === 'main' ? mainDisplayName : (selectedAgent?.id ?? 'Agent'),
+                    selectedAgent?.id === defaultAgentId ? mainDisplayName : (selectedAgent?.id ?? t('chat.agentUnavailable')),
                   )}
                 </span>
                 <ChevronDown size={11} className={clsx('text-aegis-text-dim shrink-0 transition-transform duration-150', agentDropdownOpen && 'rotate-180')} />
@@ -592,7 +593,7 @@ function NewSessionPicker({
                         )}
                       >
                         <span className="truncate">
-                          {getAgentDisplayName(a, a.id === 'main' ? mainDisplayName : a.id)}
+                          {getAgentDisplayName(a, a.id === defaultAgentId ? mainDisplayName : a.id)}
                         </span>
                         {isActive && <Check size={11} className="text-aegis-primary shrink-0 ms-2" />}
                       </button>
@@ -617,7 +618,7 @@ function NewSessionPicker({
                   onClick={() => {
                     setPersonaCleared(true);
                     if (personaSource === 'skill') onClearPersona?.();
-                    else if (personaSource === 'default') onClearDefaultPersona?.(selectedAgentId);
+                    else if (personaSource === 'default' && selectedAgentId) onClearDefaultPersona?.(selectedAgentId);
                   }}
                   title={t('chat.clearPersona')}
                   aria-label={t('chat.clearPersona')}
@@ -632,6 +633,8 @@ function NewSessionPicker({
             {/* Action buttons */}
             <div className="flex flex-col gap-1 mb-2">
               <button
+                type="button"
+                disabled={!selectedAgentId}
                 onClick={() => { onOpenMainSession(selectedAgentId, effectivePersona); onClose(); }}
                 className={clsx(
                   'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-start transition-colors',
@@ -646,7 +649,9 @@ function NewSessionPicker({
               <button
                 type="button"
                 disabled={creatingSession}
+                aria-disabled={!selectedAgentId}
                 onClick={() => {
+                  if (!selectedAgentId) return;
                   void onCreateNativeSession(selectedAgentId, effectivePersona).then((created) => {
                     if (created) onClose();
                   });
@@ -693,12 +698,15 @@ function NewSessionPicker({
                   messagesPerSession[session.key],
                   t('chat.newSessionLabel'),
                 );
-                const fullLabel = session.topic
-                  || (session.lastMessage && !isWeakSessionTopic(session.lastMessage) ? session.lastMessage : '')
-                  || session.label
-                  || session.key;
+                const fullLabel = getSessionDisplayLabel(session, {
+                  mainSessionLabel: mainDisplayName,
+                  genericSessionLabel: t('chat.newSessionLabel'),
+                  messageFallback: getSessionPreview(displayLabel, session, messagesPerSession[session.key]),
+                });
                 const detailText = getSessionPreview(displayLabel, session, messagesPerSession[session.key]);
-                const timeLabel = formatSessionTimestamp(session.lastTimestamp);
+                const timeLabel = formatSessionTimestamp(
+                  session.lastTimestamp === undefined ? undefined : String(session.lastTimestamp),
+                );
                 const isRenaming = pickerRenamingKey === session.key;
                 return (
                   <div
@@ -888,6 +896,7 @@ export function ChatTabs() {
     currentThinking,
     sessionDefaults,
   } = useChatStore();
+  const mainSessionKey = useGatewayDataStore((s) => s.mainSessionKey);
 
   // ── Drag-to-reorder sensors ──
   const dndSensors = useSensors(
@@ -910,6 +919,9 @@ export function ChatTabs() {
 
   const activeTabIndex = openTabs.indexOf(activeSessionKey);
   const hasMultipleTabs = openTabs.length > 1;
+  const displayTabs = mainSessionKey && openTabs.includes(mainSessionKey)
+    ? [mainSessionKey, ...openTabs.filter((key) => key !== mainSessionKey)]
+    : openTabs;
   const canSwitchPrev = activeTabIndex > 0;
   const canSwitchNext = activeTabIndex >= 0 && activeTabIndex < openTabs.length - 1;
   const switchRelativeTab = useCallback((direction: -1 | 1) => {
@@ -940,33 +952,8 @@ export function ChatTabs() {
   const handleOpenNewPicker = useCallback(() => {
     setShowNewPicker((v) => !v);
     if (!showNewPicker) {
-      setLoadingNew(true);
-      gateway.getSessions()
-        .then((result: any) => {
-          const existingByKey = new Map(sessions.map((session) => [session.key, session]));
-          const list: Session[] = coalesceSessionsByKey((result?.sessions || []).map((s: any) => {
-            const key = s.key || s.sessionKey;
-            const previous = existingByKey.get(key);
-            const lastMessage = s.lastMessage?.content?.substring?.(0, 80) || previous?.lastMessage;
-            return {
-              key,
-              sessionId: typeof s.sessionId === 'string' ? s.sessionId : previous?.sessionId,
-              label: typeof s.label === 'string'
-                ? s.label
-                : (typeof s.name === 'string' ? s.name : ''),
-              topic: previous?.topic,
-              lastMessage,
-              lastTimestamp: s.lastMessage?.timestamp || s.updatedAt || previous?.lastTimestamp,
-              kind: s.kind || previous?.kind,
-              agentId: s.agentId || s.agent_id,
-              agent: s.agent,
-              metadata: s.metadata,
-            };
-          }));
-          setNewSessions(list.filter((s) => !openTabs.includes(s.key)));
-        })
-        .catch(() => {})
-        .finally(() => setLoadingNew(false));
+      setLoadingNew(false);
+      setNewSessions(sessions.filter((session) => !openTabs.includes(session.key)));
     }
   }, [showNewPicker, openTabs, sessions]);
 
@@ -1172,19 +1159,20 @@ export function ChatTabs() {
       {/* ── Scrollable tab strip ── */}
       <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div ref={scrollContainerRef} className="flex-1 flex items-end h-full overflow-x-auto scrollbar-none min-w-0 pl-1">
-        <SortableContext items={openTabs} strategy={horizontalListSortingStrategy}>
-        {openTabs.map((key) => {
+        <SortableContext items={displayTabs} strategy={horizontalListSortingStrategy}>
+        {displayTabs.map((key) => {
           const isActive = key === activeSessionKey;
-          const isMain = isAgentMainSession(key);
+          const isPinnedMain = mainSessionKey === key;
           const { isMainSession } = parseSessionKey(key);
           const session = sessions.find((s) => s.key === key);
           const label = sessionLabel(
             session, key, agents, mainAgentName, messagesPerSession[key], t('chat.newSessionLabel'),
           );
-          const fullLabel = session?.topic
-            || (session?.lastMessage && !isWeakSessionTopic(session.lastMessage) ? session.lastMessage : '')
-            || session?.label
-            || label;
+          const fullLabel = getSessionDisplayLabel(session, {
+            mainSessionLabel: mainAgentName,
+            genericSessionLabel: t('chat.newSessionLabel'),
+            messageFallback: getSessionPreview(label, session, messagesPerSession[key]),
+          });
           const unread = session?.unread ?? 0;
           const isEditing = editingKey === key;
           const contextBudgetNotice = getGatewaySessionContextBudgetNotice(session?.contextBudgetStatus);
@@ -1203,7 +1191,7 @@ export function ChatTabs() {
             : null;
 
           return (
-            <SortableTab id={key} disabled={isMain}>
+            <SortableTab id={key} disabled={isPinnedMain}>
 	            <div
 	              key={key}
 	              className="group/tab relative shrink-0"
@@ -1219,11 +1207,11 @@ export function ChatTabs() {
                 aria-selected={isActive}
                 title={fullLabel}
                 onClick={() => isActive ? undefined : setActiveSession(key)}
-                onAuxClick={(e) => !isMain && handleTabAuxClick(e, key)}
+                onAuxClick={(e) => !isPinnedMain && handleTabAuxClick(e, key)}
                 className={clsx(
                   'isolate flex items-center gap-1.5 h-[38px] pl-3 text-[12px] font-medium select-none relative',
                   'transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none active:scale-[0.985]',
-                  isMain ? 'pr-3' : 'pr-10',
+                  isPinnedMain ? 'pr-3' : 'pr-10',
                   isActive
                     ? 'text-aegis-text'
                     : 'text-aegis-text-dim hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.03)]',
@@ -1342,7 +1330,7 @@ export function ChatTabs() {
                 )}
 
               </button>
-              {!isMain && (
+              {!isPinnedMain && (
                 <span className="absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100">
                   <IconButton
                     size="xs"

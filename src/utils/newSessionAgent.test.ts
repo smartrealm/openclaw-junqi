@@ -1,34 +1,34 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { FALLBACK_NEW_SESSION_AGENT_ID, resolveNewSessionAgentId } from './sessionLifecycle';
+import { resolveNewSessionAgentId } from './sessionLifecycle';
 
 test('a new session starts on the agent of the session in view', () => {
-  assert.equal(resolveNewSessionAgentId('agent:research:desktop-abc', ['main', 'research']), 'research');
-  assert.equal(resolveNewSessionAgentId('agent:main:main', ['main', 'research']), 'main');
+  assert.equal(resolveNewSessionAgentId('agent:research:desktop-abc', ['main', 'research'], 'main'), 'research');
+  assert.equal(resolveNewSessionAgentId('agent:main:main', ['main', 'research'], 'research'), 'main');
 });
 
 test('unresolvable context falls back to the main agent', () => {
   for (const key of [null, undefined, '', 'not-a-session-key', 'agent:', ':::']) {
-    assert.equal(resolveNewSessionAgentId(key, ['main', 'research']), FALLBACK_NEW_SESSION_AGENT_ID);
+    assert.equal(resolveNewSessionAgentId(key, ['main', 'research'], 'research'), 'research');
   }
 });
 
 // A stale tab must not create a session on an agent the gateway dropped.
 test('an agent the gateway no longer reports is not reused', () => {
-  assert.equal(resolveNewSessionAgentId('agent:removed:desktop-1', ['main', 'research']), 'main');
+    assert.equal(resolveNewSessionAgentId('agent:removed:desktop-1', ['main', 'research'], 'research'), 'research');
   // An empty roster means the list has not loaded yet; the key is still the
   // best available context and must not be discarded.
-  assert.equal(resolveNewSessionAgentId('agent:research:desktop-1', []), 'research');
+    assert.equal(resolveNewSessionAgentId('agent:research:desktop-1', [], 'research'), null);
 });
 
 // Regression: the picker seeded from `agentList[0]`, an arbitrary gateway-ordered
 // entry, and never re-synced once `agents.list` arrived after mount.
 test('the new-session picker seeds from session context, not list order', () => {
   const source = readFileSync('src/components/Chat/ChatTabs.tsx', 'utf8');
-  assert.match(source, /resolveNewSessionAgentId\(activeSessionKey/);
+  assert.match(source, /resolveNewSessionAgentId\(\s*activeSessionKey/);
   assert.doesNotMatch(source, /useState\(agentList\[0\]\?\.id \?\? 'main'\)/);
-  assert.match(source, /if \(open && !wasOpenRef\.current\) setSelectedAgentId\(seedAgentId\)/);
+  assert.match(source, /setSelectedAgentId\(seedAgentId\s*\?\?/);
 });
 
 // Regression: the dashboard shortcut hard-coded `agent=main`, so the same
@@ -36,14 +36,14 @@ test('the new-session picker seeds from session context, not list order', () => 
 test('every new-session entry resolves the agent the same way', () => {
   const dashboard = readFileSync('src/pages/Dashboard/index.tsx', 'utf8');
   const sidebar = readFileSync('src/components/Layout/NavSidebar.tsx', 'utf8');
-  assert.match(dashboard, /resolveNewSessionAgentId\(activeSessionKey/);
+  assert.match(dashboard, /resolveNewSessionAgentId\(\s*activeSessionKey/);
   assert.doesNotMatch(dashboard, /\/chat\?agent=main&new=1/);
-  assert.match(sidebar, /resolveNewSessionAgentId\(activeKey, agents\.map\(\(agent\) => agent\.id\)\)/);
+  assert.match(sidebar, /resolveNewSessionAgentId\(\s*activeKey[\s\S]*defaultAgentId/);
   assert.match(sidebar, /agentId: newSessionAgentId/);
   assert.doesNotMatch(sidebar, /agentId: 'main'/);
 });
 
-test('ordinary creation leaves title generation to OpenClaw and forks keep an explicit title', () => {
+test('ordinary creation and forks leave title generation to OpenClaw', () => {
   const route = readFileSync('src/hooks/useAgentScopedSession.ts', 'utf8');
   const picker = readFileSync('src/components/Chat/ChatTabs.tsx', 'utf8');
   const sidebar = readFileSync('src/components/Layout/NavSidebar.tsx', 'utf8');
@@ -52,7 +52,7 @@ test('ordinary creation leaves title generation to OpenClaw and forks keep an ex
     assert.doesNotMatch(source, /label: t\('chat\.newSessionLabel'\)/);
     assert.doesNotMatch(source, /label: '新会话'/);
   }
-  assert.match(actions, /label: t\('chat\.forkedSessionLabel'\)/);
+  assert.doesNotMatch(actions, /label: t\('chat\.forkedSessionLabel'\)/);
   assert.match(actions, /parentSessionKey: session\.key,\s+fork: true/);
   for (const locale of ['zh', 'zh-TW', 'en']) {
     const bundle = JSON.parse(readFileSync(`src/locales/${locale}.json`, 'utf8'));

@@ -58,6 +58,10 @@ import {
   type OpenClawSessionSearchResult,
 } from '@/services/gateway/OpenClawSessionSearchClient';
 import { saveChatMedia } from '@/services/chat/mediaSaveRuntime';
+import {
+  parseOpenClawAgentList,
+  projectOpenClawSession,
+} from '@/services/gateway/OpenClawSessionProjection';
 
 export type { OpenClawSessionPreviewEntry } from '@/services/gateway/OpenClawSessionPreviewClient';
 export type {
@@ -137,15 +141,19 @@ export interface SessionInfo {
   key: string;
   sessionId?: string;
   label?: string;
-  category?: string;
+  displayName?: string;
+  derivedTitle?: string;
+  lastMessagePreview?: string;
+  category?: string | null;
+  unread?: number;
+  agentId?: string;
   model?: string;
   running?: boolean;
   totalTokens?: number;
   contextTokens?: number;
-  maxTokens?: number;
-  compactions?: number;
-  lastActive?: string;
   kind?: string;
+  pinned?: boolean;
+  archived?: boolean;
   [k: string]: any;
 }
 
@@ -323,6 +331,9 @@ interface GatewayDataState {
   sessionSearchLoading: boolean;
   sessionSearchError: string | null;
   agents: AgentInfo[];
+  defaultAgentId: string | null;
+  mainSessionKey: string | null;
+  agentScope: 'per-sender' | 'global' | null;
   costSummary: CostSummary | null;
   sessionsUsage: SessionsUsage | null;
   cronJobs: CronJob[];
@@ -398,6 +409,12 @@ interface GatewayDataState {
   setSessionSearchLoading: (query: string | null) => void;
   setSessionSearchError: (value: string | null) => void;
   setAgents: (agents: AgentInfo[]) => void;
+  setAgentSnapshot: (
+    agents: AgentInfo[],
+    defaultAgentId: string,
+    mainSessionKey: string,
+    agentScope: 'per-sender' | 'global',
+  ) => void;
   setCostSummary: (data: CostSummary) => void;
   setSessionsUsage: (data: SessionsUsage) => void;
   setCronJobs: (jobs: CronJob[]) => void;
@@ -469,6 +486,9 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   sessionSearchLoading: false,
   sessionSearchError: null,
   agents: [],
+  defaultAgentId: null,
+  mainSessionKey: null,
+  agentScope: null,
   costSummary: null,
   sessionsUsage: null,
   cronJobs: [],
@@ -753,6 +773,11 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
       errors: { ...get().errors, agents: null },
     }),
 
+  setAgentSnapshot: (agents, defaultAgentId, mainSessionKey, agentScope) => {
+    get().setAgents(agents);
+    set({ defaultAgentId, mainSessionKey, agentScope });
+  },
+
   setCostSummary: (data) =>
     set({
       costSummary: data,
@@ -951,8 +976,24 @@ function isSessionsUsage(value: unknown): value is SessionsUsage {
     && isGatewayRecord(value.aggregates);
 }
 
-export function parseGatewayAgentList(response: unknown): AgentInfo[] | null {
-  return gatewayCollectionOf(response, 'agents', isAgentInfo);
+export function parseGatewayAgentList(response: unknown): {
+  agents: AgentInfo[];
+  defaultAgentId: string;
+  mainSessionKey: string;
+  scope: 'per-sender' | 'global';
+} | null {
+  try {
+    const snapshot = parseOpenClawAgentList(response);
+    if (!snapshot.agents.every(isAgentInfo)) return null;
+    return {
+      agents: [...snapshot.agents],
+      defaultAgentId: snapshot.defaultId,
+      mainSessionKey: snapshot.mainKey,
+      scope: snapshot.scope,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function parseGatewayCronJobList(response: unknown): CronJob[] | null {
@@ -1225,7 +1266,14 @@ async function fetchSessions(): Promise<boolean> {
       ]),
       complete: activeSnapshot.complete && (archivedSnapshot?.complete ?? true),
     };
-    const rawList = sessionListSnapshot.sessions;
+    const rawList: SessionInfo[] = sessionListSnapshot.sessions.map((value) => {
+      const projected = projectOpenClawSession(value);
+      return {
+        ...projected,
+        category: projected.category ?? null,
+        unread: projected.unread === true ? 1 : 0,
+      };
+    });
 
     // Merge: preserve event-enriched runningUpdatedAt that the server does not return.
     // IMPORTANT: polling must NEVER generate a new runningUpdatedAt timestamp by itself.
@@ -1252,13 +1300,7 @@ async function fetchSessions(): Promise<boolean> {
       : [...incomingList, ...prev.filter((session) => !incomingKeys.has(session.key))];
 
     // Skip store update if nothing meaningful changed (avoids unnecessary React re-renders)
-    const same = prev.length === list.length
-      && prev.every((s, i) => s.key === list[i]?.key
-        && s.label === list[i]?.label
-        && s.category === list[i]?.category
-        && s.running === list[i]?.running
-        && s.totalTokens === list[i]?.totalTokens
-        && s.runningUpdatedAt === list[i]?.runningUpdatedAt);
+    const same = JSON.stringify(prev) === JSON.stringify(list);
     if (!same) {
       store.setSessions(list);
     } else {
@@ -1281,12 +1323,17 @@ async function fetchAgents(): Promise<boolean> {
   try {
     const res = await ticket.connection.request('agents.list', {});
     if (!isCurrentGatewayRequest(ticket)) return false;
-    const list = parseGatewayAgentList(res);
-    if (!list) {
+    const snapshot = parseGatewayAgentList(res);
+    if (!snapshot) {
       rejectGatewayResponse(store, 'agents', 'agents.list');
       return false;
     }
-    store.setAgents(list);
+    store.setAgentSnapshot(
+      snapshot.agents,
+      snapshot.defaultAgentId,
+      snapshot.mainSessionKey,
+      snapshot.scope,
+    );
     return true;
   } catch (e: any) {
     if (!isCurrentGatewayRequest(ticket)) return false;

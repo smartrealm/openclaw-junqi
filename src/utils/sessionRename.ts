@@ -22,13 +22,13 @@ export type SessionRenameResult =
   | { ok: false; error: string };
 
 type SessionRenameDeps = {
-  patchLabel: (sessionKey: string, label: string | null) => Promise<unknown>;
+  patchLabel: (sessionKey: string, sessionId: string, label: string | null) => Promise<unknown>;
   warn: (...args: unknown[]) => void;
   notifyFailure: (detail: string) => void;
 };
 
 const defaultSessionRenameDeps: SessionRenameDeps = {
-  patchLabel: (sessionKey, label) => gateway.setSessionLabel(label, sessionKey),
+  patchLabel: (sessionKey, sessionId, label) => gateway.setSessionLabel(label, sessionKey, sessionId),
   warn: (...args) => debugWarn('app', ...args),
   notifyFailure: (detail) => {
     useNotificationStore.getState().addToast('error', '重命名会话失败', detail);
@@ -98,9 +98,11 @@ async function performSessionRename(
   operationId: number,
 ): Promise<SessionRenameResult> {
   if (isSessionDeleted(sessionKey)) return { ok: false, error: 'Session has been deleted' };
+  const sessionId = useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.sessionId;
+  if (!sessionId) return { ok: false, error: 'Session identity is unavailable' };
 
   try {
-    const response = await sessionRenameDeps.patchLabel(sessionKey, requestedLabel || null);
+    const response = await sessionRenameDeps.patchLabel(sessionKey, sessionId, requestedLabel || null);
     const failure = gatewayMutationFailure(response, 'Gateway rejected session label mutation');
     if (failure) throw new Error(failure);
     const label = confirmedLabel(response, sessionKey, requestedLabel);

@@ -125,6 +125,7 @@ docs/
 
 目录：[`quality/`](quality/)
 
+- [OpenClaw 会话生命周期收敛审计](quality/openclaw-session-lifecycle-convergence-audit-2026-08-06.md)
 - [桌面原生通知投递修复](quality/native-notification-delivery-2026-08-05.md)
 - [通知单一呈现与身份收敛](quality/notification-single-presentation-and-identity-2026-08-06.md)
 - [统一文件预览呈现审计](quality/unified-file-preview-surface-audit-2026-08-05.md)

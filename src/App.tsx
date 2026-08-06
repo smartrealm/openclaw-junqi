@@ -49,14 +49,6 @@ import {
   type GatewayRecoveryProgress,
 } from '@/services/gateway/recoveryProgress';
 import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
-import { parseGatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
-import { parseGatewaySessionAgentStatus } from '@/services/gateway/sessionAgentStatus';
-import { parseGatewaySessionAbortedLastRun } from '@/services/gateway/sessionAbortedLastRun';
-import { parseGatewaySessionContextBudgetStatus } from '@/services/gateway/sessionContextBudgetStatus';
-import { parseGatewaySessionGoal } from '@/services/gateway/sessionGoal';
-import { parseGatewaySessionLastRunError } from '@/services/gateway/sessionLastRunError';
-import { parseGatewaySessionThinkingProfile } from '@/services/gateway/sessionThinkingProfile';
-import { parseOpenClawActiveLeafEntryId } from '@/services/gateway/activeLeafEntryId';
 import {
   OPENCLAW_UPDATE_MAINTENANCE_FINISHED,
   OPENCLAW_UPDATE_MAINTENANCE_STARTED,
@@ -85,6 +77,7 @@ import { validateCachedSetupInstallation } from '@/services/setupInstallationHea
 import { approveSelectedGatewayDevice } from '@/api/tauri-commands';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
 import { JarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
+import { projectOpenClawSessionForChat } from '@/utils/openClawSessionProjection';
 import {
   createWorkspaceBootstrapReadiness,
   shouldReleaseWorkspaceAfterGatewayRetryExhaustion,
@@ -342,74 +335,7 @@ export default function App() {
             contextTokens: result.defaults.contextTokens ?? null,
           }
         : undefined;
-      const sessions = rawSessions.flatMap((s: any) => {
-        const key = typeof s?.key === 'string' && s.key.trim()
-          ? s.key.trim()
-          : typeof s?.sessionKey === 'string' && s.sessionKey.trim()
-            ? s.sessionKey.trim()
-            : '';
-        if (!key) return [];
-        const gatewayModel = resolveGatewaySessionModelId(s.modelProvider, s.model);
-        const agentRuntime = parseGatewaySessionAgentRuntime(s.agentRuntime);
-        const thinkingProfile = parseGatewaySessionThinkingProfile(s);
-        const activeLeafEntryId = parseOpenClawActiveLeafEntryId(s.activeLeafEntryId);
-        return [{
-          key,
-          sessionId: typeof s.sessionId === 'string' ? s.sessionId : undefined,
-          agentId: typeof s.agentId === 'string' ? s.agentId : undefined,
-          label: typeof s.label === 'string'
-            ? s.label
-            : (typeof s.name === 'string' ? s.name : ''),
-          category: typeof s.category === 'string' ? s.category : undefined,
-          topic: typeof s.topic === 'string' ? s.topic : undefined,
-          lastMessage: s.lastMessage?.content?.substring?.(0, 60),
-          lastTimestamp: s.lastMessage?.timestamp || s.updatedAt,
-          kind: s.kind,
-          channel: typeof s.channel === 'string' ? s.channel : (typeof s.lastChannel === 'string' ? s.lastChannel : null),
-          lastChannel: typeof s.lastChannel === 'string' ? s.lastChannel : null,
-          origin: s.origin,
-          spawnedBy: typeof s.spawnedBy === 'string' ? s.spawnedBy : undefined,
-          parentSessionKey: typeof s.parentSessionKey === 'string' ? s.parentSessionKey : undefined,
-          status: typeof s.status === 'string' ? s.status : undefined,
-          agentStatus: parseGatewaySessionAgentStatus(s.agentStatus),
-          abortedLastRun: parseGatewaySessionAbortedLastRun(s.abortedLastRun),
-          contextBudgetStatus: parseGatewaySessionContextBudgetStatus(s.contextBudgetStatus),
-          goal: parseGatewaySessionGoal(s.goal),
-          lastRunError: parseGatewaySessionLastRunError(s.lastRunError),
-          ...(activeLeafEntryId !== undefined ? { activeLeafEntryId } : {}),
-          // 缺失运行字段时保持未知；将其视为 false 会与旧 Gateway 的本地流式状态竞争。
-          hasActiveRun: typeof s.hasActiveRun === 'boolean' ? s.hasActiveRun : undefined,
-          hasActiveSubagentRun: typeof s.hasActiveSubagentRun === 'boolean' ? s.hasActiveSubagentRun : undefined,
-          subagentRunState: typeof s.subagentRunState === 'string' ? s.subagentRunState : undefined,
-          systemSent: s.systemSent === true,
-          // 供标题栏与会话控制使用的每会话元数据。
-          model: gatewayModel,
-          modelSelectionLocked: s.modelSelectionLocked === true,
-          agentRuntime,
-          thinkingLevel: thinkingProfile.level,
-          thinkingLevels: thinkingProfile.levels,
-          thinkingDefault: thinkingProfile.defaultLevel,
-          fastMode: s.fastMode === true || s.fastMode === false || s.fastMode === 'auto'
-            ? s.fastMode
-            : null,
-          verboseLevel: s.verboseLevel === 'on' || s.verboseLevel === 'full' || s.verboseLevel === 'off'
-            ? s.verboseLevel
-            : null,
-          traceLevel: typeof s.traceLevel === 'string' && s.traceLevel.trim()
-            ? s.traceLevel
-            : null,
-          responseUsage: typeof s.responseUsage === 'string' && s.responseUsage.trim()
-            ? s.responseUsage
-            : null,
-          reasoningLevel: s.reasoningLevel === 'on' || s.reasoningLevel === 'off' || s.reasoningLevel === 'stream'
-            ? s.reasoningLevel
-            : null,
-          totalTokens: s.totalTokens,
-          contextTokens: s.contextTokens,
-          compactionCount: s.compactionCount,
-          running: s.running ?? false,
-        }];
-      });
+      const sessions = rawSessions.map(projectOpenClawSessionForChat);
       // 即使会话列表为空也同步会话与默认值，保证配置变化后标题栏模型保持一致。
       setSessions(sessions, defaults, {
         completeSnapshot: sessionListSnapshot.complete,

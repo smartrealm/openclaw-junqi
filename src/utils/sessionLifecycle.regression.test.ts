@@ -29,8 +29,8 @@ function message(id: string, content: string): ChatMessage {
 
 function seedSession(activeSessionKey = SESSION_KEY): Session[] {
   const sessions: Session[] = [
-    { key: MAIN_KEY, label: 'Main' },
-    { key: SESSION_KEY, label: 'Worker' },
+    { key: MAIN_KEY, sessionId: 'main-session', label: 'Main' },
+    { key: SESSION_KEY, sessionId: 'worker-session', label: 'Worker' },
   ];
   useChatStore.setState({
     sessions,
@@ -210,7 +210,7 @@ describe('session lifecycle regression fixes', () => {
     const firstResponse = new Promise<unknown>((resolve) => { releaseFirst = resolve; });
     const calls: Array<string | null> = [];
     __setSessionRenameDepsForTest({
-      patchLabel: async (_key, label) => {
+      patchLabel: async (_key, _sessionId, label) => {
         calls.push(label);
         if (label === 'First') return firstResponse;
         return { ok: true, key: SESSION_KEY, entry: { label } };

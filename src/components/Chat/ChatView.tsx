@@ -58,6 +58,7 @@ import { groupExecutionProcessBlocks } from './executionProcessGrouping';
 import clsx from 'clsx';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import { isSessionDeleted } from '@/utils/sessionLifecycle';
+import { projectOpenClawSessionForChat } from '@/utils/openClawSessionProjection';
 import { resetSessionEverywhere } from '@/utils/sessionReset';
 import { startRecoverableTask } from '@/utils/recoverableTask';
 import { scheduleRecoverableSessionHistoryRefresh } from '@/services/chat/recoverableHistoryRefresh';
@@ -1055,12 +1056,19 @@ function ChatViewContent() {
             () => gateway.forkSessionAtMessage(sourceSessionKey, entryId, activeAgentId),
           );
           if (useChatStore.getState().activeSessionKey !== sourceSessionKey) return;
-          const state = useChatStore.getState();
-          state.addNativeSession({
-            key: result.sessionKey,
-            label: result.sessionKey,
-            ...(activeAgentId ? { agentId: activeAgentId } : {}),
-          });
+          const session = await gateway.describeSession(result.sessionKey);
+          const projected = projectOpenClawSessionForChat(session);
+          const gatewayProjection = {
+            ...projected,
+            category: projected.category ?? null,
+            unread: projected.unread ?? 0,
+            model: projected.model ?? undefined,
+          };
+          useChatStore.getState().addNativeSession(projected);
+          useGatewayDataStore.getState().setSessions([
+            ...useGatewayDataStore.getState().sessions.filter((item) => item.key !== projected.key),
+            gatewayProjection,
+          ]);
           setDraft(result.sessionKey, result.editorText ?? '');
           setPreparedAttachments(result.sessionKey, restoreOpenClawEditorImages(result.editorAttachments ?? []));
           await loadHistory(result.sessionKey, { force: true });
