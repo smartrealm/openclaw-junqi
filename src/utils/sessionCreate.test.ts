@@ -48,6 +48,17 @@ describe('createNativeSession', () => {
     );
     assert.equal(fork.activeLeafEntryId, undefined);
     assert.equal(fork.initialLabel, undefined);
+
+    const createdWithoutLabel = projectCreatedNativeSession({
+      key: 'agent:architect:without-label',
+      sessionId: 'without-label-id',
+      entry: { sessionId: 'without-label-id', createdAt: 2 },
+    }, {
+      agentId: 'architect',
+      label: '新会话',
+    });
+    assert.equal(createdWithoutLabel.label, '新会话');
+    assert.equal(createdWithoutLabel.initialLabel, '新会话');
   });
 
   it('does not commit a renderer session until Gateway confirms its identity', async () => {

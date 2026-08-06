@@ -33,6 +33,7 @@ export function projectCreatedNativeSession(
   input: CreateNativeSessionInput,
 ): Session {
   const entry = created.entry;
+  const label = entry.label ?? input.label;
   const createdAt = typeof entry.createdAt === 'number'
     ? entry.createdAt
     : typeof entry.updatedAt === 'number'
@@ -41,8 +42,8 @@ export function projectCreatedNativeSession(
   return {
     key: created.key,
     sessionId: created.sessionId,
-    label: entry.label ?? input.label,
-    ...(input.fork !== true && entry.label === input.label ? { initialLabel: input.label } : {}),
+    label,
+    ...(input.fork !== true && label === input.label ? { initialLabel: input.label } : {}),
     agentId: input.agentId,
     createdAt,
     ...(input.fork === true ? {} : { activeLeafEntryId: null }),
