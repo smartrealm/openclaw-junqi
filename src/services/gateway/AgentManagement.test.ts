@@ -44,3 +44,19 @@ test('reports a partial creation when the display-name update fails', async () =
       && error.displayName === '研究助手',
   );
 });
+
+test('leaves an ordinary Agent workspace undefined for Gateway resolution', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const manager = new OpenClawAgentManagement({
+    async request(method, params) {
+      calls.push({ method, params });
+      return { ok: true, agentId: 'research', name: 'research', workspace: '/tmp/research' };
+    },
+  });
+
+  await manager.create({ id: 'research' });
+
+  assert.deepEqual(calls, [
+    { method: 'agents.create', params: { name: 'research' } },
+  ]);
+});

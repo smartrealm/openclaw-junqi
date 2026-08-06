@@ -6,7 +6,6 @@ import {
   getSessionBucketKey,
   isSessionBucketKey,
   resolveExpandedSessionBuckets,
-  sessionTitle,
   sortSessionsByActivity,
 } from './sidebarUtils';
 
@@ -84,20 +83,4 @@ test('session bucket disclosure keeps the preferred bucket and reveals required 
   );
   assert.equal(isSessionBucketKey('today'), true);
   assert.equal(isSessionBucketKey('yesterday'), false);
-});
-
-test('session title preserves the Gateway label in every language', () => {
-  for (const label of ['New chat', '新会话', '新會話', 'Main Session']) {
-    assert.equal(
-      sessionTitle(sx({ key: 'agent:main:desktop-label', label }), 'A different first message'),
-      label,
-    );
-  }
-  assert.equal(
-    sessionTitle(
-      sx({ key: 'agent:main:desktop-created', label: '新会话', initialLabel: '新会话' }),
-      '使用这条提示作为会话名称。附加内容',
-    ),
-    '使用这条提示作为会话名称',
-  );
 });

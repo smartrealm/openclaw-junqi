@@ -19,14 +19,14 @@
 
 当前：侧栏固定创建到 `main`，创建去重忽略 label 和分叉语义。
 
-目标：所有普通新建入口按当前会话与 Gateway Agent roster 解析目标 Agent，并使用 `chat.newSessionLabel` 作为持久 session label。飞行期仅合并完全相同的规范化创建意图。
+目标：所有普通新建入口按当前会话与 Gateway Agent roster 解析目标 Agent，且不传持久 `label`，由 OpenClaw 按首条用户消息生成标题。`chat.newSessionLabel` 仅是本地空标题显示兜底。飞行期仅合并完全相同的规范化创建意图。
 
 验收：
 
 - [ ] 非 main 当前会话从侧栏新建仍属于该 Agent；
 - [ ] 不同 label 或不同 fork 语义的并发请求分别到达 Gateway；
 - [ ] 完全相同的重复点击只发出一次 Gateway 请求；
-- [ ] 普通创建的持久 label 在侧栏、标签栏与路由入口一致。
+- [ ] 普通创建请求不含 `label`；侧栏、标签栏与路由入口用同一本地化兜底文案展示空标题。
 
 ## BUG-NS-04：路由创建失败可恢复
 

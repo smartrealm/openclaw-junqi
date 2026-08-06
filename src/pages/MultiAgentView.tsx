@@ -94,6 +94,7 @@ function AgentCard({
   label?: string;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -110,8 +111,8 @@ function AgentCard({
       : null;
 
   const displayName = label || getSessionDisplayLabel(session, {
-    mainSessionLabel: 'Main Session',
-    genericSessionLabel: 'Session',
+    mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
+    genericSessionLabel: t('dashboard.session', 'Session'),
   });
 
   return (
@@ -413,8 +414,8 @@ export function MultiAgentViewPage() {
                     />
                     <span className="text-[13px] font-bold">
                       {selectedRunning?.label || getSessionDisplayLabel(selectedSession ?? { key: selectedKey ?? '' }, {
-                        mainSessionLabel: 'Main Session',
-                        genericSessionLabel: 'Session',
+                        mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
+                        genericSessionLabel: t('dashboard.session', 'Session'),
                       })}
                     </span>
                     <span

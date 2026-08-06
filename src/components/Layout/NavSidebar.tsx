@@ -18,7 +18,6 @@ import {
   isSessionBucketKey,
   resolveExpandedSessionBuckets,
   sessionActivityTime,
-  sessionTitle,
   sortSessionsByActivity,
   type SessionBucketKey,
 } from './sidebarUtils';
@@ -26,6 +25,7 @@ import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { createNativeSession } from '@/utils/sessionCreate';
 import { resolveNewSessionAgentId } from '@/utils/sessionLifecycle';
+import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import {
@@ -397,6 +397,11 @@ function WorkbenchPanel() {
     }
     return out;
   }, [messagesPerSession]);
+  const displaySessionTitle = useCallback((session: Session) => getSessionDisplayLabel(session, {
+    mainSessionLabel: t('agents.mainAgent', 'Main Agent'),
+    genericSessionLabel: t('chat.newSessionLabel'),
+    messageFallback: firstUserByKey[session.key],
+  }), [firstUserByKey, t]);
 
   const presentation = useMemo(
     () => partitionSessionsForPresentation(
@@ -513,7 +518,7 @@ function WorkbenchPanel() {
     if (!activity) return null;
     return (
       <SessionRowItem key={sx.key} session={sx} sessionKey={sx.key}
-        currentTitle={sessionTitle(sx, firstUserByKey[sx.key])} isActive={sx.key === activeKey}
+        currentTitle={displaySessionTitle(sx)} isActive={sx.key === activeKey}
         activity={activity} />
     );
   };
@@ -529,7 +534,6 @@ function WorkbenchPanel() {
         onClick={() => {
             void createNativeSession({
               agentId: newSessionAgentId,
-              label: t('chat.newSessionLabel'),
             }).then((result) => {
               if (result.ok) {
                 navigate('/chat');
@@ -669,9 +673,9 @@ function WorkbenchPanel() {
                     });
                   }}
                   className="min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:bg-aegis-hover/35 hover:text-aegis-text-secondary"
-                  title={sessionTitle(session, firstUserByKey[session.key])}
+                  title={displaySessionTitle(session)}
                 >
-                  {sessionTitle(session, firstUserByKey[session.key])}
+                  {displaySessionTitle(session)}
                 </button>
                 <button
                   type="button"
@@ -734,7 +738,7 @@ function WorkbenchPanel() {
                           const isSelected = item.kind === 'subagent'
                             ? location.pathname === '/chat' && activeKey === session.key
                             : routedBackgroundSessionKey === session.key;
-                          const title = sessionTitle(session, firstUserByKey[session.key]);
+                          const title = displaySessionTitle(session);
                           const workerAgentId = session.agentId || agentIdFromSessionKey(session.key) || 'main';
                           const parentSessionKey = parentSessionKeyForSession(session);
                           const parentAgentId = parentSessionKey

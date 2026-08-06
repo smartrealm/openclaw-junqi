@@ -36,18 +36,15 @@ describe('createNativeSession', () => {
         sessionId: session.sessionId,
         agentId: session.agentId,
         activeLeafEntryId: session.activeLeafEntryId,
-        initialLabel: session.initialLabel,
       },
       {
         key: CREATED.key,
         sessionId: CREATED.sessionId,
         agentId: 'architect',
         activeLeafEntryId: null,
-        initialLabel: 'Created',
       },
     );
     assert.equal(fork.activeLeafEntryId, undefined);
-    assert.equal(fork.initialLabel, undefined);
 
     const createdWithoutLabel = projectCreatedNativeSession({
       key: 'agent:architect:without-label',
@@ -55,10 +52,8 @@ describe('createNativeSession', () => {
       entry: { sessionId: 'without-label-id', createdAt: 2 },
     }, {
       agentId: 'architect',
-      label: '新会话',
     });
-    assert.equal(createdWithoutLabel.label, '新会话');
-    assert.equal(createdWithoutLabel.initialLabel, '新会话');
+    assert.equal(createdWithoutLabel.label, '');
   });
 
   it('does not commit a renderer session until Gateway confirms its identity', async () => {
@@ -69,7 +64,7 @@ describe('createNativeSession', () => {
       createRemote: () => remote,
       commit: (created, input) => {
         commits += 1;
-        return { key: created.key, sessionId: created.sessionId, label: input.label };
+        return { key: created.key, sessionId: created.sessionId, label: input.label ?? '' };
       },
     });
 
@@ -93,7 +88,7 @@ describe('createNativeSession', () => {
         commit: (created, input) => ({
           key: created.key,
           sessionId: created.sessionId,
-          label: input.label,
+          label: input.label ?? '',
         }),
       });
 
@@ -137,7 +132,7 @@ describe('createNativeSession', () => {
       commit: (created, input) => ({
         key: created.key,
         sessionId: created.sessionId,
-        label: input.label,
+        label: input.label ?? '',
       }),
     });
 
@@ -159,6 +154,25 @@ describe('createNativeSession', () => {
       { agentId: 'main', label: 'Branch', parentSessionKey: 'agent:main:parent' },
       { agentId: 'main', label: 'Branch', parentSessionKey: 'agent:main:parent', fork: true },
     ]);
+  });
+
+  it('omits a title for ordinary sessions and keeps a confirmed empty title local', async () => {
+    const requests: CreateNativeSessionInput[] = [];
+    setSessionCreateDependenciesForTests({
+      createRemote: async (input) => {
+        requests.push(input);
+        return {
+          ...CREATED,
+          entry: { sessionId: CREATED.sessionId, createdAt: 1 },
+        };
+      },
+    });
+
+    const result = await createNativeSession({ agentId: ' main ' });
+
+    assert.deepEqual(requests, [{ agentId: 'main' }]);
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.session.label, '');
   });
 
   it('rejects a transcript fork without a parent before calling Gateway', async () => {

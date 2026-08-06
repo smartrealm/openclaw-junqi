@@ -6,40 +6,52 @@ type SessionLike = {
   topic?: string;
   lastMessage?: string | { content?: string };
   label?: string;
-  initialLabel?: string;
 };
+
+export interface SessionDisplayLabelOptions {
+  readonly mainSessionLabel: string;
+  readonly genericSessionLabel: string;
+  /** Read-only transcript preview when the Gateway has not named the session. */
+  readonly messageFallback?: string;
+}
 
 function normalizeText(value?: string): string {
   return String(value ?? '').trim();
 }
 
+function summarizeFallback(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized || isWeakSessionTopic(normalized)) return '';
+  return normalized.slice(0, 32);
+}
+
 export function getSessionDisplayLabel(
   session: SessionLike | undefined,
-  options?: { mainSessionLabel?: string; genericSessionLabel?: string },
+  options: SessionDisplayLabelOptions,
 ): string {
   const key = normalizeText(session?.key);
-  const mainSessionLabel = options?.mainSessionLabel ?? 'Main Session';
-  const genericSessionLabel = options?.genericSessionLabel ?? 'Session';
+  const { mainSessionLabel, genericSessionLabel, messageFallback } = options;
 
   if (!key) return genericSessionLabel;
 
-  // Gateway label 是会话权威名称。仅 JunQi 创建时留下的默认名称在首条
-  // 消息出现后让位给消息主题；手动重命名和 Gateway 标签变化都会清除标记。
+  // Gateway label is authoritative. Presentation fallbacks never overwrite it.
   const label = normalizeText(session?.label);
-  const initialLabel = normalizeText(session?.initialLabel);
-  if (label && (!initialLabel || label !== initialLabel)) return label;
-
-  // 只有 Gateway 未提供 label 时才使用展示回退。
-  if (isAgentMainSession(key)) return mainSessionLabel;
+  if (label) return label;
 
   const topic = normalizeText(session?.topic);
   if (topic && !isWeakSessionTopic(topic)) return topic;
 
+  const explicitFallback = summarizeFallback(normalizeText(messageFallback));
+  if (explicitFallback) return explicitFallback;
+
   const rawLastMessage = session?.lastMessage;
-  const lastMessage = normalizeText(
+  const lastMessage = summarizeFallback(normalizeText(
     typeof rawLastMessage === 'string' ? rawLastMessage : rawLastMessage?.content,
-  );
-  if (lastMessage && !isWeakSessionTopic(lastMessage)) return lastMessage.slice(0, 32);
+  ));
+  if (lastMessage) return lastMessage;
+
+  // Only an unnamed canonical main session uses the agent-provided fallback.
+  if (isAgentMainSession(key)) return mainSessionLabel;
 
   const lastKeyPart = key.split(':').pop() || key;
   if (/^desktop-[a-z0-9-]+$/i.test(lastKeyPart)) return genericSessionLabel;

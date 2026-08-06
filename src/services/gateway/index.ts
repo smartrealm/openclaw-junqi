@@ -305,7 +305,7 @@ export async function abortAfterTaskCheckpoint<T>(
 
 export interface GatewayAgentCreateParams {
   name: string;
-  workspace: string;
+  workspace?: string;
   model?: string;
   emoji?: string;
   avatar?: string;

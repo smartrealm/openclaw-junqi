@@ -134,7 +134,10 @@ function deriveTimelineTasks({
     const metrics = activitySessionMetrics(activityRecord);
     out.push({
       id: `session:${session.key}`,
-      title: prompt.text || getSessionDisplayLabel(session as any, { mainSessionLabel: '主会话', genericSessionLabel: '会话' }),
+      title: prompt.text || getSessionDisplayLabel(session as any, {
+        mainSessionLabel: t('dashboard.mainSession', {}),
+        genericSessionLabel: t('dashboard.session', {}),
+      }),
       agent: agentNames.get(agentId) || agentId,
       model: modelName(session.model),
       runtime,

@@ -50,3 +50,15 @@ test('numeric timestamps in seconds are normalized to ISO milliseconds', () => {
   assert.ok(record);
   assert.equal(record.session.updatedAt, new Date(1_750_000_000_000).toISOString());
 });
+
+test('keeps an absent Gateway label empty instead of promoting the session key to a title', () => {
+  const record = normalizeUsageSession({ key: 'agent:main:desktop-history', topic: 'Local topic' });
+  assert.ok(record);
+  assert.equal(record.session.label, '');
+
+  const [merged] = mergeActivitySessions({
+    gatewaySessions: [{ key: 'agent:main:desktop-history' }],
+    chatSessions: [],
+  });
+  assert.equal(merged.session.label, '');
+});

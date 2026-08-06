@@ -1213,6 +1213,8 @@
       "sharedWorkspace": "复用默认工作区",
       "sharedWorkspaceHint": "与默认工作区共享文件和初始化上下文。",
       "suggestedWorkspace": "建议的专用路径",
+      "gatewayDefaultWorkspace": "由 Gateway 解析默认工作区",
+      "gatewayDefaultWorkspaceHint": "未指定路径时，Gateway 会为该智能体解析并初始化专用默认工作区。",
       "sharedWorkspaceWarning": "此智能体会与默认工作区共享文件和初始化说明。",
       "skillsInherit": "继承默认技能",
       "skillsInheritHint": "沿用全局智能体技能策略。",

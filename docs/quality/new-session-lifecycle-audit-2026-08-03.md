@@ -26,7 +26,28 @@
 
 Chat 标签栏和 Dashboard 已按当前会话解析 Agent，主导航侧栏却固定使用 `main`。这会让同一“新建会话”动作因入口不同而切换到另一个 Agent。
 
-目标是复用 `resolveNewSessionAgentId(activeSessionKey, agents)`，所有普通创建入口写入相同的持久会话 label。
+目标是复用 `resolveNewSessionAgentId(activeSessionKey, agents)`。普通创建不应写入持久会话 `label`；本地化的新会话文案只能作为标题生成前的界面兜底。
+
+### BUG-NS-02 后续修正（2026-08-06）：本地占位文案阻断官方标题生成
+
+本地官方 OpenClaw 源码提交 `1e3880352e6` 的
+`src/gateway/dashboard-session-title.ts` 中，`hasExplicitSessionName` 会把非空
+`entry.label` 视为显式名称，`maybeGenerateSessionTitle` 因而不会再根据首条用户消息生成标题。
+JunQi 曾向普通 `sessions.create` 请求传入 `chat.newSessionLabel`，使“新会话”成为持久名称，违背该契约。
+
+现已将普通创建改为只传 `agentId`；只有分叉等明确命名的会话才传 `label`。侧栏与标签栏通过
+翻译字典显示空标题占位，且绝不将其回写到 Gateway。回归测试覆盖三个普通创建入口不再传该字段，
+并保留分叉请求的显式标题。
+
+### BUG-NS-02 验证补充（2026-08-06）
+
+一次桌面端运行仍返回 `label already in use: 新会话`。该返回只能由旧构建向 Gateway 发送持久
+`label` 引起：当前 Gateway 协议将 `label` 定义为可选字段，且客户端、协调器和三个普通创建入口
+均只传 `agentId`。本次在 `OpenClawSessionLifecycleClient` 增加协议层回归测试，断言普通请求的
+完整参数严格等于 `{ agentId: "main" }`。
+
+因此，修复后的安装包不能复用仍在运行的旧前端资源；需重启到包含本次提交的桌面制品后重新验证。
+分叉仍保留显式名称，用户重命名继续通过 `sessions.patch` 处理。
 
 ### BUG-NS-03：飞行中的创建请求去重过宽
 

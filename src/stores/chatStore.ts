@@ -300,8 +300,6 @@ export interface Session {
   /** Ephemeral OpenClaw session identity. Changes after reset/new. */
   sessionId?: string;
   label: string;
-  /** JunQi 创建时写入的默认名称；仅用于首条消息前后的展示转换。 */
-  initialLabel?: string;
   /** OpenClaw user-defined session organization bucket. `null` means ungrouped. */
   category?: string | null;
   agentId?: string;
@@ -1403,9 +1401,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // User mutations are only applied locally after `sessions.patch`
         // confirms them, so no client-side shadow value is needed here.
         label: typeof session.label === 'string' ? session.label : '',
-        ...(previous?.initialLabel && session.label === previous.initialLabel
-          ? { initialLabel: previous.initialLabel }
-          : {}),
         pinned: session.pinned,
         archived: session.archived,
         ...(typeof session.category === 'string' && session.category.trim()
@@ -1604,9 +1599,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ? state
       : {
           sessions: coalesceSessionsByKey(updateSession(state.sessions, key, (session) =>
-            session.label === label && !session.initialLabel
-              ? session
-              : { ...session, label, initialLabel: undefined },
+            session.label === label ? session : { ...session, label },
           )),
         }
   )),

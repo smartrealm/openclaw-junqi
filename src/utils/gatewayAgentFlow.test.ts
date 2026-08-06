@@ -40,7 +40,7 @@ test('buildGatewayAgentCreatePayload emits the RPC create shape', () => {
   );
 });
 
-test('buildGatewayAgentCreatePayload uses the default workspace required by OpenClaw', () => {
+test('buildGatewayAgentCreatePayload keeps a configured default workspace explicit', () => {
   assert.deepEqual(
     buildGatewayAgentCreatePayload({
       id: 'worker',
@@ -50,6 +50,13 @@ test('buildGatewayAgentCreatePayload uses the default workspace required by Open
       id: 'worker',
       workspace: '/srv/openclaw/workspace',
     },
+  );
+});
+
+test('buildGatewayAgentCreatePayload omits an unresolved workspace for Gateway to resolve', () => {
+  assert.deepEqual(
+    buildGatewayAgentCreatePayload({ id: 'worker', workspace: '' }),
+    { id: 'worker' },
   );
 });
 

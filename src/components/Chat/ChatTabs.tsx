@@ -188,8 +188,9 @@ function sessionLabel(
   session: Session | undefined,
   key: string,
   agents: AgentInfo[],
-  mainAgentName: string = 'Main Agent',
-  cachedMessages?: Array<{ role: string; content: unknown }>,
+  mainAgentName: string,
+  cachedMessages: Array<{ role: string; content: unknown }> | undefined,
+  genericSessionLabel: string,
 ): string {
   const { agentId } = parseSessionKey(key);
   const agent = agents.find((a) => a.id === agentId);
@@ -205,7 +206,7 @@ function sessionLabel(
   };
   const label = getSessionDisplayLabel(merged, {
     mainSessionLabel: agentDisplayName,
-    genericSessionLabel: 'Session',
+    genericSessionLabel,
   });
   return compactTabLabel(label, 28);
 }
@@ -471,9 +472,11 @@ function NewSessionPicker({
     setPickerRenameError(null);
     // Pre-fill with the same display label the row shows so the user sees
     // exactly what they'll replace.
-    const display = sessionLabel(session, session.key, agents, mainDisplayName, messagesPerSession[session.key]);
+    const display = sessionLabel(
+      session, session.key, agents, mainDisplayName, messagesPerSession[session.key], t('chat.newSessionLabel'),
+    );
     setPickerRenameValue(display || session.label || '');
-  }, [agents, mainDisplayName, messagesPerSession]);
+  }, [agents, mainDisplayName, messagesPerSession, t]);
 
   const submitPickerRename = useCallback(async () => {
     if (pickerRenaming || !pickerRenamingKey) return;
@@ -688,6 +691,7 @@ function NewSessionPicker({
                   agents,
                   mainDisplayName,
                   messagesPerSession[session.key],
+                  t('chat.newSessionLabel'),
                 );
                 const fullLabel = session.topic
                   || (session.lastMessage && !isWeakSessionTopic(session.lastMessage) ? session.lastMessage : '')
@@ -1011,7 +1015,6 @@ export function ChatTabs() {
     try {
       const result = await createNativeSession({
         agentId,
-        label: t('chat.newSessionLabel'),
       });
       if (!result.ok) {
         useNotificationStore.getState().addToast('error', t('chat.newSession'), result.error);
@@ -1175,7 +1178,9 @@ export function ChatTabs() {
           const isMain = isAgentMainSession(key);
           const { isMainSession } = parseSessionKey(key);
           const session = sessions.find((s) => s.key === key);
-          const label = sessionLabel(session, key, agents, mainAgentName, messagesPerSession[key]);
+          const label = sessionLabel(
+            session, key, agents, mainAgentName, messagesPerSession[key], t('chat.newSessionLabel'),
+          );
           const fullLabel = session?.topic
             || (session?.lastMessage && !isWeakSessionTopic(session.lastMessage) ? session.lastMessage : '')
             || session?.label
@@ -1453,7 +1458,9 @@ export function ChatTabs() {
               onRequestRename={() => {
                 startRename(
                   session.key,
-                  sessionLabel(session, session.key, agents, mainAgentName, messagesPerSession[session.key]),
+                  sessionLabel(
+                    session, session.key, agents, mainAgentName, messagesPerSession[session.key], t('chat.newSessionLabel'),
+                  ),
                 );
               }}
               onOpenSession={(key) => openTab(key)}

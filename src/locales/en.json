@@ -1212,6 +1212,8 @@
       "sharedWorkspace": "Reuse default workspace",
       "sharedWorkspaceHint": "Shares files and bootstrap context with the default workspace.",
       "suggestedWorkspace": "Suggested dedicated path",
+      "gatewayDefaultWorkspace": "Gateway default workspace",
+      "gatewayDefaultWorkspaceHint": "Without a path, Gateway resolves and initializes this Agent's dedicated default workspace.",
       "sharedWorkspaceWarning": "This Agent will share files and bootstrap instructions with the default workspace.",
       "skillsInherit": "Inherit default skills",
       "skillsInheritHint": "Keep the global Agent skill policy.",

@@ -67,6 +67,9 @@ test('the add-agent flow supports a one-action base agent and explicit workspace
   assert.match(page, /Create base agent/);
   assert.match(page, /modelMode: 'inherit'/);
   assert.match(page, /Default fallback chain|Fallback chain/);
+  assert.match(page, /gatewayDefaultWorkspaceHint/);
+  assert.doesNotMatch(page, /if \(!payload\.workspace\)/);
+  assert.doesNotMatch(page, /newAgentWorkspaceMissing/);
 });
 
 test('agent skill failures have an explicit retry state', async () => {

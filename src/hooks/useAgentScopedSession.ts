@@ -32,7 +32,7 @@ export function useAgentScopedSession(): AgentScopedSessionState {
     const operation = ++operationRef.current;
     setError(null);
     setRetrying(true);
-    void createNativeSession({ agentId, label: t('chat.newSessionLabel') }).then((result) => {
+    void createNativeSession({ agentId }).then((result) => {
       if (operation !== operationRef.current) return;
       setRetrying(false);
       if (!result.ok) {

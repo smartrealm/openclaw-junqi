@@ -15,6 +15,7 @@ import {
 } from '@/services/gateway/voiceWakeTypes';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 
 interface JarvisVoiceSettingsPanelProps {
   settings: JarvisVoiceSettingsState;
@@ -145,8 +146,11 @@ export function JarvisVoiceSettingsPanel({ settings }: JarvisVoiceSettingsPanelP
     .filter((session) => isCanonicalVoiceWakeSessionKey(session.key))
     .map((session) => ({
       value: session.key,
-      label: session.label?.trim() || session.key,
-    })), [sessions]);
+      label: getSessionDisplayLabel(session, {
+        mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
+        genericSessionLabel: t('dashboard.session', 'Session'),
+      }),
+    })), [sessions, t]);
 
   const updateRoute = (index: number, update: (route: VoiceWakeRoute) => VoiceWakeRoute) => {
     setRoutingDraft((current) => current ? {

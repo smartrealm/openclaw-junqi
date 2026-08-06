@@ -39,15 +39,12 @@ export class OpenClawAgentManagement {
 
   async create(agent: GatewayAgentCreatePayload): Promise<Record<string, unknown>> {
     const workspace = agent.workspace?.trim();
-    if (!workspace) {
-      throw new Error('A workspace is required to create an OpenClaw agent.');
-    }
 
     // The official create RPC derives the id from `name`. Create with the
     // validated internal id, then persist the independent display name.
     const created = await this.client.request('agents.create', {
       name: agent.id,
-      workspace,
+      ...(workspace ? { workspace } : {}),
       ...(agent.model ? { model: agent.model } : {}),
     });
     const createdRecord = responseRecord(created);

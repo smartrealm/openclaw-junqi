@@ -1184,6 +1184,8 @@
       "sharedWorkspace": "重用預設工作區",
       "sharedWorkspaceHint": "與預設工作區共用檔案和初始化內容。",
       "suggestedWorkspace": "建議的專用路徑",
+      "gatewayDefaultWorkspace": "由 Gateway 解析預設工作區",
+      "gatewayDefaultWorkspaceHint": "未指定路徑時，Gateway 會為此智能體解析並初始化專用預設工作區。",
       "sharedWorkspaceWarning": "此智能體會與預設工作區共用檔案和初始化指示。",
       "skillsInherit": "繼承預設技能",
       "skillsInheritHint": "沿用全域智能體技能策略。",

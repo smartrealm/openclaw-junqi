@@ -9,16 +9,17 @@
 
 ## 当前行为
 
-JunQi 的新建入口以当前语言的 `chat.newSessionLabel` 作为创建请求的默认标签。旧展示逻辑按固定英文和简体中文正则把部分标签猜为占位符，导致“新会话”“New chat”“新會話”在不同界面得到不同结果。
+JunQi 普通新建入口不再向 `sessions.create` 发送默认标签。空标签仅在本地展示层使用已本地化的兜底文案。
 
 ## 目标行为
 
-Gateway label 保持权威。仅 JunQi 创建的空白会话默认 label 会在客户端投影中被显式标记；首条提示消息出现后，标签页和侧边栏使用该消息作为只读展示标题。该标记不属于 Gateway 协议，既不写入也不修改 Gateway。手动重命名或 Gateway 返回不同 label 时标记失效并原样展示 Gateway label。
-
-OpenClaw 创建响应允许缺失 `entry.label`；此时 JunQi 以本次请求的 label 作为最终展示值，并按该最终值判定默认名称来源，不能因响应字段缺失而漏掉展示转换。
+Gateway label 保持权威。任意非空 Gateway label 在所有页面原样展示；首条提示与本地语言不会覆盖它。OpenClaw 创建响应允许缺失 `entry.label`；此时 JunQi 保留空投影，仅使用本地化文案作为只读展示回退，不写入或修改 Gateway。
 
 ## 验收
 
-- [x] 简体中文、繁体中文和英文的新建默认标签均能在首条提示后显示消息标题。
-- [x] 非 JunQi 默认的 Gateway label 不会被客户端改写。
-- [x] Gateway 缺失 label 时仍保留原有展示回退。
+- [x] 普通创建请求不含 `label`。
+- [x] 任意非空 Gateway label 不会被客户端改写。
+- [x] Gateway 缺失 label 时仅使用本地展示回退。
+- [x] 侧栏、标签页、仪表盘、活动和时间线使用同一标签优先级。
+- [x] 活动聚合不会将 session key 写入 `label`。
+- [x] 所有展示兜底由调用页面的翻译函数提供，不含固定语言字符串。

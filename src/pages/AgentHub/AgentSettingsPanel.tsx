@@ -44,6 +44,7 @@ import { AgentBootstrapFilesPanel } from './AgentBootstrapFilesPanel';
 import type { OpenClawAgentBootstrapFile, OpenClawAgentBootstrapFileGet } from '@/services/gateway';
 import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import {
   readActiveOpenclawConfig,
   validateActiveOpenclawConfig,
@@ -791,7 +792,7 @@ export function AgentSettingsPanel({
       return key.startsWith(`agent:${agentId}:`);
     }).map((s: any) => ({
       key: s.key || s.sessionId || '',
-      label: s.label || s.displayName || s.key || '',
+      label: s.label || s.displayName || '',
       model: s.model || '',
       totalTokens: s.usage?.totalTokens ?? s.totalTokens ?? 0,
       running: false, // usage data is historical — never "running"
@@ -1695,7 +1696,10 @@ export function AgentSettingsPanel({
                                 {formatRelativeTime(latestSession.updatedAt)}
                               </span>
                               <span className="text-[9px] text-aegis-text-dim truncate">
-                                · {latestSession.label}
+                                · {getSessionDisplayLabel(latestSession, {
+                                  mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
+                                  genericSessionLabel: t('dashboard.session', 'Session'),
+                                })}
                               </span>
                             </div>
                           </div>

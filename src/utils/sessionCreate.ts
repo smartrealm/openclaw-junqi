@@ -7,7 +7,11 @@ import { sessionListMutationFence } from '@/utils/sessionListMutationFence';
 
 export interface CreateNativeSessionInput {
   readonly agentId: string;
-  readonly label: string;
+  /**
+   * Explicit title only. Omit it for ordinary sessions so OpenClaw can derive
+   * the title from the first user message.
+   */
+  readonly label?: string;
   readonly parentSessionKey?: string;
   /** Copy the parent transcript instead of only recording a parent relation. */
   readonly fork?: boolean;
@@ -33,7 +37,6 @@ export function projectCreatedNativeSession(
   input: CreateNativeSessionInput,
 ): Session {
   const entry = created.entry;
-  const label = entry.label ?? input.label;
   const createdAt = typeof entry.createdAt === 'number'
     ? entry.createdAt
     : typeof entry.updatedAt === 'number'
@@ -42,8 +45,7 @@ export function projectCreatedNativeSession(
   return {
     key: created.key,
     sessionId: created.sessionId,
-    label,
-    ...(input.fork !== true && label === input.label ? { initialLabel: input.label } : {}),
+    label: entry.label?.trim() ?? '',
     agentId: input.agentId,
     createdAt,
     ...(input.fork === true ? {} : { activeLeafEntryId: null }),
@@ -92,14 +94,14 @@ export function setSessionCreateDependenciesForTests(
 /** Creates a real Gateway session and only then exposes it to the desktop UI. */
 export function createNativeSession(input: CreateNativeSessionInput): Promise<CreateNativeSessionResult> {
   const agentId = input.agentId.trim();
-  const label = input.label.trim();
-  if (!agentId || !label) {
-    return Promise.resolve({ ok: false, error: 'agentId and label are required' });
+  const label = input.label?.trim();
+  if (!agentId) {
+    return Promise.resolve({ ok: false, error: 'agentId is required' });
   }
 
   const request: CreateNativeSessionInput = {
     agentId,
-    label,
+    ...(label ? { label } : {}),
     ...(input.parentSessionKey?.trim() ? { parentSessionKey: input.parentSessionKey.trim() } : {}),
     ...(input.fork === true ? { fork: true } : {}),
   };
@@ -108,7 +110,7 @@ export function createNativeSession(input: CreateNativeSessionInput): Promise<Cr
   }
 
   // A retry is duplicate work only when every protocol-visible part of its
-  // creation intent is identical. Different labels and fork semantics must
+  // creation intent is identical. Explicit labels and fork semantics must
   // remain separate Gateway operations.
   const inflightKey = JSON.stringify([
     request.agentId,

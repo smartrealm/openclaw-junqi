@@ -43,15 +43,16 @@ test('every new-session entry resolves the agent the same way', () => {
   assert.doesNotMatch(sidebar, /agentId: 'main'/);
 });
 
-test('normal creation uses one localised persistent label and forks request transcript copying', () => {
+test('ordinary creation leaves title generation to OpenClaw and forks keep an explicit title', () => {
   const route = readFileSync('src/hooks/useAgentScopedSession.ts', 'utf8');
   const picker = readFileSync('src/components/Chat/ChatTabs.tsx', 'utf8');
   const sidebar = readFileSync('src/components/Layout/NavSidebar.tsx', 'utf8');
   const actions = readFileSync('src/components/Chat/session-actions/SessionActionsMenu.tsx', 'utf8');
   for (const source of [route, picker, sidebar]) {
-    assert.match(source, /label: t\('chat\.newSessionLabel'\)/);
+    assert.doesNotMatch(source, /label: t\('chat\.newSessionLabel'\)/);
     assert.doesNotMatch(source, /label: '新会话'/);
   }
+  assert.match(actions, /label: t\('chat\.forkedSessionLabel'\)/);
   assert.match(actions, /parentSessionKey: session\.key,\s+fork: true/);
   for (const locale of ['zh', 'zh-TW', 'en']) {
     const bundle = JSON.parse(readFileSync(`src/locales/${locale}.json`, 'utf8'));

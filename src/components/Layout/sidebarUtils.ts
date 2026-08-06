@@ -93,32 +93,3 @@ export function resolveExpandedSessionBuckets(
   }
   return expanded;
 }
-
-export function sessionTitle(sx: Session, firstUserMessage?: string): string {
-  // Gateway label 是会话权威名称。仅 JunQi 创建的默认名称可在首条提示后
-  // 用消息摘要展示；手动重命名和 Gateway 标签变化均会清除该标记。
-  if (sx.label && sx.label.trim().length > 0 && sx.label !== sx.initialLabel) {
-    return sx.label.trim();
-  }
-  // Gateway 未提供 label 时，首条用户消息可作为只读展示回退。
-  // 该回退不会写回或覆盖 Gateway 会话条目。
-  // 首条用户消息是会话主题的直接摘要，截断以保持侧边栏行高稳定。
-  // 只取首句或首行，避免长粘贴内容撑高行高。
-  if (firstUserMessage && firstUserMessage.trim().length > 0) {
-    const trimmed = firstUserMessage.replace(/\s+/g, ' ').trim();
-    if (trimmed) {
-      // 在首个自然断句处或长度上限处截断。
-      const breakIdx = trimmed.search(/[。.!?！？\n]/);
-      const firstChunk = breakIdx > 0 ? trimmed.slice(0, breakIdx) : trimmed;
-      return firstChunk.length > 30 ? `${firstChunk.slice(0, 29)}…` : firstChunk;
-    }
-  }
-  // 依次使用 topic、会话 key 子段和智能体名称。
-  if (typeof sx.topic === 'string' && sx.topic.trim()) return sx.topic;
-  const parts = String(sx.key || '').split(':');
-  const agentId = parts.length >= 2 ? parts[1] : '';
-  const sub = parts.length >= 4 ? parts.slice(3).join(':') : '';
-  if (sub) return sub.length > 30 ? `${sub.slice(0, 28)}…` : sub;
-  if (agentId && agentId !== 'main') return agentId;
-  return sx.key;
-}

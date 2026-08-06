@@ -77,6 +77,21 @@ describe('OpenClawSessionLifecycleClient', () => {
     assert.equal(calls.length, 1);
   });
 
+  it('omits the optional label for an ordinary session', async () => {
+    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const client = new OpenClawSessionLifecycleClient(async (method, params) => {
+      calls.push({ method, params });
+      return response({ entry: { sessionId: SESSION_ID } }) as never;
+    });
+
+    await client.create({ agentId: ' main ' });
+
+    assert.deepEqual(calls, [{
+      method: 'sessions.create',
+      params: { agentId: 'main' },
+    }]);
+  });
+
   it('rejects an unconfirmed or identity-inconsistent response', () => {
     assert.throws(
       () => parseOpenClawCreatedSession({ ok: false }),

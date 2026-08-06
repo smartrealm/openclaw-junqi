@@ -119,7 +119,9 @@ function sessionFromRecord(record: DataRecord): Session | null {
   return {
     ...record,
     key,
-    label: nonEmptyString(record.label, record.displayName, record.topic, key) || key,
+    // Keep a missing Gateway label empty. The display layer owns key fallback;
+    // writing it here would make a technical key look like a user title.
+    label: nonEmptyString(record.label, record.displayName) || '',
     agentId: nonEmptyString(record.agentId, record.agent, key.split(':')[1]),
     model,
     totalTokens,
@@ -162,7 +164,7 @@ function normalizeSession(value: Session | SessionInfo): Session {
   return {
     ...record,
     key,
-    label: nonEmptyString(record.label, record.displayName, record.topic, key) || key,
+    label: nonEmptyString(record.label, record.displayName) || '',
   } as Session;
 }
 
@@ -189,7 +191,7 @@ export function mergeActivitySessions({
       ...(previous?.session || {}),
       ...session,
       key: session.key,
-      label: nonEmptyString(session.label, previous?.session.label, session.key) || session.key,
+      label: nonEmptyString(session.label, previous?.session.label) || '',
     } as Session;
     if (!merged.model && previous?.session.model) merged.model = previous.session.model;
     if (!(merged.totalTokens && merged.totalTokens > 0) && previous?.session.totalTokens) {

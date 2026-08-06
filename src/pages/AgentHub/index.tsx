@@ -310,7 +310,10 @@ function formatChannelBinding(t: ReturnType<typeof useTranslation>['t'], binding
   return accountId ? `${channelLabel} / ${accountId}` : channelLabel;
 }
 
-function parseSessions(raw: any[]): SessionInfo[] {
+function parseSessions(
+  raw: any[],
+  labels: { mainSessionLabel: string; genericSessionLabel: string },
+): SessionInfo[] {
   return raw.map((s) => {
     const key = s.key || '';
     const type = classifyAgentSessionKind(key);
@@ -318,7 +321,7 @@ function parseSessions(raw: any[]): SessionInfo[] {
     const agentId = parts[1] || 'main';
     const label = type === 'cron'
       ? (s.label || `cron:${parts[3]?.substring(0, 8) || '?'}`)
-      : getSessionDisplayLabel(s, { mainSessionLabel: 'main-session', genericSessionLabel: 'session' });
+      : getSessionDisplayLabel(s, labels);
     return { key, label, type, model: fmtModel(s.model), totalTokens: s.totalTokens || 0, contextTokens: s.contextTokens || 200000, running: !!s.running, updatedAt: s.updatedAt || 0, agentId };
   }).sort((a, b) => {
     if (a.running && !b.running) return -1;
@@ -733,7 +736,14 @@ export function AgentHubPage() {
   const skillList = useSkillsStore((s) => s.skills);
   const refreshSkills = useSkillsStore((s) => s.refresh);
 
-  const sessions = useMemo(() => parseSessions(rawSessions as any[]), [rawSessions]);
+  const sessionLabels = useMemo(() => ({
+    mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
+    genericSessionLabel: t('dashboard.session', 'Session'),
+  }), [t]);
+  const sessions = useMemo(
+    () => parseSessions(rawSessions as any[], sessionLabels),
+    [rawSessions, sessionLabels],
+  );
 
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
   const [expandedWorker, setExpandedWorker] = useState<string | null>(null);
@@ -897,14 +907,12 @@ export function AgentHubPage() {
   const newAgentWorkspace = newAgent.workspaceMode === 'shared'
     ? effectiveDefaultAgentWorkspace.trim()
     : newAgent.workspace.trim() || suggestedDedicatedWorkspace;
-  const newAgentWorkspaceMissing = !newAgentWorkspace;
   const newAgentModelMissing = newAgent.modelMode !== 'inherit' && !newAgent.model.trim();
   const newAgentFallbacksMissing = newAgent.modelMode === 'fallbacks' && newAgent.fallbacks.length === 0;
   const canCreateAgent = connected
     && !!normalizedNewAgentId
     && !newAgentIdInvalid
     && !newAgentIdExists
-    && !newAgentWorkspaceMissing
     && !newAgentModelMissing
     && !newAgentFallbacksMissing
     && !creatingAgent;
@@ -1006,10 +1014,6 @@ export function AgentHubPage() {
     if (!payload.id) return;
     if (!GATEWAY_AGENT_ID_RE.test(payload.id)) {
       setAgentFormError(t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'));
-      return;
-    }
-    if (!payload.workspace) {
-      setAgentFormError(t('agentHub.addForm.workspaceRequired', 'Choose a workspace or configure a default Agent workspace.'));
       return;
     }
     if (newAgentModelMissing) {
@@ -1477,10 +1481,7 @@ export function AgentHubPage() {
                               ? !!normalizedNewAgentId && !newAgentIdInvalid && !newAgentIdExists
                               : newAgentStep === 1
                                 ? !newAgentModelMissing && !newAgentFallbacksMissing
-                                : newAgentStep === 2
-                                  ? !newAgentWorkspaceMissing
-                                  : true;
-                            const workspaceErrorVisible = newAgentStep >= 2 && newAgentWorkspaceMissing;
+                                : true;
                             const modelErrorVisible = newAgentStep >= 1 && (newAgentModelMissing || newAgentFallbacksMissing);
                             return (
                           <div className="space-y-4">
@@ -1683,7 +1684,7 @@ export function AgentHubPage() {
                                 </div>
                                 <input
                                   disabled={creatingAgent || newAgent.workspaceMode === 'shared'}
-                                  placeholder={suggestedDedicatedWorkspace || effectiveDefaultAgentWorkspace || '/path/to/workspace'}
+                                  placeholder={suggestedDedicatedWorkspace || effectiveDefaultAgentWorkspace || t('agentHub.wizard.gatewayDefaultWorkspace')}
                                   value={newAgent.workspaceMode === 'shared' ? effectiveDefaultAgentWorkspace : (newAgent.workspace || suggestedDedicatedWorkspace)}
                                   onChange={(event) => {
                                     setAgentFormError(null);
@@ -1694,6 +1695,11 @@ export function AgentHubPage() {
                                 {newAgent.workspaceMode === 'dedicated' && suggestedDedicatedWorkspace && !newAgent.workspace.trim() && (
                                   <p className="text-[10px] leading-4 text-aegis-text-dim">
                                     {t('agentHub.wizard.suggestedWorkspace', 'Suggested dedicated path')}: <span className="font-mono text-aegis-text-secondary">{suggestedDedicatedWorkspace}</span>
+                                  </p>
+                                )}
+                                {newAgent.workspaceMode === 'dedicated' && !suggestedDedicatedWorkspace && !newAgent.workspace.trim() && (
+                                  <p className="text-[10px] leading-4 text-aegis-text-dim">
+                                    {t('agentHub.wizard.gatewayDefaultWorkspaceHint')}
                                   </p>
                                 )}
                                 {newAgent.workspaceMode === 'shared' && (
@@ -1783,7 +1789,7 @@ export function AgentHubPage() {
                                     : newAgent.modelMode === 'fallbacks'
                                       ? `${newAgent.model.trim()} + ${t('config.fallbackCount', '{{count}} fallbacks', { count: newAgent.fallbacks.length })}`
                                       : `${t('agentHub.wizard.modelStrict', 'Strict model')}: ${newAgent.model.trim() || t('config.notSet', 'Not set')}`],
-                                  [t('agentSettings.workspace', 'Workspace'), newAgentWorkspace || t('agentHub.inherited', 'Inherited')],
+                                  [t('agentSettings.workspace', 'Workspace'), newAgentWorkspace || t('agentHub.wizard.gatewayDefaultWorkspace')],
                                   [t('nav.agentSkills', 'Agent Skills'), newAgent.skillsMode === 'inherit'
                                     ? t('agentHub.wizard.skillsInherit', 'Inherit default skills')
                                     : selectedNewAgentSkills.length > 0
@@ -1799,7 +1805,7 @@ export function AgentHubPage() {
                               </div>
                             )}
 
-                            {(agentFormError || newAgentIdInvalid || newAgentIdExists || workspaceErrorVisible || modelErrorVisible || !connected) && (
+                            {(agentFormError || newAgentIdInvalid || newAgentIdExists || modelErrorVisible || !connected) && (
                               <div className="flex items-start gap-2 rounded-lg border border-aegis-danger/20 bg-aegis-danger/10 px-3 py-2 text-[11px] leading-relaxed text-aegis-danger">
                                 <AlertCircle size={13} className="mt-0.5 shrink-0" />
                                 <span>
@@ -1808,13 +1814,11 @@ export function AgentHubPage() {
                                       ? t('agentHub.addForm.notConnected', 'Gateway is not connected.')
                                         : newAgentIdExists
                                         ? t('agentHub.addForm.duplicateId', 'This agent ID already exists.')
-                                        : workspaceErrorVisible
-                                          ? t('agentHub.addForm.workspaceRequired', 'Choose a workspace or configure a default workspace before creating the agent.')
-                                          : modelErrorVisible
-                                            ? (newAgentFallbacksMissing
-                                              ? t('agentHub.wizard.fallbackRequired', 'Add at least one fallback to enable ordered failover.')
-                                              : t('agentHub.wizard.modelRequired', 'Choose a model for this Agent override.'))
-                                            : t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'))}
+                                        : modelErrorVisible
+                                          ? (newAgentFallbacksMissing
+                                            ? t('agentHub.wizard.fallbackRequired', 'Add at least one fallback to enable ordered failover.')
+                                            : t('agentHub.wizard.modelRequired', 'Choose a model for this Agent override.'))
+                                          : t('agentHub.addForm.invalidId', 'Use lowercase letters, numbers, hyphen, or underscore. Start with a letter or number.'))}
                                 </span>
                               </div>
                             )}

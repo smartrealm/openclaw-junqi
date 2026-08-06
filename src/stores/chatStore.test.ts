@@ -400,48 +400,6 @@ test('a sparse sessions.list row cannot erase a confirmed empty transcript leaf'
   );
 });
 
-test('新建默认标签只在 Gateway 保持相同名称时保留展示来源标记', () => {
-  const createdKey = 'agent:architect:created-label';
-  useChatStore.setState({
-    sessions: [{
-      key: createdKey,
-      sessionId: 'created-label-id',
-      agentId: 'architect',
-      label: '新会话',
-      initialLabel: '新会话',
-    }],
-    openTabs: [createdKey],
-    activeSessionKey: createdKey,
-  });
-
-  useChatStore.getState().setSessions([{
-    key: createdKey,
-    sessionId: 'created-label-id',
-    agentId: 'architect',
-    label: '新会话',
-  }]);
-  assert.equal(
-    useChatStore.getState().sessions.find((session) => session.key === createdKey)?.initialLabel,
-    '新会话',
-  );
-
-  useChatStore.getState().setSessionLabel(createdKey, '整理发布计划');
-  assert.equal(
-    useChatStore.getState().sessions.find((session) => session.key === createdKey)?.initialLabel,
-    undefined,
-  );
-
-  useChatStore.getState().setSessions([{
-    key: createdKey,
-    sessionId: 'created-label-id',
-    agentId: 'architect',
-    label: 'Gateway 标题',
-  }]);
-  const session = useChatStore.getState().sessions.find((item) => item.key === createdKey);
-  assert.equal(session?.label, 'Gateway 标题');
-  assert.equal(session?.initialLabel, undefined);
-});
-
 test('a sessions.list leaf or identity change remains authoritative over a confirmed empty leaf', () => {
   const createdKey = 'agent:architect:empty-session';
   useChatStore.setState({

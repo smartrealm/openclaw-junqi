@@ -79,9 +79,8 @@ export function buildGatewayAgentCreatePayload(
   };
   const name = String(input.name ?? '').trim();
   const model = String(input.model ?? '').trim();
-  // OpenClaw's official create RPC requires a workspace. An empty field means
-  // "use the configured default" in the JunQi wizard, regardless of whether
-  // the value came from the inherit checkbox or the review step.
+  // OpenClaw resolves an omitted workspace for the new Agent. JunQi supplies
+  // a path only when the user chose or entered one explicitly.
   const workspace = String(input.workspace ?? '').trim() || defaultWorkspace.trim();
   if (name) payload.name = name;
   if (model) payload.model = model;
