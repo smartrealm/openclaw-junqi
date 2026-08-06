@@ -53,6 +53,8 @@ import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
 import { OpenClawSessionOrganizationClient } from './OpenClawSessionOrganizationClient';
 import { OpenClawSessionGroupsClient } from './OpenClawSessionGroupsClient';
 import { OpenClawSessionLifecycleClient } from './OpenClawSessionLifecycleClient';
+import { listAllOpenClawSessions } from './OpenClawSessionListClient';
+import { parseOpenClawDescribedSession } from './OpenClawSessionProjection';
 import {
   OpenClawTaskLedgerClient,
   type OpenClawTaskListInput,
@@ -1449,7 +1451,9 @@ export const gateway = {
 
   // Sessions & Agents
   async getSessions(): Promise<GatewaySessionListResponse> {
-    return connection.request<GatewaySessionListResponse>('sessions.list', {});
+    return listAllOpenClawSessions(
+      (method, params) => connection.request(method, params),
+    );
   },
   async createSession(input: {
     agentId: string;
@@ -1461,7 +1465,11 @@ export const gateway = {
   },
   async describeSession(sessionKey: string) {
     const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
-    return connection.request('sessions.describe', { key: targetSessionKey });
+    return parseOpenClawDescribedSession(await connection.request('sessions.describe', {
+      key: targetSessionKey,
+      includeDerivedTitles: true,
+      includeLastMessage: true,
+    }));
   },
   async getEffectiveTools(sessionKey: string, agentId?: string): Promise<ToolsEffectiveResult> {
     const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
@@ -1815,20 +1823,20 @@ export const gateway = {
   async setSessionReasoning(level: 'on' | 'off' | 'stream' | null, sessionKey: string) {
     return sessionSettings.setReasoning(sessionKey, level);
   },
-  async setSessionLabel(label: string | null, sessionKey: string) {
-    return sessionSettings.setLabel(sessionKey, label);
+  async setSessionLabel(label: string | null, sessionKey: string, expectedSessionId: string) {
+    return sessionSettings.setLabel(sessionKey, expectedSessionId, label);
   },
-  async setSessionPinned(pinned: boolean, sessionKey: string) {
-    return sessionOrganization.setPinned(sessionKey, pinned);
+  async setSessionPinned(pinned: boolean, sessionKey: string, expectedSessionId: string) {
+    return sessionOrganization.setPinned(sessionKey, expectedSessionId, pinned);
   },
-  async setSessionUnread(unread: boolean, sessionKey: string) {
-    return sessionOrganization.setUnread(sessionKey, unread);
+  async setSessionUnread(unread: boolean, sessionKey: string, expectedSessionId: string) {
+    return sessionOrganization.setUnread(sessionKey, expectedSessionId, unread);
   },
-  async setSessionArchived(archived: boolean, sessionKey: string) {
-    return sessionOrganization.setArchived(sessionKey, archived);
+  async setSessionArchived(archived: boolean, sessionKey: string, expectedSessionId: string) {
+    return sessionOrganization.setArchived(sessionKey, expectedSessionId, archived);
   },
-  async setSessionCategory(category: string | null, sessionKey: string) {
-    return sessionOrganization.setCategory(sessionKey, category);
+  async setSessionCategory(category: string | null, sessionKey: string, expectedSessionId: string) {
+    return sessionOrganization.setCategory(sessionKey, expectedSessionId, category);
   },
   async listSessionGroups() {
     return sessionGroups.list();

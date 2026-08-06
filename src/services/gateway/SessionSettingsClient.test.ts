@@ -43,7 +43,7 @@ describe('SessionSettingsClient', () => {
     await client.setResponseUsage(SESSION_KEY, null);
     await client.setReasoning(SESSION_KEY, 'stream');
     await client.setReasoning(SESSION_KEY, null);
-    await client.setLabel(SESSION_KEY, 'Planning');
+    await client.setLabel(SESSION_KEY, 'session-main', 'Planning');
 
     assert.deepEqual(calls, [
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, model: 'openai/gpt-5.6' } },
@@ -60,7 +60,7 @@ describe('SessionSettingsClient', () => {
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, responseUsage: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, reasoningLevel: 'stream' } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, reasoningLevel: null } },
-      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, label: 'Planning' } },
+      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, expectedSessionId: 'session-main', label: 'Planning' } },
     ]);
   });
 

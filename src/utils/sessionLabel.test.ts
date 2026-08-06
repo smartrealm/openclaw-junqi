@@ -28,6 +28,12 @@ test('缺失 Gateway label 时才使用会话展示回退', () => {
   );
 });
 
+test('uses the official derived title and preview fields in their documented order', () => {
+  assert.equal(getSessionDisplayLabel({ key: 'agent:research:desktop-derived', derivedTitle: 'Derived title', displayName: 'Display name', lastMessagePreview: 'Preview' }, labels), 'Derived title');
+  assert.equal(getSessionDisplayLabel({ key: 'agent:research:desktop-derived', displayName: 'Display name', lastMessagePreview: 'Preview' }, labels), 'Display name');
+  assert.equal(getSessionDisplayLabel({ key: 'agent:research:desktop-derived', lastMessagePreview: 'Preview' }, labels), 'Preview');
+});
+
 test('uses the supplied transcript fallback before a canonical main-session fallback', () => {
   assert.equal(
     getSessionDisplayLabel(

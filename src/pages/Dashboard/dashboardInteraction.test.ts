@@ -63,7 +63,7 @@ test('quick actions expose real product routes in addition to compaction', () =>
   // tab picker. Assert the route shape and the shared resolver, not one agent.
   assert.match(dashboard, /\/chat\?agent=\$\{encodeURIComponent\(/);
   assert.match(dashboard, /&new=1/);
-  assert.match(dashboard, /resolveNewSessionAgentId\(activeSessionKey/);
+  assert.match(dashboard, /resolveNewSessionAgentId\(\s*activeSessionKey/);
   assert.match(dashboard, /navigate\('\/agents'\)/);
   assert.match(dashboard, /navigate\('\/analytics'\)/);
   assert.match(dashboard, /navigate\('\/skills'\)/);

@@ -31,9 +31,9 @@ export interface SessionActionsMenuProps {
   readonly className?: string;
 }
 
-function agentIdForSession(session: Session): string {
+function agentIdForSession(session: Session): string | null {
   if (session.agentId?.trim()) return session.agentId.trim();
-  return /^agent:([^:]+):/.exec(session.key)?.[1] ?? 'main';
+  return /^agent:([^:]+):/.exec(session.key)?.[1] ?? null;
 }
 
 function isUnread(session: Session): boolean {
@@ -142,9 +142,13 @@ export function SessionActionsMenu({
   };
 
   const forkSession = async () => {
+    const agentId = agentIdForSession(session);
+    if (!agentId) {
+      useNotificationStore.getState().addToast('error', t('chat.forkSession'), t('chat.agentUnavailable'));
+      return;
+    }
     const result = await createNativeSession({
-      agentId: agentIdForSession(session),
-      label: t('chat.forkedSessionLabel'),
+      agentId,
       parentSessionKey: session.key,
       fork: true,
     });

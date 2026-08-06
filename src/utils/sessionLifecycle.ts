@@ -177,25 +177,23 @@ export function createLatestRequestGate(): LatestRequestGate {
   };
 }
 
-export const FALLBACK_NEW_SESSION_AGENT_ID = 'main';
-
 /**
  * Which agent a new session should start on.
  *
  * There is no global "selected agent" anywhere in the app, so the only honest
- * context is the session the user is currently looking at. Falls back to the
- * main agent when that cannot be resolved, and never returns an agent the
- * gateway did not report - a stale key must not create a session on an agent
- * that no longer exists.
+ * context is the session the user is currently looking at. The Gateway's
+ * `agents.list.defaultId` is the only fallback when that cannot be resolved.
  */
 export function resolveNewSessionAgentId(
   activeSessionKey: string | null | undefined,
-  availableAgentIds: readonly string[] = [],
-): string {
+  availableAgentIds: readonly string[],
+  defaultAgentId: string | null | undefined,
+): string | null {
   const known = new Set(availableAgentIds.filter((id) => typeof id === 'string' && id.length > 0));
   const active = /^agent:([^:]+):/i.exec(normalizeSessionKey(String(activeSessionKey ?? '')))?.[1];
-  if (active && (known.size === 0 || known.has(active))) return active;
-  return FALLBACK_NEW_SESSION_AGENT_ID;
+  if (active && known.has(active)) return active;
+  const fallback = typeof defaultAgentId === 'string' ? defaultAgentId.trim() : '';
+  return fallback && known.has(fallback) ? fallback : null;
 }
 
 export function __resetSessionLifecycleForTest(): void {

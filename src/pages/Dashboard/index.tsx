@@ -131,6 +131,7 @@ export function DashboardPage() {
   const usageLoading = useGatewayDataStore((s) => s.loading.usage);
   const usageError   = useGatewayDataStore((s) => s.errors.usage);
   const agents       = useGatewayDataStore((s) => s.agents);
+  const defaultAgentId = useGatewayDataStore((s) => s.defaultAgentId);
   const connectionStartedAt = useGatewayDataStore((s) => s.connectionStartedAt);
 
   const [quickActionLoading, setQuickActionLoading] = useState<string | null>(null);
@@ -176,9 +177,7 @@ export function DashboardPage() {
       if (!session?.key) continue;
       byKey.set(session.key, {
         ...session,
-        label: typeof session.label === 'string' && session.label.trim()
-          ? session.label
-          : session.key,
+        label: typeof session.label === 'string' ? session.label : '',
       });
     }
     for (const session of chatSessions) {
@@ -866,13 +865,22 @@ export function DashboardPage() {
             {isFeatureEnabled('chat') && (
               <QuickAction icon={MessageSquarePlus} label={t('chat.newSession', 'New session')}
                 glowColor={themeColorVar('primary', 0.08)} bgColor={themeColorVar('primary', 0.1)} iconColor={themeColorVar('primary')}
-                onClick={() => navigate(
-                  // Was hard-coded to main, which silently disagreed with the
-                  // chat tab picker for anyone working on another agent.
-                  `/chat?agent=${encodeURIComponent(
-                    resolveNewSessionAgentId(activeSessionKey, agents.map((a: any) => a?.id)),
-                  )}&new=1`,
-                )} />
+                onClick={() => {
+                  const agentId = resolveNewSessionAgentId(
+                    activeSessionKey,
+                    agents.map((agent) => agent.id),
+                    defaultAgentId,
+                  );
+                  if (!agentId) {
+                    useNotificationStore.getState().addToast(
+                      'error',
+                      t('chat.newSession'),
+                      t('chat.agentUnavailable'),
+                    );
+                    return;
+                  }
+                  navigate(`/chat?agent=${encodeURIComponent(agentId)}&new=1`);
+                }} />
             )}
             {isFeatureEnabled('agents') && (
               <QuickAction icon={Bot} label={t('nav.agents', 'Agents')}

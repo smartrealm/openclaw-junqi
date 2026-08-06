@@ -35,11 +35,6 @@ import {
   withoutDeletedSessions,
 } from '@/utils/sessionLifecycle';
 import { preserveConfirmedEmptyTranscriptLeaf } from '@/utils/confirmedEmptyTranscript';
-import {
-  projectSessionOrganization,
-  removeSessionOrganization,
-  setSessionOrganizationTopic,
-} from '@/services/chat/sessionOrganization';
 import type { OpenClawChatSendTiming } from '@/services/gateway/chatSendTiming';
 import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
 import type { GatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
@@ -177,17 +172,12 @@ const resolveSessionTopic = (
   return stableCurrentTopic;
 };
 
-function resolveAndPersistSessionTopic(
+function resolveSessionProjectionTopic(
   session: Pick<Session, 'key' | 'sessionId' | 'topic'>,
   messages: ChatMessage[],
   fallbackText?: string,
 ): string | undefined {
-  const hydratedCurrentTopic = session.topic ?? projectSessionOrganization(session).topic;
-  const nextTopic = resolveSessionTopic(hydratedCurrentTopic, messages, fallbackText);
-  if (nextTopic && !isWeakSessionTopic(nextTopic)) {
-    setSessionOrganizationTopic(session, nextTopic);
-  }
-  return nextTopic;
+  return resolveSessionTopic(session.topic, messages, fallbackText);
 }
 
 const clearSessionAttentionState = (session: Session): Session => ({
@@ -195,9 +185,14 @@ const clearSessionAttentionState = (session: Session): Session => ({
   hasPendingCompletion: false,
 });
 
+const sessionReadWrites = new Set<string>();
+
 function persistSessionAsRead(session: Session | undefined): void {
-  if (!session) return;
-  void gateway.setSessionUnread(false, session.key).then(() => {
+  if (!session?.sessionId || unreadCount(session.unread) === 0) return;
+  const identity = `${session.key}#${session.sessionId}`;
+  if (sessionReadWrites.has(identity)) return;
+  sessionReadWrites.add(identity);
+  void gateway.setSessionUnread(false, session.key, session.sessionId).then(() => {
     useChatStore.setState((state) => ({
       sessions: updateSession(state.sessions, session.key, (item) => ({
         ...item,
@@ -205,7 +200,7 @@ function persistSessionAsRead(session: Session | undefined): void {
         hasPendingCompletion: false,
       })),
     }));
-  }).catch(() => undefined);
+  }).catch(() => undefined).finally(() => sessionReadWrites.delete(identity));
 }
 
 function unreadCount(value: number | boolean | undefined): number {
@@ -300,15 +295,21 @@ export interface Session {
   /** Ephemeral OpenClaw session identity. Changes after reset/new. */
   sessionId?: string;
   label: string;
+  /** OpenClaw 计算出的只读展示名称。 */
+  displayName?: string;
+  /** OpenClaw 从已确认 transcript 派生的标题。 */
+  derivedTitle?: string;
+  /** OpenClaw 返回的最近消息预览。 */
+  lastMessagePreview?: string;
   /** OpenClaw user-defined session organization bucket. `null` means ungrouped. */
   category?: string | null;
   agentId?: string;
   createdAt?: number | string;
   topic?: string;
   lastMessage?: string;
-  lastTimestamp?: string;
+  lastTimestamp?: string | number;
   lastActive?: string;
-  updatedAt?: string;
+  updatedAt?: string | number;
   unread?: number;
   hasPendingCompletion?: boolean;
   kind?: string;
@@ -961,7 +962,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return {
         sessions: updateSession(state.sessions, targetKey, (session) => ({
           ...session,
-          topic: resolveAndPersistSessionTopic(session, updated, session.lastMessage),
+          topic: resolveSessionProjectionTopic(session, updated, session.lastMessage),
         })),
         ...(isActive ? { messages: updated, renderBlocks: derived.blocks, responseGroups: derived.groups } : {}),
         messagesPerSession: {
@@ -1224,7 +1225,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return {
       sessions: updateSession(state.sessions, targetKey, (session) => ({
         ...session,
-        topic: resolveAndPersistSessionTopic(session, canonicalMessages, session.lastMessage),
+        topic: resolveSessionProjectionTopic(session, canonicalMessages, session.lastMessage),
       })),
       ...(isActive ? { messages: canonicalMessages, renderBlocks: derived.blocks, responseGroups: derived.groups } : {}),
       messagesPerSession: {
@@ -1307,7 +1308,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return {
       sessions: updateSession(state.sessions, key, (session) => ({
         ...session,
-        topic: resolveAndPersistSessionTopic(session, canonicalMessages, session.lastMessage),
+        topic: resolveSessionProjectionTopic(session, canonicalMessages, session.lastMessage),
       })),
       messagesPerSession: { ...state.messagesPerSession, [key]: canonicalMessages },
       _blocksCache: { ...state._blocksCache, [key]: derived.blocks },
@@ -1391,10 +1392,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const previous = previousByKey.get(session.key);
       const hasCachedMessages = Object.prototype.hasOwnProperty.call(retainedMessageCache, session.key);
       const cachedMessages = hasCachedMessages ? retainedMessageCache[session.key] ?? [] : [];
-      const organization = projectSessionOrganization(session);
-      const hydratedTopic = changedIdentityKeys.has(session.key)
-        ? undefined
-        : previous?.topic ?? organization.topic;
+      const hydratedTopic = changedIdentityKeys.has(session.key) ? undefined : previous?.topic;
       const merged: Session = {
         ...session,
         // OpenClaw's `sessions.list` response is authoritative for labels.
@@ -1407,8 +1405,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ? { groupId: session.category.trim() }
           : {}),
         topic: hasCachedMessages
-          ? resolveAndPersistSessionTopic({ ...session, topic: hydratedTopic }, cachedMessages, session.lastMessage)
-          : resolveAndPersistSessionTopic({ ...session, topic: hydratedTopic }, [], session.lastMessage),
+          ? resolveSessionProjectionTopic({ ...session, topic: hydratedTopic }, cachedMessages, session.lastMessage)
+          : resolveSessionProjectionTopic({ ...session, topic: hydratedTopic }, [], session.lastMessage),
         unread: unreadCount(session.unread),
         hasPendingCompletion: changedIdentityKeys.has(session.key)
           ? session.hasPendingCompletion ?? false
@@ -1460,7 +1458,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSessionIdentity: (key, sessionId, agentId) => {
     const previousSessionId = get().sessions.find((session) => session.key === key)?.sessionId;
     const changed = hasSessionIdentityChanged(previousSessionId, sessionId);
-    const organization = projectSessionOrganization({ key, sessionId });
     set((state) => ({
       ...(changed ? clearTranscriptStateForIdentityChanges(state, new Set([key])) : {}),
       sessions: upsertSession(state.sessions, key, (session) => ({
@@ -1469,7 +1466,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...(agentId ? { agentId } : {}),
         ...(changed ? {
           topic: undefined,
-          ...(organization.topic ? { topic: organization.topic } : {}),
           unread: 0,
           hasPendingCompletion: false,
           pinned: undefined,
@@ -1698,23 +1694,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   togglePinSession: async (key) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
-    if (!session) return;
+    if (!session?.sessionId) return;
     const pinned = !session.pinned;
-    await gateway.setSessionPinned(pinned, key);
+    await gateway.setSessionPinned(pinned, key, session.sessionId);
     set((state) => ({ sessions: updateSession(state.sessions, key, (item) => ({ ...item, pinned })) }));
   },
 
   setSessionArchived: async (key, archived) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
-    if (!session) return;
-    await gateway.setSessionArchived(archived, key);
+    if (!session?.sessionId) return;
+    await gateway.setSessionArchived(archived, key, session.sessionId);
     set((state) => ({ sessions: updateSession(state.sessions, key, (item) => ({ ...item, archived })) }));
   },
 
   setSessionUnread: async (key, unread) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
-    if (!session) return;
-    await gateway.setSessionUnread(unread, key);
+    if (!session?.sessionId) return;
+    await gateway.setSessionUnread(unread, key, session.sessionId);
     set((state) => ({
       sessions: updateSession(state.sessions, key, (item) => ({
         ...item,
@@ -1726,8 +1722,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setSessionCategory: async (key, category) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
-    if (!session) return;
-    const confirmedCategory = await gateway.setSessionCategory(category, key);
+    if (!session?.sessionId) return;
+    const confirmedCategory = await gateway.setSessionCategory(category, key, session.sessionId);
     set((state) => ({
       sessions: updateSession(state.sessions, key, (item) => ({
         ...item,
@@ -1899,8 +1895,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   removeSession: (key) => set((state) => {
     if (isAgentMainSession(key)) return state;
-    const deletedSession = state.sessions.find((session) => session.key === key);
-    if (deletedSession) removeSessionOrganization(deletedSession);
     const newTabs = state.openTabs.filter((t) => t !== key);
     if (newTabs.length === 0) newTabs.push(MAIN_SESSION);
     persistOpenTabs(newTabs);

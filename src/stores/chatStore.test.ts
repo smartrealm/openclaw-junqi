@@ -11,9 +11,6 @@ import { normalizeHistoryMessage } from '@/processing/normalizeHistoryMessage';
 import { gateway } from '@/services/gateway';
 import { OpenClawSessionGroupsUnsupportedError } from '@/services/gateway/OpenClawSessionGroupsClient';
 import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIdentityTransition';
-import {
-  __resetSessionOrganizationForTests,
-} from '@/services/chat/sessionOrganization';
 import { markSessionDeleted, restoreSessionKey } from '@/utils/sessionLifecycle';
 
 const MAIN_KEY = 'agent:main:main';
@@ -21,8 +18,8 @@ const OTHER_KEY = 'agent:worker:main';
 
 function seedSessions(activeSessionKey = MAIN_KEY) {
   const sessions: Session[] = [
-    { key: MAIN_KEY, label: 'Main', model: 'anthropic/claude-sonnet-4-6', thinkingLevel: 'low' },
-    { key: OTHER_KEY, label: 'Worker', model: 'openai/gpt-4o', thinkingLevel: 'medium' },
+    { key: MAIN_KEY, sessionId: 'session-main', label: 'Main', model: 'anthropic/claude-sonnet-4-6', thinkingLevel: 'low' },
+    { key: OTHER_KEY, sessionId: 'session-worker', label: 'Worker', model: 'openai/gpt-4o', thinkingLevel: 'medium' },
   ];
   useChatStore.setState({
     sessions,
@@ -727,7 +724,6 @@ test('opening or replacing the active tab does not create a local unread marker'
   const unreadKey = 'agent:worker:unread-target';
   const unreadSession = { key: unreadKey, sessionId: 'gateway-session-id', label: 'Unread target' };
   const mainSession = { key: MAIN_KEY, sessionId: 'main-gateway-session-id', label: 'Main' };
-  __resetSessionOrganizationForTests();
   useChatStore.setState({
     sessions: [mainSession, unreadSession],
     openTabs: [MAIN_KEY],
@@ -740,23 +736,23 @@ test('opening or replacing the active tab does not create a local unread marker'
 
   useChatStore.getState().closeTab(unreadKey);
   assert.equal(localStorage.getItem('junqi:session-organization:v1'), null);
-  __resetSessionOrganizationForTests();
 });
 
 test('session category updates only after Gateway confirms the patched entry', async () => {
   const setSessionCategory = gateway.setSessionCategory;
   const sessionKey = 'agent:main:project-alpha';
   Object.assign(gateway, {
-    setSessionCategory: async () => 'Projects',
+    setSessionCategory: async (_category: string | null, _key: string, _sessionId: string) => 'Projects',
   });
   useChatStore.setState({
-    sessions: [{ key: sessionKey, label: 'Project session' }],
+    sessions: [{ key: sessionKey, sessionId: 'gateway-project-alpha', label: 'Project session' }],
   });
 
   try {
     await useChatStore.getState().setSessionCategory(sessionKey, 'Projects');
     assert.deepEqual(useChatStore.getState().sessions, [{
       key: sessionKey,
+      sessionId: 'gateway-project-alpha',
       label: 'Project session',
       groupId: 'Projects',
       category: 'Projects',
@@ -771,16 +767,17 @@ test('explicit unread state follows the confirmed native session patch in both d
   const sessionKey = 'agent:main:unread-session';
   const calls: boolean[] = [];
   Object.assign(gateway, {
-    setSessionUnread: async (unread: boolean) => { calls.push(unread); },
+    setSessionUnread: async (unread: boolean, _key: string, _sessionId: string) => { calls.push(unread); },
   });
   useChatStore.setState({
-    sessions: [{ key: sessionKey, label: 'Unread session', unread: 2, hasPendingCompletion: true }],
+    sessions: [{ key: sessionKey, sessionId: 'gateway-unread-session', label: 'Unread session', unread: 2, hasPendingCompletion: true }],
   });
 
   try {
     await useChatStore.getState().setSessionUnread(sessionKey, false);
     assert.deepEqual(useChatStore.getState().sessions, [{
       key: sessionKey,
+      sessionId: 'gateway-unread-session',
       label: 'Unread session',
       unread: 0,
       hasPendingCompletion: false,

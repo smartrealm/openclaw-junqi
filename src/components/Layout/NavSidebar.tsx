@@ -373,8 +373,13 @@ function WorkbenchPanel() {
   const sessions = useChatStore((st) => st.sessions);
   const cronJobs = useGatewayDataStore((st) => st.cronJobs);
   const agents = useGatewayDataStore((st) => st.agents);
+  const defaultAgentId = useGatewayDataStore((st) => st.defaultAgentId);
   const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
-  const newSessionAgentId = resolveNewSessionAgentId(activeKey, agents.map((agent) => agent.id));
+  const newSessionAgentId = resolveNewSessionAgentId(
+    activeKey,
+    agents.map((agent) => agent.id),
+    defaultAgentId,
+  );
   const typingBySession = useChatStore((st) => st.typingBySession);
   const typingStartedAtBySession = useChatStore((st) => st.typingStartedAtBySession);
   const thinkingBySession = useChatStore((st) => st.thinkingBySession);
@@ -532,6 +537,7 @@ function WorkbenchPanel() {
       <SidebarPrimaryAction
         icon={<Plus size={16} />}
         onClick={() => {
+            if (!newSessionAgentId) return;
             void createNativeSession({
               agentId: newSessionAgentId,
             }).then((result) => {
@@ -546,6 +552,7 @@ function WorkbenchPanel() {
               );
             });
         }}
+        disabled={!newSessionAgentId}
       >
         {t('sidebar.newChat', '新建对话')}
       </SidebarPrimaryAction>

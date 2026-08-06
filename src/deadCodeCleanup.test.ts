@@ -46,6 +46,5 @@ test('unused Rust path and state helpers stay removed', () => {
 test('session titles do not return to a reusable-key local cache', () => {
   assert.doesNotMatch(source('src/stores/chatStore.ts'), /aegis:session-topic-prefs/);
   assert.doesNotMatch(source('src/utils/sessionDelete.ts'), /aegis:session-topic-prefs/);
-  assert.match(source('src/services/chat/sessionOrganization.ts'), /LEGACY_TOPIC_STORAGE_KEY/);
-  assert.match(source('src/services/chat/sessionOrganization.ts'), /setSessionOrganizationTopic/);
+  assert.equal(existsSync(new URL('src/services/chat/sessionOrganization.ts', root)), false);
 });

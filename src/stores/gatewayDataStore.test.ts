@@ -153,7 +153,9 @@ test('cron events refresh the authoritative list without manufacturing local run
 });
 
 test('Gateway polling decoders reject malformed responses instead of inventing empty data', () => {
-  assert.deepEqual(parseGatewayAgentList({ agents: [{ id: 'main' }] }), [{ id: 'main' }]);
+  assert.deepEqual(parseGatewayAgentList({ defaultId: 'main', mainKey: 'agent:main:main', scope: 'per-sender', agents: [{ id: 'main' }] }), {
+    agents: [{ id: 'main' }], defaultAgentId: 'main', mainSessionKey: 'agent:main:main', scope: 'per-sender',
+  });
   assert.equal(parseGatewayAgentList({ agents: [{ name: 'missing-id' }] }), null);
   assert.deepEqual(parseGatewayCronJobList([{ id: 'daily', agentId: 'ops' }]), [{ id: 'daily', agentId: 'ops' }]);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: 'daily', agentId: '' }] }), null);

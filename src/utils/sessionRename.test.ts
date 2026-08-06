@@ -10,6 +10,7 @@ const TEST_KEY = 'agent:test:rename-1';
 function seedSession(label = 'Original Label'): Session {
   const session: Session = {
     key: TEST_KEY,
+    sessionId: 'gateway-rename-1',
     label,
     lastMessage: 'previous turn',
     lastTimestamp: '2026-01-01T00:00:00.000Z',
@@ -23,7 +24,7 @@ function chatLabel(): string | undefined {
 }
 
 describe('applySessionRename', () => {
-  let patches: Array<{ key: string; label: string | null }>;
+  let patches: Array<{ key: string; sessionId: string; label: string | null }>;
   let warnings: unknown[][];
 
   beforeEach(() => {
@@ -32,8 +33,8 @@ describe('applySessionRename', () => {
     useChatStore.setState({ sessions: [] });
     useGatewayDataStore.setState({ sessions: [] });
     __setSessionRenameDepsForTest({
-      patchLabel: async (key, label) => {
-        patches.push({ key, label });
+      patchLabel: async (key, sessionId, label) => {
+        patches.push({ key, sessionId, label });
         return { ok: true, key, entry: label === null ? {} : { label } };
       },
       warn: (...args) => warnings.push(args),
@@ -47,7 +48,7 @@ describe('applySessionRename', () => {
     const result = await applySessionRename(TEST_KEY, '  After  ');
 
     assert.deepEqual(result, { ok: true, label: 'After' });
-    assert.deepEqual(patches, [{ key: TEST_KEY, label: 'After' }]);
+    assert.deepEqual(patches, [{ key: TEST_KEY, sessionId: 'gateway-rename-1', label: 'After' }]);
     assert.equal(chatLabel(), 'After');
     assert.equal(useGatewayDataStore.getState().sessions[0]?.label, 'After');
     assert.equal(useChatStore.getState().sessions[0]?.lastMessage, session.lastMessage);
@@ -59,15 +60,15 @@ describe('applySessionRename', () => {
     const result = await applySessionRename(TEST_KEY, '   ');
 
     assert.deepEqual(result, { ok: true, label: '' });
-    assert.deepEqual(patches, [{ key: TEST_KEY, label: null }]);
+    assert.deepEqual(patches, [{ key: TEST_KEY, sessionId: 'gateway-rename-1', label: null }]);
     assert.equal(chatLabel(), '');
   });
 
   test('uses the Gateway-confirmed label instead of assuming the requested value', async () => {
     seedSession('Before');
     __setSessionRenameDepsForTest({
-      patchLabel: async (key, label) => {
-        patches.push({ key, label });
+      patchLabel: async (key, sessionId, label) => {
+        patches.push({ key, sessionId, label });
         return { ok: true, key, entry: { label: 'Confirmed by Gateway' } };
       },
       warn: (...args) => warnings.push(args),
@@ -95,11 +96,11 @@ describe('applySessionRename', () => {
     assert.equal(warnings.length, 1);
   });
 
-  test('still sends a native mutation for a session not present in local state', async () => {
+  test('rejects a rename when the local session identity is unavailable', async () => {
     const result = await applySessionRename('agent:missing:session', 'Remote label');
 
-    assert.deepEqual(result, { ok: true, label: 'Remote label' });
-    assert.deepEqual(patches, [{ key: 'agent:missing:session', label: 'Remote label' }]);
+    assert.deepEqual(result, { ok: false, error: 'Session identity is unavailable' });
+    assert.deepEqual(patches, []);
   });
 
   test('rejects a missing session key without making a Gateway request', async () => {

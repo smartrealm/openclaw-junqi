@@ -64,15 +64,13 @@ export function SessionInspectionControl({ sessionKey, agentId }: SessionInspect
     }, 0);
   };
 
-  const addBranchToStores = (checkpoint: SessionCompactionCheckpoint, result: {
+  const addBranchToStores = (result: {
     key: string;
     sessionId: string;
     entry: { updatedAt: number };
   }) => {
     const normalizedAgentId = agentId.trim();
-    const label = t('chat.sessionInspection.branchLabel', {
-      checkpointId: checkpoint.checkpointId,
-    });
+    const label = '';
     useChatStore.getState().addNativeSession({
       key: result.key,
       sessionId: result.sessionId,
@@ -128,7 +126,7 @@ export function SessionInspectionControl({ sessionKey, agentId }: SessionInspect
         setActiveCheckpointId(checkpoint.checkpointId);
         try {
           const result = await branchCheckpoint(checkpoint.checkpointId);
-          addBranchToStores(checkpoint, result);
+          addBranchToStores(result);
           setOpen(false);
         } catch (cause) {
           actionError('branch', cause);
