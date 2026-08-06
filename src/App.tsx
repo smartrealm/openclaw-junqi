@@ -410,7 +410,9 @@ export default function App() {
       });
       boot.markStageCompleted('config', 'Sessions ready');
       initialSessionSnapshotSettledRef.current = true;
-      markInitialWorkspaceDataReady();
+      // 会话请求已经取得 OpenClaw 的权威首屏快照；智能体列表由后台轮询补齐，
+      // 不得让它的独立失败阻塞工作区进入。
+      markInitialWorkspaceDataReady(true);
       boot.markStageRunning('conversation', 'Warming recent conversation');
       const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
       void gateway.getHistory(sessionKey, 20, 8_000).then((result) => {

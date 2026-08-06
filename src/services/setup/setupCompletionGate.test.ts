@@ -6,7 +6,6 @@ function dependencies(overrides: Partial<Parameters<typeof validateSetupCompleti
   return {
     probeGateway: async () => true,
     requiresOnboarding: async () => false,
-    probeModel: async () => ({ ready: true, model: 'openai/gpt-5.6' }),
     ...overrides,
   };
 }
@@ -26,32 +25,15 @@ test('setup completion stops at an unavailable selected Gateway', async () => {
 });
 
 test('setup completion rejects a selected-runtime config that still requires onboarding', async () => {
-  let modelChecked = false;
   const result = await validateSetupCompletion(dependencies({
     requiresOnboarding: async () => true,
-    probeModel: async () => {
-      modelChecked = true;
-      return { ready: true };
-    },
   }));
 
   assert.deepEqual(result, { ready: false, reason: 'onboarding-required' });
-  assert.equal(modelChecked, false);
+  assert.equal(result.ready, false);
 });
 
-test('setup completion returns the live model diagnostic without treating Gateway health as model health', async () => {
-  const result = await validateSetupCompletion(dependencies({
-    probeModel: async () => ({ ready: false, detail: 'provider authorization failed' }),
-  }));
-
-  assert.deepEqual(result, {
-    ready: false,
-    reason: 'model-unavailable',
-    detail: 'provider authorization failed',
-  });
-});
-
-test('setup completion succeeds only after all three checks pass', async () => {
+test('setup completion follows the native Gateway and configuration gates', async () => {
   const calls: string[] = [];
   const result = await validateSetupCompletion({
     probeGateway: async () => {
@@ -62,12 +44,8 @@ test('setup completion succeeds only after all three checks pass', async () => {
       calls.push('config');
       return false;
     },
-    probeModel: async () => {
-      calls.push('model');
-      return { ready: true, model: 'openai/gpt-5.6' };
-    },
   });
 
-  assert.deepEqual(result, { ready: true, model: 'openai/gpt-5.6' });
-  assert.deepEqual(calls, ['gateway', 'config', 'model']);
+  assert.deepEqual(result, { ready: true });
+  assert.deepEqual(calls, ['gateway', 'config']);
 });

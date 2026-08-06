@@ -169,7 +169,9 @@ export async function resolveGatewayConnectionTarget(
     : sameSelectedRuntime
       ? await dependencies.getToken().catch(() => configured?.token ?? '')
       : '';
-  const deviceToken = request.useTokenOverride
+  // OpenClaw 共享 Gateway token 已能完成设备签名握手。此时提前读取独立设备 token
+  // 既不会改变握手参数，也会在 macOS 首次启动时额外触发 Keychain 授权。
+  const deviceToken = request.useTokenOverride || token
     ? ''
     : await deviceCredential(wsUrl, dependencies, configured);
   const httpUrl = wsUrl.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');

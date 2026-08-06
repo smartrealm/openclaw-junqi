@@ -39,7 +39,6 @@ export interface WizardSessionPorts {
   setupStep: SetupStep;
   report: (message: string, nextProgress?: number) => void;
   patchStep: (id: string, status: StepStatus, detail?: string) => void;
-  probeActiveRuntimeModel: () => Promise<{ ready: boolean; model?: string | null; detail?: string | null }>;
   resolveActiveRuntimeOnboardingRequirement: () => Promise<boolean>;
   updateOnboardingRequirement: (required: boolean) => void;
   appendSetupLog: (log: Omit<SetupLog, "ts"> & { ts?: number }) => void;
@@ -61,7 +60,6 @@ export function useWizardSession({
   setupStep,
   report,
   patchStep,
-  probeActiveRuntimeModel,
   resolveActiveRuntimeOnboardingRequirement,
   updateOnboardingRequirement,
   appendSetupLog,
@@ -279,26 +277,6 @@ export function useWizardSession({
         replaceSetupStep("error");
         return result;
       }
-      const modelProbe = await probeActiveRuntimeModel();
-      assertWizardOperationCurrent(operationId);
-      if (!modelProbe.ready) {
-        const message = t(
-          modelProbe.detail ? "setup.wizard.modelNotReadyWithDetail" : "setup.wizard.modelNotReady",
-          modelProbe.detail
-            ? "所选模型尚未通过实时验证：{{detail}}"
-            : "所选模型尚未通过实时验证，请继续完成 OpenClaw 配置。",
-          modelProbe.detail ? { detail: modelProbe.detail } : undefined,
-        );
-        updateOnboardingRequirement(true);
-        setWizardStep(null);
-        setWizardRecoveryRequired(false);
-        setWizardError(message);
-        setSetupError(message);
-        await refreshGatewayConnectionTarget();
-        assertWizardOperationCurrent(operationId);
-        replaceSetupStep("configure-openclaw");
-        return result;
-      }
       updateOnboardingRequirement(false);
       setWizardStep(null);
       setWizardError(null);
@@ -318,7 +296,7 @@ export function useWizardSession({
     report(result.step.title || result.step.message || t("setup.wizard.title", "配置 OpenClaw"), 82);
     replaceSetupStep("configure-openclaw");
     return result;
-  }, [appendSetupLog, assertWizardOperationCurrent, probeActiveRuntimeModel, refreshGatewayConnectionTarget, report, setGatewayRunning, setPostStorageStep, replaceSetupStep, setSetupError, t, updateOnboardingRequirement]);
+  }, [appendSetupLog, assertWizardOperationCurrent, refreshGatewayConnectionTarget, report, setGatewayRunning, setPostStorageStep, replaceSetupStep, setSetupError, t, updateOnboardingRequirement]);
 
   const recoverLostWizardSession = useCallback(async (
     client: OpenClawWizardClient,
@@ -326,13 +304,10 @@ export function useWizardSession({
     client.forgetSession();
     const structurallyIncomplete = await resolveActiveRuntimeOnboardingRequirement();
     if (!structurallyIncomplete) {
-      const modelProbe = await probeActiveRuntimeModel();
-      if (modelProbe.ready) {
-        return { done: true, status: "done" };
-      }
+      return { done: true, status: "done" };
     }
     return await client.start();
-  }, [probeActiveRuntimeModel, resolveActiveRuntimeOnboardingRequirement]);
+  }, [resolveActiveRuntimeOnboardingRequirement]);
 
   const recoverAfterGatewayHandoff = useCallback(async (
     operationId: number,
@@ -345,8 +320,7 @@ export function useWizardSession({
       return await client.resume();
     } catch (error) {
       if (!isOpenClawWizardSessionLost(error)) throw error;
-      // Wizard sessions are process-local. The official finalizer can replace
-      // that process after durable model/config metadata has already landed.
+      // 向导会话只存在于 Gateway 进程内；官方终结流程可能在配置持久化后替换该进程。
       return await recoverLostWizardSession(client);
     }
   }, [assertWizardOperationCurrent, recoverLostWizardSession, refreshGatewayConnectionTarget, waitForGatewayConnection]);
@@ -451,7 +425,7 @@ export function useWizardSession({
       ) {
         // 官方终态说明可能先于服务交接替换 Gateway 进程出现。确认请求丢失连接时，只能
         // 根据与提供方无关的终态语义恢复；`applyWizardResult` 仍会在进入就绪前核验所选
-        // Gateway 身份并执行实时模型探测。
+        // Gateway 身份和当前运行时配置。
         const structurallyIncomplete = await resolveActiveRuntimeOnboardingRequirement();
         assertWizardOperationCurrent(operationId);
         if (!structurallyIncomplete) {
@@ -513,8 +487,8 @@ export function useWizardSession({
         result = await wizardClientRef.current!.retry();
       } catch (error) {
         if (!isOpenClawWizardSessionLost(error)) throw error;
-        // 官方终态与服务交接会清除进程内向导会话。重试时先从当前运行时的持久化配置和
-        // 实时模型状态恢复，不能把已回收的 sessionId 当作新的用户错误。
+        // 官方终态与服务交接会清除进程内向导会话。重试时先从当前运行时的持久化配置
+        // 恢复，不能把已回收的 sessionId 当作新的用户错误。
         result = await recoverLostWizardSession(wizardClientRef.current!);
       }
       assertWizardOperationCurrent(operationId);

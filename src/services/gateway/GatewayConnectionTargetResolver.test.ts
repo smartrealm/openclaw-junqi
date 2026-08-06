@@ -37,15 +37,22 @@ function dependencies(
   };
 }
 
-test('selected runtime target combines its typed token with the device credential', async () => {
-  const target = await resolveGatewayConnectionTarget({}, dependencies());
+test('selected runtime token skips an unnecessary device credential lookup', async () => {
+  let credentialLookups = 0;
+  const target = await resolveGatewayConnectionTarget({}, dependencies({
+    migrateCredential: async () => {
+      credentialLookups += 1;
+      throw new Error('shared token must bypass device credential lookup');
+    },
+  }));
 
   assert.deepEqual(target, {
     wsUrl: 'ws://127.0.0.1:18789',
     httpUrl: 'http://127.0.0.1:18789',
     token: 'selected-runtime-token',
-    deviceToken: 'device-token',
+    deviceToken: '',
   });
+  assert.equal(credentialLookups, 0);
 });
 
 test('manual endpoint never inherits the selected runtime bootstrap token', async () => {
@@ -103,6 +110,7 @@ test('rotated selected-runtime device tokens keep the selected credential scope'
 test('legacy system credentials migrate through the shared target resolver', async () => {
   const deleted: Array<{ endpoint: string; scope: string }> = [];
   const target = await resolveGatewayConnectionTarget({}, dependencies({
+    getToken: async () => '',
     getDeviceCredential: async () => ({
       runtimeKey: 'endpoint', token: null, persistence: 'unsupported', migrated: false,
     }),

@@ -1,7 +1,7 @@
-//! 由操作系统凭据库支持的 Gateway 设备签名。
+//! 由应用私有状态持久化支持的 Gateway 设备签名。
 //!
-//! 渲染进程永远不会取得私钥。新建身份代表一个新的 OpenClaw 设备，仍可能需要
-//! 按 OpenClaw 的正常流程完成配对。
+//! 渲染进程永远不会取得私钥。设备身份文件只由 Rust 命令读取，Unix 平台使用
+//! 私有文件权限。新建身份代表一个新的 OpenClaw 设备，仍可能需要按官方流程完成配对。
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use ring::{
@@ -12,11 +12,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{future::Future, sync::OnceLock};
 
-use crate::commands::secret_store::{get_system_credential, store_system_credential};
+use crate::paths;
 
-const DEVICE_IDENTITY_SERVICE: &str = "junqi-desktop-gateway-device-identity";
-const DEVICE_IDENTITY_ACCOUNT: &str = "default";
-const DEVICE_IDENTITY_LABEL: &str = "JunQi Gateway device identity";
+const DEVICE_IDENTITY_FILE: &str = "gateway-device-identity.json";
 const MAX_TEXT_BYTES: usize = 512;
 const MAX_TOKEN_BYTES: usize = 64 * 1024;
 const MAX_SCOPES: usize = 16;
@@ -55,6 +53,13 @@ pub struct GatewayDeviceChallengeSignature {
 
 struct DeviceIdentityCache {
     key_pair: tokio::sync::OnceCell<Ed25519KeyPair>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredDeviceIdentity {
+    version: u8,
+    private_key: String,
 }
 
 impl DeviceIdentityCache {
@@ -148,29 +153,40 @@ fn load_key_pair(encoded: &str) -> Result<Ed25519KeyPair, String> {
     Ed25519KeyPair::from_pkcs8(&pkcs8).map_err(|error| format!("read device identity: {error}"))
 }
 
-async fn load_or_create_key_pair_from_system_store() -> Result<Ed25519KeyPair, String> {
-    if let Some(encoded) =
-        get_system_credential(DEVICE_IDENTITY_SERVICE, DEVICE_IDENTITY_ACCOUNT).await?
-    {
-        return load_key_pair(&encoded);
+async fn load_or_create_key_pair_from_app_data() -> Result<Ed25519KeyPair, String> {
+    let path = paths::app_config_dir().join(DEVICE_IDENTITY_FILE);
+    if path.exists() {
+        let raw = std::fs::read_to_string(&path)
+            .map_err(|error| format!("read device identity: {error}"))?;
+        let stored: StoredDeviceIdentity = serde_json::from_str(&raw)
+            .map_err(|error| format!("parse device identity: {error}"))?;
+        if stored.version != 1 {
+            return Err("device identity version is unsupported".to_string());
+        }
+        return load_key_pair(&stored.private_key);
     }
 
     let pkcs8 = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
         .map_err(|error| format!("generate device identity: {error}"))?;
     let encoded = URL_SAFE_NO_PAD.encode(pkcs8.as_ref());
-    store_system_credential(
-        DEVICE_IDENTITY_SERVICE,
-        DEVICE_IDENTITY_ACCOUNT,
-        DEVICE_IDENTITY_LABEL,
-        &encoded,
-    )
-    .await?;
+    let record = serde_json::json!({ "version": 1, "privateKey": encoded });
+    paths::atomic_write_text(
+        &path,
+        &serde_json::to_string(&record)
+            .map_err(|error| format!("serialize device identity: {error}"))?,
+    )?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|error| format!("protect device identity: {error}"))?;
+    }
     load_key_pair(&encoded)
 }
 
 async fn load_or_create_key_pair() -> Result<&'static Ed25519KeyPair, String> {
     device_identity_cache()
-        .load_or_try_initialize(load_or_create_key_pair_from_system_store)
+        .load_or_try_initialize(load_or_create_key_pair_from_app_data)
         .await
 }
 
@@ -252,7 +268,7 @@ mod tests {
         let second = cache
             .load_or_try_initialize(|| async {
                 calls.fetch_add(1, Ordering::SeqCst);
-                unreachable!("已成功加载的身份不得再次访问凭据库")
+                unreachable!("已成功加载的身份不得再次读取持久化状态")
             })
             .await
             .expect("cached identity load succeeds");

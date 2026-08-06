@@ -543,10 +543,7 @@ describe('Gateway credential security regression gates', () => {
     const handshake = await waitForSocketRequest(socket, 'connect');
     assert.deepEqual(handshake.params.scopes, ['operator.read', 'operator.write']);
     assert.deepEqual(handshake.params.auth, { token: 'daily-token' });
-    assert.deepEqual(savedDeviceTokens, [{
-      token: 'daily-device-token',
-      url: 'ws://127.0.0.1:18789',
-    }]);
+    assert.deepEqual(savedDeviceTokens, []);
 
     connection.disconnect();
     stopPolling();

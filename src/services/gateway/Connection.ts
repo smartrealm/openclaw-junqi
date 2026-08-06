@@ -804,8 +804,12 @@ export class GatewayConnection {
         }
         if (!this.transient && hello.authDeviceToken) {
           this.deviceToken = hello.authDeviceToken;
-          void this.persistDeviceCredential(this.url, hello.authDeviceToken)
-            .catch(() => {});
+          // 共享 token 已完成当前连接时，设备 token 只保留在进程内，避免首次进入
+          // 工作区又为独立 Keychain 项发起授权。无共享 token 的设备认证仍需持久化。
+          if (!this.token.trim()) {
+            void this.persistDeviceCredential(this.url, hello.authDeviceToken)
+              .catch(() => {});
+          }
         }
         this.connected = true;
         this.connecting = false;
@@ -849,10 +853,8 @@ export class GatewayConnection {
       { timeoutMs: this.connectTimeoutMs },
     );
 
-    // The challenge timestamp is part of the Gateway-signed device proof.
-    // Match OpenClaw's client precedence: try the explicit shared token first.
-    // A stored device token is sent as deviceToken only when no shared token is
-    // available; a successful shared-token handshake rotates it via hello-ok.
+    // 挑战时间戳属于 Gateway 设备签名证明。共享 token 优先；只有共享 token 不可用时
+    // 才发送已存设备 token。共享 token 握手返回的设备 token 仅保留在当前进程。
     const platform = await this.resolvePlatform().catch((): GatewayClientPlatform => 'unknown');
     if (!isCurrentGatewayHandshake(
       this.ws,

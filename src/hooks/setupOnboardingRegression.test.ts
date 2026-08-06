@@ -127,7 +127,7 @@ test('BUG-ONB-34 a failed cached installation validation blocks Gateway recovery
   assert.match(healthGate, /navigateSetup\(['"]detecting['"], ['"]replace['"]\)/);
 });
 
-test('BUG-ONB-37 dashboard completion revalidates Gateway, config, and model before committing the setup marker', () => {
+test('BUG-ONB-37 dashboard completion revalidates Gateway and config before committing the setup marker', () => {
   const entry = setupFlow.slice(
     setupFlow.indexOf('const enterDashboard = useCallback'),
     setupFlow.indexOf('const detectDocker = useCallback'),
@@ -136,7 +136,7 @@ test('BUG-ONB-37 dashboard completion revalidates Gateway, config, and model bef
   assert.match(entry, /validateSetupCompletion\(\{/);
   assert.match(entry, /probeGateway: \(\) => probeSelectedGateway\(\)\.catch\(\(\) => false\)/);
   assert.match(entry, /requiresOnboarding: resolveActiveRuntimeOnboardingRequirement/);
-  assert.match(entry, /probeModel: probeActiveRuntimeModel/);
+  assert.doesNotMatch(entry, /probeModel|probeActiveRuntimeModel/);
   assert.ok(entry.indexOf('validateSetupCompletion') < entry.indexOf('setSetupComplete(true)'));
   assert.match(entry, /replaceSetupStep\("gateway-stopped"\)/);
   assert.match(entry, /replaceSetupStep\("configure-openclaw"\)/);
@@ -491,7 +491,7 @@ test('BUG-ONB-18 unused prepare_gateway bridge is no longer part of the command 
   assert.doesNotMatch(setupCommand, /prepare_gateway/);
 });
 
-test('BUG-ONB-21 Ready requires the official live model probe', () => {
+test('BUG-ONB-21 Ready follows the native Gateway and configuration gates', () => {
   const completion = setupFlow.slice(
     setupFlow.indexOf('if (result.done || result.status === "done")'),
     setupFlow.indexOf('const recoverLostWizardSession'),
@@ -501,10 +501,9 @@ test('BUG-ONB-21 Ready requires the official live model probe', () => {
     setupFlow.indexOf('// Gateway startup is an installation transition'),
   );
 
-  assert.match(completion, /const modelProbe = await probeActiveRuntimeModel\(\)/);
-  assert.match(completion, /if \(!modelProbe\.ready\)/);
-  assert.ok(completion.indexOf('updateOnboardingRequirement(false)') > completion.indexOf('if (!modelProbe.ready)'));
-  assert.match(readyTransition, /onboardingRequired = !\(await probeActiveRuntimeModel\(\)\)\.ready/);
+  assert.doesNotMatch(completion, /probeActiveRuntimeModel|modelNotReady/);
+  assert.match(completion, /updateOnboardingRequirement\(false\)/);
+  assert.doesNotMatch(readyTransition, /probeActiveRuntimeModel|probeModel/);
 });
 
 test('BUG-ONB-25 lost terminal sessions reconcile observable completion before restart', () => {
@@ -513,9 +512,9 @@ test('BUG-ONB-25 lost terminal sessions reconcile observable completion before r
     setupFlow.indexOf('const startOfficialOnboarding'),
   );
   assert.match(recovery, /resolveActiveRuntimeOnboardingRequirement\(\)/);
-  assert.match(recovery, /probeActiveRuntimeModel\(\)/);
+  assert.doesNotMatch(recovery, /probeActiveRuntimeModel/);
   assert.match(recovery, /return \{ done: true, status: "done" \}/);
-  assert.ok(recovery.indexOf('return await client.start()') > recovery.indexOf('if (modelProbe.ready)'));
+  assert.ok(recovery.indexOf('return await client.start()') > recovery.indexOf('if \(!structurallyIncomplete\)'));
 });
 
 test('BUG-IW-04 wizard presentation stays within the installed strict schema', () => {
@@ -631,19 +630,9 @@ test('BUG-ONB-46 Gateway-owned progress is polled and local QR capture survives 
 });
 
 test('a superseded wizard submit releases its re-entry guard', () => {
-  // The wizard screen deliberately keeps its action clickable while a submit is
-  // still in flight once an error is showing (`wizardSubmitting && !wizardError`),
-  // and applyWizardResult reaches exactly that state: it sets the model-not-ready
-  // error and then awaits refreshGatewayConnectionTarget before submitWizardStep
-  // can reach its finally. Retrying there supersedes the submit, whose finally is
-  // gated on still being current and therefore never clears the guard. Ownership
-  // of the guard has to pass to the operation taking over, otherwise every later
-  // submit returns null and the wizard silently stops responding.
+  // 向导提交期间允许在错误状态下重试；接管操作必须同步释放旧提交的所有权，
+  // 否则旧请求的 finally 不会清理守卫，后续向导操作会永久失去响应。
   assert.match(setupPage, /disabled: flow\.wizardSubmitting && !flow\.wizardError/);
-  assert.match(
-    setupFlow,
-    /setWizardError\(message\);[\s\S]*?await refreshGatewayConnectionTarget\(\)/,
-  );
   assert.match(
     setupFlow,
     /const beginWizardOperation = useCallback\(\(\) => \{[\s\S]*?wizardSubmitInFlightRef\.current = false;[\s\S]*?return operationId;/,
