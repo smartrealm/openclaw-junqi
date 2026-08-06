@@ -24,7 +24,7 @@ interface NotificationState {
   addToast: (type: NotificationType, title: string, body: string) => void;
   /** Remove a toast by id (called on dismiss or auto-expire). */
   removeToast: (id: string) => void;
-  /** Remove every visible toast when a native privacy lock engages. */
+  /** 清除当前可见的临时提示。 */
   clearToasts: () => void;
 }
 

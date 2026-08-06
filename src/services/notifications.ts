@@ -5,7 +5,6 @@ import {
   sendNotification,
 } from '@tauri-apps/plugin-notification';
 import { debugWarn } from '@/utils/debugLog';
-import { isPrivacyLocked } from '@/privacy-lock/store';
 import {
   notifyPersistentNotificationsChanged,
   persistentNotificationRepository,
@@ -91,16 +90,12 @@ class NotificationService {
   notify(options: NotifyOptions): void {
     if (!this._enabled) return;
     if (options.dedupeKey && !this.rememberDedupeKey(options.dedupeKey)) return;
-    const locked = isPrivacyLocked();
-    const protectedOptions = locked
-      ? { ...options, title: 'JunQi', body: '' }
-      : options;
     const present = () => {
-      if (this._dndMode || locked) return;
-      this.present(protectedOptions);
+      if (this._dndMode) return;
+      this.present(options);
     };
 
-    void this.persist(protectedOptions).then((inserted) => {
+    void this.persist(options).then((inserted) => {
       if (inserted) present();
     }).catch(() => {
       // Persistence is unavailable in browser-only development. Preserve the
@@ -111,7 +106,7 @@ class NotificationService {
 
   /** 后端已持久化的事件只负责呈现，避免再次写入同一条通知。 */
   presentPersisted(level: string, title: string, body: string): void {
-    if (!this._enabled || this._dndMode || isPrivacyLocked()) return;
+    if (!this._enabled || this._dndMode) return;
     this.present({ type: notificationTypeFromPersistentLevel(level), title, body });
   }
 
@@ -174,7 +169,7 @@ class NotificationService {
 
   /** 设置页的主动测试可明确请求系统权限。 */
   testSystemNotification(title: string, body: string): void {
-    if (!this._enabled || this._dndMode || isPrivacyLocked()) return;
+    if (!this._enabled || this._dndMode) return;
     void this.showNativeNotification(title, body);
   }
 

@@ -43,6 +43,7 @@ specs/
 
 ## Quality
 
+- [JunQi 隐私锁能力移除](quality/2026-08-07-privacy-lock-removal.md)
 - [桌面原生通知投递](quality/2026-08-05-native-notification-delivery.md)
 - [统一文件预览呈现](quality/2026-08-05-unified-file-preview-surface.md)
 - [工作区首屏数据就绪](quality/2026-08-05-workspace-bootstrap-readiness.md)
@@ -93,7 +94,6 @@ specs/
 - [工作台可靠性](quality/2026-07-29-workspace-reliability.md)
 - [无引用代码与终端类型收敛](quality/2026-07-29-dead-code-convergence.md)
 - [加载指示器收敛](quality/2026-07-29-loading-indicator-convergence.md)
-- [JunQi 隐私锁](quality/2026-08-05-privacy-lock.md)
 - [Agent 活动视觉语言](quality/2026-08-05-agent-activity-visual-language.md)
 - [萌宠文字与聊天窗口恢复](quality/2026-07-29-pet-caption-and-chat-window-recovery.md)
 - [会话模型选择器与 OpenClaw 对齐](quality/2026-07-30-session-model-picker-openclaw-parity.md)

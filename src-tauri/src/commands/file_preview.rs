@@ -108,17 +108,9 @@ impl FilePreviewRegistry {
 
 #[tauri::command]
 pub fn create_file_preview_url(
-    app: tauri::AppHandle,
     path: String,
     registry: State<'_, FilePreviewRegistry>,
 ) -> CreateFilePreviewResult {
-    if crate::commands::privacy_lock::ensure_unlocked(&app).is_err() {
-        return CreateFilePreviewResult {
-            success: false,
-            url: None,
-            error: Some("privacy_locked".to_string()),
-        };
-    }
     match registry.create_preview_url(&path) {
         Ok(url) => CreateFilePreviewResult {
             success: true,

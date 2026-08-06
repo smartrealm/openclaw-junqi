@@ -68,12 +68,11 @@ earlyBootstrap();
   const { i18nReady } = await import('./i18n');
   await i18nReady;
   await import('@/styles/index.css');
-  const [React, ReactDOM, ErrorBoundary, Tooltip, PrivacyLock] = await Promise.all([
+  const [React, ReactDOM, ErrorBoundary, Tooltip] = await Promise.all([
     import('react'),
     import('react-dom/client'),
     import('@/components/shared/ErrorBoundary'),
     import('@/components/ui/tooltip'),
-    import('@/privacy-lock/PrivacyLockGate'),
   ]);
 
   // Auxiliary windows share the SPA entry but use deliberately lightweight
@@ -100,18 +99,12 @@ earlyBootstrap();
             ? (await import('./pages/TerminalWindowRoot')).default
             : (await import('./App')).default;
 
-  const compactLock = windowLabel === 'pet'
-    || windowLabel === 'dynamic-island'
-    || windowLabel === 'quickchat';
   ReactDOM.createRoot(document.getElementById('app-root')!).render(
     React.createElement(React.StrictMode, null,
       React.createElement(ErrorBoundary.ErrorBoundary, null,
-        React.createElement(PrivacyLock.PrivacyLockGate, {
-          compact: compactLock,
-          children: React.createElement(Tooltip.TooltipProvider, {
-            delayDuration: 350,
-            children: React.createElement(Root),
-          }),
+        React.createElement(Tooltip.TooltipProvider, {
+          delayDuration: 350,
+          children: React.createElement(Root),
         })
       )
     )

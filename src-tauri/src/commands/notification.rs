@@ -15,7 +15,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationItem {
@@ -272,11 +272,7 @@ pub fn push_local_notification(
     let Ok(result) = persist_notification(create_notification(level, title, body, url)) else {
         return;
     };
-    if !result.inserted
-        || app
-            .state::<super::privacy_lock::PrivacyLockState>()
-            .is_locked()
-    {
+    if !result.inserted {
         return;
     }
     let _ = app.emit("junqi:notification-created", result);

@@ -19,7 +19,6 @@ fn handoffs() -> &'static Mutex<HashMap<String, serde_json::Value>> {
 
 #[tauri::command]
 pub fn open_terminal_window(app: AppHandle, handoff: serde_json::Value) -> Result<String, String> {
-    crate::commands::privacy_lock::ensure_unlocked(&app)?;
     let label = format!(
         "terminal-{}",
         TERMINAL_WINDOW_SEQUENCE.fetch_add(1, Ordering::Relaxed)

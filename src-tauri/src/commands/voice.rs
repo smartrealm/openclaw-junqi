@@ -47,17 +47,6 @@ fn stop_and_discard_recording(rec: ActiveRecording) {
     let _ = fs::remove_file(path);
 }
 
-pub fn stop_recording_for_privacy_lock() -> Result<(), String> {
-    let recording = RECORDER
-        .lock()
-        .map_err(|_| "voice_recording_state_unavailable".to_string())?
-        .take();
-    if let Some(recording) = recording {
-        stop_and_discard_recording(recording);
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub fn voice_start_recording() -> Result<serde_json::Value, String> {
     // 启动事务全程持有槽位，保证并发停止只能处理随后安装的同一工作线程。
