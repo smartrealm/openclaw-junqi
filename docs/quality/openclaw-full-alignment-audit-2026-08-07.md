@@ -152,9 +152,9 @@ Gateway schema/`models.list` 的可验证能力继续收敛；Gateway 未返回�
 安装可以按官方参数或平台条件跳过。服务安装跳过后，JunQi 只能展示“未由 OpenClaw 服务托管”，不能
 声称后台常驻已完成。
 
-**JunQi 准入条件**：进入工作台前仍需核验选定 runtime 的认证 Gateway、当前配置快照，以及官方
-`openclaw.setup.verify` 的当前默认 Agent 推理路由。该 RPC 只验证 primary route；fallback 列表存在
-不能证明 primary 可用，也不能由客户端静默改写配置或自动提升 fallback。
+**JunQi 准入条件**：进入工作台前必须核验选定 runtime 的认证 Gateway 和当前配置快照。若 Gateway 提供官方
+`openclaw.setup.verify`，还必须以其结果核验当前默认 Agent 推理路由；该 RPC 不可用时保留模型待核验状态，
+不能伪报 primary 可用，也不能由客户端静默改写配置或自动提升 fallback。
 
 **本机复现（2026-08-07）**：Gateway 服务已加载运行，RPC 身份为 `operator` 且具备 `operator.admin`；
 选定 Gateway 对 `openclaw.setup.verify` 与 `models.probe` 均返回 `INVALID_REQUEST: unknown method`。同日核对的
@@ -178,9 +178,9 @@ dashboard session；无初始 turn 的非 fork 会话不加载旧历史，首发
 - Provider 模板和新增 Provider 编辑器尚未完全替换为官方 Wizard 或 Gateway schema 驱动的入口；当前
   模型目录和保存控制面已经对齐，但该编辑入口仍需继续核验。
 - 官方 Wizard 的可选步骤由 Gateway 返回的步骤和 `installDaemon` 结果决定，JunQi 不添加本地跳过规则；
-  当前完成门禁仍要求选定 Gateway、配置状态和官方 `openclaw.setup.verify` 的实时模型验证。模型验证失败和
-  官方验证方法不可用是不同状态，前者提示修正模型或凭据，后者提示升级或切换支持该官方能力的 Gateway；两者
-  均不得伪造安装成功或自动重跑 Wizard。
+  当前完成门禁要求选定 Gateway 和配置状态，且在官方 `openclaw.setup.verify` 可用时要求实时模型验证。模型验证
+  失败和官方验证方法不可用是不同状态：前者提示修正模型或凭据并阻断进入，后者保留待核验警告并允许进入；两者
+  均不得伪造模型已验证或自动重跑 Wizard。
 - 系统凭据授权已移除旧迁移访问，但 macOS Keychain、Windows Credential Manager 和 Linux Secret
   Service 的真实授权次数仍需在各平台安装包中实测。
 - 安装运行时及逐平台真实验收尚未完成，不能据此宣布全局完成。

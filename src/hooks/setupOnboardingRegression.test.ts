@@ -73,8 +73,12 @@ test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway r
   assert.match(completion, /await probeSelectedGateway\(\)/);
   assert.match(completion, /verification\.status === "unavailable"/);
   assert.match(completion, /setup\.wizard\.inferenceVerificationUnavailable/);
-  assert.match(completion, /replaceSetupStep\("error"\)/);
-  assert.doesNotMatch(completion, /handoffError[\s\S]*level: "warn"/);
+  assert.match(completion, /level: "warn"/);
+  const unavailableBranch = completion.slice(
+    completion.indexOf('if (verification.status === "unavailable")'),
+    completion.indexOf('if (verification.status === "failed")'),
+  );
+  assert.doesNotMatch(unavailableBranch, /throw new Error/);
 });
 
 test('BUG-ONB-34 cached setup validates installation before Gateway recovery', () => {
@@ -144,7 +148,7 @@ test('BUG-ONB-37 dashboard completion revalidates Gateway and config before comm
   assert.ok(entry.indexOf('validateSetupCompletion') < entry.indexOf('setSetupComplete(true)'));
   assert.match(entry, /replaceSetupStep\("gateway-stopped"\)/);
   assert.match(entry, /replaceSetupStep\("configure-openclaw"\)/);
-  assert.match(entry, /completion\.reason === "inference-verification-unavailable"/);
+  assert.match(entry, /completion\.verification\.status === "unavailable"/);
   assert.match(entry, /replaceSetupStep\("gateway-ready"\)/);
   assert.match(entry, /dashboardEntryInFlightRef\.current/);
 });

@@ -136,7 +136,7 @@
       </svg>
     </div>
     <div class="cards">
-      <div class="card"><p class="card-kicker">TRUST MODEL</p><h3>安装完成不等于可进入工作台</h3><ul><li>必须验证选定 Gateway 的运行模式与身份</li><li>必须完成认证或管理员配对</li><li>默认模型需要官方实时验证成功；方法不可用时保持待核验，不误报凭据错误</li></ul></div>
+      <div class="card"><p class="card-kicker">TRUST MODEL</p><h3>安装完成不等于模型已验证</h3><ul><li>必须验证选定 Gateway 的运行模式与身份</li><li>必须完成认证或管理员配对</li><li>官方实时验证可用时必须通过；方法不可用时保留待核验并允许进入工作台</li></ul></div>
       <div class="card"><p class="card-kicker">PERSISTENCE</p><h3>两类持久状态</h3><ul><li>Rust Bootstrap：目录、runtime、迁移事务</li><li>Renderer localStorage：setup-done 与 UI 偏好</li></ul></div>
       <div class="card"><p class="card-kicker">INSTALL LATENCY</p><h3>最短安全等待</h3><ul><li>Node release index 与 checksum authority 并发解析</li><li>现有环境、npm cache 与 SHA-256 验证的 runtime 下载缓存优先复用</li><li>Windows x86 复用稳定 MinGit fallback，缺失才下载；完整性与事务门禁不省略</li></ul></div>
       <div class="card"><p class="card-kicker">RECOVERY</p><h3>失败与重装残留保守恢复</h3><ul><li>目录事务与运行模式切换可恢复或回滚</li><li>Windows 半安装只有在 Scheduled Task / 登录项不存在、目标端口空闲、无 managed child 且无 pending recovery 时继续</li><li>残留服务、未知监听或探测失败均不停止、不覆盖，先恢复 OpenClaw 后执行官方所有权验证</li></ul></div>

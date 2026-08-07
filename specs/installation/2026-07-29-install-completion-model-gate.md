@@ -6,10 +6,10 @@ Date: 2026-07-29
 
 - [x] Setup completion checks the selected Gateway again in the final action.
 - [x] Setup completion re-reads the selected-runtime onboarding requirement.
-- [x] Setup completion repeats the live active-model probe.
-- [x] A failed check cannot write the setup-complete marker.
+- [x] Gateway 提供官方实时模型验证时，Setup completion repeats the live active-model probe.
+- [x] 官方实时模型验证明确失败时不能写入 setup-complete marker；官方方法不可用时保留待核验状态，不能伪报模型成功或阻断已完成的官方配置。
 - [x] Gateway failure routes to Gateway recovery.
-- [x] Config or model failure routes to official OpenClaw configuration.
+- [x] Config or official model verification failure routes to official OpenClaw configuration.
 - [x] The gate is a small injected service with behavior tests, not more inline
       branching in the setup hook.
 - [x] Wizard start, next, and status results reject unknown top-level fields.

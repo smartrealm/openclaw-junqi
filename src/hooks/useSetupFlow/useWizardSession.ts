@@ -269,12 +269,18 @@ export function useWizardSession({
         }
         const verification = await verifyConfiguredInference();
         if (verification.status === "unavailable") {
-          throw new Error(t(
-            "setup.wizard.inferenceVerificationUnavailable",
-            "OpenClaw 配置已完成，但当前 Gateway 不支持官方实时模型验证。JunQi 无法确认默认模型是否可用，请升级或切换到支持该官方能力的 Gateway 后再验证。",
-          ));
+          // 稳定版 Gateway 可能没有实时验证 RPC；记录待核验状态，不阻断官方向导完成。
+          appendSetupLog({
+            source: "setup",
+            step: "gateway",
+            message: t(
+              "setup.wizard.inferenceVerificationUnavailable",
+              "OpenClaw 配置已完成，但当前 Gateway 未提供官方实时模型验证。模型可用性暂未核验。",
+            ),
+            level: "warn",
+          });
         }
-        if (verification.status !== "verified") {
+        if (verification.status === "failed") {
           throw new Error(t(
             "setup.wizard.inferenceUnverified",
             "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",

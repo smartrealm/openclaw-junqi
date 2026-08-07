@@ -353,21 +353,23 @@ export function useSetupFlow(
       });
 
       setGatewayReadyContinuation({ status: "idle", error: null });
+      if (completion.ready && completion.verification.status === "unavailable") {
+        const message = t(
+          "setup.wizard.inferenceVerificationUnavailable",
+          "OpenClaw 配置已完成，但当前 Gateway 未提供官方实时模型验证。模型可用性暂未核验，可继续进入工作区。",
+        );
+        appendSetupLog({ source: "setup", step: "gateway", message, level: "warn" });
+      }
       if (!completion.ready) {
         if (completion.reason === "onboarding-required") {
           // 配置页面独占官方向导的启动权；此处只决定去向，避免一次点击创建竞争的向导会话。
           navigateSetup("configure-openclaw", "push");
           return;
         }
-        const message = completion.reason === "inference-verification-unavailable"
-          ? t(
-              "setup.wizard.inferenceVerificationUnavailable",
-              "OpenClaw 配置已完成，但当前 Gateway 不支持官方实时模型验证。JunQi 无法确认默认模型是否可用，请升级或切换到支持该官方能力的 Gateway 后再验证。",
-            )
-          : t(
-              "setup.wizard.inferenceUnverified",
-              "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",
-            );
+        const message = t(
+          "setup.wizard.inferenceUnverified",
+          "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",
+        );
         setGatewayReadyContinuation({ status: "failed", error: message });
         setSetupError(message);
         appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
@@ -867,21 +869,28 @@ export function useSetupFlow(
         return;
       }
       if (!completion.ready) {
-        const message = completion.reason === "inference-verification-unavailable"
-          ? t(
-              "setup.wizard.inferenceVerificationUnavailable",
-              "OpenClaw 配置已完成，但当前 Gateway 不支持官方实时模型验证。JunQi 无法确认默认模型是否可用，请升级或切换到支持该官方能力的 Gateway 后再验证。",
-            )
-          : t(
-              "setup.wizard.inferenceUnverified",
-              "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",
-            );
+        const message = t(
+          "setup.wizard.inferenceUnverified",
+          "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",
+        );
         setDashboardEntryError(message);
         setSetupError(message);
         appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
         report(message);
         replaceSetupStep("gateway-ready");
         return;
+      }
+
+      if (completion.verification.status === "unavailable") {
+        appendSetupLog({
+          source: "setup",
+          step: "gateway",
+          message: t(
+            "setup.wizard.inferenceVerificationUnavailable",
+            "OpenClaw 配置已完成，但当前 Gateway 未提供官方实时模型验证。模型可用性暂未核验，可继续进入工作区。",
+          ),
+          level: "warn",
+        });
       }
 
       setSetupError(null);

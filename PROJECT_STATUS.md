@@ -4,8 +4,9 @@
 
 ## 当前目标
 
-收敛 OpenClaw 首次配置完成后的 Gateway 服务交接与模型实时验证门禁。JunQi 必须保留 OpenClaw 的真实
-完成语义：Gateway 已恢复连接不等于默认模型已验证；当前 Gateway 不支持官方验证方法也不等于模型或凭据失效。
+收敛 OpenClaw 首次配置完成后的 Gateway 服务交接与模型实时验证状态。JunQi 必须保留 OpenClaw 的真实
+完成语义：Gateway 已恢复连接不等于默认模型已验证；当前 Gateway 不支持官方验证方法也不等于模型或凭据失效，
+且不能因此阻断已经完成的官方配置。
 
 ## 已完成内容
 
@@ -17,16 +18,17 @@
   handler，但该能力尚未进入当前稳定 npm 包。不能把主线源码能力描述为用户当前可直接升级获得的稳定功能。
 - 已复现官方 Wizard 完成后的服务交接在本机约需 85 秒恢复 JunQi 的认证连接；此前统一 20 秒等待会过早超时。
 - 完成门禁已由布尔结果改为三种结构化状态：`verified`、`failed`、`unavailable`。
-- 官方验证能力不可用时，首次配置和工作台入口均显示独立错误语义，不再跳转到 Wizard 并自动重跑。
+- 官方验证能力不可用时，首次配置、Gateway 就绪页和工作台入口都保留“模型待核验”警告并继续；只有官方方法
+  返回明确失败时才阻断进入。
 - 官方服务交接与来源变化恢复路径使用 120 秒有界认证连接等待；初始连接和普通 Wizard 操作仍维持 20 秒。
 - 已更新首次启动流程预览、全链路审计、规格和计划，记录当前运行时与官方源码的能力差异及验证边界。
 
 ## 关键技术决策
 
-- `openclaw.setup.verify` 是模型实时验证的唯一完成门禁。不得以 Gateway 健康、静态模型引用、`models.probe`
-  或本地推断作为替代成功条件。
-- “官方方法不可用”与“官方方法已执行但模型验证失败”必须分开建模和呈现。前者提示升级或切换支持该方法的
-  Gateway，后者才提示修正模型或凭据。
+- `openclaw.setup.verify` 可用时是模型实时验证的唯一证据。不得以 Gateway 健康、静态模型引用、`models.probe`
+  或本地推断替代成功条件。
+- “官方方法不可用”与“官方方法已执行但模型验证失败”必须分开建模和呈现。前者是待核验状态，不能伪报模型成功，
+  也不能把当前稳定版不存在的能力当作安装阻断；后者才提示修正模型或凭据并阻断进入。
 - Gateway 交接等待只扩展在官方服务 handoff 路径，使用有限上限；不得把普通 RPC 等待改成全局长等待或无限重试。
 - 已完成的官方 Wizard 不得因为验证或交接失败被自动重放。JunQi 只能保留待核验状态并等待用户修正官方运行时。
 
@@ -47,10 +49,11 @@
 
 ## 测试与验证
 
-- 已通过：`pnpm exec tsc --noEmit`。
 - 已通过：
   `node --import ./test-setup.ts --import tsx --test src/services/setup/setupCompletionGate.test.ts src/services/gateway/OpenClawSetupVerificationClient.test.ts src/hooks/setupOnboardingRegression.test.ts`，共 58 个测试。
-- 已通过：`git diff --check`。
+- 已通过：`pnpm lint`、完整 `pnpm test` 和 `git diff --check`。全量测试包含既有第三方 SSR `useLayoutEffect`
+  警告，但命令成功结束。测试中发现 `WizardScreen` 已移除硬编码色值而主题守护仍期望 2 个；守护已按
+  当前语义令牌实现校正为 0。
 - 已执行本机 Gateway CLI 复现：服务状态可用；`openclaw.setup.verify` 和 `models.probe` 均返回未知方法。
 - 已通过：`pnpm lint`、完整 `pnpm test`、`pnpm build` 和 `git diff --check`。全量测试包含既有第三方 SSR
   `useLayoutEffect` 警告，但命令成功结束。
@@ -63,12 +66,12 @@
 
 ## 已知问题
 
-- 当前本机 Gateway 尚不支持官方实时验证方法，因此 JunQi 会正确阻止进入工作台，直到运行时提供该官方能力。
-- 当前提示中的“升级或切换”不能被理解为已有稳定升级路径；稳定 `latest` 仍不提供该方法。这是待决的
-  OpenClaw 稳定版兼容策略问题，不是当前模型凭据错误。
+- 当前本机 Gateway 尚不支持官方实时验证方法。JunQi 进入工作台时会如实记录模型待核验；不把它显示为凭据失败。
+- 当前稳定 `latest` 仍不提供该方法，因此不得提示用户通过升级当前稳定版解决；支持该 RPC 的未来官方 Gateway
+  需要再补充真实验证。
 - 120 秒 handoff 等待来自本机一次可复现观察；macOS、Windows、Ubuntu、CentOS 和 Docker 运行时仍需真机验证。
 - 本机构建未进行正式代码签名或公证，不能作为正式发布制品。
-- 本轮变更已提交为 `1f1b36f0`；截至本文档更新时工作区干净。
+- 已完成最终 `pnpm lint`、完整 `pnpm test` 和 `git diff --check`；代码改动尚未提交，桌面安装包尚待重新构建。
 
 ## 已放弃方案
 
@@ -79,7 +82,7 @@
 
 ## 下一步顺序
 
-1. 在桌面安装包中完成首次配置，确认服务交接后可在 120 秒内恢复认证连接，且不会出现重复 Wizard。
+1. 执行 TypeScript、边界和全量测试后构建桌面安装包，验证本机首次配置在实时验证 RPC 不可用时进入工作台且留下待核验日志。
 2. 在支持 `openclaw.setup.verify` 的官方 Gateway 上验证 `verified`、`failed` 和 `unavailable` 三种结果的 UI 路径。
 3. 在 macOS、Windows、Ubuntu、CentOS 以及 Native/Docker 的真实环境记录交接时间与行为差异；未经实测不得扩展为跨平台承诺。
 4. 后续行为变更结束、暂停或交接前，按 `AGENTS.md` 更新本文件并重新执行与改动范围相符的验证。

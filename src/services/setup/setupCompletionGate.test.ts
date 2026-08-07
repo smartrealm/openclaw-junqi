@@ -54,7 +54,7 @@ test('setup completion rejects a static model reference that fails official live
   });
 });
 
-test('setup completion preserves an unavailable official verification capability', async () => {
+test('setup completion continues with an unavailable optional verification capability', async () => {
   const result = await validateSetupCompletion(dependencies({
     verifyConfiguredInference: async () => ({
       status: 'unavailable',
@@ -63,8 +63,7 @@ test('setup completion preserves an unavailable official verification capability
   }));
 
   assert.deepEqual(result, {
-    ready: false,
-    reason: 'inference-verification-unavailable',
+    ready: true,
     verification: {
       status: 'unavailable',
       error: 'The connected OpenClaw Gateway does not support openclaw.setup.verify',
@@ -89,6 +88,9 @@ test('setup completion follows the native Gateway and configuration gates', asyn
     },
   });
 
-  assert.deepEqual(result, { ready: true });
+  assert.deepEqual(result, {
+    ready: true,
+    verification: { status: 'verified', modelRef: 'openai/gpt-5.6-sol', latencyMs: 120 },
+  });
   assert.deepEqual(calls, ['gateway', 'config', 'inference']);
 });

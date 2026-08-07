@@ -4293,7 +4293,7 @@
       "connectionTimeout": "The Gateway process is ready, but JunQi could not complete an authenticated Gateway connection in time.",
       "handoffNotReady": "OpenClaw setup completed, but the selected Gateway could not be verified after the runtime handoff. Repair it and try again.",
       "inferenceUnverified": "OpenClaw setup completed, but the default model did not pass live verification. Correct the model or credentials and try again.",
-      "inferenceVerificationUnavailable": "OpenClaw setup completed, but this Gateway does not support the official live model verification method. JunQi cannot confirm whether the default model is usable; upgrade or switch to a Gateway that supports it before verifying again.",
+      "inferenceVerificationUnavailable": "OpenClaw setup completed, but this Gateway does not expose the official live model verification method. Model availability remains unverified; you can continue to the workspace.",
       "failed": "The OpenClaw setup wizard failed.",
       "missingStep": "The OpenClaw setup wizard did not return its next step.",
       "sessionExpired": "The OpenClaw setup session expired. Reconnect to continue.",
