@@ -127,6 +127,40 @@ Gateway schema/`models.list` 的可验证能力继续收敛；Gateway 未返回�
 `authDeviceToken` 时只复用，不再次写入系统凭据库；只有首次获得或实际轮换才保存。
 同一 runtime 的并发读取采用 single-flight，因此冷启动、重连和多个界面消费者只共享一次系统凭据读取。
 
+### A-08 高：Gateway 服务状态缺少 locale 时被误判为旧服务
+
+**官方依据**：OpenClaw `gateway status --json` 的服务归属证据包括服务定义、状态目录、配置路径、运行时
+命令和运行状态；服务环境中的 `OPENCLAW_LOCALE` 不是服务安装与运行的必需字段。官方向导也允许跳过可选的
+渠道、搜索、技能和控制界面步骤，是否安装 Gateway 服务由 `installDaemon` 和当前平台条件决定。
+
+**初始实现**：JunQi 在服务命令、状态目录和配置路径均匹配时，仍要求服务状态 JSON 返回与当前配置相同的
+`OPENCLAW_LOCALE`。官方服务状态未回报该字段时被归类为 `StaleLocale`，重启后又因“未验证为当前服务”失败，
+随后触发连接切换和向导重试竞态。
+
+**处理结果**：缺少 locale 时按已选服务处理；只有字段明确存在且与配置冲突时才标记为 `StaleLocale`。服务
+归属仍必须同时通过状态目录、配置路径、Node/OpenClaw 运行时命令和已知运行状态，未放宽外部服务隔离。
+新增回归测试覆盖“locale 缺失仍为当前服务”和“locale 明确冲突仍需重建”。
+
+### A-09 中：官方可跳过步骤与 JunQi 工作台准入边界
+
+**官方依据**：OpenClaw `onboard --help` 暴露 `--skip-channels`、`--skip-search`、
+`--skip-skills`、`--skip-ui`、`--skip-bootstrap`、`--skip-hooks`、`--skip-health` 和
+`--skip-daemon`。Gateway `wizard.start` 只启动官方 Wizard 会话；步骤是否出现、是否可跳过以及终态
+结果均由 Gateway/CLI 返回，JunQi 不在本地复制一套步骤判定。
+
+**可跳过不等于可用**：渠道、搜索、技能、控制界面、默认工作区文件、hooks、健康检查和 Gateway 服务
+安装可以按官方参数或平台条件跳过。服务安装跳过后，JunQi 只能展示“未由 OpenClaw 服务托管”，不能
+声称后台常驻已完成。
+
+**JunQi 准入条件**：进入工作台前仍需核验选定 runtime 的认证 Gateway、当前配置快照，以及官方
+`openclaw.setup.verify` 的当前默认 Agent 推理路由。该 RPC 只验证 primary route；fallback 列表存在
+不能证明 primary 可用，也不能由客户端静默改写配置或自动提升 fallback。
+
+**本机复现（2026-08-07）**：Gateway 服务已加载运行，RPC 身份为 `operator` 且具备 `operator.admin`；
+当前 primary `vllm/gpt-5.6-sol` 实时请求返回 HTTP 503，已配置 fallback `deepseek/deepseek-v4-flash`
+返回 200。故当前“默认模型尚未通过实时验证”是模型后端事实，不是 Gateway 安装失败；修复 primary 或
+通过 OpenClaw 官方配置流程重新选择模型后，才能通过 JunQi 的准入门禁。
+
 ## 本轮会话修复摘要
 
 `docs/quality/openclaw-confirmed-empty-session-audit-2026-08-05.md` 记录的 BUG-01 至 BUG-04 已按
@@ -138,6 +172,9 @@ dashboard session；无初始 turn 的非 fork 会话不加载旧历史，首发
 - macOS、Windows、Ubuntu 与 CentOS 的真实安装、凭据库和 Gateway 交接仍需逐平台验收。
 - Provider 模板和新增 Provider 编辑器尚未完全替换为官方 Wizard 或 Gateway schema 驱动的入口；当前
   模型目录和保存控制面已经对齐，但该编辑入口仍需继续核验。
+- 官方 Wizard 的可选步骤由 Gateway 返回的步骤和 `installDaemon` 结果决定，JunQi 不添加本地跳过规则；
+  当前完成门禁仍要求选定 Gateway、配置状态和官方 `openclaw.setup.verify` 的实时模型验证，模型凭据
+  不可用时应明确停留在待配置，而不是伪造安装成功。
 - 系统凭据授权已移除旧迁移访问，但 macOS Keychain、Windows Credential Manager 和 Linux Secret
   Service 的真实授权次数仍需在各平台安装包中实测。
 - 安装运行时及逐平台真实验收尚未完成，不能据此宣布全局完成。

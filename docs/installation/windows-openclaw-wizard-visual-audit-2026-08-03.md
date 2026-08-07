@@ -49,20 +49,21 @@ JunQi 的总体边界正确：
 - 最终完成仍需官方服务所有权交接、selected Gateway 身份复核和真实模型调用。
 - Native 与 Docker 不静默互换。
 
-但可视化层仍有三个需要整改的问题，以及两个明确的协议限制。
+本轮已按当前 Gateway schema 收敛授权展示；剩余真机边界仍需在 Windows Native、Docker 和远程 Gateway 上验证。
 
 ## 发现
 
-### BUG-WVW-01 · HIGH · 浏览器认证信息没有通用可视化操作面
+### BUG-WVW-01 · 已修复 · 浏览器认证信息使用官方结构化字段
 
 **位置**：
 
 - `src/pages/SetupPage/WizardScreen.tsx`
-- `src/services/openclawWizardQr.ts`
+- `src/services/openclawWizard.ts`
 
 **当前行为**：
 
-JunQi 只有在官方消息同时包含“扫描”语义时，才提取 HTTP(S) URL，并显示复制链接和浏览器打开按钮。普通 OAuth、device-code 或浏览器认证 note 仍只显示为纯文本。
+旧实现会从官方消息文本中猜测 URL 与二维码。当前实现严格读取 Wizard schema 的 `externalUrl` 与
+`deviceCode`，在桌面窗口中提供复制、系统浏览器打开和一次性代码展示。
 
 已安装 OpenClaw 的 xAI device-code 流会产生如下官方 note：
 
@@ -73,9 +74,8 @@ Code: <user code>
 Code expires in ... minutes.
 ```
 
-这不是 QR scan note，因此当前 `resolveOpenClawWizardQrUrl()` 返回 `null`，JunQi 不提供“打开浏览器”“复制链接”“复制代码”操作。
-
-OpenAI Codex OAuth 还会由 Gateway 进程调用 `openUrl()`。Native Windows 用户会话中通常可以打开系统浏览器；Docker 容器、后台服务、浏览器启动失败或远程 Gateway 中则不能把“Gateway 尝试打开浏览器”等同于“用户已看到认证页面”。
+OpenClaw 通过 `openUrl()` 把明确的浏览器地址附加到下一个 Wizard step。JunQi 只在该字段存在时调用
+Tauri Shell；Shell 不可用不会改以 WebView 弹窗伪造已打开。
 
 **影响**：
 
@@ -86,8 +86,7 @@ OpenAI Codex OAuth 还会由 Gateway 进程调用 `openUrl()`。Native Windows �
 
 **目标**：
 
-- 从官方 `note.message` 中提取浏览器安全的 HTTP(S) URL，作为只读表现增强；不得改写原文。
-- 普通认证 note 显示“在浏览器中打开”和“复制链接”。
+- 使用官方 `externalUrl` 与 `deviceCode`；不再从 `note.message`、终端日志或渠道名称推断认证状态。
 - 对明确标记的 `Code:` / “代码：”行，仅提供复制代码，不自动提交、不写日志、不持久化。
 - generic URL 不触发自动推进；只有当前已验证的 QR polling 语义可以自动确认官方步骤。
 - URL 必须拒绝非 HTTP(S)、userinfo 和无法解析的值。

@@ -4,6 +4,13 @@
 
 ## 引导完成门禁
 
+## Wizard 结构化步骤
+
+JunQi 只呈现 Gateway `wizard.*` schema 已定义的步骤及字段。选项中的 `Skip for now`、可选插件和
+推荐项由 Gateway 提供并原样回传；客户端不添加 CLI 专属 skip 参数。`externalUrl`、`deviceCode`、
+`channels`、`accounts` 和 `preparedModelRef` 必须严格校验后投影到桌面 UI，不能从消息文本或终端输出
+猜测二维码、授权完成或配置结果。
+
 ### 当前
 
 JunQi 将“配置文件存在且包含默认模型引用”解释为 OpenClaw 已完成配置。

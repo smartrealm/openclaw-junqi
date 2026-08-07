@@ -21,7 +21,7 @@ test('an added envelope field no longer breaks the wizard', async () => {
   assert.equal(result.sessionId, 's1');
 });
 
-test('an added step field is ignored rather than dropping the step', async () => {
+test('官方授权字段会被保留，未知步骤字段不会越过协议边界', async () => {
   const result = await clientReturning({
     ...RUNNING,
     step: {
@@ -29,15 +29,33 @@ test('an added step field is ignored rather than dropping the step', async () =>
       type: 'select',
       title: 'Pick',
       options: [{ value: 1, label: 'a' }],
+      externalUrl: 'https://provider.example/authorize',
+      deviceCode: { code: 'ABCD-1234', expiresInMinutes: 15 },
       required: true,
       helpUrl: 'https://example.invalid',
     },
   }).start();
   assert.equal(result.step?.id, 'pick');
   assert.equal(result.step?.type, 'select');
-  // Unknown keys are dropped, never forwarded as if they were supported.
+  assert.equal(result.step?.externalUrl, 'https://provider.example/authorize');
+  assert.deepEqual(result.step?.deviceCode, { code: 'ABCD-1234', expiresInMinutes: 15 });
+  // 未知字段不得被转发为客户端已支持的协议。
   assert.equal((result.step as unknown as Record<string, unknown>).required, undefined);
   assert.equal((result.step as unknown as Record<string, unknown>).helpUrl, undefined);
+});
+
+test('终态保留官方配置结果', async () => {
+  const result = await clientReturning({
+    sessionId: 's1',
+    done: true,
+    status: 'done',
+    channels: ['telegram'],
+    accounts: [{ channel: 'telegram', accountId: 'primary' }],
+    preparedModelRef: 'openai/gpt-5.6',
+  }).start();
+  assert.deepEqual(result.channels, ['telegram']);
+  assert.deepEqual(result.accounts, [{ channel: 'telegram', accountId: 'primary' }]);
+  assert.equal(result.preparedModelRef, 'openai/gpt-5.6');
 });
 
 // Reporting an unsupported step as "missing" sent the user after the Gateway

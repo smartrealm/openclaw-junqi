@@ -15,6 +15,17 @@ export interface OpenClawWizardOption {
   hint?: string;
 }
 
+export interface OpenClawWizardDeviceCode {
+  code: string;
+  expiresInMinutes?: number;
+  message?: string;
+}
+
+export interface OpenClawWizardConfiguredAccount {
+  channel: string;
+  accountId: string;
+}
+
 export interface OpenClawWizardStep {
   id: string;
   type: OpenClawWizardStepType;
@@ -26,6 +37,8 @@ export interface OpenClawWizardStep {
   placeholder?: string;
   sensitive?: boolean;
   executor?: 'gateway' | 'client';
+  externalUrl?: string;
+  deviceCode?: OpenClawWizardDeviceCode;
 }
 
 export interface OpenClawWizardResult {
@@ -33,6 +46,9 @@ export interface OpenClawWizardResult {
   status?: 'running' | 'done' | 'cancelled' | 'error';
   step?: OpenClawWizardStep;
   error?: string;
+  channels?: string[];
+  accounts?: OpenClawWizardConfiguredAccount[];
+  preparedModelRef?: string;
 }
 
 export interface OpenClawWizardStartResult extends OpenClawWizardResult {
@@ -68,13 +84,35 @@ function isWizardOption(value: unknown): value is OpenClawWizardOption {
     && (option.hint === undefined || typeof option.hint === 'string');
 }
 
+function isWizardDeviceCode(value: unknown): value is OpenClawWizardDeviceCode {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const code = value as Record<string, unknown>;
+  return typeof code.code === 'string'
+    && Boolean(code.code.trim())
+    && (code.expiresInMinutes === undefined
+      || (typeof code.expiresInMinutes === 'number'
+        && Number.isInteger(code.expiresInMinutes)
+        && code.expiresInMinutes >= 1
+        && code.expiresInMinutes <= 1440))
+    && (code.message === undefined || typeof code.message === 'string');
+}
+
+function isWizardConfiguredAccount(value: unknown): value is OpenClawWizardConfiguredAccount {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const account = value as Record<string, unknown>;
+  return typeof account.channel === 'string'
+    && Boolean(account.channel.trim())
+    && typeof account.accountId === 'string'
+    && Boolean(account.accountId.trim());
+}
+
 const WIZARD_STEP_TYPES = [
   'note', 'select', 'text', 'confirm', 'multiselect', 'progress', 'action',
 ] as const;
 
 const WIZARD_STEP_KEYS = [
   'id', 'type', 'title', 'message', 'format', 'options', 'initialValue',
-  'placeholder', 'sensitive', 'executor',
+  'placeholder', 'sensitive', 'executor', 'externalUrl', 'deviceCode',
 ] as const;
 
 /**
@@ -93,12 +131,8 @@ type WizardStepParse =
   | ({ ok: false } & WizardStepRejection);
 
 /**
- * Forward compatible on purpose. OpenClaw ships onboarding changes on its own
- * cadence, so a field we have never seen must not be able to take the wizard
- * down: unknown keys are dropped rather than rejected, and only the fields
- * JunQi actually reads are validated. Known fields keep their strict value
- * checks - `format`, `executor` and the option shape all steer behaviour, and
- * relaxing those would turn protocol drift into silent misinterpretation.
+ * 上游可新增字段，但 JunQi 只投影已知字段。已使用的字段必须严格校验，避免
+ * 协议漂移被静默误解为可用能力。
  */
 function normalizeWizardStep(value: unknown): WizardStepParse {
   if (!value || typeof value !== 'object') return { ok: false, reason: 'invalid' };
@@ -117,6 +151,12 @@ function normalizeWizardStep(value: unknown): WizardStepParse {
   if (raw.placeholder !== undefined && typeof raw.placeholder !== 'string') return { ok: false, reason: 'invalid' };
   if (raw.sensitive !== undefined && typeof raw.sensitive !== 'boolean') return { ok: false, reason: 'invalid' };
   if (raw.executor !== undefined && raw.executor !== 'gateway' && raw.executor !== 'client') {
+    return { ok: false, reason: 'invalid' };
+  }
+  if (raw.externalUrl !== undefined && (typeof raw.externalUrl !== 'string' || !raw.externalUrl.trim())) {
+    return { ok: false, reason: 'invalid' };
+  }
+  if (raw.deviceCode !== undefined && !isWizardDeviceCode(raw.deviceCode)) {
     return { ok: false, reason: 'invalid' };
   }
   // Project to the known shape: unknown fields are ignored, never forwarded to
@@ -276,6 +316,29 @@ function assertWizardResultFields(
   if (result.error !== undefined && typeof result.error !== 'string') {
     throw new Error('OpenClaw wizard response has an invalid `error`.');
   }
+  if (result.channels !== undefined
+    && (!Array.isArray(result.channels)
+      || !result.channels.every((channel) => typeof channel === 'string' && Boolean(channel.trim())))) {
+    throw new Error('OpenClaw wizard response has invalid `channels`.');
+  }
+  if (result.accounts !== undefined
+    && (!Array.isArray(result.accounts) || !result.accounts.every(isWizardConfiguredAccount))) {
+    throw new Error('OpenClaw wizard response has invalid `accounts`.');
+  }
+  if (result.preparedModelRef !== undefined
+    && (typeof result.preparedModelRef !== 'string' || !result.preparedModelRef.trim())) {
+    throw new Error('OpenClaw wizard response has an invalid `preparedModelRef`.');
+  }
+  const response: OpenClawWizardResult = {
+    done: result.done,
+    ...(result.status ? { status: result.status } : {}),
+    ...(typeof result.error === 'string' ? { error: result.error } : {}),
+    ...(Array.isArray(result.channels) ? { channels: result.channels.filter(
+      (channel): channel is string => typeof channel === 'string',
+    ) } : {}),
+    ...(Array.isArray(result.accounts) ? { accounts: result.accounts.filter(isWizardConfiguredAccount) } : {}),
+    ...(typeof result.preparedModelRef === 'string' ? { preparedModelRef: result.preparedModelRef } : {}),
+  };
   // Terminal error/cancel responses intentionally do not carry a next step.
   // They are valid official Wizard outcomes and must reach the recovery
   // state machine instead of being misclassified as malformed Gateway data.
@@ -288,15 +351,15 @@ function assertWizardResultFields(
         ? `This JunQi build does not support the OpenClaw onboarding step \`${parsed.id}\` of type \`${parsed.type}\`. Update JunQi Desktop to continue setup.`
         : 'OpenClaw wizard response is missing the next step.');
     }
-    return { ...value as OpenClawWizardResult, step: parsed.step };
+    return { ...response, step: parsed.step };
   }
-  return value as OpenClawWizardResult;
+  return response;
 }
 
 function assertWizardStartResult(value: unknown): OpenClawWizardStartResult {
   const result = assertWizardResultFields(
     value,
-    ['sessionId', 'done', 'step', 'status', 'error'],
+    ['sessionId', 'done', 'step', 'status', 'error', 'channels', 'accounts', 'preparedModelRef'],
     'wizard start response',
   );
   const sessionId = (value as Record<string, unknown>).sessionId;
@@ -309,7 +372,7 @@ function assertWizardStartResult(value: unknown): OpenClawWizardStartResult {
 function assertWizardNextResult(value: unknown): OpenClawWizardResult {
   return assertWizardResultFields(
     value,
-    ['done', 'step', 'status', 'error'],
+    ['done', 'step', 'status', 'error', 'channels', 'accounts', 'preparedModelRef'],
     'wizard next response',
   );
 }
