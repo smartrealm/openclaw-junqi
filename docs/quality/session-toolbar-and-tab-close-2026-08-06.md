@@ -31,4 +31,4 @@
 - `src/stores/chatStore.test.ts` 新增主会话标签关闭回归，确认 Gateway 会话记录保留并切换到剩余标签。
 - 已通过 `pnpm lint`、完整 `pnpm test`（前端 2806 项、脚本 243 项）、`pnpm build`；完整测试仍有既有第三方
   SSR `useLayoutEffect` 警告，但命令成功结束。
-- 尚未在桌面安装包中完成本轮真实视觉验收；现有 `.app` 与 DMG 需在包含本轮标签关闭修复的代码上重新构建后再验收。
+- 已按会话工具栏调整对应的提交重建并安装 macOS ARM64 `.app`；头像视觉调整发生在其后，尚未重新安装，真实视觉验收和 DMG 重建仍待完成。

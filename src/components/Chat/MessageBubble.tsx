@@ -224,20 +224,19 @@ export function AssistantResponseAvatar({
   return (
     <div
       className={clsx(
-        'w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow-sm ring-1 ring-aegis-primary/20',
+        'w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 border border-aegis-border/80 bg-aegis-elevated text-aegis-primary shadow-[inset_0_0_0_1px_rgb(var(--aegis-primary)/0.12),0_3px_10px_rgb(var(--aegis-overlay)/0.12)]',
         className,
       )}
-      style={{ backgroundImage: 'linear-gradient(135deg, rgb(var(--aegis-primary)), rgb(var(--aegis-primary-deep)))' }}
       aria-label={agent.name}
     >
       {agent.marker ? (
         <span className="max-w-5 overflow-hidden text-ellipsis whitespace-nowrap text-sm leading-none" aria-hidden>{agent.marker}</span>
       ) : agent.name === 'Claude Code' ? (
-        <Sparkles size={14} className="text-white" />
+        <Sparkles size={14} />
       ) : agent.name === 'Codex' ? (
-        <Bot size={14} className="text-white" />
+        <Bot size={14} />
       ) : (
-        <span className="text-[10px] font-bold text-white">{agent.letter}</span>
+        <span className="text-[10px] font-bold">{agent.letter}</span>
       )}
     </div>
   );

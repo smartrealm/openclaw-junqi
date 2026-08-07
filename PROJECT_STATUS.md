@@ -27,6 +27,8 @@
   与分支图标区分。保留项均已有对应组件和 OpenClaw/工作台业务消费者。
 - 已解除会话标签对规范主会话的关闭限制：`ChatTabs` 为所有已打开标签提供关闭按钮和中键关闭，`chatStore.closeTab`
   只更新本地标签投影；`removeSession` 仍独立禁止删除规范主会话。
+- 已收敛会话助手头像的视觉层次：`AssistantResponseAvatar` 移除高饱和主色渐变，改用 `aegis-elevated`、`aegis-border`
+  和低透明度主色内层强调；身份标记、字母或官方名称对应图标保持不变，回复头像与输入中指示器继续复用同一实现。
 
 ## 关键技术决策
 
@@ -51,6 +53,9 @@
   差异图标语义修正。
 - `src/components/Chat/ChatTabs.tsx`、`src/stores/chatStore.ts`、`src/stores/chatStore.test.ts`：标签关闭与会话删除边界，
   以及规范主会话标签关闭回归。
+- `src/components/Chat/MessageBubble.tsx`：会话助手头像的主题表面和前景层次。
+- `docs/quality/openclaw-agent-identity-projection-2026-08-04.md`：OpenClaw 身份投影及头像视觉边界。
+- `docs/junqi-session-features.md`、`docs/openclaw-features.md`：合并的历史会话能力分析与待核验边界。
 - `docs/quality/openclaw-full-alignment-audit-2026-08-07.md`、
   `specs/quality/2026-08-07-openclaw-full-alignment.md`、
   `plans/quality/2026-08-07-openclaw-full-alignment.md`、
@@ -75,15 +80,23 @@
 - 本轮主会话标签关闭回归已通过：`node --import ./test-setup.ts --import tsx --test src/stores/chatStore.test.ts`，共 53 个测试。
 - 本轮最新 `pnpm lint`、完整 `pnpm test`（前端 2806 项、脚本 243 项）和 `pnpm build` 均通过；完整测试仍有既有第三方
   SSR `useLayoutEffect` 警告，但命令成功结束。
+- 此前已在本机 macOS ARM64 上执行 `pnpm tauri build --bundles app --no-sign`，并将会话工具栏调整对应的
+  `JunQi Desktop.app` 安装到 `/Applications/JunQi Desktop.app`；版本为 `2.2.10`，安装后二进制与构建产物 SHA-256 一致。
+- 本轮助手头像视觉调整尚未重新构建或安装桌面 `.app`；当前安装包不包含本轮已提交的头像样式改动。
+- 已完成会话助手头像视觉调整；本轮聊天相关测试、`pnpm lint`、完整 `pnpm test` 和 `pnpm build` 均通过，亮暗主题与窄窗口的最终视觉验收仍待完成。
+- 已审查并合并 `Blues-Code/code` 分支的 `7f0d208c`；合并提交为 `fa094888`。该分支只新增两份会话能力分析文档，未引入
+  源码、配置、OpenClaw RPC 或运行时行为；文档已标明基于旧快照的证据边界，不作为当前功能契约。
 
 ## 已知问题
 
 - 当前本机 Gateway 尚不支持官方实时验证方法。JunQi 进入工作台时会如实记录模型待核验；不把它显示为凭据失败。
 - 当前稳定 `latest` 仍不提供该方法，因此不得提示用户通过升级当前稳定版解决；支持该 RPC 的未来官方 Gateway
   需要再补充真实验证。
+- 合并的 `docs/junqi-session-features.md` 和 `docs/openclaw-features.md` 是历史分析与待核验线索；其中数量、能力和入口
+  清单不得替代最新版 OpenClaw 官方文档、源码或当前 JunQi 实现。
 - 120 秒 handoff 等待来自本机一次可复现观察；macOS、Windows、Ubuntu、CentOS 和 Docker 运行时仍需真机验证。
-- 本机构建与本轮验证未进行正式代码签名或公证，不能作为正式发布制品；包含本轮标签关闭修复的桌面安装包尚待重新构建。
-- 代码改动尚未提交；桌面安装包中的工具栏密度、图标语义、键盘焦点和窄窗口表现尚未完成真机验收。
+- 本机构建与本轮验证未进行正式代码签名或公证，不能作为正式发布制品；本机已安装的旧版 `.app` 仅用于此前本地验收。
+- 本轮头像与文档改动已提交；桌面安装包中的工具栏密度、图标语义、键盘焦点和窄窗口表现尚未完成真机验收。
 
 ## 已放弃方案
 
@@ -94,7 +107,7 @@
 
 ## 下一步顺序
 
-1. 在包含本轮标签关闭修复的代码上重新构建桌面安装包，并走查会话上下文栏的入口密度、图标语义、键盘焦点和窄窗口表现。
+1. 重新构建当前工作区的 `.app` 后，走查会话上下文栏和助手头像的入口密度、图标语义、键盘焦点、主题对比度和窄窗口表现，并补充 DMG 重建与安装验收。
 2. 在支持 `openclaw.setup.verify` 的官方 Gateway 上验证 `verified`、`failed` 和 `unavailable` 三种结果的 UI 路径。
 3. 在 macOS、Windows、Ubuntu、CentOS 以及 Native/Docker 的真实环境记录交接时间与行为差异；未经实测不得扩展为跨平台承诺。
 4. 后续行为变更结束、暂停或交接前，按 `AGENTS.md` 更新本文件并重新执行与改动范围相符的验证。
