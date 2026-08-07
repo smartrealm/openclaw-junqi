@@ -34,13 +34,20 @@ export function preserveConfirmedEmptyTranscriptLeaf<T extends ConfirmedEmptyTra
     || !hasConfirmedEmptyTranscript(previous)
     || incoming.activeLeafEntryId !== undefined
     || incoming.key !== previous.key
-    || incoming.sessionId !== previous.sessionId
+    || (incoming.sessionId !== undefined && incoming.sessionId !== previous.sessionId)
     || incomingAgentId !== previousAgentId
   ) {
     return incoming;
   }
 
-  return { ...incoming, activeLeafEntryId: null };
+  // 官方列表行允许省略 sessionId 与 agentId。缺省不是身份轮换；同一 key 的
+  // 创建确认仍是首发 CAS 的唯一身份依据，直到 Gateway 明确返回新的身份或 leaf。
+  return {
+    ...incoming,
+    sessionId: previous.sessionId,
+    agentId: previousAgentId ?? undefined,
+    activeLeafEntryId: null,
+  };
 }
 
 export function shouldLoadActiveSessionHistory(params: {

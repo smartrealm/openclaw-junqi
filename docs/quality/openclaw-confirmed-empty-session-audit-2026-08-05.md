@@ -58,10 +58,11 @@ Gateway 明确返回 leaf、identity 变化或 identity 缺失时不保留，继
 
 复核发现新建会话在 `sessions.list` 回刷后重新进入历史加载门禁：官方稀疏列表行没有 `agentId`，JunQi 旧合并逻辑将其与创建时身份视为不一致，抹除了已确认的 `activeLeafEntryId: null`。
 
-修复为：会话投影从官方 session key 的 agent 段补齐身份；创建确认与稀疏列表合并也以该派生身份核对。这样不会新增 OpenClaw 字段或本地会话语义，只恢复同一官方会话的创建确认事实。
+修复为：会话投影从官方 session key 的 agent 段补齐身份；创建确认与稀疏列表合并也以该派生身份核对。对同一 key 的列表行，只有 Gateway 明确返回新的 sessionId、agent 或 leaf 时才覆盖创建确认；缺省字段继续保留已确认身份。这样不会新增 OpenClaw 字段或本地会话语义，只恢复同一官方会话的创建确认事实。
 
 ### 当前复核验证
 
 - [x] `confirmedEmptyTranscript` 与 `openClawSessionProjection` 定向回归测试通过。
+- [x] `chatStore` 覆盖仅含 key 的轻量 `sessions.list` 行不会清除创建身份和空 leaf。
 - [x] `pnpm lint` 通过。
 - [ ] 完整前端测试、Rust 测试、生产构建和桌面安装包验证待本次复核完成。
