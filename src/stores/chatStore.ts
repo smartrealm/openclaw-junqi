@@ -1859,7 +1859,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   }),
 
   closeTab: (key) => set((state) => {
-    if (key === MAIN_SESSION) return state;
     const newTabs = state.openTabs.filter((t) => t !== key);
     if (newTabs.length === 0) newTabs.push(MAIN_SESSION);
     persistOpenTabs(newTabs);

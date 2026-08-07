@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-收敛 OpenClaw 首次配置完成后的 Gateway 服务交接与模型实时验证状态。JunQi 必须保留 OpenClaw 的真实
+收敛 OpenClaw 首次配置完成后的 Gateway 服务交接与模型实时验证状态，并收敛会话上下文工具栏。JunQi 必须保留 OpenClaw 的真实
 完成语义：Gateway 已恢复连接不等于默认模型已验证；当前 Gateway 不支持官方验证方法也不等于模型或凭据失效，
 且不能因此阻断已经完成的官方配置。
 
@@ -22,6 +22,11 @@
   返回明确失败时才阻断进入。
 - 官方服务交接与来源变化恢复路径使用 120 秒有界认证连接等待；初始连接和普通 Wizard 操作仍维持 20 秒。
 - 已更新首次启动流程预览、全链路审计、规格和计划，记录当前运行时与官方源码的能力差异及验证边界。
+- 已清理会话上下文栏中的旧制品下载器、全局技能计数、全局工具配置和全局活动入口；这些入口不属于当前会话操作。
+- 保留会话伴侣、当前会话实际工具、浏览器控制、分支、检查点、制品、差异和会话文件，并将差异图标改为 `FileDiff`，
+  与分支图标区分。保留项均已有对应组件和 OpenClaw/工作台业务消费者。
+- 已解除会话标签对规范主会话的关闭限制：`ChatTabs` 为所有已打开标签提供关闭按钮和中键关闭，`chatStore.closeTab`
+  只更新本地标签投影；`removeSession` 仍独立禁止删除规范主会话。
 
 ## 关键技术决策
 
@@ -42,6 +47,10 @@
   不可用错误类型。
 - `src/services/setup/setupCompletionGate.test.ts` 与 `src/hooks/setupOnboardingRegression.test.ts`：结构化结果与
   handoff 路径回归覆盖。
+- `src/components/Chat/SessionContextBar.tsx`、`src/components/Chat/SessionDiffControl.tsx`：会话上下文栏入口收敛与
+  差异图标语义修正。
+- `src/components/Chat/ChatTabs.tsx`、`src/stores/chatStore.ts`、`src/stores/chatStore.test.ts`：标签关闭与会话删除边界，
+  以及规范主会话标签关闭回归。
 - `docs/quality/openclaw-full-alignment-audit-2026-08-07.md`、
   `specs/quality/2026-08-07-openclaw-full-alignment.md`、
   `plans/quality/2026-08-07-openclaw-full-alignment.md`、
@@ -63,6 +72,9 @@
 - 已完成本机 macOS DMG 安装器构建并通过 `hdiutil imageinfo` 校验为只读 UDZO 镜像：
   `src-tauri/target/release/bundle/dmg/JunQi Desktop_2.2.10_aarch64.dmg`。镜像已挂载并打开，待人工安装验收。
 - 尚未执行本轮桌面安装包真机回归。
+- 本轮主会话标签关闭回归已通过：`node --import ./test-setup.ts --import tsx --test src/stores/chatStore.test.ts`，共 53 个测试。
+- 本轮最新 `pnpm lint`、完整 `pnpm test`（前端 2806 项、脚本 243 项）和 `pnpm build` 均通过；完整测试仍有既有第三方
+  SSR `useLayoutEffect` 警告，但命令成功结束。
 
 ## 已知问题
 
@@ -70,8 +82,8 @@
 - 当前稳定 `latest` 仍不提供该方法，因此不得提示用户通过升级当前稳定版解决；支持该 RPC 的未来官方 Gateway
   需要再补充真实验证。
 - 120 秒 handoff 等待来自本机一次可复现观察；macOS、Windows、Ubuntu、CentOS 和 Docker 运行时仍需真机验证。
-- 本机构建未进行正式代码签名或公证，不能作为正式发布制品。
-- 已完成最终 `pnpm lint`、完整 `pnpm test` 和 `git diff --check`；代码改动尚未提交，桌面安装包尚待重新构建。
+- 本机构建与本轮验证未进行正式代码签名或公证，不能作为正式发布制品；包含本轮标签关闭修复的桌面安装包尚待重新构建。
+- 代码改动尚未提交；桌面安装包中的工具栏密度、图标语义、键盘焦点和窄窗口表现尚未完成真机验收。
 
 ## 已放弃方案
 
@@ -82,7 +94,7 @@
 
 ## 下一步顺序
 
-1. 执行 TypeScript、边界和全量测试后构建桌面安装包，验证本机首次配置在实时验证 RPC 不可用时进入工作台且留下待核验日志。
+1. 在包含本轮标签关闭修复的代码上重新构建桌面安装包，并走查会话上下文栏的入口密度、图标语义、键盘焦点和窄窗口表现。
 2. 在支持 `openclaw.setup.verify` 的官方 Gateway 上验证 `verified`、`failed` 和 `unavailable` 三种结果的 UI 路径。
 3. 在 macOS、Windows、Ubuntu、CentOS 以及 Native/Docker 的真实环境记录交接时间与行为差异；未经实测不得扩展为跨平台承诺。
 4. 后续行为变更结束、暂停或交接前，按 `AGENTS.md` 更新本文件并重新执行与改动范围相符的验证。

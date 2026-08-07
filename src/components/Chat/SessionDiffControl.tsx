@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, GitBranch, LoaderCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, FileDiff, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { gateway, type OpenClawSessionDiff } from '@/services/gateway';
@@ -97,7 +97,7 @@ export function SessionDiffControl({ sessionKey, agentId }: SessionDiffControlPr
           open && 'bg-[rgb(var(--aegis-overlay)/0.07)] text-aegis-text',
         )}
       >
-        <GitBranch size={11} aria-hidden="true" />
+        <FileDiff size={11} aria-hidden="true" />
       </button>
 
       {open && (

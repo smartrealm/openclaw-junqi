@@ -745,6 +745,30 @@ test('removeSession closes the tab, switches active session, and persists tab or
   assert.equal(localStorage.getItem('aegis-open-tabs'), JSON.stringify([MAIN_KEY]));
 });
 
+test('closeTab can close a main session tab without deleting its Gateway session', () => {
+  const conversationKey = 'agent:worker:conversation-tab';
+  useChatStore.setState({
+    sessions: [
+      { key: MAIN_KEY, sessionId: 'session-main', label: 'Main' },
+      { key: conversationKey, sessionId: 'session-conversation', label: 'Conversation' },
+    ],
+    openTabs: [MAIN_KEY, conversationKey],
+    activeSessionKey: MAIN_KEY,
+    messagesPerSession: {},
+    _blocksCache: {},
+    _groupsCache: {},
+    quickRepliesBySession: {},
+  });
+
+  useChatStore.getState().closeTab(MAIN_KEY);
+
+  const state = useChatStore.getState();
+  assert.deepEqual(state.openTabs, [conversationKey]);
+  assert.equal(state.activeSessionKey, conversationKey);
+  assert.equal(state.sessions.some((session) => session.key === MAIN_KEY), true);
+  assert.equal(localStorage.getItem('aegis-open-tabs'), JSON.stringify([conversationKey]));
+});
+
 test('opening or replacing the active tab does not create a local unread marker', () => {
   const unreadKey = 'agent:worker:unread-target';
   const unreadSession = { key: unreadKey, sessionId: 'gateway-session-id', label: 'Unread target' };
