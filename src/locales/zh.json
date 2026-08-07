@@ -4261,6 +4261,7 @@
       "connectionTimeout": "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成经认证的 Gateway 连接。",
       "handoffNotReady": "OpenClaw 配置已完成，但切换运行方式后无法验证所选 Gateway。请修复并重试。",
       "inferenceUnverified": "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",
+      "inferenceVerificationUnavailable": "OpenClaw 配置已完成，但当前 Gateway 不支持官方实时模型验证。JunQi 无法确认默认模型是否可用，请升级或切换到支持该官方能力的 Gateway 后再验证。",
       "failed": "OpenClaw 配置向导执行失败。",
       "missingStep": "OpenClaw 配置向导没有返回下一步。",
       "sessionExpired": "OpenClaw 配置会话已失效，请重新连接。",

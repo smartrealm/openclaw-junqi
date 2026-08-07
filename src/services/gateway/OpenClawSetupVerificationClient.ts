@@ -57,8 +57,11 @@ function failureStatus(value: unknown): OpenClawSetupVerificationFailureStatus |
 }
 
 function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
+  if (!(error instanceof GatewayRpcError)) return false;
+  if (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND') {
+    return true;
+  }
+  return error.code === 'INVALID_REQUEST' && /^unknown method:/i.test(error.message.trim());
 }
 
 export function parseOpenClawSetupVerification(value: unknown): OpenClawSetupVerification {
