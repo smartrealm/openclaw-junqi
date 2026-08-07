@@ -107,7 +107,7 @@ describe('ChannelQrLoginSession', () => {
     ]);
   });
 
-  test('cancels the provider session when the dialog closes', async () => {
+  test('关闭对话框只停止本地投影，不调用不存在的取消 RPC', async () => {
     let resolveWait: ((value: unknown) => void) | undefined;
     const gateway: ChannelGatewayRpc & { calls: Array<{ method: string; params: Record<string, unknown> }> } = {
       calls: [],
@@ -115,7 +115,7 @@ describe('ChannelQrLoginSession', () => {
         this.calls.push({ method, params });
         if (method === 'web.login.start') return { qrContent: 'https://example.com/qr', sessionId: 'session-1' };
         if (method === 'web.login.wait') return new Promise((resolve) => { resolveWait = resolve; });
-        return { cancelled: true };
+        throw new Error(`Unexpected Gateway method: ${method}`);
       },
     };
     const session = new ChannelQrLoginSession(gateway, 'qqbot', 'primary');
@@ -124,11 +124,7 @@ describe('ChannelQrLoginSession', () => {
     session.cancel();
     resolveWait?.({ connected: true });
     await pending;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(gateway.calls.at(-1), {
-      method: 'web.login.cancel',
-      params: { channel: 'qqbot', accountId: 'primary', sessionId: 'session-1' },
-    });
+    assert.deepEqual(gateway.calls.map((call) => call.method), ['web.login.start', 'web.login.wait']);
   });
 
   test('does not expose a raw Gateway error to the UI state', async () => {
@@ -162,7 +158,7 @@ describe('ChannelQrLoginSession', () => {
     assert.equal(session.snapshot().phase, 'connected');
   });
 
-  test('releases an earlier provider session before refreshing the QR code', async () => {
+  test('刷新二维码时以本地代际围栏丢弃先前等待结果', async () => {
     let resolveFirstWait: ((value: unknown) => void) | undefined;
     const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
     const gateway: ChannelGatewayRpc = {
@@ -173,7 +169,7 @@ describe('ChannelQrLoginSession', () => {
         }
         if (method === 'web.login.start') return { connected: true };
         if (method === 'web.login.wait') return new Promise((resolve) => { resolveFirstWait = resolve; });
-        return { cancelled: true };
+        throw new Error(`Unexpected Gateway method: ${method}`);
       },
     };
     const session = new ChannelQrLoginSession(gateway, 'qqbot');
@@ -182,7 +178,7 @@ describe('ChannelQrLoginSession', () => {
     await session.start(true);
     resolveFirstWait?.({ connected: true });
     await first;
-    assert.ok(calls.some((call) => call.method === 'web.login.cancel' && call.params.sessionId === 'first-session'));
+    assert.equal(calls.some((call) => call.method === 'web.login.cancel'), false);
     assert.equal(session.snapshot().phase, 'connected');
   });
 

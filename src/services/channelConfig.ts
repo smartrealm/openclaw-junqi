@@ -1,14 +1,11 @@
 import type { ChannelConfig, GatewayRuntimeConfig } from '@/types/openclawConfig';
 import {
+  CONFIG_REVISION_CONFLICT_PREFIX,
   isChannelConfigurationMetadataKey,
   isConfigRevisionConflict,
   mergeChannelConfigPartitions,
 } from './channelConfigMerge';
-import {
-  readActiveOpenclawConfig,
-  validateActiveOpenclawConfig,
-  writeActiveOpenclawConfig,
-} from './openclawConfigRuntime';
+import { openClawRuntimeConfigClient } from './gateway';
 
 export type ChannelBindingSource = 'account' | 'channel';
 
@@ -51,8 +48,8 @@ export interface ChannelAccountRuntimeState {
 
 export interface ChannelConfigRepository {
   detect(): Promise<{ path: string; exists: boolean }>;
-  read(): Promise<{ config: GatewayRuntimeConfig; revision: string }>;
-  write(config: GatewayRuntimeConfig, expectedRevision: string): Promise<void>;
+  read(): Promise<{ config: GatewayRuntimeConfig; revision?: string }>;
+  write(config: GatewayRuntimeConfig, expectedRevision?: string): Promise<void>;
   restart(): Promise<{ success: boolean; error?: string } | null>;
 }
 
@@ -475,19 +472,24 @@ export async function persistChannelsOnly(
   base: GatewayRuntimeConfig,
   next: GatewayRuntimeConfig,
 ): Promise<GatewayRuntimeConfig> {
-  return persistChannelsOnlyWithRepository(tauriChannelConfigRepository, base, next);
+  return persistChannelsOnlyWithRepository(gatewayChannelConfigRepository, base, next);
 }
 
-export const tauriChannelConfigRepository: ChannelConfigRepository = {
+export const gatewayChannelConfigRepository: ChannelConfigRepository = {
   async detect() {
-    return validateActiveOpenclawConfig();
+    const snapshot = await openClawRuntimeConfigClient.read();
+    return { path: snapshot.path ?? '', exists: snapshot.exists };
   },
   async read() {
-    const { data, revision } = await readActiveOpenclawConfig();
-    return { config: data, revision };
+    const snapshot = await openClawRuntimeConfigClient.read();
+    return { config: snapshot.config, revision: snapshot.hash };
   },
-  async write(config: GatewayRuntimeConfig, expectedRevision: string) {
-    await writeActiveOpenclawConfig(config, expectedRevision);
+  async write(config: GatewayRuntimeConfig, expectedRevision?: string) {
+    const snapshot = await openClawRuntimeConfigClient.read();
+    if (snapshot.exists && snapshot.hash !== expectedRevision) {
+      throw new Error(`${CONFIG_REVISION_CONFLICT_PREFIX}: Gateway config hash changed`);
+    }
+    await openClawRuntimeConfigClient.replace(config, snapshot);
   },
   async restart() {
     const { gatewayLifecycle } = await import('@/services/gateway/gatewayLifecycle');
@@ -534,7 +536,7 @@ export async function persistChannelsOnlyWithRepository(
 }
 
 export async function cleanupDeletedAgentChannelBindings(agentId: string): Promise<number> {
-  return cleanupDeletedAgentChannelBindingsWithRepository(tauriChannelConfigRepository, agentId);
+  return cleanupDeletedAgentChannelBindingsWithRepository(gatewayChannelConfigRepository, agentId);
 }
 
 export async function cleanupDeletedAgentChannelBindingsWithRepository(

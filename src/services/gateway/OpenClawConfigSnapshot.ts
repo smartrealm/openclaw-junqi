@@ -4,6 +4,7 @@ export interface OpenClawConfigSnapshot {
   exists: boolean;
   config: GatewayRuntimeConfig;
   hash?: string;
+  path?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -36,5 +37,6 @@ export function readOpenClawConfigSnapshot(value: unknown): OpenClawConfigSnapsh
     exists: snapshot.exists,
     config: snapshot.config,
     ...(hash ? { hash } : {}),
+    ...(typeof snapshot.path === 'string' && snapshot.path.trim() ? { path: snapshot.path } : {}),
   };
 }

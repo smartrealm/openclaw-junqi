@@ -45,7 +45,6 @@ pub mod office_preview;
 pub mod openclaw_channel;
 pub(crate) mod openclaw_cli;
 pub mod openclaw_media_preview;
-pub mod openclaw_provider;
 pub mod openclaw_repair;
 pub(crate) mod openclaw_state_dir;
 pub mod openclaw_update;

@@ -119,7 +119,7 @@ test('an absent baseline does not weaken the decision', async () => {
 test('the config manager captures the baseline before it overwrites it', () => {
   const source = readFileSync('src/pages/ConfigManager/index.tsx', 'utf8');
   const capture = source.indexOf('const reloadBaseline = originalConfig;');
-  const overwrite = source.indexOf('setOriginalConfig(structuredClone(normalizedSavedConfig))');
+  const overwrite = source.indexOf('setOriginalConfig(structuredClone(savedConfig))');
   assert.ok(capture >= 0, 'baseline must be captured explicitly');
   assert.ok(overwrite > capture, 'baseline must be captured before the state setter');
   assert.match(source, /diffConfigPaths\(reloadBaseline \?\? \{\}/);

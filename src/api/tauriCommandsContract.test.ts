@@ -26,10 +26,6 @@ const openclawRepair = readFileSync(
   new URL('../services/gateway/openclawRepair.ts', import.meta.url),
   'utf8',
 );
-const providerRuntime = readFileSync(
-  new URL('../services/openclawProviderRuntime.ts', import.meta.url),
-  'utf8',
-);
 const channelRuntime = readFileSync(
   new URL('../services/openclawChannelRuntime.ts', import.meta.url),
   'utf8',
@@ -223,8 +219,7 @@ test('shared Gateway commands have one renderer invocation boundary', () => {
   assert.match(commands, /export const gatewayRescueChat/);
   assert.match(commands, /export const createOpenClawMediaPreviewUrl/);
   assert.match(commands, /export const getGatewayRuntimeSnapshot/);
-  assert.match(commands, /export const getLegacyGatewayCredential/);
-  assert.match(commands, /export const deleteLegacyGatewayCredential/);
+  assert.doesNotMatch(commands, /getLegacyGatewayCredential|deleteLegacyGatewayCredential|migrateGatewayCredential/);
   assert.match(pluginRecovery, /listBrokenGatewayPluginsCommand\(error\)/);
   assert.match(pluginRecovery, /healOpenclawPluginCommand\(id, reason\)/);
   assert.match(openclawRepair, /createOpenClawRepairCoordinator\(repairOpenclaw\)/);
@@ -253,12 +248,11 @@ test('shared Gateway commands have one renderer invocation boundary', () => {
   assert.doesNotMatch(adapter, /function migrateNativeLegacyGatewayCredential/);
 });
 
-test('OpenClaw provider and channel commands have one typed renderer boundary', () => {
-  const commandNames = /(?:get_openclaw_provider_catalog|get_openclaw_config_schema|get_openclaw_auth_profiles|probe_openclaw_provider|probe_active_openclaw_model|get_openclaw_channel_catalog|install_openclaw_channel_plugin|get_openclaw_channel_capabilities|get_openclaw_channel_status|get_openclaw_channel_logs)/;
+test('OpenClaw channel commands have one typed renderer boundary', () => {
+  const commandNames = /(?:get_openclaw_channel_catalog|install_openclaw_channel_plugin|get_openclaw_channel_capabilities|get_openclaw_channel_status|get_openclaw_channel_logs)/;
   for (const source of [
     adapter,
     setupFlow,
-    providerRuntime,
     channelRuntime,
     configSchema,
     channelsCenter,
@@ -270,11 +264,9 @@ test('OpenClaw provider and channel commands have one typed renderer boundary', 
     assert.doesNotMatch(source, new RegExp(`invoke(?:<[^>]+>)?\\(["']${commandNames.source}["']`));
     assert.doesNotMatch(source, /window\.aegis\.(?:providerRuntime|channelRuntime)/);
   }
-  assert.match(commands, /export const getOpenclawProviderCatalog/);
-  assert.match(commands, /export const probeOpenclawProvider/);
+  assert.doesNotMatch(commands, /getOpenclawProviderCatalog|probeOpenclawProvider|getOpenclawConfigSchema|getOpenclawAuthProfiles|probeActiveOpenclawModel/);
   assert.match(commands, /export const getOpenclawChannelCatalog/);
   assert.match(commands, /export const getOpenclawChannelStatus/);
-  assert.match(providerRuntime, /normalizeOfficialProviderCatalog/);
   assert.match(channelRuntime, /loadOfficialChannelStatus/);
 });
 

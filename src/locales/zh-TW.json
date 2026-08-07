@@ -4229,6 +4229,7 @@
       "connectingAction": "正在連接",
       "connectionTimeout": "Gateway 程序已就緒，但 JunQi 未能在限定時間內完成經驗證的 Gateway 連線。",
       "handoffNotReady": "OpenClaw 配置已完成，但切換運行方式後無法驗證所選 Gateway。請修復並重試。",
+      "inferenceUnverified": "OpenClaw 配置已完成，但預設模型尚未通過即時驗證。請修正模型或憑據後重試。",
       "failed": "OpenClaw 配置嚮導執行失敗。",
       "missingStep": "OpenClaw 配置嚮導沒有返回下一步。",
       "sessionExpired": "OpenClaw 配置會話已失效，請重新連接。",

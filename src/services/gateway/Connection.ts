@@ -803,10 +803,11 @@ export class GatewayConnection {
           });
         }
         if (!this.transient && hello.authDeviceToken) {
+          const previousDeviceToken = this.deviceToken.trim();
           this.deviceToken = hello.authDeviceToken;
           // 共享 token 已完成当前连接时，设备 token 只保留在进程内，避免首次进入
           // 工作区又为独立 Keychain 项发起授权。无共享 token 的设备认证仍需持久化。
-          if (!this.token.trim()) {
+          if (!this.token.trim() && hello.authDeviceToken !== previousDeviceToken) {
             void this.persistDeviceCredential(this.url, hello.authDeviceToken)
               .catch(() => {});
           }

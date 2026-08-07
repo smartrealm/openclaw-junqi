@@ -10,6 +10,7 @@ export interface OpenClawSessionEntry {
 
 export interface OpenClawCreatedSession {
   readonly key: string;
+  readonly agentId: string;
   readonly sessionId: string;
   readonly entry: OpenClawSessionEntry;
 }
@@ -28,7 +29,7 @@ export type OpenClawSessionRequester = <T>(
 ) => Promise<T>;
 
 export class OpenClawSessionLifecycleResponseError extends Error {
-  constructor(readonly reason: 'invalid-payload' | 'not-confirmed' | 'missing-identity') {
+  constructor(readonly reason: 'invalid-payload' | 'not-confirmed' | 'missing-identity' | 'agent-mismatch') {
     super(`OPENCLAW_SESSION_LIFECYCLE_${reason.toUpperCase()}`);
     this.name = 'OpenClawSessionLifecycleResponseError';
   }
@@ -44,7 +45,25 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-export function parseOpenClawCreatedSession(value: unknown): OpenClawCreatedSession {
+function agentIdFromGatewaySessionKey(key: string): string | null {
+  return /^agent:([^:]+):/i.exec(key)?.[1] ?? null;
+}
+
+function canonicalAgentIdForGatewayComparison(value: string): string {
+  const trimmed = value.trim();
+  const normalized = trimmed.toLowerCase();
+  if (/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(trimmed)) return normalized;
+  return normalized
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+/g, '')
+    .replace(/-+$/g, '')
+    .slice(0, 64) || 'main';
+}
+
+export function parseOpenClawCreatedSession(
+  value: unknown,
+  expectedAgentId?: string,
+): OpenClawCreatedSession {
   const response = record(value);
   if (!response) throw new OpenClawSessionLifecycleResponseError('invalid-payload');
   if (response.ok !== true) throw new OpenClawSessionLifecycleResponseError('not-confirmed');
@@ -53,12 +72,17 @@ export function parseOpenClawCreatedSession(value: unknown): OpenClawCreatedSess
   const sessionId = nonEmptyString(response.sessionId);
   const entry = record(response.entry);
   const entrySessionId = entry ? nonEmptyString(entry.sessionId) : null;
-  if (!key || !sessionId || !entry || !entrySessionId || entrySessionId !== sessionId) {
+  const agentId = key ? agentIdFromGatewaySessionKey(key) : null;
+  if (!key || !agentId || !sessionId || !entry || !entrySessionId || entrySessionId !== sessionId) {
     throw new OpenClawSessionLifecycleResponseError('missing-identity');
+  }
+  if (expectedAgentId && agentId !== canonicalAgentIdForGatewayComparison(expectedAgentId)) {
+    throw new OpenClawSessionLifecycleResponseError('agent-mismatch');
   }
 
   return {
     key,
+    agentId,
     sessionId,
     entry: {
       ...entry,
@@ -97,6 +121,6 @@ export class OpenClawSessionLifecycleClient {
       ...(parentSessionKey ? { parentSessionKey } : {}),
       ...(input.fork === true ? { fork: true } : {}),
     });
-    return parseOpenClawCreatedSession(result);
+    return parseOpenClawCreatedSession(result, agentId);
   }
 }

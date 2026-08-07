@@ -46,7 +46,7 @@ export function projectCreatedNativeSession(
     key: created.key,
     sessionId: created.sessionId,
     label: entry.label?.trim() ?? '',
-    agentId: input.agentId,
+    agentId: created.agentId,
     createdAt,
     ...(input.fork === true ? {} : { activeLeafEntryId: null }),
     ...(entry.model ? { model: entry.model } : {}),
@@ -82,13 +82,11 @@ const defaultDependencies: SessionCreateDependencies = {
 };
 
 let dependencies = defaultDependencies;
-const creationInFlight = new Map<string, Promise<CreateNativeSessionResult>>();
 
 export function setSessionCreateDependenciesForTests(
   overrides?: Partial<SessionCreateDependencies>,
 ): void {
   dependencies = overrides ? { ...defaultDependencies, ...overrides } : defaultDependencies;
-  creationInFlight.clear();
 }
 
 /** Creates a real Gateway session and only then exposes it to the desktop UI. */
@@ -109,29 +107,12 @@ export function createNativeSession(input: CreateNativeSessionInput): Promise<Cr
     return Promise.resolve({ ok: false, error: 'fork requires parentSessionKey' });
   }
 
-  // A retry is duplicate work only when every protocol-visible part of its
-  // creation intent is identical. Explicit labels and fork semantics must
-  // remain separate Gateway operations.
-  const inflightKey = JSON.stringify([
-    request.agentId,
-    request.label,
-    request.parentSessionKey ?? null,
-    request.fork === true,
-  ]);
-  const existing = creationInFlight.get(inflightKey);
-  if (existing) return existing;
-
-  const task = dependencies.createRemote(request)
+  return dependencies.createRemote(request)
     .then((created) => {
       const session = dependencies.commit(created, request);
       sessionListMutationFence.invalidate();
       notifyNativeSessionCommit();
       return { ok: true as const, session };
     })
-    .catch((error) => ({ ok: false as const, error: errorMessage(error) }))
-    .finally(() => {
-      if (creationInFlight.get(inflightKey) === task) creationInFlight.delete(inflightKey);
-    });
-  creationInFlight.set(inflightKey, task);
-  return task;
+    .catch((error) => ({ ok: false as const, error: errorMessage(error) }));
 }

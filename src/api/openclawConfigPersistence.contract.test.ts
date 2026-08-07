@@ -35,8 +35,8 @@ test('OpenClaw config reads and imports share the Rust JSON5 contract', () => {
   assert.match(tauriLib, /commands::config::parse_openclaw_config_text/);
 });
 
-test('renderer config writes target only the selected runtime and retain no local config backup', () => {
-  assert.match(commands, /expectedRevision: expectedRevision \?\? null/);
+test('renderer does not expose a direct OpenClaw config write command', () => {
+  assert.doesNotMatch(commands, /writeOpenclawConfig|write_config/);
   assert.match(adapter, /clearLegacyOpenClawConfigBackups\(\)/);
   assert.doesNotMatch(configManager, /aegis-config-backups/);
   assert.doesNotMatch(configManager, /config\.read\([^)]/);
@@ -46,7 +46,7 @@ test('renderer config writes target only the selected runtime and retain no loca
 });
 
 test('active OpenClaw config access crosses one typed renderer boundary', () => {
-  const activeConfigCommandNames = /(?:read_config|write_config|parse_openclaw_config_text|validate_openclaw_config)/;
+  const activeConfigCommandNames = /(?:read_config|parse_openclaw_config_text|validate_openclaw_config)/;
   for (const rendererSource of [
     app,
     setupFlow,
@@ -59,13 +59,13 @@ test('active OpenClaw config access crosses one typed renderer boundary', () => 
     assert.doesNotMatch(rendererSource, new RegExp(`invoke(?:<[^>]+>)?\\(["']${activeConfigCommandNames.source}["']`));
     assert.doesNotMatch(rendererSource, /window\.aegis\.config\.(?:detect|read|write|parse)/);
   }
-  assert.match(app, /readActiveOpenclawConfig/);
   assert.match(setupFlow, /validateActiveOpenclawConfig/);
-  assert.match(channelConfig, /writeActiveOpenclawConfig/);
   assert.match(configManager, /parseActiveOpenclawConfig/);
-  assert.match(channelsCenter, /readActiveOpenclawConfig/);
-  assert.match(agentSettings, /readActiveOpenclawConfig/);
-  assert.match(gatewayErrorScreen, /resetActiveOpenclawConfig/);
+  assert.doesNotMatch(app, /readActiveOpenclawConfig/);
+  assert.doesNotMatch(channelConfig, /writeActiveOpenclawConfig/);
+  assert.doesNotMatch(channelsCenter, /readActiveOpenclawConfig/);
+  assert.doesNotMatch(agentSettings, /readActiveOpenclawConfig/);
+  assert.doesNotMatch(gatewayErrorScreen, /resetActiveOpenclawConfig/);
 });
 
 test('OpenClaw configuration types stay outside the legacy desktop bridge', () => {

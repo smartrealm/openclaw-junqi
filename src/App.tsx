@@ -71,7 +71,6 @@ import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOpt
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
 import { voiceRuntime } from '@/services/voice/VoiceRuntime';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
-import { readActiveOpenclawConfig } from '@/services/openclawConfigRuntime';
 import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
 import { approveSelectedGatewayDevice } from '@/api/tauri-commands';
@@ -379,13 +378,6 @@ export default function App() {
       (method, params) => gateway.call(method, params),
       extractAvailableModelsFromGatewayResult,
     );
-    try {
-      const { data } = await readActiveOpenclawConfig();
-      const profiles = Object.keys(data?.auth?.profiles ?? {}).length;
-      const providers = Object.keys(data?.models?.providers ?? {}).length;
-      const modelDefs = Object.keys(data?.agents?.defaults?.models ?? {}).length;
-      localStorage.setItem('aegis-provider-health', JSON.stringify({ profiles, providers, modelDefs, loadedModels: models.length }));
-    } catch {}
     setAvailableModels(models);
   }, [setAvailableModels]);
 

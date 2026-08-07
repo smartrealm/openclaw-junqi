@@ -6,6 +6,7 @@ function dependencies(overrides: Partial<Parameters<typeof validateSetupCompleti
   return {
     probeGateway: async () => true,
     requiresOnboarding: async () => false,
+    verifyConfiguredInference: async () => true,
     ...overrides,
   };
 }
@@ -33,6 +34,14 @@ test('setup completion rejects a selected-runtime config that still requires onb
   assert.equal(result.ready, false);
 });
 
+test('setup completion rejects a static model reference that fails official live verification', async () => {
+  const result = await validateSetupCompletion(dependencies({
+    verifyConfiguredInference: async () => false,
+  }));
+
+  assert.deepEqual(result, { ready: false, reason: 'inference-unverified' });
+});
+
 test('setup completion follows the native Gateway and configuration gates', async () => {
   const calls: string[] = [];
   const result = await validateSetupCompletion({
@@ -44,8 +53,12 @@ test('setup completion follows the native Gateway and configuration gates', asyn
       calls.push('config');
       return false;
     },
+    verifyConfiguredInference: async () => {
+      calls.push('inference');
+      return true;
+    },
   });
 
   assert.deepEqual(result, { ready: true });
-  assert.deepEqual(calls, ['gateway', 'config']);
+  assert.deepEqual(calls, ['gateway', 'config', 'inference']);
 });

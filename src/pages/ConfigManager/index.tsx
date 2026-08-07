@@ -3,46 +3,23 @@
 // Full config state management + Diff Preview + Export/Import
 // ═══════════════════════════════════════════════════════════
 
-import { lazy, Suspense, useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { FileJson, CheckCircle2, AlertCircle, RefreshCw, Bot, Users, MessageSquare, Wrench, SlidersHorizontal, KeyRound, type LucideIcon, Download, Upload } from 'lucide-react';
 import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';
-import { getTemplateById } from './providerTemplates';
-import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
-import { gateway } from '@/services/gateway';
+import { gateway, openClawRuntimeConfigClient } from '@/services/gateway';
 import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
-import {
-  probeOfficialProviderCandidate,
-  type ProviderProbeRequest,
-  type ProviderProbeSummary,
-} from '@/services/openclawProviderRuntime';
-import {
-  normalizeAgentsForRuntime,
-  normalizeModelsProvidersForRuntime,
-} from './runtimeNormalization';
-import {
-  authProfilesForRuntime,
-  normalizeAuthProfilesFromDisk,
-} from './configUtils';
-import { deriveProviderApiKeyEnvKey, preserveProviderSecretsFromDisk } from './providerSecretResolver';
 import { FloatingSaveButton, ChangesPill } from './components';
 import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 import { debugLog, debugWarn } from '@/utils/debugLog';
-import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 import { readConfigNavigationIntent, type ConfigTab } from './configNavigation';
-import { migrateLegacyChannelBindings } from '@/services/channelConfig';
 import { isChannelConfigurationMetadataKey } from '@/services/channelConfigMerge';
 import { smartMerge } from './configMerge';
 import { diffConfigPaths, planConfigReload } from '@/services/gateway/configReloadPlan';
-import {
-  parseActiveOpenclawConfig,
-  readActiveOpenclawConfig,
-  validateActiveOpenclawConfig,
-  writeActiveOpenclawConfig,
-} from '@/services/openclawConfigRuntime';
+import { parseActiveOpenclawConfig } from '@/services/openclawConfigRuntime';
 
 type Tab = ConfigTab;
 
@@ -87,8 +64,6 @@ export function ConfigManagerPage() {
   const [saveSuccess, setSaveSuccess]     = useState(false);
   const [reloading, setReloading]         = useState(false);
   const [reloadSuccess, setReloadSuccess] = useState(false);
-  const [connectionFailures, setConnectionFailures] = useState<string[] | null>(null);
-  const connectionConfirmResolverRef = useRef<((value: boolean) => void) | null>(null);
 
   // ── hasChanges — true when config differs from disk ──
   const hasChanges = useMemo(
@@ -103,20 +78,11 @@ export function ConfigManagerPage() {
         setDetecting(true);
         setError('');
 
-        const detected = await validateActiveOpenclawConfig();
-        setConfigPath(detected.path);
-        setConfigExists(detected.exists);
-        if (!detected.valid) {
-          throw new Error(detected.error || 'The selected OpenClaw config is invalid.');
-        }
-
-        // A missing openclaw.json is a valid first-run state. The backend read
-        // contract returns an empty object for that case. Keep the editor
-        // usable and let the first save create the selected-runtime file.
-        const { data } = await readActiveOpenclawConfig();
-        const normalized = normalizeConfig(data);
-        setConfig(normalized);
-        setOriginalConfig(structuredClone(normalized));
+        const snapshot = await openClawRuntimeConfigClient.read();
+        setConfigPath(snapshot.path ?? '');
+        setConfigExists(snapshot.exists);
+        setConfig(snapshot.config);
+        setOriginalConfig(structuredClone(snapshot.config));
       } catch (err: any) {
         setError(err.message || 'Unknown error');
       } finally {
@@ -150,44 +116,31 @@ export function ConfigManagerPage() {
   // ── Save ──
   async function persistConfig(
     targetConfig?: GatewayRuntimeConfig | null,
-    options?: { connectionProbe?: ProviderProbeRequest }
   ): Promise<boolean> {
     const configToSave = targetConfig ?? config;
     if (!configToSave) return false;
     setSaving(true);
 
     try {
-      // 1. Re-read the latest version from disk to capture any external edits
-      const { data: diskConfig, revision } = await readActiveOpenclawConfig();
+      // 1. 从 Gateway 重新读取带 hash 的当前快照，保留外部配置更新并建立 CAS 写入前提。
+      const snapshot = await openClawRuntimeConfigClient.read();
+      const diskConfig = snapshot.config;
 
-      // 2. Apply only the user's changes on top of the fresh disk version
-      const mergedRaw = smartMerge(diskConfig, originalConfig, configToSave) as GatewayRuntimeConfig;
-      // Preserve provider env vars from disk when the UI state lost them but the
-      // provider/profile still exists. Prevents accidental API key deletion.
-      const merged = preserveProviderSecretsFromDisk(diskConfig, mergedRaw);
+      // 2. 仅将用户变更合并到最新 Gateway 快照；Provider、凭据和网络策略不在客户端重写。
+      const toWrite = smartMerge(diskConfig, originalConfig, configToSave) as GatewayRuntimeConfig;
 
-      // Strip UI-only fields before validation/probing. Do not infer or replace
-      // OpenClaw tool providers from JunQi-owned credential heuristics: only an
-      // explicit user edit or the selected Runtime may choose those values.
-      const toWrite = normalizeConfigForDisk(merged);
-      const precheckResult = await runConnectionPrecheck(toWrite, options?.connectionProbe);
-      if (!precheckResult.ok) {
-        const continueSave = await requestConnectionFailureConfirm(precheckResult.failures);
-        if (!continueSave) return false;
-      }
-
-      // 3. Write the already validated candidate.
-      await writeActiveOpenclawConfig(toWrite, revision);
+      // 3. 仅通过 Gateway 写入，服务端负责 schema、脱敏字段恢复与 baseHash 冲突校验。
+      await openClawRuntimeConfigClient.replace(toWrite, snapshot);
       setConfigExists(true);
 
       // 4. Sync UI state from the actual saved config so in-memory state matches disk.
-      const normalizedSavedConfig = normalizeConfig(toWrite);
+      const savedConfig = structuredClone(toWrite);
       // Captured before the state setters below: the reload plan needs the
       // pre-save baseline, and relying on the stale closure value of
       // `originalConfig` would break the moment this moves to a ref.
       const reloadBaseline = originalConfig;
-      setConfig(structuredClone(normalizedSavedConfig));
-      setOriginalConfig(structuredClone(normalizedSavedConfig));
+      setConfig(savedConfig);
+      setOriginalConfig(structuredClone(savedConfig));
 
       // Keep the last confirmed catalog mounted while the Gateway reloads.
       // Clearing it here unmounts the composer control and causes a visible flash.
@@ -197,7 +150,7 @@ export function ConfigManagerPage() {
       // Only restart when OpenClaw says this change needs it. reloadKind is
       // per-path and only available from config.schema.lookup; an unknown or
       // unavailable answer degrades to restart rather than skipping it.
-      const changedPaths = diffConfigPaths(reloadBaseline ?? {}, normalizedSavedConfig);
+      const changedPaths = diffConfigPaths(reloadBaseline ?? {}, savedConfig);
       const reloadPlan = await planConfigReload(
         changedPaths,
         (path) => gateway.callPrivileged('config.schema.lookup', { path }),
@@ -257,10 +210,9 @@ export function ConfigManagerPage() {
 
   async function handleApplyAndSave(
     updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig,
-    options?: { connectionProbe?: ProviderProbeRequest }
   ): Promise<boolean> {
     if (!config) return false;
-    return persistConfig(updater(config), options);
+    return persistConfig(updater(config));
   }
 
   // ── Export ──
@@ -287,422 +239,13 @@ export function ConfigManagerPage() {
       const text = await file.text();
       try {
         const data = await parseActiveOpenclawConfig(text);
-        setConfig(normalizeConfig(data));
+        setConfig(data);
         // Don't update originalConfig — so hasChanges becomes true
       } catch {
         setError(t('config.importError'));
       }
     };
     input.click();
-  };
-
-  // ── Normalization ──
-  // auth.profiles may contain legacy fields ("type"/"key") or newer UI fields ("mode"/"apiKey"/"token").
-  // Normalize to mode/apiKey/token when writing to disk.
-  const canonicalProviderId = (providerId: string | undefined): string => {
-    const normalized = String(providerId ?? '').trim().toLowerCase();
-    if (normalized === 'modelstudio' || normalized === 'qwencloud' || normalized === 'qwen-dashscope') return 'qwen';
-    if (normalized === 'z.ai' || normalized === 'z-ai') return 'zai';
-    if (normalized === 'kimi-coding' || normalized === 'kimi-code' || normalized === 'kimi') return 'kimi-coding';
-    return normalized;
-  };
-
-  const stripProviderPrefix = (providerId: string, modelId: string | undefined): string => {
-    const trimmed = String(modelId ?? '').trim();
-    if (!trimmed) return trimmed;
-    const slashIndex = trimmed.indexOf('/');
-    if (slashIndex <= 0) return trimmed;
-    const head = trimmed.slice(0, slashIndex);
-    if (canonicalProviderId(head) !== canonicalProviderId(providerId)) return trimmed;
-    return trimmed.slice(slashIndex + 1);
-  };
-
-  const canonicalizeModelRef = (modelRef: string | undefined): string | undefined => {
-    const trimmed = String(modelRef ?? '').trim();
-    if (!trimmed) return undefined;
-    const slashIndex = trimmed.indexOf('/');
-    if (slashIndex <= 0) return trimmed;
-    const provider = canonicalProviderId(trimmed.slice(0, slashIndex));
-    const model = trimmed.slice(slashIndex + 1).trim();
-    return provider && model ? `${provider}/${model}` : trimmed;
-  };
-
-  const PROVIDER_API_KEY_REF_RE = /^\$\{[^}]+\}$/;
-
-  const isProviderApiKeyReference = (value: unknown): boolean => {
-    if (typeof value === 'string') {
-      return PROVIDER_API_KEY_REF_RE.test(value.trim());
-    }
-    if (!value || typeof value !== 'object') return false;
-    const record = value as Record<string, unknown>;
-    return typeof record.source === 'string' || typeof record.id === 'string';
-  };
-
-  const hydrateAgentModelCapabilitiesForUi = (data: GatewayRuntimeConfig): GatewayRuntimeConfig => {
-    const models = data.agents?.defaults?.models;
-    if (!models || Object.keys(models).length === 0) return data;
-
-    let mutated = false;
-    const providerConfigs = data.models?.providers ?? {};
-    const nextModels: Record<string, any> = {};
-    for (const [modelRef, modelEntry] of Object.entries(models)) {
-      const existingEntry =
-        modelEntry && typeof modelEntry === 'object'
-          ? { ...(modelEntry as Record<string, any>) }
-          : {};
-      const explicitSupport = resolveModelSupportsImage(existingEntry);
-      if (typeof explicitSupport === 'boolean') {
-        nextModels[modelRef] = existingEntry;
-        continue;
-      }
-
-      const canonicalRef = canonicalizeModelRef(modelRef) ?? modelRef;
-      const slashIndex = canonicalRef.indexOf('/');
-      const providerId = slashIndex > 0 ? canonicalProviderId(canonicalRef.slice(0, slashIndex)) : undefined;
-      const rawModelId = slashIndex > 0 ? canonicalRef.slice(slashIndex + 1) : canonicalRef;
-      const providerModels = providerId ? providerConfigs[providerId]?.models : undefined;
-      const providerModel = Array.isArray(providerModels)
-        ? providerModels.find((item: any) => stripProviderPrefix(providerId!, String(item?.id ?? '')) === rawModelId)
-        : undefined;
-      const generatedSupport =
-        typeof providerId === 'string'
-          ? GENERATED_PROVIDER_CATALOG[providerId]?.find(
-            (item) => stripProviderPrefix(providerId, item.id) === rawModelId
-          )?.supportsImage
-          : undefined;
-      const inferredSupport =
-        resolveModelSupportsImage(providerModel)
-        ?? generatedSupport;
-
-      if (typeof inferredSupport === 'boolean') {
-        mutated = true;
-        nextModels[modelRef] = {
-          ...existingEntry,
-          supportsImage: inferredSupport,
-          input: inferredSupport ? ['text', 'image'] : ['text'],
-        };
-        continue;
-      }
-
-      nextModels[modelRef] = existingEntry;
-    }
-
-    if (!mutated) return data;
-    return {
-      ...data,
-      agents: {
-        ...data.agents,
-        defaults: {
-          ...data.agents?.defaults,
-          models: nextModels,
-        },
-      },
-    };
-  };
-
-  const isPrivateHostname = (hostname: string): boolean => {
-    const normalized = String(hostname ?? '').trim().toLowerCase();
-    if (!normalized) return false;
-    if (normalized === 'localhost' || normalized.endsWith('.local')) return true;
-    const ipv4Match = normalized.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (!ipv4Match) return normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd');
-    const [a, b, c, d] = ipv4Match.slice(1).map((part) => Number(part));
-    if ([a, b, c, d].some((part) => Number.isNaN(part) || part < 0 || part > 255)) return false;
-    if (a === 10 || a === 127) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 100 && b >= 64 && b <= 127) return true;
-    if (a === 198 && (b === 18 || b === 19)) return true;
-    return false;
-  };
-
-  const shouldAutoAllowPrivateProviderNetwork = (
-    providerId: string,
-    providerConfig: Record<string, any> | undefined,
-  ): boolean => {
-    const baseUrl = String(providerConfig?.baseUrl ?? '').trim();
-    if (!baseUrl) return false;
-    const template = getTemplateById(providerId);
-    const isCustomLike = !template || template.id === 'custom' || template.id === 'vllm' || template.id === 'ollama';
-    if (!isCustomLike) return false;
-    try {
-      return isPrivateHostname(new URL(baseUrl).hostname);
-    } catch {
-      return false;
-    }
-  };
-
-  const ensurePrivateProviderNetworkAccess = (data: GatewayRuntimeConfig): GatewayRuntimeConfig => {
-    const providers = data.models?.providers;
-    if (!providers || Object.keys(providers).length === 0) return data;
-
-    let mutated = false;
-    const nextProviders: Record<string, any> = {};
-    for (const [rawProviderId, providerValue] of Object.entries(providers)) {
-      const providerId = canonicalProviderId(rawProviderId);
-      const providerConfig =
-        providerValue && typeof providerValue === 'object'
-          ? { ...(providerValue as Record<string, any>) }
-          : providerValue;
-      if (
-        providerConfig &&
-        typeof providerConfig === 'object' &&
-        shouldAutoAllowPrivateProviderNetwork(providerId, providerConfig) &&
-        providerConfig.request?.allowPrivateNetwork !== false
-      ) {
-        const nextRequest = {
-          ...(providerConfig.request ?? {}),
-          allowPrivateNetwork: true,
-        };
-        if (JSON.stringify(nextRequest) !== JSON.stringify(providerConfig.request ?? {})) {
-          mutated = true;
-          nextProviders[providerId] = {
-            ...providerConfig,
-            request: nextRequest,
-          };
-          continue;
-        }
-      }
-      nextProviders[providerId] = providerConfig;
-    }
-
-    if (!mutated) return data;
-    return {
-      ...data,
-      models: {
-        ...data.models,
-        providers: nextProviders,
-      },
-    };
-  };
-
-  const stripProviderSecrets = (data: GatewayRuntimeConfig): GatewayRuntimeConfig => {
-    const providers = data.models?.providers;
-    if (!providers) return data;
-
-    let mutated = false;
-    const nextProviders: Record<string, any> = {};
-    for (const [providerId, providerConfig] of Object.entries(providers)) {
-      if (
-        providerConfig &&
-        typeof providerConfig === 'object' &&
-        'apiKey' in providerConfig &&
-        !isProviderApiKeyReference((providerConfig as Record<string, unknown>).apiKey)
-      ) {
-        const { apiKey: _apiKey, ...rest } = providerConfig as Record<string, any>;
-        nextProviders[providerId] = rest;
-        mutated = true;
-      } else {
-        nextProviders[providerId] = providerConfig;
-      }
-    }
-
-    if (!mutated) return data;
-    return {
-      ...data,
-      models: {
-        ...data.models,
-        providers: nextProviders,
-      },
-    };
-  };
-
-  // Bring existing configs in line with latest schema:
-  // - For any auth.profiles[*] whose provider has an envKey template,
-  //   move token/apiKey into env.vars[envKey] and clear them from profile.
-  const normalizeConfig = (data: GatewayRuntimeConfig): GatewayRuntimeConfig => {
-    let next: GatewayRuntimeConfig = { ...data };
-    // Ensure auth.profiles use apiKey/mode for UI (from key/type on disk)
-    if (next.auth?.profiles) {
-      next = {
-        ...next,
-        auth: {
-          ...next.auth,
-          profiles: normalizeAuthProfilesFromDisk(next.auth.profiles) ?? next.auth.profiles,
-        },
-      };
-    }
-    const profiles = next.auth?.profiles ?? {};
-
-    for (const [profileKey, profile] of Object.entries(profiles)) {
-      const providerId = (profile as any).provider ?? profileKey.split(':')[0];
-      const tmpl = getTemplateById(providerId);
-      if (!tmpl?.envKey) continue;
-
-      const key = (profile as any).token ?? (profile as any).apiKey ?? (profile as any).key;
-      if (!key) continue;
-
-      next = {
-        ...next,
-        env: {
-          ...next.env,
-          vars: {
-            ...(next.env?.vars ?? {}),
-            [tmpl.envKey]: key,
-          },
-        },
-        auth: {
-          ...next.auth,
-          profiles: {
-            ...(next.auth?.profiles ?? {}),
-            [profileKey]: {
-              ...profile,
-              token: undefined,
-              apiKey: undefined,
-            },
-          },
-        },
-      };
-    }
-    const stripped = stripProviderSecrets(next);
-    return hydrateAgentModelCapabilitiesForUi(stripped);
-  };
-
-  const migrateCustomProviderSecretsToModels = (data: GatewayRuntimeConfig): GatewayRuntimeConfig => {
-    const profiles = data.auth?.profiles;
-    if (!profiles || Object.keys(profiles).length === 0) return data;
-
-    let mutated = false;
-    const nextProfiles: Record<string, any> = {};
-    const nextEnvVars = { ...(data.env?.vars ?? {}) };
-    const nextProviders = { ...(data.models?.providers ?? {}) };
-
-    for (const [profileKey, profileValue] of Object.entries(profiles)) {
-      const profile = profileValue && typeof profileValue === 'object'
-        ? { ...(profileValue as Record<string, any>) }
-        : {};
-      const providerId = canonicalProviderId(profile.provider ?? profileKey.split(':')[0]);
-      const template = getTemplateById(providerId);
-      const secret = profile.token ?? profile.apiKey ?? profile.key;
-      const shouldUseProviderApiKey = Boolean(secret) && (!template || template.id === 'custom');
-
-      if (!shouldUseProviderApiKey) {
-        nextProfiles[profileKey] = profile;
-        continue;
-      }
-
-      const envKey = deriveProviderApiKeyEnvKey(providerId, template);
-      nextEnvVars[envKey] = String(secret);
-      nextProviders[providerId] = {
-        ...(nextProviders[providerId] ?? {}),
-        apiKey: `\${${envKey}}`,
-      };
-      nextProfiles[profileKey] = {
-        ...profile,
-        provider: providerId,
-        token: undefined,
-        apiKey: undefined,
-        key: undefined,
-      };
-      mutated = true;
-    }
-
-    if (!mutated) return data;
-    return {
-      ...data,
-      env: {
-        ...data.env,
-        vars: nextEnvVars,
-      },
-      auth: {
-        ...data.auth,
-        profiles: nextProfiles,
-      },
-      models: {
-        ...data.models,
-        providers: nextProviders,
-      },
-    };
-  };
-
-  const normalizeConfigForDisk = (data: GatewayRuntimeConfig): GatewayRuntimeConfig => {
-    const migrated = migrateCustomProviderSecretsToModels(data);
-    const withPrivateProviderAccess = ensurePrivateProviderNetworkAccess(migrated);
-    const auth = withPrivateProviderAccess.auth;
-    const normalized = {
-      ...withPrivateProviderAccess,
-      agents: normalizeAgentsForRuntime({
-        agents: withPrivateProviderAccess.agents,
-        providers: withPrivateProviderAccess.models?.providers,
-        generatedProviderCatalog: GENERATED_PROVIDER_CATALOG,
-        canonicalizeModelRef,
-      }),
-      models: withPrivateProviderAccess.models
-        ? {
-          ...withPrivateProviderAccess.models,
-          providers: normalizeModelsProvidersForRuntime({
-            providers: withPrivateProviderAccess.models.providers,
-            agents: withPrivateProviderAccess.agents,
-            generatedProviderCatalog: GENERATED_PROVIDER_CATALOG,
-            canonicalProviderId,
-            stripProviderPrefix,
-            canonicalizeModelRef,
-            getTemplateById,
-          }),
-        }
-        : data.models,
-      auth: !auth?.profiles ? auth : {
-        ...auth,
-        profiles: authProfilesForRuntime(auth.profiles, canonicalProviderId),
-      },
-    };
-    return migrateLegacyChannelBindings(normalized);
-  };
-
-  const requestConnectionFailureConfirm = (failures: string[]) => {
-    return new Promise<boolean>((resolve) => {
-      connectionConfirmResolverRef.current = resolve;
-      setConnectionFailures(failures);
-    });
-  };
-
-  const resolveConnectionFailureConfirm = (value: boolean) => {
-    const resolver = connectionConfirmResolverRef.current;
-    connectionConfirmResolverRef.current = null;
-    setConnectionFailures(null);
-    resolver?.(value);
-  };
-
-  const probeProviderCandidate = async (
-    candidate: GatewayRuntimeConfig,
-    probe: ProviderProbeRequest,
-  ): Promise<ProviderProbeSummary> => {
-    const providerId = canonicalProviderId(probe.providerId);
-    if (!providerId) {
-      return { ok: false, status: 'unknown', detail: 'Provider ID is required.' };
-    }
-    const normalizedCandidate = normalizeConfigForDisk(candidate);
-    return probeOfficialProviderCandidate(normalizedCandidate, {
-      providerId,
-      profileKey: probe.profileKey,
-    });
-  };
-
-  const runConnectionPrecheck = async (
-    candidate: GatewayRuntimeConfig,
-    probe?: ProviderProbeRequest,
-  ) => {
-    if (!probe) {
-      return { ok: true, failures: [] as string[] };
-    }
-    const providerId = canonicalProviderId(probe.providerId);
-    try {
-      const result = await probeProviderCandidate(candidate, probe);
-      if (result.ok) return { ok: true, failures: [] as string[] };
-      const detail = [result.status, result.reasonCode, result.detail]
-        .filter(Boolean)
-        .join(' · ');
-      return {
-        ok: false,
-        failures: [`${providerId}:${probe.profileKey ?? 'default'} — ${detail}`],
-      };
-    } catch (error: any) {
-      return {
-        ok: false,
-        failures: [`${providerId}:${probe.profileKey ?? 'default'} — ${error?.message || String(error)}`],
-      };
-    }
   };
 
   // ── Reload (re-detect path + re-read) ──
@@ -712,17 +255,11 @@ export function ConfigManagerPage() {
     setError('');
     setReloadSuccess(false);
     try {
-      const detected = await validateActiveOpenclawConfig();
-      setConfigPath(detected.path);
-      setConfigExists(detected.exists);
-      if (!detected.valid) {
-        throw new Error(detected.error || 'The selected OpenClaw config is invalid.');
-      }
-
-      const { data } = await readActiveOpenclawConfig();
-      const normalized = normalizeConfig(data);
-      setConfig(normalized);
-      setOriginalConfig(structuredClone(normalized));
+      const snapshot = await openClawRuntimeConfigClient.read();
+      setConfigPath(snapshot.path ?? '');
+      setConfigExists(snapshot.exists);
+      setConfig(snapshot.config);
+      setOriginalConfig(structuredClone(snapshot.config));
       setReloadSuccess(true);
       setTimeout(() => setReloadSuccess(false), 2000);
     } catch (err: any) {
@@ -939,7 +476,6 @@ export function ConfigManagerPage() {
                   config={config}
                   onChange={handleChange}
                   onApplyAndSave={handleApplyAndSave}
-                  onProbeProvider={probeProviderCandidate}
                   saving={saving}
                   addRequestId={providerAddRequestId}
                 />
@@ -974,51 +510,6 @@ export function ConfigManagerPage() {
         onSave={() => void handleSave()}
         onDiscard={handleDiscard}
       />
-
-      {connectionFailures && (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-xl rounded-2xl border border-aegis-border bg-aegis-card-solid shadow-[0_10px_40px_rgba(0,0,0,0.45)]">
-            <div className="px-5 py-4 border-b border-aegis-border">
-              <h3 className="text-sm font-bold text-aegis-text">
-                {t('config.connectionPrecheckTitle', '连接测试未全部通过')}
-              </h3>
-              <p className="text-xs text-aegis-text-muted mt-1">
-                {t('config.connectionPrecheckHint', '建议先修复连接再保存；你也可以选择继续保存并重启 Gateway。')}
-              </p>
-            </div>
-            <div className="px-5 py-4 max-h-64 overflow-auto">
-              <div className="text-xs text-aegis-text-muted mb-2">
-                {t('config.connectionPrecheckFailedList', '失败项：')}
-              </div>
-              <div className="space-y-1.5">
-                {connectionFailures.map((item) => (
-                  <div
-                    key={item}
-                    className="text-xs font-mono break-all rounded-lg border border-red-500/20 bg-red-500/8 text-red-300 px-2.5 py-2"
-                  >
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="px-5 py-4 border-t border-aegis-border flex items-center justify-end gap-2">
-              <button
-                autoFocus
-                onClick={() => resolveConnectionFailureConfirm(false)}
-                className="px-3.5 py-2 rounded-lg text-xs font-semibold border border-aegis-border text-aegis-text-secondary hover:bg-white/[0.03] transition-colors"
-              >
-                {t('config.connectionPrecheckCancel', '取消保存')}
-              </button>
-              <button
-                onClick={() => resolveConnectionFailureConfirm(true)}
-                className="px-3.5 py-2 rounded-lg text-xs font-bold bg-aegis-primary text-aegis-btn-primary-text hover:brightness-110 transition-all"
-              >
-                {t('config.connectionPrecheckContinue', '仍然继续保存')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Save Success Toast — portal to body so it is not squeezed/covered by page stacking contexts ── */}
       {saveSuccess && createPortal(

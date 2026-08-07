@@ -20,6 +20,7 @@ import {
 } from "@/api/tauri-commands";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
+import { openClawSetupVerificationClient } from "@/services/gateway";
 import { executeRuntimeSelectionTransaction } from "@/services/setup/runtimeSelectionTransaction";
 import { validateSetupCompletion } from "@/services/setup/setupCompletionGate";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
@@ -189,6 +190,14 @@ export function useSetupFlow(
     }
   }, []);
 
+  const verifyActiveRuntimeInference = useCallback(async (): Promise<boolean> => {
+    try {
+      return (await openClawSetupVerificationClient.verify()).ok;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const {
     continueAfterEnvironmentReview,
     redetectEnvironment,
@@ -246,6 +255,7 @@ export function useSetupFlow(
     report,
     patchStep,
     resolveActiveRuntimeOnboardingRequirement,
+    verifyConfiguredInference: verifyActiveRuntimeInference,
     updateOnboardingRequirement,
     appendSetupLog,
     replaceSetupStep,
@@ -328,10 +338,14 @@ export function useSetupFlow(
         }
       }
 
-      const onboardingRequired = needsOnboardingRef.current;
+      const completion = await validateSetupCompletion({
+        probeGateway: () => probeSelectedGateway().catch(() => false),
+        requiresOnboarding: resolveActiveRuntimeOnboardingRequirement,
+        verifyConfiguredInference: verifyActiveRuntimeInference,
+      });
 
       setGatewayReadyContinuation({ status: "idle", error: null });
-      if (onboardingRequired) {
+      if (!completion.ready) {
         // The configure page owns wizard startup. This transition only decides
         // the destination so one click cannot create competing wizard sessions.
         navigateSetup("configure-openclaw", "push");
@@ -353,7 +367,7 @@ export function useSetupFlow(
     } finally {
       gatewayReadyContinuationInFlightRef.current = false;
     }
-  }, [appendSetupLog, gatewayRunning, navigateSetup, report, setSetupError, startGatewayAction, t]);
+  }, [appendSetupLog, gatewayRunning, navigateSetup, report, resolveActiveRuntimeOnboardingRequirement, setSetupError, startGatewayAction, t, verifyActiveRuntimeInference]);
 
   // Storage, runtime selection, and the official OpenClaw wizard stay
   // interactive; only the Gateway start above continues on its own.
@@ -801,6 +815,7 @@ export function useSetupFlow(
       const completion = await validateSetupCompletion({
         probeGateway: () => probeSelectedGateway().catch(() => false),
         requiresOnboarding: resolveActiveRuntimeOnboardingRequirement,
+        verifyConfiguredInference: verifyActiveRuntimeInference,
       });
       if (!completion.ready && completion.reason === "gateway-unavailable") {
         const message = t(
@@ -841,7 +856,7 @@ export function useSetupFlow(
       dashboardEntryInFlightRef.current = false;
       setEnteringDashboard(false);
     }
-  }, [appendSetupLog, invalidateActiveRun, replaceSetupStep, report, resolveActiveRuntimeOnboardingRequirement, setGatewayRunning, setSetupComplete, setSetupError, setWorkspaceStartupMode, t, updateOnboardingRequirement]);
+  }, [appendSetupLog, invalidateActiveRun, replaceSetupStep, report, resolveActiveRuntimeOnboardingRequirement, setGatewayRunning, setSetupComplete, setSetupError, setWorkspaceStartupMode, t, updateOnboardingRequirement, verifyActiveRuntimeInference]);
 
   const detectDocker = useCallback(async () => {
     if (dockerDetectingRef.current) return;

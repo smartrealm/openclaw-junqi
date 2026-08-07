@@ -1,4 +1,3 @@
-import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
 import type { AgentDefaults, ModelEntry, ModelReferenceConfig } from './types';
 import { resolveModelSupportsImage } from '@/utils/providerModelCapabilities';
 import { getModelFallbacks, getModelPrimary, setModelPrimary } from './modelReference';
@@ -30,16 +29,6 @@ function stripProviderNamespace(providerId: string, modelRef: string): string {
   return trimmed.slice(slashIndex + 1);
 }
 
-function resolveGeneratedModelSupportsImage(modelRef: string): boolean | undefined {
-  const normalizedRef = String(modelRef ?? '').trim();
-  const slashIndex = normalizedRef.indexOf('/');
-  if (slashIndex <= 0) return undefined;
-  const providerId = normalizedRef.slice(0, slashIndex);
-  const rows = GENERATED_PROVIDER_CATALOG[normalizeProviderIdForCatalog(providerId)] ?? [];
-  const row = rows.find((entry) => normalizeProviderModelRef(providerId, entry.id) === normalizedRef);
-  return row?.supportsImage;
-}
-
 function buildConfiguredImageSupportMap(models: Record<string, ModelEntry>): Map<string, boolean> {
   const map = new Map<string, boolean>();
   for (const [id, entry] of Object.entries(models)) {
@@ -48,10 +37,6 @@ function buildConfiguredImageSupportMap(models: Record<string, ModelEntry>): Map
       map.set(id, explicitSupport);
       continue;
     }
-    const generatedSupport = resolveGeneratedModelSupportsImage(id);
-    if (typeof generatedSupport === 'boolean') {
-      map.set(id, generatedSupport);
-    }
   }
   return map;
 }
@@ -59,7 +44,7 @@ function buildConfiguredImageSupportMap(models: Record<string, ModelEntry>): Map
 function isModelImageCapable(modelRef: string, imageSupportMap?: Map<string, boolean>): boolean {
   const explicitSupport = imageSupportMap?.get(String(modelRef ?? '').trim());
   if (typeof explicitSupport === 'boolean') return explicitSupport;
-  return resolveGeneratedModelSupportsImage(modelRef) === true;
+  return false;
 }
 
 function resolveTextPrimaryModel(

@@ -40,6 +40,7 @@ export interface WizardSessionPorts {
   report: (message: string, nextProgress?: number) => void;
   patchStep: (id: string, status: StepStatus, detail?: string) => void;
   resolveActiveRuntimeOnboardingRequirement: () => Promise<boolean>;
+  verifyConfiguredInference: () => Promise<boolean>;
   updateOnboardingRequirement: (required: boolean) => void;
   appendSetupLog: (log: Omit<SetupLog, "ts"> & { ts?: number }) => void;
   replaceSetupStep: (step: SetupStep) => void;
@@ -61,6 +62,7 @@ export function useWizardSession({
   report,
   patchStep,
   resolveActiveRuntimeOnboardingRequirement,
+  verifyConfiguredInference,
   updateOnboardingRequirement,
   appendSetupLog,
   replaceSetupStep,
@@ -260,6 +262,12 @@ export function useWizardSession({
             "OpenClaw 配置已完成，但切换运行方式后无法验证所选 Gateway。请修复并重试。",
           ));
         }
+        if (!(await verifyConfiguredInference())) {
+          throw new Error(t(
+            "setup.wizard.inferenceUnverified",
+            "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",
+          ));
+        }
       } catch (handoffError) {
         // Rust 侧已完成的交接可能晚于渲染层导航；后续连接可继续观测，但已废弃的操作不能
         // 修改引导界面或启动后续探测。
@@ -296,7 +304,7 @@ export function useWizardSession({
     report(result.step.title || result.step.message || t("setup.wizard.title", "配置 OpenClaw"), 82);
     replaceSetupStep("configure-openclaw");
     return result;
-  }, [appendSetupLog, assertWizardOperationCurrent, refreshGatewayConnectionTarget, report, setGatewayRunning, setPostStorageStep, replaceSetupStep, setSetupError, t, updateOnboardingRequirement]);
+  }, [appendSetupLog, assertWizardOperationCurrent, refreshGatewayConnectionTarget, report, setGatewayRunning, setPostStorageStep, replaceSetupStep, setSetupError, t, updateOnboardingRequirement, verifyConfiguredInference]);
 
   const recoverLostWizardSession = useCallback(async (
     client: OpenClawWizardClient,

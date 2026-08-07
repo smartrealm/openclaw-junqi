@@ -41,6 +41,14 @@ export function composerDeliveryOptions(
   return deliveryMode === 'steer' ? { delivery: 'steer' } : {};
 }
 
+/** 失败后只在官方并发冲突或已确认空会话首发时读取历史，不推断远端终态。 */
+export function shouldRefreshHistoryAfterMessageSendFailure(
+  error: unknown,
+  confirmedEmptyTranscript: boolean,
+): boolean {
+  return confirmedEmptyTranscript || isOpenClawActiveLeafChangedError(error);
+}
+
 export function useMessageSend({
   activeSessionKey,
   activeSessionId,
@@ -65,9 +73,10 @@ export function useMessageSend({
     const trimmed = rawText.trim();
     if ((!trimmed && sendFiles.length === 0) || isSending || !connected || historyLoading) return;
 
+    const confirmedEmptyTranscript = isConfirmedEmptyTranscript();
     if (historyLoader && shouldWarmUpHistoryBeforeFirstSend({
       messageCount,
-      confirmedEmptyTranscript: isConfirmedEmptyTranscript(),
+      confirmedEmptyTranscript,
     })) {
       try {
         await historyLoader(sessionKey);
@@ -137,7 +146,7 @@ export function useMessageSend({
         state.setQuickReplies([], sessionKey);
       }
     } catch (error) {
-      if (isOpenClawActiveLeafChangedError(error)) {
+      if (shouldRefreshHistoryAfterMessageSendFailure(error, confirmedEmptyTranscript)) {
         void historyLoader?.(sessionKey, { force: true, background: true })
           .catch((refreshError) => debugError('app', '[MessageSend] Active leaf refresh failed:', refreshError));
       }

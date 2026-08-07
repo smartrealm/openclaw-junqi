@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PROVIDER_TEMPLATES, UI_CATALOG, getTemplateById } from './providerTemplates';
 import { AUTH_MODE_ORDER } from '@/types/providerAuthMode';
-import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
 
 test('provider templates only use current JunQi auth modes', () => {
   const allowed = new Set(AUTH_MODE_ORDER);
@@ -30,13 +29,4 @@ test('provider UI catalog entries all resolve to templates', () => {
   for (const entry of UI_CATALOG) {
     assert.ok(getTemplateById(entry.templateId), `${entry.catalogId} references missing template ${entry.templateId}`);
   }
-});
-
-test('generated provider catalog coverage matches intentional runtime aliases', () => {
-  const generatedIds = new Set(Object.keys(GENERATED_PROVIDER_CATALOG));
-  const missing = PROVIDER_TEMPLATES
-    .map((template) => template.id)
-    .filter((id) => !generatedIds.has(id));
-  assert.deepEqual(missing, ['modelstudio']);
-  assert.ok(generatedIds.has('qwen'), 'modelstudio runtime catalog should be exposed under qwen');
 });
