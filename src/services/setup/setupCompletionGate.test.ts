@@ -6,7 +6,11 @@ function dependencies(overrides: Partial<Parameters<typeof validateSetupCompleti
   return {
     probeGateway: async () => true,
     requiresOnboarding: async () => false,
-    verifyConfiguredInference: async () => true,
+    verifyConfiguredInference: async () => ({
+      status: 'verified' as const,
+      modelRef: 'openai/gpt-5.6-sol',
+      latencyMs: 120,
+    }),
     ...overrides,
   };
 }
@@ -36,10 +40,36 @@ test('setup completion rejects a selected-runtime config that still requires onb
 
 test('setup completion rejects a static model reference that fails official live verification', async () => {
   const result = await validateSetupCompletion(dependencies({
-    verifyConfiguredInference: async () => false,
+    verifyConfiguredInference: async () => ({
+      status: 'failed',
+      reason: 'auth',
+      error: 'Credential rejected',
+    }),
   }));
 
-  assert.deepEqual(result, { ready: false, reason: 'inference-unverified' });
+  assert.deepEqual(result, {
+    ready: false,
+    reason: 'inference-unverified',
+    verification: { status: 'failed', reason: 'auth', error: 'Credential rejected' },
+  });
+});
+
+test('setup completion preserves an unavailable official verification capability', async () => {
+  const result = await validateSetupCompletion(dependencies({
+    verifyConfiguredInference: async () => ({
+      status: 'unavailable',
+      error: 'The connected OpenClaw Gateway does not support openclaw.setup.verify',
+    }),
+  }));
+
+  assert.deepEqual(result, {
+    ready: false,
+    reason: 'inference-verification-unavailable',
+    verification: {
+      status: 'unavailable',
+      error: 'The connected OpenClaw Gateway does not support openclaw.setup.verify',
+    },
+  });
 });
 
 test('setup completion follows the native Gateway and configuration gates', async () => {
@@ -55,7 +85,7 @@ test('setup completion follows the native Gateway and configuration gates', asyn
     },
     verifyConfiguredInference: async () => {
       calls.push('inference');
-      return true;
+      return { status: 'verified', modelRef: 'openai/gpt-5.6-sol', latencyMs: 120 };
     },
   });
 

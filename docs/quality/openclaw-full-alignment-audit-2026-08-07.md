@@ -157,9 +157,14 @@ Gateway schema/`models.list` 的可验证能力继续收敛；Gateway 未返回�
 不能证明 primary 可用，也不能由客户端静默改写配置或自动提升 fallback。
 
 **本机复现（2026-08-07）**：Gateway 服务已加载运行，RPC 身份为 `operator` 且具备 `operator.admin`；
-当前 primary `vllm/gpt-5.6-sol` 实时请求返回 HTTP 503，已配置 fallback `deepseek/deepseek-v4-flash`
-返回 200。故当前“默认模型尚未通过实时验证”是模型后端事实，不是 Gateway 安装失败；修复 primary 或
-通过 OpenClaw 官方配置流程重新选择模型后，才能通过 JunQi 的准入门禁。
+选定 Gateway 对 `openclaw.setup.verify` 与 `models.probe` 均返回 `INVALID_REQUEST: unknown method`。同日核对的
+最新版 OpenClaw 官方源码已包含这两个 handler，故这不是模型或凭据失败的证据，而是当前 Gateway 与官方源码
+能力不一致。JunQi 将其保留为“官方实时验证不可用”，不把静态模型文本、Gateway 健康或其他探测替代为成功。
+
+**交接复现（2026-08-07）**：官方 Wizard 最终写入配置并交接服务后，Gateway 日志显示从配置重载到 JunQi
+重新建立认证连接约需 85 秒。此前统一使用 20 秒连接等待，导致服务实际恢复后客户端已报告连接超时。现在仅在
+官方服务交接和交接后恢复路径使用 120 秒有界等待；首次连接和普通 Wizard 步骤仍保持原有 20 秒等待，避免把
+常规故障隐藏为长时间无反馈。
 
 ## 本轮会话修复摘要
 
@@ -173,8 +178,9 @@ dashboard session；无初始 turn 的非 fork 会话不加载旧历史，首发
 - Provider 模板和新增 Provider 编辑器尚未完全替换为官方 Wizard 或 Gateway schema 驱动的入口；当前
   模型目录和保存控制面已经对齐，但该编辑入口仍需继续核验。
 - 官方 Wizard 的可选步骤由 Gateway 返回的步骤和 `installDaemon` 结果决定，JunQi 不添加本地跳过规则；
-  当前完成门禁仍要求选定 Gateway、配置状态和官方 `openclaw.setup.verify` 的实时模型验证，模型凭据
-  不可用时应明确停留在待配置，而不是伪造安装成功。
+  当前完成门禁仍要求选定 Gateway、配置状态和官方 `openclaw.setup.verify` 的实时模型验证。模型验证失败和
+  官方验证方法不可用是不同状态，前者提示修正模型或凭据，后者提示升级或切换支持该官方能力的 Gateway；两者
+  均不得伪造安装成功或自动重跑 Wizard。
 - 系统凭据授权已移除旧迁移访问，但 macOS Keychain、Windows Credential Manager 和 Linux Secret
   Service 的真实授权次数仍需在各平台安装包中实测。
 - 安装运行时及逐平台真实验收尚未完成，不能据此宣布全局完成。

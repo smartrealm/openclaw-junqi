@@ -21,8 +21,9 @@ import {
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
 import { openClawSetupVerificationClient } from "@/services/gateway";
+import { OpenClawSetupVerificationUnavailableError } from "@/services/gateway/OpenClawSetupVerificationClient";
 import { executeRuntimeSelectionTransaction } from "@/services/setup/runtimeSelectionTransaction";
-import { validateSetupCompletion } from "@/services/setup/setupCompletionGate";
+import { toSetupInferenceVerification, validateSetupCompletion, type SetupInferenceVerification } from "@/services/setup/setupCompletionGate";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import { createOnboardingPresentationMachine } from "@/services/setup/onboardingPresentation";
 import {
@@ -190,11 +191,18 @@ export function useSetupFlow(
     }
   }, []);
 
-  const verifyActiveRuntimeInference = useCallback(async (): Promise<boolean> => {
+  const verifyActiveRuntimeInference = useCallback(async (): Promise<SetupInferenceVerification> => {
     try {
-      return (await openClawSetupVerificationClient.verify()).ok;
-    } catch {
-      return false;
+      return toSetupInferenceVerification(await openClawSetupVerificationClient.verify());
+    } catch (error) {
+      if (error instanceof OpenClawSetupVerificationUnavailableError) {
+        return { status: "unavailable", error: sanitizeSetupDiagnostic(error.message) };
+      }
+      return {
+        status: "failed",
+        reason: "unknown",
+        error: sanitizeSetupDiagnostic(error instanceof Error ? error.message : error),
+      };
     }
   }, []);
 
@@ -346,9 +354,24 @@ export function useSetupFlow(
 
       setGatewayReadyContinuation({ status: "idle", error: null });
       if (!completion.ready) {
-        // The configure page owns wizard startup. This transition only decides
-        // the destination so one click cannot create competing wizard sessions.
-        navigateSetup("configure-openclaw", "push");
+        if (completion.reason === "onboarding-required") {
+          // 配置页面独占官方向导的启动权；此处只决定去向，避免一次点击创建竞争的向导会话。
+          navigateSetup("configure-openclaw", "push");
+          return;
+        }
+        const message = completion.reason === "inference-verification-unavailable"
+          ? t(
+              "setup.wizard.inferenceVerificationUnavailable",
+              "OpenClaw 配置已完成，但当前 Gateway 不支持官方实时模型验证。JunQi 无法确认默认模型是否可用，请升级或切换到支持该官方能力的 Gateway 后再验证。",
+            )
+          : t(
+              "setup.wizard.inferenceUnverified",
+              "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",
+            );
+        setGatewayReadyContinuation({ status: "failed", error: message });
+        setSetupError(message);
+        appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+        report(message);
         return;
       }
 
@@ -830,7 +853,7 @@ export function useSetupFlow(
         replaceSetupStep("gateway-stopped");
         return;
       }
-      if (!completion.ready) {
+      if (!completion.ready && completion.reason === "onboarding-required") {
         updateOnboardingRequirement(true);
         const message = t(
           "setup.dashboardEntryOnboardingRequired",
@@ -841,6 +864,23 @@ export function useSetupFlow(
         appendSetupLog({ source: "setup", step: "wizard", message, level: "warn" });
         report(message);
         replaceSetupStep("configure-openclaw");
+        return;
+      }
+      if (!completion.ready) {
+        const message = completion.reason === "inference-verification-unavailable"
+          ? t(
+              "setup.wizard.inferenceVerificationUnavailable",
+              "OpenClaw 配置已完成，但当前 Gateway 不支持官方实时模型验证。JunQi 无法确认默认模型是否可用，请升级或切换到支持该官方能力的 Gateway 后再验证。",
+            )
+          : t(
+              "setup.wizard.inferenceUnverified",
+              "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",
+            );
+        setDashboardEntryError(message);
+        setSetupError(message);
+        appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+        report(message);
+        replaceSetupStep("gateway-ready");
         return;
       }
 

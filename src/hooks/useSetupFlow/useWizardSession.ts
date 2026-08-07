@@ -34,13 +34,16 @@ import { cacheGatewayTarget } from "./helpers";
 import type { StepStatus } from "./types";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import { getGatewayDeviceCredentialForUrl } from "@/services/gateway/credentialProvider";
+import type { SetupInferenceVerification } from "@/services/setup/setupCompletionGate";
+
+const GATEWAY_HANDOFF_CONNECTION_TIMEOUT_MS = 120_000;
 
 export interface WizardSessionPorts {
   setupStep: SetupStep;
   report: (message: string, nextProgress?: number) => void;
   patchStep: (id: string, status: StepStatus, detail?: string) => void;
   resolveActiveRuntimeOnboardingRequirement: () => Promise<boolean>;
-  verifyConfiguredInference: () => Promise<boolean>;
+  verifyConfiguredInference: () => Promise<SetupInferenceVerification>;
   updateOnboardingRequirement: (required: boolean) => void;
   appendSetupLog: (log: Omit<SetupLog, "ts"> & { ts?: number }) => void;
   replaceSetupStep: (step: SetupStep) => void;
@@ -254,6 +257,8 @@ export function useWizardSession({
       try {
         await handoffGatewayToOfficialService();
         assertWizardOperationCurrent(operationId);
+        await waitForGatewayConnection(operationId, GATEWAY_HANDOFF_CONNECTION_TIMEOUT_MS);
+        assertWizardOperationCurrent(operationId);
         const selectedGatewayReady = await probeSelectedGateway();
         assertWizardOperationCurrent(operationId);
         if (!selectedGatewayReady) {
@@ -262,7 +267,14 @@ export function useWizardSession({
             "OpenClaw 配置已完成，但切换运行方式后无法验证所选 Gateway。请修复并重试。",
           ));
         }
-        if (!(await verifyConfiguredInference())) {
+        const verification = await verifyConfiguredInference();
+        if (verification.status === "unavailable") {
+          throw new Error(t(
+            "setup.wizard.inferenceVerificationUnavailable",
+            "OpenClaw 配置已完成，但当前 Gateway 不支持官方实时模型验证。JunQi 无法确认默认模型是否可用，请升级或切换到支持该官方能力的 Gateway 后再验证。",
+          ));
+        }
+        if (verification.status !== "verified") {
           throw new Error(t(
             "setup.wizard.inferenceUnverified",
             "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",
@@ -321,7 +333,7 @@ export function useWizardSession({
     operationId: number,
   ): Promise<OpenClawWizardResult> => {
     await refreshGatewayConnectionTarget();
-    await waitForGatewayConnection(operationId);
+    await waitForGatewayConnection(operationId, GATEWAY_HANDOFF_CONNECTION_TIMEOUT_MS);
     assertWizardOperationCurrent(operationId);
     const client = wizardClientRef.current!;
     try {

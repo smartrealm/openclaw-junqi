@@ -68,7 +68,11 @@ test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway r
   );
 
   assert.match(completion, /await handoffGatewayToOfficialService\(\)/);
+  assert.match(setupFlow, /GATEWAY_HANDOFF_CONNECTION_TIMEOUT_MS = 120_000/);
+  assert.match(completion, /waitForGatewayConnection\(operationId, GATEWAY_HANDOFF_CONNECTION_TIMEOUT_MS\)/);
   assert.match(completion, /await probeSelectedGateway\(\)/);
+  assert.match(completion, /verification\.status === "unavailable"/);
+  assert.match(completion, /setup\.wizard\.inferenceVerificationUnavailable/);
   assert.match(completion, /replaceSetupStep\("error"\)/);
   assert.doesNotMatch(completion, /handoffError[\s\S]*level: "warn"/);
 });
@@ -140,6 +144,8 @@ test('BUG-ONB-37 dashboard completion revalidates Gateway and config before comm
   assert.ok(entry.indexOf('validateSetupCompletion') < entry.indexOf('setSetupComplete(true)'));
   assert.match(entry, /replaceSetupStep\("gateway-stopped"\)/);
   assert.match(entry, /replaceSetupStep\("configure-openclaw"\)/);
+  assert.match(entry, /completion\.reason === "inference-verification-unavailable"/);
+  assert.match(entry, /replaceSetupStep\("gateway-ready"\)/);
   assert.match(entry, /dashboardEntryInFlightRef\.current/);
 });
 
