@@ -231,7 +231,6 @@ const RETURN_BUTTON_SCRIPT: &str = r#"
 /// Open (or focus) the Control UI window, authenticating via the token hash.
 #[tauri::command]
 pub async fn open_control_ui(app: AppHandle) -> Result<(), String> {
-    crate::commands::privacy_lock::ensure_unlocked(&app)?;
     let port = crate::commands::gateway::configured_gateway_port();
     if !crate::commands::gateway::is_gateway_healthy(port).await {
         return Err(format!(

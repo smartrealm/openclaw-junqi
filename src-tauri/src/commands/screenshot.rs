@@ -13,8 +13,7 @@ use std::process::Command as StdCommand;
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub async fn screenshot_interactive(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    crate::commands::privacy_lock::ensure_unlocked(&app)?;
+pub async fn screenshot_interactive() -> Result<serde_json::Value, String> {
     let tmp = std::env::temp_dir().join(format!("junqi-screenshot-{}.png", std::process::id()));
     let path_str = tmp.to_string_lossy().to_string();
 
@@ -48,8 +47,7 @@ pub async fn screenshot_interactive(app: tauri::AppHandle) -> Result<serde_json:
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub async fn screenshot_fullscreen(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    crate::commands::privacy_lock::ensure_unlocked(&app)?;
+pub async fn screenshot_fullscreen() -> Result<serde_json::Value, String> {
     let tmp = std::env::temp_dir().join(format!("junqi-screenshot-{}.png", std::process::id()));
     let path_str = tmp.to_string_lossy().to_string();
     let output = StdCommand::new("screencapture")
@@ -91,8 +89,7 @@ pub fn screenshot_check_permission() -> Result<serde_json::Value, String> {
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn screenshot_list_windows(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
-    crate::commands::privacy_lock::ensure_unlocked(&app)?;
+pub fn screenshot_list_windows() -> Result<Vec<serde_json::Value>, String> {
     let output = StdCommand::new("screencapture")
         .arg("-l")
         .output()
@@ -118,11 +115,7 @@ pub fn screenshot_list_windows(app: tauri::AppHandle) -> Result<Vec<serde_json::
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn screenshot_capture_window(
-    app: tauri::AppHandle,
-    id: String,
-) -> Result<serde_json::Value, String> {
-    crate::commands::privacy_lock::ensure_unlocked(&app)?;
+pub fn screenshot_capture_window(id: String) -> Result<serde_json::Value, String> {
     let win_id = if let Some(window_id) = id.strip_prefix("window:") {
         window_id
     } else if id.starts_with("screen:") {
@@ -166,13 +159,13 @@ fn screenshot_capture_inner() -> Result<serde_json::Value, String> {
 
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
-pub async fn screenshot_interactive(_app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+pub async fn screenshot_interactive() -> Result<serde_json::Value, String> {
     Err("UNSUPPORTED:截图功能仅支持 macOS".to_string())
 }
 
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
-pub async fn screenshot_fullscreen(_app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+pub async fn screenshot_fullscreen() -> Result<serde_json::Value, String> {
     Err("UNSUPPORTED:截图功能仅支持 macOS".to_string())
 }
 
@@ -184,15 +177,12 @@ pub fn screenshot_check_permission() -> Result<serde_json::Value, String> {
 
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
-pub fn screenshot_list_windows(_app: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
+pub fn screenshot_list_windows() -> Result<Vec<serde_json::Value>, String> {
     Ok(vec![])
 }
 
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
-pub fn screenshot_capture_window(
-    _app: tauri::AppHandle,
-    _id: String,
-) -> Result<serde_json::Value, String> {
+pub fn screenshot_capture_window(_id: String) -> Result<serde_json::Value, String> {
     Err("UNSUPPORTED:截图功能仅支持 macOS".to_string())
 }

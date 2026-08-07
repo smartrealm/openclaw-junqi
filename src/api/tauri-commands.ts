@@ -384,14 +384,6 @@ export const startDockerGateway = (port?: number, tag?: string) => invoke<Gatewa
 export const detectGatewayConfig = () => invoke<GatewayConfigInfo>("detect_gateway_config");
 /** Resolve the selected runtime credential through OpenClaw without exposing its config form. */
 export const getGatewayToken = () => invoke<string>('get_gateway_token');
-/** Compatibility-only migration source for pre-credential-provider Gateway tokens. */
-export const getLegacyGatewayCredential = (endpoint: string, scope?: string) => (
-  invoke<string | null>('get_legacy_gateway_credential', { endpoint, scope: scope ?? null })
-);
-export const deleteLegacyGatewayCredential = (endpoint: string, scope?: string) => (
-  invoke<void>('delete_legacy_gateway_credential', { endpoint, scope: scope ?? null })
-);
-
 /** Probe a concrete Gateway port for compatibility surfaces such as Control UI. */
 export const probeGatewayPort = (port?: number) => (
   port === undefined
@@ -548,12 +540,6 @@ export const stopVoiceRecording = (recordingId: string) => (
   invoke<VoiceRecordingStopResult>('voice_stop_recording', { recordingId })
 );
 
-export interface ActiveOpenClawModelProbe {
-  ready: boolean;
-  model: string | null;
-  detail: string | null;
-}
-
 /** Selected-runtime OpenClaw configuration file contract. */
 export interface OpenclawConfigReadResult {
   data: GatewayRuntimeConfig;
@@ -569,10 +555,6 @@ export interface OpenclawConfigValidationResult {
   error?: string;
 }
 
-export interface OpenclawConfigWriteResult {
-  revision: string;
-}
-
 export const readOpenclawConfig = () => invoke<OpenclawConfigReadResult>('read_config');
 export const validateOpenclawConfig = () => (
   invoke<OpenclawConfigValidationResult>('validate_openclaw_config')
@@ -580,35 +562,6 @@ export const validateOpenclawConfig = () => (
 export const parseOpenclawConfigText = (raw: string) => (
   invoke<GatewayRuntimeConfig>('parse_openclaw_config_text', { raw })
 );
-export const writeOpenclawConfig = (
-  data: GatewayRuntimeConfig,
-  expectedRevision?: string,
-) => invoke<OpenclawConfigWriteResult>('write_config', {
-  json: JSON.stringify(data, null, 2),
-  expectedRevision: expectedRevision ?? null,
-});
-
-/** OpenClaw-owned provider metadata remains opaque until its service parser validates it. */
-export const getOpenclawProviderCatalog = (provider?: string) => (
-  invoke<unknown>('get_openclaw_provider_catalog', { provider: provider ?? null })
-);
-export const getOpenclawConfigSchema = () => invoke<unknown>('get_openclaw_config_schema');
-export const getOpenclawAuthProfiles = (provider?: string) => (
-  invoke<unknown>('get_openclaw_auth_profiles', { provider: provider ?? null })
-);
-export const probeOpenclawProvider = (
-  config: unknown,
-  provider: string,
-  profileKey?: string,
-) => invoke<unknown>('probe_openclaw_provider', {
-  json: JSON.stringify(config),
-  provider,
-  profileKey: profileKey ?? null,
-});
-export const probeActiveOpenclawModel = () => (
-  invoke<ActiveOpenClawModelProbe>('probe_active_openclaw_model')
-);
-
 /** OpenClaw-owned channel metadata remains opaque until its service parser validates it. */
 export const getOpenclawChannelCatalog = () => invoke<unknown>('get_openclaw_channel_catalog');
 export const installOpenclawChannelPlugin = (channel: string) => (
@@ -793,10 +746,6 @@ export interface StoreGatewayCredentialParams extends GatewayCredentialKeyParams
   token: string;
 }
 
-export interface MigrateGatewayCredentialParams extends GatewayCredentialKeyParams {
-  legacyToken: string;
-}
-
 export const getGatewayCredential = (params: GatewayCredentialKeyParams) =>
   invoke<GatewayCredentialResult>('get_gateway_credential', { params });
 
@@ -805,9 +754,6 @@ export const storeGatewayCredential = (params: StoreGatewayCredentialParams) =>
 
 export const deleteGatewayCredential = (params: GatewayCredentialKeyParams) =>
   invoke<GatewayCredentialResult>('delete_gateway_credential', { params });
-
-export const migrateGatewayCredential = (params: MigrateGatewayCredentialParams) =>
-  invoke<GatewayCredentialResult>('migrate_gateway_credential', { params });
 
 export interface GatewayDeviceIdentityReference {
   deviceId: string;

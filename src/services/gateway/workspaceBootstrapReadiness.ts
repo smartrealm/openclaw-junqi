@@ -23,14 +23,13 @@ function hasCurrentConnectionFetch(
 }
 
 /**
- * The dashboard can use shared Gateway data only after both required groups
- * were fetched for the current connection, never from a previous connection.
+ * 会话快照是工作区首屏唯一必需的 Gateway 数据。智能体列表属于后台投影，
+ * 不得因为它的权限、版本或响应失败而阻塞已经可用的会话工作区。
  */
 export function hasCurrentWorkspaceBootstrapData(
   state: WorkspaceBootstrapGatewayState,
 ): boolean {
-  return hasCurrentConnectionFetch(state, 'sessions')
-    && hasCurrentConnectionFetch(state, 'agents');
+  return hasCurrentConnectionFetch(state, 'sessions');
 }
 
 /**
@@ -49,5 +48,5 @@ export function hasCurrentWorkspaceBootstrapFailure(
     return false;
   }
 
-  return state.errors.sessions !== null || state.errors.agents !== null;
+  return state.errors.sessions !== null;
 }

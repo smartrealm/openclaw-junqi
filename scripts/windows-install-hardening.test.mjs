@@ -140,9 +140,9 @@ test('Windows release matrix builds and stages an NSIS installer for the support
   assert.match(release, /if-no-files-found: error/);
 });
 
-test('normal and hosted builds reuse committed provider catalogs without a runner-local OpenClaw CLI', () => {
-  assert.match(packageManifest.scripts.build, /^npm run generate:provider-catalog -- --if-missing && npm run build:shared$/);
-  assert.match(packageManifest.scripts['build:hosted-release'], /generate:provider-catalog -- --if-missing/);
+test('normal and hosted builds do not depend on a runner-local OpenClaw CLI', () => {
+  assert.equal(packageManifest.scripts.build, 'npm run build:shared');
+  assert.equal(packageManifest.scripts['build:hosted-release'], 'npm run build:shared');
   assert.equal(hostedReleaseProfile.build?.beforeBuildCommand, 'npm run build:hosted-release');
   assert.match(taggedRelease, /--config\s+src-tauri\/tauri\.hosted-release\.conf\.json/);
 });

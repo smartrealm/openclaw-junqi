@@ -204,11 +204,9 @@ export class ChannelQrLoginSession {
   async start(force = false): Promise<void> {
     this.verificationController?.abort();
     this.verificationController = null;
-    const previousSessionId = this.sessionId;
     const generation = ++this.generation;
     this.deadline = Date.now() + QR_LOGIN_SESSION_TIMEOUT_MS;
     this.sessionId = null;
-    if (previousSessionId) this.cancelProviderSession(previousSessionId);
     this.publish({ phase: 'preparing', qrDataUrl: null, qrContent: null, message: '', error: '' });
     try {
       const result = resultRecord(await this.gateway.call('web.login.start', {
@@ -250,7 +248,6 @@ export class ChannelQrLoginSession {
       await this.waitUntilConnected(generation, qrDataUrl, qrContent);
     } catch {
       if (this.isCurrent(generation)) {
-        if (this.sessionId) this.cancelProviderSession(this.sessionId);
         this.sessionId = null;
         this.publish({ phase: 'error', qrDataUrl: null, qrContent: null, message: '', error: 'qr_request_failed' });
       }
@@ -260,12 +257,9 @@ export class ChannelQrLoginSession {
   cancel(): void {
     this.verificationController?.abort();
     this.verificationController = null;
-    const sessionId = this.sessionId;
-    const shouldCancelProvider = this.state.phase === 'preparing' || this.state.phase === 'waiting';
     this.generation += 1;
     this.sessionId = null;
     this.publish({ ...this.state, phase: 'cancelled', qrDataUrl: null, qrContent: null });
-    if (shouldCancelProvider) this.cancelProviderSession(sessionId);
   }
 
   private async waitUntilConnected(
@@ -277,7 +271,6 @@ export class ChannelQrLoginSession {
     let currentQrContent = initialQrContent;
     while (this.isCurrent(generation)) {
       if (Date.now() >= this.deadline) {
-        if (this.sessionId) this.cancelProviderSession(this.sessionId);
         this.sessionId = null;
         this.publish({ phase: 'expired', qrDataUrl: null, qrContent: null, message: '', error: 'qr_expired' });
         return;
@@ -296,13 +289,11 @@ export class ChannelQrLoginSession {
         return;
       }
       if (outcome === 'denied' || outcome === 'expired') {
-        if (this.sessionId) this.cancelProviderSession(this.sessionId);
         this.sessionId = null;
         this.publishTerminal(outcome, safeGatewayMessage(result.message));
         return;
       }
       if (outcome === 'error') {
-        if (this.sessionId) this.cancelProviderSession(this.sessionId);
         this.sessionId = null;
         this.publish({
           phase: 'error',
@@ -389,14 +380,6 @@ export class ChannelQrLoginSession {
   private async delayBeforeNextPoll(generation: number, delayMs: number): Promise<void> {
     await new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
     if (!this.isCurrent(generation)) return;
-  }
-
-  private cancelProviderSession(sessionId: string | null): void {
-    void this.gateway.call('web.login.cancel', {
-      channel: this.channelId,
-      ...this.accountParams(),
-      ...(sessionId ? { sessionId } : {}),
-    }).catch(() => undefined);
   }
 
   private accountParams(): Record<string, string> {

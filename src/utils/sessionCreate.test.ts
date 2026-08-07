@@ -6,11 +6,16 @@ import {
   setSessionCreateDependenciesForTests,
   type CreateNativeSessionInput,
 } from './sessionCreate';
+import {
+  hasConfirmedEmptyTranscript,
+  shouldWarmUpHistoryBeforeFirstSend,
+} from './confirmedEmptyTranscript';
 import { subscribeNativeSessionCommit } from './sessionLifecycle';
 import type { OpenClawCreatedSession } from '@/services/gateway/OpenClawSessionLifecycleClient';
 
 const CREATED: OpenClawCreatedSession = {
   key: 'agent:main:created',
+  agentId: 'main',
   sessionId: 'created-id',
   entry: { sessionId: 'created-id', label: 'Created', createdAt: 1 },
 };
@@ -20,11 +25,11 @@ afterEach(() => setSessionCreateDependenciesForTests());
 describe('createNativeSession', () => {
   it('将非 fork 的确认创建绑定到目标 Agent 并投影权威空 transcript leaf', () => {
     const session = projectCreatedNativeSession(CREATED, {
-      agentId: 'architect',
+      agentId: 'main',
       label: 'Created',
     });
     const fork = projectCreatedNativeSession(CREATED, {
-      agentId: 'architect',
+      agentId: 'main',
       label: 'Forked',
       parentSessionKey: 'agent:architect:parent',
       fork: true,
@@ -40,14 +45,20 @@ describe('createNativeSession', () => {
       {
         key: CREATED.key,
         sessionId: CREATED.sessionId,
-        agentId: 'architect',
+        agentId: 'main',
         activeLeafEntryId: null,
       },
     );
     assert.equal(fork.activeLeafEntryId, undefined);
+    assert.equal(hasConfirmedEmptyTranscript(session), true);
+    assert.equal(shouldWarmUpHistoryBeforeFirstSend({
+      messageCount: 0,
+      confirmedEmptyTranscript: hasConfirmedEmptyTranscript(session),
+    }), false);
 
     const createdWithoutLabel = projectCreatedNativeSession({
       key: 'agent:architect:without-label',
+      agentId: 'architect',
       sessionId: 'without-label-id',
       entry: { sessionId: 'without-label-id', createdAt: 2 },
     }, {
@@ -100,7 +111,7 @@ describe('createNativeSession', () => {
     }
   });
 
-  it('coalesces duplicate create intents and preserves a failed renderer state', async () => {
+  it('keeps duplicate create intents as independent Gateway operations', async () => {
     let requests = 0;
     let commits = 0;
     setSessionCreateDependenciesForTests({
@@ -116,9 +127,12 @@ describe('createNativeSession', () => {
 
     const first = createNativeSession({ agentId: 'main', label: 'Created' });
     const second = createNativeSession({ agentId: 'main', label: 'Created' });
-    assert.equal(first, second);
-    assert.deepEqual(await first, { ok: false, error: 'gateway offline' });
-    assert.equal(requests, 1);
+    assert.notEqual(first, second);
+    assert.deepEqual(await Promise.all([first, second]), [
+      { ok: false, error: 'gateway offline' },
+      { ok: false, error: 'gateway offline' },
+    ]);
+    assert.equal(requests, 2);
     assert.equal(commits, 0);
   });
 
@@ -146,9 +160,10 @@ describe('createNativeSession', () => {
       agentId: 'main', label: 'Branch', parentSessionKey: 'agent:main:parent', fork: true,
     });
 
-    assert.equal(first, duplicate);
-    await Promise.all([first, differentLabel, child, fork]);
+    assert.notEqual(first, duplicate);
+    await Promise.all([first, duplicate, differentLabel, child, fork]);
     assert.deepEqual(requests, [
+      { agentId: 'main', label: 'First' },
       { agentId: 'main', label: 'First' },
       { agentId: 'main', label: 'Second' },
       { agentId: 'main', label: 'Branch', parentSessionKey: 'agent:main:parent' },

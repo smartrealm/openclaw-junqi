@@ -1,15 +1,12 @@
 import {
-  deleteLegacyGatewayCredential,
   detectGatewayConfig,
   getGatewayToken,
-  getLegacyGatewayCredential,
   type GatewayConfigInfo,
 } from '@/api/tauri-commands';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import {
   getGatewayDeviceCredentialForUrl,
   gatewayRuntimeKeyFromUrl,
-  migrateLegacyGatewayCredential,
   resolveGatewayCredentialRuntimeKey,
   selectedGatewayRuntimeKey,
   storeGatewayDeviceCredential,
@@ -27,22 +24,16 @@ export interface GatewayConnectionTargetRequest {
 export interface GatewayConnectionTargetResolverDependencies {
   detectConfig: () => Promise<GatewayConfigInfo>;
   getToken: () => Promise<string>;
-  migrateCredential: (runtimeKey: string) => Promise<GatewayCredential>;
   getDeviceCredential: (gatewayUrl: string) => Promise<GatewayCredential>;
   storeDeviceCredential: (runtimeKey: string, token: string) => Promise<GatewayCredential>;
-  getLegacyCredential: (endpoint: string, scope: string) => Promise<string | null>;
-  deleteLegacyCredential: (endpoint: string, scope: string) => Promise<void>;
   getSavedUrl: () => string;
 }
 
 const defaultDependencies: GatewayConnectionTargetResolverDependencies = {
   detectConfig: detectGatewayConfig,
   getToken: getGatewayToken,
-  migrateCredential: migrateLegacyGatewayCredential,
   getDeviceCredential: getGatewayDeviceCredentialForUrl,
   storeDeviceCredential: storeGatewayDeviceCredential,
-  getLegacyCredential: getLegacyGatewayCredential,
-  deleteLegacyCredential: deleteLegacyGatewayCredential,
   getSavedUrl: readSavedGatewayUrl,
 };
 
@@ -101,36 +92,17 @@ function readSavedGatewayUrl(): string {
 async function deviceCredential(
   gatewayUrl: string,
   dependencies: GatewayConnectionTargetResolverDependencies,
-  configured: GatewayConfigInfo | null,
 ): Promise<string> {
-  const runtimeKey = resolveGatewayConnectionCredentialRuntimeKey(gatewayUrl, configured);
-  let credential = await dependencies.migrateCredential(runtimeKey);
-  if (!credential.token) credential = await dependencies.getDeviceCredential(gatewayUrl);
-  if (!credential.token) {
-    const scope = gatewayEndpointsMatch(gatewayUrl, configured?.ws_url ?? '')
-      ? configured?.credential_scope || 'selected-runtime'
-      : 'external-endpoint';
-    const token = await dependencies.getLegacyCredential(gatewayUrl, scope).catch(() => null);
-    if (token?.trim()) {
-      credential = await dependencies.storeDeviceCredential(
-        resolveGatewayCredentialRuntimeKey(gatewayUrl),
-        token,
-      );
-      if (credential.persistence === 'system') {
-        await dependencies.deleteLegacyCredential(gatewayUrl, scope).catch(() => {});
-      }
-    }
-  }
-  return credential.token ?? '';
+  const credential = await dependencies.getDeviceCredential(gatewayUrl);
+  return credential.token?.trim() ?? '';
 }
 
-/** Reads a migrated device credential without resolving or exposing a runtime bootstrap token. */
+/** 读取设备凭据，不解析或暴露运行时启动令牌。 */
 export async function getStoredGatewayCredentialToken(
   gatewayUrl: string,
   dependencies: GatewayConnectionTargetResolverDependencies = defaultDependencies,
 ): Promise<string> {
-  const configured = await dependencies.detectConfig().catch(() => null);
-  return deviceCredential(gatewayUrl, dependencies, configured);
+  return deviceCredential(gatewayUrl, dependencies);
 }
 
 /**
@@ -169,9 +141,11 @@ export async function resolveGatewayConnectionTarget(
     : sameSelectedRuntime
       ? await dependencies.getToken().catch(() => configured?.token ?? '')
       : '';
-  const deviceToken = request.useTokenOverride
+  // OpenClaw 共享 Gateway token 已能完成设备签名握手。此时提前读取独立设备 token
+  // 既不会改变握手参数，也会在 macOS 首次启动时额外触发 Keychain 授权。
+  const deviceToken = request.useTokenOverride || token
     ? ''
-    : await deviceCredential(wsUrl, dependencies, configured);
+    : await deviceCredential(wsUrl, dependencies);
   const httpUrl = wsUrl.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
 
   return { wsUrl, token, deviceToken, httpUrl };

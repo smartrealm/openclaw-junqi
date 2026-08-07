@@ -68,7 +68,11 @@ test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway r
   );
 
   assert.match(completion, /await handoffGatewayToOfficialService\(\)/);
+  assert.match(setupFlow, /GATEWAY_HANDOFF_CONNECTION_TIMEOUT_MS = 120_000/);
+  assert.match(completion, /waitForGatewayConnection\(operationId, GATEWAY_HANDOFF_CONNECTION_TIMEOUT_MS\)/);
   assert.match(completion, /await probeSelectedGateway\(\)/);
+  assert.match(completion, /verification\.status === "unavailable"/);
+  assert.match(completion, /setup\.wizard\.inferenceVerificationUnavailable/);
   assert.match(completion, /replaceSetupStep\("error"\)/);
   assert.doesNotMatch(completion, /handoffError[\s\S]*level: "warn"/);
 });
@@ -127,7 +131,7 @@ test('BUG-ONB-34 a failed cached installation validation blocks Gateway recovery
   assert.match(healthGate, /navigateSetup\(['"]detecting['"], ['"]replace['"]\)/);
 });
 
-test('BUG-ONB-37 dashboard completion revalidates Gateway, config, and model before committing the setup marker', () => {
+test('BUG-ONB-37 dashboard completion revalidates Gateway and config before committing the setup marker', () => {
   const entry = setupFlow.slice(
     setupFlow.indexOf('const enterDashboard = useCallback'),
     setupFlow.indexOf('const detectDocker = useCallback'),
@@ -136,10 +140,12 @@ test('BUG-ONB-37 dashboard completion revalidates Gateway, config, and model bef
   assert.match(entry, /validateSetupCompletion\(\{/);
   assert.match(entry, /probeGateway: \(\) => probeSelectedGateway\(\)\.catch\(\(\) => false\)/);
   assert.match(entry, /requiresOnboarding: resolveActiveRuntimeOnboardingRequirement/);
-  assert.match(entry, /probeModel: probeActiveRuntimeModel/);
+  assert.doesNotMatch(entry, /probeModel|probeActiveRuntimeModel/);
   assert.ok(entry.indexOf('validateSetupCompletion') < entry.indexOf('setSetupComplete(true)'));
   assert.match(entry, /replaceSetupStep\("gateway-stopped"\)/);
   assert.match(entry, /replaceSetupStep\("configure-openclaw"\)/);
+  assert.match(entry, /completion\.reason === "inference-verification-unavailable"/);
+  assert.match(entry, /replaceSetupStep\("gateway-ready"\)/);
   assert.match(entry, /dashboardEntryInFlightRef\.current/);
 });
 
@@ -491,7 +497,7 @@ test('BUG-ONB-18 unused prepare_gateway bridge is no longer part of the command 
   assert.doesNotMatch(setupCommand, /prepare_gateway/);
 });
 
-test('BUG-ONB-21 Ready requires the official live model probe', () => {
+test('BUG-ONB-21 Ready follows the native Gateway and configuration gates', () => {
   const completion = setupFlow.slice(
     setupFlow.indexOf('if (result.done || result.status === "done")'),
     setupFlow.indexOf('const recoverLostWizardSession'),
@@ -501,10 +507,9 @@ test('BUG-ONB-21 Ready requires the official live model probe', () => {
     setupFlow.indexOf('// Gateway startup is an installation transition'),
   );
 
-  assert.match(completion, /const modelProbe = await probeActiveRuntimeModel\(\)/);
-  assert.match(completion, /if \(!modelProbe\.ready\)/);
-  assert.ok(completion.indexOf('updateOnboardingRequirement(false)') > completion.indexOf('if (!modelProbe.ready)'));
-  assert.match(readyTransition, /onboardingRequired = !\(await probeActiveRuntimeModel\(\)\)\.ready/);
+  assert.doesNotMatch(completion, /probeActiveRuntimeModel|modelNotReady/);
+  assert.match(completion, /updateOnboardingRequirement\(false\)/);
+  assert.doesNotMatch(readyTransition, /probeActiveRuntimeModel|probeModel/);
 });
 
 test('BUG-ONB-25 lost terminal sessions reconcile observable completion before restart', () => {
@@ -513,69 +518,58 @@ test('BUG-ONB-25 lost terminal sessions reconcile observable completion before r
     setupFlow.indexOf('const startOfficialOnboarding'),
   );
   assert.match(recovery, /resolveActiveRuntimeOnboardingRequirement\(\)/);
-  assert.match(recovery, /probeActiveRuntimeModel\(\)/);
+  assert.doesNotMatch(recovery, /probeActiveRuntimeModel/);
   assert.match(recovery, /return \{ done: true, status: "done" \}/);
-  assert.ok(recovery.indexOf('return await client.start()') > recovery.indexOf('if (modelProbe.ready)'));
+  assert.ok(recovery.indexOf('return await client.start()') > recovery.indexOf('if \(!structurallyIncomplete\)'));
 });
 
 test('BUG-IW-04 wizard presentation stays within the installed strict schema', () => {
   const wizard = screen('WizardScreen');
-  assert.doesNotMatch(wizard, /presentedStep\.externalUrl|presentedStep\.deviceCode/);
-  assert.doesNotMatch(wizardClient, /externalUrl|deviceCode|\[key: string\]/);
+  assert.match(wizard, /presentedStep\.externalUrl/);
+  assert.match(wizard, /presentedStep\.deviceCode/);
+  assert.match(wizardClient, /externalUrl.*deviceCode/);
   // The step type set stays closed; only its expression moved to a constant.
   assert.match(wizardClient, /WIZARD_STEP_TYPES = \[/);
   assert.match(wizardClient, /WIZARD_STEP_TYPES as readonly string\[\]\)\.includes\(raw\.type\)/);
   // Unknown keys are dropped by projection rather than reaching the UI.
   assert.match(wizardClient, /for \(const key of WIZARD_STEP_KEYS\)/);
-  assert.match(setupPage, /async function openWizardExternalUrl/);
+  assert.match(setupPage, /function WizardAuthorizationHint/);
   assert.match(setupPage, /@tauri-apps\/plugin-shell/);
 });
 
-test('BUG-ONB-27 terminal QR notes render a bounded local image and use the system browser action', () => {
+test('BUG-ONB-27 官方授权字段通过桌面 Shell 呈现', () => {
   const wizardFile = screen('WizardScreen');
   const wizard = wizardFile.slice(
-    wizardFile.indexOf('function WizardStepQrHint'),
+    wizardFile.indexOf('function WizardAuthorizationHint'),
     wizardFile.indexOf('function WizardScreen'),
   );
 
-  assert.match(wizard, /renderLocalQrDataUrl\(url\)/);
-  assert.match(wizard, /openWizardExternalUrl\(url\)/);
+  assert.match(wizard, /openWizardExternalUrl\(externalUrl\)/);
+  assert.match(wizard, /deviceCode\.code/);
   assert.doesNotMatch(wizard, /target="_blank"/);
-  assert.match(setupPage, /resolveOpenClawWizardQrUrl/);
-  assert.match(setupPage, /authorizationComplete/);
-  assert.match(setupPage, /authorizationContinueHint/);
-  assert.match(setupPage, /shouldAutoAdvanceOpenClawWizardQr/);
-  assert.match(setupPage, /flow\.submitWizardStep\(step\.id\)/);
+  assert.doesNotMatch(setupPage, /openclawWizardQr|openclawTerminalQr|getGatewayLogs/);
+  assert.match(setupPage, /<WizardAuthorizationHint/);
 });
 
-test('BUG-ONB-41 channel authorization remains vendor-neutral and schema-bound', () => {
-  const qr = readFileSync(new URL('../services/openclawWizardQr.ts', import.meta.url), 'utf8');
+test('BUG-ONB-41 授权呈现只依赖官方结构化字段', () => {
   const wizardService = readFileSync(new URL('../services/openclawWizard.ts', import.meta.url), 'utf8');
 
-  assert.doesNotMatch(qr, /dingtalk|feishu|lark/i);
-  assert.match(qr, /extractOpenClawWizardQrUrl\(message\)/);
-  // Schema-bound still holds: the type set is closed and unknown keys are
-  // projected away instead of being forwarded as supported contract.
+  assert.match(wizardService, /isWizardDeviceCode/);
+  assert.match(wizardService, /isWizardConfiguredAccount/);
   assert.match(wizardService, /WIZARD_STEP_TYPES as readonly string\[\]\)\.includes\(raw\.type\)/);
   assert.match(wizardService, /for \(const key of WIZARD_STEP_KEYS\)/);
-  assert.match(setupPage, /\{messageRenderedInBody && \(/);
-  assert.match(setupPage, /presentedStep\.message/);
+  assert.match(setupPage, /WizardAuthorizationHint/);
 });
 
-test('BUG-ONB-42 a user-started QR flow crosses only its protocol continuation', () => {
-  const qr = readFileSync(new URL('../services/openclawWizardQr.ts', import.meta.url), 'utf8');
+test('BUG-ONB-42 授权步骤不因文本内容自动推进', () => {
   const wizard = screen('WizardScreen');
   const submit = wizard.slice(
     wizard.indexOf('const submitCurrentStep = async'),
     wizard.indexOf('return (', wizard.indexOf('const submitCurrentStep = async')),
   );
 
-  assert.doesNotMatch(qr, /dingtalk|feishu|lark/i);
-  assert.match(qr, /step\?\.type === 'confirm'/);
-  assert.match(qr, /step\.initialValue === true/);
-  assert.match(submit, /startedQrUrlAuthorization = Boolean\(wizardScanQrUrl\)/);
-  assert.match(submit, /continueOpenClawWizardQrAuthorization/);
-  assert.match(submit, /flow\.submitWizardStep\(stepId, nextValue\)/);
+  assert.match(submit, /await flow\.submitWizardStep\(step\.id, value\)/);
+  assert.doesNotMatch(submit, /continueOpenClawWizardQrAuthorization|wizardScanQrUrl/);
 });
 
 test('BUG-ONB-40 official Gateway finalizer refreshes credentials and reconciles its lost wizard session', () => {
@@ -596,14 +590,28 @@ test('BUG-ONB-45 a terminal note survives the final Gateway restart without a fa
   const wizard = screen('WizardScreen');
 
   assert.match(submit, /connectionTimedOut/);
+  assert.match(submit, /OpenClawWizardGatewayConnectionTimeoutError/);
   assert.match(submit, /isOpenClawWizardCompletionStep\(wizardClientRef\.current\?\.currentStepView\)/);
   assert.match(submit, /resolveActiveRuntimeOnboardingRequirement\(\)/);
   assert.match(submit, /applyWizardResult\(\{ done: true, status: "done" \}, operationId\)/);
   assert.match(wizard, /isOpenClawWizardNonBlockingProbeFailure\(presentedStep\)/);
   assert.match(wizard, /setup\.wizard\.nonBlockingProbeFailure/);
+  assert.match(wizard, /setup\.wizard\.completionVerification/);
 });
 
-test('BUG-ONB-46 Gateway-owned progress is polled and local QR capture survives it', () => {
+test('BUG-ONB-50 retry recovers an upstream-reaped Wizard session instead of surfacing wizard not found', () => {
+  const wizardHook = hookFile('useWizardSession');
+  const retry = wizardHook.slice(
+    wizardHook.indexOf('const retryOfficialOnboarding'),
+    wizardHook.indexOf('const pollOfficialOnboarding'),
+  );
+
+  assert.match(retry, /wizardClientRef\.current!\.retry\(\)/);
+  assert.match(retry, /isOpenClawWizardSessionLost\(error\)/);
+  assert.match(retry, /recoverLostWizardSession\(wizardClientRef\.current!\)/);
+});
+
+test('BUG-ONB-46 Gateway 执行的进度步骤只由官方会话轮询', () => {
   const wizard = screen('WizardScreen');
   const wizardHook = hookFile('useWizardSession');
 
@@ -611,25 +619,13 @@ test('BUG-ONB-46 Gateway-owned progress is polled and local QR capture survives 
   assert.match(wizard, /autoPolledProgressStepRef\.current === step\.id/);
   assert.match(wizard, /void flow\.pollWizard\(\)/);
   assert.match(wizardHook, /pollWizard: pollOfficialOnboarding/);
-  assert.match(wizard, /terminalQrCaptureActive/);
-  assert.match(wizard, /if \(terminalQrFallback \|\| autoPollProgress\) return/);
-  assert.match(wizard, /terminalQrCaptureActive && !terminalQrFallback/);
+  assert.doesNotMatch(wizard, /terminalQrCaptureActive|terminalQrFallback|wizardScanQrUrl/);
 });
 
 test('a superseded wizard submit releases its re-entry guard', () => {
-  // The wizard screen deliberately keeps its action clickable while a submit is
-  // still in flight once an error is showing (`wizardSubmitting && !wizardError`),
-  // and applyWizardResult reaches exactly that state: it sets the model-not-ready
-  // error and then awaits refreshGatewayConnectionTarget before submitWizardStep
-  // can reach its finally. Retrying there supersedes the submit, whose finally is
-  // gated on still being current and therefore never clears the guard. Ownership
-  // of the guard has to pass to the operation taking over, otherwise every later
-  // submit returns null and the wizard silently stops responding.
+  // 向导提交期间允许在错误状态下重试；接管操作必须同步释放旧提交的所有权，
+  // 否则旧请求的 finally 不会清理守卫，后续向导操作会永久失去响应。
   assert.match(setupPage, /disabled: flow\.wizardSubmitting && !flow\.wizardError/);
-  assert.match(
-    setupFlow,
-    /setWizardError\(message\);[\s\S]*?await refreshGatewayConnectionTarget\(\)/,
-  );
   assert.match(
     setupFlow,
     /const beginWizardOperation = useCallback\(\(\) => \{[\s\S]*?wizardSubmitInFlightRef\.current = false;[\s\S]*?return operationId;/,

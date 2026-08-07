@@ -397,6 +397,31 @@ test('a sparse sessions.list row cannot erase a confirmed empty transcript leaf'
   );
 });
 
+test('只含 key 的轻量 sessions.list 行保留已确认空会话的完整身份', () => {
+  const createdKey = 'agent:architect:empty-session';
+  useChatStore.setState({
+    sessions: [{
+      key: createdKey,
+      sessionId: 'empty-session-id',
+      agentId: 'architect',
+      label: 'New chat',
+      activeLeafEntryId: null,
+    }],
+    openTabs: [createdKey],
+    activeSessionKey: createdKey,
+  });
+
+  useChatStore.getState().setSessions([{
+    key: createdKey,
+    label: 'New chat',
+  }]);
+
+  const session = useChatStore.getState().sessions.find((item) => item.key === createdKey);
+  assert.equal(session?.sessionId, 'empty-session-id');
+  assert.equal(session?.agentId, 'architect');
+  assert.equal(session?.activeLeafEntryId, null);
+});
+
 test('a sessions.list leaf or identity change remains authoritative over a confirmed empty leaf', () => {
   const createdKey = 'agent:architect:empty-session';
   useChatStore.setState({

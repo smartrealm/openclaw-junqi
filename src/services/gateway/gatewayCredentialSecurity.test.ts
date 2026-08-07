@@ -543,10 +543,7 @@ describe('Gateway credential security regression gates', () => {
     const handshake = await waitForSocketRequest(socket, 'connect');
     assert.deepEqual(handshake.params.scopes, ['operator.read', 'operator.write']);
     assert.deepEqual(handshake.params.auth, { token: 'daily-token' });
-    assert.deepEqual(savedDeviceTokens, [{
-      token: 'daily-device-token',
-      url: 'ws://127.0.0.1:18789',
-    }]);
+    assert.deepEqual(savedDeviceTokens, []);
 
     connection.disconnect();
     stopPolling();
@@ -631,6 +628,30 @@ describe('Gateway credential security regression gates', () => {
       deviceToken: 'paired-device-token',
     });
 
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('does not rewrite an unchanged device credential after a normal handshake', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection({
+      persistDeviceCredential: async (url, token) => {
+        savedDeviceTokens.push({ url, token });
+      },
+    });
+    connection.connect('ws://127.0.0.1:18789', '', 'paired-device-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(socket, message, 'paired-connection', ['operator.read', 'operator.write'], 'paired-device-token');
+      }
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    await turn();
+
+    assert.deepEqual(savedDeviceTokens, []);
     connection.disconnect();
     stopPolling();
     await turn();
@@ -1010,16 +1031,11 @@ describe('Gateway credential security regression gates', () => {
     assert.doesNotMatch(resolver, /ConfigResolverChain|EventPayloadResolver|CachedTokenResolver/);
   });
 
-  it('migrates the 1.2.33 credential slot before deleting the legacy copy', () => {
+  it('does not retain a legacy credential migration path', () => {
     const resolver = source('src/services/gateway/GatewayConnectionTargetResolver.ts');
-    const start = resolver.indexOf('async function deviceCredential');
-    const end = resolver.indexOf('/** Reads a migrated', start);
-    const migration = resolver.slice(start, end);
-    const storeIndex = migration.indexOf('await dependencies.storeDeviceCredential');
-    const persistenceIndex = migration.indexOf("credential.persistence === 'system'");
-    const deleteIndex = migration.indexOf('deleteLegacyCredential');
-    assert.ok(storeIndex >= 0 && storeIndex < persistenceIndex);
-    assert.ok(persistenceIndex < deleteIndex);
+    const provider = source('src/services/gateway/credentialProvider.ts');
+    assert.doesNotMatch(resolver, /legacy credential|migrateCredential|getLegacyCredential|deleteLegacyCredential/i);
+    assert.doesNotMatch(provider, /migrateLegacyGatewayCredential|LEGACY_GATEWAY_/);
   });
 
   it('never falls back to the local shared token for an arbitrary pairing endpoint', () => {

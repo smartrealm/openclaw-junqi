@@ -58,7 +58,6 @@ pub(crate) fn gateway_port_from_config(value: &serde_json::Value) -> Option<u16>
 }
 
 const MISSING_CONFIG_REVISION: &str = "missing";
-pub(crate) const CONFIG_REVISION_CONFLICT_PREFIX: &str = "CONFIG_REVISION_CONFLICT";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,12 +65,6 @@ pub struct ConfigData {
     pub data: serde_json::Value,
     pub path: String,
     pub exists: bool,
-    pub revision: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConfigWriteResult {
     pub revision: String,
 }
 
@@ -120,25 +113,6 @@ fn config_revision(raw: &str) -> String {
     format!("{:x}", Sha256::digest(raw.as_bytes()))
 }
 
-fn config_revision_for_path(path: &Path) -> Result<String, String> {
-    match std::fs::read_to_string(path) {
-        Ok(raw) => Ok(config_revision(&raw)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            Ok(MISSING_CONFIG_REVISION.to_string())
-        }
-        Err(error) => Err(format!("Failed to read config for revision check: {error}")),
-    }
-}
-
-fn verify_expected_config_revision(expected: Option<&str>, actual: &str) -> Result<(), String> {
-    if expected.is_some_and(|revision| revision != actual) {
-        return Err(format!(
-            "{CONFIG_REVISION_CONFLICT_PREFIX}: OpenClaw config changed before save; reload and retry"
-        ));
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn validate_openclaw_config() -> ConfigValidation {
     let mode = paths::active_runtime_mode();
@@ -180,29 +154,6 @@ fn validate_openclaw_config_path(path: &Path) -> ConfigValidation {
             error: Some(error),
         },
     }
-}
-
-#[tauri::command]
-pub async fn write_config(
-    state: State<'_, GatewayProcess>,
-    json: String,
-    expected_revision: Option<String>,
-) -> Result<ConfigWriteResult, String> {
-    let operation_gate = state.operation_gate.clone();
-    let _operation_guard = operation_gate.try_lock_owned().map_err(|_| {
-        "Gateway or storage maintenance is running; try saving again shortly".to_string()
-    })?;
-    let mode = paths::active_runtime_mode();
-    paths::validate_runtime_mode(mode)?;
-    let value = parse_openclaw_config(&json)?;
-    crate::commands::openclaw_provider::validate_candidate_config(&value).await?;
-    let path = paths::active_config_path();
-    let actual_revision = config_revision_for_path(&path)?;
-    verify_expected_config_revision(expected_revision.as_deref(), &actual_revision)?;
-    write_openclaw_config_value(&path, &value)?;
-    Ok(ConfigWriteResult {
-        revision: config_revision_for_path(&path)?,
-    })
 }
 
 /// Parse an OpenClaw configuration according to the JSON5 syntax accepted by
@@ -591,14 +542,6 @@ mod tests {
             config_data_from_raw(Path::new("/tmp/openclaw.json"), "{gateway: []}").unwrap_err();
 
         assert!(err.contains("`gateway` must be an object"));
-    }
-
-    #[test]
-    fn expected_config_revision_rejects_stale_writes() {
-        verify_expected_config_revision(Some("current"), "current").unwrap();
-        let err = verify_expected_config_revision(Some("stale"), "current").unwrap_err();
-
-        assert!(err.starts_with(CONFIG_REVISION_CONFLICT_PREFIX));
     }
 
     #[test]

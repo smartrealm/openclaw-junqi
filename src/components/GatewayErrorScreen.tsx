@@ -11,19 +11,14 @@ import {
   AlertTriangle,
   RefreshCw,
   FileText,
-  Trash2,
   ChevronDown,
   ChevronUp,
-  CheckCircle2,
   Terminal,
   FolderOpen,
 } from 'lucide-react';
 import { GatewaySelfRescuePanel } from './GatewaySelfRescuePanel';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
-import {
-  resetActiveOpenclawConfig,
-  validateActiveOpenclawConfig,
-} from '@/services/openclawConfigRuntime';
+import { validateActiveOpenclawConfig } from '@/services/openclawConfigRuntime';
 import { openRuntimeDataDirectory } from '@/services/runtimeDataDirectory';
 import { useGatewayProcessRecovery } from '@/hooks/useGatewayProcessRecovery';
 
@@ -101,8 +96,6 @@ export function GatewayErrorScreen({
       color: 'text-aegis-danger',
     },
   }[category];
-  const isConfigInvalid = category === 'config-invalid' || category === 'config-schema-invalid';
-
   const [showLogs, setShowLogs] = useState(false);
   const logsContainerRef = useRef<HTMLDivElement | null>(null);
   const [configValidation, setConfigValidation] = useState<{
@@ -111,30 +104,12 @@ export function GatewayErrorScreen({
     exists: boolean;
     error?: string;
   } | null>(null);
-  const [resetting, setResetting] = useState(false);
-  const [resetResult, setResetResult] = useState<string | null>(null);
-
-  // Re-validate config file on mount (in case the error message isn't CONFIG_INVALID
-  // but the file is still broken — e.g. crash triggered by invalid config)
+  // Gateway 不可用时只读取配置诊断，不能绕过 Gateway 覆盖 OpenClaw 配置。
   useEffect(() => {
     void validateActiveOpenclawConfig().then(setConfigValidation).catch(() => setConfigValidation(null));
   }, []);
 
   useGatewayProcessRecovery(onRecovered);
-
-  const handleResetConfig = useCallback(async () => {
-    setResetting(true);
-    setResetResult(null);
-    try {
-      await resetActiveOpenclawConfig();
-      setResetResult(t('gatewayError.reset.removed'));
-      setConfigValidation(await validateActiveOpenclawConfig());
-    } catch (error) {
-      setResetResult(t('gatewayError.reset.failed', { error: String(error) }));
-    } finally {
-      setResetting(false);
-    }
-  }, []);
 
   const handleOpenLogFile = useCallback(() => {
     void openRuntimeDataDirectory();
@@ -220,14 +195,6 @@ export function GatewayErrorScreen({
             </div>
           </div>
 
-          {/* Reset result */}
-          {resetResult && (
-            <div className="mb-4 p-3 rounded-lg bg-aegis-success/10 border border-aegis-success/20 flex items-start gap-2">
-              <CheckCircle2 className="w-4 h-4 text-aegis-success mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-aegis-success leading-relaxed break-all">{resetResult}</p>
-            </div>
-          )}
-
           {/* Action buttons */}
           <div className="flex flex-wrap gap-2 mb-4">
               <button
@@ -240,19 +207,6 @@ export function GatewayErrorScreen({
                   : <RefreshCw className="w-4 h-4" />}
               {retrying ? t('gatewayError.actions.retrying') : t('gatewayError.actions.retryGateway')}
               </button>
-
-            {(isConfigInvalid || (configValidation && !configValidation.valid)) && (
-              <button
-                onClick={() => void handleResetConfig()}
-                disabled={resetting}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-warning text-aegis-btn-primary-text text-sm font-medium hover:bg-aegis-warning/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-              >
-                {resetting
-                  ? <LoadingIndicator size={16} />
-                  : <Trash2 className="w-4 h-4" />}
-                {resetting ? t('gatewayError.actions.resetting') : t('gatewayError.actions.resetConfig')}
-              </button>
-            )}
 
             <button
               onClick={handleOpenLogFile}

@@ -1,6 +1,5 @@
 use crate::commands::openclaw_cli;
 use std::time::Duration;
-use tauri::AppHandle;
 
 const DEVICE_APPROVAL_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -9,11 +8,7 @@ const DEVICE_APPROVAL_TIMEOUT: Duration = Duration::from_secs(30);
 /// this command. OpenClaw remains the authority for request identity, scope
 /// changes, replacement requests, and approval persistence.
 #[tauri::command]
-pub async fn approve_selected_gateway_device(
-    app: AppHandle,
-    request_id: String,
-) -> Result<(), String> {
-    crate::commands::privacy_lock::ensure_unlocked(&app)?;
+pub async fn approve_selected_gateway_device(request_id: String) -> Result<(), String> {
     let request_id = request_id.trim();
     openclaw_cli::validate_cli_identifier(request_id, "device pairing request id")?;
 

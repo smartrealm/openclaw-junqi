@@ -24,8 +24,8 @@
 - [x] 首次普通发送传递 `expectedLeafEntryId: null`；Gateway 受理后本地不再把该 null 当作当前 leaf。
 - [x] 身份轮换、Gateway 历史投影、会话删除和 Gateway active-leaf 冲突继续按既有生命周期清理或刷新。
 - [x] 未确认、未知 leaf、fork 或初始 turn 会话仍在首发前读取权威历史。
-- [x] 同一 key、sessionId、agentId 的稀疏 `sessions.list` 行不得抹除创建确认的空 leaf；Gateway
-  明确给出 leaf 或任一身份不一致时必须以 Gateway 投影为准。
+- [x] 同一 key 且未明确给出新身份的稀疏 `sessions.list` 行不得抹除创建确认的 sessionId、agent 和空 leaf；Gateway
+  明确给出新的 sessionId、key、agent 身份或 leaf 时必须以 Gateway 投影为准。
 
 ## 平台与运行时边界
 

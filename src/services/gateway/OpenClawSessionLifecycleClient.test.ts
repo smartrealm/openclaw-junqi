@@ -44,6 +44,7 @@ describe('OpenClawSessionLifecycleClient', () => {
       },
     }]);
     assert.equal(created.key, SESSION_KEY);
+    assert.equal(created.agentId, 'main');
     assert.equal(created.sessionId, SESSION_ID);
   });
 
@@ -92,6 +93,14 @@ describe('OpenClawSessionLifecycleClient', () => {
     }]);
   });
 
+  it('accepts the official canonical Agent id returned for a differently cased request', async () => {
+    const client = new OpenClawSessionLifecycleClient(async () => response() as never);
+
+    const created = await client.create({ agentId: 'MAIN' });
+
+    assert.equal(created.agentId, 'main');
+  });
+
   it('rejects an unconfirmed or identity-inconsistent response', () => {
     assert.throws(
       () => parseOpenClawCreatedSession({ ok: false }),
@@ -100,6 +109,10 @@ describe('OpenClawSessionLifecycleClient', () => {
     assert.throws(
       () => parseOpenClawCreatedSession(response({ entry: { sessionId: 'different' } })),
       (error: unknown) => error instanceof OpenClawSessionLifecycleResponseError && error.reason === 'missing-identity',
+    );
+    assert.throws(
+      () => parseOpenClawCreatedSession(response(), 'research'),
+      (error: unknown) => error instanceof OpenClawSessionLifecycleResponseError && error.reason === 'agent-mismatch',
     );
   });
 

@@ -1,3 +1,5 @@
+import { gateway } from '@/services/gateway';
+
 export interface OpenClawFieldSchema {
   $ref?: string;
   type?: string;
@@ -85,7 +87,7 @@ let configSchemaPromise: Promise<Record<string, unknown>> | undefined;
 
 export function loadOpenClawConfigSchema(): Promise<Record<string, unknown>> {
   if (!configSchemaPromise) {
-    configSchemaPromise = (getOpenclawConfigSchema() as Promise<Record<string, unknown>>).catch((error) => {
+    configSchemaPromise = (gateway.callPrivileged('config.schema', {}) as Promise<Record<string, unknown>>).catch((error) => {
       configSchemaPromise = undefined;
       throw error;
     });
@@ -111,4 +113,3 @@ export function schemaValueKind(schema: OpenClawFieldSchema): string {
   if (schemaStringOptions(schema).length > 0) return 'string';
   return 'object';
 }
-import { getOpenclawConfigSchema } from '@/api/tauri-commands';

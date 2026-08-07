@@ -24,7 +24,6 @@ export interface ProviderTemplate {
    * The selected Runtime schema remains the write-time authority.
    */
   api?: OpenClawApiProtocol;
-  popularModels: { id: string; suggestedAlias?: string; supportsImage?: boolean }[];
   docsUrl?: string;
   /** If true, user must supply a URL (like vllm/custom). */
   requiresBaseUrl?: boolean;
@@ -51,12 +50,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKeyAlt: ['ANTHROPIC_OAUTH_TOKEN'],
     baseUrl: 'https://api.anthropic.com/v1',
     api: 'anthropic-messages',
-    popularModels: [
-      { id: 'anthropic/claude-sonnet-5',   suggestedAlias: 'sonnet-5' },
-      { id: 'anthropic/claude-opus-4-6',   suggestedAlias: 'opus'     },
-      { id: 'anthropic/claude-sonnet-4-6', suggestedAlias: 'sonnet'   },
-      { id: 'anthropic/claude-haiku-3.5',  suggestedAlias: 'haiku'    },
-    ],
     docsUrl: 'https://docs.anthropic.com/en/api/getting-started',
   },
 
@@ -72,13 +65,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'OPENAI_API_KEY',
     baseUrl: 'https://api.openai.com/v1',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'openai/gpt-5.6',       suggestedAlias: 'gpt-5.6', supportsImage: true },
-      { id: 'openai/gpt-5.6-sol',   suggestedAlias: 'gpt-5.6-sol', supportsImage: true },
-      { id: 'openai/gpt-5.6-terra', suggestedAlias: 'gpt-5.6-terra', supportsImage: true },
-      { id: 'openai/gpt-5.6-luna',  suggestedAlias: 'gpt-5.6-luna', supportsImage: true },
-      { id: 'openai/gpt-5.5',       suggestedAlias: 'gpt-5.5', supportsImage: true },
-    ],
     docsUrl: 'https://platform.openai.com/docs/api-reference',
   },
 
@@ -94,17 +80,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'GEMINI_API_KEY',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     api: 'google-generative-ai',
-    popularModels: [
-      { id: 'google/gemini-2.5-pro',                suggestedAlias: 'g2.5-pro', supportsImage: true      },
-      { id: 'google/gemini-2.5-flash',              suggestedAlias: 'g2.5-flash', supportsImage: true    },
-      { id: 'google/gemini-2.5-flash-lite',         suggestedAlias: 'g2.5-lite', supportsImage: true     },
-      { id: 'google/gemini-3-pro-preview',          suggestedAlias: 'g3-pro', supportsImage: true        },
-      { id: 'google/gemini-3-flash-preview',        suggestedAlias: 'g3-flash', supportsImage: true      },
-      { id: 'google/gemini-3.1-flash-lite-preview', suggestedAlias: 'g3.1-lite', supportsImage: true     },
-      { id: 'google/gemini-3.1-pro-preview',        suggestedAlias: 'g3.1-pro', supportsImage: true      },
-      { id: 'google/gemini-3.1-flash-image-preview', suggestedAlias: 'g3.1-image', supportsImage: true   },
-      { id: 'google/gemini-3-pro-image-preview',    suggestedAlias: 'g3-image', supportsImage: true      },
-    ],
     docsUrl: 'https://ai.google.dev/api',
   },
 
@@ -120,22 +95,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'XAI_API_KEY',
     baseUrl: 'https://api.x.ai/v1',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'xai/grok-4.3',                              suggestedAlias: 'grok-4.3', supportsImage: true },
-      { id: 'xai/grok-4',                                suggestedAlias: 'grok-4'         },
-      { id: 'xai/grok-4-fast',                           suggestedAlias: 'grok-4-fast', supportsImage: true    },
-      { id: 'xai/grok-4-fast-non-reasoning',             suggestedAlias: 'g4-fast-nr', supportsImage: true     },
-      { id: 'xai/grok-4-1-fast',                         suggestedAlias: 'grok-4.1-fast', supportsImage: true  },
-      { id: 'xai/grok-4-1-fast-non-reasoning',           suggestedAlias: 'g4.1-fast-nr', supportsImage: true   },
-      { id: 'xai/grok-4.20-beta-latest-reasoning',       suggestedAlias: 'g4.20-reason', supportsImage: true   },
-      { id: 'xai/grok-4.20-beta-latest-non-reasoning',   suggestedAlias: 'g4.20-nr', supportsImage: true       },
-      { id: 'xai/grok-code-fast-1',                      suggestedAlias: 'grok-code'      },
-      { id: 'xai/grok-3',                                suggestedAlias: 'grok-3'         },
-      { id: 'xai/grok-3-fast',                           suggestedAlias: 'grok-3-fast'    },
-      { id: 'xai/grok-3-mini',                           suggestedAlias: 'grok-3-mini'    },
-      { id: 'xai/grok-3-mini-fast',                      suggestedAlias: 'g3-mini-fast'   },
-      { id: 'xai/grok-4-0709',                           suggestedAlias: 'grok-4-0709'    },
-    ],
     docsUrl: 'https://docs.x.ai/api',
   },
 
@@ -151,15 +110,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'MISTRAL_API_KEY',
     baseUrl: 'https://api.mistral.ai/v1',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'mistral/mistral-large-latest',  suggestedAlias: 'mistral-large', supportsImage: true },
-      { id: 'mistral/mistral-medium-2508',   suggestedAlias: 'mistral-medium', supportsImage: true },
-      { id: 'mistral/mistral-small-latest',  suggestedAlias: 'mistral-small', supportsImage: true  },
-      { id: 'mistral/pixtral-large-latest',  suggestedAlias: 'pixtral-large', supportsImage: true  },
-      { id: 'mistral/devstral-medium-latest',suggestedAlias: 'devstral'       },
-      { id: 'mistral/codestral-latest',      suggestedAlias: 'codestral'      },
-      { id: 'mistral/magistral-small',       suggestedAlias: 'magistral'      },
-    ],
     docsUrl: 'https://docs.mistral.ai/api/',
   },
 
@@ -175,12 +125,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'OPENROUTER_API_KEY',
     baseUrl: 'https://openrouter.ai/api/v1',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'openrouter/auto',               suggestedAlias: 'auto'          },
-      { id: 'openrouter/hunter-alpha',       suggestedAlias: 'hunter'        },
-      { id: 'openrouter/healer-alpha',       suggestedAlias: 'healer'        },
-      { id: 'openrouter/anthropic/claude-sonnet-4-5', suggestedAlias: 'sonnet' },
-    ],
     docsUrl: 'https://openrouter.ai/docs',
   },
 
@@ -196,10 +140,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'GROQ_API_KEY',
     baseUrl: 'https://api.groq.com/openai/v1',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'groq/llama-3.3-70b-versatile', suggestedAlias: 'llama' },
-      { id: 'groq/moonshotai/kimi-k2-instruct-0905', suggestedAlias: 'kimi-k2' },
-    ],
     docsUrl: 'https://console.groq.com/docs',
   },
 
@@ -215,16 +155,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'TOGETHER_API_KEY',
     baseUrl: 'https://api.together.xyz/v1',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'together/zai-org/GLM-4.7',                               suggestedAlias: 'glm-4.7'    },
-      { id: 'together/moonshotai/Kimi-K2.5',                          suggestedAlias: 'kimi-k2.5', supportsImage: true  },
-      { id: 'together/moonshotai/Kimi-K2-Instruct-0905',              suggestedAlias: 'kimi-k2'    },
-      { id: 'together/meta-llama/Llama-3.3-70B-Instruct-Turbo',       suggestedAlias: 'llama-3.3'  },
-      { id: 'together/meta-llama/Llama-4-Scout-17B-16E-Instruct',     suggestedAlias: 'llama-scout', supportsImage: true},
-      { id: 'together/meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8', suggestedAlias: 'llama-mav', supportsImage: true },
-      { id: 'together/deepseek-ai/DeepSeek-V3.1',                     suggestedAlias: 'ds-v3.1'    },
-      { id: 'together/deepseek-ai/DeepSeek-R1',                       suggestedAlias: 'ds-r1'      },
-    ],
     docsUrl: 'https://docs.together.ai/',
   },
 
@@ -240,9 +170,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'KILOCODE_API_KEY',
     baseUrl: 'https://api.kilo.ai/api/gateway/',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'kilocode/kilo/auto', suggestedAlias: 'kilo-auto' },
-    ],
     docsUrl: 'https://kilo.ai/docs',
   },
 
@@ -258,17 +185,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'VENICE_API_KEY',
     baseUrl: 'https://api.venice.ai/api/v1',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'venice/kimi-k2-5',                 suggestedAlias: 'kimi-k2.5'   },
-      { id: 'venice/qwen3-5-35b-a3b',           suggestedAlias: 'qwen3.5'      },
-      { id: 'venice/qwen3-vl-235b-a22b',        suggestedAlias: 'qwen3-vl'     },
-      { id: 'venice/deepseek-v3.2',             suggestedAlias: 'deepseek-v3.2'},
-      { id: 'venice/openai-gpt-54',             suggestedAlias: 'gpt-5.4'      },
-      { id: 'venice/claude-opus-4-6',           suggestedAlias: 'opus-4.6'     },
-      { id: 'venice/claude-sonnet-4-6',         suggestedAlias: 'sonnet-4.6'   },
-      { id: 'venice/gemini-3-pro-preview',      suggestedAlias: 'gemini-3-pro' },
-      { id: 'venice/grok-code-fast-1',          suggestedAlias: 'grok-code'    },
-    ],
     docsUrl: 'https://docs.venice.ai/',
   },
 
@@ -285,12 +201,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKeyAlt: ['HUGGINGFACE_HUB_TOKEN'],
     baseUrl: 'https://api-inference.huggingface.co',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'huggingface/deepseek-ai/DeepSeek-R1',                     suggestedAlias: 'deepseek-r1' },
-      { id: 'huggingface/deepseek-ai/DeepSeek-V3.1',                   suggestedAlias: 'deepseek-v3.1' },
-      { id: 'huggingface/meta-llama/Llama-3.3-70B-Instruct-Turbo',     suggestedAlias: 'llama-3.3' },
-      { id: 'huggingface/openai/gpt-oss-120b',                         suggestedAlias: 'gpt-oss-120b' },
-    ],
     docsUrl: 'https://huggingface.co/docs/api-inference',
   },
 
@@ -306,7 +216,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'LITELLM_API_KEY',
     baseUrl: 'http://localhost:4000/v1',
     api: 'openai-completions',
-    popularModels: [],
     hint: 'Unified gateway for 100+ LLM providers',
     docsUrl: 'https://docs.litellm.ai/',
   },
@@ -322,11 +231,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     defaultAuthMode: 'api_key',
     envKey: 'AI_GATEWAY_API_KEY',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'vercel-ai-gateway/anthropic/claude-opus-4.6', suggestedAlias: 'opus-4.6' },
-      { id: 'vercel-ai-gateway/openai/gpt-5.4',            suggestedAlias: 'gpt-5.4'  },
-      { id: 'vercel-ai-gateway/openai/gpt-5.4-pro',        suggestedAlias: 'gpt-5.4-pro' },
-    ],
     docsUrl: 'https://vercel.com/docs/ai-gateway',
   },
 
@@ -342,12 +246,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'NVIDIA_API_KEY',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'nvidia/nvidia/nemotron-3-super-120b-a12b', suggestedAlias: 'nemotron-super' },
-      { id: 'nvidia/moonshotai/kimi-k2.5',              suggestedAlias: 'kimi-k2.5' },
-      { id: 'nvidia/minimaxai/minimax-m2.5',            suggestedAlias: 'minimax-m2.5' },
-      { id: 'nvidia/z-ai/glm5',                         suggestedAlias: 'glm-5' },
-    ],
     docsUrl: 'https://docs.api.nvidia.com/',
   },
 
@@ -364,19 +262,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'COPILOT_GITHUB_TOKEN',
     envKeyAlt: ['GH_TOKEN', 'GITHUB_TOKEN'],
     api: 'openai-completions',
-    popularModels: [
-      { id: 'github-copilot/claude-sonnet-4.6', suggestedAlias: 'sonnet-4.6' },
-      { id: 'github-copilot/claude-sonnet-4.5', suggestedAlias: 'sonnet-4.5' },
-      { id: 'github-copilot/gpt-5.4',           suggestedAlias: 'gpt-5.4' },
-      { id: 'github-copilot/gpt-5.2-codex',     suggestedAlias: 'gpt-5.2-codex' },
-      { id: 'github-copilot/gpt-4o',            suggestedAlias: 'gpt-4o' },
-      { id: 'github-copilot/gpt-4.1',           suggestedAlias: 'gpt-4.1' },
-      { id: 'github-copilot/gpt-4.1-mini',      suggestedAlias: 'gpt-4.1-mini' },
-      { id: 'github-copilot/gpt-4.1-nano',      suggestedAlias: 'gpt-4.1-nano' },
-      { id: 'github-copilot/o1',                suggestedAlias: 'o1' },
-      { id: 'github-copilot/o1-mini',           suggestedAlias: 'o1-mini' },
-      { id: 'github-copilot/o3-mini',           suggestedAlias: 'o3-mini' },
-    ],
     docsUrl: 'https://docs.github.com/en/copilot',
   },
 
@@ -399,10 +284,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     baseUrl: 'https://api.minimax.io/anthropic',
     // anthropic-messages — OpenClaw sends via Anthropic API format
     api: 'anthropic-messages',
-    popularModels: [
-      { id: 'minimax/MiniMax-M2.7',           suggestedAlias: 'minimax-m27'   },
-      { id: 'minimax/MiniMax-M2.7-highspeed', suggestedAlias: 'minimax-fast'  },
-    ],
     hint: 'MiniMax M2.5（Anthropic 协议）— OpenClaw 官方支持',
     docsUrl: 'https://platform.minimaxi.com/document/ChatCompletion%20v2',
   },
@@ -421,13 +302,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'MOONSHOT_API_KEY',
     baseUrl: 'https://api.moonshot.ai/v1',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'moonshot/kimi-k2.5',              suggestedAlias: 'kimi-k2.5', supportsImage: true     },
-      { id: 'moonshot/kimi-k2.6',              suggestedAlias: 'kimi-k2.6', supportsImage: true     },
-      { id: 'moonshot/kimi-k2-thinking',       suggestedAlias: 'kimi-thinking'  },
-      { id: 'moonshot/kimi-k2-thinking-turbo', suggestedAlias: 'kimi-think-t'   },
-      { id: 'moonshot/kimi-k2-turbo',          suggestedAlias: 'kimi-turbo'     },
-    ],
     docsUrl: 'https://platform.moonshot.ai/docs/api-reference',
   },
 
@@ -445,21 +319,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'ZAI_API_KEY',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'zai/glm-5.1',          suggestedAlias: 'glm-5.1'         },
-      { id: 'zai/glm-5',            suggestedAlias: 'glm-5'           },
-      { id: 'zai/glm-5-turbo',      suggestedAlias: 'glm-5-turbo'     },
-      { id: 'zai/glm-5v-turbo',     suggestedAlias: 'glm-5v-turbo', supportsImage: true    },
-      { id: 'zai/glm-4.7',          suggestedAlias: 'glm-4.7'         },
-      { id: 'zai/glm-4.7-flash',    suggestedAlias: 'glm-4.7-flash'   },
-      { id: 'zai/glm-4.7-flashx',   suggestedAlias: 'glm-4.7-flashx'  },
-      { id: 'zai/glm-4.6',          suggestedAlias: 'glm-4.6'         },
-      { id: 'zai/glm-4.6v',         suggestedAlias: 'glm-4.6v', supportsImage: true        },
-      { id: 'zai/glm-4.5',          suggestedAlias: 'glm-4.5'         },
-      { id: 'zai/glm-4.5-air',      suggestedAlias: 'glm-4.5-air'     },
-      { id: 'zai/glm-4.5-flash',    suggestedAlias: 'glm-4.5-flash'   },
-      { id: 'zai/glm-4.5v',         suggestedAlias: 'glm-4.5v', supportsImage: true        },
-    ],
     docsUrl: 'https://bigmodel.cn/dev/api',
   },
 
@@ -476,10 +335,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'DEEPSEEK_API_KEY',
     baseUrl: 'https://api.deepseek.com/v1',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'deepseek/deepseek-reasoner', suggestedAlias: 'deepseek-r'   },
-      { id: 'deepseek/deepseek-chat',     suggestedAlias: 'deepseek-chat' },
-    ],
     docsUrl: 'https://api-docs.deepseek.com/',
   },
 
@@ -497,7 +352,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'SILICONFLOW_API_KEY',
     baseUrl: 'https://api.siliconflow.cn/v1',
     api: 'openai-completions',
-    popularModels: [],
     hint: '请输入模型广场里的完整模型名，例如 deepseek-ai/DeepSeek-V3；系统会自动写成 siliconflow/<模型名>',
     docsUrl: 'https://docs.siliconflow.cn/cn/usercases/use-siliconcloud-in-OpenClaw#openclaw',
   },
@@ -518,10 +372,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'QIANFAN_API_KEY',
     baseUrl: 'https://qianfan.baidubce.com/v2',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'qianfan/deepseek-v3.2',                suggestedAlias: 'ds-v3'    },
-      { id: 'qianfan/ernie-5.0-thinking-preview',   suggestedAlias: 'ernie5', supportsImage: true   },
-    ],
     hint: '使用百炼平台 API Key（非旧版 IAM 鉴权）',
     docsUrl: 'https://qianfan.cloud.baidu.com/doc/index.html',
   },
@@ -541,17 +391,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'MODELSTUDIO_API_KEY',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'qwen/qwen3.5-plus',         suggestedAlias: 'qwen3.5-plus', supportsImage: true     },
-      { id: 'qwen/qwen3.6-plus',         suggestedAlias: 'qwen3.6-plus', supportsImage: true     },
-      { id: 'qwen/qwen3-max-2026-01-23', suggestedAlias: 'qwen3-max'        },
-      { id: 'qwen/qwen3-coder-next',     suggestedAlias: 'qwen-coder-next'  },
-      { id: 'qwen/qwen3-coder-plus',     suggestedAlias: 'qwen-coder-plus'  },
-      { id: 'qwen/MiniMax-M2.5',         suggestedAlias: 'minimax-m2.5'     },
-      { id: 'qwen/kimi-k2.5',            suggestedAlias: 'kimi-k2.5', supportsImage: true        },
-      { id: 'qwen/glm-5',                suggestedAlias: 'glm-5'            },
-      { id: 'qwen/glm-4.7',              suggestedAlias: 'glm-4.7'          },
-    ],
     hint: '百炼订阅 Plan 专属 Key（非普通 DashScope Key）',
     docsUrl: 'https://help.aliyun.com/zh/model-studio/',
   },
@@ -570,13 +409,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'VOLCANO_ENGINE_API_KEY',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     api: 'openai-completions',
-    popularModels: [
-      { id: 'volcengine/doubao-seed-code-preview-251028', suggestedAlias: 'doubao-code', supportsImage: true },
-      { id: 'volcengine/doubao-seed-1-8-251228',          suggestedAlias: 'doubao-1.8', supportsImage: true  },
-      { id: 'volcengine/moonshotai/kimi-k2.5',            suggestedAlias: 'kimi-k2.5'   },
-      { id: 'volcengine/zai-org/glm-4.7',                 suggestedAlias: 'glm-4.7'     },
-      { id: 'volcengine/deepseek-v3-2-251201',            suggestedAlias: 'deepseek-v3.2', supportsImage: true },
-    ],
     docsUrl: 'https://www.volcengine.com/docs/82379',
   },
 
@@ -595,11 +427,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'XIAOMI_API_KEY',
     baseUrl: 'https://api.xiaomimimo.com/anthropic',
     api: 'anthropic-messages',
-    popularModels: [
-      { id: 'xiaomi/mimo-v2-flash', suggestedAlias: 'mimo-flash' },
-      { id: 'xiaomi/mimo-v2-pro',   suggestedAlias: 'mimo-pro'   },
-      { id: 'xiaomi/mimo-v2-omni',  suggestedAlias: 'mimo-omni', supportsImage: true  },
-    ],
     docsUrl: 'https://ai.mi.com/',
   },
 
@@ -625,9 +452,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKeyAlt: ['KIMICODE_API_KEY'],
     baseUrl: 'https://api.kimi.com/coding/',
     api: 'anthropic-messages',
-    popularModels: [
-      { id: 'kimi-coding/k2p5', suggestedAlias: 'kimi-code' },
-    ],
     hint: '与 Kimi 开放平台（MOONSHOT_API_KEY）完全独立，需专用 KIMI_API_KEY',
     docsUrl: 'https://docs.openclaw.ai/concepts/model-providers',
   },
@@ -649,11 +473,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'OLLAMA_API_KEY',
     baseUrl: 'http://localhost:11434',
     api: 'ollama',
-    popularModels: [
-      { id: 'ollama/llama3.2',      suggestedAlias: 'llama'   },
-      { id: 'ollama/qwen3:8b',      suggestedAlias: 'qwen'    },
-      { id: 'ollama/deepseek-r1:7b',suggestedAlias: 'ds-r1'   },
-    ],
     docsUrl: 'https://ollama.ai/docs',
   },
 
@@ -672,7 +491,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'VLLM_API_KEY',
     baseUrl: '',
     api: 'openai-completions',
-    popularModels: [],
     requiresBaseUrl: true,
     hint: '本地/私有部署的 OpenAI 兼容服务器',
     docsUrl: 'https://docs.vllm.ai/',
@@ -691,7 +509,6 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKey: 'OPENCLAW_CUSTOM_API_KEY',
     baseUrl: '',
     api: 'openai-completions',
-    popularModels: [],
     requiresBaseUrl: true,
     hint: '任意 OpenAI 或 Anthropic 兼容端点',
   },
@@ -758,7 +575,6 @@ export interface ProviderCatalogEntry {
   /** Overrides the template's baseUrl for this specific region/plan. */
   baseUrlOverride?: string;
   /** First model to default-select in ConfigureStep. Falls back to generated provider catalog first item. */
-  defaultModelRef?: string;
   /** Warning banner shown in ConfigureStep when this is a coding/special plan. */
   planWarning?: string;
 }
@@ -767,9 +583,9 @@ export interface ProviderCatalogEntry {
 export const UI_CATALOG: ProviderCatalogEntry[] = [
 
   // ── No region split (single global endpoint) ────────────────────────────────
-  { catalogId: 'deepseek',   templateId: 'deepseek',   label: 'DeepSeek',        tabs: ['china', 'global'], region: 'none', plan: 'general', defaultModelRef: 'deepseek/deepseek-chat' },
-  { catalogId: 'openai',     templateId: 'openai',     label: 'OpenAI',           tabs: ['global'],          region: 'none', plan: 'general', defaultModelRef: 'openai/gpt-4o' },
-  { catalogId: 'anthropic',  templateId: 'anthropic',  label: 'Anthropic',        tabs: ['global'],          region: 'none', plan: 'general', defaultModelRef: 'anthropic/claude-sonnet-4-6' },
+  { catalogId: 'deepseek',   templateId: 'deepseek',   label: 'DeepSeek',        tabs: ['china', 'global'], region: 'none', plan: 'general'},
+  { catalogId: 'openai',     templateId: 'openai',     label: 'OpenAI',           tabs: ['global'],          region: 'none', plan: 'general'},
+  { catalogId: 'anthropic',  templateId: 'anthropic',  label: 'Anthropic',        tabs: ['global'],          region: 'none', plan: 'general'},
   { catalogId: 'google',     templateId: 'google',     label: 'Google Gemini',    tabs: ['global'],          region: 'none', plan: 'general' },
   { catalogId: 'xai',        templateId: 'xai',        label: 'xAI (Grok)',       tabs: ['global'],                         region: 'none', plan: 'general' },
   { catalogId: 'mistral',    templateId: 'mistral',    label: 'Mistral AI',       tabs: ['global'],                         region: 'none', plan: 'general' },
@@ -784,14 +600,14 @@ export const UI_CATALOG: ProviderCatalogEntry[] = [
   { catalogId: 'github-copilot', templateId: 'github-copilot', label: 'GitHub Copilot', tabs: ['global'],                  region: 'none', plan: 'oauth-portal' },
 
   // ── CN-primary providers (no global counterpart in Desktop templates) ───────
-  { catalogId: 'volcengine', templateId: 'volcengine', label: '火山引擎豆包',      tabs: ['recommended', 'china'],           region: 'cn',   plan: 'general', defaultModelRef: 'volcengine/doubao-seed-1-8-251228' },
+  { catalogId: 'volcengine', templateId: 'volcengine', label: '火山引擎豆包',      tabs: ['recommended', 'china'],           region: 'cn',   plan: 'general'},
   { catalogId: 'siliconflow', templateId: 'siliconflow', label: '硅基流动 SiliconFlow', tabs: ['recommended', 'china'],      region: 'cn',   plan: 'general', baseUrlOverride: 'https://api.siliconflow.cn/v1' },
   { catalogId: 'qianfan',    templateId: 'qianfan',    label: '百度千帆',          tabs: ['china'],                          region: 'cn',   plan: 'general' },
   { catalogId: 'xiaomi',     templateId: 'xiaomi',     label: 'Xiaomi MiMo',      tabs: ['china'],                          region: 'cn',   plan: 'general' },
 
   // ── Dual-endpoint: Moonshot / Kimi 开放平台 ──────────────────────────────────
-  { catalogId: 'moonshot-cn',     templateId: 'moonshot', label: 'Kimi · 中国站',  tabs: ['recommended', 'china'],  region: 'cn',     plan: 'general', baseUrlOverride: 'https://api.moonshot.cn/v1',  defaultModelRef: 'moonshot/kimi-k2.5' },
-  { catalogId: 'moonshot-global', templateId: 'moonshot', label: 'Kimi · Global', tabs: ['global'],                 region: 'global', plan: 'general', baseUrlOverride: 'https://api.moonshot.ai/v1', defaultModelRef: 'moonshot/kimi-k2.5' },
+  { catalogId: 'moonshot-cn',     templateId: 'moonshot', label: 'Kimi · 中国站',  tabs: ['recommended', 'china'],  region: 'cn',     plan: 'general', baseUrlOverride: 'https://api.moonshot.cn/v1'},
+  { catalogId: 'moonshot-global', templateId: 'moonshot', label: 'Kimi · Global', tabs: ['global'],                 region: 'global', plan: 'general', baseUrlOverride: 'https://api.moonshot.ai/v1'},
 
   // ── Dual-endpoint: Z.AI (智谱 GLM) ──────────────────────────────────────────
   { catalogId: 'zai-cn',     templateId: 'zai', label: 'Z.AI · 国内',   tabs: ['recommended', 'china'], region: 'cn',     plan: 'general', baseUrlOverride: 'https://open.bigmodel.cn/api/paas/v4' },
@@ -808,7 +624,7 @@ export const UI_CATALOG: ProviderCatalogEntry[] = [
   { catalogId: 'modelstudio-general',       templateId: 'modelstudio', label: '百炼 通用兼容模式',    tabs: ['recommended', 'china'],                           region: 'cn',     plan: 'general', baseUrlOverride: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
 
   // ── Coding Plan (专用编码线，独立密钥) ──────────────────────────────────────
-  { catalogId: 'kimi-coding',           templateId: 'kimi-coding', label: 'Kimi Coding',          tabs: ['coding'], region: 'none',   plan: 'coding', defaultModelRef: 'kimi-coding/k2p5', planWarning: '与 Kimi 开放平台（MOONSHOT_API_KEY）完全独立。必须使用 KIMI_API_KEY，严禁混用。' },
+  { catalogId: 'kimi-coding',           templateId: 'kimi-coding', label: 'Kimi Coding',          tabs: ['coding'], region: 'none',   plan: 'coding', planWarning: '与 Kimi 开放平台（MOONSHOT_API_KEY）完全独立。必须使用 KIMI_API_KEY，严禁混用。' },
   { catalogId: 'zai-coding-cn',         templateId: 'zai',         label: 'Z.AI Coding · CN',     tabs: ['china', 'coding'], region: 'cn',     plan: 'coding', baseUrlOverride: 'https://open.bigmodel.cn/api/coding/paas/v4',  planWarning: '厂商控制台通常为独立 Coding Plan Key（与普通开放平台 ZAI_API_KEY 不同）。' },
   { catalogId: 'zai-coding-global',     templateId: 'zai',         label: 'Z.AI Coding · Global', tabs: ['global', 'coding'], region: 'global', plan: 'coding', baseUrlOverride: 'https://api.z.ai/api/coding/paas/v4',          planWarning: '厂商控制台通常为独立 Coding Plan Key（与普通开放平台 ZAI_API_KEY 不同）。' },
 

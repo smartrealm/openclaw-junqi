@@ -1,21 +1,15 @@
 import {
   deleteGatewayCredential as deleteGatewayCredentialCommand,
   getGatewayCredential as getGatewayCredentialCommand,
-  migrateGatewayCredential as migrateGatewayCredentialCommand,
   storeGatewayCredential as storeGatewayCredentialCommand,
   type GatewayCredentialKeyParams,
   type GatewayCredentialPersistence,
   type GatewayCredentialResult,
-  type MigrateGatewayCredentialParams,
   type StoreGatewayCredentialParams,
 } from '@/api/tauri-commands';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { getGatewayDeviceIdentityReference } from './deviceAuthentication';
 
-export const LEGACY_GATEWAY_TOKEN_KEY = 'aegis-gateway-token';
-export const LEGACY_GATEWAY_CONFIG_KEY = 'aegis-config';
-export const LEGACY_GATEWAY_SETTING_KEY = 'aegis-setting:gatewayToken';
-export const GATEWAY_CREDENTIAL_MIGRATION_MARKER = 'aegis-gateway-credential-migration-v1';
 export const GATEWAY_RUNTIME_ALIAS_KEY = 'aegis-gateway-runtime-aliases-v1';
 
 const DEFAULT_GATEWAY_URL = defaultGatewayWsUrl();
@@ -32,16 +26,11 @@ export interface GatewayCredentialBackend {
   get(params: GatewayCredentialKeyParams): Promise<GatewayCredentialResult>;
   store(params: StoreGatewayCredentialParams): Promise<GatewayCredentialResult>;
   delete(params: GatewayCredentialKeyParams): Promise<GatewayCredentialResult>;
-  migrate(params: MigrateGatewayCredentialParams): Promise<GatewayCredentialResult>;
 }
 
 interface ProviderOptions {
   backend?: GatewayCredentialBackend;
   resolveDeviceId?: () => Promise<string>;
-}
-
-interface LegacyMigrationOptions extends ProviderOptions {
-  storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 }
 
 interface RuntimeBindingOptions extends ProviderOptions {
@@ -77,13 +66,11 @@ const defaultBackend: GatewayCredentialBackend = {
   get: getGatewayCredentialCommand,
   store: storeGatewayCredentialCommand,
   delete: deleteGatewayCredentialCommand,
-  migrate: migrateGatewayCredentialCommand,
 };
 
 const sessionCredentials = new Map<string, GatewayCredential>();
 const runtimeSessionCredentials = new Map<string, GatewayCredential>();
-const migrationsInFlight = new Map<string, Promise<GatewayCredential>>();
-
+const credentialLookupsInFlight = new Map<string, Promise<GatewayCredential>>();
 function normalizeRuntimeKey(runtimeKey: string): string {
   const value = runtimeKey.trim();
   if (!value) throw new Error('runtimeKey must not be empty');
@@ -348,6 +335,11 @@ export async function getGatewayDeviceCredential(
   const normalized = normalizeRuntimeKey(runtimeKey);
   const runtimeSession = runtimeSessionCredentials.get(normalized);
   if (runtimeSession?.token) return { ...runtimeSession };
+
+  const existingLookup = credentialLookupsInFlight.get(normalized);
+  if (existingLookup) return existingLookup;
+
+  const lookup = (async (): Promise<GatewayCredential> => {
   let resolvedDeviceId: string;
   try {
     resolvedDeviceId = await deviceId(options);
@@ -377,6 +369,15 @@ export async function getGatewayDeviceCredential(
       persistence: 'unsupported',
       migrated: false,
     };
+  }
+  })();
+  credentialLookupsInFlight.set(normalized, lookup);
+  try {
+    return await lookup;
+  } finally {
+    if (credentialLookupsInFlight.get(normalized) === lookup) {
+      credentialLookupsInFlight.delete(normalized);
+    }
   }
 }
 
@@ -472,118 +473,9 @@ export async function deleteGatewayDeviceCredential(
   }
 }
 
-function readLegacyGatewayToken(storage: Pick<Storage, 'getItem'>): string {
-  const direct = storage.getItem(LEGACY_GATEWAY_TOKEN_KEY)?.trim();
-  if (direct) return direct;
-
-  try {
-    const parsed = JSON.parse(storage.getItem(LEGACY_GATEWAY_CONFIG_KEY) || '{}');
-    if (typeof parsed?.gatewayToken === 'string' && parsed.gatewayToken.trim()) {
-      return parsed.gatewayToken.trim();
-    }
-  } catch {}
-
-  try {
-    const parsed = JSON.parse(storage.getItem(LEGACY_GATEWAY_SETTING_KEY) || 'null');
-    return typeof parsed === 'string' ? parsed.trim() : '';
-  } catch {
-    return '';
-  }
-}
-
-/** Remove token fields while preserving non-secret connection preferences. */
-export function clearLegacyGatewayCredentialStorage(
-  storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> = localStorage,
-): void {
-  storage.removeItem(LEGACY_GATEWAY_TOKEN_KEY);
-  storage.removeItem(LEGACY_GATEWAY_SETTING_KEY);
-  const rawConfig = storage.getItem(LEGACY_GATEWAY_CONFIG_KEY);
-  if (!rawConfig) return;
-  try {
-    const parsed = JSON.parse(rawConfig);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      storage.removeItem(LEGACY_GATEWAY_CONFIG_KEY);
-      return;
-    }
-    if ('gatewayToken' in parsed) {
-      delete parsed.gatewayToken;
-      try {
-        storage.setItem(LEGACY_GATEWAY_CONFIG_KEY, JSON.stringify(parsed));
-      } catch {
-        // If quota/policy blocks the sanitized rewrite, deleting the whole
-        // legacy config is the only way to guarantee the token is gone.
-        storage.removeItem(LEGACY_GATEWAY_CONFIG_KEY);
-      }
-    }
-  } catch {
-    storage.removeItem(LEGACY_GATEWAY_CONFIG_KEY);
-  }
-}
-
-/**
- * One-time browser-storage migration. Plaintext is cleared even when the OS
- * credential store is unavailable; in that case the value survives only in
- * this module's process-local map for the current desktop session.
- */
-export async function migrateLegacyGatewayCredential(
-  runtimeKey: string,
-  options: LegacyMigrationOptions = {},
-): Promise<GatewayCredential> {
-  const normalized = normalizeRuntimeKey(runtimeKey);
-  const existingMigration = migrationsInFlight.get(normalized);
-  if (existingMigration) return existingMigration;
-  const storage = options.storage ?? localStorage;
-
-  const migration = (async () => {
-    const legacyToken = readLegacyGatewayToken(storage);
-    if (!legacyToken) {
-      try { clearLegacyGatewayCredentialStorage(storage); } catch {}
-      try { storage.setItem(GATEWAY_CREDENTIAL_MIGRATION_MARKER, '1'); } catch {}
-      return getGatewayDeviceCredential(normalized, options);
-    }
-
-    let resolvedDeviceId: string | null = null;
-    let credential: GatewayCredential;
-    try {
-      resolvedDeviceId = await deviceId(options);
-      const response = asCredential(await (options.backend ?? defaultBackend).migrate({
-        runtimeKey: normalized,
-        deviceId: resolvedDeviceId,
-        legacyToken,
-      }));
-      credential = { ...response, token: response.token || legacyToken };
-    } catch {
-      credential = {
-        runtimeKey: normalized,
-        token: legacyToken,
-        persistence: 'session_only',
-        migrated: true,
-      };
-    } finally {
-      try { clearLegacyGatewayCredentialStorage(storage); } catch {}
-      try { storage.setItem(GATEWAY_CREDENTIAL_MIGRATION_MARKER, '1'); } catch {}
-    }
-    if (resolvedDeviceId) {
-      sessionCredentials.set(credentialMapKey(normalized, resolvedDeviceId), credential);
-    } else {
-      runtimeSessionCredentials.set(normalized, credential);
-    }
-    return credential;
-  })();
-  migrationsInFlight.set(normalized, migration);
-
-  try {
-    return await migration;
-  } finally {
-    if (migrationsInFlight.get(normalized) === migration) {
-      migrationsInFlight.delete(normalized);
-    }
-  }
-}
-
 /** Test-only reset for the process-local fallback. */
 export function resetGatewayCredentialProviderForTests(): void {
   sessionCredentials.clear();
   runtimeSessionCredentials.clear();
-  migrationsInFlight.clear();
+  credentialLookupsInFlight.clear();
 }

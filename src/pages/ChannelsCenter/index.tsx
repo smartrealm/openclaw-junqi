@@ -52,10 +52,7 @@ import { ChannelQrLoginDialog } from './ChannelQrLoginDialog';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { ChannelRuntimeIcon } from '@/components/shared/ChannelRuntimeIcon';
 import { runChannelRuntimeAction } from '@/services/channelRuntimeActions';
-import {
-  readActiveOpenclawConfig,
-  validateActiveOpenclawConfig,
-} from '@/services/openclawConfigRuntime';
+import { openClawRuntimeConfigClient } from '@/services/gateway';
 import {
   loadGatewayProcessLogs,
   observeSelectedGatewayProcess,
@@ -365,17 +362,13 @@ export function ChannelsCenterPage() {
     setLoading(true);
     setError('');
     try {
-      const detected = await validateActiveOpenclawConfig();
-      if (!detected.valid) {
-        throw new Error(detected.error || 'The selected OpenClaw config is invalid.');
-      }
-      if (!detected.exists) {
+      const snapshot = await openClawRuntimeConfigClient.read();
+      if (!snapshot.exists) {
         setConfig(null);
         setError(t('channelsCenter.configMissing', 'OpenClaw config file was not found.'));
         return;
       }
-      const { data } = await readActiveOpenclawConfig();
-      setConfig(data);
+      setConfig(snapshot.config);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

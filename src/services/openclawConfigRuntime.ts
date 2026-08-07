@@ -2,10 +2,8 @@ import {
   parseOpenclawConfigText,
   readOpenclawConfig,
   validateOpenclawConfig,
-  writeOpenclawConfig,
   type OpenclawConfigReadResult,
   type OpenclawConfigValidationResult,
-  type OpenclawConfigWriteResult,
 } from '@/api/tauri-commands';
 import type { GatewayRuntimeConfig } from '@/types/openclawConfig';
 
@@ -24,16 +22,4 @@ export function validateActiveOpenclawConfig(): Promise<OpenclawConfigValidation
 
 export function parseActiveOpenclawConfig(raw: string): Promise<GatewayRuntimeConfig> {
   return parseOpenclawConfigText(raw);
-}
-
-export function writeActiveOpenclawConfig(
-  data: GatewayRuntimeConfig,
-  expectedRevision?: string,
-): Promise<OpenclawConfigWriteResult> {
-  return writeOpenclawConfig(data, expectedRevision);
-}
-
-/** Reset is a selected-runtime write, not a renderer-local recovery action. */
-export function resetActiveOpenclawConfig(): Promise<OpenclawConfigWriteResult> {
-  return writeOpenclawConfig({});
 }

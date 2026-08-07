@@ -51,14 +51,6 @@ pub struct StoreGatewayCredentialParams {
     token: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MigrateGatewayCredentialParams {
-    runtime_key: String,
-    device_id: String,
-    legacy_token: String,
-}
-
 fn validate_component(value: &str, name: &str, max_bytes: usize) -> Result<String, String> {
     let normalized = value.trim();
     if normalized.is_empty() {
@@ -193,48 +185,6 @@ pub async fn delete_gateway_credential(
         GatewayCredentialPersistence::System,
         None,
         false,
-    ))
-}
-
-/// Idempotently adopts a browser-stored legacy token. Existing secure state
-/// wins, so a stale browser value can never overwrite a newer device token.
-#[tauri::command]
-pub async fn migrate_gateway_credential(
-    params: MigrateGatewayCredentialParams,
-) -> Result<GatewayCredentialResult, String> {
-    let (runtime_key, device_id) = validate_key(&params.runtime_key, &params.device_id)?;
-    let legacy_token = validate_token(&params.legacy_token)?;
-    if !system_credential_store_available() {
-        return Ok(result(
-            runtime_key,
-            GatewayCredentialPersistence::SessionOnly,
-            Some(legacy_token),
-            true,
-        ));
-    }
-
-    let account = credential_account(&runtime_key, &device_id);
-    if let Some(existing) = get_system_credential(GATEWAY_CREDENTIAL_SERVICE, &account).await? {
-        return Ok(result(
-            runtime_key,
-            GatewayCredentialPersistence::System,
-            Some(existing),
-            false,
-        ));
-    }
-
-    store_system_credential(
-        GATEWAY_CREDENTIAL_SERVICE,
-        &account,
-        GATEWAY_CREDENTIAL_LABEL,
-        &legacy_token,
-    )
-    .await?;
-    Ok(result(
-        runtime_key,
-        GatewayCredentialPersistence::System,
-        Some(legacy_token),
-        true,
     ))
 }
 

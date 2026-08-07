@@ -45,6 +45,7 @@ plans/
 
 ## Quality
 
+- [JunQi 隐私锁能力移除实施计划](quality/2026-08-07-privacy-lock-removal.md)
 - [桌面原生通知投递实施计划](quality/2026-08-05-native-notification-delivery.md)
 - [统一文件预览呈现实施计划](quality/2026-08-05-unified-file-preview-surface.md)
 - [工作区首屏数据就绪实施计划](quality/2026-08-05-workspace-bootstrap-readiness.md)
@@ -92,7 +93,6 @@ plans/
 - [工作台可靠性](quality/2026-07-29-workspace-reliability.md)
 - [无引用代码与终端类型收敛](quality/2026-07-29-dead-code-convergence.md)
 - [加载指示器收敛](quality/2026-07-29-loading-indicator-convergence.md)
-- [JunQi 隐私锁](quality/2026-08-05-privacy-lock.md)
 - [Agent 活动视觉语言](quality/2026-08-05-agent-activity-visual-language.md)
 - [用户消息恢复操作](quality/2026-07-29-user-message-recovery-actions.md)
 - [萌宠文字与聊天窗口恢复](quality/2026-07-29-pet-caption-and-chat-window-recovery.md)

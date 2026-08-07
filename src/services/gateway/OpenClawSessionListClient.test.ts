@@ -32,6 +32,27 @@ describe('listOpenClawSessionLifecycle', () => {
     assert.deepEqual(responses.archived, archived);
   });
 
+  it('accepts a terminal page that omits offset', async () => {
+    const terminal = { sessions: [{ key: 'agent:main:main' }], totalCount: 1, nextOffset: null, hasMore: false };
+    const archived = emptyPage(0);
+    const responses = await listOpenClawSessionLifecycle(async (_method, params) => {
+      return params.archived ? archived as never : terminal as never;
+    });
+    assert.deepEqual(responses.active.sessions, terminal.sessions);
+  });
+
+  it('rejects an offset-less terminal page after pagination began', async () => {
+    const first = { sessions: [{ key: 'agent:main:main' }], totalCount: 2, offset: 0, nextOffset: 1, hasMore: true };
+    const terminal = { sessions: [{ key: 'agent:main:desktop-1' }], totalCount: 2, nextOffset: null, hasMore: false };
+    await assert.rejects(
+      listOpenClawSessionLifecycle(async (_method, params) => {
+        if (params.archived) return emptyPage(0) as never;
+        return (params.offset === 0 ? first : terminal) as never;
+      }),
+      /invalid pagination metadata/,
+    );
+  });
+
   it('does not hide authentication failures', async () => {
     await assert.rejects(
       listOpenClawSessionLifecycle(async (_method, params) => {

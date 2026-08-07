@@ -748,16 +748,17 @@ fn classify_service_ownership(
             .as_ref()
             .and_then(|command| command_matches_runtime(command, runtime))
         {
-            Some(true) => match identity.locale.as_deref() {
-                Some(expected) => match environment
-                    .and_then(|environment| declared_environment(environment, "OPENCLAW_LOCALE"))
-                {
-                    Some(actual) if actual.eq_ignore_ascii_case(expected) => {
-                        GatewayServiceOwnership::SelectedState
-                    }
-                    _ => GatewayServiceOwnership::StaleLocale,
-                },
-                None => GatewayServiceOwnership::SelectedState,
+            Some(true) => match (
+                identity.locale.as_deref(),
+                environment
+                    .and_then(|environment| declared_environment(environment, "OPENCLAW_LOCALE")),
+            ) {
+                // OpenClaw 的服务状态契约不要求回报 locale 环境变量。状态目录、
+                // 配置和运行时身份已足以证明服务归属；缺少展示语言不能触发服务重建。
+                (Some(expected), Some(actual)) if !actual.eq_ignore_ascii_case(expected) => {
+                    GatewayServiceOwnership::StaleLocale
+                }
+                _ => GatewayServiceOwnership::SelectedState,
             },
             Some(false) => GatewayServiceOwnership::StaleRuntime,
             None => GatewayServiceOwnership::Unverifiable,
@@ -1789,6 +1790,22 @@ mod tests {
                 &locale_identity,
             ),
             GatewayServiceOwnership::StaleLocale,
+        );
+        let mut without_locale = status(Some(vec![
+            node.to_string_lossy().into_owned(),
+            entry.to_string_lossy().into_owned(),
+            "gateway".into(),
+        ]));
+        without_locale
+            .service
+            .as_mut()
+            .and_then(|service| service.command.as_mut())
+            .and_then(|command| command.environment.as_mut())
+            .unwrap()
+            .remove("OPENCLAW_LOCALE");
+        assert_eq!(
+            classify_service_ownership(&without_locale, &locale_identity),
+            GatewayServiceOwnership::SelectedState,
         );
         assert_eq!(
             classify_service_ownership(

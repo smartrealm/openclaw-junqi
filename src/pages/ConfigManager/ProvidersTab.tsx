@@ -39,15 +39,11 @@ import { buildProviderSubmissionModelIds } from './providerModelSelection';
 import { resolveExplicitProviderDefault } from './providerDefaultSelection';
 import {
   gateway,
+  openClawModelAuthStatusClient,
   openClawModelAuthLogoutClient,
   openClawModelProbeClient,
   type OpenClawModelProbeResult,
 } from '@/services/gateway';
-import { GENERATED_PROVIDER_CATALOG } from '@/generated/providerCatalog.generated';
-import {
-  GENERATED_IMAGE_GENERATION_MODELS,
-  GENERATED_VIDEO_GENERATION_MODELS,
-} from '@/generated/mediaCatalog.generated';
 import {
   resolveProviderSecret,
   buildProviderSecretPatch,
@@ -87,18 +83,10 @@ import {
   removeProviderModelReferences,
   updateProviderModel,
 } from './providerModelMutations';
-import {
-  loadOfficialProviderCatalog,
-  loadOfficialProviderAuthProfiles,
-  providerCatalogModels as filterOfficialProviderModels,
-  type ProviderProbeRequest,
-  type ProviderProbeSummary,
-} from '@/services/openclawProviderRuntime';
 import { enqueueTerminalCommand } from '@/services/terminalCommandQueue';
 import {
   buildOpenClawAuthLoginCommand,
   isOfficialOAuthMode,
-  providerProbeProfileKey,
 } from './providerAuthFlow';
 import {
   hasProviderWildcard,
@@ -122,14 +110,30 @@ interface ProvidersTabProps {
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
   onApplyAndSave: (
     updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig,
-    options?: { connectionProbe?: ProviderProbeRequest }
   ) => Promise<boolean>;
-  onProbeProvider: (
-    candidate: GatewayRuntimeConfig,
-    probe: ProviderProbeRequest,
-  ) => Promise<ProviderProbeSummary>;
   saving: boolean;
   addRequestId?: number;
+}
+
+function gatewayProviderAuthReady(
+  status: { providers: readonly {
+    provider: string;
+    status: string;
+    profiles?: readonly { type: string; status: string }[];
+  }[] } | null,
+  providerId: string,
+  requiredType?: string,
+): boolean {
+  const provider = status?.providers.find((entry) => (
+    normalizeProviderIdForWrite(entry.provider) === normalizeProviderIdForWrite(providerId)
+  ));
+  if (!provider) return false;
+  if (requiredType) {
+    return provider.profiles?.some((profile) => (
+      profile.type === requiredType && (profile.status === 'ok' || profile.status === 'expiring')
+    )) === true;
+  }
+  return provider.status === 'ok' || provider.status === 'expiring' || provider.status === 'static';
 }
 
 
@@ -215,10 +219,6 @@ function findProviderConfigKey(
   return Object.keys(providers).find((key) => providerNamespaceMatches(key, providerId));
 }
 
-function getGeneratedCatalogRows(providerId: string) {
-  return GENERATED_PROVIDER_CATALOG[normalizeProviderIdForCatalog(providerId)] ?? [];
-}
-
 function normalizeProviderModelRef(providerId: string, modelId: string | undefined): string | undefined {
   const trimmed = String(modelId ?? '').trim().replace(/^\/+|\/+$/g, '');
   if (!trimmed) return undefined;
@@ -255,21 +255,6 @@ type GatewayModelOption = {
   supportsImage?: boolean;
 };
 
-function resolveGeneratedModelSupportsImage(modelRef: string): boolean | undefined {
-  const normalizedRef = String(modelRef ?? '').trim();
-  if (!normalizedRef) return undefined;
-  const slashIndex = normalizedRef.indexOf('/');
-  if (slashIndex <= 0) return undefined;
-  const providerId = normalizedRef.slice(0, slashIndex);
-  const rows = getGeneratedCatalogRows(providerId);
-  if (rows.length === 0) return undefined;
-  const row = rows.find((entry) => {
-    const normalized = normalizeProviderModelRef(providerId, entry.id);
-    return normalized === normalizedRef;
-  });
-  return row?.supportsImage;
-}
-
 function buildConfiguredImageSupportMap(models: Record<string, ModelEntry>): Map<string, boolean> {
   const map = new Map<string, boolean>();
   for (const [id, entry] of Object.entries(models)) {
@@ -277,10 +262,6 @@ function buildConfiguredImageSupportMap(models: Record<string, ModelEntry>): Map
     if (typeof explicitSupport === 'boolean') {
       map.set(id, explicitSupport);
       continue;
-    }
-    const generatedSupport = resolveGeneratedModelSupportsImage(id);
-    if (typeof generatedSupport === 'boolean') {
-      map.set(id, generatedSupport);
     }
   }
   return map;
@@ -291,7 +272,7 @@ function isModelImageCapable(modelRef: string, imageSupportMap?: Map<string, boo
   if (typeof explicitSupport === 'boolean') {
     return explicitSupport;
   }
-  return resolveGeneratedModelSupportsImage(modelRef) === true;
+  return false;
 }
 
 function parseGatewayModelsResponse(res: unknown): GatewayModelOption[] {
@@ -654,7 +635,6 @@ export function applyProviderAddition(
   ]);
 
   const prevModels = prev.agents?.defaults?.models ?? {};
-  const generatedRows = getGeneratedCatalogRows(providerId);
   const currentProviderKey = findProviderConfigKey(prev.models?.providers, providerId);
   const currentProviderCfg = currentProviderKey
     ? prev.models?.providers?.[currentProviderKey] ?? {}
@@ -670,16 +650,13 @@ export function applyProviderAddition(
   }
 
   const submissionModels = modelPairs.map(({ fullId, rawId }) => {
-    const generatedModel = generatedRows.find((m) => normalizeProviderModelRef(providerId, m.id) === fullId);
     const existingProviderModel = existingProviderModelMap.get(rawId);
     const supportsImage =
       explicitImageModelSet.has(fullId)
-      || generatedModel?.supportsImage === true
       || resolveModelSupportsImage(existingProviderModel) === true
       || resolveModelSupportsImage(prevModels[fullId]) === true;
     const name =
       existingProviderModel?.name
-      ?? generatedModel?.suggestedAlias
       ?? rawId.split('/').pop()
       ?? rawId;
     return {
@@ -1175,12 +1152,15 @@ function FetchModelsButton({ providerId, allModels, onChange, saving, t }: {
     setFetching(true);
     setFetchResult(null);
     try {
-      const catalog = await loadOfficialProviderCatalog();
-      const fetchedModels = filterOfficialProviderModels(catalog, providerId).map((model) => ({
-        id: model.key,
-        alias: model.name,
-        supportsImage: String(model.input ?? '').toLowerCase().includes('image'),
-      }));
+      const response = await gateway.getAvailableModels('configured');
+      const fetchedModels = parseGatewayModelsResponse(response)
+        .filter((model) => normalizeProviderIdForCatalog(String(model.provider ?? '')) === providerId)
+        .map((model) => ({
+          id: String(model.id ?? ''),
+          alias: String(model.alias ?? model.id ?? ''),
+          supportsImage: model.supportsImage === true,
+        }))
+        .filter((model) => model.id);
 
       if (fetchedModels.length === 0) { setFetchSuccess(false); setFetchResult(t('config.fetchModelsNoneFound')); return; }
 
@@ -1270,13 +1250,13 @@ function ProfileRow({
       setOfficialAuthReady(false);
       return;
     }
-    loadOfficialProviderAuthProfiles(providerId)
-      .then((profiles) => {
-        if (!cancelled) setOfficialAuthReady(profiles.some((candidate) => candidate.id === profileKey));
+    openClawModelAuthStatusClient.get()
+      .then((status) => {
+        if (!cancelled) setOfficialAuthReady(gatewayProviderAuthReady(status, providerId, 'oauth'));
       })
       .catch(() => { if (!cancelled) setOfficialAuthReady(false); });
     return () => { cancelled = true; };
-  }, [profileKey, profileUsesOAuth, providerId]);
+  }, [profileUsesOAuth, providerId]);
   const providerModels = buildEditableProviderModels(providerId, allModels ?? {}, modelsProvider);
   const modelCount    = Object.keys(providerModels).length;
   const hasStoredSecret = Boolean(
@@ -2262,12 +2242,7 @@ interface ConfigureStepProps {
     profile: AuthProfile,
     selectedModels: string[],
     providerConfig?: ProviderConfigOverride,
-    connectionProbe?: ProviderProbeRequest
   ) => Promise<boolean>;
-  onProbeProvider: (
-    candidate: GatewayRuntimeConfig,
-    probe: ProviderProbeRequest,
-  ) => Promise<ProviderProbeSummary>;
   saving: boolean;
 }
 
@@ -2277,7 +2252,6 @@ function ConfigureStep({
   catalogEntry,
   onBack,
   onSubmit,
-  onProbeProvider,
   saving,
 }: ConfigureStepProps) {
   const { t } = useTranslation();
@@ -2302,25 +2276,13 @@ function ConfigureStep({
   const [textPrimaryModel, setTextPrimaryModel] = useState('');
   const [imagePrimaryModel, setImagePrimaryModel] = useState('');
   const [gatewayModels, setGatewayModels] = useState<GatewayModelOption[]>([]);
-  const [providerCatalogModels, setProviderCatalogModels] = useState<GatewayModelOption[]>([]);
   const [loadingGatewayModels, setLoadingGatewayModels] = useState(false);
-  const [loadingProviderCatalog, setLoadingProviderCatalog] = useState(false);
-  const [catalogVersion, setCatalogVersion] = useState('');
-  const [officialAuthProfiles, setOfficialAuthProfiles] = useState<Array<{
-    id: string;
-    provider: string;
-    type: string;
-    label?: string;
-  }>>([]);
+  const [officialAuthReady, setOfficialAuthReady] = useState(false);
   const [loadingOfficialAuth, setLoadingOfficialAuth] = useState(false);
   const [officialAuthError, setOfficialAuthError] = useState('');
-  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
-  const [testMessage, setTestMessage] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
   const [secretDraftConfig, setSecretDraftConfig] = useState<GatewayRuntimeConfig>(() => structuredClone(config));
-  const [selectedModels, setSelectedModels] = useState<string[]>(() =>
-    catalogEntry?.defaultModelRef ? [catalogEntry.defaultModelRef] : []
-  );
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const toggleModel = (id: string) => {
     setSelectedModels((prev) =>
       prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
@@ -2348,28 +2310,26 @@ function ConfigureStep({
     : undefined;
   const requestedProfileKey = normalizeProfileKeyForProvider(effectiveProviderId, profileName);
   const oauthMode = isOfficialOAuthMode(authMode);
-  const officialOAuthProfile = oauthMode
-    ? officialAuthProfiles.find((profile) => profile.id === requestedProfileKey)
-      ?? officialAuthProfiles.find((profile) => normalizeProviderIdForWrite(profile.provider) === effectiveProviderId)
-    : undefined;
-
   const refreshOfficialAuth = useCallback(async () => {
     if (!oauthMode) {
-      setOfficialAuthProfiles([]);
+      setOfficialAuthReady(false);
       setOfficialAuthError('');
       return;
     }
     setLoadingOfficialAuth(true);
     setOfficialAuthError('');
     try {
-      setOfficialAuthProfiles(await loadOfficialProviderAuthProfiles(effectiveProviderId));
+      const status = await openClawModelAuthStatusClient.get({ refresh: true });
+      const ready = gatewayProviderAuthReady(status, effectiveProviderId, 'oauth');
+      setOfficialAuthReady(ready);
+      if (!ready) setOfficialAuthError(t('config.officialAuthRequired', 'Complete OpenClaw authentication before saving'));
     } catch (error: any) {
-      setOfficialAuthProfiles([]);
+      setOfficialAuthReady(false);
       setOfficialAuthError(error?.message || String(error));
     } finally {
       setLoadingOfficialAuth(false);
     }
-  }, [effectiveProviderId, oauthMode]);
+  }, [effectiveProviderId, oauthMode, t]);
 
   useEffect(() => {
     void refreshOfficialAuth();
@@ -2416,26 +2376,14 @@ function ConfigureStep({
       .filter((id): id is string => Boolean(id));
     return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
   }, [effectiveProviderCatalogId, gatewayModels, isCustomLike]);
-  const providerCatalogModelOptions = useMemo(() => {
-    const values = providerCatalogModels
-      .map((item) => normalizeProviderModelRef(effectiveProviderId, item.id))
-      .filter((id): id is string => Boolean(id));
-    return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
-  }, [effectiveProviderId, providerCatalogModels]);
+  const providerCatalogModelOptions = gatewayModelOptions;
   const modelSourceInfo = useMemo(() => {
-    if (providerCatalogModelOptions.length > 0) {
-      return {
-        label: t('config.modelSourceProvider', 'Source: OpenClaw Catalog'),
-        detail: `${t('config.modelSourceProviderHint', 'Using the model catalog reported by the installed OpenClaw runtime')}${catalogVersion ? ` (${catalogVersion})` : ''}`,
-        className: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
-      };
-    }
     return {
       label: t('config.modelSourceGateway', 'Source: Runtime Catalog'),
       detail: t('config.modelSourceGatewayHint', 'Using the model catalog currently exposed by the connected gateway'),
       className: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20',
     };
-  }, [catalogVersion, providerCatalogModelOptions.length, t]);
+  }, [t]);
   const suggestedModels = useMemo(
     () => {
       return Array.from(new Set([
@@ -2456,12 +2404,6 @@ function ConfigureStep({
     .filter((id): id is string => Boolean(id));
   const imageSupportMap = useMemo(() => {
     const map = new Map<string, boolean>();
-    for (const item of providerCatalogModels) {
-      if (typeof item.supportsImage !== 'boolean') continue;
-      const normalized = normalizeProviderModelRef(effectiveProviderId, item.id);
-      if (!normalized) continue;
-      map.set(normalized, item.supportsImage);
-    }
     for (const item of gatewayModels) {
       if (typeof item.supportsImage !== 'boolean') continue;
       const normalized = normalizeProviderModelRef(effectiveProviderId, item.id);
@@ -2476,7 +2418,6 @@ function ConfigureStep({
     effectiveProviderId,
     gatewayModels,
     normalizedExplicitImageModels,
-    providerCatalogModels,
   ]);
   const imageModelOptions = useMemo(
     () => normalizedModelOptions.filter((id) => imageSupportMap.get(id) === true),
@@ -2494,13 +2435,13 @@ function ConfigureStep({
     imageModelOptions,
     imagePrimaryModel,
   ) ?? '';
-  const canSubmit = Boolean(profileName) && (!oauthMode || Boolean(officialOAuthProfile)) && (
+  const canSubmit = Boolean(profileName) && (!oauthMode || officialAuthReady) && (
     isCustomLike
       ? Boolean(baseUrl.trim()) && modelsToAdd.length > 0
       : modelsToAdd.length > 0
   );
   const submission = canSubmit ? {
-    profileKey: officialOAuthProfile?.id ?? requestedProfileKey,
+    profileKey: requestedProfileKey,
     profile: {
       provider: effectiveProviderId,
       mode: authMode,
@@ -2544,16 +2485,11 @@ function ConfigureStep({
 
   const handleSubmit = async () => {
     if (!submission || saving) return;
-    const connectionProbe: ProviderProbeRequest = {
-      providerId: effectiveProviderId,
-      profileKey: providerProbeProfileKey(authMode, submission.profileKey),
-    };
     const added = await onSubmit(
       submission.profileKey,
       submission.profile,
       submission.models,
       submission.providerConfig,
-      connectionProbe
     );
     if (added && tmpl.id === 'custom') {
       setCustomProviderAppearance(effectiveProviderId, { icon: customProviderIcon });
@@ -2561,60 +2497,13 @@ function ConfigureStep({
   };
 
   const effectiveBaseUrl = baseUrl.trim();
-  const canTestConnection = Boolean(submission && previewDraft);
-
-  const testConnection = async () => {
-    if (!canTestConnection || !submission || !previewDraft) return;
-    setTestStatus('testing');
-    setTestMessage('');
-    try {
-      const result = await onProbeProvider(previewDraft, {
-        providerId: effectiveProviderId,
-        profileKey: providerProbeProfileKey(authMode, submission.profileKey),
-      });
-      setTestStatus(result.ok ? 'ok' : 'error');
-      setTestMessage(result.ok
-        ? t('config.connected')
-        : [result.status, result.reasonCode, result.detail].filter(Boolean).join(' · '));
-    } catch (error: any) {
-      setTestStatus('error');
-      setTestMessage(error?.message || String(error));
-    }
-  };
-
   const hasCatalogRegion = catalogEntry && catalogEntry.region !== 'none';
   const hasCatalogPlan   = catalogEntry && catalogEntry.plan   !== 'general';
 
   useEffect(() => {
-    if (isCustomLike || selectedModels.length > 0 || suggestedModels.length === 0) return;
-    const initialSelection: string[] = [];
-    if (catalogEntry?.defaultModelRef) {
-      const normalizedDefault = normalizeProviderModelRef(effectiveProviderId, catalogEntry.defaultModelRef);
-      if (normalizedDefault && suggestedModels.includes(normalizedDefault)) {
-        initialSelection.push(normalizedDefault);
-      }
-    }
-    if (initialSelection.length === 0) {
-      initialSelection.push(suggestedModels[0]);
-    }
-    setSelectedModels(initialSelection.filter(Boolean));
-  }, [
-    catalogEntry?.defaultModelRef,
-    effectiveProviderId,
-    isCustomLike,
-    selectedModels.length,
-    suggestedModels,
-  ]);
-
-  useEffect(() => {
     let cancelled = false;
-    if (!isCustomLike) {
-      setGatewayModels([]);
-      setLoadingGatewayModels(false);
-      return;
-    }
     setLoadingGatewayModels(true);
-    gateway.getAvailableModels()
+    gateway.getAvailableModels('configured')
       .then((res) => {
         if (cancelled) return;
         setGatewayModels(parseGatewayModelsResponse(res));
@@ -2627,42 +2516,7 @@ function ConfigureStep({
         if (!cancelled) setLoadingGatewayModels(false);
       });
     return () => { cancelled = true; };
-  }, [isCustomLike]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoadingProviderCatalog(true);
-    loadOfficialProviderCatalog()
-      .then((catalog) => {
-        if (cancelled) return;
-        setCatalogVersion(catalog.version ?? '');
-        const normalizedRows = filterOfficialProviderModels(catalog, effectiveProviderId)
-          .map((model): GatewayModelOption | null => {
-            const id = normalizeProviderModelRef(effectiveProviderId, model.key);
-            if (!id) return null;
-            return {
-              id,
-              alias: model.name,
-              supportsImage: String(model.input ?? '').toLowerCase().includes('image'),
-            };
-          })
-          .filter((item): item is GatewayModelOption => Boolean(item));
-        const deduped = new Map<string, GatewayModelOption>();
-        for (const item of normalizedRows) {
-          if (!deduped.has(item.id)) deduped.set(item.id, item);
-        }
-        setProviderCatalogModels(Array.from(deduped.values()));
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setCatalogVersion('');
-        setProviderCatalogModels([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingProviderCatalog(false);
-      });
-    return () => { cancelled = true; };
-  }, [effectiveProviderId]);
+  }, []);
 
   return (
     <div className="flex flex-col gap-4">
@@ -2876,12 +2730,12 @@ function ConfigureStep({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-xs font-semibold text-aegis-text">
-                {officialOAuthProfile
+                {officialAuthReady
                   ? t('config.officialAuthReady', 'OpenClaw authentication ready')
                   : t('config.officialAuthRequired', 'Complete OpenClaw authentication before saving')}
               </div>
               <div className="mt-1 break-all font-mono text-[10px] text-aegis-text-muted">
-                {officialOAuthProfile?.id ?? requestedProfileKey}
+                {requestedProfileKey}
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -2891,7 +2745,7 @@ function ConfigureStep({
                 className="inline-flex items-center gap-1.5 rounded border border-aegis-primary/30 bg-aegis-primary/10 px-2.5 py-1.5 text-xs font-medium text-aegis-primary hover:bg-aegis-primary/15"
               >
                 <Key size={12} />
-                {officialOAuthProfile
+                {officialAuthReady
                   ? t('config.officialAuthAgain', 'Authenticate again')
                   : t('config.openOfficialAuth', 'Open official login')}
               </button>
@@ -2922,34 +2776,6 @@ function ConfigureStep({
         </p>
       )}
 
-      {/* Test connection — all providers with baseUrl (OpenClaw-style: GET models endpoint) */}
-      {canTestConnection && (
-        <div className="flex flex-col gap-1.5">
-          <button
-            type="button"
-            onClick={testConnection}
-            disabled={testStatus === 'testing'}
-            className={clsx(
-              'self-start flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium',
-              'border border-aegis-border text-aegis-text-secondary',
-              'hover:bg-white/[0.03] hover:border-aegis-border-hover',
-              'disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200'
-            )}
-          >
-            {testStatus === 'testing' ? (
-              <LoadingIndicator size={12} />
-            ) : null}
-            {t('config.testConnection')}
-          </button>
-          {testStatus === 'ok' && (
-            <p className="text-[11px] text-green-500 font-medium">{testMessage}</p>
-          )}
-          {testStatus === 'error' && testMessage && (
-            <p className="text-[11px] text-red-400 font-mono break-all">{testMessage}</p>
-          )}
-        </div>
-      )}
-
       {/* Suggested models */}
       {suggestedModels.length > 0 && (
         <div className="flex flex-col gap-2">
@@ -2969,7 +2795,7 @@ function ConfigureStep({
           <p className="text-[10px] text-aegis-text-muted leading-tight">
             {modelSourceInfo.detail}
           </p>
-          {(loadingGatewayModels || loadingProviderCatalog) && (
+          {loadingGatewayModels && (
             <p className="text-[10px] text-aegis-text-muted">{t('config.loading', 'Loading...')}</p>
           )}
           <div className="flex flex-wrap gap-2">
@@ -3150,16 +2976,11 @@ interface AddProviderModalProps {
   config: GatewayRuntimeConfig;
   saving: boolean;
   onClose: () => void;
-  onProbeProvider: (
-    candidate: GatewayRuntimeConfig,
-    probe: ProviderProbeRequest,
-  ) => Promise<ProviderProbeSummary>;
   onSubmit: (
     profileKey: string,
     profile: AuthProfile,
     models: string[],
     providerConfig?: ProviderConfigOverride,
-    connectionProbe?: ProviderProbeRequest
   ) => Promise<boolean>;
   /** Pre-select a template and skip to the configure step */
   initialTemplate?: ProviderTemplate;
@@ -3169,7 +2990,6 @@ function AddProviderModal({
   config,
   saving,
   onClose,
-  onProbeProvider,
   onSubmit,
   initialTemplate,
 }: AddProviderModalProps) {
@@ -3247,9 +3067,8 @@ function AddProviderModal({
               catalogEntry={selectedEntry}
               onBack={handleBack}
               saving={saving}
-              onProbeProvider={onProbeProvider}
-              onSubmit={async (key, profile, models, providerConfig, connectionProbe) => {
-                const ok = await onSubmit(key, profile, models, providerConfig, connectionProbe);
+              onSubmit={async (key, profile, models, providerConfig) => {
+                const ok = await onSubmit(key, profile, models, providerConfig);
                 if (ok) onClose();
                 return ok;
               }}
@@ -3269,7 +3088,6 @@ export function ProvidersTab({
   config,
   onChange,
   onApplyAndSave,
-  onProbeProvider,
   saving,
   addRequestId = 0,
 }: ProvidersTabProps) {
@@ -3305,17 +3123,11 @@ export function ProvidersTab({
   const imageGenerationPrimaryModel = getModelPrimary(config.agents?.defaults?.imageGenerationModel);
   const videoGenerationPrimaryModel = getModelPrimary(config.agents?.defaults?.videoGenerationModel);
   const imageGenerationOptions = useMemo(
-    () => Array.from(new Set([
-      ...GENERATED_IMAGE_GENERATION_MODELS.map((entry) => entry.id),
-      ...(imageGenerationPrimaryModel ? [imageGenerationPrimaryModel] : []),
-    ])).sort((a, b) => a.localeCompare(b)),
+    () => imageGenerationPrimaryModel ? [imageGenerationPrimaryModel] : [],
     [imageGenerationPrimaryModel]
   );
   const videoGenerationOptions = useMemo(
-    () => Array.from(new Set([
-      ...GENERATED_VIDEO_GENERATION_MODELS.map((entry) => entry.id),
-      ...(videoGenerationPrimaryModel ? [videoGenerationPrimaryModel] : []),
-    ])).sort((a, b) => a.localeCompare(b)),
+    () => videoGenerationPrimaryModel ? [videoGenerationPrimaryModel] : [],
     [videoGenerationPrimaryModel]
   );
 
@@ -3909,15 +3721,13 @@ export function ProvidersTab({
         <AddProviderModal
           config={config}
           saving={saving}
-          onProbeProvider={onProbeProvider}
           onClose={() => {
             setShowModal(false);
             setModalInitialTemplate(undefined);
           }}
-          onSubmit={async (profileKey, profile, models, providerConfig, connectionProbe) =>
+          onSubmit={async (profileKey, profile, models, providerConfig) =>
             onApplyAndSave(
               (prev) => applyProviderAddition(prev, profileKey, profile, models, providerConfig),
-              { connectionProbe }
             )
           }
           initialTemplate={modalInitialTemplate}

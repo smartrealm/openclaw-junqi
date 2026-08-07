@@ -125,6 +125,7 @@ docs/
 
 目录：[`quality/`](quality/)
 
+- [JunQi 隐私锁能力移除记录](quality/privacy-lock-removal-2026-08-07.md)
 - [OpenClaw 会话生命周期收敛审计](quality/openclaw-session-lifecycle-convergence-audit-2026-08-06.md)
 - [桌面原生通知投递修复](quality/native-notification-delivery-2026-08-05.md)
 - [通知单一呈现与身份收敛](quality/notification-single-presentation-and-identity-2026-08-06.md)
@@ -230,7 +231,6 @@ docs/
 - [Gateway 生命周期审计与前端重启协调器](gateway/openclaw-gateway-lifecycle-audit.md)
 - [OpenClaw 配置权威源审计](quality/openclaw-config-authority-audit-2026-07-29.md)
 - [加载指示器收敛记录](quality/loading-indicator-convergence-2026-07-29.md)
-- [JunQi 隐私锁设计与现状审计](quality/privacy-lock-design-and-audit-2026-08-05.md)
 - [Agent 活动视觉语言接入记录](quality/agent-activity-visual-language-2026-08-05.md)
 - [萌宠文字与聊天窗口恢复记录](quality/pet-caption-and-chat-window-recovery-2026-07-29.md)
 - [默认模型已安装契约审计](quality/default-model-installed-contract-audit-2026-07-29.md)

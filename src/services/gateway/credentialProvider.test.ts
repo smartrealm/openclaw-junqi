@@ -5,18 +5,12 @@ import type {
   GatewayCredentialPersistence,
 } from '@/api/tauri-commands';
 import {
-  GATEWAY_CREDENTIAL_MIGRATION_MARKER,
   GATEWAY_RUNTIME_ALIAS_KEY,
-  LEGACY_GATEWAY_CONFIG_KEY,
-  LEGACY_GATEWAY_SETTING_KEY,
-  LEGACY_GATEWAY_TOKEN_KEY,
   bindGatewayCredentialToInstance,
-  clearLegacyGatewayCredentialStorage,
   collaborationInstanceRuntimeKey,
   gatewayRuntimeKeyFromUrl,
   getGatewayDeviceCredentialForUrl,
   getGatewayDeviceCredential,
-  migrateLegacyGatewayCredential,
   resetGatewayCredentialProviderForTests,
   resolveGatewayCredentialRuntimeKey,
   selectedGatewayRuntimeKey,
@@ -40,7 +34,6 @@ function backend(overrides: Partial<GatewayCredentialBackend> = {}): GatewayCred
     get: async ({ runtimeKey }) => response(runtimeKey, 'unsupported'),
     store: async ({ runtimeKey }) => response(runtimeKey, 'session_only'),
     delete: async ({ runtimeKey }) => response(runtimeKey, 'unsupported'),
-    migrate: async ({ runtimeKey, legacyToken }) => response(runtimeKey, 'session_only', legacyToken, true),
     ...overrides,
   };
 }
@@ -68,10 +61,6 @@ function credentialBackend(
         const previous = credentials.get(runtimeKey);
         credentials.delete(runtimeKey);
         return response(runtimeKey, previous?.persistence ?? 'system');
-      },
-      migrate: async ({ runtimeKey, legacyToken }) => {
-        credentials.set(runtimeKey, { token: legacyToken, persistence: 'system' });
-        return response(runtimeKey, 'system', legacyToken, true);
       },
     },
   };
@@ -126,92 +115,31 @@ describe('Gateway credential provider', () => {
     assert.equal(restored.token, 'paired-token');
   });
 
-  it('migrates once and removes every legacy plaintext location', async () => {
-    localStorage.setItem(LEGACY_GATEWAY_TOKEN_KEY, 'legacy-direct');
-    localStorage.setItem(LEGACY_GATEWAY_CONFIG_KEY, JSON.stringify({
-      gatewayUrl: 'ws://localhost:18789',
-      gatewayToken: 'legacy-config',
-      theme: 'dark',
-    }));
-    localStorage.setItem(LEGACY_GATEWAY_SETTING_KEY, JSON.stringify('legacy-setting'));
-    let migratedToken = '';
-
-    const result = await migrateLegacyGatewayCredential('runtime-a', {
+  it('shares concurrent system credential reads for one runtime', async () => {
+    let reads = 0;
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const result = response('runtime-a', 'system', 'paired-token');
+    const options = {
       resolveDeviceId: deviceId,
       backend: backend({
-        migrate: async (params) => {
-          migratedToken = params.legacyToken;
-          return response(params.runtimeKey, 'system', params.legacyToken, true);
+        get: async () => {
+          reads += 1;
+          await gate;
+          return result;
         },
       }),
-    });
+    };
 
-    assert.equal(migratedToken, 'legacy-direct');
-    assert.equal(result.token, 'legacy-direct');
-    assert.equal(localStorage.getItem(LEGACY_GATEWAY_TOKEN_KEY), null);
-    assert.equal(localStorage.getItem(LEGACY_GATEWAY_SETTING_KEY), null);
-    assert.deepEqual(JSON.parse(localStorage.getItem(LEGACY_GATEWAY_CONFIG_KEY) || '{}'), {
-      gatewayUrl: 'ws://localhost:18789',
-      theme: 'dark',
-    });
-    assert.equal(localStorage.getItem(GATEWAY_CREDENTIAL_MIGRATION_MARKER), '1');
+    const first = getGatewayDeviceCredential('runtime-a', options);
+    const second = getGatewayDeviceCredential('runtime-a', options);
+    release?.();
+    const credentials = await Promise.all([first, second]);
+
+    assert.equal(reads, 1);
+    assert.deepEqual(credentials.map((credential) => credential.token), ['paired-token', 'paired-token']);
   });
 
-  it('uses an existing secure token instead of overwriting it with legacy state', async () => {
-    localStorage.setItem(LEGACY_GATEWAY_TOKEN_KEY, 'stale-legacy');
-    const result = await migrateLegacyGatewayCredential('runtime-a', {
-      resolveDeviceId: deviceId,
-      backend: backend({
-        migrate: async ({ runtimeKey }) => response(runtimeKey, 'system', 'current-secure', false),
-      }),
-    });
-
-    assert.equal(result.token, 'current-secure');
-    assert.equal(result.migrated, false);
-    assert.equal(localStorage.getItem(LEGACY_GATEWAY_TOKEN_KEY), null);
-  });
-
-  it('clears plaintext and falls back to session memory when migration fails', async () => {
-    localStorage.setItem(LEGACY_GATEWAY_CONFIG_KEY, JSON.stringify({ gatewayToken: 'legacy' }));
-    const failing = backend({ migrate: async () => { throw new Error('keychain locked'); } });
-
-    const result = await migrateLegacyGatewayCredential('runtime-a', {
-      resolveDeviceId: deviceId,
-      backend: failing,
-    });
-
-    assert.equal(result.persistence, 'session_only');
-    assert.equal(result.token, 'legacy');
-    assert.deepEqual(JSON.parse(localStorage.getItem(LEGACY_GATEWAY_CONFIG_KEY) || '{}'), {});
-    const cached = await getGatewayDeviceCredential('runtime-a', {
-      resolveDeviceId: deviceId,
-      backend: failing,
-    });
-    assert.equal(cached.token, 'legacy');
-  });
-
-  it('still clears plaintext when device identity is unavailable', async () => {
-    localStorage.setItem(LEGACY_GATEWAY_TOKEN_KEY, 'legacy');
-    const result = await migrateLegacyGatewayCredential('runtime-a', {
-      resolveDeviceId: async () => { throw new Error('identity unavailable'); },
-      backend: backend(),
-    });
-
-    assert.equal(result.persistence, 'session_only');
-    assert.equal(result.token, 'legacy');
-    assert.equal(localStorage.getItem(LEGACY_GATEWAY_TOKEN_KEY), null);
-    const cached = await getGatewayDeviceCredential('runtime-a', {
-      resolveDeviceId: async () => { throw new Error('identity unavailable'); },
-      backend: backend(),
-    });
-    assert.equal(cached.token, 'legacy');
-  });
-
-  it('preserves unrelated config when clearing malformed or stale secrets', () => {
-    localStorage.setItem(LEGACY_GATEWAY_CONFIG_KEY, JSON.stringify({ gatewayToken: 'x', gatewayUrl: 'ws://x' }));
-    clearLegacyGatewayCredentialStorage();
-    assert.deepEqual(JSON.parse(localStorage.getItem(LEGACY_GATEWAY_CONFIG_KEY) || '{}'), { gatewayUrl: 'ws://x' });
-  });
 });
 
 it('keeps selected Native and Docker credentials isolated on one loopback endpoint', () => {

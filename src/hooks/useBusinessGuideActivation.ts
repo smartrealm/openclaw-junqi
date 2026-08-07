@@ -1,7 +1,9 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { probeActiveOpenclawModel } from '@/api/tauri-commands';
 import { isBusinessGuideActive } from '@/business-guide/activation';
-import { readActiveOpenclawConfig, validateActiveOpenclawConfig } from '@/services/openclawConfigRuntime';
+import {
+  openClawRuntimeConfigClient,
+  openClawSetupVerificationClient,
+} from '@/services/gateway';
 import { getCurrentRuntimeIdentity, subscribeRuntimeIdentity } from '@/services/gateway/runtimeIdentity';
 import { requiresOpenClawOnboarding } from '@/services/openclawWizard';
 import { useAppStore } from '@/stores/app-store';
@@ -19,17 +21,14 @@ const unverifiedRuntime: RuntimeVerification = {
 
 async function verifySelectedRuntime(): Promise<RuntimeVerification> {
   try {
-    const [validation, config, model] = await Promise.all([
-      validateActiveOpenclawConfig(),
-      readActiveOpenclawConfig(),
-      probeActiveOpenclawModel(),
+    const [config, verification] = await Promise.all([
+      openClawRuntimeConfigClient.read(),
+      openClawSetupVerificationClient.verify(),
     ]);
     return {
-      configurationVerified: validation.exists
-        && validation.valid
-        && config.exists
-        && !requiresOpenClawOnboarding(config.exists, config.data),
-      modelVerified: model.ready,
+      configurationVerified: config.exists
+        && !requiresOpenClawOnboarding(config.exists, config.config),
+      modelVerified: verification.ok,
     };
   } catch {
     return unverifiedRuntime;

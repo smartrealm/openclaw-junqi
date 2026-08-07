@@ -9,6 +9,7 @@ import { parseGatewaySessionGoal } from '@/services/gateway/sessionGoal';
 import { parseGatewaySessionLastRunError } from '@/services/gateway/sessionLastRunError';
 import { parseGatewaySessionThinkingProfile } from '@/services/gateway/sessionThinkingProfile';
 import type { Session } from '@/stores/chatStore';
+import { agentIdFromSessionKey } from './sessionPresentation';
 
 function text(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -41,6 +42,7 @@ export function projectOpenClawSessionForChat(value: unknown): Session {
   const source = projectOpenClawSession(value);
   const thinking = parseGatewaySessionThinkingProfile(source);
   const activeLeafEntryId = parseOpenClawActiveLeafEntryId(source.activeLeafEntryId);
+  const agentId = source.agentId ?? agentIdFromSessionKey(source.key) ?? undefined;
   const model = resolveGatewaySessionModelId(source.modelProvider, source.model);
   const category = text(source.category);
   const channel = text(source.channel) ?? text(source.lastChannel) ?? null;
@@ -58,7 +60,7 @@ export function projectOpenClawSessionForChat(value: unknown): Session {
   return {
     key: source.key,
     sessionId: source.sessionId,
-    agentId: source.agentId,
+    ...(agentId ? { agentId } : {}),
     label: source.label ?? '',
     displayName: source.displayName,
     derivedTitle: source.derivedTitle,
@@ -105,4 +107,3 @@ export function projectOpenClawSessionForChat(value: unknown): Session {
     unread: source.unread === true ? 1 : 0,
   };
 }
-

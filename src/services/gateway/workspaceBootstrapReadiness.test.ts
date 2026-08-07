@@ -22,16 +22,16 @@ test('workspace bootstrap rejects snapshots from a previous Gateway connection',
   })), false);
 });
 
-test('workspace bootstrap requires both current connection snapshots', () => {
+test('workspace bootstrap opens after the current session snapshot', () => {
   assert.equal(hasCurrentWorkspaceBootstrapData(state({
-    lastFetch: { sessions: 1_000, agents: 1_001 },
+    lastFetch: { sessions: 1_000, agents: 0 },
   })), true);
   assert.equal(hasCurrentWorkspaceBootstrapData(state({
-    lastFetch: { sessions: 1_001, agents: 0 },
+    lastFetch: { sessions: 999, agents: 1_001 },
   })), false);
 });
 
-test('workspace bootstrap failure waits for requests to settle and never overrides success', () => {
+test('workspace bootstrap failure only treats the required session request as fatal', () => {
   assert.equal(hasCurrentWorkspaceBootstrapFailure(state({
     loading: { sessions: true, agents: false },
     errors: { sessions: 'timeout', agents: null },
@@ -42,5 +42,8 @@ test('workspace bootstrap failure waits for requests to settle and never overrid
   assert.equal(hasCurrentWorkspaceBootstrapFailure(state({
     lastFetch: { sessions: 1_000, agents: 1_000 },
     errors: { sessions: 'timeout', agents: null },
+  })), false);
+  assert.equal(hasCurrentWorkspaceBootstrapFailure(state({
+    errors: { sessions: null, agents: 'unauthorized' },
   })), false);
 });

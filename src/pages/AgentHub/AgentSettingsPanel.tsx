@@ -45,10 +45,7 @@ import type { OpenClawAgentBootstrapFile, OpenClawAgentBootstrapFileGet } from '
 import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
-import {
-  readActiveOpenclawConfig,
-  validateActiveOpenclawConfig,
-} from '@/services/openclawConfigRuntime';
+import { openClawRuntimeConfigClient } from '@/services/gateway';
 import {
   AGENT_PROFILE_DOMAIN_MAX_CHARS,
   AGENT_PROFILE_SCOPE_MAX_CHARS,
@@ -414,17 +411,13 @@ export function AgentSettingsPanel({
     setLoadingChannels(true);
     setChannelError(null);
     try {
-      const detected = await validateActiveOpenclawConfig();
-      if (!detected.valid) {
-        throw new Error(detected.error || 'The selected OpenClaw config is invalid.');
-      }
-      if (!detected.exists) {
+      const snapshot = await openClawRuntimeConfigClient.read();
+      if (!snapshot.exists) {
         setChannelConfig(null);
         setChannelError(t('channelsCenter.configMissing', 'OpenClaw config file was not found.'));
         return;
       }
-      const { data } = await readActiveOpenclawConfig();
-      setChannelConfig(data);
+      setChannelConfig(snapshot.config);
     } catch (err) {
       setChannelError(err instanceof Error ? err.message : String(err));
     } finally {

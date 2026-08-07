@@ -1,24 +1,29 @@
-export interface SetupCompletionModelProbe {
-  ready: boolean;
-  model?: string | null;
-  detail?: string | null;
-}
+import type { OpenClawSetupVerification, OpenClawSetupVerificationFailureStatus } from "@/services/gateway/OpenClawSetupVerificationClient";
 
 export interface SetupCompletionDependencies {
   probeGateway: () => Promise<boolean>;
   requiresOnboarding: () => Promise<boolean>;
-  probeModel: () => Promise<SetupCompletionModelProbe>;
+  verifyConfiguredInference: () => Promise<SetupInferenceVerification>;
+}
+
+export type SetupInferenceVerification =
+  | { status: "verified"; modelRef: string; latencyMs: number }
+  | { status: "failed"; reason: OpenClawSetupVerificationFailureStatus; error: string }
+  | { status: "unavailable"; error: string };
+
+export function toSetupInferenceVerification(
+  verification: OpenClawSetupVerification,
+): SetupInferenceVerification {
+  return verification.ok
+    ? { status: "verified", modelRef: verification.modelRef, latencyMs: verification.latencyMs }
+    : { status: "failed", reason: verification.status, error: verification.error };
 }
 
 export type SetupCompletionResult =
-  | { ready: true; model?: string | null }
-  | {
-      ready: false;
-      reason: 'gateway-unavailable' | 'onboarding-required' | 'model-unavailable';
-      detail?: string | null;
-    };
+  | { ready: true }
+  | { ready: false; reason: 'gateway-unavailable' | 'onboarding-required' | 'inference-unverified' | 'inference-verification-unavailable'; verification?: SetupInferenceVerification };
 
-/** Validate the selected runtime in the same action that persists setup. */
+/** 按 OpenClaw 原生跳过引导条件验证选定运行时。 */
 export async function validateSetupCompletion(
   dependencies: SetupCompletionDependencies,
 ): Promise<SetupCompletionResult> {
@@ -28,14 +33,13 @@ export async function validateSetupCompletion(
   if (await dependencies.requiresOnboarding()) {
     return { ready: false, reason: 'onboarding-required' };
   }
-
-  const model = await dependencies.probeModel();
-  if (!model.ready) {
-    return {
-      ready: false,
-      reason: 'model-unavailable',
-      ...(model.detail ? { detail: model.detail } : {}),
-    };
+  const verification = await dependencies.verifyConfiguredInference();
+  if (verification.status === "unavailable") {
+    return { ready: false, reason: 'inference-verification-unavailable', verification };
   }
-  return { ready: true, ...(model.model ? { model: model.model } : {}) };
+  if (verification.status !== "verified") {
+    return { ready: false, reason: 'inference-unverified', verification };
+  }
+
+  return { ready: true };
 }

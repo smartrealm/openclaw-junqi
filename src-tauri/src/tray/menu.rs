@@ -11,7 +11,6 @@ struct TrayLabels {
     toggle: &'static str,
     toggle_pet: &'static str,
     toggle_island: &'static str,
-    lock: &'static str,
     quit: &'static str,
 }
 
@@ -21,28 +20,24 @@ fn labels_for_language(language: &str) -> TrayLabels {
             toggle: "显示/隐藏主窗口",
             toggle_pet: "显示/隐藏萌宠",
             toggle_island: "显示/隐藏灵动岛",
-            lock: "锁定 JunQi",
             quit: "退出 JunQi Desktop",
         },
         "zh-TW" => TrayLabels {
             toggle: "顯示/隱藏主視窗",
             toggle_pet: "顯示/隱藏萌寵",
             toggle_island: "顯示/隱藏動態島",
-            lock: "鎖定 JunQi",
             quit: "結束 JunQi Desktop",
         },
         "ar" => TrayLabels {
             toggle: "إظهار/إخفاء النافذة الرئيسية",
             toggle_pet: "إظهار/إخفاء الرفيق",
             toggle_island: "إظهار/إخفاء الجزيرة الديناميكية",
-            lock: "قفل JunQi",
             quit: "إنهاء JunQi Desktop",
         },
         _ => TrayLabels {
             toggle: "Show/Hide",
             toggle_pet: "Show/Hide Pet",
             toggle_island: "Show/Hide Dynamic Island",
-            lock: "Lock JunQi",
             quit: "Quit JunQi Desktop",
         },
     }
@@ -53,10 +48,9 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>, labels: TrayLabels) -> tauri::Resu
     let toggle_pet = MenuItemBuilder::with_id("toggle-pet", labels.toggle_pet).build(app)?;
     let toggle_island =
         MenuItemBuilder::with_id("toggle-island", labels.toggle_island).build(app)?;
-    let lock = MenuItemBuilder::with_id("privacy-lock", labels.lock).build(app)?;
     let quit = MenuItemBuilder::with_id("quit", labels.quit).build(app)?;
     MenuBuilder::new(app)
-        .items(&[&toggle, &toggle_island, &toggle_pet, &lock, &quit])
+        .items(&[&toggle, &toggle_island, &toggle_pet, &quit])
         .build()
 }
 
@@ -100,19 +94,6 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 tauri::async_runtime::spawn(async move {
                     let _ = crate::commands::dynamic_island::toggle_dynamic_island(app).await;
                 });
-            }
-            "privacy-lock" => {
-                let snapshot = crate::commands::privacy_lock::lock_from_native(
-                    app,
-                    crate::commands::privacy_lock::PrivacyLockReason::Manual,
-                );
-                if snapshot.locked {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.unminimize();
-                        let _ = window.set_focus();
-                    }
-                }
             }
             "quit" => {
                 app.exit(0);

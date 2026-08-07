@@ -48,14 +48,25 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
         sessionId: 'session-1',
         done: false,
         status: 'running',
-        step: { id: 'provider', type: 'select', options: [{ label: 'Provider', value: { id: 'dynamic' } }] },
+        step: {
+          id: 'provider',
+          type: 'select',
+          options: [
+            { label: 'Skip for now', value: '__skip__', hint: 'Configure this later' },
+            { label: 'Provider', value: { id: 'dynamic' } },
+          ],
+        },
       };
     }
     return { done: true, status: 'done' };
   });
 
   const started = await client.start(' /tmp/workspace ');
-  assert.deepEqual(started.step?.options?.[0].value, { id: 'dynamic' });
+  assert.deepEqual(started.step?.options?.[0], {
+    label: 'Skip for now',
+    value: '__skip__',
+    hint: 'Configure this later',
+  });
   await client.next('provider', { id: 'dynamic' });
   assert.deepEqual(calls, [
     {
@@ -162,37 +173,55 @@ test('wizard client restores an unfinished official session after a renderer res
 });
 
 test('Wizard 会话只会在创建它的运行时与 Gateway 目标中恢复', async () => {
-  localStorage.clear();
-  const firstGatewayUrl = new URL('/', `ws://${crypto.randomUUID()}.invalid`).toString();
-  const secondGatewayUrl = new URL('/', `ws://${crypto.randomUUID()}.invalid`).toString();
-  let scope: { runtimeMode: 'native' | 'docker'; gatewayWsUrl: string } = {
-    runtimeMode: 'native',
-    gatewayWsUrl: firstGatewayUrl,
-  };
-  const store = createScopedOpenClawWizardSessionStore(() => scope);
-  const firstClient = new OpenClawWizardClient(async () => ({
-    sessionId: 'native-session',
-    done: false,
-    status: 'running',
-    step: { id: 'model', type: 'select' },
-  }), store);
-  await firstClient.start();
-
-  scope = { runtimeMode: 'docker', gatewayWsUrl: secondGatewayUrl };
-  const calls: string[] = [];
-  const dockerClient = new OpenClawWizardClient(async (method) => {
-    calls.push(method);
-    return {
-      sessionId: 'docker-session',
+  const previousLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); },
+      clear: () => { values.clear(); },
+    },
+  });
+  try {
+    const firstGatewayUrl = new URL('/', `ws://${crypto.randomUUID()}.invalid`).toString();
+    const secondGatewayUrl = new URL('/', `ws://${crypto.randomUUID()}.invalid`).toString();
+    let scope: { runtimeMode: 'native' | 'docker'; gatewayWsUrl: string } = {
+      runtimeMode: 'native',
+      gatewayWsUrl: firstGatewayUrl,
+    };
+    const store = createScopedOpenClawWizardSessionStore(() => scope);
+    const firstClient = new OpenClawWizardClient(async () => ({
+      sessionId: 'native-session',
       done: false,
       status: 'running',
       step: { id: 'model', type: 'select' },
-    };
-  }, store);
+    }), store);
+    await firstClient.start();
 
-  assert.equal(dockerClient.hasActiveSession, false);
-  await dockerClient.start();
-  assert.deepEqual(calls, ['wizard.start']);
+    scope = { runtimeMode: 'docker', gatewayWsUrl: secondGatewayUrl };
+    const calls: string[] = [];
+    const dockerClient = new OpenClawWizardClient(async (method) => {
+      calls.push(method);
+      return {
+        sessionId: 'docker-session',
+        done: false,
+        status: 'running',
+        step: { id: 'model', type: 'select' },
+      };
+    }, store);
+
+    assert.equal(dockerClient.hasActiveSession, false);
+    await dockerClient.start();
+    assert.deepEqual(calls, ['wizard.start']);
+  } finally {
+    if (previousLocalStorage) {
+      Object.defineProperty(globalThis, 'localStorage', previousLocalStorage);
+    } else {
+      Reflect.deleteProperty(globalThis, 'localStorage');
+    }
+  }
 });
 
 test('wizard client starts fresh after terminal failure without replaying accepted answers', async () => {
@@ -372,11 +401,7 @@ test('wizard client preserves Gateway option identity from the installed schema'
   assert.equal(result.step?.format, 'plain');
 });
 
-// Original intent: JunQi must never render protocol features the installed
-// OpenClaw does not have (the reverted OAuth device-code extension). That still
-// holds - unknown fields are dropped before the step reaches the UI - but a new
-// field no longer takes onboarding down with it. See AUD-01.
-test('fields outside the installed schema never reach the UI', async () => {
+test('官方授权字段会完整到达界面', async () => {
   for (const step of [
     { id: 'external', type: 'note', externalUrl: 'https://auth.example/device' },
     { id: 'device', type: 'note', deviceCode: { code: 'ABCD-1234' } },
@@ -389,8 +414,8 @@ test('fields outside the installed schema never reach the UI', async () => {
     }));
     const result = await client.start();
     assert.equal(result.step?.id, step.id);
-    assert.equal((result.step as unknown as Record<string, unknown>).externalUrl, undefined);
-    assert.equal((result.step as unknown as Record<string, unknown>).deviceCode, undefined);
+    assert.equal(result.step?.externalUrl, step.externalUrl);
+    assert.deepEqual(result.step?.deviceCode, step.deviceCode);
   }
 });
 
