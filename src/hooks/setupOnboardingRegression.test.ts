@@ -404,7 +404,6 @@ test('BUG-ONB-29 model verification owns the active setup status after Gateway s
   assert.match(setupFlowPanels, /export type InstallationConsoleSummary =/);
   assert.match(setupFlowPanels, /kind: "model-checking"/);
   assert.match(setupFlowPanels, /kind: "model-check-failed"; message: string/);
-  assert.match(setupFlowPanels, /const showProgress = !modelChecking && !modelCheckFailed/);
   assert.match(setupPage, /const installationSummary: InstallationConsoleSummary = gatewayReadyChecking/);
   assert.match(setupPage, /summary=\{installationSummary\}/);
   assert.doesNotMatch(setupPage, /gatewayReadyChecking && \([\s\S]*?<StatusPanel/);

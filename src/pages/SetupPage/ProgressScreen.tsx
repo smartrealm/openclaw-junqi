@@ -48,7 +48,7 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
         "setup.gatewayReadyCheckingDescription",
         "正在验证当前模型是否可用；完成后将进入官方配置向导或完成页。",
       )
-    : gatewayReadyError ?? t("setup.gatewayReadySubtitle", "OpenClaw Gateway 已启动。请点击下一步继续。");
+    : gatewayReadyError ?? t("setup.gatewayReadySubtitle", "运行时检查已完成，下一步将核验 OpenClaw 配置。");
 
   return (
     <SetupShell

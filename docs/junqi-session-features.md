@@ -99,22 +99,15 @@ OpenClaw 官方能力清单。文中的组件、数量、超时、状态、入�
 
 ### 右侧工具区
 
-> 本节保留快照时期的工具清单。当前分支已移除旧制品下载器、全局技能计数、全局工具配置和全局活动入口；
-> 其余入口也必须以当前组件和 OpenClaw 实际能力核对后才能视为可用。
+> 当前工具清单以 `SessionContextBar` 的实际消费者为准。旧制品下载器、全局技能计数、全局工具配置、
+> 全局活动、会话变更、会话文件和会话伴侣入口均已移除。
 
 按钮从左到右：
-- **聚焦按钮**（Crosshair）：将会话设为焦点上下文
-- **制品管理**（Artifacts）：显示会话生成的文件制品，支持保存到本地
-- **会话伴侣**（Session Companion）：打开辅助面板
-- **技能数量**：显示已启用技能数（点击跳转到技能页面）
-- **工具按钮**（Wrench）：OpenClaw 工具配置
 - **有效工具控制**（EffectiveToolsControl）
 - **浏览器控制中心**（BrowserControlCenter）
 - **会话分支控制**（SessionBranchesControl）
 - **会话检查控制**（SessionInspectionControl）
-- **会话差异控制**（SessionDiffControl）
-- **会话文件控制**（SessionFilesControl）
-- **活动监控**（Activity）
+- **会话产物控制**（SessionArtifactsControl）
 - **上下文使用率**：显示 `${usedK}K/${maxLabel}` 格式的 token 使用
 - **导出 Markdown**：导出会话内容
 - **刷新按钮**：触发 `aegis:refresh` 事件

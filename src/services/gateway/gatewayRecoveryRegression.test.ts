@@ -303,14 +303,13 @@ test('OpenClaw session inspection and checkpoint controls use official session R
 
 test('session context toolbar exposes only session-scoped controls', () => {
   const contextBar = source('src/components/Chat/SessionContextBar.tsx');
-  const diffControl = source('src/components/Chat/SessionDiffControl.tsx');
   assert.doesNotMatch(contextBar, /SessionArtifactsButton/);
   assert.doesNotMatch(contextBar, /useSkillsStore|OPENCLAW_TOOLS_ROUTE|navigate\('\/activity'\)/);
   assert.match(contextBar, /<EffectiveToolsControl[\s\S]*?sessionKey=\{activeSessionKey\}/);
+  assert.match(contextBar, /<SessionBranchesControl sessionKey=\{activeSessionKey\}/);
+  assert.match(contextBar, /<SessionInspectionControl sessionKey=\{activeSessionKey\}/);
   assert.match(contextBar, /<SessionArtifactsControl[\s\S]*?sessionKey=\{activeSessionKey\}/);
-  assert.match(contextBar, /<SessionFilesControl[\s\S]*?sessionKey=\{activeSessionKey\}/);
-  assert.match(diffControl, /FileDiff size=\{11\}/);
-  assert.doesNotMatch(diffControl, /GitBranch/);
+  assert.doesNotMatch(contextBar, /SessionDiffControl|SessionFilesControl|sessionToolsOpen|MoreHorizontal/);
 });
 
 // BUG-WIN-CWD-01: state_dir (data directory) and Gateway cwd must be decoupled.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, Check, ChevronDown, CircleStop, Download, Folder, Gauge, ListTodo, MessageSquareText, MoreHorizontal, Plus, RotateCcw } from 'lucide-react';
+import { AlertCircle, Check, ChevronDown, CircleStop, Download, Folder, Gauge, ListTodo, MessageSquareText, Plus, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -15,8 +15,6 @@ import { BrowserControlCenter } from './BrowserControlCenter';
 import { SessionInspectionControl } from './SessionInspectionControl';
 import { SessionBranchesControl } from './SessionBranchesControl';
 import { SessionArtifactsControl } from './SessionArtifactsControl';
-import { SessionDiffControl } from './SessionDiffControl';
-import { SessionFilesControl } from './SessionFilesControl';
 import { ChatIconButton } from './ChatIconButton';
 import { desktopFileRuntime } from '@/services/chat/desktopFileRuntime';
 import { getGatewaySessionContextBudgetNotice } from '@/services/gateway/sessionContextBudgetStatus';
@@ -110,25 +108,6 @@ export function SessionContextBar() {
   const navigate = useNavigate();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRefreshed, setIsRefreshed] = useState(false);
-  const [sessionToolsOpen, setSessionToolsOpen] = useState(false);
-  const sessionToolsRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!sessionToolsOpen) return undefined;
-    const closeOnOutside = (event: MouseEvent) => {
-      if (!sessionToolsRef.current?.contains(event.target as Node)) setSessionToolsOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSessionToolsOpen(false);
-    };
-    document.addEventListener('mousedown', closeOnOutside);
-    window.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutside);
-      window.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [sessionToolsOpen]);
-
   // Parse agentId from session key (same logic as ChatTabs)
   const keyParts = activeSessionKey.split(':');
   const agentId = keyParts.length >= 3 ? (keyParts[1] ?? '') : '';
@@ -251,35 +230,9 @@ export function SessionContextBar() {
             onOpenConfiguration={() => navigate('/tools')}
           />
           <BrowserControlCenter />
-          <div ref={sessionToolsRef} className="relative no-drag">
-            <ChatIconButton
-              type="button"
-              label={t('chat.sessionTools.open')}
-              onClick={() => setSessionToolsOpen((value) => !value)}
-              aria-expanded={sessionToolsOpen}
-              className={clsx(
-                'inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors',
-                'hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary',
-                sessionToolsOpen && 'bg-[rgb(var(--aegis-overlay)/0.07)] text-aegis-text',
-              )}
-            >
-              <MoreHorizontal size={11} aria-hidden="true" />
-            </ChatIconButton>
-            {sessionToolsOpen && (
-              <div
-                role="group"
-                aria-label={t('chat.sessionTools.title')}
-                className="absolute end-0 top-full z-50 mt-2 flex items-center gap-1 rounded-lg border border-aegis-menu-border bg-aegis-menu-bg p-1.5"
-                style={{ boxShadow: 'var(--aegis-menu-shadow)' }}
-              >
-                <SessionBranchesControl sessionKey={activeSessionKey} agentId={agentId} />
-                <SessionInspectionControl sessionKey={activeSessionKey} agentId={agentId} />
-                <SessionArtifactsControl sessionKey={activeSessionKey} agentId={agentId} />
-                <SessionDiffControl sessionKey={activeSessionKey} agentId={agentId} />
-                <SessionFilesControl sessionKey={activeSessionKey} agentId={agentId} />
-              </div>
-            )}
-          </div>
+          <SessionBranchesControl sessionKey={activeSessionKey} agentId={agentId} />
+          <SessionInspectionControl sessionKey={activeSessionKey} agentId={agentId} />
+          <SessionArtifactsControl sessionKey={activeSessionKey} agentId={agentId} />
         </div>
         {maxTokens > 0 && (
           <span className="text-[10px] text-aegis-text-muted font-mono hidden lg:inline" title={`${usedK}K / ${maxLabel} (${Math.round((usedTokens / maxTokens) * 100)}%)`}>

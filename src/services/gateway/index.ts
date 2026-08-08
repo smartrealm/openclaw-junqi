@@ -5,7 +5,6 @@
 // ═══════════════════════════════════════════════════════════
 
 import {
-  GatewayConnectionFenceError,
   GatewayConnection,
   GatewayDisconnectedError,
   GatewayRpcError,
@@ -76,8 +75,6 @@ import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
 import { SessionTranscriptHistoryClient } from './SessionTranscriptHistoryClient';
 import { OpenClawSessionObserverClient } from './OpenClawSessionObserverClient';
 import { OpenClawSessionViewerPresenceClient } from './OpenClawSessionViewerPresenceClient';
-import { OpenClawSessionDiffClient } from './OpenClawSessionDiffClient';
-import { OpenClawSessionFilesClient } from './OpenClawSessionFilesClient';
 import {
   openClawSessionObserverStream,
   routeOpenClawSessionObserverEvent,
@@ -195,16 +192,6 @@ export type {
   SessionTranscriptRewindResult as OpenClawSessionRewindResult,
 } from './SessionTranscriptHistoryClient';
 export type { OpenClawSessionViewerPresenceResult } from './OpenClawSessionViewerPresenceClient';
-export type { OpenClawSessionDiff, OpenClawSessionDiffFile } from './OpenClawSessionDiffClient';
-export { OpenClawSessionDiffUnavailableError } from './OpenClawSessionDiffClient';
-export type {
-  OpenClawSessionFile,
-  OpenClawSessionFileBrowser,
-  OpenClawSessionFileBrowserEntry,
-  OpenClawSessionFilesGet,
-  OpenClawSessionFilesList,
-} from './OpenClawSessionFilesClient';
-export { OpenClawSessionFileConflictError } from './OpenClawSessionFilesClient';
 export type { OpenClawModelAuthStatusSnapshot } from './OpenClawModelAuthStatusClient';
 export type { OpenClawModelAuthLogoutResult } from './OpenClawModelAuthLogoutClient';
 export type { OpenClawModelProbeResult } from './OpenClawModelProbeClient';
@@ -484,23 +471,6 @@ const sessionViewerPresence = new OpenClawSessionViewerPresenceClient({
     params,
     expectedConnectionId,
   ),
-});
-const sessionDiff = new OpenClawSessionDiffClient({
-  captureConnectionId: () => connection.getAttestedConnectionId(),
-  isConnectionCurrent: (connectionId) => (
-    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
-  ),
-  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
-    method,
-    params,
-    expectedConnectionId,
-  ),
-  requestPrivileged: (method, params, expectedConnectionId) => {
-    if (!connection.isConnected() || connection.getAttestedConnectionId() !== expectedConnectionId) {
-      throw new GatewayConnectionFenceError(expectedConnectionId, connection.getAttestedConnectionId());
-    }
-    return requestPrivileged(method, params);
-  },
 });
 const auditClient = new OpenClawAuditClient(
   (method, params) => connection.request(method, params),
@@ -1122,23 +1092,6 @@ const requestApprovals = createApprovalRequester(connection);
 export const openClawBrowserClient = new OpenClawBrowserClient({
   request: (method, params, timeoutMs) => requestPrivileged(method, params, timeoutMs),
 });
-const sessionFiles = new OpenClawSessionFilesClient({
-  captureConnectionId: () => connection.getAttestedConnectionId(),
-  isConnectionCurrent: (connectionId) => (
-    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
-  ),
-  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
-    method,
-    params,
-    expectedConnectionId,
-  ),
-  requestPrivileged: (method, params, expectedConnectionId) => {
-    if (!connection.isConnected() || connection.getAttestedConnectionId() !== expectedConnectionId) {
-      throw new GatewayConnectionFenceError(expectedConnectionId, connection.getAttestedConnectionId());
-    }
-    return requestPrivileged(method, params);
-  },
-});
 const approvalClient = new OpenClawApprovalClient(
   (method, params) => requestApprovals(method, params),
 );
@@ -1563,28 +1516,6 @@ export const gateway = {
   },
   async forkSessionAtMessage(sessionKey: string, entryId: string, agentId?: string) {
     return sessionTranscriptHistory.forkAtMessage(sessionKey, entryId, agentId);
-  },
-  async getSessionDiff(sessionKey: string, agentId?: string) {
-    return sessionDiff.get(sessionKey, agentId);
-  },
-  async listSessionFiles(
-    sessionKey: string,
-    options: { agentId?: string; path?: string; search?: string } = {},
-  ) {
-    return sessionFiles.list(sessionKey, options);
-  },
-  async getSessionFile(sessionKey: string, path: string, agentId?: string) {
-    return sessionFiles.get(sessionKey, path, agentId);
-  },
-  async setSessionFile(
-    sessionKey: string,
-    path: string,
-    content: string,
-    expectedHash: string,
-    agentId?: string,
-    expectedConnectionId?: string,
-  ) {
-    return sessionFiles.set(sessionKey, path, content, expectedHash, agentId, expectedConnectionId);
   },
   async listAgentWorkspace(input: OpenClawAgentsWorkspaceListInput) {
     return openClawAgentsWorkspaceClient.list(input);

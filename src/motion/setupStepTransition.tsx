@@ -53,13 +53,13 @@ export function setupStepEntryState(
   reducedMotion: boolean,
   mode: SetupStepMotionMode = 'directional',
 ): { opacity: number; x: number; y: number } {
-  if (reducedMotion) {
+  if (reducedMotion || direction === 0) {
     return { opacity: 1, x: 0, y: 0 };
   }
-  if (mode === 'ambient') return { opacity: 0, x: 0, y: 12 };
+  if (mode === 'ambient') return { opacity: 0.98, x: 0, y: 4 };
   return {
-    opacity: 0,
-    x: direction === 0 ? 0 : direction * -24,
+    opacity: 0.96,
+    x: direction * -12,
     y: 0,
   };
 }
@@ -98,7 +98,9 @@ export function SetupStepTransition({
 
 export function SetupStepScene({ children }: { children: ReactNode }) {
   const context = useContext(SetupStepTransitionContext);
-  if (!context) return <div className="flex w-full justify-center">{children}</div>;
+  if (!context) {
+    return <div className="flex w-full min-w-0 max-w-full justify-center overflow-x-clip">{children}</div>;
+  }
 
   const { direction, mode, reducedMotion, step } = context;
   return (
@@ -107,10 +109,10 @@ export function SetupStepScene({ children }: { children: ReactNode }) {
       initial={setupStepEntryState(direction, reducedMotion, mode)}
       animate={{ opacity: 1, x: 0, y: 0 }}
       transition={{
-        duration: reducedMotion ? 0 : mode === 'ambient' ? 0.22 : 0.26,
+        duration: reducedMotion ? 0 : mode === 'ambient' ? 0.14 : 0.18,
         ease: [0.22, 1, 0.36, 1],
       }}
-      className="flex w-full justify-center"
+      className="flex w-full min-w-0 max-w-full justify-center overflow-x-clip"
       data-setup-scene-motion={mode}
     >
       {children}

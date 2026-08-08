@@ -101,51 +101,53 @@ function Stepper({ active, activeComplete = false }: { active: number; activeCom
   const { t } = useTranslation();
   return (
     <div className="px-6 pt-6" dir="ltr">
-      <div className="mx-auto flex w-fit max-w-full items-start justify-center gap-2 overflow-x-auto rounded-xl border border-aegis-border bg-aegis-elevated px-3 py-3 shadow-sm">
+      <div className="mx-auto grid w-full max-w-3xl grid-cols-5 items-start rounded-xl border border-aegis-border bg-aegis-elevated px-3 py-3 shadow-sm">
         {SETUP_STEPS.map(({ id, titleKey, titleFallback, descriptionKey, descriptionFallback }, i) => {
           const done = i < active;
           const current = i === active;
           const currentComplete = current && activeComplete;
           return (
-            <div key={id} className="flex items-start">
-              <div className="flex min-w-[94px] flex-col items-center gap-2 text-center">
-                <div
-                  data-setup-step-current-complete={currentComplete || undefined}
-                  className={clsx(
-                    "flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-black transition-colors",
-                    done && "border-aegis-primary/45 bg-aegis-primary/10 text-aegis-primary",
-                    current && !currentComplete && "border-aegis-primary bg-aegis-bg text-aegis-primary shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.12)]",
-                    currentComplete && "border-aegis-success bg-aegis-success/10 text-aegis-success shadow-[0_0_0_3px_rgb(var(--aegis-success)/0.12)]",
-                    !done && !current && "border-aegis-border bg-aegis-surface text-aegis-text-dim",
-                  )}
-                >
-                  {done || currentComplete ? <Check size={15} strokeWidth={3} /> : i + 1}
-                </div>
-                <div>
-                  <div
-                    className={clsx(
-                      "text-xs font-bold",
-                      current && "text-aegis-text",
-                      done && !current && "text-aegis-text-secondary",
-                      !done && !current && "text-aegis-text-dim",
-                    )}
-                    dir="auto"
-                  >
-                    {t(titleKey, titleFallback)}
-                  </div>
-                  <div
-                    className={clsx("mt-0.5 hidden text-[11px] font-medium sm:block", current ? "text-aegis-text-secondary" : "text-aegis-text-dim")}
-                    dir="auto"
-                  >
-                    {t(descriptionKey, descriptionFallback)}
-                  </div>
-                </div>
-              </div>
+            <div key={id} className="relative flex min-w-0 flex-col items-center gap-2 text-center">
               {i < SETUP_STEPS.length - 1 && (
                 <div
-                  className={clsx("mt-4 h-[2px] w-10 rounded-full transition-colors", i < active ? "bg-aegis-primary/35" : "bg-aegis-border")}
+                  aria-hidden="true"
+                  className={clsx(
+                    "absolute left-[calc(50%+1rem)] right-[calc(-50%+1rem)] top-4 h-[2px] rounded-full transition-colors",
+                    i < active ? "bg-aegis-primary/35" : "bg-aegis-border",
+                  )}
                 />
               )}
+              <div
+                data-setup-step-current-complete={currentComplete || undefined}
+                className={clsx(
+                  "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-sm font-black transition-colors",
+                  done && "border-aegis-primary/45 bg-aegis-primary/10 text-aegis-primary",
+                  current && !currentComplete && "border-aegis-primary bg-aegis-bg text-aegis-primary shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.12)]",
+                  currentComplete && "border-aegis-success bg-aegis-success/10 text-aegis-success shadow-[0_0_0_3px_rgb(var(--aegis-success)/0.12)]",
+                  !done && !current && "border-aegis-border bg-aegis-surface text-aegis-text-dim",
+                )}
+              >
+                {done || currentComplete ? <Check size={15} strokeWidth={3} /> : i + 1}
+              </div>
+              <div className="min-w-0 px-1">
+                <div
+                  className={clsx(
+                    "break-words text-xs font-bold leading-4",
+                    current && "text-aegis-text",
+                    done && !current && "text-aegis-text-secondary",
+                    !done && !current && "text-aegis-text-dim",
+                  )}
+                  dir="auto"
+                >
+                  {t(titleKey, titleFallback)}
+                </div>
+                <div
+                  className={clsx("mt-0.5 hidden break-words text-[11px] font-medium leading-4 sm:block", current ? "text-aegis-text-secondary" : "text-aegis-text-dim")}
+                  dir="auto"
+                >
+                  {t(descriptionKey, descriptionFallback)}
+                </div>
+              </div>
             </div>
           );
         })}
@@ -244,7 +246,7 @@ export function SetupShell({
         className="h-[32px] shrink-0 chrome-bg border-b border-aegis-border/30"
       />
       <Stepper active={active} activeComplete={activeComplete} />
-      <main className="flex min-h-0 flex-1 flex-col items-center overflow-auto px-3 py-4 sm:px-6 sm:py-8">
+      <main className="flex min-h-0 flex-1 flex-col items-center overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-6 sm:py-8">
         <SetupStepScene>
           <section className={clsx("w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
             <div className="mb-4 text-center sm:mb-6">
@@ -988,7 +990,6 @@ export function InstallationConsole({
   const completed = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || 1;
   const consoleMode = installationConsoleMode(summary);
-  const modelChecking = summary.kind === "model-checking";
   const modelCheckFailed = summary.kind === "model-check-failed";
   const isReady = setupStep === "ready" || summary.kind === "gateway-ready";
   const percent = isReady
@@ -999,33 +1000,16 @@ export function InstallationConsole({
     if (isError) setMobileView("logs");
   }, [isError]);
   const currentMeta = current ? STEP_META[current.id] : null;
-  const currentTitle = modelChecking
-    ? t("setup.gatewayReadyCheckingTitle", "正在检查 OpenClaw 配置")
-    : modelCheckFailed
-      ? t("setup.gatewayReadyContinueFailedTitle", "无法进入下一步")
-      : summary.kind === "gateway-ready"
-        ? t("setup.gatewayConnected", "Gateway 已就绪")
-        : installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
-  const currentDescription = modelChecking
-    ? t(
-        "setup.gatewayReadyCheckingDescription",
-        "正在验证当前模型是否可用；完成后将进入官方配置向导或完成页。",
-      )
-    : modelCheckFailed
-      ? summary.message
-      : summary.kind === "gateway-ready"
-        ? t("setup.gatewayReadySubtitle", "OpenClaw Gateway 已启动。请点击下一步继续。")
-        : currentMeta
-          ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
-          : t("setup.subtitle");
-  const summaryLabel = modelChecking
-    ? t("setup.gatewayReadyCheckingAction", "正在检查配置…")
-    : isReady
-      ? t("setup.ready", "就绪")
-      : isError
-        ? t("setup.error", "安装遇到问题")
-        : t("setup.installPanel.current", "当前执行");
-  const showProgress = !modelChecking && !modelCheckFailed;
+  const currentTitle = installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
+  const currentDescription = currentMeta
+    ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
+    : t("setup.subtitle");
+  const summaryLabel = isReady
+    ? t("setup.ready", "就绪")
+    : isError
+      ? t("setup.error", "安装遇到问题")
+      : t("setup.installPanel.current", "当前执行");
+  const showProgress = consoleMode === "activity";
 
   const activityPanel = (
     <div id="setup-installation-details" className="overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated">
@@ -1062,27 +1046,18 @@ export function InstallationConsole({
   if (consoleMode === "checkpoint") {
     return (
       <div className="space-y-3">
-        <div className={clsx(
-          "flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3",
-          modelChecking
-            ? "border-aegis-primary/30 bg-aegis-primary/5"
-            : isError
-              ? "border-red-500/35 bg-red-500/5"
-              : "border-aegis-success/35 bg-aegis-success/5",
-        )}>
-          <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-aegis-text-secondary">
-            {modelChecking
-              ? <RefreshCw size={16} className="shrink-0 animate-spin text-aegis-primary" />
-              : isError
-                ? <X size={16} className="shrink-0 text-red-300" />
-                : <CheckCircle2 size={16} className="shrink-0 text-aegis-success" />}
-            <span>{summaryLabel}</span>
-            <span className="text-aegis-text-dim">{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}</span>
-          </div>
-          <div className={clsx(
-            "text-lg font-semibold tabular-nums",
-            modelChecking ? "text-aegis-primary" : isError ? "text-red-300" : "text-aegis-success",
-          )}>{percent}%</div>
+        <div
+          data-installation-checkpoint="runtime-complete"
+          className="flex items-center gap-2 rounded-xl border border-aegis-success/35 bg-aegis-success/5 px-4 py-3 text-sm font-medium text-aegis-text-secondary"
+        >
+          <CheckCircle2 size={16} className="shrink-0 text-aegis-success" />
+          <span>
+            {t("setup.installPanel.runtimeChecksComplete", {
+              completed,
+              total,
+              defaultValue: "{{completed}}/{{total}} 项运行时检查完成",
+            })}
+          </span>
         </div>
         <button
           type="button"
@@ -1110,13 +1085,11 @@ export function InstallationConsole({
       )}>
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-aegis-text-muted">
-            {modelChecking
-              ? <RefreshCw size={15} className="animate-spin text-aegis-primary" />
-              : isReady
-                ? <CheckCircle2 size={15} className="text-aegis-success" />
-                : isError
-                  ? <X size={15} className="text-red-300" />
-                  : <CircleDot size={15} className="text-aegis-primary" />}
+            {isReady
+              ? <CheckCircle2 size={15} className="text-aegis-success" />
+              : isError
+                ? <X size={15} className="text-red-300" />
+                : <CircleDot size={15} className="text-aegis-primary" />}
             {summaryLabel}
           </div>
           <div className="text-lg font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
