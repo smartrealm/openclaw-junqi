@@ -13,7 +13,7 @@
 - 合并后的首次启动完成门禁区分 `verified`、`failed` 与 `unavailable`。官方模型实时验证不可用时保留待核验告警并允许进入工作区；明确验证失败才阻断。
 - 会话工具栏移除会话旁问、会话变更与会话文件的本地入口、专属 Gateway 客户端、测试和文案；保留实际工具、浏览器控制、分支、会话上下文与会话产物的直接入口。
 - Gateway 能力证据注册表记录保守的 hello 发现以及真实 RPC 成功、未授权、未知方法、连接失效和待核验结果，不把方法列表缺项视作不支持。
-- 安装向导、Gateway 第三阶段和 Ready 页已收敛加载、交接、动效与窄窗口行为；四处发行版本当前统一为 `2.2.12`。
+- 安装向导、Gateway 第三阶段和 Ready 页已收敛加载、交接、动效与窄窗口行为；四处发行版本当前统一为 `2.3.0`。
 - 会话重命名、置顶、未读、归档和分组不再向 `sessions.patch` 发送 `expectedSessionId`，统一按 OpenClaw 字段级最小权限走 `operator.write`；模型与运行参数仍保留 `operator.admin`。
 - Gateway 端点使用统一规范化规则识别等价回环地址，重启后继续读取所选 runtime 的认证凭据；旧的 `aegis-config`
   双轨存储路径已删除。
@@ -75,6 +75,7 @@
   `git diff --check` 也已通过。
 - 合并 main 后已通过 TypeScript、模块边界、版本一致性、完整 `pnpm test`（2829 项应用测试与 243 项脚本测试）和 `pnpm build`。
 - 本次合并 Jarvis 钉钉工作台改动后已通过 `pnpm lint`、钉钉安装反馈与渠道向导定向测试、完整 `pnpm test`（2845 项应用测试与 243 项脚本测试）和 `pnpm build`。
+- `v2.3.0` 已推送至 GitHub；本机 macOS ARM64 DMG 已生成并通过 `hdiutil verify`，包内版本为 `2.3.0`。
 - Windows Gateway 端点、默认主会话固定和新建会话竞态回归继续通过；`git diff --check` 与 Emoji 扫描在提交前再次执行。
 
 ## 已知问题
@@ -87,6 +88,7 @@
   语义，无法准确表达的有界或复杂月年规则明确显示为未支持。
 - 尚未在真实 Gateway 中验收钉钉插件加载、`tools.effective`、`tools.invoke`、插件审批往返和 DWS 业务响应；当前本地构建只证明源码、bundle 和类型契约成立。
 - 钉钉能力表格优先布局与安装反馈尚未在真实 Tauri 的亮色、暗色、窄窗口和键盘焦点下人工验收。
+- 本地 `pnpm tauri build --bundles app,dmg` 在 DMG 生成后因缺少 `TAURI_SIGNING_PRIVATE_KEY` 无法生成 updater 签名；该本地包仅用于安装验证，不能替代 GitHub 发布制品。
 - 尚未在 macOS、Windows、Linux 真机上完成首次引导渠道插件授权、二维码或设备代码交互；这些行为仍以目标 Gateway 和官方插件返回为准。
 
 ## 已放弃方案
