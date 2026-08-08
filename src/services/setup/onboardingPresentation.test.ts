@@ -33,7 +33,7 @@ test('引导呈现状态区分官方配置、失败和已验证完成', () => {
 test('引导呈现状态机为每个持久化页面状态提供确定的用户语义', () => {
   const machine = createOnboardingPresentationMachine('welcome');
   const expectations = [
-    ['welcome', 0, 'decision'],
+    ['welcome', -1, 'decision'],
     ['detecting', 0, 'operation'],
     ['environment-review', 0, 'decision'],
     ['storage', 1, 'decision'],
