@@ -29,6 +29,16 @@ docs/
 
 目录：[`installation/`](installation/)
 
+首次启动往返导航专题建议按以下顺序阅读：
+
+1. [审计记录](installation/setup-round-trip-navigation-audit-2026-08-08.md)：审计时事实与根因；
+2. [修复规格](../specs/installation/2026-08-08-setup-round-trip-navigation.md)：目标行为与验收条件；
+3. [实施计划](../plans/installation/2026-08-08-setup-round-trip-navigation.md)：文件范围与执行顺序；
+4. [验证记录](installation/setup-round-trip-navigation-validation-2026-08-08.md)：自动化、验收包和未验证边界；
+5. [导航与页签动效设计](quality/navigation-and-tab-motion-design-2026-08-02.md)：共享动效原则。
+
+其他安装与首次启动文档：
+
 - [新手引导编排重构记录](installation/onboarding-orchestration-redesign-2026-08-05.md)
 - [Windows 安装阶段全量复审](installation/windows-installation-full-audit-2026-07-24.md)
 - [Windows Native 安装审计](installation/windows-native-install-audit.md)
@@ -67,6 +77,8 @@ docs/
 - [`../plans/installation/2026-07-29-setup-state-ownership.md`](../plans/installation/2026-07-29-setup-state-ownership.md)
 - [`../specs/installation/2026-08-05-onboarding-orchestration-redesign.md`](../specs/installation/2026-08-05-onboarding-orchestration-redesign.md)
 - [`../plans/installation/2026-08-05-onboarding-orchestration-redesign.md`](../plans/installation/2026-08-05-onboarding-orchestration-redesign.md)
+- [`../specs/installation/2026-08-08-setup-round-trip-navigation.md`](../specs/installation/2026-08-08-setup-round-trip-navigation.md)
+- [`../plans/installation/2026-08-08-setup-round-trip-navigation.md`](../plans/installation/2026-08-08-setup-round-trip-navigation.md)
 
 ## Gateway 生命周期与服务归属
 
@@ -151,6 +163,7 @@ docs/
 - [OpenClaw 桌面会话查看声明对齐](quality/openclaw-session-viewer-presence-alignment-2026-08-04.md)
 - [OpenClaw 原生会话组写入对齐](quality/openclaw-session-group-mutations-alignment-2026-08-04.md)
 - [OpenClaw 会话变更快照对齐](quality/openclaw-session-diff-alignment-2026-08-04.md)
+- [会话工具栏控件加固验证](quality/session-toolbar-controls-hardening-2026-08-07.md)
 - [OpenClaw 会话文件只读投影对齐](quality/openclaw-session-files-readonly-alignment-2026-08-04.md)
 - [OpenClaw 会话文件 CAS 写入对齐](quality/openclaw-session-files-cas-write-alignment-2026-08-04.md)
 - [灵动岛显隐生命周期审计](quality/dynamic-island-visibility-lifecycle-audit-2026-08-04.md)
@@ -181,7 +194,7 @@ docs/
 - [OpenClaw Gateway 方法广告发现边界修正](quality/openclaw-gateway-method-advertisement-gate-2026-08-04.md)
 - [OpenClaw 稳定性诊断只读对齐](quality/openclaw-diagnostic-stability-alignment-2026-08-04.md)
 - [OpenClaw Hook 状态只读投影](quality/openclaw-hooks-status-readonly-projection-2026-08-04.md)
-- [OpenClaw 会话 Companion 控制台对齐](quality/openclaw-session-companion-control-ui-alignment-2026-08-04.md)
+- [会话旁问入口移除记录](quality/openclaw-session-companion-removal-2026-08-07.md)
 - [OpenClaw 桌面语音与 Jarvis 边界审计](quality/openclaw-desktop-voice-wake-boundary-audit-2026-08-04.md)
 - [OpenClaw 会话用量条目对齐](quality/openclaw-session-usage-logs-alignment-2026-08-04.md)
 - [维护中心审计](quality/maintenance-center-audit.md)

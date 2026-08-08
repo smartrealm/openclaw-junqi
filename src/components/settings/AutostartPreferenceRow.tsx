@@ -18,7 +18,7 @@ export interface AutostartPreferenceRowProps {
 
 function AutostartPreferenceSkeleton({ className }: Pick<AutostartPreferenceRowProps, 'className'>) {
   return (
-    <div className={clsx('flex items-start gap-3 py-4 text-left', className)} aria-busy="true">
+    <div className={clsx('flex min-h-[80px] items-start gap-3 py-4 text-left', className)} aria-busy="true">
       <span className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-aegis-surface" />
       <div className="min-w-0 flex-1 space-y-2 py-1">
         <span className="block h-3 w-40 animate-pulse rounded bg-aegis-surface" />
@@ -45,7 +45,7 @@ export function AutostartPreferenceRow({
   const busy = pendingLabel !== null;
 
   return (
-    <div className={clsx('flex items-start gap-3 py-4 text-left', className)} aria-busy={busy}>
+    <div className={clsx('flex min-h-[80px] items-start gap-3 py-4 text-left', className)} aria-busy={busy}>
       <span className={clsx(
         'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
         checked ? 'bg-aegis-success/15 text-aegis-success' : 'bg-aegis-primary/15 text-aegis-primary',

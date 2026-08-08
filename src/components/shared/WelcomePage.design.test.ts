@@ -12,3 +12,10 @@ test('welcome navigation uses the current company emblem instead of the legacy m
   assert.match(sidebarHeader, /JunQiLogo variant="company-emblem"/);
   assert.doesNotMatch(sidebarHeader, /JunQiLogo variant="emblem"/);
 });
+
+test('welcome skills preview reads Gateway skill state instead of the local Skill Hub', async () => {
+  const source = await readFile(new URL('./WelcomePage.tsx', import.meta.url), 'utf8');
+  assert.match(source, /useSkillsStore/);
+  assert.match(source, /gatewaySkills/);
+  assert.doesNotMatch(source, /listSkillHubSkills/);
+});

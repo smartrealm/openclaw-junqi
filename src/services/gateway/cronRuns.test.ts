@@ -53,6 +53,59 @@ test('projects cron.get into a safe typed job detail without retaining payload c
   assert.equal('payload' in parsed, false);
 });
 
+test('projects the current automation schedule, payload, delivery, and failure policy fields', () => {
+  const parsed = parseCronJobDetails({
+    ...job,
+    schedule: {
+      kind: 'stream',
+      command: ['node', 'watch.mjs'],
+      mode: 'match',
+      match: '^ready$',
+      batchMs: 250,
+      maxBatchBytes: 4096,
+    },
+    pacing: { min: '10s', max: '2m' },
+    payload: { kind: 'script', script: 'echo ready' },
+    delivery: {
+      mode: 'announce',
+      channel: 'telegram',
+      to: 'channel-1',
+      threadId: 7,
+      accountId: 'primary',
+      bestEffort: true,
+      failureDestination: { mode: 'webhook', to: 'https://example.invalid/failure' },
+    },
+    failureAlert: { after: 3, cooldownMs: 60_000, includeSkipped: true, mode: 'announce' },
+    state: {
+      ...job.state,
+      streamStatus: 'running',
+      lastFailureNotificationDeliveryStatus: 'not-requested',
+    },
+  });
+
+  assert.deepEqual(parsed.schedule, {
+    kind: 'stream',
+    command: ['node', 'watch.mjs'],
+    mode: 'match',
+    match: '^ready$',
+    batchMs: 250,
+    maxBatchBytes: 4096,
+  });
+  assert.equal(parsed.payloadKind, 'script');
+  assert.deepEqual(parsed.pacing, { min: '10s', max: '2m' });
+  assert.deepEqual(parsed.delivery, {
+    mode: 'announce',
+    channel: 'telegram',
+    to: 'channel-1',
+    threadId: 7,
+    accountId: 'primary',
+    bestEffort: true,
+    failureDestination: { mode: 'webhook', to: 'https://example.invalid/failure' },
+  });
+  assert.deepEqual(parsed.failureAlert, { after: 3, cooldownMs: 60_000, includeSkipped: true, mode: 'announce' });
+  assert.equal(parsed.state.streamStatus, 'running');
+});
+
 test('fails closed when cron.get or cron.runs violates the official response shape', () => {
   assert.throws(() => parseCronJobDetails({ ...job, state: undefined }), /state/);
   assert.throws(() => parseCronJobDetails({ ...job, schedule: { kind: 'cron' } }), /schedule\.expr/);
@@ -88,6 +141,15 @@ test('uses exact official envelopes for cron.get, cron.runs, and cron.run', asyn
     { method: 'cron.runs', params: { scope: 'job', id: 'job-1', limit: 5 } },
     { method: 'cron.run', params: { id: 'job-1', mode: 'force' } },
   ]);
+});
+
+test('reports an invalid cron.get response without classifying a transport failure', async () => {
+  const invalidMethods: string[] = [];
+  await assert.rejects(
+    () => getCronJob(async () => ({ ...job, state: undefined }), 'job-1', (method) => invalidMethods.push(method)),
+    /state/,
+  );
+  assert.deepEqual(invalidMethods, ['cron.get']);
 });
 
 test('waits for the exact runId instead of accepting another recent run', async () => {

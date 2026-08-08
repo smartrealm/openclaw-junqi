@@ -1,18 +1,15 @@
 import { GatewayRpcError } from './Connection';
+import {
+  enqueueCronRun,
+  listCronRuns,
+  parseCronRunLogEntry,
+  parseCronRunsPage,
+  type CronRunLogEntry,
+  type CronRunStatus,
+} from './cronRuns';
 
-export type OpenClawCronRunStatus = 'ok' | 'error' | 'skipped';
-
-export interface OpenClawCronRunEntry {
-  readonly ts: number;
-  readonly jobId: string;
-  readonly action: 'finished';
-  readonly status?: OpenClawCronRunStatus;
-  readonly runId?: string;
-  readonly summary?: string;
-  readonly error?: string;
-  readonly durationMs?: number;
-  readonly jobName?: string;
-}
+export type OpenClawCronRunStatus = CronRunStatus;
+export type OpenClawCronRunEntry = CronRunLogEntry;
 
 export interface OpenClawCronRunPage {
   readonly entries: readonly OpenClawCronRunEntry[];
@@ -26,6 +23,10 @@ export interface OpenClawCronRunAcknowledgement {
 }
 
 export type OpenClawCronRunRequester = <T>(method: string, params: Record<string, unknown>) => Promise<T>;
+
+export interface OpenClawCronRunDiagnostics {
+  recordCapabilityInvalidResponse?: (method: string) => void;
+}
 
 const CRON_RUN_METHOD = 'cron.run';
 const CRON_RUNS_METHOD = 'cron.runs';
@@ -48,46 +49,9 @@ export class OpenClawCronRunResponseError extends Error {
   }
 }
 
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function requiredString(value: unknown): string {
-  if (typeof value !== 'string' || value.length === 0) throw new OpenClawCronRunResponseError();
-  return value;
-}
-
-function optionalString(value: unknown): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string') throw new OpenClawCronRunResponseError();
-  return value;
-}
-
-function optionalInteger(value: unknown): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new OpenClawCronRunResponseError();
-  }
-  return value;
-}
-
-function requiredInteger(value: unknown): number {
-  const parsed = optionalInteger(value);
-  if (parsed === undefined) throw new OpenClawCronRunResponseError();
-  return parsed;
-}
-
 function requiredInputString(value: string, message: string): string {
-  if (typeof value !== 'string' || value.length === 0) throw new Error(message);
-  return value;
-}
-
-function cronRunStatus(value: unknown): OpenClawCronRunStatus | undefined {
-  if (value === undefined) return undefined;
-  if (value === 'ok' || value === 'error' || value === 'skipped') return value;
-  throw new OpenClawCronRunResponseError();
+  if (typeof value !== 'string' || value.trim().length === 0) throw new Error(message);
+  return value.trim();
 }
 
 function unsupportedMethod(error: unknown): boolean {
@@ -95,51 +59,54 @@ function unsupportedMethod(error: unknown): boolean {
     && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
 }
 
+function invalidCronResponse(error: unknown, method: string): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message.startsWith(`${method} returned an invalid`)
+    || (method === CRON_RUN_METHOD && error.message.startsWith('cron.run returned an enqueued result'));
+}
+
 export function parseOpenClawCronRunEntry(value: unknown): OpenClawCronRunEntry {
-  const source = record(value);
-  if (!source || source.action !== 'finished') throw new OpenClawCronRunResponseError();
-  const status = cronRunStatus(source.status);
-  const runId = optionalString(source.runId);
-  const summary = optionalString(source.summary);
-  const error = optionalString(source.error);
-  const durationMs = optionalInteger(source.durationMs);
-  const jobName = optionalString(source.jobName);
-  return {
-    ts: requiredInteger(source.ts),
-    jobId: requiredString(source.jobId),
-    action: 'finished',
-    ...(status === undefined ? {} : { status }),
-    ...(runId === undefined ? {} : { runId }),
-    ...(summary === undefined ? {} : { summary }),
-    ...(error === undefined ? {} : { error }),
-    ...(durationMs === undefined ? {} : { durationMs }),
-    ...(jobName === undefined ? {} : { jobName }),
-  };
+  try {
+    return parseCronRunLogEntry(value);
+  } catch {
+    throw new OpenClawCronRunResponseError();
+  }
 }
 
 export function parseOpenClawCronRunPage(value: unknown): OpenClawCronRunPage {
-  const source = record(value);
-  if (!source || !Array.isArray(source.entries)) throw new OpenClawCronRunResponseError();
-  return { entries: source.entries.map(parseOpenClawCronRunEntry) };
+  try {
+    return { entries: parseCronRunsPage(value).entries };
+  } catch {
+    throw new OpenClawCronRunResponseError();
+  }
 }
 
 export class OpenClawCronRunClient {
   constructor(
     private readonly request: OpenClawCronRunRequester,
+    private readonly diagnostics: OpenClawCronRunDiagnostics = {},
   ) {}
 
   async enqueue(jobId: string): Promise<OpenClawCronRunAcknowledgement> {
     const id = requiredInputString(jobId, 'Invalid OpenClaw cron job id');
     try {
-      const source = record(await this.request<unknown>(CRON_RUN_METHOD, { id, mode: 'force' }));
-      if (!source || typeof source.ok !== 'boolean') throw new OpenClawCronRunResponseError();
-      const enqueued = source.enqueued === true;
-      const runId = optionalString(source.runId);
-      const reason = optionalString(source.reason);
-      if (enqueued && runId === undefined) throw new OpenClawCronRunResponseError();
-      return { ok: source.ok, enqueued, ...(runId === undefined ? {} : { runId }), ...(reason === undefined ? {} : { reason }) };
+      const result = await enqueueCronRun(
+        (method, params) => this.request<unknown>(method, params),
+        id,
+        'force',
+      );
+      return {
+        ok: result.ok,
+        enqueued: result.enqueued === true,
+        ...(result.runId ? { runId: result.runId } : {}),
+        ...(result.reason ? { reason: result.reason } : {}),
+      };
     } catch (error) {
       if (unsupportedMethod(error)) throw new OpenClawCronRunUnsupportedError(CRON_RUN_METHOD);
+      if (invalidCronResponse(error, CRON_RUN_METHOD)) {
+        this.diagnostics.recordCapabilityInvalidResponse?.(CRON_RUN_METHOD);
+        throw new OpenClawCronRunResponseError();
+      }
       throw error;
     }
   }
@@ -148,13 +115,21 @@ export class OpenClawCronRunClient {
     const id = requiredInputString(jobId, 'Invalid OpenClaw cron job id');
     if (runId !== undefined) requiredInputString(runId, 'Invalid OpenClaw cron run id');
     try {
-      return parseOpenClawCronRunPage(await this.request<unknown>(CRON_RUNS_METHOD, {
-        id,
-        ...(runId === undefined ? {} : { runId }),
-        limit: runId === undefined ? 14 : 1,
-      }));
+      const page = await listCronRuns(
+        (method, params) => this.request<unknown>(method, params),
+        {
+          jobId: id,
+          ...(runId === undefined ? {} : { runId }),
+          limit: runId === undefined ? 14 : 1,
+        },
+      );
+      return { entries: page.entries };
     } catch (error) {
       if (unsupportedMethod(error)) throw new OpenClawCronRunUnsupportedError(CRON_RUNS_METHOD);
+      if (invalidCronResponse(error, CRON_RUNS_METHOD)) {
+        this.diagnostics.recordCapabilityInvalidResponse?.(CRON_RUNS_METHOD);
+        throw new OpenClawCronRunResponseError();
+      }
       throw error;
     }
   }

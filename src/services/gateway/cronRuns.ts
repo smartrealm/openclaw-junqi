@@ -11,10 +11,59 @@ export type CronScheduleDetails =
   | { kind: 'at'; at: string }
   | { kind: 'every'; everyMs: number; anchorMs?: number }
   | { kind: 'cron'; expr: string; tz?: string; staggerMs?: number }
-  | { kind: 'on-exit'; command: string; cwd?: string };
+  | { kind: 'on-exit'; command: string; cwd?: string }
+  | {
+    kind: 'stream';
+    command: string[];
+    cwd?: string;
+    mode?: 'line' | 'match';
+    match?: string;
+    batchMs?: number;
+    maxBatchBytes?: number;
+  };
+
+export type CronPayloadKind = 'systemEvent' | 'agentTurn' | 'command' | 'script' | 'heartbeat';
+
+export interface CronPacingDetails {
+  min?: string;
+  max?: string;
+}
+
+export interface CronDeliveryDestinationDetails {
+  mode?: 'announce' | 'webhook';
+  channel?: string;
+  to?: string;
+  accountId?: string;
+}
+
+export interface CronDeliveryDetails {
+  mode: 'none' | 'announce' | 'webhook';
+  channel?: string;
+  to?: string;
+  threadId?: string | number;
+  accountId?: string;
+  bestEffort?: boolean;
+  completionDestination?: { mode: 'webhook'; to?: string };
+  failureDestination?: CronDeliveryDestinationDetails;
+}
+
+export interface CronFailureAlertDetails {
+  after?: number;
+  channel?: string;
+  to?: string;
+  cooldownMs?: number;
+  includeSkipped?: boolean;
+  mode?: 'announce' | 'webhook';
+  accountId?: string;
+}
 
 export interface CronJobStateDetails {
   nextRunAtMs?: number;
+  scheduleActivatedAtMs?: number;
+  startupCatchupAtMs?: number;
+  pacedNextRunAtMs?: number;
+  forcePreservedNextRunAtMs?: number;
+  queuedAtMs?: number;
   runningAtMs?: number;
   lastRunAtMs?: number;
   lastRunStatus?: CronRunStatus;
@@ -26,6 +75,25 @@ export interface CronJobStateDetails {
   lastDelivered?: boolean;
   lastDeliveryStatus?: CronDeliveryStatus;
   lastDeliveryError?: string;
+  lastDiagnosticSummary?: string;
+  autoDisabled?: {
+    reason: 'consecutive-failures' | 'schedule-errors';
+    atMs: number;
+    consecutiveErrors: number;
+  };
+  lastFailureAlertAtMs?: number;
+  scheduleErrorCount?: number;
+  streamStatus?: 'starting' | 'running' | 'restarting' | 'stopped' | 'disabled' | 'error';
+  streamError?: string;
+  streamConsecutiveFailures?: number;
+  streamRestartExhausted?: boolean;
+  streamDroppedBatches?: number;
+  streamCoalescedBatches?: number;
+  streamLastStartedAtMs?: number;
+  streamLastExitAtMs?: number;
+  lastFailureNotificationDelivered?: boolean;
+  lastFailureNotificationDeliveryStatus?: CronDeliveryStatus;
+  lastFailureNotificationDeliveryError?: string;
 }
 
 /** Safe read projection of the official CronJob response. Payload content is not retained. */
@@ -40,9 +108,12 @@ export interface OpenClawCronJobDetails {
   createdAtMs: number;
   updatedAtMs: number;
   schedule: CronScheduleDetails;
+  pacing?: CronPacingDetails;
   sessionTarget: CronSessionTarget;
   wakeMode: CronWakeMode;
-  payloadKind: 'systemEvent' | 'agentTurn' | 'command';
+  payloadKind: CronPayloadKind;
+  delivery?: CronDeliveryDetails;
+  failureAlert?: false | CronFailureAlertDetails;
   state: CronJobStateDetails;
   nextRunAtMs?: number;
   lastRunAtMs?: number;
@@ -163,6 +234,13 @@ function optionalNumber(value: unknown, field: string, method: string): number |
   return value;
 }
 
+function optionalThreadId(value: unknown, field: string, method: string): string | number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (Number.isSafeInteger(value) && (value as number) >= 0) return value as number;
+  throw new Error(`${method} returned an invalid ${field}`);
+}
+
 function oneOf<const T extends readonly string[]>(
   value: unknown,
   values: T,
@@ -213,13 +291,110 @@ function parseSchedule(value: unknown, method: string): CronScheduleDetails {
       ...(value.cwd !== undefined ? { cwd: requiredString(value.cwd, 'schedule.cwd', method) } : {}),
     };
   }
+  if (kind === 'stream') {
+    if (!Array.isArray(value.command) || value.command.length === 0 || value.command.some((item) => typeof item !== 'string' || !item.trim())) {
+      throw new Error(`${method} returned an invalid schedule.command`);
+    }
+    const mode = value.mode === undefined
+      ? undefined
+      : oneOf(value.mode, ['line', 'match'] as const, 'schedule.mode', method);
+    if (mode === 'match' && typeof value.match !== 'string') {
+      throw new Error(`${method} returned an invalid schedule.match`);
+    }
+    return {
+      kind,
+      command: value.command.map((item) => item.trim()),
+      ...(value.cwd !== undefined ? { cwd: requiredString(value.cwd, 'schedule.cwd', method) } : {}),
+      ...(mode !== undefined ? { mode } : {}),
+      ...(value.match !== undefined ? { match: requiredString(value.match, 'schedule.match', method) } : {}),
+      ...(value.batchMs !== undefined ? { batchMs: requiredInteger(value.batchMs, 'schedule.batchMs', method) } : {}),
+      ...(value.maxBatchBytes !== undefined ? { maxBatchBytes: requiredInteger(value.maxBatchBytes, 'schedule.maxBatchBytes', method, 1) } : {}),
+    };
+  }
   throw new Error(`${method} returned an invalid schedule.kind`);
+}
+
+function parsePacing(value: unknown, method: string): CronPacingDetails {
+  if (!isRecord(value)) throw new Error(`${method} returned an invalid pacing`);
+  return {
+    ...(value.min !== undefined ? { min: requiredString(value.min, 'pacing.min', method) } : {}),
+    ...(value.max !== undefined ? { max: requiredString(value.max, 'pacing.max', method) } : {}),
+  };
+}
+
+function parseDeliveryDestination(value: unknown, method: string): CronDeliveryDestinationDetails {
+  if (!isRecord(value)) throw new Error(`${method} returned an invalid delivery destination`);
+  return {
+    ...(value.mode !== undefined ? { mode: oneOf(value.mode, ['announce', 'webhook'] as const, 'delivery.destination.mode', method) } : {}),
+    ...(value.channel !== undefined ? { channel: requiredString(value.channel, 'delivery.destination.channel', method) } : {}),
+    ...(value.to !== undefined ? { to: requiredString(value.to, 'delivery.destination.to', method) } : {}),
+    ...(value.accountId !== undefined ? { accountId: requiredString(value.accountId, 'delivery.destination.accountId', method) } : {}),
+  };
+}
+
+function parseDelivery(value: unknown, method: string): CronDeliveryDetails {
+  if (!isRecord(value)) throw new Error(`${method} returned an invalid delivery`);
+  const mode = oneOf(value.mode, ['none', 'announce', 'webhook'] as const, 'delivery.mode', method);
+  const completionDestination = value.completionDestination === undefined
+    ? undefined
+    : (() => {
+      if (!isRecord(value.completionDestination) || value.completionDestination.mode !== 'webhook') {
+        throw new Error(`${method} returned an invalid delivery.completionDestination`);
+      }
+      return {
+        mode: 'webhook' as const,
+        ...(value.completionDestination.to !== undefined
+          ? { to: requiredString(value.completionDestination.to, 'delivery.completionDestination.to', method) }
+          : {}),
+      };
+    })();
+  return {
+    mode,
+    ...(value.channel !== undefined ? { channel: requiredString(value.channel, 'delivery.channel', method) } : {}),
+    ...(value.to !== undefined ? { to: requiredString(value.to, 'delivery.to', method) } : {}),
+    ...(value.threadId !== undefined ? { threadId: optionalThreadId(value.threadId, 'delivery.threadId', method) } : {}),
+    ...(value.accountId !== undefined ? { accountId: requiredString(value.accountId, 'delivery.accountId', method) } : {}),
+    ...(value.bestEffort !== undefined ? { bestEffort: requiredBoolean(value.bestEffort, 'delivery.bestEffort', method) } : {}),
+    ...(completionDestination ? { completionDestination } : {}),
+    ...(value.failureDestination !== undefined
+      ? { failureDestination: parseDeliveryDestination(value.failureDestination, method) }
+      : {}),
+  };
+}
+
+function parseFailureAlert(value: unknown, method: string): false | CronFailureAlertDetails {
+  if (value === false) return false;
+  if (!isRecord(value)) throw new Error(`${method} returned an invalid failureAlert`);
+  return {
+    ...(value.after !== undefined ? { after: requiredInteger(value.after, 'failureAlert.after', method, 1) } : {}),
+    ...(value.channel !== undefined ? { channel: requiredString(value.channel, 'failureAlert.channel', method) } : {}),
+    ...(value.to !== undefined ? { to: requiredString(value.to, 'failureAlert.to', method) } : {}),
+    ...(value.cooldownMs !== undefined ? { cooldownMs: requiredInteger(value.cooldownMs, 'failureAlert.cooldownMs', method) } : {}),
+    ...(value.includeSkipped !== undefined ? { includeSkipped: requiredBoolean(value.includeSkipped, 'failureAlert.includeSkipped', method) } : {}),
+    ...(value.mode !== undefined ? { mode: oneOf(value.mode, ['announce', 'webhook'] as const, 'failureAlert.mode', method) } : {}),
+    ...(value.accountId !== undefined ? { accountId: requiredString(value.accountId, 'failureAlert.accountId', method) } : {}),
+  };
 }
 
 function parseJobState(value: unknown, method: string): CronJobStateDetails {
   if (!isRecord(value)) throw new Error(`${method} returned an invalid state`);
+  const autoDisabled = value.autoDisabled === undefined
+    ? undefined
+    : (() => {
+      if (!isRecord(value.autoDisabled)) throw new Error(`${method} returned an invalid state.autoDisabled`);
+      return {
+        reason: oneOf(value.autoDisabled.reason, ['consecutive-failures', 'schedule-errors'] as const, 'state.autoDisabled.reason', method),
+        atMs: requiredInteger(value.autoDisabled.atMs, 'state.autoDisabled.atMs', method),
+        consecutiveErrors: requiredInteger(value.autoDisabled.consecutiveErrors, 'state.autoDisabled.consecutiveErrors', method),
+      };
+    })();
   return {
     ...(value.nextRunAtMs !== undefined ? { nextRunAtMs: requiredInteger(value.nextRunAtMs, 'state.nextRunAtMs', method) } : {}),
+    ...(value.scheduleActivatedAtMs !== undefined ? { scheduleActivatedAtMs: requiredInteger(value.scheduleActivatedAtMs, 'state.scheduleActivatedAtMs', method) } : {}),
+    ...(value.startupCatchupAtMs !== undefined ? { startupCatchupAtMs: requiredInteger(value.startupCatchupAtMs, 'state.startupCatchupAtMs', method) } : {}),
+    ...(value.pacedNextRunAtMs !== undefined ? { pacedNextRunAtMs: requiredInteger(value.pacedNextRunAtMs, 'state.pacedNextRunAtMs', method) } : {}),
+    ...(value.forcePreservedNextRunAtMs !== undefined ? { forcePreservedNextRunAtMs: requiredInteger(value.forcePreservedNextRunAtMs, 'state.forcePreservedNextRunAtMs', method) } : {}),
+    ...(value.queuedAtMs !== undefined ? { queuedAtMs: requiredInteger(value.queuedAtMs, 'state.queuedAtMs', method) } : {}),
     ...(value.runningAtMs !== undefined ? { runningAtMs: requiredInteger(value.runningAtMs, 'state.runningAtMs', method) } : {}),
     ...(value.lastRunAtMs !== undefined ? { lastRunAtMs: requiredInteger(value.lastRunAtMs, 'state.lastRunAtMs', method) } : {}),
     ...(value.lastRunStatus !== undefined ? { lastRunStatus: oneOf(value.lastRunStatus, CRON_RUN_STATUSES, 'state.lastRunStatus', method) } : {}),
@@ -231,6 +406,21 @@ function parseJobState(value: unknown, method: string): CronJobStateDetails {
     ...(value.lastDelivered !== undefined ? { lastDelivered: requiredBoolean(value.lastDelivered, 'state.lastDelivered', method) } : {}),
     ...(value.lastDeliveryStatus !== undefined ? { lastDeliveryStatus: oneOf(value.lastDeliveryStatus, CRON_DELIVERY_STATUSES, 'state.lastDeliveryStatus', method) } : {}),
     ...(value.lastDeliveryError !== undefined ? { lastDeliveryError: optionalString(value.lastDeliveryError, 'state.lastDeliveryError', method) } : {}),
+    ...(value.lastDiagnosticSummary !== undefined ? { lastDiagnosticSummary: optionalString(value.lastDiagnosticSummary, 'state.lastDiagnosticSummary', method) } : {}),
+    ...(autoDisabled ? { autoDisabled } : {}),
+    ...(value.lastFailureAlertAtMs !== undefined ? { lastFailureAlertAtMs: requiredInteger(value.lastFailureAlertAtMs, 'state.lastFailureAlertAtMs', method) } : {}),
+    ...(value.scheduleErrorCount !== undefined ? { scheduleErrorCount: requiredInteger(value.scheduleErrorCount, 'state.scheduleErrorCount', method) } : {}),
+    ...(value.streamStatus !== undefined ? { streamStatus: oneOf(value.streamStatus, ['starting', 'running', 'restarting', 'stopped', 'disabled', 'error'] as const, 'state.streamStatus', method) } : {}),
+    ...(value.streamError !== undefined ? { streamError: optionalString(value.streamError, 'state.streamError', method) } : {}),
+    ...(value.streamConsecutiveFailures !== undefined ? { streamConsecutiveFailures: requiredInteger(value.streamConsecutiveFailures, 'state.streamConsecutiveFailures', method) } : {}),
+    ...(value.streamRestartExhausted !== undefined ? { streamRestartExhausted: requiredBoolean(value.streamRestartExhausted, 'state.streamRestartExhausted', method) } : {}),
+    ...(value.streamDroppedBatches !== undefined ? { streamDroppedBatches: requiredInteger(value.streamDroppedBatches, 'state.streamDroppedBatches', method) } : {}),
+    ...(value.streamCoalescedBatches !== undefined ? { streamCoalescedBatches: requiredInteger(value.streamCoalescedBatches, 'state.streamCoalescedBatches', method) } : {}),
+    ...(value.streamLastStartedAtMs !== undefined ? { streamLastStartedAtMs: requiredInteger(value.streamLastStartedAtMs, 'state.streamLastStartedAtMs', method) } : {}),
+    ...(value.streamLastExitAtMs !== undefined ? { streamLastExitAtMs: requiredInteger(value.streamLastExitAtMs, 'state.streamLastExitAtMs', method) } : {}),
+    ...(value.lastFailureNotificationDelivered !== undefined ? { lastFailureNotificationDelivered: requiredBoolean(value.lastFailureNotificationDelivered, 'state.lastFailureNotificationDelivered', method) } : {}),
+    ...(value.lastFailureNotificationDeliveryStatus !== undefined ? { lastFailureNotificationDeliveryStatus: oneOf(value.lastFailureNotificationDeliveryStatus, CRON_DELIVERY_STATUSES, 'state.lastFailureNotificationDeliveryStatus', method) } : {}),
+    ...(value.lastFailureNotificationDeliveryError !== undefined ? { lastFailureNotificationDeliveryError: optionalString(value.lastFailureNotificationDeliveryError, 'state.lastFailureNotificationDeliveryError', method) } : {}),
   };
 }
 
@@ -254,27 +444,32 @@ export function buildCronRunsParams(params: CronRunsParams): Record<string, unkn
   };
 }
 
-export function parseCronJobDetails(value: unknown): OpenClawCronJobDetails {
-  const method = 'cron.get';
+export function parseCronJobDetails(value: unknown, method = 'cron.get'): OpenClawCronJobDetails {
   if (!isRecord(value)) throw new Error(`${method} returned an invalid job`);
   const payload = value.payload;
   if (!isRecord(payload)) throw new Error(`${method} returned an invalid payload`);
-  const payloadKind = oneOf(payload.kind, ['systemEvent', 'agentTurn', 'command'] as const, 'payload.kind', method);
+  const payloadKind = oneOf(payload.kind, ['systemEvent', 'agentTurn', 'command', 'script', 'heartbeat'] as const, 'payload.kind', method);
   const state = parseJobState(value.state, method);
+  const pacing = value.pacing === undefined ? undefined : parsePacing(value.pacing, method);
+  const delivery = value.delivery === undefined ? undefined : parseDelivery(value.delivery, method);
+  const failureAlert = value.failureAlert === undefined ? undefined : parseFailureAlert(value.failureAlert, method);
   return {
     id: requiredString(value.id, 'id', method),
     name: requiredString(value.name, 'name', method),
     enabled: requiredBoolean(value.enabled, 'enabled', method),
-    ...(value.agentId !== undefined ? { agentId: optionalString(value.agentId, 'agentId', method) } : {}),
-    ...(value.sessionKey !== undefined ? { sessionKey: optionalString(value.sessionKey, 'sessionKey', method) } : {}),
+    ...(value.agentId !== undefined ? { agentId: requiredString(value.agentId, 'agentId', method) } : {}),
+    ...(value.sessionKey !== undefined ? { sessionKey: requiredString(value.sessionKey, 'sessionKey', method) } : {}),
     ...(value.description !== undefined ? { description: optionalString(value.description, 'description', method) } : {}),
     ...(value.deleteAfterRun !== undefined ? { deleteAfterRun: requiredBoolean(value.deleteAfterRun, 'deleteAfterRun', method) } : {}),
     createdAtMs: requiredInteger(value.createdAtMs, 'createdAtMs', method),
     updatedAtMs: requiredInteger(value.updatedAtMs, 'updatedAtMs', method),
     schedule: parseSchedule(value.schedule, method),
+    ...(pacing ? { pacing } : {}),
     sessionTarget: parseSessionTarget(value.sessionTarget, method),
     wakeMode: oneOf(value.wakeMode, ['next-heartbeat', 'now'] as const, 'wakeMode', method),
     payloadKind,
+    ...(delivery ? { delivery } : {}),
+    ...(failureAlert !== undefined ? { failureAlert } : {}),
     state,
     ...(value.nextRunAtMs !== undefined ? { nextRunAtMs: requiredInteger(value.nextRunAtMs, 'nextRunAtMs', method) } : {}),
     ...(value.lastRunAtMs !== undefined ? { lastRunAtMs: requiredInteger(value.lastRunAtMs, 'lastRunAtMs', method) } : {}),
@@ -298,7 +493,7 @@ function parseUsage(value: unknown, method: string): CronRunLogEntry['usage'] {
   };
 }
 
-function parseRunLogEntry(value: unknown): CronRunLogEntry {
+export function parseCronRunLogEntry(value: unknown): CronRunLogEntry {
   const method = 'cron.runs';
   if (!isRecord(value)) throw new Error(`${method} returned an invalid entry`);
   return {
@@ -335,7 +530,7 @@ export function parseCronRunsPage(value: unknown): CronRunsPage {
     ? null
     : requiredInteger(value.nextOffset, 'nextOffset', method);
   return {
-    entries: value.entries.map(parseRunLogEntry),
+    entries: value.entries.map(parseCronRunLogEntry),
     total: requiredInteger(value.total, 'total', method),
     offset: requiredInteger(value.offset, 'offset', method),
     limit: requiredInteger(value.limit, 'limit', method, 1),
@@ -364,8 +559,15 @@ export function parseCronRunEnqueueResult(value: unknown): CronRunEnqueueResult 
 export async function getCronJob(
   request: CronRequester,
   jobId: string,
+  onInvalidResponse?: (method: string) => void,
 ): Promise<OpenClawCronJobDetails> {
-  return parseCronJobDetails(await request('cron.get', buildCronGetParams(jobId)));
+  const response = await request('cron.get', buildCronGetParams(jobId));
+  try {
+    return parseCronJobDetails(response);
+  } catch (error) {
+    onInvalidResponse?.('cron.get');
+    throw error;
+  }
 }
 
 export async function listCronRuns(

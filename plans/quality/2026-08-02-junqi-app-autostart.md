@@ -11,3 +11,6 @@
    the platform-specific login-item boundaries.
 5. [x] Consolidate Ready-screen autostart action surfaces into one loading-safe
    switch row for both independent login policies.
+6. [x] Gate the Ready-screen preference block on both initial status reads and
+   render a full-size skeleton until the block can be shown as one stable
+   layout.

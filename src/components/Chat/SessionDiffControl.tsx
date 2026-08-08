@@ -2,7 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, FileDiff, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { gateway, type OpenClawSessionDiff } from '@/services/gateway';
+import {
+  gateway,
+  OpenClawSessionDiffUnavailableError,
+  type OpenClawSessionDiff,
+} from '@/services/gateway';
+import { ChatIconButton } from './ChatIconButton';
 
 interface SessionDiffControlProps {
   sessionKey: string;
@@ -12,7 +17,13 @@ interface SessionDiffControlProps {
 interface SessionDiffState {
   loading: boolean;
   value: OpenClawSessionDiff | null;
-  error: string | null;
+  error: SessionDiffError | null;
+}
+
+interface SessionDiffError {
+  readonly detail: string;
+  readonly authorization: boolean;
+  readonly missingScope?: string;
 }
 
 const initialState: SessionDiffState = {
@@ -50,10 +61,15 @@ export function SessionDiffControl({ sessionKey, agentId }: SessionDiffControlPr
       }
     } catch (error) {
       if (requestId === requestIdRef.current) {
+        const unavailable = error instanceof OpenClawSessionDiffUnavailableError ? error : null;
         setState({
           loading: false,
           value: null,
-          error: error instanceof Error ? error.message : String(error),
+          error: {
+            detail: error instanceof Error ? error.message : String(error),
+            authorization: unavailable?.authorization ?? false,
+            ...(unavailable?.missingScope ? { missingScope: unavailable.missingScope } : {}),
+          },
         });
       }
     }
@@ -84,13 +100,12 @@ export function SessionDiffControl({ sessionKey, agentId }: SessionDiffControlPr
 
   return (
     <div ref={rootRef} className="relative no-drag">
-      <button
+      <ChatIconButton
         type="button"
+        label={t('chat.sessionDiff.open')}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title={t('chat.sessionDiff.open')}
-        aria-label={t('chat.sessionDiff.open')}
         className={clsx(
           'inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors',
           'hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary',
@@ -98,7 +113,7 @@ export function SessionDiffControl({ sessionKey, agentId }: SessionDiffControlPr
         )}
       >
         <FileDiff size={11} aria-hidden="true" />
-      </button>
+      </ChatIconButton>
 
       {open && (
         <div
@@ -140,9 +155,21 @@ export function SessionDiffControl({ sessionKey, agentId }: SessionDiffControlPr
               <div className="space-y-2 rounded-md border border-aegis-danger/25 bg-aegis-danger/5 px-3 py-2.5 text-aegis-text-muted">
                 <div className="flex items-start gap-2">
                   <AlertCircle size={14} className="mt-0.5 shrink-0 text-aegis-danger" aria-hidden="true" />
-                  <span>{t('chat.sessionDiff.error')}</span>
+                  <div className="space-y-1">
+                    <div>{state.error.authorization ? t('chat.sessionDiff.authorization') : t('chat.sessionDiff.error')}</div>
+                    {state.error.authorization && state.error.missingScope && (
+                      <div className="text-[10px] text-aegis-text-dim">
+                        {t('chat.sessionDiff.authorizationScope', { scope: state.error.missingScope })}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="break-words font-mono text-[10px] text-aegis-text-dim">{state.error}</div>
+                {!state.error.authorization && (
+                  <div className="break-words font-mono text-[10px] text-aegis-text-dim">{state.error.detail}</div>
+                )}
+                {state.error.authorization && (
+                  <div className="text-[10px] text-aegis-text-dim">{t('chat.sessionDiff.authorizationNextStep')}</div>
+                )}
                 <button
                   type="button"
                   onClick={() => { void load(); }}

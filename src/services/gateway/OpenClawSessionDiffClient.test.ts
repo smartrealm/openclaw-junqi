@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { GatewayRpcError } from './Connection';
 import {
   OpenClawSessionDiffClient,
   OpenClawSessionDiffResponseError,
@@ -51,6 +52,30 @@ test('会话变更快照只接受当前连接返回的同一会话', async () =>
   assert.deepEqual(calls, [{ sessionKey: 'agent:main:one', agentId: 'main' }]);
 });
 
+test('会话变更优先使用带 operator.admin 的特权连接', async () => {
+  const lanes: string[] = [];
+  const client = new OpenClawSessionDiffClient({
+    captureConnectionId: () => 'gateway-a',
+    isConnectionCurrent: () => true,
+    requestFenced: async () => {
+      lanes.push('ordinary');
+      throw new Error('ordinary connection must not be used when privileged lane exists');
+    },
+    requestPrivileged: async (method, params, connectionId) => {
+      lanes.push(`${method}:${JSON.stringify(params)}:${connectionId}`);
+      return {
+        sessionKey: 'agent:main:one',
+        files: [],
+        additions: 0,
+        deletions: 0,
+      };
+    },
+  });
+
+  await client.get('agent:main:one');
+  assert.deepEqual(lanes, ['sessions.diff:{"sessionKey":"agent:main:one"}:gateway-a']);
+});
+
 test('会话变更快照拒绝身份错配和畸形协议字段', async () => {
   const identityMismatch = new OpenClawSessionDiffClient({
     captureConnectionId: () => 'gateway-a',
@@ -98,5 +123,31 @@ test('会话变更快照在连接切换后失败关闭', async () => {
   await assert.rejects(
     client.get('agent:main:one'),
     OpenClawSessionDiffUnavailableError,
+  );
+});
+
+test('会话变更快照保留 Gateway 的缺失权限事实', async () => {
+  const client = new OpenClawSessionDiffClient({
+    captureConnectionId: () => 'gateway-a',
+    isConnectionCurrent: () => true,
+    requestFenced: async () => {
+      throw new GatewayRpcError(
+        'missing scope: operator.admin',
+        'UNAUTHORIZED',
+      );
+    },
+    requestPrivileged: async () => {
+      throw new GatewayRpcError(
+        'missing scope: operator.admin',
+        'UNAUTHORIZED',
+      );
+    },
+  });
+
+  await assert.rejects(
+    client.get('agent:main:one'),
+    (error: unknown) => error instanceof OpenClawSessionDiffUnavailableError
+      && error.missingScope === 'operator.admin'
+      && error.authorization,
   );
 });

@@ -13,7 +13,7 @@ export const ChatIconButton = forwardRef<HTMLButtonElement, ChatIconButtonProps>
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button ref={ref} {...buttonProps} aria-label={label}>
+        <button ref={ref} {...buttonProps} aria-label={label} title={buttonProps.title ?? label}>
           {children}
         </button>
       </TooltipTrigger>

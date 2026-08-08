@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { useSessionBranches } from '@/hooks/useSessionBranches';
 import { useChatStore } from '@/stores/chatStore';
+import { ChatIconButton } from './ChatIconButton';
 
 interface SessionBranchesControlProps {
   readonly sessionKey: string;
@@ -85,8 +86,9 @@ export function SessionBranchesControl({
 
   return (
     <div ref={rootRef} className="relative no-drag">
-      <button
+      <ChatIconButton
         type="button"
+        label={t('chat.sessionBranches.open')}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -95,11 +97,9 @@ export function SessionBranchesControl({
           'hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary',
           open && 'bg-[rgb(var(--aegis-overlay)/0.07)] text-aegis-text',
         )}
-        title={t('chat.sessionBranches.open')}
-        aria-label={t('chat.sessionBranches.open')}
       >
-        <GitBranch size={11} />
-      </button>
+        <GitBranch size={11} aria-hidden="true" />
+      </ChatIconButton>
 
       {open && (
         <div

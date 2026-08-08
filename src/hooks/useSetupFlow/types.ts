@@ -48,6 +48,7 @@ export interface SetupFlow {
   dockerStatus: DockerStatus | null;
   openclawStatus: OpenclawStatus | null;
   checkingDocker: boolean;
+  environmentReviewBusy: boolean;
   needsGit: boolean;
   nodeRequirement: string | null;
   steps: StepState[];

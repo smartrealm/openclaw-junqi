@@ -26,6 +26,11 @@ import {
 import { storeGatewayConnectionDeviceCredential } from './GatewayConnectionTargetResolver';
 import { signGatewayDeviceChallenge } from './deviceAuthentication';
 import { getNativePlatformInfo } from '@/api/tauri-commands';
+import {
+  GatewayCapabilityRegistry,
+  type GatewayCapabilityEvidence,
+  type GatewayCapabilitySnapshot,
+} from './GatewayCapabilityRegistry';
 
 // OpenClaw reserves protocol v3 compatibility for node/probe clients. JunQi
 // connects as an operator/UI client, whose current wire contract is v4.
@@ -404,6 +409,7 @@ export class GatewayConnection {
   private helloPolicy: GatewayHelloPolicy | null = null;
   private helloObservation: GatewayHelloObservation | null = null;
   private readonly helloListeners = new Set<(observation: GatewayHelloObservation | null) => void>();
+  private readonly capabilityRegistry = new GatewayCapabilityRegistry();
 
   // ── Pairing detection (gentle retry instead of exponential backoff) ──
   private pairingRequired = false;
@@ -519,9 +525,23 @@ export class GatewayConnection {
     return () => this.helloListeners.delete(listener);
   }
 
+  /** 返回当前认证 socket 的能力证据；hello 方法列表只能作为保守发现信息。 */
+  getCapabilitySnapshot(): GatewayCapabilitySnapshot {
+    return this.capabilityRegistry.snapshot();
+  }
+
+  getCapabilityEvidence(method: string): GatewayCapabilityEvidence | null {
+    return this.capabilityRegistry.get(method);
+  }
+
+  recordCapabilityInvalidResponse(method: string, code?: string): void {
+    this.capabilityRegistry.recordInvalidResponse(method, code);
+  }
+
   private publishHello(observation: GatewayHelloObservation | null): void {
     if (this.helloObservation === observation) return;
     this.helloObservation = observation;
+    this.capabilityRegistry.observeHello(observation);
     this.helloListeners.forEach((listener) => listener(observation));
   }
 
@@ -953,18 +973,30 @@ export class GatewayConnection {
     options?: GatewayRequestOptions,
   ): Promise<T> {
     if (!this.ws || !this.connected) {
+      this.capabilityRegistry.recordFailure(method, new GatewayDisconnectedError());
       throw new GatewayTransportLifecycleError('Gateway is not connected');
     }
 
     return new Promise<T>((resolve, reject) => {
       const id = this.nextId();
-      if (!this.registerCallback(id, { resolve, reject }, options)) return;
+      const resolveWithEvidence = (value: T) => {
+        this.capabilityRegistry.recordSuccess(method);
+        resolve(value);
+      };
+      const rejectWithEvidence = (error: unknown) => {
+        this.capabilityRegistry.recordFailure(method, error);
+        reject(error);
+      };
+      if (!this.registerCallback(id, {
+        resolve: resolveWithEvidence,
+        reject: rejectWithEvidence,
+      }, options)) return;
       try {
         this.send({ type: 'req', id, method, params });
       } catch (error) {
         const pending = this.pendingRequests.get(id);
         if (pending) this.clearPendingRequest(id, pending);
-        reject(error);
+        rejectWithEvidence(error);
       }
     });
   }
@@ -991,6 +1023,10 @@ export class GatewayConnection {
       || socket.readyState !== WebSocket.OPEN
       || actual !== expected
     ) {
+      this.capabilityRegistry.recordFailure(
+        method,
+        new GatewayConnectionFenceError(expected, actual),
+      );
       throw new GatewayConnectionFenceError(expected, actual);
     }
 
@@ -1001,17 +1037,23 @@ export class GatewayConnection {
         && this.runtimeIdentityConnectionId === expected;
       const rejectFenced = (error: unknown) => {
         if (!verifyFence()) {
-          reject(new GatewayConnectionFenceError(expected, this.runtimeIdentityConnectionId));
+          const fenceError = new GatewayConnectionFenceError(expected, this.runtimeIdentityConnectionId);
+          this.capabilityRegistry.recordFailure(method, fenceError);
+          reject(fenceError);
           return;
         }
+        this.capabilityRegistry.recordFailure(method, error);
         reject(error);
       };
       if (!this.registerCallback<T>(id, {
         resolve: (value) => {
           if (!verifyFence()) {
-            reject(new GatewayConnectionFenceError(expected, this.runtimeIdentityConnectionId));
+            const fenceError = new GatewayConnectionFenceError(expected, this.runtimeIdentityConnectionId);
+            this.capabilityRegistry.recordFailure(method, fenceError);
+            reject(fenceError);
             return;
           }
+          this.capabilityRegistry.recordSuccess(method);
           resolve(value as T);
         },
         reject: rejectFenced,

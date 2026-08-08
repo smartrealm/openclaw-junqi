@@ -28,7 +28,6 @@ import {
 import { Cube, Robot } from '@phosphor-icons/react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { listSkillHubSkills } from '@/api/tauri-commands';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { TimelineView, type TimelineTask } from './TimelineView';
@@ -36,6 +35,7 @@ import { EmptyState } from './EmptyState';
 import { Icon } from '@/components/shared/icons';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import { useChatStore } from '@/stores/chatStore';
+import { useSkillsStore } from '@/stores/skillsStore';
 import { useWorkshopStore } from '@/stores/workshopStore';
 import { debugWarn } from '@/utils/debugLog';
 import { migrateLegacyProjectPaths } from '@/workspace/projectWorkspace';
@@ -372,7 +372,7 @@ export function WelcomePage({ onLaunchTool, onOpenProject }: WelcomePageProps) {
   const sidebarItems: Array<{ key: View; icon: React.ReactNode; label: string }> = [
     { key: 'projects', icon: <Layers size={15} />, label: t('welcome.projects', 'Projects') },
     { key: 'timeline', icon: <Clock size={15} />, label: t('welcome.timeline', 'Timeline') },
-    { key: 'skills', icon: <Blocks size={15} />, label: t('welcome.skillHub', 'Skill Hub') },
+    { key: 'skills', icon: <Blocks size={15} />, label: t('welcome.gatewaySkills', 'Gateway Skills') },
   ];
 
   return (
@@ -777,36 +777,35 @@ function WorkspaceEmptyState({
 function SkillsView() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [skills, setSkills] = useState<{ name: string; displayName?: string; description?: string }[]>([]);
+  const connected = useChatStore((state) => state.connected);
+  const skillState = useSkillsStore((state) => state.skills);
+  const loading = useSkillsStore((state) => state.loading);
+  const error = useSkillsStore((state) => state.error);
+  const refreshSkills = useSkillsStore((state) => state.refresh);
+  const skills = useMemo(
+    () => Object.entries(skillState).map(([key, skill]) => ({ key, name: skill.name })),
+    [skillState],
+  );
 
   useEffect(() => {
-    let cancelled = false;
-    listSkillHubSkills()
-      .then((list) => {
-        if (!cancelled) setSkills(list);
-      })
-      .catch(() => {
-        if (!cancelled) setSkills([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (connected) void refreshSkills();
+  }, [connected, refreshSkills]);
+
+  const status = !connected
+    ? t('welcome.gatewaySkillsUnavailable', 'OpenClaw Gateway is not connected')
+    : loading
+      ? t('common.loading', 'Loading')
+      : error
+        ? t('welcome.gatewaySkillsUnavailable', 'OpenClaw Gateway skills are unavailable')
+        : t('welcome.gatewaySkillsCount', '{{count}} skills', { count: skills.length });
+  const visibleSkills = connected ? skills : [];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex items-center justify-between border-b border-aegis-border px-6 py-4">
         <div>
-          <h1 className="text-[15px] font-semibold text-aegis-text">{t('welcome.skillHub', 'Skill Hub')}</h1>
-          <p className="mt-0.5 text-[11px] text-aegis-text-dim">
-            {loading
-              ? t('common.loading', 'Loading')
-              : t('welcome.skillCount', '{{count}} skills', { count: skills.length })}
-          </p>
+          <h1 className="text-[15px] font-semibold text-aegis-text">{t('welcome.gatewaySkills', 'Gateway Skills')}</h1>
+          <p className="mt-0.5 text-[11px] text-aegis-text-dim">{status}</p>
         </div>
         <button
           type="button"
@@ -822,21 +821,24 @@ function SkillsView() {
           <div className="flex items-center justify-center py-12">
             <LoadingIndicator size={16} className="text-aegis-text-dim" />
           </div>
-        ) : skills.length === 0 ? (
+        ) : visibleSkills.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
             <Blocks size={30} className="text-aegis-text-dim opacity-40" />
-            <div className="text-[12px] text-aegis-text-dim">{t('welcome.noSkills', 'No skills found')}</div>
+            <div className="text-[12px] text-aegis-text-dim">
+              {connected
+                ? t('welcome.gatewaySkillsEmpty', 'No skills reported by OpenClaw Gateway')
+                : t('welcome.gatewaySkillsUnavailable', 'OpenClaw Gateway is not connected')}
+            </div>
           </div>
         ) : (
           <div className="mx-auto flex w-full max-w-[900px] flex-col border-y border-aegis-border">
-            {skills.map((skill) => (
-              <div key={skill.name} className="flex min-h-12 items-center gap-3 border-b border-aegis-border px-2 last:border-b-0">
+            {visibleSkills.map((skill) => (
+              <div key={skill.key} className="flex min-h-12 items-center gap-3 border-b border-aegis-border px-2 last:border-b-0">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-aegis-overlay/[0.05] text-aegis-text-muted">
                   <Cube size={14} weight="regular" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[11.5px] font-semibold text-aegis-text">{skill.displayName ?? skill.name}</div>
-                  {skill.description && <div className="truncate text-[10px] text-aegis-text-dim">{skill.description}</div>}
+                  <div className="truncate text-[11.5px] font-semibold text-aegis-text">{skill.name}</div>
                 </div>
               </div>
             ))}

@@ -89,7 +89,6 @@ import { OpenClawTtsStatusClient } from './OpenClawTtsStatusClient';
 import { OpenClawTtsPreferencesClient } from './OpenClawTtsPreferencesClient';
 import { OpenClawDiagnosticStabilityClient } from './OpenClawDiagnosticStabilityClient';
 import { OpenClawHooksStatusClient } from './OpenClawHooksStatusClient';
-import { OpenClawSessionCompanionClient } from './OpenClawSessionCompanionClient';
 import { OpenClawSessionUsageLogsClient } from './OpenClawSessionUsageLogsClient';
 import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
 import { OpenClawModelAuthLogoutClient } from './OpenClawModelAuthLogoutClient';
@@ -154,6 +153,10 @@ import {
   getCronJob,
   type OpenClawCronJobDetails,
 } from './cronRuns';
+import type {
+  GatewayCapabilityEvidence,
+  GatewayCapabilitySnapshot,
+} from './GatewayCapabilityRegistry';
 
 // Re-export types for consumers
 export type {
@@ -163,6 +166,12 @@ export type {
   GatewayConnectionOptions,
   GatewayRequestOptions,
 };
+export type {
+  GatewayCapabilityEvidence,
+  GatewayCapabilitySnapshot,
+  GatewayCapabilityState,
+  GatewayCapabilityEvidenceSource,
+} from './GatewayCapabilityRegistry';
 export type { OpenClawTranscriptTarget } from './SessionTranscriptSubscription';
 export type { OpenClawTtsClip, OpenClawTtsSpeakInput } from './OpenClawTtsClient';
 export type { OpenClawTtsStatus } from './OpenClawTtsStatusClient';
@@ -177,11 +186,6 @@ export type {
   OpenClawHooksStatusSnapshot,
 } from './OpenClawHooksStatusClient';
 export type {
-  OpenClawSessionCompanionAnswer,
-  OpenClawSessionCompanionExchange,
-  OpenClawSessionCompanionState,
-} from './OpenClawSessionCompanionClient';
-export type {
   OpenClawSessionUsageLogEntry,
   OpenClawSessionUsageLogRole,
 } from './OpenClawSessionUsageLogsClient';
@@ -192,6 +196,7 @@ export type {
 } from './SessionTranscriptHistoryClient';
 export type { OpenClawSessionViewerPresenceResult } from './OpenClawSessionViewerPresenceClient';
 export type { OpenClawSessionDiff, OpenClawSessionDiffFile } from './OpenClawSessionDiffClient';
+export { OpenClawSessionDiffUnavailableError } from './OpenClawSessionDiffClient';
 export type {
   OpenClawSessionFile,
   OpenClawSessionFileBrowser,
@@ -490,6 +495,12 @@ const sessionDiff = new OpenClawSessionDiffClient({
     params,
     expectedConnectionId,
   ),
+  requestPrivileged: (method, params, expectedConnectionId) => {
+    if (!connection.isConnected() || connection.getAttestedConnectionId() !== expectedConnectionId) {
+      throw new GatewayConnectionFenceError(expectedConnectionId, connection.getAttestedConnectionId());
+    }
+    return requestPrivileged(method, params);
+  },
 });
 const auditClient = new OpenClawAuditClient(
   (method, params) => connection.request(method, params),
@@ -560,12 +571,6 @@ export const openClawHooksStatusClient = new OpenClawHooksStatusClient({
     params,
     expectedConnectionId,
   ),
-});
-
-export const openClawSessionCompanionClient = new OpenClawSessionCompanionClient({
-  captureConnectionId: () => connection.getAttestedConnectionId(),
-  isConnectionCurrent: (connectionId) => connection.isConnected() && connection.getAttestedConnectionId() === connectionId,
-  requestFenced: (method, params, connectionId) => connection.requestFenced(method, params, connectionId),
 });
 
 export const openClawSessionUsageLogsClient = new OpenClawSessionUsageLogsClient({
@@ -1181,6 +1186,7 @@ const taskLedger = new OpenClawTaskLedgerClient({
 });
 const cronRunClient = new OpenClawCronRunClient(
   (method, params) => connection.request(method, params),
+  { recordCapabilityInvalidResponse: (method) => connection.recordCapabilityInvalidResponse(method) },
 );
 const cronStatusClient = new OpenClawCronStatusClient(
   (method, params) => connection.request(method, params),
@@ -1356,6 +1362,13 @@ export const gateway = {
   getStatus() { return connection.getStatus(); },
   getLastError() { return connection.getLastError(); },
   getHelloObservation() { return connection.getHelloObservation(); },
+  getCapabilitySnapshot(): GatewayCapabilitySnapshot { return connection.getCapabilitySnapshot(); },
+  getCapabilityEvidence(method: string): GatewayCapabilityEvidence | null {
+    return connection.getCapabilityEvidence(method);
+  },
+  recordCapabilityInvalidResponse(method: string, code?: string) {
+    connection.recordCapabilityInvalidResponse(method, code);
+  },
   subscribeHello(listener: (observation: GatewayHelloObservation | null) => void) {
     return connection.subscribeHello(listener);
   },
@@ -1629,6 +1642,7 @@ export const gateway = {
     return getCronJob(
       (method, params) => connection.request(method, params),
       jobId,
+      (method) => connection.recordCapabilityInvalidResponse(method),
     );
   },
   async getMemoryStatus(agentId?: string, deep = false): Promise<MemoryStatusResult> {

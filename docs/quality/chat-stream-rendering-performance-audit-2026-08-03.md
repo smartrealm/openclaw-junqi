@@ -86,3 +86,28 @@ OpenClaw Control UI 当前并未为 JunQi 的 SemanticBlock 和 ResponseGroup �
 2026-08-04 已通过 timing decoder、ChatHandler 和 ChatStore 定向回归（92 项），以及
 `pnpm lint`、`pnpm test`、`pnpm build`、`pnpm verify:openclaw-docs`。未连接真实 Gateway
 或执行 Windows、macOS、Linux 真机界面验收，因此不声明该事件已在具体运行环境中实测到达。
+
+## 2026-08-07 动态岛跨窗口发布节流
+
+### 发现
+
+`DynamicIslandRuntime` 与聊天流状态订阅在同一渲染链路中。此前每次流式 Store 更新都会重新生成
+快照，并立即向动态岛窗口发送一次 `dynamic-island:update` Tauri 事件。聊天流默认以 50ms 微批
+进入 React 状态，因此该事件会把高频状态计算和跨窗口 IPC 叠加到同一时间段，可能造成窗口帧间歇性
+抖动。该判断来自当前调用图和事件频率审查，尚未用 Tauri 真机录制确认具体卡顿帧。
+
+### 调整
+
+- `DynamicIslandUpdateScheduler` 将动态岛更新合并为 100ms 的尾部发布窗口。
+- 发布时读取最新快照，不丢弃中间状态；动态岛显示、隐藏和 `ready` 初次同步仍由可见性控制器
+  立即处理。
+- 调度器销毁或隐藏时取消待发布回调，过期回调不能再次发送事件。
+- 该改动只调整 JunQi 本地跨窗口 UI 投影频率，不改变 OpenClaw session、run、task 或 transcript
+  的状态和事件语义。
+
+### 验证结果与边界
+
+2026-08-07 已通过动态岛调度器行为回归（合并、最新快照、取消和销毁），
+并通过 `pnpm exec tsc --noEmit`、`pnpm lint` 和 `git diff --check`。尚未在真实 Tauri 窗口中
+录制长时间聊天、终端高输出、拖拽调整大小等场景的帧时间；若卡顿仍出现在终端高输出或窗口拖拽
+期间，需要沿终端渲染器和分割器事件链路继续单独测量，不能把本次节流视为所有卡顿已解决。

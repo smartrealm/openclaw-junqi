@@ -482,6 +482,8 @@ describe('Gateway credential security regression gates', () => {
     };
     challenge(socket);
     await waitForSocketRequest(socket, 'connect');
+    assert.equal(connection.getCapabilityEvidence('audit.list')?.state, 'advertised');
+    assert.equal(connection.getCapabilityEvidence('tools.catalog'), null);
     connection.disconnect();
     stopPolling();
     await turn();
@@ -510,11 +512,14 @@ describe('Gateway credential security regression gates', () => {
 
     assert.deepEqual(observations, ['history-connection']);
     assert.deepEqual(connection.getHelloObservation()?.methods, ['sessions.branches.list', 'sessions.fork']);
+    assert.equal(connection.getCapabilitySnapshot().methodsConservative, true);
+    assert.equal(connection.getCapabilityEvidence('sessions.branches.list')?.state, 'advertised');
 
     connection.disconnect();
     stopPolling();
     await turn();
     assert.deepEqual(observations, ['history-connection', null]);
+    assert.equal(connection.getCapabilitySnapshot().connectionId, null);
     unsubscribe();
   });
 

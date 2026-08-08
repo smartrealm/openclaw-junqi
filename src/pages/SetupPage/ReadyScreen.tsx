@@ -16,35 +16,29 @@ import { AutostartPreferenceRow } from "@/components/settings/AutostartPreferenc
 
 export function GatewayAutostartPreference({
   installMode,
+  status: loadedStatus,
   onOperationStateChange,
 }: {
   installMode: InstallMode;
+  status: GatewayAutostartStatus | null;
   onOperationStateChange: (busy: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<GatewayAutostartStatus | null | undefined>(undefined);
+  const [status, setStatus] = useState<GatewayAutostartStatus | null>(loadedStatus);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (installMode !== "native") return;
-    let cancelled = false;
-    void gatewayAutostartStatus()
-      .then((next) => { if (!cancelled) setStatus(next); })
-      .catch(() => { if (!cancelled) setStatus(null); });
-    return () => { cancelled = true; };
-  }, [installMode]);
+    setStatus(loadedStatus);
+  }, [loadedStatus]);
 
   useEffect(() => {
     onOperationStateChange(busy);
     return () => onOperationStateChange(false);
   }, [busy, onOperationStateChange]);
 
-  if (installMode !== "native" || status === null || status?.supported === false) return null;
-  if (status === undefined) {
-    return <AutostartPreferenceRow.Skeleton />;
-  }
+  if (installMode !== "native" || status === null || status.supported === false) return null;
   const enabled = status.enabled;
   const presentation = presentGatewayAutostart(status, t);
 
@@ -95,36 +89,28 @@ export function GatewayAutostartPreference({
 }
 
 export function AppAutostartPreference({
+  status: loadedStatus,
+  initialError,
   onOperationStateChange,
 }: {
+  status: AppAutostartStatus | null;
+  initialError?: string | null;
   onOperationStateChange: (busy: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<AppAutostartStatus | null | undefined>(undefined);
+  const [status, setStatus] = useState<AppAutostartStatus | null>(loadedStatus);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError ?? null);
 
   useEffect(() => {
-    let cancelled = false;
-    void appAutostartStatus()
-      .then((next) => { if (!cancelled) setStatus(next); })
-      .catch((cause) => {
-        if (!cancelled) {
-          setStatus(null);
-          setError(cause instanceof Error ? cause.message : String(cause));
-        }
-      });
-    return () => { cancelled = true; };
-  }, []);
+    setStatus(loadedStatus);
+    setError(initialError ?? null);
+  }, [initialError, loadedStatus]);
 
   useEffect(() => {
     onOperationStateChange(busy);
     return () => onOperationStateChange(false);
   }, [busy, onOperationStateChange]);
-
-  if (status === undefined) {
-    return <AutostartPreferenceRow.Skeleton className="border-t border-aegis-border" />;
-  }
 
   const enabled = status?.enabled ?? false;
   const presentation = presentAppAutostart({ enabled }, t);
@@ -171,16 +157,70 @@ function AutostartPreferences({
   onAppOperationStateChange: (busy: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const [gatewayStatus, setGatewayStatus] = useState<GatewayAutostartStatus | null | undefined>(
+    installMode === "native" ? undefined : null,
+  );
+  const [appStatus, setAppStatus] = useState<AppAutostartStatus | null | undefined>(undefined);
+  const [appStatusError, setAppStatusError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setGatewayStatus(installMode === "native" ? undefined : null);
+    setAppStatus(undefined);
+    setAppStatusError(null);
+
+    const gatewayRequest = installMode === "native"
+      ? gatewayAutostartStatus().catch(() => null)
+      : Promise.resolve<GatewayAutostartStatus | null>(null);
+    const appRequest = appAutostartStatus()
+      .then((status) => ({ status, error: null as string | null }))
+      .catch((cause) => ({
+        status: null,
+        error: cause instanceof Error ? cause.message : String(cause),
+      }));
+
+    void Promise.all([gatewayRequest, appRequest]).then(([nextGatewayStatus, nextApp]) => {
+      if (cancelled) return;
+      setGatewayStatus(nextGatewayStatus);
+      setAppStatus(nextApp.status);
+      setAppStatusError(nextApp.error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [installMode]);
+
+  const loading = gatewayStatus === undefined || appStatus === undefined;
+
   return (
-    <section className="w-full border-t border-aegis-border pt-5 text-left">
+    <section className="w-full border-t border-aegis-border pt-5 text-left" aria-busy={loading}>
       <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-aegis-text-dim">
         {t("setup.runtimePreferences", "运行偏好")}
       </div>
-      <GatewayAutostartPreference
-        installMode={installMode}
-        onOperationStateChange={onGatewayOperationStateChange}
-      />
-      <AppAutostartPreference onOperationStateChange={onAppOperationStateChange} />
+      {loading ? (
+        <div
+          role="status"
+          className="min-h-[176px]"
+          aria-label={t("setup.runtimePreferencesLoading", "正在加载运行偏好")}
+        >
+          {installMode === "native" && <AutostartPreferenceRow.Skeleton />}
+          <AutostartPreferenceRow.Skeleton className="border-t border-aegis-border" />
+        </div>
+      ) : (
+        <>
+          <GatewayAutostartPreference
+            installMode={installMode}
+            status={gatewayStatus}
+            onOperationStateChange={onGatewayOperationStateChange}
+          />
+          <AppAutostartPreference
+            status={appStatus}
+            initialError={appStatusError}
+            onOperationStateChange={onAppOperationStateChange}
+          />
+        </>
+      )}
     </section>
   );
 }

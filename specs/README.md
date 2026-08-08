@@ -24,6 +24,7 @@ specs/
 - [首次安装底部操作区响应式修复](installation/2026-08-02-setup-footer-responsive-actions.md)
 - [Windows 卸载流程](installation/2026-07-26-windows-uninstall-flow-bugfix.md)
 - [Setup runtime 与渠道兼容](installation/2026-07-27-setup-runtime-and-channel-compatibility.md)
+- [首次启动往返导航修复](installation/2026-08-08-setup-round-trip-navigation.md)
 
 ## Gateway
 
@@ -57,7 +58,6 @@ specs/
 - [OpenClaw Agent 配置快照与并发写入对齐](quality/2026-08-04-openclaw-agent-config-snapshot-alignment.md)
 - [OpenClaw Gateway 挑战与策略对齐](quality/2026-08-04-openclaw-gateway-challenge-policy-alignment.md)
 - [Gateway 设备身份与工作区启动恢复](quality/2026-08-05-gateway-device-identity-startup-recovery.md)
-- [OpenClaw 会话 Companion 控制台对齐规格](quality/2026-08-04-openclaw-session-companion-control-ui.md)
 - [OpenClaw 桌面语音与 Jarvis 边界规格](quality/2026-08-04-openclaw-desktop-voice-wake-boundary.md)
 - [OpenClaw 会话快速模式对齐](quality/2026-08-04-openclaw-session-fast-mode.md)
 - [OpenClaw 会话推理可见性对齐](quality/2026-08-04-openclaw-session-reasoning-visibility.md)
@@ -192,6 +192,7 @@ specs/
 - [OpenClaw 工具生命周期终态围栏](quality/2026-08-04-openclaw-tool-lifecycle-terminal-fence.md)
 - [OpenClaw 原生会话组写入对齐](quality/2026-08-04-openclaw-session-group-mutations.md)
 - [OpenClaw 会话变更快照对齐](quality/2026-08-04-openclaw-session-diff.md)
+- [会话工具栏控件加固](quality/2026-08-07-session-toolbar-controls-hardening.md)
 - [OpenClaw 会话文件只读投影对齐](quality/2026-08-04-openclaw-session-files-readonly.md)
 - [OpenClaw 会话文件 CAS 写入对齐](quality/2026-08-04-openclaw-session-files-cas-write.md)
 - [OpenClaw Gateway 方法广告发现边界修正](quality/2026-08-04-openclaw-gateway-method-advertisement-gate.md)

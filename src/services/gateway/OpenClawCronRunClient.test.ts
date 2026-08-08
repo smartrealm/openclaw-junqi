@@ -16,6 +16,15 @@ const finished = {
   durationMs: 20,
 };
 
+const page = {
+  entries: [finished],
+  total: 1,
+  offset: 0,
+  limit: 1,
+  hasMore: false,
+  nextOffset: null,
+};
+
 describe('OpenClawCronRunClient', () => {
   it('only accepts a queued manual run with a Gateway run id', async () => {
     const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -32,15 +41,16 @@ describe('OpenClawCronRunClient', () => {
     const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
     const client = new OpenClawCronRunClient(async (method, params) => {
       calls.push({ method, params });
-      return { entries: [finished] } as never;
+      return page as never;
     });
 
     assert.deepEqual(await client.findTerminal('job-1', 'run-1'), finished);
-    assert.deepEqual(calls, [{ method: 'cron.runs', params: { id: 'job-1', runId: 'run-1', limit: 1 } }]);
+    assert.deepEqual(calls, [{ method: 'cron.runs', params: { scope: 'job', id: 'job-1', runId: 'run-1', limit: 1 } }]);
   });
 
   it('does not settle a run from a different history identity', async () => {
     const client = new OpenClawCronRunClient(async () => ({
+      ...page,
       entries: [{ ...finished, runId: 'other-run' }],
     }) as never);
 
@@ -50,19 +60,21 @@ describe('OpenClawCronRunClient', () => {
   it('preserves every official terminal status without treating an absent record as completion', async () => {
     for (const status of ['ok', 'error', 'skipped'] as const) {
       const client = new OpenClawCronRunClient(async () => ({
+        ...page,
         entries: [{ ...finished, status }],
       }) as never);
 
       assert.equal((await client.findTerminal('job-1', 'run-1'))?.status, status);
     }
 
-    const pending = new OpenClawCronRunClient(async () => ({ entries: [] }) as never);
+    const pending = new OpenClawCronRunClient(async () => ({ ...page, entries: [] }) as never);
     assert.equal(await pending.findTerminal('job-1', 'run-1'), null);
   });
 
   it('rejects malformed acknowledgements and history entries', async () => {
     const missingRunId = new OpenClawCronRunClient(async () => ({ ok: true, enqueued: true }) as never);
     const malformedEntry = new OpenClawCronRunClient(async () => ({
+      ...page,
       entries: [{ ...finished, status: 'running' }],
     }) as never);
 

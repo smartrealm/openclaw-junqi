@@ -18,6 +18,7 @@ import {
   browserProfileNeedsLoginConfirmation,
   useOpenClawBrowserControl,
 } from '@/hooks/useOpenClawBrowserControl';
+import { ChatIconButton } from './ChatIconButton';
 
 function snapshotText(value: unknown): string {
   if (typeof value === 'string') return value;
@@ -88,21 +89,20 @@ export function BrowserControlCenter() {
 
   return (
     <div ref={rootRef} className="relative no-drag">
-      <button
+      <ChatIconButton
         type="button"
+        label={t('chat.browserControl.open')}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title={t('chat.browserControl.open')}
-        aria-label={t('chat.browserControl.open')}
         className={clsx(
           'inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors',
           'hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary',
           open && 'bg-[rgb(var(--aegis-overlay)/0.07)] text-aegis-text',
         )}
       >
-        <Globe2 size={11} />
-      </button>
+        <Globe2 size={11} aria-hidden="true" />
+      </ChatIconButton>
 
       {open && (
         <section

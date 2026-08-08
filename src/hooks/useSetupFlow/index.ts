@@ -41,6 +41,7 @@ import { useWizardSession } from "./useWizardSession";
 import { useSetupOperationCoordinator } from "./useSetupOperationCoordinator";
 import { useSetupProgressEvents } from "./useSetupProgressEvents";
 import { useSetupEnvironmentReview } from "./useSetupEnvironmentReview";
+import { isEnvironmentReviewActionInFlight } from "./environmentReviewAction";
 import { useSetupPresentation } from "./useSetupPresentation";
 import { useSetupInstallers } from "./useSetupInstallers";
 import {
@@ -209,7 +210,10 @@ export function useSetupFlow(
   const {
     continueAfterEnvironmentReview,
     redetectEnvironment,
-    environmentActionInFlightRef,
+    environmentActionStateRef,
+    environmentReviewBusy,
+    beginEnvironmentNavigation,
+    finishEnvironmentAction,
     dockerDetectingRef,
   } = useSetupEnvironmentReview({
     setupStep,
@@ -647,16 +651,14 @@ export function useSetupFlow(
     setupNavigationLeavingRef.current = true;
     invalidateWizardOperations();
     setWizardSubmitting(false);
-    // Backing out of the official wizard means "pause and review", not
-    // "discard progress". Its opaque id is persisted so returning after an
-    // app restart still resumes the same official Gateway session.
+    // 退出官方向导表示暂停并复核，不表示丢弃进度。持久化其不透明标识后，
+    // 应用重启再返回时仍会恢复同一个官方 Gateway 会话。
     setWizardStep(null);
     setWizardError(null);
     void invalidateActiveRun();
 
-    // Detection and Gateway startup are cancellable renderer runs, not durable
-    // configuration transactions. Consume their history immediately: late RPC
-    // completions observe the invalid run id and cannot navigate forward again.
+    // 检测和 Gateway 启动属于可取消的渲染进程，不是持久配置事务。
+    // 立即消费对应历史，迟到的 RPC 完成结果会识别到失效运行标识，不能再次向前导航。
     const backPolicy = setupBackPolicy(setupStep);
     if (backPolicy === "cancel-run") {
       setSetupError(null);
@@ -670,10 +672,9 @@ export function useSetupFlow(
     }
 
     try {
-      // Only storage and the untouched runtime-choice screen can own a pending
-      // location memento. Runtime selection itself is synchronously guarded
-      // from Back and commits or compensates its staged mode transaction before
-      // releasing that guard; later pages must never roll back committed state.
+      // 只有数据位置页和未操作的运行方式选择页可以持有待处理的位置备忘。
+      // 运行方式选择会同步阻止返回，并在解除门禁前提交或补偿暂存事务；
+      // 后续页面不得回滚已经提交的状态。
       if (backPolicy === "rollback-storage") {
         await rollbackRuntimeReconfiguration();
       }
@@ -682,9 +683,8 @@ export function useSetupFlow(
       appendSetupLog({ source: "setup", step: "storage", message, level: "error" });
       setSetupError(message);
       report(message);
-      // A failed durable rollback must remain at the storage recovery gate.
-      // Sending it to the generic error screen would let a second Back skip
-      // that screen and leave the pending location transaction unresolved.
+      // 持久回滚失败后必须停留在数据位置恢复门禁。
+      // 若跳转到通用错误页，第二次返回会越过恢复页，使待处理的位置事务无法收敛。
       setForceStorageSelection(true);
       replaceSetupStep("storage");
       setupNavigationLeavingRef.current = false;
@@ -695,10 +695,9 @@ export function useSetupFlow(
     setNodeRequirement(null);
     setBrokenPlugins([]);
     pluginHealAttemptedRef.current.clear();
-    // A run that pushed a transient step has already ended by the time Back is
-    // reachable, so skip past every one of them to the last screen the user
-    // actually acted on. `goBackSetup` returns the fallback once history is
-    // exhausted, and the fallback is never transient, so this terminates.
+    // 能够执行返回时，推入临时步骤的运行已经结束，因此应越过所有临时步骤，
+    // 回到用户最后实际操作的页面。历史耗尽时 `goBackSetup` 返回非临时兜底页，
+    // 所以该循环一定会终止。
     let destination = goBackSetup("welcome");
     while (isStaleSetupBackDestination(destination) || destination === setupStep) {
       destination = goBackSetup("welcome");
@@ -706,8 +705,7 @@ export function useSetupFlow(
     if (destination === "storage") {
       setForceStorageSelection(true);
     }
-    // Navigation and retries retain the same diagnostic timeline so the user
-    // can inspect each completed stage and compare a later attempt with it.
+    // 导航和重试保留同一条诊断时间线，便于检查已完成阶段并与后续尝试对照。
     presentSetupStep(destination);
     setupNavigationLeavingRef.current = false;
   }, [setupStep, invalidateActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, presentSetupStep, rollbackRuntimeReconfiguration, appendSetupLog, report, replaceSetupStep, setForceStorageSelection]);
@@ -715,7 +713,7 @@ export function useSetupFlow(
   const goBack = useCallback(async () => {
     if (
       (setupStep === "environment-review" && (
-        environmentActionInFlightRef.current || dockerDetectingRef.current
+        isEnvironmentReviewActionInFlight(environmentActionStateRef.current) || dockerDetectingRef.current
       ))
       || setupBackInFlightRef.current
       || runtimeSelectionInFlightRef.current
@@ -727,15 +725,18 @@ export function useSetupFlow(
       || isWizardOperationInFlight()
     ) return;
     setupBackInFlightRef.current = true;
-    if (setupStep === "environment-review") environmentActionInFlightRef.current = true;
+    if (setupStep === "environment-review" && !beginEnvironmentNavigation()) {
+      setupBackInFlightRef.current = false;
+      return;
+    }
     try {
       await performGoBack();
     } finally {
       setupNavigationLeavingRef.current = false;
-      environmentActionInFlightRef.current = false;
+      finishEnvironmentAction();
       setupBackInFlightRef.current = false;
     }
-  }, [isPluginRecoveryInFlight, isWizardOperationInFlight, performGoBack, setupStep]);
+  }, [beginEnvironmentNavigation, finishEnvironmentAction, isPluginRecoveryInFlight, isWizardOperationInFlight, performGoBack, setupStep]);
 
   const cancelSetupRun = useCallback(async () => {
     if (
@@ -958,7 +959,7 @@ export function useSetupFlow(
 
   return {
     presentation,
-    progress, statusMessage, installMode, dockerStatus, openclawStatus, checkingDocker, needsGit, nodeRequirement, steps,
+    progress, statusMessage, installMode, dockerStatus, openclawStatus, checkingDocker, environmentReviewBusy, needsGit, nodeRequirement, steps,
     installTarget,
     wizardStep,
     wizardSubmitting,

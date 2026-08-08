@@ -3,8 +3,8 @@ import {
   AlertCircle,
   ChevronLeft,
   FileText,
+  FileWarning,
   Folder,
-  Image,
   LoaderCircle,
   RefreshCw,
   Save,
@@ -23,7 +23,10 @@ import {
   type FilePreviewContent,
 } from '@/file-preview/content';
 import { FilePreviewSurface } from '@/components/FileExplorer/FilePreviewSurface';
+import { formatBytes } from '@/utils/format';
 import { SessionFileCodeEditor } from './SessionFileCodeEditor';
+import { ChatIconButton } from './ChatIconButton';
+import { sessionFilePreviewFailure } from './sessionFilePreviewState';
 import {
   canEditSessionFile,
   sessionFileDraftKey,
@@ -255,6 +258,7 @@ export function SessionFilesControl({ sessionKey, agentId }: SessionFilesControl
   const editor = active?.draft && selected && canEditSessionFile(selected)
     ? { active, draft: active.draft }
     : null;
+  const previewFailure = selected && !preview && !editor ? sessionFilePreviewFailure(selected) : null;
   const hasTouchedFiles = (snapshot?.files.length ?? 0) > 0;
   const hasBrowserEntries = (browser?.entries.length ?? 0) > 0;
   const editorDocumentId = useMemo(() => editor
@@ -263,13 +267,12 @@ export function SessionFilesControl({ sessionKey, agentId }: SessionFilesControl
 
   return (
     <div ref={rootRef} className="relative no-drag">
-      <button
+      <ChatIconButton
         type="button"
+        label={t('chat.sessionFiles.open')}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title={t('chat.sessionFiles.open')}
-        aria-label={t('chat.sessionFiles.open')}
         className={clsx(
           'inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors',
           'hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary',
@@ -277,7 +280,7 @@ export function SessionFilesControl({ sessionKey, agentId }: SessionFilesControl
         )}
       >
         <FileText size={11} aria-hidden="true" />
-      </button>
+      </ChatIconButton>
 
       {open && (
         <div
@@ -305,7 +308,7 @@ export function SessionFilesControl({ sessionKey, agentId }: SessionFilesControl
             <div className="min-h-0 overflow-y-auto border-e border-aegis-border p-2">
               {hasTouchedFiles && <p className="px-2 pb-1 text-[9px] font-medium text-aegis-text-dim">{t('chat.sessionFiles.touched')}</p>}
               {snapshot?.files.map((file) => (
-                <button key={`touched:${file.path}`} type="button" disabled={file.missing || saving} onClick={() => { void selectFile(file); }} className={clsx('mb-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-start text-[10px] transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] disabled:cursor-not-allowed disabled:opacity-50', selected?.path === file.path && 'bg-aegis-primary/10 text-aegis-primary')}>
+                <button key={`touched:${file.path}`} type="button" disabled={file.missing || saving} onClick={() => { void selectFile(file); }} title={file.path} aria-label={file.path} className={clsx('mb-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-start text-[10px] transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] disabled:cursor-not-allowed disabled:opacity-50', selected?.path === file.path && 'bg-aegis-primary/10 text-aegis-primary')}>
                   <FileText size={12} className="shrink-0" aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
                   <span className="text-[9px] text-aegis-text-dim">{t(`chat.sessionFiles.kind.${file.kind}`)}</span>
@@ -316,7 +319,7 @@ export function SessionFilesControl({ sessionKey, agentId }: SessionFilesControl
                 <button key={`browser:${entry.path}`} type="button" disabled={saving} onClick={() => {
                   if (entry.kind === 'directory') void load(entry.path);
                   else void selectFile({ path: entry.path, name: entry.name, kind: entry.sessionKind === 'read' ? 'read' : 'modified', missing: false });
-                }} className="mb-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-start text-[10px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] disabled:opacity-50">
+                }} title={entry.path} aria-label={entry.path} className={clsx('mb-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-start text-[10px] text-aegis-text-secondary transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] disabled:opacity-50', selected?.path === entry.path && 'bg-aegis-primary/10 text-aegis-primary')}>
                   {entry.kind === 'directory' ? <Folder size={12} className="shrink-0 text-aegis-primary" aria-hidden="true" /> : <FileText size={12} className="shrink-0" aria-hidden="true" />}
                   <span className="min-w-0 flex-1 truncate font-mono">{entry.name}</span>
                 </button>
@@ -327,7 +330,7 @@ export function SessionFilesControl({ sessionKey, agentId }: SessionFilesControl
               {!loading && error && <div className="space-y-2 rounded-md border border-aegis-danger/25 bg-aegis-danger/5 p-2.5 text-[11px] text-aegis-text-muted"><div className="flex items-start gap-2"><AlertCircle size={14} className="shrink-0 text-aegis-danger" aria-hidden="true" />{t('chat.sessionFiles.error')}</div><div className="break-words font-mono text-[10px] text-aegis-text-dim">{error}</div></div>}
               {!loading && !error && !hasTouchedFiles && !hasBrowserEntries && <p className="py-5 text-center text-[11px] text-aegis-text-dim">{t('chat.sessionFiles.empty')}</p>}
               {!loading && !error && !selected && (hasTouchedFiles || hasBrowserEntries) && <p className="py-5 text-center text-[11px] text-aegis-text-dim">{t('chat.sessionFiles.select')}</p>}
-              {selected && !loading && !error && (editor ? <div className="flex min-h-full flex-col gap-2"><SessionFileCodeEditor documentId={editorDocumentId} name={selected.name} content={editor.draft.content} readOnly={saving} onChange={updateDraft} onSave={() => { void saveActiveFile(); }} /><div className="flex items-center justify-between gap-2"><div className="min-w-0 text-[10px] text-aegis-text-dim">{editor.active.saveOutcome === 'saved' ? t('chat.sessionFiles.saved') : editor.active.saveOutcome === 'conflict' ? t('chat.sessionFiles.conflict') : editor.active.saveOutcome === 'error' ? t('chat.sessionFiles.saveFailed') : null}</div><div className="flex shrink-0 items-center gap-1"><button type="button" onClick={reloadActiveFile} disabled={saving} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.07)] disabled:opacity-50"><RefreshCw size={11} aria-hidden="true" />{t('chat.sessionFiles.reload')}</button><button type="button" onClick={() => { void saveActiveFile(); }} disabled={saving} className="inline-flex items-center gap-1 rounded-md bg-aegis-primary px-2 py-1 text-[10px] text-white hover:opacity-90 disabled:cursor-wait disabled:opacity-50">{saving ? <LoaderCircle size={11} className="animate-spin" aria-hidden="true" /> : <Save size={11} aria-hidden="true" />}{saving ? t('chat.sessionFiles.saving') : t('chat.sessionFiles.save')}</button></div></div></div> : preview ? <FilePreviewSurface content={preview} fileName={selected.name} compact /> : <div className="flex items-center gap-2 py-5 text-[11px] text-aegis-text-dim"><Image size={14} aria-hidden="true" />{t('chat.sessionFiles.previewUnavailable')}</div>)}
+              {selected && !loading && !error && (editor ? <div className="flex min-h-full flex-col gap-2"><SessionFileCodeEditor documentId={editorDocumentId} name={selected.name} content={editor.draft.content} readOnly={saving} onChange={updateDraft} onSave={() => { void saveActiveFile(); }} /><div className="flex items-center justify-between gap-2"><div className="min-w-0 text-[10px] text-aegis-text-dim">{editor.active.saveOutcome === 'saved' ? t('chat.sessionFiles.saved') : editor.active.saveOutcome === 'conflict' ? t('chat.sessionFiles.conflict') : editor.active.saveOutcome === 'error' ? t('chat.sessionFiles.saveFailed') : null}</div><div className="flex shrink-0 items-center gap-1"><button type="button" onClick={reloadActiveFile} disabled={saving} title={t('chat.sessionFiles.reload')} aria-label={t('chat.sessionFiles.reload')} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.07)] disabled:opacity-50"><RefreshCw size={11} aria-hidden="true" />{t('chat.sessionFiles.reload')}</button><button type="button" onClick={() => { void saveActiveFile(); }} disabled={saving} title={t('chat.sessionFiles.save')} aria-label={t('chat.sessionFiles.save')} className="inline-flex items-center gap-1 rounded-md bg-aegis-primary px-2 py-1 text-[10px] text-white hover:opacity-90 disabled:cursor-wait disabled:opacity-50">{saving ? <LoaderCircle size={11} className="animate-spin" aria-hidden="true" /> : <Save size={11} aria-hidden="true" />}{saving ? t('chat.sessionFiles.saving') : t('chat.sessionFiles.save')}</button></div></div></div> : preview ? <FilePreviewSurface content={preview} fileName={selected.name} compact /> : <div className="space-y-3 rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.025)] p-3 text-[11px] text-aegis-text-dim"><div className="flex items-start gap-2"><FileWarning size={15} className="mt-0.5 shrink-0 text-aegis-warning" aria-hidden="true" /><div className="min-w-0"><p className="font-medium text-aegis-text-muted">{previewFailure === 'missing' ? t('chat.sessionFiles.previewMissing') : previewFailure === 'unsupported' ? t('chat.sessionFiles.previewUnsupported') : previewFailure === 'contentUnavailable' ? t('chat.sessionFiles.previewContentUnavailable') : t('chat.sessionFiles.previewUnavailable')}</p><p className="mt-1 leading-5">{t('chat.sessionFiles.previewBoundary')}</p></div></div><dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-t border-aegis-border pt-2 text-[10px]"><dt>{t('chat.sessionFiles.fileName')}</dt><dd className="min-w-0 truncate font-mono text-aegis-text-muted" title={selected.name}>{selected.name}</dd>{selected.mimeType && <><dt>{t('chat.sessionFiles.mimeType')}</dt><dd className="min-w-0 truncate font-mono text-aegis-text-muted" title={selected.mimeType}>{selected.mimeType}</dd></>}{selected.size !== undefined && <><dt>{t('chat.sessionFiles.fileSize')}</dt><dd className="text-aegis-text-muted">{formatBytes(selected.size)}</dd></>}</dl></div>)}
             </div>
           </div>
         </div>

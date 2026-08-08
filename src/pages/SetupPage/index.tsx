@@ -20,6 +20,7 @@ import { WizardScreen } from "./WizardScreen";
 import { ReadyScreen } from "./ReadyScreen";
 import { GitMissingScreen } from "./GitMissingScreen";
 import { NodeMissingScreen } from "./NodeMissingScreen";
+import { SetupStepTransition } from "@/motion/setupStepTransition";
 
 export function SetupPage() {
   const { t } = useTranslation();
@@ -77,23 +78,27 @@ export function SetupPage() {
   }, [appendSetupLog, t]);
 
   const sharedLogs = useMemo(() => logs, [logs]);
-  switch (setupStep) {
-    case "welcome": return <WelcomeScreen flow={flow} logs={sharedLogs} />;
-    case "detecting": return <DetectingScreen flow={flow} logs={sharedLogs} />;
-    case "environment-review": return <EnvironmentReviewScreen flow={flow} logs={sharedLogs} />;
-    case "storage": return <StorageSetupStep activeStage={flow.presentation.stage} logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={flow.goBack} forceConfigure={flow.forceStorageSelection} />;
-    case "gateway-stopped": return <GatewayStartingScreen flow={flow} logs={sharedLogs} />;
-    case "choosing-mode": return <ModeSelectScreen flow={flow} logs={sharedLogs} />;
-    case "ready": return <ReadyScreen flow={flow} logs={sharedLogs} />;
-    case "checking":
-    case "install-git":
-    case "install-node":
-    case "install-openclaw":
-    case "gateway-ready":
-    case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
-    case "configure-openclaw": return <WizardScreen flow={flow} logs={sharedLogs} />;
-    case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;
-    case "node-missing": return <NodeMissingScreen flow={flow} logs={sharedLogs} />;
-    default: return <DetectingScreen flow={flow} logs={sharedLogs} />;
-  }
+  const screen = (() => {
+    switch (setupStep) {
+      case "welcome": return <WelcomeScreen flow={flow} logs={sharedLogs} />;
+      case "detecting": return <DetectingScreen flow={flow} logs={sharedLogs} />;
+      case "environment-review": return <EnvironmentReviewScreen flow={flow} logs={sharedLogs} />;
+      case "storage": return <StorageSetupStep activeStage={flow.presentation.stage} logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={flow.goBack} forceConfigure={flow.forceStorageSelection} />;
+      case "gateway-stopped": return <GatewayStartingScreen flow={flow} logs={sharedLogs} />;
+      case "choosing-mode": return <ModeSelectScreen flow={flow} logs={sharedLogs} />;
+      case "ready": return <ReadyScreen flow={flow} logs={sharedLogs} />;
+      case "checking":
+      case "install-git":
+      case "install-node":
+      case "install-openclaw":
+      case "gateway-ready":
+      case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
+      case "configure-openclaw": return <WizardScreen flow={flow} logs={sharedLogs} />;
+      case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;
+      case "node-missing": return <NodeMissingScreen flow={flow} logs={sharedLogs} />;
+      default: return <DetectingScreen flow={flow} logs={sharedLogs} />;
+    }
+  })();
+
+  return <SetupStepTransition step={setupStep}>{screen}</SetupStepTransition>;
 }

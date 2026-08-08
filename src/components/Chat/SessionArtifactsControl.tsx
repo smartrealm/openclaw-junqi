@@ -6,6 +6,7 @@ import { useSessionArtifacts } from '@/hooks/useSessionArtifacts';
 import type { ArtifactDownloadResult, ArtifactSummary } from '@/services/gateway/artifacts';
 import { artifactDownloadToPreview, artifactDownloadUrl, artifactInlineLimitBytes } from '@/utils/artifactPreview';
 import { ManagedFilePreview } from '@/components/FileExplorer/ManagedFilePreview';
+import { ChatIconButton } from './ChatIconButton';
 
 interface SessionArtifactsControlProps {
   sessionKey: string;
@@ -87,8 +88,9 @@ export function SessionArtifactsControl({ sessionKey, agentId }: SessionArtifact
 
   return (
     <div ref={rootRef} className="relative no-drag">
-      <button
+      <ChatIconButton
         type="button"
+        label={t('chat.sessionArtifacts.open')}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -97,11 +99,9 @@ export function SessionArtifactsControl({ sessionKey, agentId }: SessionArtifact
           'hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary',
           open && 'bg-[rgb(var(--aegis-overlay)/0.07)] text-aegis-text',
         )}
-        title={t('chat.sessionArtifacts.open')}
-        aria-label={t('chat.sessionArtifacts.open')}
       >
-        <Layers size={11} />
-      </button>
+        <Layers size={11} aria-hidden="true" />
+      </ChatIconButton>
 
       {open && (
         <div

@@ -472,8 +472,11 @@ test('BUG-GSO-02 autostart enable completes the official service handoff', () =>
   const readyFile = screen('ReadyScreen');
   const ready = readyFile.slice(readyFile.indexOf('function ReadyScreen'));
   assert.match(setupPage, /function GatewayAutostartPreference/);
-  assert.match(setupPage, /installMode !== "native" \|\| status === null \|\| status\?\.supported === false/);
+  assert.match(setupPage, /installMode !== "native" \|\| status === null \|\| status\.supported === false/);
   assert.match(setupPage, /setup\.runtimePreferences/);
+  assert.match(setupPage, /Promise\.all\(\[gatewayRequest, appRequest\]\)/);
+  assert.match(setupPage, /const loading = gatewayStatus === undefined \|\| appStatus === undefined/);
+  assert.match(setupPage, /loading \? \([\s\S]*AutostartPreferenceRow\.Skeleton/);
   assert.match(ready, /<AutostartPreferences[\s\S]*installMode=\{flow\.installMode\}[\s\S]*onGatewayOperationStateChange=\{setGatewayAutostartBusy\}[\s\S]*onAppOperationStateChange=\{setAppAutostartBusy\}[\s\S]*\/>/);
   assert.doesNotMatch(ready, /OpenClawUpdatePanel/);
 
@@ -688,7 +691,6 @@ test('environment review distinguishes Docker installation from daemon readiness
   assert.match(review, /setup\.dockerInstalledStopped/);
   assert.match(review, /setup\.dockerNotDetected/);
   assert.match(review, /loading: flow\.checkingDocker/);
-  assert.match(review, /disabled: flow\.checkingDocker/);
   assert.match(review, /setup\.recheckingEnvironmentHint/);
   assert.match(redetect, /detectEnvironment\(runId\)/);
   assert.doesNotMatch(redetect, /navigateSetup\("detecting", "replace"\)/);

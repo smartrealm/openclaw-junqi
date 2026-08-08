@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, Check, ChevronDown, CircleStop, Download, Folder, Gauge, ListTodo, MessageSquareText, Plus, RotateCcw } from 'lucide-react';
+import { AlertCircle, Check, ChevronDown, CircleStop, Download, Folder, Gauge, ListTodo, MessageSquareText, MoreHorizontal, Plus, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -17,7 +17,7 @@ import { SessionBranchesControl } from './SessionBranchesControl';
 import { SessionArtifactsControl } from './SessionArtifactsControl';
 import { SessionDiffControl } from './SessionDiffControl';
 import { SessionFilesControl } from './SessionFilesControl';
-import { requestSessionCompanionOpen } from './sessionCompanionUi';
+import { ChatIconButton } from './ChatIconButton';
 import { desktopFileRuntime } from '@/services/chat/desktopFileRuntime';
 import { getGatewaySessionContextBudgetNotice } from '@/services/gateway/sessionContextBudgetStatus';
 
@@ -110,6 +110,24 @@ export function SessionContextBar() {
   const navigate = useNavigate();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRefreshed, setIsRefreshed] = useState(false);
+  const [sessionToolsOpen, setSessionToolsOpen] = useState(false);
+  const sessionToolsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!sessionToolsOpen) return undefined;
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!sessionToolsRef.current?.contains(event.target as Node)) setSessionToolsOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSessionToolsOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutside);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [sessionToolsOpen]);
 
   // Parse agentId from session key (same logic as ChatTabs)
   const keyParts = activeSessionKey.split(':');
@@ -227,26 +245,41 @@ export function SessionContextBar() {
       )}
       <div className="ms-auto flex items-center gap-2 pl-2 border-l border-[rgb(var(--aegis-overlay)/0.06)]">
         <div className="hidden items-center gap-0.5 lg:flex">
-          <button
-            type="button"
-            onClick={() => requestSessionCompanionOpen()}
-            className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
-            title={t('chat.sessionCompanion.open')}
-            aria-label={t('chat.sessionCompanion.open')}
-          >
-            <MessageSquareText size={11} />
-          </button>
           <EffectiveToolsControl
             sessionKey={activeSessionKey}
             agentId={agentId}
             onOpenConfiguration={() => navigate('/tools')}
           />
           <BrowserControlCenter />
-          <SessionBranchesControl sessionKey={activeSessionKey} agentId={agentId} />
-          <SessionInspectionControl sessionKey={activeSessionKey} agentId={agentId} />
-          <SessionArtifactsControl sessionKey={activeSessionKey} agentId={agentId} />
-          <SessionDiffControl sessionKey={activeSessionKey} agentId={agentId} />
-          <SessionFilesControl sessionKey={activeSessionKey} agentId={agentId} />
+          <div ref={sessionToolsRef} className="relative no-drag">
+            <ChatIconButton
+              type="button"
+              label={t('chat.sessionTools.open')}
+              onClick={() => setSessionToolsOpen((value) => !value)}
+              aria-expanded={sessionToolsOpen}
+              className={clsx(
+                'inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors',
+                'hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary',
+                sessionToolsOpen && 'bg-[rgb(var(--aegis-overlay)/0.07)] text-aegis-text',
+              )}
+            >
+              <MoreHorizontal size={11} aria-hidden="true" />
+            </ChatIconButton>
+            {sessionToolsOpen && (
+              <div
+                role="group"
+                aria-label={t('chat.sessionTools.title')}
+                className="absolute end-0 top-full z-50 mt-2 flex items-center gap-1 rounded-lg border border-aegis-menu-border bg-aegis-menu-bg p-1.5"
+                style={{ boxShadow: 'var(--aegis-menu-shadow)' }}
+              >
+                <SessionBranchesControl sessionKey={activeSessionKey} agentId={agentId} />
+                <SessionInspectionControl sessionKey={activeSessionKey} agentId={agentId} />
+                <SessionArtifactsControl sessionKey={activeSessionKey} agentId={agentId} />
+                <SessionDiffControl sessionKey={activeSessionKey} agentId={agentId} />
+                <SessionFilesControl sessionKey={activeSessionKey} agentId={agentId} />
+              </div>
+            )}
+          </div>
         </div>
         {maxTokens > 0 && (
           <span className="text-[10px] text-aegis-text-muted font-mono hidden lg:inline" title={`${usedK}K / ${maxLabel} (${Math.round((usedTokens / maxTokens) * 100)}%)`}>
@@ -254,15 +287,18 @@ export function SessionContextBar() {
           </span>
         )}
         {renderBlocks.length > 0 && (
-          <button
+          <ChatIconButton
+            type="button"
+            label={t('chat.exportMarkdown')}
             onClick={() => exportChatMarkdown(renderBlocks, activeSessionKey)}
             className="p-1.5 rounded-md transition-colors text-aegis-text-dim hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.05)]"
-            title={t('chat.exportMarkdown')}
           >
-            <Download size={13} />
-          </button>
+            <Download size={13} aria-hidden="true" />
+          </ChatIconButton>
         )}
-        <button
+        <ChatIconButton
+          type="button"
+          label={isRefreshed ? t('chat.refreshDone') : t('chat.refresh')}
           onClick={() => {
             if (isRefreshing) return;
             setIsRefreshed(false);
@@ -279,12 +315,11 @@ export function SessionContextBar() {
             isRefreshing && 'opacity-50 cursor-wait',
             isRefreshed && 'text-aegis-success hover:text-aegis-success',
           )}
-          title={isRefreshed ? t('chat.refreshDone') : t('chat.refresh')}
         >
           {isRefreshed
-            ? <Check size={13} />
-            : <RotateCcw size={13} className={clsx('transition-transform', isRefreshing && 'animate-spin')} />}
-        </button>
+            ? <Check size={13} aria-hidden="true" />
+            : <RotateCcw size={13} className={clsx('transition-transform', isRefreshing && 'animate-spin')} aria-hidden="true" />}
+        </ChatIconButton>
       </div>
     </div>
   );

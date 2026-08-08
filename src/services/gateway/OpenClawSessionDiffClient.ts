@@ -3,6 +3,7 @@ import {
   GatewayDisconnectedError,
   GatewayRpcError,
 } from './Connection';
+import { classifyGatewayAuthorizationError } from './messageRouter';
 import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
 
 export const OPENCLAW_SESSIONS_DIFF_METHOD = 'sessions.diff' as const;
@@ -41,6 +42,11 @@ export interface OpenClawSessionDiffClientDependencies {
     params: Record<string, unknown>,
     connectionId: string,
   ) => Promise<unknown>;
+  requestPrivileged?: (
+    method: string,
+    params: Record<string, unknown>,
+    expectedConnectionId: string,
+  ) => Promise<unknown>;
 }
 
 export class OpenClawSessionDiffResponseError extends Error {
@@ -55,7 +61,11 @@ export class OpenClawSessionDiffResponseError extends Error {
 export class OpenClawSessionDiffUnavailableError extends Error {
   readonly code = 'OPENCLAW_SESSION_DIFF_UNAVAILABLE';
 
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly missingScope?: string,
+    readonly authorization = false,
+  ) {
     super(message);
     this.name = 'OpenClawSessionDiffUnavailableError';
   }
@@ -202,6 +212,12 @@ function connectionUnavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
 
+function missingScopeFromAuthorization(error: unknown, fallback?: string): string | undefined {
+  if (fallback) return fallback;
+  if (!(error instanceof GatewayRpcError)) return undefined;
+  return /missing\s+scope\s*:\s*([A-Za-z0-9_.-]+)/i.exec(error.message)?.[1];
+}
+
 export class OpenClawSessionDiffClient {
   constructor(private readonly dependencies: OpenClawSessionDiffClientDependencies) {}
 
@@ -216,7 +232,8 @@ export class OpenClawSessionDiffClient {
     }
 
     try {
-      const response = await this.dependencies.requestFenced(
+      const request = this.dependencies.requestPrivileged ?? this.dependencies.requestFenced;
+      const response = await request(
         OPENCLAW_SESSIONS_DIFF_METHOD,
         { sessionKey: key, ...(normalizedAgentId ? { agentId: normalizedAgentId } : {}) },
         connectionId,
@@ -231,6 +248,14 @@ export class OpenClawSessionDiffClient {
       if (unsupportedMethod(error)) {
         throw new OpenClawSessionDiffUnavailableError(
           'The connected OpenClaw Gateway does not support sessions.diff',
+        );
+      }
+      const authorization = classifyGatewayAuthorizationError(error);
+      if (authorization) {
+        throw new OpenClawSessionDiffUnavailableError(
+          'The connected OpenClaw Gateway denied sessions.diff',
+          missingScopeFromAuthorization(error, authorization.missingScope),
+          true,
         );
       }
       if (connectionUnavailable(error)) {
