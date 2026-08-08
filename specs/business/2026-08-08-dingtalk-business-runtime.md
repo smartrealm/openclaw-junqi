@@ -26,6 +26,8 @@
 15. 专属 Agent 必须同时满足 OpenClaw 的逐 Agent `tools.allow/deny` 和插件 `allowedAgentIds` 二次围栏；缺少 `ctx.agentId` 或配置为空时失败关闭。
 16. 工作台身份卡只能展示 DWS 运行时返回的当前 profile、授权域、状态、到期时间和当前用户投影；未返回头像 URL 时不得拼接或猜测图片地址。
 17. DWS 就绪引导必须以紧凑状态条区分插件未就绪、当前 Agent 未授权、DWS 缺失、业务身份未确认、用户资料待验证与可用状态；缺失 DWS 时只提供官方流程交接和重新检测，不得自动安装或伪报成功。
+19. DWS 缺失引导必须明确安装目标绑定当前 Gateway runtime，并仅展示已核对的官方安装/登录入口；复制命令、打开官方文档和重新检测均为用户主动操作，JunQi 不执行远程脚本或读取 token。
+18. 业务活动必须优先展示 OpenClaw 官方 metadata-only 审计事件中的 Agent、Session、run、toolCall 与终态；本地仅可保存对应调用的派生关联元数据，不能替代官方审计、保存业务参数或推断委派关系。
 
 ## 阶段 0 验收
 

@@ -14,6 +14,8 @@
 - 业务页已迁移为钉钉单平台三栏工作台：左侧筛选、中部能力表格、右侧可收起和拖拽的参数详情；能力来源为当前 Session 的 `tools.effective`，不再展示飞书、Google、静态目录或 Chat bridge。
 - 运行状态工具现在读取当前 DWS profile、profile 状态、授权域、到期时间和 `contact user get-self` 的当前用户资料；工作台仅投影姓名、组织、部门、userId 和 HTTPS 头像地址，头像媒体 ID 或非 HTTPS 值显示为待验证。
 - 工作台使用一条紧凑 readiness 状态条引导当前阻塞步骤：插件安装或 Gateway 重启、专属 Agent 授权、DWS 缺失、DWS 业务身份未确认、用户资料待验证和完整可用均有不同文案。DWS 缺失仅交接官方安装流程并提供重新检测，不自动修改主机或 Gateway 环境。
+- DWS 缺失时，状态条打开简短官方安装交接：明确安装目标是当前 Gateway 所在主机/容器，展示官方 macOS/Linux、Windows PowerShell、npm 入口及 `dws auth login`/`--device` 登录步骤，提供复制命令、打开官方文档和重新检测；JunQi 不执行远程安装脚本，不接管 DWS token。
+- 业务活动页以 OpenClaw `audit.activity.list` 的 metadata-only 工具事件作为权威审计层，按钉钉工具筛选当前 Gateway 中跨 Session 的参与 Agent、run、tool call 与终态，并支持分页读取更早记录；本窗口调用投影只保存运行时、Session、Agent、Profile、审批和 DWS 关联元数据，绝不保存参数、业务数据或原始输出。上游未提供委派关系时不推断父子 Agent。
 - 已通过插件单测、前端业务单测、TypeScript、全仓边界检查、Rust `cargo check`、Rust 全量 `cargo test --lib`、`pnpm build`、`pnpm verify:openclaw-docs` 和 `git diff --check`。
 - 尚未完成正式 DWS 发布包、真实钉钉租户、真实 Gateway 审批往返，以及 macOS/Windows/Linux/Docker 的真机视觉和运行验收；这些边界保持待验证，不把本机编译结果描述为业务上线。
 - 2026-08-08 本机只读探测显示 OpenClaw 为 `2026.7.1-2`，当前 PATH 不存在 `dws`，`plugins list --json` 也未包含 `junqi-dingtalk`；因此未执行安装、认证、profile 或业务工具调用。

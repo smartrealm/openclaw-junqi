@@ -25,6 +25,7 @@ import {
   DINGTALK_TOOL_SCHEMA_TOOL,
   collectDingTalkTools,
   dingTalkDomainLabel,
+  parseDingTalkBusinessEvidence,
   parseDingTalkToolSchemaOutput,
   parseDingTalkRuntimeOutput,
   parseProfileReference,
@@ -211,6 +212,7 @@ export function BusinessApplicationsPage() {
   ));
   const toolsError = useGatewayDataStore((state) => state.toolsEffectiveError);
   const sessionExists = sessions.some((session) => session.key === activeSessionKey);
+  const activeSession = sessions.find((session) => session.key === activeSessionKey) ?? null;
   const allTools = useMemo(() => collectDingTalkTools(effective?.groups), [effective]);
   const rawEffectiveTools = useMemo(
     () => effective?.groups.flatMap((group) => group.tools) ?? [],
@@ -410,6 +412,10 @@ export function BusinessApplicationsPage() {
     beginAttempt({
       id: attemptId,
       sessionKey: activeSessionKey,
+      sessionId: activeSession?.sessionId ?? null,
+      agentId: effective?.agentId ?? activeSession?.agentId ?? null,
+      runtimeFingerprint: identity?.verified ? identity.targetFingerprint : null,
+      runtimeConnectionId: identity?.verified ? identity.connectionId : null,
       toolName: tool.entry.id,
       toolLabel: tool.entry.label,
       profileRef,
@@ -429,6 +435,14 @@ export function BusinessApplicationsPage() {
         ...(tool.effect === 'write' ? { confirm: true } : {}),
         idempotencyKey: attemptId,
       });
+      const dwsEvidence = parseDingTalkBusinessEvidence(result);
+      const evidence = {
+        gatewayToolName: result.toolName,
+        ...(result.source ? { gatewaySource: result.source } : {}),
+        ...(dwsEvidence.dwsCanonicalPath ? { dwsCanonicalPath: dwsEvidence.dwsCanonicalPath } : {}),
+        ...(dwsEvidence.schemaDigest ? { schemaDigest: dwsEvidence.schemaDigest } : {}),
+        ...(dwsEvidence.recoveryEventId ? { recoveryEventId: dwsEvidence.recoveryEventId } : {}),
+      };
       setInvocationOutput(result);
       if (runtimeTool && result.ok) {
         setRuntimeIdentity(parseDingTalkRuntimeOutput(result));
@@ -438,13 +452,15 @@ export function BusinessApplicationsPage() {
         settleAttempt(attemptId, {
           state: 'approval_required',
           ...(result.approvalId ? { approvalId: result.approvalId } : {}),
+          evidence,
         });
       } else if (result.ok) {
-        settleAttempt(attemptId, { state: 'succeeded', finishedAt: Date.now() });
+        settleAttempt(attemptId, { state: 'succeeded', evidence, finishedAt: Date.now() });
       } else {
         settleAttempt(attemptId, {
           state: 'failed',
           errorCode: result.error?.code ?? 'OPENCLAW_TOOL_FAILED',
+          evidence,
           finishedAt: Date.now(),
         });
         setInvocationError(result.error?.message ?? 'OpenClaw 报告工具执行失败。');
@@ -464,7 +480,7 @@ export function BusinessApplicationsPage() {
     } finally {
       setInvoking(false);
     }
-  }, [activeSessionKey, beginAttempt, disabledReason, parsedArguments.value, profile, selectedTool, settleAttempt]);
+  }, [activeSession, activeSessionKey, beginAttempt, disabledReason, effective?.agentId, identity, parsedArguments.value, profile, selectedTool, settleAttempt]);
 
   const invokeSelected = useCallback(() => {
     if (!selectedTool) return;

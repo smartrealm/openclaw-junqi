@@ -2,9 +2,21 @@ import { create } from 'zustand';
 
 export type BusinessAttemptState = 'pending' | 'approval_required' | 'succeeded' | 'failed' | 'unknown';
 
+export interface BusinessInvocationEvidence {
+  readonly gatewayToolName?: string;
+  readonly gatewaySource?: string;
+  readonly dwsCanonicalPath?: string;
+  readonly schemaDigest?: string;
+  readonly recoveryEventId?: string;
+}
+
 export interface BusinessActivityAttempt {
   readonly id: string;
   readonly sessionKey: string;
+  readonly sessionId: string | null;
+  readonly agentId: string | null;
+  readonly runtimeFingerprint: string | null;
+  readonly runtimeConnectionId: string | null;
   readonly toolName: string;
   readonly toolLabel: string;
   readonly profileRef: string | null;
@@ -13,6 +25,7 @@ export interface BusinessActivityAttempt {
   readonly state: BusinessAttemptState;
   readonly approvalId?: string;
   readonly errorCode?: string;
+  readonly evidence?: BusinessInvocationEvidence;
   readonly startedAt: number;
   readonly finishedAt?: number;
 }
@@ -20,7 +33,7 @@ export interface BusinessActivityAttempt {
 interface BusinessActivityState {
   attempts: BusinessActivityAttempt[];
   begin: (attempt: BusinessActivityAttempt) => void;
-  settle: (id: string, patch: Partial<Pick<BusinessActivityAttempt, 'state' | 'approvalId' | 'errorCode' | 'finishedAt'>>) => void;
+  settle: (id: string, patch: Partial<Pick<BusinessActivityAttempt, 'state' | 'approvalId' | 'errorCode' | 'evidence' | 'finishedAt'>>) => void;
   clear: () => void;
 }
 

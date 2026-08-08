@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   collectDingTalkTools,
+  parseDingTalkBusinessEvidence,
   parseDingTalkRuntimeOutput,
   parseDingTalkToolSchemaOutput,
   parseProfileReference,
@@ -80,4 +81,18 @@ test('projects DWS runtime absence as a verified unavailable state', () => {
   assert.equal(runtime.available, false);
   assert.equal(runtime.runtimeError?.code, 'DWS_RUNTIME_NOT_FOUND');
   assert.equal(runtime.runtimeError?.message, 'DWS executable was not found in PATH');
+});
+
+test('projects only DWS evidence metadata from a business result', () => {
+  const evidence = parseDingTalkBusinessEvidence({ output: { details: {
+    dwsCanonicalPath: 'contact.user.get_self',
+    schemaDigest: 'a'.repeat(64),
+    recoveryEventId: 'recovery-a',
+    data: { mobile: '13800000000' },
+  } } });
+  assert.deepEqual(evidence, {
+    dwsCanonicalPath: 'contact.user.get_self',
+    schemaDigest: 'a'.repeat(64),
+    recoveryEventId: 'recovery-a',
+  });
 });

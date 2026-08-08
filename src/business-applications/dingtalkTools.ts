@@ -54,6 +54,12 @@ export interface DingTalkRuntimeIdentityProjection {
   } | null;
 }
 
+export interface DingTalkBusinessEvidenceProjection {
+  readonly dwsCanonicalPath: string | null;
+  readonly schemaDigest: string | null;
+  readonly recoveryEventId: string | null;
+}
+
 const DOMAIN_LABELS: Record<DingTalkDomain, string> = {
   contact: '通讯录',
   approval: '审批',
@@ -173,6 +179,19 @@ export function parseDingTalkRuntimeOutput(output: unknown): DingTalkRuntimeIden
       department: optionalString(userRecord.department),
       avatarUrl: avatarUrl && /^https:\/\//i.test(avatarUrl) ? avatarUrl : null,
     } : null,
+  };
+}
+
+/** 仅投影 DWS 返回的关联元数据，禁止将业务数据或原始输出写入活动记录。 */
+export function parseDingTalkBusinessEvidence(output: unknown): DingTalkBusinessEvidenceProjection {
+  const invocation = record(output);
+  const toolResult = record(invocation?.output);
+  const details = record(toolResult?.details);
+  const schemaDigest = optionalString(details?.schemaDigest);
+  return {
+    dwsCanonicalPath: optionalString(details?.dwsCanonicalPath),
+    schemaDigest: schemaDigest && /^[a-f0-9]{64}$/.test(schemaDigest) ? schemaDigest : null,
+    recoveryEventId: optionalString(details?.recoveryEventId),
   };
 }
 
