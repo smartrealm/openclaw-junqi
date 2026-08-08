@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-收敛首次启动步骤切换、Gateway 第三阶段呈现和会话上下文工具栏。当前会话工具栏已完整移除会话变更与会话文件，
+发布已完成首次启动步骤切换、Gateway 第三阶段呈现和会话上下文工具栏收敛的 `2.2.11`。当前会话工具栏已完整移除会话变更与会话文件，
 并将分支、会话上下文和会话产物改为独立直接入口；不保留隐藏入口、专属 Gateway 客户端、兼容层或无消费者代码。首次启动仍必须保留 OpenClaw 的真实完成语义。
 
 ## 已完成内容
@@ -113,6 +113,7 @@
 - Ready 运行偏好并行加载与完整骨架回归已通过：`setupOnboardingRegression.test.ts`、`AutostartPreferenceRow.test.tsx`、`pnpm exec tsc --noEmit`；桌面真机首次进入的视觉帧仍未录制。
 - Setup 当前页入场、环境动作门禁和下一步—上一步—下一步往返定向回归共 29 项通过；`pnpm lint`、`pnpm build` 和完整 `pnpm test` 均通过。完整测试前端 2825 项、脚本 243 项，首次运行发现的一条旧源码表达式断言已删除并由行为测试替代。
 - 已基于当前全部修改重新构建并校验 macOS arm64 DMG 验收包：`src-tauri/target/release/bundle/dmg/JunQi Desktop_2.2.10_aarch64.dmg`。`hdiutil verify` 通过，文件大小为 8732068 字节，SHA-256 为 `8a3de1db0808e611de2b4c9ec367f150987116d11f02a9fbc967168636ef57ab`。Tauri 已生成 `.app`、DMG 和 updater 归档，但因当前环境只有 updater 公钥、没有发布私钥而以非零状态结束；应用仅为 ad-hoc 签名，未正式签名或公证，本轮尚未重新执行安装后的真机走查。
+- 已确认远端 `v2.2.10` 已被历史发布占用；本轮按发布工作流约束将四处桌面版本统一提升到 `2.2.11`，不改写已有标签。
 - 本轮助手头像视觉调整已包含在当前安装的 `.app` 中；亮暗主题与窄窗口的最终视觉验收仍待完成。
 - 已完成会话助手头像视觉调整；本轮聊天相关测试、`pnpm lint`、完整 `pnpm test` 和 `pnpm build` 均通过，亮暗主题与窄窗口的最终视觉验收仍待完成。
 - 本轮已通过聚焦回归：Gateway 能力证据、Gateway Skills 欢迎页、本地 Skill Hub 边界、Cron contract/parser、Cron runs、Cron store
