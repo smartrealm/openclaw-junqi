@@ -116,8 +116,8 @@ export function DingTalkReadinessPanel({
   };
   const action = readiness.title === '当前运行时未安装 DWS'
     ? <Button size="xs" variant="outline" tone="warning" onClick={openGuide} leadingIcon={<ExternalLink size={12} />}>安装指南</Button>
-    : readiness.action === 'install-plugin' && installAvailable
-    ? <Button size="xs" variant="outline" tone="primary" loading={busy} leadingIcon={<Wrench size={12} />} onClick={onInstallPlugin}>安装插件</Button>
+    : readiness.action === 'install-plugin'
+    ? <Button size="xs" variant="outline" tone="primary" loading={busy} leadingIcon={<Wrench size={12} />} onClick={onInstallPlugin} title={installAvailable ? '在当前已验证的 Gateway 中安装钉钉业务插件' : '需要先连接并验证当前 Gateway'}>在 JunQi 安装</Button>
     : readiness.action === 'restart-gateway'
       ? <Button size="xs" variant="outline" tone="warning" loading={busy} onClick={onRestartGateway}>重启 Gateway</Button>
       : readiness.action === 'refresh'
