@@ -110,11 +110,22 @@ export class OpenClawCronManagementClient {
     }
   }
 
-  async update(jobId: string, patch: OpenClawCronMutationPatch): Promise<OpenClawCronManagedJob> {
+  async update(
+    jobId: string,
+    patch: OpenClawCronMutationPatch,
+    expectedConfigRevision?: string,
+  ): Promise<OpenClawCronManagedJob> {
     const id = requiredInputString(jobId, 'Invalid OpenClaw cron job id');
     const validatedPatch = validatePatch(patch);
+    const revision = expectedConfigRevision === undefined
+      ? undefined
+      : requiredInputString(expectedConfigRevision, 'Invalid OpenClaw cron config revision');
     try {
-      return parseJob(await this.request<unknown>(CRON_UPDATE_METHOD, { id, patch: validatedPatch }));
+      return parseJob(await this.request<unknown>(CRON_UPDATE_METHOD, {
+        id,
+        patch: validatedPatch,
+        ...(revision === undefined ? {} : { expectedConfigRevision: revision }),
+      }));
     } catch (error) {
       if (unsupportedMethod(error)) throw new OpenClawCronManagementUnsupportedError(CRON_UPDATE_METHOD);
       throw error;

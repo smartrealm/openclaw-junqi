@@ -1600,8 +1600,12 @@ export const gateway = {
   async addCronAgentTurn(params: CronAgentTurnAddParams): Promise<OpenClawCronManagedJob> {
     return cronManagementClient.addAgentTurn(params);
   },
-  async updateCronJob(jobId: string, patch: OpenClawCronMutationPatch): Promise<OpenClawCronManagedJob> {
-    return cronManagementClient.update(jobId, patch);
+  async updateCronJob(
+    jobId: string,
+    patch: OpenClawCronMutationPatch,
+    expectedConfigRevision?: string,
+  ): Promise<OpenClawCronManagedJob> {
+    return cronManagementClient.update(jobId, patch, expectedConfigRevision);
   },
   async removeCronJob(jobId: string): Promise<void> {
     return cronManagementClient.remove(jobId);

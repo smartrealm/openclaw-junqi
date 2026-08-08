@@ -107,6 +107,7 @@ export interface OpenClawCronJobDetails {
   deleteAfterRun?: boolean;
   createdAtMs: number;
   updatedAtMs: number;
+  configRevision?: string;
   schedule: CronScheduleDetails;
   pacing?: CronPacingDetails;
   sessionTarget: CronSessionTarget;
@@ -463,6 +464,9 @@ export function parseCronJobDetails(value: unknown, method = 'cron.get'): OpenCl
     ...(value.deleteAfterRun !== undefined ? { deleteAfterRun: requiredBoolean(value.deleteAfterRun, 'deleteAfterRun', method) } : {}),
     createdAtMs: requiredInteger(value.createdAtMs, 'createdAtMs', method),
     updatedAtMs: requiredInteger(value.updatedAtMs, 'updatedAtMs', method),
+    ...(value.configRevision !== undefined
+      ? { configRevision: requiredString(value.configRevision, 'configRevision', method) }
+      : {}),
     schedule: parseSchedule(value.schedule, method),
     ...(pacing ? { pacing } : {}),
     sessionTarget: parseSessionTarget(value.sessionTarget, method),

@@ -525,7 +525,11 @@ export function CronMonitorPage() {
     setActionLoading(jobId);
     setCronMutationError(null);
     try {
-      await gateway.updateCronJob(jobId, { enabled });
+      await gateway.updateCronJob(
+        jobId,
+        { enabled },
+        jobsRef.current.find((job) => job.id === jobId)?.configRevision,
+      );
       if (!await refreshGroup('cron')) throw new Error(t('cron.updateReadbackFailed'));
     } catch (error) {
       setCronMutationError(error instanceof Error ? error.message : String(error));
@@ -604,7 +608,11 @@ export function CronMonitorPage() {
     setActionLoading(`agent-${jobId}`);
     setAgentUpdateError(null);
     try {
-      await gateway.updateCronJob(jobId, cronAgentUpdatePatch(agentId));
+      await gateway.updateCronJob(
+        jobId,
+        cronAgentUpdatePatch(agentId),
+        jobsRef.current.find((job) => job.id === jobId)?.configRevision,
+      );
       const refreshed = await refreshGroup('cron');
       const confirmed = refreshed
         && isCronAgentSelectionConfirmed(

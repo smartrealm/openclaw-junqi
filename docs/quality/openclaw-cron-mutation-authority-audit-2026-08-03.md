@@ -58,3 +58,15 @@ CronMonitor 已支持创建、启停、运行和 Agent 路由，但没有删除�
 - 不实现或猜测 Cron 的 command payload、webhook、投递目标、trigger、pacing、scratch 或模型覆盖编辑器；当前界面没有完整的官方字段编辑契约。
 - 不把日历本地事件改成 Gateway 的权威实体；本轮只修复已有本地事件与其已创建 Cron job 的副作用一致性。
 - 不把管理员 token 写入前端持久化状态；继续使用既有短生命周期 transient connection 和授权错误处理。
+
+## 后续复审：修订令牌并发围栏
+
+日期：2026-08-08
+
+最新版官方 `CronUpdateParamsSchema` 支持由 `cron.list` 或 `cron.get` 返回的 `configRevision` 作为
+`expectedConfigRevision`，以拒绝基于过期任务定义的更新。JunQi 此前完整读取了任务定义，却在安全投影中
+丢弃该字段，因此启停和 Agent 路由无法携带并发围栏。
+
+现已在只读任务投影中保留非空 `configRevision`，并仅在 Gateway 真实返回该值时由 `CronMonitor` 原样传入
+`cron.update`。客户端不生成本地修订号；缺失令牌时仍按官方可选字段省略。Gateway 的冲突响应继续作为真实
+错误呈现，后续仅以官方刷新结果收敛，不转换为成功。
