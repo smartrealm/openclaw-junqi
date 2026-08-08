@@ -797,7 +797,14 @@
     "schedulerUnavailable": "调度器状态不可用",
     "nextWakeIn": "下次唤醒 {{time}}",
     "jobDetailLoading": "正在读取 OpenClaw 任务详情",
-    "jobDetailUnavailable": "任务详情暂不可用，当前显示列表快照"
+    "jobDetailUnavailable": "任务详情暂不可用，当前显示列表快照",
+    "format": {
+      "every": "每 {{interval}}",
+      "onExit": "退出后：{{command}}",
+      "stream": "流式：{{command}}",
+      "unavailable": "暂无",
+      "now": "现在"
+    }
   },
   "agents": {
     "title": "智能体中心",
@@ -2630,7 +2637,15 @@
     "checkInName": "定期提醒",
     "checkInDesc": "周期性提醒你查看是否有待处理事项",
     "healthName": "系统健康",
-    "healthDesc": "监控磁盘、内存、运行时间和进程"
+    "healthDesc": "监控磁盘、内存、运行时间和进程",
+    "morningJobName": "晨间简报",
+    "morningMessage": "请准备一份简洁的晨间简报：核对所在地天气、今日重要新闻以及记忆中的待办、提醒和截止事项。",
+    "weeklyJobName": "每周总结",
+    "weeklyMessage": "请完成本周回顾：阅读本周记忆，汇总关键事件和决策，更新重要信息并清理过期内容。",
+    "checkInJobName": "定期检查",
+    "checkInMessage": "请检查近期记忆和会话中的待办事项。仅在有需要跟进的内容时联系用户，否则保持静默。",
+    "healthJobName": "系统健康检查",
+    "healthMessage": "请检查磁盘空间、内存使用、运行时间和异常进程。仅在发现需要处理的问题时报告。"
   },
   "dashboardExtra": {
     "contextCompacted": "上下文已压缩 ×{{n}}"
@@ -3664,7 +3679,20 @@
       "scheduled": "已计划",
       "pending": "待发送",
       "fired": "已发送",
-      "failed": "发送失败"
+      "failed": "发送失败",
+      "unsupported": "当前重复规则无法由 OpenClaw 定时任务准确执行"
+    },
+    "reminderContent": {
+      "jobName": "日历提醒：{{title}}",
+      "title": "日历提醒：{{title}}",
+      "time": "时间：{{start}}{{end}}",
+      "timeEnd": "至{{end}}",
+      "allDay": "全天事件",
+      "location": "地点：{{location}}",
+      "notes": "备注：{{notes}}",
+      "lastChannel": "请通过最近活跃渠道向用户发送此提醒。",
+      "namedChannel": "请通过渠道 {{channel}} 向用户发送此提醒，并使用该渠道的消息工具。",
+      "leadTime": "事件将在 {{minutes}} 分钟后开始。"
     },
     "delivery": {
       "label": "发送到",

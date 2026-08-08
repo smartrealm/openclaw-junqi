@@ -28,6 +28,12 @@ export interface OpenClawCronRunDiagnostics {
   recordCapabilityInvalidResponse?: (method: string) => void;
 }
 
+export interface OpenClawCronRunClientDependencies {
+  readonly request: OpenClawCronRunRequester;
+  readonly requestPrivileged: OpenClawCronRunRequester;
+  readonly diagnostics?: OpenClawCronRunDiagnostics;
+}
+
 const CRON_RUN_METHOD = 'cron.run';
 const CRON_RUNS_METHOD = 'cron.runs';
 
@@ -82,16 +88,13 @@ export function parseOpenClawCronRunPage(value: unknown): OpenClawCronRunPage {
 }
 
 export class OpenClawCronRunClient {
-  constructor(
-    private readonly request: OpenClawCronRunRequester,
-    private readonly diagnostics: OpenClawCronRunDiagnostics = {},
-  ) {}
+  constructor(private readonly dependencies: OpenClawCronRunClientDependencies) {}
 
   async enqueue(jobId: string): Promise<OpenClawCronRunAcknowledgement> {
     const id = requiredInputString(jobId, 'Invalid OpenClaw cron job id');
     try {
       const result = await enqueueCronRun(
-        (method, params) => this.request<unknown>(method, params),
+        (method, params) => this.dependencies.requestPrivileged<unknown>(method, params),
         id,
         'force',
       );
@@ -104,7 +107,7 @@ export class OpenClawCronRunClient {
     } catch (error) {
       if (unsupportedMethod(error)) throw new OpenClawCronRunUnsupportedError(CRON_RUN_METHOD);
       if (invalidCronResponse(error, CRON_RUN_METHOD)) {
-        this.diagnostics.recordCapabilityInvalidResponse?.(CRON_RUN_METHOD);
+        this.dependencies.diagnostics?.recordCapabilityInvalidResponse?.(CRON_RUN_METHOD);
         throw new OpenClawCronRunResponseError();
       }
       throw error;
@@ -116,7 +119,7 @@ export class OpenClawCronRunClient {
     if (runId !== undefined) requiredInputString(runId, 'Invalid OpenClaw cron run id');
     try {
       const page = await listCronRuns(
-        (method, params) => this.request<unknown>(method, params),
+        (method, params) => this.dependencies.request<unknown>(method, params),
         {
           jobId: id,
           ...(runId === undefined ? {} : { runId }),
@@ -127,7 +130,7 @@ export class OpenClawCronRunClient {
     } catch (error) {
       if (unsupportedMethod(error)) throw new OpenClawCronRunUnsupportedError(CRON_RUNS_METHOD);
       if (invalidCronResponse(error, CRON_RUNS_METHOD)) {
-        this.diagnostics.recordCapabilityInvalidResponse?.(CRON_RUNS_METHOD);
+        this.dependencies.diagnostics?.recordCapabilityInvalidResponse?.(CRON_RUNS_METHOD);
         throw new OpenClawCronRunResponseError();
       }
       throw error;

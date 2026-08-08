@@ -1,17 +1,29 @@
 // ═══════════════════════════════════════════════════════════
-// Scheduled task maintenance
-// Top: search and actions | Left: task list | Right: details and run history
+// 定时任务维护页面
+// 顶部负责检索与操作，左侧展示任务，右侧展示详情与运行记录
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { buildCronAgentOptions, resolveCronAgentAvailability } from './cronAgentSelection';
-import { Play, RotateCcw, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, BarChart3, DollarSign, FileText, Brain, Wrench, Clock, CalendarClock, Trash2 } from 'lucide-react';
-import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
+import { Play, RotateCcw, Check, X, Plus, Search, Clock, CalendarClock, Trash2 } from 'lucide-react';
 import { gateway, type OpenClawCronRunEntry, type OpenClawCronStatus } from '@/services/gateway';
 import { OpenClawCronStatusUnsupportedError } from '@/services/gateway/OpenClawCronStatusClient';
-import type { CronScheduleDetails, OpenClawCronJobDetails } from '@/services/gateway/cronRuns';
+import type { OpenClawCronJobDetails } from '@/services/gateway/cronRuns';
+import {
+  cronRunInFlight,
+  cronRunLoading,
+  formatCronCountdown,
+  formatCronDuration,
+  formatCronSchedule,
+  formatCronTimeAgo,
+  getCronDeliveryStatus as getDeliveryStatus,
+  getCronLastRun as getLastRun,
+  getCronNextRun as getNextRun,
+  getCronStatus as getStatus,
+  getCronTemplates,
+} from './cronPresentation';
 import {
   buildCronAgentTurnAddParams,
   cronAgentUpdatePatch,
@@ -41,23 +53,23 @@ import {
 } from '@/components/ui/dialog';
 
 // ═══════════════════════════════════════════════════════════
-// Types
+// 类型
 // ═══════════════════════════════════════════════════════════
 
 type CronJob = OpenClawCronJobDetails;
 
 type RunEntry = OpenClawCronRunEntry;
 
-// Current OpenClaw CLI waits at most ten minutes and polls cron.runs every two seconds.
-// These are JunQi presentation limits, not Gateway protocol fields.
+// 当前 OpenClaw CLI 最多等待十分钟，并每两秒读取一次 cron.runs。
+// 这些仅是 JunQi 呈现层等待限制，不属于 Gateway 协议字段。
 const OPENCLAW_CRON_RUN_WAIT_TIMEOUT_MS = 600_000;
 const OPENCLAW_CRON_RUN_POLL_INTERVAL_MS = 2_000;
 
 // ═══════════════════════════════════════════════════════════
-// Constants & Helpers
+// 常量与辅助逻辑
 // ═══════════════════════════════════════════════════════════
 
-/** Theme-aware job color palette — called at render time */
+/** 主题感知的任务颜色，在渲染时读取。 */
 const getJobColor = (idx: number): string => dataColor(idx);
 const DEFAULT_AGENT_SELECT_VALUE = 'default';
 const agentSelectValue = (agentId: string | undefined): string =>
@@ -65,163 +77,39 @@ const agentSelectValue = (agentId: string | undefined): string =>
 const agentIdFromSelectValue = (value: string): string =>
   value === DEFAULT_AGENT_SELECT_VALUE ? '' : value.slice('agent:'.length);
 
-const getJobIcon = (name: string): React.ReactNode => {
-  const n = name.toLowerCase();
-  if (n.includes('heart') || n.includes('beat')) return <Heart size={14} strokeWidth={1.75} />;
-  if (n.includes('morning') || n.includes('brief')) return <Zap size={14} strokeWidth={1.75} />;
-  if (n.includes('health') || n.includes('system')) return <Search size={14} strokeWidth={1.75} />;
-  if (n.includes('sync') || n.includes('memory') || n.includes('db')) return <RefreshCw size={14} strokeWidth={1.75} />;
-  if (n.includes('research')) return <Radio size={14} strokeWidth={1.75} />;
-  if (n.includes('github') || n.includes('stats')) return <BarChart3 size={14} strokeWidth={1.75} />;
-  if (n.includes('price') || n.includes('monitor')) return <DollarSign size={14} strokeWidth={1.75} />;
-  if (n.includes('digest') || n.includes('weekly')) return <FileText size={14} strokeWidth={1.75} />;
-  if (n.includes('check') || n.includes('nudge')) return <Brain size={14} strokeWidth={1.75} />;
-  if (n.includes('maintain') || n.includes('clean')) return <Wrench size={14} strokeWidth={1.75} />;
-  if (n.includes('hilal') || n.includes('هلال')) return <SoccerBall size={14} weight="regular" />;
-  return <Clock size={14} strokeWidth={1.75} />;
-}
-
-const getNextRun = (job: CronJob) => job.state.nextRunAtMs ?? job.nextRunAtMs;
-const getLastRun = (job: CronJob) => job.state.lastRunAtMs ?? job.lastRunAtMs;
-const getStatus = (job: CronJob): 'active' | 'error' | 'paused' => {
-  if (!job.enabled) return 'paused';
-  const runStatus = job.state.lastRunStatus ?? job.state.lastStatus;
-  if (runStatus === 'error') return 'error';
-  return 'active';
-};
-
-const getDeliveryStatus = (job: CronJob): 'delivered' | 'failed' | 'unknown' | null => {
-  const ds = job.state.lastDeliveryStatus;
-  if (!ds || ds === 'not-requested') return null;
-  if (ds === 'not-delivered') return 'failed';
-  if (ds === 'delivered') return 'delivered';
-  return 'unknown';
-};
-
-// ── Templates ──
-
-// Fix #8: colorIdx instead of dataColor() at module load (CSS vars may not be ready)
-// Templates use i18n keys — resolved at render time via getCronTemplates()
-function getCronTemplates(t: (key: string) => string) {
-  return [
-    {
-      id: 'morning-briefing', icon: <Lightning size={14} weight="regular" />, colorIdx: 2,
-      name: t('cronTemplates.morningName'),
-      desc: t('cronTemplates.morningDesc'),
-      job: { name: 'Morning Briefing', schedule: { kind: 'cron' as const, expr: '0 6 * * *', tz: 'UTC' }, message: 'Good morning! Prepare a brief morning briefing: 1) Check the weather for my location, 2) Search for top news headlines today, 3) Check memory files for any upcoming tasks, reminders, or deadlines. Keep it concise and useful.', enabled: true },
-    },
-    {
-      id: 'weekly-digest', icon: <Note size={14} weight="regular" />, colorIdx: 1,
-      name: t('cronTemplates.weeklyName'),
-      desc: t('cronTemplates.weeklyDesc'),
-      job: { name: 'Weekly Digest', schedule: { kind: 'cron' as const, expr: '0 20 * * 5', tz: 'UTC' }, message: 'Weekly review time. 1) Read through this week\'s memory files, 2) Summarize key events and decisions, 3) Update MEMORY.md with important info, 4) Clean up outdated entries.', enabled: true },
-    },
-    {
-      id: 'check-in', icon: <Brain size={14} strokeWidth={1.75} />, colorIdx: 3,
-      name: t('cronTemplates.checkInName'),
-      desc: t('cronTemplates.checkInDesc'),
-      job: { name: 'Check-In', schedule: { kind: 'every' as const, everyMs: 28800000 }, message: 'Time for a check-in. Review recent memory files and sessions for context. If there are pending tasks or anything worth following up on, reach out. If nothing needs attention, skip silently.', enabled: true },
-    },
-    {
-      id: 'system-health', icon: <MagnifyingGlass size={14} weight="regular" />, colorIdx: 5,
-      name: t('cronTemplates.healthName'),
-      desc: t('cronTemplates.healthDesc'),
-      job: { name: 'System Health Check', schedule: { kind: 'every' as const, everyMs: 21600000 }, message: 'Run a system health check: 1) Check disk space, 2) Check memory usage, 3) Check uptime, 4) Look for unusual processes. Report only if something needs attention.', enabled: true },
-    },
-  ];
-}
-
-// ── Formatting ──
-
-function formatSchedule(schedule: CronScheduleDetails): string {
-  if (schedule.kind === 'every') {
-    const mins = Math.round(schedule.everyMs / 60000);
-    if (mins < 60) return `Every ${mins}m`;
-    const h = Math.floor(mins / 60), m = mins % 60;
-    return m > 0 ? `Every ${h}h ${m}m` : `Every ${h}h`;
-  }
-  if (schedule.kind === 'at') return new Date(schedule.at).toLocaleString();
-  if (schedule.kind === 'on-exit') return `On exit: ${schedule.command}`;
-  if (schedule.kind === 'stream') return `Stream: ${schedule.command.join(' ')}`;
-  if (schedule.kind === 'cron') {
-    const parts = schedule.expr.split(' ');
-    if (parts.length >= 5) {
-      const [min, hour, dom, mon] = parts;
-      if (dom !== '*' && mon === '*' && hour !== '*') return `Monthly ${dom}${ordSuffix(dom)} ${fmtTime(hour, min)}`;
-      if (dom !== '*' && mon !== '*') return `${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mon]||mon} ${dom} ${fmtTime(hour,min)}`;
-      if (hour.includes('*/')) return `Every ${hour.replace('*/','')}h`;
-      if (hour !== '*' && dom === '*') return `Daily ${fmtTime(hour, min)}`;
-    }
-    return schedule.expr;
-  }
-  return '—';
-}
-
-function ordSuffix(n: string) { const v = +n; return [1,21,31].includes(v)?'st':[2,22].includes(v)?'nd':[3,23].includes(v)?'rd':'th'; }
-function fmtTime(h: string, m: string) { const hr=+h, mm=m.padStart(2,'0'); return hr===0?`12:${mm}AM`:hr<12?`${hr}:${mm}AM`:hr===12?`12:${mm}PM`:`${hr-12}:${mm}PM`; }
-
-function formatTimeAgo(ts: string | number | null | undefined): string {
-  if (ts == null) return '—';
-  try {
-    const d = new Date(typeof ts === 'string' ? ts : ts);
-    if (isNaN(d.getTime())) return '—';
-    const diff = Date.now() - d.getTime();
-    if (diff < 0) {
-      const a = Math.abs(diff);
-      if (a < 60000) return 'now';
-      if (a < 3600000) return `in ${Math.floor(a / 60000)}m`;
-      if (a < 86400000) { const h = Math.floor(a / 3600000), m = Math.floor((a % 3600000) / 60000); return m > 0 ? `in ${h}h ${m}m` : `in ${h}h`; }
-      return `in ${Math.floor(a / 86400000)}d`;
-    }
-    if (diff < 60000) return 'just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return `${Math.floor(diff / 86400000)}d ago`;
-  } catch { return '—'; }
-}
-
-function formatCountdown(ts: string | number | null | undefined): string {
-  if (ts == null) return '—';
-  try {
-    const d = new Date(typeof ts === 'string' ? ts : ts);
-    const diff = d.getTime() - Date.now();
-    if (diff <= 0) return 'now';
-    if (diff < 3600000) return `${Math.ceil(diff / 60000)}m`;
-    if (diff < 86400000) { const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000); return m > 0 ? `${h}h ${m}m` : `${h}h`; }
-    return `${Math.floor(diff / 86400000)}d`;
-  } catch { return '—'; }
-}
-
-function formatDuration(ms?: number): string {
-  if (!ms) return '—';
-  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
-}
-
-function cronRunInFlight(status: 'queued' | 'waiting' | 'pending' | 'ok' | 'error' | 'skipped' | undefined): boolean {
-  return status === 'queued' || status === 'waiting' || status === 'pending';
-}
-
-function cronRunLoading(status: 'queued' | 'waiting' | 'pending' | 'ok' | 'error' | 'skipped' | undefined): boolean {
-  return status === 'queued' || status === 'waiting';
-}
-
-
-
 // ═══════════════════════════════════════════════════════════
-// ClockFace — 24h circular schedule visualization
+// 时钟视图：24 小时调度可视化
 // ═══════════════════════════════════════════════════════════
 
 
 // ═══════════════════════════════════════════════════════════
-// Main Page
+// 页面主体
 // ═══════════════════════════════════════════════════════════
 
 export function CronMonitorPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { connected } = useChatStore();
-  // lang removed — templates now use i18n keys directly
-
-  // ── State (jobs from central store) ──
+  const present = useCallback(
+    (key: string, options?: Record<string, unknown>) => t(key, options),
+    [t],
+  );
+  const formatSchedule = useCallback(
+    (schedule: OpenClawCronJobDetails['schedule']) => formatCronSchedule(schedule, i18n.language, present),
+    [i18n.language, present],
+  );
+  const formatTimeAgo = useCallback(
+    (value: string | number | null | undefined) => formatCronTimeAgo(value, i18n.language, present),
+    [i18n.language, present],
+  );
+  const formatCountdown = useCallback(
+    (value: string | number | null | undefined) => formatCronCountdown(value, i18n.language, present),
+    [i18n.language, present],
+  );
+  const formatDuration = useCallback(
+    (milliseconds: number | undefined) => formatCronDuration(milliseconds, i18n.language, present),
+    [i18n.language, present],
+  );
+  // ── 状态：任务来自中心数据源 ──
   const storeJobs = useGatewayDataStore((s) => s.cronJobs);
   const cronStatus = useGatewayDataStore((s) => s.cronStatus);
   const cronStatusError = useGatewayDataStore((s) => s.cronStatusError);
@@ -248,9 +136,7 @@ export function CronMonitorPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused' | 'error'>('all');
   const [showAllLogs, setShowAllLogs] = useState(false);
-  // Split-button quick-create menu navigates to /cron?new=1 to open the
-  // form directly. After opening, the query is consumed so the dialog does
-  // not re-trigger on subsequent renders.
+  // 快捷创建入口通过 /cron?new=1 打开表单，消费参数后不再重复触发。
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createJob, setCreateJob] = useState({ name: '', cronExpr: '0 9 * * *', message: '', agentId: '' });
   const [creating, setCreating] = useState(false);
@@ -306,22 +192,22 @@ export function CronMonitorPage() {
     }
   }, [searchParams, setSearchParams]);
 
-  // Fix #1: Stable ref for jobs — avoids useCallback rebuilding every 30s
+  // 使用稳定的任务引用，避免每 30 秒轮询时重建回调。
   const jobsRef = useRef<CronJob[]>([]);
   jobsRef.current = jobs;
 
-  // Fix #3: Stale request guard for selected job fetches
+  // 为选中任务的请求增加过期保护，避免旧响应覆盖新选择。
   const selectedFetchId = useRef(0);
   const selectedJobDetailFetchId = useRef(0);
 
-  // Fix #6: Tick for live countdown/timeAgo updates (every 15s)
+  // 定时刷新倒计时和相对时间显示。
   const [, setTick] = useState(0);
   useEffect(() => {
     const iv = setInterval(() => setTick(t => (t + 1) % 10000), 15000);
     return () => clearInterval(iv);
   }, []);
 
-  // Fix #11: Cache theme hex values (re-computed on mount only)
+  // 缓存主题颜色，避免渲染期间重复读取计算。
   const [tc] = useState(() => ({
     primary: themeHex('primary'),
     accent: themeHex('accent'),
@@ -334,7 +220,7 @@ export function CronMonitorPage() {
     primaryA50: themeAlpha('primary', 0.5),
   }));
 
-  // ── Derived ──
+  // ── 派生数据 ──
   const colorMap = useMemo(() => {
     const m: Record<string, string> = {};
     jobs.forEach((j, i) => { m[j.id] = getJobColor(i); });
@@ -401,7 +287,7 @@ export function CronMonitorPage() {
       });
   }, [selectedJobId, connected]);
 
-  // Sorted: errors, then active by next run, then paused; filtered by search
+  // 先显示错误任务，再按下次运行时间显示活动任务，最后显示暂停任务，并应用搜索筛选。
   const sortedJobs = useMemo(() => {
     let filtered = jobs;
     if (statusFilter !== 'all') {
@@ -423,14 +309,14 @@ export function CronMonitorPage() {
     });
   }, [jobs, searchQuery, statusFilter]);
 
-  // Jobs come from central store (polled every 30s automatically)
+  // 任务来自中心状态，并由状态层定期轮询。
 
-  // ── Runs cache — only reload on manual Refresh or first mount ──
+  // ── 运行记录缓存：仅在首次挂载或手动刷新时重新加载 ──
   const runsCache = useRef<Record<string, RunEntry[]>>({});
   const runsCacheLoaded = useRef(false);
 
-  // ── Load all recent runs — batched (3 at a time) to avoid gateway overload ──
-  // Fix #1: uses jobsRef instead of jobs dependency, avoiding a rebuild every 30s
+  // ── 分批加载最近运行记录，避免同时请求过多 ──
+  // 使用稳定的任务引用，避免轮询导致回调重建。
   const loadAllRuns = useCallback(async () => {
     const currentJobs = jobsRef.current;
     if (!connected || currentJobs.length === 0) return;
@@ -462,8 +348,8 @@ export function CronMonitorPage() {
     finally { setLoadingRuns(false); }
   }, [connected]);
 
-  // ── Load runs for a single job and merge into cache ──
-  // Fix #1: uses jobsRef for a stable callback without rebuilds on polling
+  // ── 加载单个任务的运行记录并合并到缓存 ──
+  // 使用稳定的任务引用，避免轮询时重建回调。
   const loadSingleJobRuns = useCallback(async (jobId: string) => {
     if (!connected) return;
     setRunsError(null);
@@ -475,7 +361,7 @@ export function CronMonitorPage() {
       }));
       runsCache.current[jobId] = entries;
 
-      // Rebuild recent runs from cache
+      // 从缓存重新生成最近运行记录。
       const all: RunEntry[] = [];
       Object.values(runsCache.current).forEach(arr => all.push(...arr));
       all.sort((a, b) => new Date(b.ts || 0).getTime() - new Date(a.ts || 0).getTime());
@@ -483,29 +369,29 @@ export function CronMonitorPage() {
     } catch (error) { setRunsError(error instanceof Error ? error.message : String(error)); }
   }, [connected]);
 
-  // Load once on first mount only
+  // 仅在首次挂载时加载。
   useEffect(() => {
     if (jobs.length > 0 && !runsCacheLoaded.current) loadAllRuns();
   }, [jobs.length, loadAllRuns]);
 
-  // ── Load selected job runs (cache-first, then fetch) ──
-  // Fix #3: stale request guard — rapid clicks don't cause race conditions
+  // ── 加载选中任务的运行记录（先使用缓存，再请求最新数据） ──
+  // 过期请求保护，避免快速切换任务时出现竞态。
   useEffect(() => {
     if (!selectedJobId || !connected) { setSelectedJobRuns([]); return; }
 
     const fetchId = ++selectedFetchId.current;
 
-    // Show cached data immediately (if available)
+    // 如果有缓存，先立即展示。
     const cached = runsCache.current[selectedJobId];
     if (cached?.length) {
       setSelectedJobRuns([...cached].slice(-14).reverse());
     }
 
-    // Then fetch fresh data in background
+    // 再在后台请求最新数据。
     (async () => {
       try {
         const result = await gateway.listCronRuns(selectedJobId);
-        if (fetchId !== selectedFetchId.current) return; // stale — discard
+        if (fetchId !== selectedFetchId.current) return; // 请求已过期，丢弃结果。
         const job = jobsRef.current.find(j => j.id === selectedJobId);
         const entries = result.entries.slice(-14).reverse().map((e) => ({
           ...e, jobId: selectedJobId, jobName: job?.name || selectedJobId,
@@ -513,14 +399,14 @@ export function CronMonitorPage() {
         setSelectedJobRuns(entries);
         setRunsError(null);
       } catch (error) {
-        if (fetchId !== selectedFetchId.current) return; // stale
+        if (fetchId !== selectedFetchId.current) return; // 请求已过期，丢弃结果。
         setRunsError(error instanceof Error ? error.message : String(error));
         if (!cached?.length) setSelectedJobRuns([]);
       }
     })();
   }, [selectedJobId, connected]);
 
-  // ── Actions ──
+  // ── 操作 ──
   const toggleJob = async (jobId: string, enabled: boolean) => {
     setActionLoading(jobId);
     setCronMutationError(null);
@@ -580,7 +466,10 @@ export function CronMonitorPage() {
     }
   };
 
-  const cronTemplates = useMemo(() => getCronTemplates(t), [t]);
+  const cronTemplates = useMemo(
+    () => getCronTemplates(present, Intl.DateTimeFormat().resolvedOptions().timeZone),
+    [present],
+  );
 
   const addTemplate = async (tpl: ReturnType<typeof getCronTemplates>[0]) => {
     setActionLoading(`tpl-${tpl.id}`);
@@ -668,8 +557,8 @@ export function CronMonitorPage() {
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  // ═══ RENDER ═══
-  // Activity log shows selected job's runs when a job is selected, otherwise all recent runs
+  // ═══ 渲染 ═══
+  // 选中任务时显示该任务的运行记录，否则显示最近运行记录。
   const activityRuns = selectedJobId ? selectedJobRuns : recentRuns;
   return (
     <div className="flex flex-col flex-1 min-h-0" style={{ minHeight: 'calc(100vh - 80px)' }}>
@@ -786,10 +675,10 @@ export function CronMonitorPage() {
                 const isError = status === 'error';
                 const isPaused = status === 'paused';
                 const isSelected = selectedJobId === job.id;
-                // Fix #5: removed dead `progress` variable (cycleProgress result was never used)
+                // 已移除没有消费者的进度变量。
 
                 return (
-                  // Fix #4: layout animation only — no initial/animate that re-fires on poll
+                  // 只保留布局动画，轮询时不重新触发进入动画。
                   <motion.div key={job.id}
                     layout transition={{ layout: { duration: 0.15 } }}
                     onClick={() => selectJob(job.id)}
@@ -808,7 +697,7 @@ export function CronMonitorPage() {
                     {/* Info */}
                     <div className="flex-1 min-w-0 py-3 ps-3.5 pe-2">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[13px]">{getJobIcon(job.name || '')}</span>
+                        <span className="text-[13px]"><Clock size={14} strokeWidth={1.75} /></span>
                         <span className={clsx('text-[13px] font-bold truncate',
                           isError && 'text-aegis-danger/80',
                           isSelected && !isError && 'text-aegis-accent',
@@ -849,7 +738,7 @@ export function CronMonitorPage() {
                       </span>
                     </div>
 
-                    {/* Actions */}
+                        {/* 操作 */}
                     <div className="flex items-center gap-1.5 pe-3 shrink-0">
                       {/* Toggle */}
                       <button onClick={(e) => { e.stopPropagation(); toggleJob(job.id, !job.enabled); }}
@@ -910,7 +799,7 @@ export function CronMonitorPage() {
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-9 h-9 rounded-md flex items-center justify-center border shrink-0"
                     style={{ background: `${colorMap[selectedJob.id]}10`, borderColor: `${colorMap[selectedJob.id]}25` }}>
-                    {getJobIcon(selectedJob.name || '')}
+                    <Clock size={14} strokeWidth={1.75} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[15px] font-bold truncate">{selectedJob.name || selectedJob.id}</div>
@@ -1057,7 +946,7 @@ export function CronMonitorPage() {
                   </>
                 )}
 
-                {/* Actions */}
+                {/* 操作 */}
                 <div className="flex gap-1.5">
                   <button onClick={() => runJob(selectedJob.id)}
                     disabled={!!actionLoading || cronRunInFlight(runResult[selectedJob.id])}
@@ -1091,7 +980,7 @@ export function CronMonitorPage() {
             )}
           </AnimatePresence>
 
-          {/* Activity Log is collapsed to 5 items; Show More makes it scrollable. */}
+          {/* 活动记录默认收起到 5 条，展开后允许滚动查看。 */}
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-[rgb(var(--aegis-overlay)/0.06)]
               bg-aegis-bg-frosted backdrop-blur-sm">
@@ -1111,14 +1000,14 @@ export function CronMonitorPage() {
                 <div className="text-[10px] text-aegis-danger py-4 px-3" role="alert">{runsError}</div>
               ) : loadingRuns ? (
                 <div className="flex items-center gap-2 py-4 px-3 text-[10px] text-aegis-text-dim">
-                  <LoadingIndicator size={12} /> Loading...
+                  <LoadingIndicator size={12} /> {t('common.loading')}
                 </div>
               ) : activityRuns.length === 0 ? (
                 <div className="text-[10px] text-aegis-text-dim py-4 px-3">{t('cron.noRunsYet', 'No runs yet')}</div>
               ) : (
                 <>
-                  {/* Fix #4: no motion animation on log items (they re-rendered every poll) */}
-                  {/* Fix #12: more unique key with index */}
+                  {/* 运行记录轮询时保持稳定布局，避免重复触发进入动画。 */}
+                  {/* 使用运行记录身份和索引组成稳定键。 */}
                   {(showAllLogs ? activityRuns : activityRuns.slice(0, 5)).map((run, i) => {
                     const color = colorMap[run.jobId || ''] || dataColor(9);
                     const isOk = run.status === 'ok';
@@ -1147,12 +1036,12 @@ export function CronMonitorPage() {
                           {formatDuration(run.durationMs)}
                         </div>
                         <div className="text-[9px] text-aegis-text-dim font-mono shrink-0 w-9 text-end">
-                          {run.ts ? formatTimeAgo(run.ts).replace(' ago', '') : '—'}
+                          {run.ts ? formatTimeAgo(run.ts) : '—'}
                         </div>
                       </div>
                     );
                   })}
-                  {/* Show More / Show Less toggle */}
+                  {/* 展开或收起运行记录。 */}
                   {activityRuns.length > 5 && (
                     <button onClick={() => setShowAllLogs(!showAllLogs)}
                       className="w-full py-2 mt-1 rounded-lg text-[10px] font-semibold
@@ -1167,7 +1056,7 @@ export function CronMonitorPage() {
         </div>
       </div>
 
-      {/* ═══ Templates Modal ═══ */}
+      {/* ═══ 模板对话框 ═══ */}
       <Dialog open={showTemplates} onOpenChange={(open) => setShowTemplates(open)}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] w-[min(560px,calc(100vw-2rem))] max-w-none gap-0 overflow-y-auto border-aegis-border bg-aegis-card-solid p-0 text-aegis-text shadow-2xl sm:rounded-2xl">
           <DialogHeader className="border-b border-aegis-border px-5 py-4 pe-12 text-start">
@@ -1370,7 +1259,7 @@ export function CronMonitorPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Fix #7: keyframes moved to index.css — no more <style> recreation per render */}
+      {/* 动画关键帧统一放在 index.css，避免每次渲染重复创建样式。 */}
     </div>
   );
 }

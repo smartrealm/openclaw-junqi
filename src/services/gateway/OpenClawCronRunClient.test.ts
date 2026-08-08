@@ -5,6 +5,7 @@ import {
   OpenClawCronRunClient,
   OpenClawCronRunResponseError,
   OpenClawCronRunUnsupportedError,
+  type OpenClawCronRunRequester,
 } from './OpenClawCronRunClient';
 
 const finished = {
@@ -25,31 +26,65 @@ const page = {
   nextOffset: null,
 };
 
+function createClient(
+  request: OpenClawCronRunRequester,
+  requestPrivileged = request,
+): OpenClawCronRunClient {
+  return new OpenClawCronRunClient({ request, requestPrivileged });
+}
+
 describe('OpenClawCronRunClient', () => {
   it('only accepts a queued manual run with a Gateway run id', async () => {
-    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
-    const client = new OpenClawCronRunClient(async (method, params) => {
-      calls.push({ method, params });
-      return { ok: true, enqueued: true, runId: 'run-1' } as never;
-    });
+    const calls: Array<{ lane: string; method: string; params: Record<string, unknown> }> = [];
+    const client = createClient(
+      async () => page as never,
+      async (method, params) => {
+        calls.push({ lane: 'admin', method, params });
+        return { ok: true, enqueued: true, runId: 'run-1' } as never;
+      },
+    );
 
     assert.deepEqual(await client.enqueue('job-1'), { ok: true, enqueued: true, runId: 'run-1' });
-    assert.deepEqual(calls, [{ method: 'cron.run', params: { id: 'job-1', mode: 'force' } }]);
+    assert.deepEqual(calls, [{ lane: 'admin', method: 'cron.run', params: { id: 'job-1', mode: 'force' } }]);
   });
 
-  it('reads terminal state only from the exact job and run history filter', async () => {
-    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
-    const client = new OpenClawCronRunClient(async (method, params) => {
-      calls.push({ method, params });
-      return page as never;
-    });
+  it('keeps run history on the read lane', async () => {
+    const calls: Array<{ lane: string; method: string; params: Record<string, unknown> }> = [];
+    const client = createClient(
+      async (method, params) => {
+        calls.push({ lane: 'read', method, params });
+        return page as never;
+      },
+      async (method, params) => {
+        calls.push({ lane: 'admin', method, params });
+        return { ok: true, enqueued: true, runId: 'run-1' } as never;
+      },
+    );
 
     assert.deepEqual(await client.findTerminal('job-1', 'run-1'), finished);
-    assert.deepEqual(calls, [{ method: 'cron.runs', params: { scope: 'job', id: 'job-1', runId: 'run-1', limit: 1 } }]);
+    assert.deepEqual(calls, [{ lane: 'read', method: 'cron.runs', params: { scope: 'job', id: 'job-1', runId: 'run-1', limit: 1 } }]);
+  });
+
+  it('uses the same lane contract for unsupported responses', async () => {
+    const lanes: string[] = [];
+    const client = createClient(
+      async () => {
+        lanes.push('read');
+        throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      },
+      async () => {
+        lanes.push('admin');
+        throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      },
+    );
+
+    await assert.rejects(client.enqueue('job-1'), OpenClawCronRunUnsupportedError);
+    await assert.rejects(client.list('job-1'), OpenClawCronRunUnsupportedError);
+    assert.deepEqual(lanes, ['admin', 'read']);
   });
 
   it('does not settle a run from a different history identity', async () => {
-    const client = new OpenClawCronRunClient(async () => ({
+    const client = createClient(async () => ({
       ...page,
       entries: [{ ...finished, runId: 'other-run' }],
     }) as never);
@@ -59,7 +94,7 @@ describe('OpenClawCronRunClient', () => {
 
   it('preserves every official terminal status without treating an absent record as completion', async () => {
     for (const status of ['ok', 'error', 'skipped'] as const) {
-      const client = new OpenClawCronRunClient(async () => ({
+      const client = createClient(async () => ({
         ...page,
         entries: [{ ...finished, status }],
       }) as never);
@@ -67,13 +102,13 @@ describe('OpenClawCronRunClient', () => {
       assert.equal((await client.findTerminal('job-1', 'run-1'))?.status, status);
     }
 
-    const pending = new OpenClawCronRunClient(async () => ({ ...page, entries: [] }) as never);
+    const pending = createClient(async () => ({ ...page, entries: [] }) as never);
     assert.equal(await pending.findTerminal('job-1', 'run-1'), null);
   });
 
   it('rejects malformed acknowledgements and history entries', async () => {
-    const missingRunId = new OpenClawCronRunClient(async () => ({ ok: true, enqueued: true }) as never);
-    const malformedEntry = new OpenClawCronRunClient(async () => ({
+    const missingRunId = createClient(async () => ({ ok: true, enqueued: true }) as never);
+    const malformedEntry = createClient(async () => ({
       ...page,
       entries: [{ ...finished, status: 'running' }],
     }) as never);
@@ -84,7 +119,7 @@ describe('OpenClawCronRunClient', () => {
 
   it('requests methods despite discovery omission and trusts Gateway unsupported responses', async () => {
     let calls = 0;
-    const client = new OpenClawCronRunClient(async () => {
+    const client = createClient(async () => {
       calls += 1;
       throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
     });
@@ -95,7 +130,7 @@ describe('OpenClawCronRunClient', () => {
   });
 
   it('maps an authoritative method-not-found response to unsupported', async () => {
-    const client = new OpenClawCronRunClient(async () => {
+    const client = createClient(async () => {
       throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
     });
 

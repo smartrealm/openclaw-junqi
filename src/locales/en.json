@@ -797,7 +797,14 @@
     "schedulerUnavailable": "Scheduler status unavailable",
     "nextWakeIn": "Next wake {{time}}",
     "jobDetailLoading": "Reading OpenClaw job details",
-    "jobDetailUnavailable": "Job details unavailable; showing the list snapshot"
+    "jobDetailUnavailable": "Job details unavailable; showing the list snapshot",
+    "format": {
+      "every": "Every {{interval}}",
+      "onExit": "On exit: {{command}}",
+      "stream": "Stream: {{command}}",
+      "unavailable": "Unavailable",
+      "now": "Now"
+    }
   },
   "agents": {
     "title": "Agent Hub",
@@ -2632,7 +2639,15 @@
     "checkInName": "Check-In",
     "checkInDesc": "Periodic nudge if anything needs attention",
     "healthName": "System Health",
-    "healthDesc": "Disk, RAM, uptime, and process monitoring"
+    "healthDesc": "Disk, RAM, uptime, and process monitoring",
+    "morningJobName": "Morning Briefing",
+    "morningMessage": "Prepare a concise morning briefing: check local weather, major news, and pending work, reminders, or deadlines in memory.",
+    "weeklyJobName": "Weekly Digest",
+    "weeklyMessage": "Complete a weekly review: read this week's memory, summarize key events and decisions, update important information, and remove stale content.",
+    "checkInJobName": "Check-In",
+    "checkInMessage": "Review recent memory and sessions for pending work. Contact the user only when something needs follow-up; otherwise remain silent.",
+    "healthJobName": "System Health Check",
+    "healthMessage": "Check disk space, memory use, uptime, and unusual processes. Report only issues that require attention."
   },
   "dashboardExtra": {
     "contextCompacted": "Context compacted ×{{n}}"
@@ -3696,7 +3711,20 @@
       "scheduled": "Scheduled",
       "pending": "Pending",
       "fired": "Sent",
-      "failed": "Failed"
+      "failed": "Failed",
+      "unsupported": "This recurrence cannot be scheduled accurately by OpenClaw Cron"
+    },
+    "reminderContent": {
+      "jobName": "Calendar reminder: {{title}}",
+      "title": "Calendar reminder: {{title}}",
+      "time": "Time: {{start}}{{end}}",
+      "timeEnd": " to {{end}}",
+      "allDay": "All-day event",
+      "location": "Location: {{location}}",
+      "notes": "Notes: {{notes}}",
+      "lastChannel": "Send this reminder to the user through the most recently active channel.",
+      "namedChannel": "Send this reminder through channel {{channel}} using that channel's message tool.",
+      "leadTime": "The event starts in {{minutes}} minutes."
     },
     "delivery": {
       "label": "Deliver to",

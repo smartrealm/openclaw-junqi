@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════
-// Calendar Store — Zustand state with localStorage + Cron reminders
-// Offline-first: events persist locally, cron syncs when connected
+// 日历状态：本地事件与 OpenClaw Cron 提醒关联
+// 本地优先持久化，连接可用时再同步 Cron 提醒
 // ═══════════════════════════════════════════════════════════
 
 import { create } from 'zustand';
@@ -9,15 +9,17 @@ import { buildCronAgentTurnAddParams } from '@/services/gateway/cronContract';
 import type { CalendarEvent, CalendarFilter, CalendarSettings } from '@/pages/Calendar/calendarTypes';
 import { DEFAULT_SETTINGS, DEFAULT_FILTER } from '@/pages/Calendar/calendarTypes';
 import { generateEventId, getLocalTimezone } from '@/pages/Calendar/calendarUtils';
+import { buildCalendarReminderContent } from '@/pages/Calendar/calendarReminderContent';
+import { buildCronReminderSchedule } from '@/pages/Calendar/cronReminderSchedule';
 import { debugError } from '@/utils/debugLog';
 
-// ── localStorage persistence ──
+// ── localStorage 持久化 ──
 
 const EVENTS_KEY = 'aegis-calendar-events';
 const SETTINGS_KEY = 'aegis-calendar-settings';
 
 function persistEvents(events: CalendarEvent[]): void {
-  try { localStorage.setItem(EVENTS_KEY, JSON.stringify(events)); } catch { /* quota exceeded */ }
+  try { localStorage.setItem(EVENTS_KEY, JSON.stringify(events)); } catch { /* 存储空间不足 */ }
 }
 
 function loadPersistedEvents(): CalendarEvent[] {
@@ -38,33 +40,38 @@ function loadPersistedSettings(): CalendarSettings {
   } catch { return DEFAULT_SETTINGS; }
 }
 
-// ── Cron reminder helpers ──
+// ── Cron 提醒辅助逻辑 ──
 
-async function createCronReminder(event: CalendarEvent): Promise<string | null> {
-  if (event.reminderMinutes <= 0 || event.allDay || !event.startTime) return null;
+type CronReminderCreation =
+  | { readonly status: 'scheduled'; readonly jobId: string }
+  | { readonly status: 'pending' | 'unsupported' | 'none' };
 
-  const eventDateTime = new Date(`${event.date}T${event.startTime}:00`);
-  const reminderTime = new Date(eventDateTime.getTime() - event.reminderMinutes * 60000);
+function initialReminderStatus(event: CalendarEvent): CalendarEvent['reminderStatus'] {
+  const schedule = buildCronReminderSchedule(event, getLocalTimezone());
+  if (schedule.status !== 'scheduled') return schedule.status;
+  return schedule.reminderAt.getTime() > Date.now() ? 'pending' : 'none';
+}
 
-  // Skip past reminders
-  if (reminderTime.getTime() <= Date.now()) return null;
-
-  const isRecurring = !!event.recurrence;
+async function createCronReminder(event: CalendarEvent): Promise<CronReminderCreation> {
+  const schedule = buildCronReminderSchedule(event, getLocalTimezone());
+  if (schedule.status !== 'scheduled') return schedule;
+  if (schedule.reminderAt.getTime() <= Date.now()) return { status: 'none' };
 
   try {
+    const { default: runtimeI18n, i18nReady } = await import('@/i18n');
+    await i18nReady;
+    const content = buildCalendarReminderContent(event, (key, options) => runtimeI18n.t(key, options));
     const result = await gateway.addCronAgentTurn(buildCronAgentTurnAddParams({
-      name: `Calendar: ${event.title}`,
-      schedule: isRecurring
-        ? { kind: 'cron', expr: buildCronExpr(event), tz: getLocalTimezone() }
-        : { kind: 'at', at: reminderTime.toISOString() },
-      message: buildReminderMessage(event),
-      deleteAfterRun: !isRecurring,
+      name: content.name,
+      schedule: schedule.schedule,
+      message: content.message,
+      deleteAfterRun: !event.recurrence,
       enabled: true,
     }));
-    return result.id;
+    return { status: 'scheduled', jobId: result.id };
   } catch (err) {
     debugError('app', '[Calendar] Failed to create cron reminder:', err);
-    return null;
+    return { status: 'pending' };
   }
 }
 
@@ -86,59 +93,7 @@ async function removeCronReminder(jobId: string): Promise<CronReminderRemoval> {
   }
 }
 
-function buildCronExpr(event: CalendarEvent): string {
-  if (!event.recurrence || !event.startTime) return '0 0 * * *';
-
-  const [hours, minutes] = event.startTime.split(':').map(Number);
-  // Subtract reminder offset
-  let remM = minutes - event.reminderMinutes;
-  let remH = hours;
-  while (remM < 0) { remM += 60; remH--; }
-  if (remH < 0) remH += 24;
-
-  const { freq, interval } = event.recurrence;
-
-  switch (freq) {
-    case 'daily':
-      return interval === 1
-        ? `${remM} ${remH} * * *`
-        : `${remM} ${remH} */${interval} * *`;
-    case 'weekly': {
-      const dow = new Date(event.date).getDay();
-      return `${remM} ${remH} * * ${dow}`;
-    }
-    case 'monthly': {
-      const dom = new Date(event.date).getDate();
-      return `${remM} ${remH} ${dom} */${interval || 1} *`;
-    }
-    case 'yearly': {
-      const d = new Date(event.date);
-      return `${remM} ${remH} ${d.getDate()} ${d.getMonth() + 1} *`;
-    }
-    default:
-      return `${remM} ${remH} * * *`;
-  }
-}
-
-function buildReminderMessage(event: CalendarEvent): string {
-  const channelInstruction = event.deliveryChannel === 'last'
-    ? 'Send this reminder to the user via the most recent active channel.'
-    : `Send this reminder to the user via ${event.deliveryChannel}. Use the message tool with channel="${event.deliveryChannel}".`;
-
-  return [
-    `Calendar Reminder: ${event.title}`,
-    event.startTime
-      ? `Time: ${event.startTime}${event.endTime ? ` – ${event.endTime}` : ''}`
-      : 'All day event',
-    event.location ? `Location: ${event.location}` : '',
-    event.notes ? `Notes: ${event.notes}` : '',
-    '',
-    channelInstruction,
-    `The event starts in ${event.reminderMinutes} minutes.`,
-  ].filter(Boolean).join('\n');
-}
-
-// ── Store definition ──
+// ── 状态定义 ──
 
 interface CalendarState {
   events: CalendarEvent[];
@@ -149,23 +104,23 @@ interface CalendarState {
   loading: boolean;
   error: string | null;
 
-  // Actions — navigation
+  // 导航操作
   setView: (view: 'month' | 'week' | 'day') => void;
   setSelectedDate: (date: Date) => void;
   navigate: (delta: number) => void;
   goToToday: () => void;
 
-  // Actions — CRUD
+  // 增删改查操作
   loadEvents: () => void;
   addEvent: (data: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt' | 'source' | 'reminderStatus' | 'reminderCronJobId'>) => Promise<CalendarEvent>;
   updateEvent: (id: string, updates: Partial<CalendarEvent>) => Promise<void>;
   deleteEvent: (id: string) => Promise<void>;
 
-  // Actions — filter & settings
+  // 筛选与设置操作
   setFilter: (patch: Partial<CalendarFilter>) => void;
   updateSettings: (patch: Partial<CalendarSettings>) => void;
 
-  // Actions — cron sync
+  // Cron 同步操作
   syncPendingReminders: () => Promise<void>;
 }
 
@@ -178,7 +133,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   loading: false,
   error: null,
 
-  // ── Navigation ──
+  // ── 导航 ──
 
   setView: (view) => set({ view }),
 
@@ -195,47 +150,49 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
   goToToday: () => set({ selectedDate: new Date() }),
 
-  // ── CRUD ──
+  // ── 增删改查 ──
 
   loadEvents: () => {
     set({ loading: true, error: null });
-    try {
-      const events = loadPersistedEvents();
-      set({ events, loading: false });
-    } catch (err: any) {
-      set({ error: err.message || 'Load failed', loading: false });
-    }
+    const events = loadPersistedEvents();
+    set({ events, loading: false });
   },
 
   addEvent: async (data) => {
     const now = new Date().toISOString();
-    const reminderCanBeScheduled = data.reminderMinutes > 0 && !data.allDay && Boolean(data.startTime);
     const event: CalendarEvent = {
       ...data,
       id: generateEventId(),
       source: 'local',
-      reminderStatus: reminderCanBeScheduled ? 'pending' : 'none',
+      reminderStatus: 'none',
       reminderCronJobId: undefined,
       createdAt: now,
       updatedAt: now,
     };
+    event.reminderStatus = initialReminderStatus(event);
 
-    // 1. Save locally (offline-first)
+    // 先持久化本地事件，避免网络失败丢失用户输入。
     set((s) => ({ events: [...s.events, event] }));
     persistEvents(get().events);
 
-    // 2. Create cron reminder (if possible)
-    if (reminderCanBeScheduled) {
-      const cronId = await createCronReminder(event);
-      if (cronId) {
+    // 仅对可由官方 Cron 准确表达的提醒创建远端任务。
+    if (event.reminderStatus === 'pending') {
+      const creation = await createCronReminder(event);
+      if (creation.status === 'scheduled') {
         set((s) => ({
           events: s.events.map((e) =>
-            e.id === event.id ? { ...e, reminderCronJobId: cronId, reminderStatus: 'scheduled' } : e
+            e.id === event.id ? { ...e, reminderCronJobId: creation.jobId, reminderStatus: 'scheduled' } : e
           ),
         }));
         persistEvents(get().events);
-        event.reminderCronJobId = cronId;
+        event.reminderCronJobId = creation.jobId;
         event.reminderStatus = 'scheduled';
+      } else if (creation.status !== 'pending') {
+        set((s) => ({
+          events: s.events.map((e) => e.id === event.id ? { ...e, reminderStatus: creation.status } : e),
+        }));
+        persistEvents(get().events);
+        event.reminderStatus = creation.status;
       }
     }
 
@@ -248,7 +205,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
     const updated = { ...old, ...updates, updatedAt: new Date().toISOString() };
 
-    // Update cron if reminder changed
+    // 所有会改变计划或消息内容的字段都必须重建远端提醒。
     const reminderChanged =
       updates.reminderMinutes !== undefined ||
       updates.startTime !== undefined ||
@@ -269,27 +226,26 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
       }
     }
 
-    const replacementPending = reminderChanged
-      && updated.reminderMinutes > 0
-      && !updated.allDay
-      && Boolean(updated.startTime);
+    const replacementStatus = reminderChanged ? initialReminderStatus(updated) : updated.reminderStatus;
     const localUpdated: CalendarEvent = reminderChanged
       ? {
         ...updated,
         reminderCronJobId: undefined,
-        reminderStatus: replacementPending ? 'pending' : 'none',
+        reminderStatus: replacementStatus,
       }
       : updated;
 
     set((s) => ({ events: s.events.map((e) => (e.id === id ? localUpdated : e)), error: null }));
     persistEvents(get().events);
 
-    if (replacementPending) {
-      const cronId = await createCronReminder(localUpdated);
+    if (localUpdated.reminderStatus === 'pending') {
+      const creation = await createCronReminder(localUpdated);
       set((s) => ({
         events: s.events.map((e) =>
           e.id === id
-            ? { ...e, reminderCronJobId: cronId || undefined, reminderStatus: cronId ? 'scheduled' : 'pending' }
+            ? creation.status === 'scheduled'
+              ? { ...e, reminderCronJobId: creation.jobId, reminderStatus: 'scheduled' }
+              : { ...e, reminderStatus: creation.status }
             : e
         ),
       }));
@@ -301,7 +257,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     const event = get().events.find((e) => e.id === id);
     if (!event) return;
 
-    // Remove cron job if exists
+    // 只有远端确认删除后才能移除本地关联。
     if (event.reminderCronJobId) {
       const removal = await removeCronReminder(event.reminderCronJobId);
       if (!removal.removed) {
@@ -314,7 +270,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     persistEvents(get().events);
   },
 
-  // ── Filter & Settings ──
+  // ── 筛选与设置 ──
 
   setFilter: (patch) => set((s) => ({ filter: { ...s.filter, ...patch } })),
 
@@ -326,7 +282,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     });
   },
 
-  // ── Cron sync (for events added while offline) ──
+  // ── Cron 同步：补发离线期间未创建的提醒 ──
 
   syncPendingReminders: async () => {
     const { events } = get();
@@ -335,12 +291,16 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     );
 
     for (const event of pending) {
-      const cronId = await createCronReminder(event);
-      if (cronId) {
+      const creation = await createCronReminder(event);
+      if (creation.status === 'scheduled') {
         set((s) => ({
           events: s.events.map((e) =>
-            e.id === event.id ? { ...e, reminderCronJobId: cronId, reminderStatus: 'scheduled' } : e
+            e.id === event.id ? { ...e, reminderCronJobId: creation.jobId, reminderStatus: 'scheduled' } : e
           ),
+        }));
+      } else if (creation.status !== 'pending') {
+        set((s) => ({
+          events: s.events.map((e) => e.id === event.id ? { ...e, reminderStatus: creation.status } : e),
         }));
       }
     }

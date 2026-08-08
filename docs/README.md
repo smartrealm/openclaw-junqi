@@ -315,6 +315,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [OpenClaw Cron 调度器状态验证](quality/openclaw-cron-scheduler-status-validation-2026-08-03.md)
 - [OpenClaw Cron 写操作授权与日历一致性审计](quality/openclaw-cron-mutation-authority-audit-2026-08-03.md)
 - [OpenClaw Cron 写操作授权与日历一致性验证](quality/openclaw-cron-mutation-authority-validation-2026-08-03.md)
+- [OpenClaw Cron 与日历提醒一致性验证](quality/openclaw-cron-calendar-integrity-2026-08-08.md)
 - [Tauri 适配器遗留 IPC 审计](quality/tauri-adapter-legacy-ipc-audit-2026-08-03.md)
 - [Tauri 适配器遗留 IPC 验证](quality/tauri-adapter-legacy-ipc-validation-2026-08-03.md)
 - [Chat 响应追溯与 OpenClaw 审计账本](quality/chat-response-trace-audit-ledger-2026-08-03.md)

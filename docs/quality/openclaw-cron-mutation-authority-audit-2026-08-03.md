@@ -58,3 +58,10 @@ CronMonitor 已支持创建、启停、运行和 Agent 路由，但没有删除�
 - 不实现或猜测 Cron 的 command payload、webhook、投递目标、trigger、pacing、scratch 或模型覆盖编辑器；当前界面没有完整的官方字段编辑契约。
 - 不把日历本地事件改成 Gateway 的权威实体；本轮只修复已有本地事件与其已创建 Cron job 的副作用一致性。
 - 不把管理员 token 写入前端持久化状态；继续使用既有短生命周期 transient connection 和授权错误处理。
+
+## 后续校正（2026-08-08）
+
+本文件记录的是 2026-08-03 的历史审计结论。随后已按 OpenClaw 官方协议补充 `cron.run` 的权限核对：
+`cron.get`、`cron.list`、`cron.status`、`cron.runs` 使用 `operator.read`，`cron.add`、`cron.update`、
+`cron.remove`、`cron.run` 使用 `operator.admin`。当前实现与详细验证证据见
+`docs/quality/openclaw-cron-calendar-integrity-2026-08-08.md`。

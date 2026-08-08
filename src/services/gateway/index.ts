@@ -1137,10 +1137,11 @@ const taskLedger = new OpenClawTaskLedgerClient({
     expectedConnectionId,
   ),
 });
-const cronRunClient = new OpenClawCronRunClient(
-  (method, params) => connection.request(method, params),
-  { recordCapabilityInvalidResponse: (method) => connection.recordCapabilityInvalidResponse(method) },
-);
+const cronRunClient = new OpenClawCronRunClient({
+  request: (method, params) => connection.request(method, params),
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
+  diagnostics: { recordCapabilityInvalidResponse: (method) => connection.recordCapabilityInvalidResponse(method) },
+});
 const cronStatusClient = new OpenClawCronStatusClient(
   (method, params) => connection.request(method, params),
 );
