@@ -46,7 +46,7 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
       subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isGatewayReady ? t("setup.gatewayReadySubtitle") : t("setup.subtitle")}
       logs={logs}
       wide
-      showLogToggle={false}
+      showLogToggle={isGatewayReady}
       previousAction={setupStep === "error" || isGatewayReady ? {
         onClick: () => flow.goBack(),
         disabled: flow.repairing || gatewayReadyChecking,

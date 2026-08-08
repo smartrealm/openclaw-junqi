@@ -42,6 +42,7 @@
 - 已补充安装与首次启动端到端总览 `docs/installation/junqi-installation-flow.md`，将运行时选择、数据位置、Gateway 交接、官方 Wizard、
   三重完成门禁、Ready/Dashboard 进入、恢复语义和跨平台未验证边界统一串联，并从 `docs/README.md` 提供唯一总览入口。
 - 已校正顶部阶段与页面语义：欢迎页是五个真实配置阶段之前的前置页，阶段条不点亮任何项目；进入检测页后环境检测才作为第一阶段点亮，下一步路由与阶段显示一致。
+- 已收敛 Gateway 就绪页高度：移除与外层标题重复的就绪详情及固定 342px 的安装活动双栏，改为紧凑的步骤完成摘要；完整日志继续复用 SetupShell 的按需展开入口。
 - 已优化 Setup 上一步/下一步过渡：稳定步骤条和底部操作栏不再随页面横移，标题与内容通过保持居中的 `SetupStepScene` 单独过渡；用户决策态使用 24px 方向入场，检测、安装、Gateway 和失败运行态使用 12px 轻微淡入，旧页面立即卸载约束保持不变。
 - 已增强会话变更和会话文件的真实状态呈现：`sessions.diff` 保留 Gateway 的授权失败及缺失 scope，不自动提权；会话文件预览按缺失、类型不支持、内容不可用和未知原因区分，并展示 Gateway 返回的安全元数据。
 - 已移除当前 Gateway 未提供的会话旁问入口、专属 RPC 客户端、Hook、测试、国际化文案和本地 `/btw`/`/side` 拦截；普通问题恢复为主会话发送。官方能力与未来恢复边界记录在
@@ -115,7 +116,7 @@
 - 会话变更特权连接回归已覆盖优先调用特权 lane；真实 Gateway admin 设备授权仍未完成。
 - Ready 运行偏好并行加载与完整骨架回归已通过：`setupOnboardingRegression.test.ts`、`AutostartPreferenceRow.test.tsx`、`pnpm exec tsc --noEmit`；桌面真机首次进入的视觉帧仍未录制。
 - Setup 当前页入场、环境动作门禁和下一步—上一步—下一步往返定向回归共 29 项通过；`pnpm lint`、`pnpm build` 和完整 `pnpm test` 均通过。完整测试前端 2825 项、脚本 243 项，首次运行发现的一条旧源码表达式断言已删除并由行为测试替代。
-- 已基于当前工作区重新构建并校验 macOS arm64 DMG 验收包：`src-tauri/target/release/bundle/dmg/JunQi Desktop_2.2.10_aarch64.dmg`。`hdiutil verify` 通过，文件大小为 8742712 字节，SHA-256 为 `afb5ce659ce9e9cefa484f80ccb3b450ee1bfc8102756108c44a847ed5dccbeb`。该包未正式签名或公证；本轮尚未重新执行安装后的真机走查。
+- 已基于当前工作区重新构建并校验 macOS arm64 DMG 验收包：`src-tauri/target/release/bundle/dmg/JunQi Desktop_2.2.10_aarch64.dmg`。`hdiutil verify` 通过，文件大小为 8743409 字节，SHA-256 为 `049bbc1d2794b09818e94b2285599bd94909eb31f126a69202a9fd4e28b1dd7a`。该包未正式签名或公证；本轮尚未重新执行安装后的真机走查。
 - 本轮助手头像视觉调整已包含在当前安装的 `.app` 中；亮暗主题与窄窗口的最终视觉验收仍待完成。
 - 已完成会话助手头像视觉调整；本轮聊天相关测试、`pnpm lint`、完整 `pnpm test` 和 `pnpm build` 均通过，亮暗主题与窄窗口的最终视觉验收仍待完成。
 - 本轮已通过聚焦回归：Gateway 能力证据、Gateway Skills 欢迎页、本地 Skill Hub 边界、Cron contract/parser、Cron runs、Cron store
@@ -123,6 +124,7 @@
 - 本轮安装流程总览仅新增文档和索引入口，未改变运行时代码；已完成链接、路径和 Emoji 扫描。
 - 本轮 Setup 居中约束与可感知动效修正已通过动效定向测试、SetupShell 渲染测试、`pnpm lint`、完整 `pnpm test`、`pnpm build`、边界检查和 `git diff --check`，并已重新打包 macOS arm64 DMG。真实桌面视觉验收仍待完成。
 - 本轮顶部阶段语义修正已通过引导呈现状态机、SetupShell 渲染、`pnpm lint`、完整 `pnpm test`、`pnpm build` 和 `git diff --check`，并已重新打包 macOS arm64 DMG。真实桌面视觉验收仍待完成。
+- 本轮 Gateway 就绪页紧凑化已通过完成摘要模式、SetupShell 布局、`pnpm lint`、完整 `pnpm test`、`pnpm build` 和 `git diff --check`，并已重新打包 macOS arm64 DMG。真实窗口高度与滚动条验收仍待完成。
 - 已审查并合并 `Blues-Code/code` 分支的 `7f0d208c`；合并提交为 `fa094888`。该分支只新增两份会话能力分析文档，未引入
   源码、配置、OpenClaw RPC 或运行时行为；文档已标明基于旧快照的证据边界，不作为当前功能契约。
 

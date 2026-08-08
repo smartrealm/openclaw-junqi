@@ -954,6 +954,12 @@ export type InstallationConsoleSummary =
   | { kind: "model-checking" }
   | { kind: "model-check-failed"; message: string };
 
+export function installationConsoleMode(
+  summary: InstallationConsoleSummary,
+): "activity" | "completion" {
+  return summary.kind === "gateway-ready" ? "completion" : "activity";
+}
+
 type InstallationConsoleProps = {
   flow: SetupFlow;
   logs: SetupLog[];
@@ -972,6 +978,7 @@ export function InstallationConsole({
   const current = currentStepOf(flow.steps);
   const completed = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || 1;
+  const consoleMode = installationConsoleMode(summary);
   const modelChecking = summary.kind === "model-checking";
   const modelCheckFailed = summary.kind === "model-check-failed";
   const isReady = setupStep === "ready" || summary.kind === "gateway-ready";
@@ -1010,6 +1017,18 @@ export function InstallationConsole({
         ? t("setup.error", "安装遇到问题")
         : t("setup.installPanel.current", "当前执行");
   const showProgress = !modelChecking && !modelCheckFailed;
+
+  if (consoleMode === "completion") {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-aegis-success/35 bg-aegis-success/5 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-aegis-text-secondary">
+          <CheckCircle2 size={16} className="shrink-0 text-aegis-success" />
+          <span>{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}</span>
+        </div>
+        <div className="text-lg font-semibold tabular-nums text-aegis-success">100%</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
