@@ -72,6 +72,7 @@ src/locales/
 - [x] 复用 `invokeOpenClawTool`，不新增第二个 Gateway requester。
 - [x] 接入 OpenClaw 工具调用与本地脱敏活动投影；正式审批状态仍以 Gateway 事件为准。
 - [x] 新增不保存参数和原始输出的 `BusinessActivityProjection`，明确非 transcript 权威。
+- [x] 将能力浏览改为表格优先：默认收起筛选轨道，将搜索和高频筛选置于表格顶部，移除与工具详情重复的租户身份输入。
 - [x] 删除旧 Chat bridge、静态 Journal、飞书与 Google descriptor、专属测试和无引用导出。
 - [ ] 若当前 edition 只有钉钉一个真实消费者，不新增一值平台配置；第二个平台真实实现时再引入单选配置。
 

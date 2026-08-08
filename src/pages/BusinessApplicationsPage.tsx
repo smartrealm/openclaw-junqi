@@ -6,6 +6,7 @@ import {
   ListChecks,
   PanelLeftClose,
   RefreshCw,
+  RotateCcw,
   Search,
   SlidersHorizontal,
   Wrench,
@@ -101,29 +102,17 @@ function useRuntimeIdentitySnapshot() {
 function FilterPane({
   width,
   collapsed,
-  search,
   domain,
-  effect,
-  profile,
   onWidthChange,
   onCollapsedChange,
-  onSearchChange,
   onDomainChange,
-  onEffectChange,
-  onProfileChange,
 }: {
   width: number;
   collapsed: boolean;
-  search: string;
   domain: DomainFilter;
-  effect: EffectFilter;
-  profile: string;
   onWidthChange: (value: number) => void;
   onCollapsedChange: (value: boolean) => void;
-  onSearchChange: (value: string) => void;
   onDomainChange: (value: DomainFilter) => void;
-  onEffectChange: (value: EffectFilter) => void;
-  onProfileChange: (value: string) => void;
 }) {
   if (collapsed) {
     return (
@@ -142,18 +131,8 @@ function FilterPane({
         <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-aegis-text-secondary"><SlidersHorizontal size={13} />筛选</span>
         <IconButton aria-label="收起筛选" title="收起筛选" onClick={() => onCollapsedChange(true)}><PanelLeftClose size={14} /></IconButton>
       </div>
-      <label className="mt-3 block text-[10px] font-medium text-aegis-text-dim" htmlFor="dingtalk-tool-search">搜索工具</label>
-      <div className="relative mt-1">
-        <Search size={12} className="pointer-events-none absolute left-2 top-2 text-aegis-text-dim" />
-        <input
-          id="dingtalk-tool-search"
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="名称或描述"
-          className="h-7 w-full rounded-md border border-aegis-border bg-aegis-bg pl-7 pr-2 text-[10.5px] text-aegis-text outline-none placeholder:text-aegis-text-dim focus:border-aegis-primary/60 focus:ring-1 focus:ring-aegis-primary/25"
-        />
-      </div>
-      <fieldset className="mt-4">
+      <p className="mt-3 text-[10px] leading-4 text-aegis-text-dim">搜索和效果筛选位于工具表格上方。这里保留业务域的集中浏览。</p>
+      <fieldset className="mt-3">
         <legend className="text-[10px] font-medium text-aegis-text-dim">业务域</legend>
         <div className="mt-1 grid grid-cols-2 gap-1">
           {DOMAIN_FILTERS.map((item) => (
@@ -174,31 +153,6 @@ function FilterPane({
           ))}
         </div>
       </fieldset>
-      <label className="mt-4 block text-[10px] font-medium text-aegis-text-dim" htmlFor="dingtalk-effect-filter">操作效果</label>
-      <select
-        id="dingtalk-effect-filter"
-        value={effect}
-        onChange={(event) => {
-          const next = event.target.value;
-          if (next === 'all' || next === 'read' || next === 'write') onEffectChange(next);
-        }}
-        className="mt-1 h-7 w-full rounded-md border border-aegis-border bg-aegis-bg px-2 text-[10.5px] text-aegis-text outline-none focus:border-aegis-primary/60"
-      >
-        <option value="all">全部效果</option>
-        <option value="read">读取</option>
-        <option value="write">写入</option>
-      </select>
-      <label className="mt-4 block text-[10px] font-medium text-aegis-text-dim" htmlFor="dingtalk-profile-filter">租户身份</label>
-      <input
-        id="dingtalk-profile-filter"
-        value={profile}
-        onChange={(event) => onProfileChange(event.target.value)}
-        placeholder="corpId:userId"
-        autoComplete="off"
-        spellCheck={false}
-        className="mt-1 h-7 w-full rounded-md border border-aegis-border bg-aegis-bg px-2 font-mono text-[10px] text-aegis-text outline-none placeholder:text-aegis-text-dim focus:border-aegis-primary/60 focus:ring-1 focus:ring-aegis-primary/25"
-      />
-      <p className="mt-1.5 text-[9.5px] leading-4 text-aegis-text-dim">每次执行都显式传递，不写入本地持久存储。</p>
     </aside>
   );
 }
@@ -225,7 +179,7 @@ export function BusinessApplicationsPage() {
   const [view, setView] = useState<WorkbenchView>('tools');
   const [leftWidth, setLeftWidth] = useState(228);
   const [rightWidth, setRightWidth] = useState(382);
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [leftCollapsed, setLeftCollapsed] = useState(true);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [search, setSearch] = useState('');
   const [domain, setDomain] = useState<DomainFilter>('all');
@@ -259,6 +213,13 @@ export function BusinessApplicationsPage() {
       return `${tool.entry.label}\n${tool.entry.description}\n${tool.entry.id}`.toLocaleLowerCase().includes(query);
     });
   }, [allTools, domain, effect, search]);
+  const hasActiveFilters = Boolean(search.trim()) || domain !== 'all' || effect !== 'all';
+
+  const clearFilters = useCallback(() => {
+    setSearch('');
+    setDomain('all');
+    setEffect('all');
+  }, []);
 
   const refreshTools = useCallback(async () => {
     if (!sessionExists || !activeSessionKey) return;
@@ -622,24 +583,60 @@ export function BusinessApplicationsPage() {
           <FilterPane
             width={leftWidth}
             collapsed={leftCollapsed}
-            search={search}
             domain={domain}
-            effect={effect}
-            profile={profile}
             onWidthChange={setLeftWidth}
             onCollapsedChange={setLeftCollapsed}
-            onSearchChange={setSearch}
             onDomainChange={setDomain}
-            onEffectChange={setEffect}
-            onProfileChange={setProfile}
           />
           <main className="flex min-h-0 min-w-0 flex-col bg-aegis-surface/20">
-            <div className="flex h-9 shrink-0 items-center justify-between border-b border-aegis-border px-3">
-              <div className="flex min-w-0 items-center gap-2 text-[10.5px] text-aegis-text-dim">
-                <span className="font-medium text-aegis-text-secondary">当前 Session</span>
-                <span className="max-w-[320px] truncate font-mono" title={activeSessionKey}>{sessionExists ? activeSessionKey : '未选择有效 Session'}</span>
+            <div className="flex h-10 shrink-0 items-center gap-2 border-b border-aegis-border px-3">
+              <label className="relative min-w-[152px] flex-1" htmlFor="dingtalk-tool-search">
+                <span className="sr-only">搜索工具</span>
+                <Search size={12} className="pointer-events-none absolute left-2 top-2 text-aegis-text-dim" />
+                <input
+                  id="dingtalk-tool-search"
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="搜索名称、描述或工具 ID"
+                  className="h-7 w-full rounded-md border border-aegis-border bg-aegis-bg pl-7 pr-2 text-[10.5px] text-aegis-text outline-none placeholder:text-aegis-text-dim focus:border-aegis-primary/60 focus:ring-1 focus:ring-aegis-primary/25"
+                />
+              </label>
+              <label className="sr-only" htmlFor="dingtalk-domain-filter">业务域</label>
+              <select
+                id="dingtalk-domain-filter"
+                value={domain}
+                onChange={(event) => {
+                  const next = event.target.value as DomainFilter;
+                  if (DOMAIN_FILTERS.includes(next)) setDomain(next);
+                }}
+                className="h-7 max-w-[112px] rounded-md border border-aegis-border bg-aegis-bg px-2 text-[10.5px] text-aegis-text outline-none focus:border-aegis-primary/60"
+              >
+                {DOMAIN_FILTERS.map((item) => <option key={item} value={item}>{domainFilterLabel(item)}</option>)}
+              </select>
+              <label className="sr-only" htmlFor="dingtalk-effect-filter">操作效果</label>
+              <select
+                id="dingtalk-effect-filter"
+                value={effect}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  if (next === 'all' || next === 'read' || next === 'write') setEffect(next);
+                }}
+                className="h-7 max-w-[92px] rounded-md border border-aegis-border bg-aegis-bg px-2 text-[10.5px] text-aegis-text outline-none focus:border-aegis-primary/60"
+              >
+                <option value="all">全部效果</option>
+                <option value="read">读取</option>
+                <option value="write">写入</option>
+              </select>
+              {hasActiveFilters && (
+                <IconButton aria-label="清除工具筛选" title="清除工具筛选" onClick={clearFilters}>
+                  <RotateCcw size={13} />
+                </IconButton>
+              )}
+              <div className="ml-auto flex min-w-0 items-center gap-2 text-[10px] text-aegis-text-dim">
+                <span className="hidden max-w-[220px] truncate font-mono xl:inline" title={activeSessionKey}>{sessionExists ? activeSessionKey : '未选择有效 Session'}</span>
+                <span className="shrink-0 tabular-nums">{filteredTools.length} / {allTools.length}</span>
               </div>
-              <span className="text-[10px] tabular-nums text-aegis-text-dim">{filteredTools.length} / {allTools.length}</span>
             </div>
             {toolsError && <div className="border-b border-aegis-danger/25 bg-aegis-danger/[0.06] px-3 py-1.5 text-[10px] text-aegis-danger">{toolsError}</div>}
             <DingTalkToolTable

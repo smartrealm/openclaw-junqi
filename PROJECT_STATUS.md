@@ -6,7 +6,7 @@
 
 完成 JunQi Desktop 作为 OpenClaw 客户端的跨平台桌面交付：保持 Gateway、会话、模型、Cron 与首次启动链路的
 官方契约；钉钉业务工作台通过受控 OpenClaw 插件呈现 DWS 的真实能力，不在桌面侧重定义 Agent、工具或业务状态。
-钉钉单平台业务工作台 UI 已迁移到生产页面，当前目标是完成插件运行时与真实业务契约验收。实现采用独立 OpenClaw 钉钉插件包装 DWS，业务页与 Chat 共用
+钉钉单平台业务工作台 UI 已迁移到生产页面，当前目标是完成插件运行时与真实业务契约验收，并保持能力表格优先于本地筛选栏。实现采用独立 OpenClaw 钉钉插件包装 DWS，业务页与 Chat 共用
 `tools.effective`、`tools.invoke` 和插件审批；Tauri 只负责经过 Runtime Identity 围栏的插件安装与启用，不直接执行 DWS。
 正式 DWS 发布包、真实 Gateway 审批往返和测试租户端到端仍是下一步门禁。
 
@@ -22,6 +22,7 @@
 - DWS runner 已收紧为最小环境白名单，不继承 Gateway token、DWS access token 或其他无关进程密钥。
 - 环境白名单回归、插件重新打包和最新 `pnpm build` 已通过，桌面资源中的插件归档已核对包含该实现。
 - 已完成业务页生产迁移：钉钉单平台、当前 Session 工具投影、左筛选/中表格/右详情三栏、拖拽和收起、参数 schema 展示、调用状态与脱敏活动投影。
+- 已完成业务工作台空间收敛：左侧筛选默认收起为 40px 轨道，搜索、业务域与操作效果筛选移至能力表格顶部并可一键清除；删除重复的左侧租户身份输入，身份只保留在工具详情中作为一次调用参数。
 - 已删除旧多平台目录、Chat bridge、静态 Journal 及其专属测试和无引用导出，不保留兼容双轨。
 - 已通过 `pnpm test`、`pnpm lint`、`pnpm build`、`pnpm verify:openclaw-docs`、`pnpm check:boundaries`、Rust `cargo fmt -- --check`、`cargo check --lib`、`cargo test --lib`、插件测试/校验/打包和 `git diff --check`。
 
@@ -75,6 +76,7 @@
   `git diff --check` 与 Emoji 扫描。
 - 合并后已通过 `pnpm lint`、完整 `pnpm test`、钉钉插件测试/校验/归档、`pnpm build`、
   Rust 格式检查和 Rust 库测试（697 通过，2 个 Keychain 测试按设计跳过）。
+- 本次表格优先布局调整已通过 `pnpm lint`、完整 `pnpm test`、`pnpm build` 和 `git diff --check`。完整测试仍输出既有的 Radix SSR 与 Node 弃用警告，没有测试失败。
 - 本机 macOS ARM64 已生成 `JunQi Desktop_2.2.11_aarch64.dmg` 和 updater 归档；DMG 的 `hdiutil verify`
   通过，包内钉钉插件归档与源码资源 SHA-256 一致。Tauri 因未配置发布私钥无法完成 updater 签名，
   所以该制品仅用于本地验收，不能作为正式发布包。
@@ -86,6 +88,7 @@
 - 当前开发机未使用真实 DWS 发布包与钉钉测试租户执行读写；源码与自动化不能替代这些验证。
 - Windows Gateway 冷启动、新建会话首条消息和重启恢复仍需通过 Windows 安装包验收。
 - 尚未在真实亮色、暗色和窄窗口中人工验收 Office、首次启动与钉钉工作台。
+- 本次能力表格优先布局尚未在真实 Tauri 窗口人工核对亮色、暗色、窄窗口和键盘焦点；自动化已覆盖类型、边界和既有契约，但不替代视觉验收。
 
 ## 失败方案
 
