@@ -37,6 +37,7 @@ specs/
 - [协作发布证据](collaboration/2026-07-18-openclaw-collaboration-release-evidence-bugfix.md)
 - [本机 System Service 协作启用归属修复](collaboration/2026-07-31-local-system-service-collaboration-enablement.md)
 - [Agent Office 只读协作投影](collaboration/2026-08-03-agent-office-read-only-projection.md)
+- [智能体中心默认办公室投影](collaboration/2026-08-08-agent-hub-office-default.md)
 
 ## Business
 
@@ -59,6 +60,7 @@ specs/
 - [OpenClaw Agent 配置快照与并发写入对齐](quality/2026-08-04-openclaw-agent-config-snapshot-alignment.md)
 - [OpenClaw Gateway 挑战与策略对齐](quality/2026-08-04-openclaw-gateway-challenge-policy-alignment.md)
 - [Gateway 设备身份与工作区启动恢复](quality/2026-08-05-gateway-device-identity-startup-recovery.md)
+- [Gateway 设备身份钥匙串提示去重](quality/2026-08-06-gateway-device-identity-keychain-prompt-dedup.md)
 - [OpenClaw 桌面语音与 Jarvis 边界规格](quality/2026-08-04-openclaw-desktop-voice-wake-boundary.md)
 - [OpenClaw 会话快速模式对齐](quality/2026-08-04-openclaw-session-fast-mode.md)
 - [OpenClaw 会话推理可见性对齐](quality/2026-08-04-openclaw-session-reasoning-visibility.md)

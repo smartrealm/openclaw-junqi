@@ -7,8 +7,8 @@ import {
   type GatewayCredentialResult,
   type StoreGatewayCredentialParams,
 } from '@/api/tauri-commands';
-import { getGatewayDeviceIdentityReference } from '@/api/tauri-commands';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
+import { getGatewayDeviceIdentityReference } from './deviceAuthentication';
 
 export const GATEWAY_RUNTIME_ALIAS_KEY = 'aegis-gateway-runtime-aliases-v1';
 

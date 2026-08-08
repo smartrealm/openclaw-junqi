@@ -1245,6 +1245,28 @@
       "inheritWorkspace": "继承默认工作区",
       "nameUpdateWarningTitle": "智能体已创建，显示名称需要处理",
       "nameUpdateWarning": "智能体已经创建，但显示名称未能保存。请打开智能体设置后重试。"
+    },
+    "office": {
+      "title": "协作办公室",
+      "description": "从当前协作运行快照派生的只读视图。",
+      "disconnectedTitle": "协作办公室暂不可用",
+      "disconnectedDescription": "连接 Gateway 后，才能读取权威协作运行状态。",
+      "runSelectorLabel": "选择协作运行",
+      "untitledRun": "未命名协作运行",
+      "refresh": "刷新",
+      "loadFailed": "读取协作运行失败",
+      "loading": "正在读取协作运行…",
+      "emptyTitle": "暂无协作运行",
+      "emptyDescription": "当前没有可投影到办公室的未归档协作运行。",
+      "configuredRosterTitle": "已配置智能体",
+      "configuredRosterDescription": "展示配置中的员工席位，不代表当前运行参与、在线或执行状态。",
+      "configuredCoordinator": "协调智能体",
+      "configuredAllowed": "允许参与",
+      "configuredUnavailable": "未允许参与",
+      "configuredNoDescription": "未提供角色说明",
+      "showAgentList": "查看智能体列表",
+      "updatedAt": "更新于 {{time}}",
+      "openRun": "查看执行详情"
     }
   },
   "analytics": {
@@ -2679,6 +2701,7 @@
     "remTruths": "候选事实"
   },
   "agentHubExtra": {
+    "officeView": "办公室",
     "treeView": "树状视图",
     "gridView": "网格视图",
     "activityView": "活动",

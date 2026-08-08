@@ -882,7 +882,7 @@ export function useSetupFlow(
         return;
       }
 
-      if (completion.verification.status === "unavailable") {
+       if (completion.verification.status === "unavailable") {
         appendSetupLog({
           source: "setup",
           step: "gateway",
@@ -891,8 +891,8 @@ export function useSetupFlow(
             "OpenClaw 配置已完成，但当前 Gateway 未提供官方实时模型验证。模型可用性暂未核验，可继续进入工作区。",
           ),
           level: "warn",
-        });
-      }
+         });
+       }
 
       setSetupError(null);
       void invalidateActiveRun();

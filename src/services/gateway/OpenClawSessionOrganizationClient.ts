@@ -68,36 +68,32 @@ export class OpenClawSessionOrganizationClient {
 
   private patch(
     sessionKey: string,
-    expectedSessionId: string,
     patch: Record<string, boolean | string | null>,
   ): Promise<Record<string, unknown>> {
     const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
-    const identity = expectedSessionId.trim();
-    if (!identity) throw new SessionOrganizationResponseError();
     return this.deps.runMutation(targetSessionKey, async () => {
       const result = await this.request<unknown>('sessions.patch', {
         key: targetSessionKey,
-        expectedSessionId: identity,
         ...patch,
       });
       return confirmedPatchResult(result, targetSessionKey);
     });
   }
 
-  async setPinned(sessionKey: string, expectedSessionId: string, pinned: boolean): Promise<void> {
-    await this.patch(sessionKey, expectedSessionId, { pinned });
+  async setPinned(sessionKey: string, pinned: boolean): Promise<void> {
+    await this.patch(sessionKey, { pinned });
   }
 
-  async setUnread(sessionKey: string, expectedSessionId: string, unread: boolean): Promise<void> {
-    await this.patch(sessionKey, expectedSessionId, { unread });
+  async setUnread(sessionKey: string, unread: boolean): Promise<void> {
+    await this.patch(sessionKey, { unread });
   }
 
-  async setArchived(sessionKey: string, expectedSessionId: string, archived: boolean): Promise<void> {
-    await this.patch(sessionKey, expectedSessionId, { archived });
+  async setArchived(sessionKey: string, archived: boolean): Promise<void> {
+    await this.patch(sessionKey, { archived });
   }
 
-  async setCategory(sessionKey: string, expectedSessionId: string, category: string | null): Promise<string | null> {
-    const entry = await this.patch(sessionKey, expectedSessionId, { category });
+  async setCategory(sessionKey: string, category: string | null): Promise<string | null> {
+    const entry = await this.patch(sessionKey, { category });
     const confirmed = entry.category;
     if (category === null) {
       if (confirmed !== undefined && confirmed !== null) throw new SessionOrganizationResponseError();

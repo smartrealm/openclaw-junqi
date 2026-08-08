@@ -8,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen, Activity, ClipboardList, GitBranch, LayoutGrid, FileArchive, Share2, X } from 'lucide-react';
+import { RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen, Activity, ClipboardList, GitBranch, LayoutGrid, FileArchive, Share2, X, PanelsTopLeft } from 'lucide-react';
 import { ArrowsClockwise, Brain as BrainPh, Broom, FloppyDisk, ChartBar, Newspaper, BookOpen, CurrencyDollar, Lightning, Clock, Cube, MagnifyingGlass, Robot, Monitor, SoccerBall } from '@phosphor-icons/react';
 import { showAlert } from '@/components/shared/AlertDialog';
 import { AgentSettingsPanel } from './AgentSettingsPanel';
@@ -61,6 +61,8 @@ import {
   hasAgentHubSnapshot,
   shouldShowAgentHubInitialLoading,
 } from './viewStability';
+import { AgentHubOfficePanel } from './AgentHubOfficePanel';
+import { DEFAULT_AGENT_HUB_VIEW } from './agentHubOfficeRunSelection';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -88,7 +90,7 @@ interface AgentInfo {
   [k: string]: unknown;
 }
 
-type ViewMode = 'tree' | 'grid' | 'activity';
+type ViewMode = 'office' | 'tree' | 'grid' | 'activity';
 
 // ═══════════════════════════════════════════════════════════
 // Worker classification
@@ -745,7 +747,7 @@ export function AgentHubPage() {
     [rawSessions, sessionLabels],
   );
 
-  const [viewMode, setViewMode] = useState<ViewMode>('tree');
+  const [viewMode, setViewMode] = useState<ViewMode>(DEFAULT_AGENT_HUB_VIEW);
   const [expandedWorker, setExpandedWorker] = useState<string | null>(null);
   const [workerLogs, setWorkerLogs] = useState<Record<string, any[]>>({});
   const [loadingLog, setLoadingLog] = useState<string | null>(null);
@@ -1323,9 +1325,10 @@ export function AgentHubPage() {
             <FileArchive size={13} />
             <span className="hidden sm:inline">{t('agentHub.importPackage', 'Import package')}</span>
           </button>
-          {/* View Switcher */}
+          {/* 视图切换 */}
           <div className="flex gap-0.5 bg-[rgb(var(--aegis-overlay)/0.02)] border border-[rgb(var(--aegis-overlay)/0.06)] rounded-xl p-1">
             {([
+              { key: 'office' as const, label: t('agentHubExtra.officeView', 'Office'), icon: PanelsTopLeft },
               { key: 'tree' as const, label: t('agentHubExtra.treeView'), icon: GitBranch },
               { key: 'grid' as const, label: t('agentHubExtra.gridView'), icon: LayoutGrid },
               { key: 'activity' as const, label: t('agentHubExtra.activityView', 'Activity'), icon: Activity },
@@ -1366,6 +1369,14 @@ export function AgentHubPage() {
         </div>
       ) : (
         <>
+          <AgentHubViewPanel active={viewMode === 'office'}>
+            <AgentHubOfficePanel
+              connected={connected}
+              onOpenRun={(runId) => navigate(`/chat?collaborationRun=${encodeURIComponent(runId)}`)}
+              onShowAgentList={() => setViewMode('grid')}
+            />
+          </AgentHubViewPanel>
+
           {/* ══════════════════════════════════════════════ */}
           {/* 树状视图 */}
           {/* ══════════════════════════════════════════════ */}

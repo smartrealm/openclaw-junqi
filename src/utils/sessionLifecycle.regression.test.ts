@@ -210,7 +210,7 @@ describe('session lifecycle regression fixes', () => {
     const firstResponse = new Promise<unknown>((resolve) => { releaseFirst = resolve; });
     const calls: Array<string | null> = [];
     __setSessionRenameDepsForTest({
-      patchLabel: async (_key, _sessionId, label) => {
+      patchLabel: async (_key, label) => {
         calls.push(label);
         if (label === 'First') return firstResponse;
         return { ok: true, key: SESSION_KEY, entry: { label } };

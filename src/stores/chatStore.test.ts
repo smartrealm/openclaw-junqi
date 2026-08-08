@@ -870,7 +870,7 @@ test('session category updates only after Gateway confirms the patched entry', a
   const setSessionCategory = gateway.setSessionCategory;
   const sessionKey = 'agent:main:project-alpha';
   Object.assign(gateway, {
-    setSessionCategory: async (_category: string | null, _key: string, _sessionId: string) => 'Projects',
+    setSessionCategory: async (_category: string | null, _key: string) => 'Projects',
   });
   useChatStore.setState({
     sessions: [{ key: sessionKey, sessionId: 'gateway-project-alpha', label: 'Project session' }],
@@ -895,7 +895,7 @@ test('explicit unread state follows the confirmed native session patch in both d
   const sessionKey = 'agent:main:unread-session';
   const calls: boolean[] = [];
   Object.assign(gateway, {
-    setSessionUnread: async (unread: boolean, _key: string, _sessionId: string) => { calls.push(unread); },
+    setSessionUnread: async (unread: boolean, _key: string) => { calls.push(unread); },
   });
   useChatStore.setState({
     sessions: [{ key: sessionKey, sessionId: 'gateway-unread-session', label: 'Unread session', unread: 2, hasPendingCompletion: true }],
@@ -915,6 +915,24 @@ test('explicit unread state follows the confirmed native session patch in both d
     assert.deepEqual(calls, [false, true]);
   } finally {
     Object.assign(gateway, { setSessionUnread });
+  }
+});
+
+test('会话组织写入只依赖 Gateway key，不因缺少本地 sessionId 被静默跳过', async () => {
+  const setSessionPinned = gateway.setSessionPinned;
+  const sessionKey = 'agent:main:key-only-session';
+  const calls: Array<{ pinned: boolean; key: string }> = [];
+  Object.assign(gateway, {
+    setSessionPinned: async (pinned: boolean, key: string) => { calls.push({ pinned, key }); },
+  });
+  useChatStore.setState({ sessions: [{ key: sessionKey, label: 'Key-only session' }] });
+
+  try {
+    await useChatStore.getState().togglePinSession(sessionKey);
+    assert.deepEqual(calls, [{ pinned: true, key: sessionKey }]);
+    assert.equal(useChatStore.getState().sessions[0]?.pinned, true);
+  } finally {
+    Object.assign(gateway, { setSessionPinned });
   }
 });
 

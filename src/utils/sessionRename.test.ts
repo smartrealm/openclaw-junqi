@@ -24,7 +24,7 @@ function chatLabel(): string | undefined {
 }
 
 describe('applySessionRename', () => {
-  let patches: Array<{ key: string; sessionId: string; label: string | null }>;
+  let patches: Array<{ key: string; label: string | null }>;
   let warnings: unknown[][];
 
   beforeEach(() => {
@@ -33,8 +33,8 @@ describe('applySessionRename', () => {
     useChatStore.setState({ sessions: [] });
     useGatewayDataStore.setState({ sessions: [] });
     __setSessionRenameDepsForTest({
-      patchLabel: async (key, sessionId, label) => {
-        patches.push({ key, sessionId, label });
+      patchLabel: async (key, label) => {
+        patches.push({ key, label });
         return { ok: true, key, entry: label === null ? {} : { label } };
       },
       warn: (...args) => warnings.push(args),
@@ -48,7 +48,7 @@ describe('applySessionRename', () => {
     const result = await applySessionRename(TEST_KEY, '  After  ');
 
     assert.deepEqual(result, { ok: true, label: 'After' });
-    assert.deepEqual(patches, [{ key: TEST_KEY, sessionId: 'gateway-rename-1', label: 'After' }]);
+    assert.deepEqual(patches, [{ key: TEST_KEY, label: 'After' }]);
     assert.equal(chatLabel(), 'After');
     assert.equal(useGatewayDataStore.getState().sessions[0]?.label, 'After');
     assert.equal(useChatStore.getState().sessions[0]?.lastMessage, session.lastMessage);
@@ -60,15 +60,15 @@ describe('applySessionRename', () => {
     const result = await applySessionRename(TEST_KEY, '   ');
 
     assert.deepEqual(result, { ok: true, label: '' });
-    assert.deepEqual(patches, [{ key: TEST_KEY, sessionId: 'gateway-rename-1', label: null }]);
+    assert.deepEqual(patches, [{ key: TEST_KEY, label: null }]);
     assert.equal(chatLabel(), '');
   });
 
   test('uses the Gateway-confirmed label instead of assuming the requested value', async () => {
     seedSession('Before');
     __setSessionRenameDepsForTest({
-      patchLabel: async (key, sessionId, label) => {
-        patches.push({ key, sessionId, label });
+      patchLabel: async (key, label) => {
+        patches.push({ key, label });
         return { ok: true, key, entry: { label: 'Confirmed by Gateway' } };
       },
       warn: (...args) => warnings.push(args),

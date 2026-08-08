@@ -9,10 +9,8 @@ import {
 import { OpenClawSessionTargetError } from './OpenClawSessionTarget';
 
 const SESSION_KEY = 'agent:main:main';
-const SESSION_ID = 'session-main';
-
 describe('OpenClawSessionOrganizationClient', () => {
-  it('uses the native sessions.patch fields through the regular mutation lane', async () => {
+  it('仅发送原生组织字段，以 regular mutation lane 申请 operator.write', async () => {
     const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
     const client = new OpenClawSessionOrganizationClient({
       runMutation: (_key, operation) => operation(),
@@ -26,16 +24,16 @@ describe('OpenClawSessionOrganizationClient', () => {
       },
     });
 
-    await client.setPinned(SESSION_KEY, SESSION_ID, true);
-    await client.setUnread(SESSION_KEY, SESSION_ID, true);
-    await client.setArchived(SESSION_KEY, SESSION_ID, true);
-    await client.setCategory(SESSION_KEY, SESSION_ID, 'Finance');
+    await client.setPinned(SESSION_KEY, true);
+    await client.setUnread(SESSION_KEY, true);
+    await client.setArchived(SESSION_KEY, true);
+    await client.setCategory(SESSION_KEY, 'Finance');
 
     assert.deepEqual(calls, [
-      { method: 'sessions.patch', params: { key: SESSION_KEY, expectedSessionId: SESSION_ID, pinned: true } },
-      { method: 'sessions.patch', params: { key: SESSION_KEY, expectedSessionId: SESSION_ID, unread: true } },
-      { method: 'sessions.patch', params: { key: SESSION_KEY, expectedSessionId: SESSION_ID, archived: true } },
-      { method: 'sessions.patch', params: { key: SESSION_KEY, expectedSessionId: SESSION_ID, category: 'Finance' } },
+      { method: 'sessions.patch', params: { key: SESSION_KEY, pinned: true } },
+      { method: 'sessions.patch', params: { key: SESSION_KEY, unread: true } },
+      { method: 'sessions.patch', params: { key: SESSION_KEY, archived: true } },
+      { method: 'sessions.patch', params: { key: SESSION_KEY, category: 'Finance' } },
     ]);
   });
 
@@ -54,10 +52,10 @@ describe('OpenClawSessionOrganizationClient', () => {
     });
     const missingTarget = '   ';
 
-    await assert.rejects(client.setPinned(missingTarget, SESSION_ID, true), OpenClawSessionTargetError);
-    await assert.rejects(client.setUnread(missingTarget, SESSION_ID, true), OpenClawSessionTargetError);
-    await assert.rejects(client.setArchived(missingTarget, SESSION_ID, true), OpenClawSessionTargetError);
-    await assert.rejects(client.setCategory(missingTarget, SESSION_ID, 'Finance'), OpenClawSessionTargetError);
+    await assert.rejects(client.setPinned(missingTarget, true), OpenClawSessionTargetError);
+    await assert.rejects(client.setUnread(missingTarget, true), OpenClawSessionTargetError);
+    await assert.rejects(client.setArchived(missingTarget, true), OpenClawSessionTargetError);
+    await assert.rejects(client.setCategory(missingTarget, 'Finance'), OpenClawSessionTargetError);
     assert.equal(mutationStarted, false);
     assert.equal(requestStarted, false);
   });
@@ -68,7 +66,7 @@ describe('OpenClawSessionOrganizationClient', () => {
       request: async () => ({ ok: true, key: SESSION_KEY, entry: { category: 'Other' } } as never),
     });
 
-    await assert.rejects(client.setCategory(SESSION_KEY, SESSION_ID, 'Finance'), SessionOrganizationResponseError);
+    await assert.rejects(client.setCategory(SESSION_KEY, 'Finance'), SessionOrganizationResponseError);
   });
 
   it('identifies only explicit protocol incompatibility for capability reporting', async () => {
@@ -78,7 +76,7 @@ describe('OpenClawSessionOrganizationClient', () => {
         throw new GatewayRpcError('unknown field: pinned', 'INVALID_PARAMS');
       },
     });
-    await assert.rejects(client.setPinned(SESSION_KEY, SESSION_ID, true), SessionOrganizationProtocolUnsupportedError);
+    await assert.rejects(client.setPinned(SESSION_KEY, true), SessionOrganizationProtocolUnsupportedError);
 
     const deniedClient = new OpenClawSessionOrganizationClient({
       runMutation: (_key, operation) => operation(),
@@ -86,6 +84,6 @@ describe('OpenClawSessionOrganizationClient', () => {
         throw new GatewayRpcError('missing scope: operator.write', 'UNAUTHORIZED');
       },
     });
-    await assert.rejects(deniedClient.setPinned(SESSION_KEY, SESSION_ID, true), GatewayRpcError);
+    await assert.rejects(deniedClient.setPinned(SESSION_KEY, true), GatewayRpcError);
   });
 });

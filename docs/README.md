@@ -120,6 +120,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [协作实施计划](collaboration/openclaw-agent-collaboration-implementation-plan.md)
 - [本机 System Service 协作启用归属修复验证](collaboration/local-system-service-collaboration-enablement-validation-2026-07-31.md)
 - [Agent Office 只读协作投影设计与验证记录](collaboration/agent-office-read-only-projection-design-2026-08-03.md)
+- [智能体中心默认办公室投影设计与验证记录](collaboration/agent-hub-office-default-design-2026-08-08.md)
 - [发布证据审计](collaboration/openclaw-collaboration-release-evidence-audit.md)
 - [Workflow Template 与 Run 边界 ADR](adr/0001-workflow-template-and-run-boundary.md)
 
@@ -175,6 +176,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [OpenClaw Agent 配置快照与并发写入对齐](quality/openclaw-agent-config-snapshot-alignment-2026-08-04.md)
 - [OpenClaw Gateway 挑战与策略对齐](quality/openclaw-gateway-challenge-policy-alignment-2026-08-04.md)
 - [Gateway 设备身份与工作区启动恢复](quality/gateway-device-identity-startup-recovery-2026-08-05.md)
+- [Gateway 设备身份钥匙串提示去重](quality/gateway-device-identity-keychain-prompt-dedup-2026-08-06.md)
 - [会话产物选择器稳定性修复](quality/session-artifact-selector-stability-2026-08-05.md)
 - [OpenClaw 会话快速模式对齐](quality/openclaw-session-fast-mode-alignment-2026-08-04.md)
 - [OpenClaw 会话推理可见性对齐](quality/openclaw-session-reasoning-visibility-alignment-2026-08-04.md)

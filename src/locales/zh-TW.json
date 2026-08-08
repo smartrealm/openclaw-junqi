@@ -1216,6 +1216,28 @@
       "inheritWorkspace": "繼承默認工作區",
       "nameUpdateWarningTitle": "智能體已建立，顯示名稱需要處理",
       "nameUpdateWarning": "智能體已經建立，但顯示名稱未能儲存。請開啟智能體設定後重試。"
+    },
+    "office": {
+      "title": "協作辦公室",
+      "description": "從目前協作運行快照派生的唯讀視圖。",
+      "disconnectedTitle": "協作辦公室暫不可用",
+      "disconnectedDescription": "連接 Gateway 後，才能讀取權威協作運行狀態。",
+      "runSelectorLabel": "選擇協作運行",
+      "untitledRun": "未命名協作運行",
+      "refresh": "重新整理",
+      "loadFailed": "讀取協作運行失敗",
+      "loading": "正在讀取協作運行…",
+      "emptyTitle": "暫無協作運行",
+      "emptyDescription": "目前沒有可投影到辦公室的未歸檔協作運行。",
+      "configuredRosterTitle": "已設定智能體",
+      "configuredRosterDescription": "展示設定中的員工席位，不代表目前運行參與、在線或執行狀態。",
+      "configuredCoordinator": "協調智能體",
+      "configuredAllowed": "允許參與",
+      "configuredUnavailable": "未允許參與",
+      "configuredNoDescription": "未提供角色說明",
+      "showAgentList": "查看智能體清單",
+      "updatedAt": "更新於 {{time}}",
+      "openRun": "查看執行詳情"
     }
   },
   "analytics": {
@@ -2648,6 +2670,7 @@
     "remTruths": "候選事實"
   },
   "agentHubExtra": {
+    "officeView": "辦公室",
     "treeView": "樹狀視圖",
     "gridView": "網格視圖",
     "activityView": "活動",

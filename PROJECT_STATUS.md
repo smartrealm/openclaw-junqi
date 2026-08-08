@@ -4,92 +4,69 @@
 
 ## 当前目标
 
-修复 Windows 安装完成并重启 JunQi 后的 Gateway 认证恢复；固定 OpenClaw 官方默认主会话；并修复
-Windows 新建会话被错误当作未知历史会话、进入历史加载门禁的问题。
+完成 Jarvis 首次启动、Gateway 能力证据与会话工具栏收敛；修复会话组织操作错误请求管理员权限的问题，
+将智能体中心 Office 扩展为配置工位与真实运行投影共存的工作区域，并保持 Windows Gateway 冷启动与新建
+空会话链路可恢复。
 
 ## 已完成内容
 
-- 核对 JunQi 从首次配置、Gateway 地址持久化、冷启动目标解析、所选 runtime 凭据读取、认证连接
-  到工作区状态展示的完整链路。
-- 核对最新版 OpenClaw 官方源码中的 `agents.list.mainKey`、主会话身份和 Windows Gateway 服务
-  生命周期；参考 `openclaw-desktop` 的桌面交互，但未复制其硬编码主会话身份。
-- 修复 Gateway 地址采用字符串全等判断的问题。等价的本机回环地址现在使用统一端点规则匹配，
-  冷启动时可以继续使用当前所选 runtime 的 token。
-- 首次配置只持久化当前 Gateway 地址首选项，删除旧 `aegis-config` 存储结构及其清理包装，不保留
-  兼容读取、迁移或凭据 fallback。
-- 将默认主会话固定规则下沉到 `chatStore`。官方 `mainKey` 到达后，页签持久化、拖拽、键盘切换和
-  渲染统一使用规范化顺序。
-- 默认主会话不可拖拽、不可关闭、不可中键关闭，也不能从会话菜单或会话管理页删除；其他会话仍可
-  关闭和排序。
-- 新增回环地址认证恢复、Gateway 地址持久化、主会话固定、官方自定义 `mainKey` 和删除保护回归测试。
-- 对照最新版 OpenClaw `sessions.create` 服务确认：未指定 key 的普通创建会生成新的 dashboard 会话，
-  无初始 turn 且非 fork 时 transcript 为空。
-- 复现 `sessions.list` 稀疏行先于本地创建提交的竞态。旧 `addNativeSession` 看到相同 key 已存在时只
-  激活页签，遗漏创建响应中的 sessionId、Agent 身份和空 leaf，因此触发 `chat.history`。
-- `addNativeSession` 现在始终把官方创建确认合并到同 key 行，同时保留列表已提供的其他元数据；
-  已确认空会话继续直接进入可发送状态，普通历史会话仍按官方历史读取。
+- 智能体中心默认进入 Office；树状、网格和活动视图仍可切换。Gateway 返回的配置智能体始终展示为静态员工席位，`junqi.collab.run.list` 与 `junqi.collab.run.get` 的真实运行与参与证据只作为同一工作区的运行覆盖层；不新增协作写语义或运行状态。
+- 合并后的首次启动完成门禁区分 `verified`、`failed` 与 `unavailable`。官方模型实时验证不可用时保留待核验告警并允许进入工作区；明确验证失败才阻断。
+- 会话工具栏移除会话旁问、会话变更与会话文件的本地入口、专属 Gateway 客户端、测试和文案；保留实际工具、浏览器控制、分支、会话上下文与会话产物的直接入口。
+- Gateway 能力证据注册表记录保守的 hello 发现以及真实 RPC 成功、未授权、未知方法、连接失效和待核验结果，不把方法列表缺项视作不支持。
+- 安装向导、Gateway 第三阶段和 Ready 页已收敛加载、交接、动效与窄窗口行为；三处发行版本在合并来源中统一为 `2.2.11`。
+- 会话重命名、置顶、未读、归档和分组不再向 `sessions.patch` 发送 `expectedSessionId`，统一按 OpenClaw 字段级最小权限走 `operator.write`；模型与运行参数仍保留 `operator.admin`。
+- Gateway 端点使用统一规范化规则识别等价回环地址，重启后继续读取所选 runtime 的认证凭据；旧的 `aegis-config`
+  双轨存储路径已删除。
+- 默认主会话以 OpenClaw `agents.list.mainKey` 为准，在会话状态层固定为最左侧不可关闭、不可拖拽的页签。
+- 修复 `sessions.list` 先于 `sessions.create` 本地提交时的竞态：创建确认会合并到已存在的同 key 行，保留
+  `sessionId`、Agent 身份和 `activeLeafEntryId: null`，新会话不再误触发历史加载。
 
 ## 关键技术决策
 
-- Gateway 进程可达不等于认证连接成立。冷启动必须保留所选 runtime 身份、配置和凭据作用域，不用
-  独立设备凭据掩盖目标身份误判。
-- 是否属于同一个 Gateway 由已有端点规范化契约判断，不能用原始 URL 字符串全等判断。
-- 默认主会话身份只取 OpenClaw 官方 `agents.list.mainKey`。连接前可保留现有默认占位，收到官方
-  快照后立即收敛；不写死特定 Agent 名称。
-- 固定顺序属于会话状态不变量，不能仅在 React 渲染数组中临时排序。
-- 本轮没有证据表明 Windows Scheduled Task 或官方 Gateway 服务恢复实现需要改写，因此未改变 Rust
-  服务生命周期和 OpenClaw 官方安装语义。
-- 新会话是否为空只接受 `sessions.create` 的确认身份和空 leaf 投影，不能依据消息数组为空推断。
-- `sessions.list` 与 `sessions.create` 的先后顺序不能改变最终会话事实；创建确认在本地提交边界补齐
-  同 key 稀疏行，不新增本地会话语义或跳过旧会话历史。
+- OpenClaw 官方 `openclaw.setup.verify` 可用时是实时模型验证依据；方法不可用只能表达待核验，不能伪报模型成功或凭据失败。
+- OpenClaw 当前未提供或产品不再消费的会话能力不保留隐藏入口、兼容层或本地替代实现。
+- OpenClaw 的 `expectedSessionId` 虽是正式 patch schema 字段，但最新官方字段级授权将其归入管理员路径；日常组织操作不得携带它，也不得用客户端 CAS 代替。
+- Office 不将配置智能体伪装为运行参与者；无 Run 时的员工席位明确标记为配置目录，默认选择最近更新的未归档 Run，用户操作只导航到既有协作详情。
+- 新会话是否为空只接受 OpenClaw 创建确认的身份与空 leaf，不依据空消息数组推断，也不跳过已有会话的权威历史读取。
 
-## 修改过的核心文件
+## 核心文件
 
-- `src/services/gateway/GatewayConnectionTargetResolver.ts`：等价 Gateway 端点识别和所选 runtime
-  凭据恢复。
-- `src/hooks/useSetupFlow/helpers.ts`、`src/api/tauri-adapter.ts`：当前 Gateway 地址持久化及旧存储路径删除。
-- `src/stores/chatStore.ts`：默认主会话身份、页签顺序和关闭不变量。
-- `src/stores/chatStore.ts`、`src/stores/chatStore.test.ts`：列表先到竞态下的创建确认合并和历史加载分流回归。
-- `src/App.tsx`：将官方 `agents.list.mainKey` 同步到会话状态层。
-- `src/components/Chat/ChatTabs.tsx`：默认主会话拖拽、关闭和中键交互限制。
-- `src/components/Chat/session-actions/SessionActionsMenu.tsx`、`src/pages/SessionManager.tsx`、
-  `src/utils/sessionDelete.ts`：默认主会话删除保护。
-- `docs/quality/windows-gateway-cold-start-and-main-session-pinning-2026-08-08.md`、对应规格和计划：
-  本轮依据、行为契约和验证边界。
-- `docs/quality/openclaw-confirmed-empty-session-audit-2026-08-05.md`、对应规格和计划：新建会话竞态依据、
-  修复设计和验证结果。
+- `src/pages/AgentHub/AgentHubOfficePanel.tsx`、`src/pages/AgentHub/agentHubOfficeRunSelection.ts`、`src/pages/AgentHub/index.tsx`：智能体中心 Office 投影、稳定选择与默认视图。
+- `src/services/setup/setupCompletionGate.ts`、`src/hooks/useSetupFlow/index.ts`、`src/hooks/useSetupFlow/useWizardSession.ts`：首次启动完成门禁与交接呈现。
+- `src/services/gateway/GatewayCapabilityRegistry.ts`、`src/services/gateway/Connection.ts`：Gateway 能力证据。
+- `src/components/Chat/SessionContextBar.tsx`、`src/services/gateway/index.ts`：会话工具栏和无消费者会话能力的移除。
+- `src/services/gateway/SessionSettingsClient.ts`、`src/services/gateway/OpenClawSessionOrganizationClient.ts`、`src/utils/sessionRename.ts`：会话组织字段的最小权限请求与确认投影。
+- `src/services/gateway/GatewayConnectionTargetResolver.ts`、`src/stores/chatStore.ts`、`src/components/Chat/ChatTabs.tsx`：
+  Gateway 冷启动身份、默认主会话固定和新建会话状态合并。
+- `docs/collaboration/agent-hub-office-default-design-2026-08-08.md`、`docs/installation/junqi-installation-flow.md`、`docs/quality/openclaw-session-diff-files-removal-2026-08-08.md`：设计与验证记录。
+- `docs/quality/windows-gateway-cold-start-and-main-session-pinning-2026-08-08.md`、
+  `docs/quality/openclaw-confirmed-empty-session-audit-2026-08-05.md`：Windows 冷启动和新建空会话竞态记录。
 
-## 测试与验证结果
+## 测试与验证
 
-- 聚焦回归已通过：Gateway 目标解析、首次配置持久化、会话页签状态和会话删除保护，共 61 项。
-- `pnpm lint` 已通过，包含 TypeScript 静态检查、模块边界和版本一致性检查。
-- 新建会话与历史分流聚焦测试 70 项通过；新增测试已先在修复前复现 sessionId 丢失。
-- 完整 `pnpm test` 已通过：前端与应用测试 2821 项，脚本与发布契约测试 243 项，均无失败。
-- `pnpm build` 已在最终代码上通过，协作资源打包、TypeScript 编译和 Vite 生产构建均成功。
-- Windows 安装、重启、Scheduled Task、Credential Manager 和真实认证恢复尚未在 Windows 真机验证。
-- 亮暗主题、窄窗口、键盘切换和拖拽的桌面视觉验收尚未执行。
-- Windows 真机的新建会话、输入框首发和无历史加载提示尚未使用本轮构建验收。
+- main 合并前已通过 63 项首次启动与 Office 定向测试、2822 项全量测试、TypeScript、模块边界、语言 JSON 解析、`pnpm build`、官方文档链接验证与 `git diff --check`。
+- 最新办公室工作区改动已通过 9 项 Office 定向测试、TypeScript、模块边界、语言 JSON 解析与 `git diff --check`。
+- 会话组织权限修复已通过 TypeScript 及 86 项会话设置、组织、生命周期、重命名与 store 定向测试。
+- 全量测试仅输出既有 Radix SSR `useLayoutEffect` 与 Node 弃用警告，命令成功结束。
+- 合并 main 后已通过 TypeScript、模块边界、版本一致性、完整 `pnpm test`（2829 项应用测试与 243 项脚本测试）和 `pnpm build`。
+- Windows Gateway 端点、默认主会话固定和新建会话竞态回归继续通过；`git diff --check` 与 Emoji 扫描在提交前再次执行。
 
 ## 已知问题
 
-- 当前开发环境不能证明 Windows 登录后 Gateway 服务启动时序和凭据库行为；代码回归通过不等于
-  Windows 真机验收完成。
-- 如果 Windows 真机仍显示未连接，需要采集所选 runtime、规范化后的 Gateway 目标、服务归属和
-  结构化认证错误；不得通过切换 runtime 或伪成功绕过。
-- 本轮实现、测试和文档按用户要求纳入同一中文提交；后续修改应继续从清晰工作区开始。
+- 尚未在真实 Tauri 的亮色、暗色、护眼和午夜主题，以及窄窗口中人工验收 Office 与首次启动流程。
+- 尚未以真实 Gateway 的大量协作 Run、长目标文本和高频事件验证 Office 密度与刷新体验。
+- Windows 与 Linux 的安装、凭据库和首次启动行为仍需真实环境验收。
+- Windows 真机新建会话、首条消息发送和重启后 Gateway 恢复尚未完成安装包验收。
 
-## 尝试过但失败的方案
+## 已放弃方案
 
-- 仅调整“正在连接”或“未连接”界面文案不能恢复认证，根因位于 Gateway 目标身份和凭据作用域。
-- 直接复制参考客户端并写死 `agent:main:main` 会忽略 OpenClaw 官方可返回的自定义 `mainKey`，已放弃。
-- 在没有证据时改写 Windows 服务安装或重启逻辑会越过 OpenClaw 官方生命周期边界，未采用。
-- 保留旧 `aegis-config` 读取、迁移或清理兼容层会继续形成双轨状态，已删除。
-- 仅在 `ChatView` 根据“消息为空”跳过历史会伪造 transcript 事实，且会误伤已有空历史会话，未采用。
-- 将该问题归因于 Windows 或直接关闭所有新页签的历史读取会掩盖真正的创建与列表竞态，未采用。
+- 不阻断已完成官方 Wizard 的“实时模型验证方法不可用”状态，也不把它描述为模型已验证。
+- 不为已删除的会话旁问、会话变更和会话文件维护本地 fallback 或无消费者封装。
+- 不将配置智能体直接填充为 Run 的参与成员、在线状态或执行状态。
+- 不在 ChatView 仅依据消息为空跳过历史，不把 Windows 时序问题用平台专属分支掩盖。
 
-## 下一步开发顺序
+## 下一步顺序
 
-1. 在 Windows 真机使用安装包完成安装、退出、系统重启、重新启动 JunQi 和认证连接验收。
-2. 连续新建多个不同 Agent 会话，确认每个会话初始为空、输入框立即可用、首次发送成功且不显示历史加载。
-3. 验证默认主会话始终位于最左侧，并覆盖关闭按钮、中键、拖拽、快捷切换和删除入口。
-4. 若 Windows 真机仍失败，依据结构化日志继续定位服务归属、凭据读取或认证协议，不增加兼容 fallback。
+1. 在真实 Tauri 中验收首次启动、智能体中心 Office、Windows 新建会话和 Gateway 重启恢复。
+2. 后续根据用户明确授权提交或发布，不把未完成的 Windows 真机验收描述为已完成。

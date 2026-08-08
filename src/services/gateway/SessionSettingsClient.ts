@@ -83,8 +83,8 @@ function confirmedPatchResult(result: unknown, sessionKey: string): SessionPatch
 }
 
 /**
- * `sessions.patch` 是 OpenClaw 控制平面变更。所有字段都经由短生命周期的
- * operator.admin 连接发送，以保持运行时逐方法授权的有效性。
+ * `sessions.patch` 是 OpenClaw 控制平面变更。用户级会话组织字段走日常
+ * operator.write 连接，模型与运行参数字段才走短生命周期的 operator.admin 连接。
  */
 export class SessionSettingsClient {
   constructor(private readonly deps: SessionSettingsClientDeps) {}
@@ -93,15 +93,12 @@ export class SessionSettingsClient {
     sessionKey: string,
     patch: Record<string, unknown>,
     privileged: boolean,
-    expectedSessionId?: string,
   ): Promise<SessionPatchResult> {
     const key = requireSessionSettingsTarget(sessionKey);
-    const identity = expectedSessionId?.trim();
     return this.deps.runMutation(key, async () => {
       const request = privileged ? this.deps.requestPrivileged : this.deps.request;
       const result = await request<unknown>('sessions.patch', {
         key,
-        ...(identity ? { expectedSessionId: identity } : {}),
         ...patch,
       });
       return confirmedPatchResult(result, key);
@@ -136,8 +133,7 @@ export class SessionSettingsClient {
     return this.patch(sessionKey, { reasoningLevel }, true);
   }
 
-  setLabel(sessionKey: string, expectedSessionId: string, label: string | null): Promise<SessionPatchResult> {
-    if (!expectedSessionId.trim()) throw new SessionSettingsTargetError();
-    return this.patch(sessionKey, { label }, true, expectedSessionId);
+  setLabel(sessionKey: string, label: string | null): Promise<SessionPatchResult> {
+    return this.patch(sessionKey, { label }, false);
   }
 }

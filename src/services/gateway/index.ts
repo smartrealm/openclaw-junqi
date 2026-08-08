@@ -1777,20 +1777,20 @@ export const gateway = {
   async setSessionReasoning(level: 'on' | 'off' | 'stream' | null, sessionKey: string) {
     return sessionSettings.setReasoning(sessionKey, level);
   },
-  async setSessionLabel(label: string | null, sessionKey: string, expectedSessionId: string) {
-    return sessionSettings.setLabel(sessionKey, expectedSessionId, label);
+  async setSessionLabel(label: string | null, sessionKey: string) {
+    return sessionSettings.setLabel(sessionKey, label);
   },
-  async setSessionPinned(pinned: boolean, sessionKey: string, expectedSessionId: string) {
-    return sessionOrganization.setPinned(sessionKey, expectedSessionId, pinned);
+  async setSessionPinned(pinned: boolean, sessionKey: string) {
+    return sessionOrganization.setPinned(sessionKey, pinned);
   },
-  async setSessionUnread(unread: boolean, sessionKey: string, expectedSessionId: string) {
-    return sessionOrganization.setUnread(sessionKey, expectedSessionId, unread);
+  async setSessionUnread(unread: boolean, sessionKey: string) {
+    return sessionOrganization.setUnread(sessionKey, unread);
   },
-  async setSessionArchived(archived: boolean, sessionKey: string, expectedSessionId: string) {
-    return sessionOrganization.setArchived(sessionKey, expectedSessionId, archived);
+  async setSessionArchived(archived: boolean, sessionKey: string) {
+    return sessionOrganization.setArchived(sessionKey, archived);
   },
-  async setSessionCategory(category: string | null, sessionKey: string, expectedSessionId: string) {
-    return sessionOrganization.setCategory(sessionKey, expectedSessionId, category);
+  async setSessionCategory(category: string | null, sessionKey: string) {
+    return sessionOrganization.setCategory(sessionKey, category);
   },
   async listSessionGroups() {
     return sessionGroups.list();
