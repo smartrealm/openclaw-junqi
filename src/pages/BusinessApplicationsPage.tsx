@@ -18,7 +18,7 @@ import { PaneResizeHandle } from '@/components/BusinessApplications/PaneResizeHa
 import { DingTalkToolTable } from '@/components/BusinessApplications/DingTalkToolTable';
 import { DingTalkToolDetail } from '@/components/BusinessApplications/DingTalkToolDetail';
 import { DingTalkRuntimeIdentity } from '@/components/BusinessApplications/DingTalkRuntimeIdentity';
-import { DingTalkReadinessPanel } from '@/components/BusinessApplications/DingTalkReadinessPanel';
+import { DingTalkReadinessPanel, type DingTalkPluginInstallProgress } from '@/components/BusinessApplications/DingTalkReadinessPanel';
 import { BusinessActivityList } from '@/components/BusinessApplications/BusinessActivityList';
 import {
   DINGTALK_RUNTIME_STATUS_TOOL,
@@ -35,6 +35,7 @@ import {
   type DingTalkToolSchemaProjection,
   type DingTalkRuntimeIdentityProjection,
 } from '@/business-applications/dingtalkTools';
+import { dingtalkPluginInstallBlocker } from '@/business-applications/dingtalkPluginInstall';
 import { useBusinessActivityStore } from '@/business-applications/activityStore';
 import {
   ensureToolsEffectiveFresh,
@@ -241,6 +242,7 @@ export function BusinessApplicationsPage() {
   const [pluginStatus, setPluginStatus] = useState<DingTalkPluginStatus | null>(null);
   const [pluginError, setPluginError] = useState<string | null>(null);
   const [pluginBusy, setPluginBusy] = useState(false);
+  const [pluginInstallationProgress, setPluginInstallationProgress] = useState<DingTalkPluginInstallProgress>({ phase: 'idle', message: null });
   const [runtimeIdentity, setRuntimeIdentity] = useState<DingTalkRuntimeIdentityProjection | null>(null);
   const [runtimeIdentityError, setRuntimeIdentityError] = useState<string | null>(null);
 
@@ -500,18 +502,25 @@ export function BusinessApplicationsPage() {
       '安装钉钉业务插件',
       'JunQi 将把固定校验过的插件包安装到当前已验证的 OpenClaw 运行时。安装后需要重启 Gateway。',
       async () => {
+        setPluginInstallationProgress({ phase: 'checking', message: '正在核对当前 Gateway 安装权限' });
         const current = getCurrentRuntimeIdentity();
         if (!current?.verified || !current.desktopMutationAllowed) {
-          setPluginError('当前 Gateway 不允许桌面安装插件。');
+          const message = dingtalkPluginInstallBlocker(current);
+          setPluginError(message);
+          setPluginInstallationProgress({ phase: 'failed', message });
           return;
         }
         setPluginBusy(true);
+        setPluginInstallationProgress({ phase: 'installing', message: '正在校验内置插件并等待 Gateway 安装、启用' });
         try {
           const status = await installBundledDingTalkPlugin(current.targetFingerprint, current.connectionId);
           setPluginStatus(status);
           setPluginError(null);
+          setPluginInstallationProgress({ phase: 'completed', message: '插件已安装并启用。下一步：重启 Gateway' });
         } catch (error) {
-          setPluginError(errorMessage(error));
+          const message = errorMessage(error);
+          setPluginError(message);
+          setPluginInstallationProgress({ phase: 'failed', message });
         } finally {
           setPluginBusy(false);
         }
@@ -594,6 +603,7 @@ export function BusinessApplicationsPage() {
         pluginNeedsInstall={pluginNeedsInstall}
         restartRequired={Boolean(pluginStatus?.restartRequired)}
         installAvailable={localInstallAvailable}
+        installationProgress={pluginInstallationProgress}
         busy={pluginBusy || toolsLoading}
         onRefresh={() => { void refreshTools(); void refreshRuntimeIdentity(); void refreshPluginStatus(); }}
         onInstallPlugin={installPlugin}

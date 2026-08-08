@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CircleAlert, CircleCheck, Copy, ExternalLink, RefreshCw, Wrench } from 'lucide-react';
+import { CircleAlert, CircleCheck, CircleDashed, Copy, ExternalLink, RefreshCw, Wrench } from 'lucide-react';
 import { Button } from '@/components/shared/button/Button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { DingTalkRuntimeIdentityProjection } from '@/business-applications/dingtalkTools';
@@ -17,6 +17,18 @@ type Readiness = {
   readonly description: string;
   readonly action: 'refresh' | 'install-plugin' | 'restart-gateway' | null;
 };
+
+export type DingTalkPluginInstallProgress = {
+  readonly phase: 'idle' | 'checking' | 'installing' | 'completed' | 'failed';
+  readonly message: string | null;
+};
+
+function installationProgressValue(phase: DingTalkPluginInstallProgress['phase']): number {
+  if (phase === 'checking') return 25;
+  if (phase === 'installing') return 60;
+  if (phase === 'completed') return 100;
+  return 0;
+}
 
 function dwsRuntimeMissing(code: string | null | undefined): boolean {
   return code === 'DWS_RUNTIME_NOT_FOUND' || code === 'DWS_RUNTIME_NOT_EXECUTABLE';
@@ -79,6 +91,7 @@ export function DingTalkReadinessPanel({
   pluginNeedsInstall,
   restartRequired,
   installAvailable,
+  installationProgress,
   busy,
   onRefresh,
   onInstallPlugin,
@@ -91,6 +104,7 @@ export function DingTalkReadinessPanel({
   pluginNeedsInstall: boolean;
   restartRequired: boolean;
   installAvailable: boolean;
+  installationProgress: DingTalkPluginInstallProgress;
   busy: boolean;
   onRefresh: () => void;
   onInstallPlugin: () => void;
@@ -123,15 +137,35 @@ export function DingTalkReadinessPanel({
       : readiness.action === 'refresh'
         ? <Button size="xs" variant="outline" tone="neutral" loading={busy} leadingIcon={<RefreshCw size={12} />} onClick={onRefresh}>重新检测</Button>
         : null;
+  const installationActive = installationProgress.phase === 'checking' || installationProgress.phase === 'installing';
+  const installationVisible = installationProgress.phase !== 'idle';
+  const installationTone = installationProgress.phase === 'failed'
+    ? 'text-aegis-danger'
+    : installationProgress.phase === 'completed'
+      ? 'text-aegis-success'
+      : 'text-aegis-text-secondary';
   return (
     <>
-      <section className={`mx-3 mt-2 flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-2 ${toneClass}`} aria-live="polite">
-        <Icon size={15} className="shrink-0" aria-hidden="true" />
-        <div className="min-w-0 flex-1">
-          <p className="text-[10.5px] font-medium">{readiness.title}</p>
-          <p className="mt-0.5 text-[9.5px] leading-4 text-aegis-text-dim">{readiness.description}</p>
+      <section className={`mx-3 mt-2 shrink-0 rounded-md border px-2.5 py-2 ${toneClass}`} aria-live="polite">
+        <div className="flex items-center gap-2">
+          <Icon size={15} className="shrink-0" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[10.5px] font-medium">{readiness.title}</p>
+            <p className="mt-0.5 text-[9.5px] leading-4 text-aegis-text-dim">{readiness.description}</p>
+          </div>
+          {action && <div className="shrink-0">{action}</div>}
         </div>
-        {action && <div className="shrink-0">{action}</div>}
+        {installationVisible && (
+          <div className="mt-2 border-t border-current/15 pt-2" role="status">
+            <div className="flex items-center gap-1.5 text-[9.5px]">
+              {installationActive ? <CircleDashed size={12} className="animate-spin" aria-hidden="true" /> : installationProgress.phase === 'completed' ? <CircleCheck size={12} aria-hidden="true" /> : <CircleAlert size={12} aria-hidden="true" />}
+              <span className={installationTone}>{installationProgress.message}</span>
+            </div>
+            <div className="mt-1.5 h-1 overflow-hidden rounded-sm bg-aegis-border/65" role="progressbar" aria-label="钉钉业务插件安装进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={installationProgress.phase === 'installing' ? undefined : installationProgressValue(installationProgress.phase)} aria-valuetext={installationProgress.message ?? undefined}>
+              <div className={`h-full bg-aegis-primary transition-[width] duration-200 ${installationActive ? 'animate-pulse' : ''}`} style={{ width: `${installationProgressValue(installationProgress.phase)}%` }} />
+            </div>
+          </div>
+        )}
       </section>
       <Dialog open={guideOpen} onOpenChange={setGuideOpen}>
         <DialogContent className="w-[min(620px,calc(100vw-24px))] border-aegis-border bg-aegis-bg-solid p-0 text-aegis-text">
