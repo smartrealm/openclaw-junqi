@@ -94,6 +94,8 @@ pub fn run() {
             commands::plugin_recovery::list_broken_gateway_plugins,
             commands::plugin_recovery::heal_openclaw_plugin,
             commands::plugin_recovery::disable_openclaw_plugin,
+            commands::dingtalk_plugin::get_dingtalk_plugin_status,
+            commands::dingtalk_plugin::install_bundled_dingtalk_plugin,
             commands::ensure::ensure_gateway_running,
             commands::storage::get_storage_setup_status,
             commands::storage::configure_storage,

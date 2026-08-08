@@ -40,6 +40,7 @@ specs/
 
 ## Business
 
+- [钉钉业务工作台运行时](business/2026-08-08-dingtalk-business-runtime.md)
 - [业务应用 UI 与 Chat 双入口](business/2026-08-02-business-applications-ui.md)
 
 ## Quality

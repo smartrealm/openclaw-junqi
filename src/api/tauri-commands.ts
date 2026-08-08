@@ -131,6 +131,14 @@ export interface PluginHealOutcome {
   attempted: string[];
   error: string | null;
 }
+export interface DingTalkPluginStatus {
+  installed: boolean;
+  enabled: boolean;
+  loaded: boolean;
+  version: string | null;
+  bundledVersion: string;
+  restartRequired: boolean;
+}
 export type GatewayRecoveryRecommendation = 'retry' | 'repair' | 'inspect_config' | 'select_storage';
 export interface TerminalIntegrationStatus {
   requested: boolean;
@@ -583,6 +591,12 @@ export const healOpenclawPlugin = (id: string, reason?: string) => (
   invoke<PluginHealOutcome>('heal_openclaw_plugin', { id, reason: reason ?? null })
 );
 export const disableOpenclawPlugin = (id: string) => invoke<void>('disable_openclaw_plugin', { id });
+export const getDingTalkPluginStatus = (targetFingerprint: string, expectedConnectionId: string) => (
+  invoke<DingTalkPluginStatus>('get_dingtalk_plugin_status', { targetFingerprint, expectedConnectionId })
+);
+export const installBundledDingTalkPlugin = (targetFingerprint: string, expectedConnectionId: string) => (
+  invoke<DingTalkPluginStatus>('install_bundled_dingtalk_plugin', { targetFingerprint, expectedConnectionId })
+);
 export const setActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (
   invoke<void>("set_active_gateway_runtime", { mode })
 );

@@ -4,11 +4,38 @@
 
 ## 当前目标
 
-发布已完成首次启动步骤切换、Gateway 第三阶段呈现和会话上下文工具栏收敛的 `2.2.11`。当前会话工具栏已完整移除会话变更与会话文件，
-并将分支、会话上下文和会话产物改为独立直接入口；不保留隐藏入口、专属 Gateway 客户端、兼容层或无消费者代码。首次启动仍必须保留 OpenClaw 的真实完成语义。
+钉钉单平台业务工作台 UI 已迁移到生产页面，当前目标是完成插件运行时与真实业务契约验收。实现采用独立 OpenClaw 钉钉插件包装 DWS，业务页与 Chat 共用
+`tools.effective`、`tools.invoke` 和插件审批；Tauri 只负责经过 Runtime Identity 围栏的插件安装与启用，不直接执行 DWS。
+正式 DWS 发布包、真实 Gateway 审批往返和测试租户端到端仍是下一步门禁。
+
+## 本阶段已完成
+
+- 已完成 `packages/junqi-dingtalk` 插件、30 工具 manifest、schema 校验、DWS runner、审批 hook、打包资源和 Tauri 安装命令。
+- DWS runner 已收紧为最小环境白名单，不继承 Gateway token、DWS access token 或其他无关进程密钥。
+- 环境白名单回归、插件重新打包和最新 `pnpm build` 已通过，桌面资源中的插件归档已核对包含该实现。
+- 已完成业务页生产迁移：钉钉单平台、当前 Session 工具投影、左筛选/中表格/右详情三栏、拖拽和收起、参数 schema 展示、调用状态与脱敏活动投影。
+- 已删除旧多平台目录、Chat bridge、静态 Journal 及其专属测试和无引用导出，不保留兼容双轨。
+- 已通过 `pnpm test`、`pnpm lint`、`pnpm build`、`pnpm verify:openclaw-docs`、`pnpm check:boundaries`、Rust `cargo fmt -- --check`、`cargo check --lib`、`cargo test --lib`、插件测试/校验/打包和 `git diff --check`。
+
+## 当前未验证
+
+- 正式 DWS 发布包安装、真实钉钉租户权限和业务响应 envelope 尚未执行。
+- 真实 Gateway 中插件加载、`tools.effective`、`tools.invoke`、`plugin.approval.*` 往返尚未执行。
+- macOS、Windows、Linux、Docker Gateway 的安装、凭据库、重启和亮暗主题/键盘/窄窗口真机视觉验收尚未执行。
+- 2026-08-08 本机 PATH 未发现 `dws`，当前 OpenClaw `2026.7.1-2` 的插件列表没有 `junqi-dingtalk`；本轮只读确认，未改变本机 Gateway 或认证状态。
 
 ## 已完成内容
 
+- 已完成钉钉单平台业务工作台设计说明、独立 HTML 交互预览和生产页面迁移；当前页面已进入 `src/`，不展示飞书或 Google。
+- 已完成钉钉业务运行时设计、领域术语、ADR、规格、分阶段实施计划以及阶段 1、阶段 2 的插件和前端实现。
+- 已核对 OpenClaw 主线提交 `733512b612e5fcfa96ca0764ac1851990406f187` 的 `tools.effective`、`tools.invoke`、插件工具注册与 `plugin.approval.*` 失败关闭边界。
+- 已核对 DWS 主线提交 `18030f1018f9d23e699063c4511987e660bb1701`，并从官方源码运行 product schema 与 auth/profile help；确认 `profile list/switch/use` 和 `oa approval create-instance` 当前正式存在。
+- 已确认 2026-08-02 旧设计中的 Tauri 直连 DWS、无 profile、无审批发起命令假设不再作为实现契约；旧文档只保留历史记录。
+- 已规划删除飞书、Google、旧 Chat bridge、静态 Journal 和无消费者 descriptor，不保留双轨兼容路径。
+- 已移除设计中的平台目录和页内平台切换，当前窗口只出现钉钉；主画布不设居中最大宽度，全局侧栏、筛选面板和右侧详情均可收起。
+- 已核对 Langfuse 官方仓库 `017ba00e5080486786029fe68cf03e889320b958` 的 `AppSidebar`、`PageHeader`、`ResizableFilterLayout`、`DataTable`、`TablePeekView` 和 `TraceLayoutDesktop`，只借鉴其主表格优先、可折叠轨道、拖拽宽度与就地详情模式。
+- 独立预览已改为能力表格主画布：筛选面板默认 228px、收起为 40px，详情面板默认 382px、收起为 40px；两侧宽度均可拖拽，点击能力行原位更新详情。
+- 已将运行时、身份、授权和能力快照全部绑定到当前 Runtime Identity、Session `tools.effective` 和真实 OpenClaw 调用结果；未核验状态不会被渲染为成功。
 - 已核对当前 OpenClaw 官方源码中的 `openclaw.setup.verify` 与 `models.probe` handler，以及 JunQi 的
   `wizard.start`、`wizard.next`、`wizard.status`、`wizard.cancel` 调用链。
 - 已复现本机选定 Gateway 在认证连接正常时对上述两个实时验证方法返回 `INVALID_REQUEST: unknown method`。
@@ -55,6 +82,14 @@
 
 ## 关键技术决策
 
+- 业务应用页采用产品配置选定单一平台的设计，不在页面内展示或切换多个平台；当前主线和默认设计均为钉钉。
+- 业务应用页复用现有窗口壳层和 `aegis-*` 语义主题体系，不增加网页式大标题、应用卡片墙或独立于桌面导航的第二套外壳。
+- 能力表格是业务工作台的主画布；筛选和详情是可收起、可调整宽度的辅助面板，不能永久挤占固定窗口宽度。
+- 本轮交付物只定义 UI 结构和交互，不提前写入产品配置或业务源码；真实 DWS 探测与操作入口必须在后续取得契约证据后实现。
+- 钉钉业务运行时归属 OpenClaw 插件，不归属 Tauri。业务页和 Chat 必须使用同一组固定插件工具、Session 有效工具清单和插件审批。
+- DWS leaf schema 是插件参数与安全元数据依据；JunQi 只维护产品 allowlist 和稳定工具契约，不暴露任意 DWS 命令入口。
+- 所有业务写操作只提供一次授权或拒绝，成功响应后必须权威重读；`non_idempotent` 或未知结果不得自动重放。
+- 当前只有钉钉一个真实实现，不增加一值平台配置。第二个平台具备真实消费者时再引入保证单平台展示的产品配置。
 - `openclaw.setup.verify` 可用时是模型实时验证的唯一证据。不得以 Gateway 健康、静态模型引用、`models.probe`
   或本地推断替代成功条件。
 - “官方方法不可用”与“官方方法已执行但模型验证失败”必须分开建模和呈现。前者是待核验状态，不能伪报模型成功，
@@ -64,6 +99,18 @@
 
 ## 核心文件
 
+- `packages/junqi-dingtalk/src/index.ts`、`dws-runner.ts`、`schema-contract.ts`、`tool-specs.ts`：固定钉钉工具、DWS 受控执行、schema 校验和写操作审批。
+- `scripts/build-dingtalk-plugin-bundle.mjs`、`src-tauri/resources/dingtalk/`：插件归档、摘要 metadata 与桌面资源同步。
+- `src-tauri/src/commands/dingtalk_plugin.rs`、`src/api/tauri-commands.ts`：受 Runtime Identity 围栏保护的插件状态、安装和启用 IPC。
+- `src/pages/BusinessApplicationsPage.tsx`、`src/business-applications/dingtalkTools.ts`、`activityStore.ts`：当前 Session 的钉钉工具投影、直接调用与脱敏活动记录。
+- `src/components/BusinessApplications/`：三栏业务工作台的能力表、详情、活动和无障碍可拖拽分隔条。
+- `docs/business/dingtalk-single-platform-ui-design-2026-08-08.md`：钉钉单平台窗口结构、状态语义、响应式和实现边界。
+- `docs/previews/junqi-dingtalk-business-workspace.html`：包含侧栏、检查器、主题和页内选中态交互的独立设计预览。
+- `docs/business/dingtalk-business-runtime-implementation-design-2026-08-08.md`：OpenClaw 插件、DWS、身份、审批、幂等、投影和分期架构。
+- `docs/business/CONTEXT.md`：钉钉业务工作台规范术语和上下文边界。
+- `docs/adr/0002-openclaw-plugin-owned-dingtalk-business-runtime.md`：DWS 运行时归属决策及被否决方案。
+- `specs/business/2026-08-08-dingtalk-business-runtime.md`：运行时、只读 MVP 和写操作验收契约。
+- `plans/business/2026-08-08-dingtalk-business-runtime.md`：契约实验、插件骨架、前端接入、只读和写入阶段计划。
 - `src/services/setup/setupCompletionGate.ts`：完成门禁的结构化验证结果和失败原因。
 - `src/hooks/useSetupFlow/index.ts`：将官方验证客户端结果映射到完成门禁，并在 Gateway 就绪页和工作台入口保留
   不可用与失败的不同语义。
@@ -97,6 +144,11 @@
 
 ## 测试与验证
 
+- 设计预览已通过 HTML 标签栈、内联脚本语法、拖拽与收起控件标识、隐藏平台文案、相对链接和 Emoji 静态检查。
+- 本轮业务规划已从 DWS 官方源码成功运行 `go run ./cmd schema oa --compact -f json`，并运行 attendance、calendar、contact、todo schema 与 auth/profile help；尚未使用正式 DWS 发布包或真实钉钉租户执行业务操作。
+- 本轮新增文档的本地相对链接、完整修改文件 Emoji 扫描和 `git diff --check` 已通过；源码、Tauri、插件、构建脚本和锁文件均包含本轮实现改动。
+- `pnpm verify:openclaw-docs` 已在锁定依赖安装后通过，确认官方 `commands.list` 文档链接有效。
+- 当前未执行真实 Tauri 窗口中的亮暗主题、键盘焦点、窄窗口和像素级视觉验收；页面结构已由生产构建验证。
 - 已通过：
   `node --import ./test-setup.ts --import tsx --test src/services/setup/setupCompletionGate.test.ts src/services/gateway/OpenClawSetupVerificationClient.test.ts src/hooks/setupOnboardingRegression.test.ts`，共 58 个测试。
 - 已通过：`pnpm lint`、完整 `pnpm test` 和 `git diff --check`。全量测试包含既有第三方 SSR `useLayoutEffect`
@@ -128,6 +180,9 @@
 
 ## 已知问题
 
+- 钉钉单平台工作台和 OpenClaw 钉钉插件已进入生产代码；正式 DWS 发布包验证、真实租户读取、真实 Gateway 审批往返和跨平台真机验收仍未实现。
+- 当前开发机没有已安装的发布版 `dws`；源码 schema 只能证明主线契约，不能替代发布包、真实认证、profile、租户权限和跨平台验收。
+- Figma 订阅的 macOS 组件库不允许当前账号导入，本轮不把空白 Figma 文件作为交付物；独立 HTML 预览是当前可审阅设计稿。
 - 当前本机 Gateway 尚不支持官方实时验证方法。JunQi 进入工作台时会如实记录模型待核验；不把它显示为凭据失败。
 - 当前稳定 `latest` 仍不提供该方法，因此不得提示用户通过升级当前稳定版解决；支持该 RPC 的未来官方 Gateway
   需要再补充真实验证。
@@ -155,9 +210,13 @@
 
 ## 下一步顺序
 
-1. 在亮暗主题、键盘焦点、窄窗口、减少动态效果和快速连续点击条件下专项复测首次启动往返导航；本机 macOS 正常使用链路已经验收，不再重复列为待打包事项。
-2. 安装当前 macOS arm64 验收包，走查会话工具栏、Gateway Skills 预览、本地 Skill Hub 边界和 Cron 待核验状态的亮暗主题、键盘焦点与窄窗口表现。
-3. 在支持 `openclaw.setup.verify` 的官方 Gateway 上验证 `verified`、`failed` 和 `unavailable` 三种结果的 UI 路径。
-4. 以官方 `plugins.list`、`node.list/describe/invoke` 和 Canvas plugin surface 为依据，分别规划只读插件、Nodes/Canvas 与安全姿态卡。
-5. 在 macOS、Windows、Ubuntu、CentOS 以及 Native/Docker 的真实环境记录交接时间与行为差异；未经实测不得扩展为跨平台承诺。
-6. 后续行为变更结束、暂停或交接前，按 `AGENTS.md` 更新本文件并重新执行与改动范围相符的验证。
+1. 执行钉钉业务计划阶段 0：安装并校验正式 DWS 发布包，采集脱敏 auth、profile、product 与 leaf schema 样本。
+2. 在真实测试 Gateway 注册并加载已打包的 `junqi-dingtalk`，验证 `tools.effective`、`tools.invoke`、插件审批和最小只读往返。
+3. 阶段 0 门禁通过后，在真实测试租户逐项验收通讯录、OA、考勤、日历和待办只读工具。
+4. 只读链路通过后，再按阶段 4、阶段 5 开放写入和高风险业务动作；未知结果不得重放。
+5. 在亮暗主题、键盘焦点、窄窗口、减少动态效果和快速连续点击条件下专项复测首次启动往返导航；本机 macOS 正常使用链路已经验收，不再重复列为待打包事项。
+6. 安装当前 macOS arm64 验收包，走查会话工具栏、Gateway Skills 预览、本地 Skill Hub 边界和 Cron 待核验状态的亮暗主题、键盘焦点与窄窗口表现。
+7. 在支持 `openclaw.setup.verify` 的官方 Gateway 上验证 `verified`、`failed` 和 `unavailable` 三种结果的 UI 路径。
+8. 以官方 `plugins.list`、`node.list/describe/invoke` 和 Canvas plugin surface 为依据，分别规划只读插件、Nodes/Canvas 与安全姿态卡。
+9. 在 macOS、Windows、Ubuntu、CentOS 以及 Native/Docker 的真实环境记录交接时间与行为差异；未经实测不得扩展为跨平台承诺。
+10. 后续行为变更结束、暂停或交接前，按 `AGENTS.md` 更新本文件并重新执行与改动范围相符的验证。

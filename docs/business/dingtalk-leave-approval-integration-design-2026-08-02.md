@@ -2,6 +2,8 @@
 
 日期：2026-08-02
 
+> 历史设计：DWS 当前主线已提供正式 profile 命令和 `oa approval create-instance`。新的运行时归属、审批与分期以[钉钉业务工作台运行时实施设计](dingtalk-business-runtime-implementation-design-2026-08-08.md)为准，本文不得作为当前命令或实现契约。
+
 ## 目标与范围
 
 为大夏集团的 JunQi Desktop 接入钉钉 OA 请假审批，支持员工在 JunQi 中形成请假草稿、核对信息、显式确认发起，并在 JunQi 中查看与钉钉一致的审批进度和审计记录。
