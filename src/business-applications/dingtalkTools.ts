@@ -27,6 +27,33 @@ export interface DingTalkToolSchemaProjection {
   readonly parameters: readonly DingTalkToolParameter[];
 }
 
+export interface DingTalkRuntimeProfileProjection {
+  readonly profile: string;
+  readonly corpName: string | null;
+  readonly userName: string | null;
+  readonly status: string | null;
+  readonly authorizedDomains: readonly string[];
+  readonly expiresAt: string | null;
+  readonly isCurrent: boolean;
+}
+
+export interface DingTalkRuntimeIdentityProjection {
+  readonly available: boolean;
+  readonly runtimeError: {
+    readonly code: string | null;
+    readonly message: string | null;
+  } | null;
+  readonly currentProfile: string | null;
+  readonly profiles: readonly DingTalkRuntimeProfileProjection[];
+  readonly user: {
+    readonly name: string | null;
+    readonly userId: string | null;
+    readonly organization: string | null;
+    readonly department: string | null;
+    readonly avatarUrl: string | null;
+  } | null;
+}
+
 const DOMAIN_LABELS: Record<DingTalkDomain, string> = {
   contact: '通讯录',
   approval: '审批',
@@ -100,6 +127,53 @@ function record(value: unknown): Record<string, unknown> | null {
   const result: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) result[key] = item;
   return result;
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export function parseDingTalkRuntimeOutput(output: unknown): DingTalkRuntimeIdentityProjection {
+  const invocation = record(output);
+  const toolResult = record(invocation?.output);
+  const details = record(toolResult?.details);
+  const runtime = record(details?.runtime);
+  const runtimeError = record(runtime?.runtimeError);
+  const currentProfile = optionalString(runtime?.currentProfile);
+  const profiles = Array.isArray(runtime?.profiles) ? runtime.profiles.map((value) => {
+    const profile = record(value);
+    const profileRef = optionalString(profile?.profile);
+    if (!profileRef) throw new Error('DWS profile 投影缺少精确身份。');
+    return {
+      profile: profileRef,
+      corpName: optionalString(profile?.corpName),
+      userName: optionalString(profile?.userName),
+      status: optionalString(profile?.status),
+      authorizedDomains: Array.isArray(profile?.authorizedDomains)
+        ? profile.authorizedDomains.flatMap((domain) => optionalString(domain) ? [optionalString(domain)!] : [])
+        : [],
+      expiresAt: optionalString(profile?.expiresAt),
+      isCurrent: profile?.isCurrent === true,
+    };
+  }) : [];
+  const userRecord = record(runtime?.currentUser);
+  const avatarUrl = optionalString(userRecord?.avatarUrl);
+  return {
+    available: runtime?.available === true,
+    runtimeError: runtimeError ? {
+      code: optionalString(runtimeError.code),
+      message: optionalString(runtimeError.message),
+    } : null,
+    currentProfile,
+    profiles,
+    user: userRecord ? {
+      name: optionalString(userRecord.name),
+      userId: optionalString(userRecord.userId),
+      organization: optionalString(userRecord.organization),
+      department: optionalString(userRecord.department),
+      avatarUrl: avatarUrl && /^https:\/\//i.test(avatarUrl) ? avatarUrl : null,
+    } : null,
+  };
 }
 
 export function parseDingTalkToolSchemaOutput(output: unknown): DingTalkToolSchemaProjection {

@@ -12,6 +12,7 @@ assert.equal(manifest.version, packageJson.version);
 assert.equal(manifest.activation?.onStartup, true);
 assert.equal(manifest.configSchema?.additionalProperties, false);
 assert.equal(manifest.contracts?.tools?.length, 30);
+assert.deepEqual(manifest.configSchema?.properties?.allowedAgentIds?.default, []);
 assert.deepEqual(packageJson.openclaw?.extensions, ["./dist/index.js"]);
 assert.equal(packageJson.dependencies?.typebox, "1.3.3");
 assert.equal(packageJson.peerDependencies?.openclaw, ">=2026.7.1");

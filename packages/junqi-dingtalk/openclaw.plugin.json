@@ -44,6 +44,12 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "allowedAgentIds": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "uniqueItems": true,
+        "default": []
+      },
       "dwsPath": {
         "type": "string",
         "minLength": 1
@@ -63,6 +69,10 @@
     }
   },
   "uiHints": {
+    "allowedAgentIds": {
+      "label": "Allowed OpenClaw agents",
+      "help": "Required. Only these agents may invoke JunQi DingTalk tools; an empty list fails closed."
+    },
     "dwsPath": {
       "label": "DWS executable path",
       "help": "Optional absolute path. Required when PATH resolves to more than one DWS executable."

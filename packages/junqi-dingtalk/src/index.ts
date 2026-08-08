@@ -4,7 +4,8 @@ import {
 } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "typebox";
 import { DwsRunner, normalizeRunnerConfig, validateProfileReference } from "./dws-runner.js";
-import { serializeRuntimeError } from "./errors.js";
+import { agentAuthorizationFailure, normalizeAllowedAgentIds } from "./agent-authorization.js";
+import { probeDwsRuntime } from "./runtime-probe.js";
 import { buildSchemaValidatedArguments, DwsSchemaRegistry } from "./schema-contract.js";
 import {
   DINGTALK_TOOL_SPECS,
@@ -30,48 +31,6 @@ const TOOL_PARAMETERS = Type.Object({
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function findProfileRecords(value: unknown): Record<string, unknown>[] {
-  if (Array.isArray(value)) return value.flatMap(findProfileRecords);
-  if (!isRecord(value)) return [];
-  const corpId = value.corpId ?? value.corp_id;
-  const userId = value.userId ?? value.user_id;
-  const current = typeof corpId === "string" && typeof userId === "string"
-    ? [{
-        corpId,
-        userId,
-        ...(typeof value.corpName === "string" ? { corpName: value.corpName } : {}),
-        ...(typeof value.userName === "string" ? { userName: value.userName } : {}),
-      }]
-    : [];
-  return [...current, ...Object.values(value).flatMap(findProfileRecords)];
-}
-
-async function probeRuntime(runner: DwsRunner): Promise<Record<string, unknown>> {
-  const executable = await runner.resolveExecutable();
-  const probe = async (command: readonly string[]): Promise<unknown> => {
-    try {
-      return (await runner.run(command)).data;
-    } catch (error) {
-      return { success: false, error: serializeRuntimeError(error) };
-    }
-  };
-  const [version, authStatus, profileList] = await Promise.all([
-    probe(["version"]),
-    probe(["auth", "status"]),
-    probe(["profile", "list"]),
-  ]);
-  const profiles = findProfileRecords(profileList)
-    .filter((profile, index, items) => items.findIndex((candidate) => (
-      candidate.corpId === profile.corpId && candidate.userId === profile.userId
-    )) === index);
-  return {
-    executable,
-    version,
-    authStatus,
-    profiles,
-  };
 }
 
 function resultEnvelope(spec: DingTalkToolSpec, profile: string, digest: string, result: {
@@ -109,6 +68,7 @@ export function createJunqiDingTalkPlugin(): OpenClawPluginDefinition {
       if (api.registrationMode !== "full") return;
       const runner = new DwsRunner(normalizeRunnerConfig(api.pluginConfig));
       const schemas = new DwsSchemaRegistry(runner);
+      const allowedAgentIds = normalizeAllowedAgentIds(api.pluginConfig);
 
       api.registerTool({
         name: RUNTIME_STATUS_TOOL_NAME,
@@ -120,7 +80,7 @@ export function createJunqiDingTalkPlugin(): OpenClawPluginDefinition {
             success: true,
             toolName: RUNTIME_STATUS_TOOL_NAME,
             observedAt: new Date().toISOString(),
-            runtime: await probeRuntime(runner),
+            runtime: await probeDwsRuntime(runner),
           });
         },
       });
@@ -200,7 +160,13 @@ export function createJunqiDingTalkPlugin(): OpenClawPluginDefinition {
         });
       }
 
-      api.on("before_tool_call", (event) => {
+      api.on("before_tool_call", (event, context) => {
+        const isDingTalkTool = event.toolName === RUNTIME_STATUS_TOOL_NAME
+          || event.toolName === TOOL_SCHEMA_TOOL_NAME
+          || DINGTALK_TOOL_SPEC_BY_NAME.has(event.toolName);
+        if (!isDingTalkTool) return;
+        const authorizationFailure = agentAuthorizationFailure(allowedAgentIds, context.agentId);
+        if (authorizationFailure) return { block: true, blockReason: authorizationFailure };
         const spec = DINGTALK_TOOL_SPEC_BY_NAME.get(event.toolName);
         if (!spec || spec.effect === "read") return;
         const profile = typeof event.params.profile === "string" ? event.params.profile : "未提供";

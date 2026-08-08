@@ -10,7 +10,10 @@
 - 插件通过 DWS 官方 canonical path 执行，强制参数数组、JSON 输出、超时、取消、输出上限、精确 `corpId:userId` profile 和 leaf schema 摘要校验；子进程只接收路径、DWS 配置目录、临时目录、语言与系统证书白名单环境变量，schema 漂移会失败关闭。
 - 写工具统一经过 OpenClaw `before_tool_call` 插件审批；DWS 的 `user_required` 只在审批通过后追加 `--yes`，未知结果不自动重放。
 - 已生成并校验桌面资源包，Native 与 Docker 安装均要求当前已核验 Runtime Identity、连接 ID、目标指纹和选定运行时匹配；Tauri 只负责官方 OpenClaw 插件安装/启用，不直接执行 DWS。
+- 已加入专属 Agent 设计：插件配置 `allowedAgentIds` 为空时失败关闭，非空时由 OpenClaw `before_tool_call` 的 `ctx.agentId` 二次核验；OpenClaw 侧仍须在 `agents.list[].tools.allow/deny` 中显式授予同一 Agent。
 - 业务页已迁移为钉钉单平台三栏工作台：左侧筛选、中部能力表格、右侧可收起和拖拽的参数详情；能力来源为当前 Session 的 `tools.effective`，不再展示飞书、Google、静态目录或 Chat bridge。
+- 运行状态工具现在读取当前 DWS profile、profile 状态、授权域、到期时间和 `contact user get-self` 的当前用户资料；工作台仅投影姓名、组织、部门、userId 和 HTTPS 头像地址，头像媒体 ID 或非 HTTPS 值显示为待验证。
+- 工作台使用一条紧凑 readiness 状态条引导当前阻塞步骤：插件安装或 Gateway 重启、专属 Agent 授权、DWS 缺失、DWS 业务身份未确认、用户资料待验证和完整可用均有不同文案。DWS 缺失仅交接官方安装流程并提供重新检测，不自动修改主机或 Gateway 环境。
 - 已通过插件单测、前端业务单测、TypeScript、全仓边界检查、Rust `cargo check`、Rust 全量 `cargo test --lib`、`pnpm build`、`pnpm verify:openclaw-docs` 和 `git diff --check`。
 - 尚未完成正式 DWS 发布包、真实钉钉租户、真实 Gateway 审批往返，以及 macOS/Windows/Linux/Docker 的真机视觉和运行验收；这些边界保持待验证，不把本机编译结果描述为业务上线。
 - 2026-08-08 本机只读探测显示 OpenClaw 为 `2026.7.1-2`，当前 PATH 不存在 `dws`，`plugins list --json` 也未包含 `junqi-dingtalk`；因此未执行安装、认证、profile 或业务工具调用。

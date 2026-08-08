@@ -6,18 +6,19 @@ import {
   ListChecks,
   PanelLeftClose,
   RefreshCw,
-  RotateCcw,
   Search,
   SlidersHorizontal,
   Wrench,
 } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { ActiveTabIndicator } from '@/components/shared/TabMotion';
-import { Button, IconButton } from '@/components/shared/button/Button';
+import { IconButton } from '@/components/shared/button/Button';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import { PaneResizeHandle } from '@/components/BusinessApplications/PaneResizeHandle';
 import { DingTalkToolTable } from '@/components/BusinessApplications/DingTalkToolTable';
 import { DingTalkToolDetail } from '@/components/BusinessApplications/DingTalkToolDetail';
+import { DingTalkRuntimeIdentity } from '@/components/BusinessApplications/DingTalkRuntimeIdentity';
+import { DingTalkReadinessPanel } from '@/components/BusinessApplications/DingTalkReadinessPanel';
 import { BusinessActivityList } from '@/components/BusinessApplications/BusinessActivityList';
 import {
   DINGTALK_RUNTIME_STATUS_TOOL,
@@ -25,11 +26,13 @@ import {
   collectDingTalkTools,
   dingTalkDomainLabel,
   parseDingTalkToolSchemaOutput,
+  parseDingTalkRuntimeOutput,
   parseProfileReference,
   parseToolArguments,
   type DingTalkDomain,
   type DingTalkEffectiveTool,
   type DingTalkToolSchemaProjection,
+  type DingTalkRuntimeIdentityProjection,
 } from '@/business-applications/dingtalkTools';
 import { useBusinessActivityStore } from '@/business-applications/activityStore';
 import {
@@ -214,6 +217,7 @@ export function BusinessApplicationsPage() {
     [effective],
   );
   const schemaToolAvailable = rawEffectiveTools.some((tool) => tool.id === DINGTALK_TOOL_SCHEMA_TOOL && !tool.deniedBySession);
+  const runtimeToolAvailable = rawEffectiveTools.some((tool) => tool.id === DINGTALK_RUNTIME_STATUS_TOOL && !tool.deniedBySession);
 
   const [view, setView] = useState<WorkbenchView>('tools');
   const [leftWidth, setLeftWidth] = useState(228);
@@ -235,6 +239,8 @@ export function BusinessApplicationsPage() {
   const [pluginStatus, setPluginStatus] = useState<DingTalkPluginStatus | null>(null);
   const [pluginError, setPluginError] = useState<string | null>(null);
   const [pluginBusy, setPluginBusy] = useState(false);
+  const [runtimeIdentity, setRuntimeIdentity] = useState<DingTalkRuntimeIdentityProjection | null>(null);
+  const [runtimeIdentityError, setRuntimeIdentityError] = useState<string | null>(null);
 
   const beginAttempt = useBusinessActivityStore((state) => state.begin);
   const settleAttempt = useBusinessActivityStore((state) => state.settle);
@@ -255,6 +261,27 @@ export function BusinessApplicationsPage() {
     await ensureToolsEffectiveFresh(activeSessionKey, 0);
   }, [activeSessionKey, sessionExists]);
 
+  const refreshRuntimeIdentity = useCallback(async () => {
+    if (!sessionExists || !runtimeToolAvailable) {
+      setRuntimeIdentity(null);
+      setRuntimeIdentityError(null);
+      return;
+    }
+    try {
+      const result = await invokeOpenClawTool({
+        name: DINGTALK_RUNTIME_STATUS_TOOL,
+        sessionKey: activeSessionKey,
+        args: {},
+      });
+      if (!result.ok) throw new Error(result.error?.message ?? 'DWS 身份读取失败');
+      setRuntimeIdentity(parseDingTalkRuntimeOutput(result));
+      setRuntimeIdentityError(null);
+    } catch (error) {
+      setRuntimeIdentity(null);
+      setRuntimeIdentityError(errorMessage(error));
+    }
+  }, [activeSessionKey, runtimeToolAvailable, sessionExists]);
+
   const refreshPluginStatus = useCallback(async () => {
     if (!identity?.verified || !identity.desktopMutationAllowed) {
       setPluginStatus(null);
@@ -274,6 +301,10 @@ export function BusinessApplicationsPage() {
   useEffect(() => {
     void refreshTools();
   }, [refreshTools]);
+
+  useEffect(() => {
+    void refreshRuntimeIdentity();
+  }, [refreshRuntimeIdentity]);
 
   useEffect(() => {
     void refreshPluginStatus();
@@ -399,6 +430,10 @@ export function BusinessApplicationsPage() {
         idempotencyKey: attemptId,
       });
       setInvocationOutput(result);
+      if (runtimeTool && result.ok) {
+        setRuntimeIdentity(parseDingTalkRuntimeOutput(result));
+        setRuntimeIdentityError(null);
+      }
       if (result.requiresApproval) {
         settleAttempt(attemptId, {
           state: 'approval_required',
@@ -505,14 +540,10 @@ export function BusinessApplicationsPage() {
           <p className="truncate text-[9.5px] text-aegis-text-dim">{headerStatus}</p>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
+          <DingTalkRuntimeIdentity runtime={runtimeIdentity} />
+          {runtimeIdentityError && <span className="max-w-[180px] truncate text-[9.5px] text-aegis-warning" title={runtimeIdentityError}>DWS 身份待验证</span>}
           {pluginError && <span className="max-w-[280px] truncate text-[9.5px] text-aegis-danger" title={pluginError}>{pluginError}</span>}
-          {!pluginVisibleInSession && localInstallAvailable && pluginNeedsInstall && (
-            <Button size="xs" variant="outline" tone="primary" loading={pluginBusy} leadingIcon={<Wrench size={12} />} onClick={installPlugin}>{pluginStatus?.installed ? '修复插件' : '安装插件'}</Button>
-          )}
-          {pluginStatus?.restartRequired && (
-            <Button size="xs" variant="outline" tone="warning" loading={pluginBusy} leadingIcon={<RotateCcw size={12} />} onClick={() => void restartGateway()}>重启 Gateway</Button>
-          )}
-          <IconButton aria-label="刷新有效工具" title="刷新有效工具" disabled={!sessionExists || toolsLoading} onClick={() => void refreshTools()}>
+          <IconButton aria-label="刷新钉钉工具和身份" title="刷新钉钉工具和身份" disabled={!sessionExists || toolsLoading} onClick={() => { void refreshTools(); void refreshRuntimeIdentity(); }}>
             <RefreshCw size={13} className={toolsLoading ? 'animate-spin' : ''} />
           </IconButton>
         </div>
@@ -538,6 +569,20 @@ export function BusinessApplicationsPage() {
           </button>
         ))}
       </nav>
+
+      <DingTalkReadinessPanel
+        sessionExists={sessionExists}
+        runtimeToolAvailable={runtimeToolAvailable}
+        runtime={runtimeIdentity}
+        runtimeError={runtimeIdentityError}
+        pluginNeedsInstall={pluginNeedsInstall}
+        restartRequired={Boolean(pluginStatus?.restartRequired)}
+        installAvailable={localInstallAvailable}
+        busy={pluginBusy || toolsLoading}
+        onRefresh={() => { void refreshTools(); void refreshRuntimeIdentity(); void refreshPluginStatus(); }}
+        onInstallPlugin={installPlugin}
+        onRestartGateway={() => void restartGateway()}
+      />
 
       {view === 'activity' ? (
         <main className="flex min-h-0 flex-1 bg-aegis-surface/20"><BusinessActivityList /></main>
@@ -575,7 +620,7 @@ export function BusinessApplicationsPage() {
               tools={filteredTools}
               selectedId={selectedId}
               loading={toolsLoading}
-              emptyMessage={sessionExists ? '插件未安装、尚未重启，或当前 Session 策略未允许这些工具。' : '请先创建或选择一个 OpenClaw Session。'}
+              emptyMessage={sessionExists ? '请先按上方状态条完成当前阻塞步骤，再重新检测有效工具。' : '请先创建或选择一个 OpenClaw Session。'}
               onSelect={selectTool}
             />
           </main>
