@@ -39,6 +39,8 @@
 - 已统一 Automations/Cron 读模型：`cron.list`、`cron.get` 和 `cron.runs` 共用严格 parser，覆盖官方时间与事件调度、payload kind、
   pacing、delivery、failureAlert、运行状态和诊断相关字段；运行记录使用官方分页 envelope，轮询超时保留为待核验。
 - 已完成会话工具栏加固：顶部图标统一复用 `ChatIconButton` 的可见 Tooltip、`aria-label` 和 `title` 兜底；低频的分支、检查点、产物、会话变更和会话文件入口收进会话工具浮层，有效工具和浏览器保持直接入口。
+- 已补充安装与首次启动端到端总览 `docs/installation/junqi-installation-flow.md`，将运行时选择、数据位置、Gateway 交接、官方 Wizard、
+  三重完成门禁、Ready/Dashboard 进入、恢复语义和跨平台未验证边界统一串联，并从 `docs/README.md` 提供唯一总览入口。
 - 已增强会话变更和会话文件的真实状态呈现：`sessions.diff` 保留 Gateway 的授权失败及缺失 scope，不自动提权；会话文件预览按缺失、类型不支持、内容不可用和未知原因区分，并展示 Gateway 返回的安全元数据。
 - 已移除当前 Gateway 未提供的会话旁问入口、专属 RPC 客户端、Hook、测试、国际化文案和本地 `/btw`/`/side` 拦截；普通问题恢复为主会话发送。官方能力与未来恢复边界记录在
   `docs/quality/openclaw-session-companion-removal-2026-08-07.md`。
@@ -116,6 +118,7 @@
 - 已完成会话助手头像视觉调整；本轮聊天相关测试、`pnpm lint`、完整 `pnpm test` 和 `pnpm build` 均通过，亮暗主题与窄窗口的最终视觉验收仍待完成。
 - 本轮已通过聚焦回归：Gateway 能力证据、Gateway Skills 欢迎页、本地 Skill Hub 边界、Cron contract/parser、Cron runs、Cron store
   和 Gateway 连接安全测试；`pnpm exec tsc --noEmit` 与 `git diff --check` 通过。
+- 本轮安装流程总览仅新增文档和索引入口，未改变运行时代码；已完成链接、路径和 Emoji 扫描。
 - 已审查并合并 `Blues-Code/code` 分支的 `7f0d208c`；合并提交为 `fa094888`。该分支只新增两份会话能力分析文档，未引入
   源码、配置、OpenClaw RPC 或运行时行为；文档已标明基于旧快照的证据边界，不作为当前功能契约。
 

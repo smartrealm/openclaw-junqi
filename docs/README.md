@@ -37,6 +37,9 @@ docs/
 4. [验证记录](installation/setup-round-trip-navigation-validation-2026-08-08.md)：自动化、验收包和未验证边界；
 5. [导航与页签动效设计](quality/navigation-and-tab-motion-design-2026-08-02.md)：共享动效原则。
 
+完整安装与首次启动总览：[JunQi Desktop 安装与首次启动流程](installation/junqi-installation-flow.md)。该总览说明从运行时选择、
+Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；专题文档仍负责具体问题的审计和验证证据。
+
 其他安装与首次启动文档：
 
 - [新手引导编排重构记录](installation/onboarding-orchestration-redesign-2026-08-05.md)
