@@ -30,6 +30,9 @@ login registration. It must not start, stop, register, or hand off OpenClaw.
   and retains its existing official-service handoff behavior.
 - [x] Ready-screen navigation is disabled while either autostart operation is
   in progress.
+- [x] Gateway and JunQi Desktop autostart status reads start in parallel; the
+  Ready page keeps the entire preference block in a same-size skeleton until
+  both results settle, preventing partial row rendering and layout jumps.
 - [x] Gateway and JunQi Desktop autostart rows share the same switch control;
   loading and in-progress states retain that control's layout and expose an
   accessible busy status instead of substituting a button.

@@ -11,7 +11,27 @@ const CHANNEL_IDS = [
   'nextcloud-talk', 'raft', 'clickclack', 'synology-chat', 'tlon', 'twitch',
   'yuanbao',
 ];
-const CHANNEL_LITERAL = new RegExp(`['"](?:${CHANNEL_IDS.join('|')})['"]`, 'i');
+const CHANNEL_LITERAL = new RegExp(`['"](?:${CHANNEL_IDS.join('|')})['"]`, 'gi');
+
+function isCronStreamModeLiteral(source: string, index: number): boolean {
+  const contextStart = Math.max(0, index - 48);
+  const contextEnd = Math.min(source.length, index + 48);
+  const context = source.slice(contextStart, contextEnd);
+  return /mode\??:\s*$/.test(source.slice(contextStart, index))
+    || /\[\s*$/.test(source.slice(contextStart, index)) && /['"]\s*,\s*['"]match['"]/.test(context)
+    || /value\.mode,\s*\[\s*$/.test(source.slice(contextStart, index));
+}
+
+function containsNonDingTalkChannelLiteral(path: string, source: string): boolean {
+  for (const match of source.matchAll(CHANNEL_LITERAL)) {
+    const literal = match[0].slice(1, -1).toLowerCase();
+    if (literal === 'line' && (path.endsWith('cronContract.ts') || path.endsWith('cronRuns.ts')) && isCronStreamModeLiteral(source, match.index ?? 0)) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
 
 async function sourceFiles(directory: string): Promise<string[]> {
   const files: string[] = [];
@@ -38,7 +58,7 @@ test('production channel logic contains no non-DingTalk channel-id literals', as
   const matches: string[] = [];
   for (const file of (await Promise.all(roots.map(sourceFiles))).flat()) {
     const source = productionSource(file, await readFile(file, 'utf8'));
-    if (CHANNEL_LITERAL.test(source)) matches.push(relative(ROOT, file));
+    if (containsNonDingTalkChannelLiteral(file, source)) matches.push(relative(ROOT, file));
   }
   assert.deepEqual(matches, []);
 });

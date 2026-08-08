@@ -1,31 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, AlertCircle, Check, ChevronDown, CircleStop, Download, FileDown, FileText, Folder, Gauge, ListTodo, MessageSquareText, Plus, Puzzle, RefreshCw, RotateCcw, Wrench, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AlertCircle, Check, ChevronDown, CircleStop, Download, Folder, Gauge, ListTodo, MessageSquareText, Plus, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
-import {
-  ensureSessionArtifactsFresh,
-  saveSessionArtifact,
-  selectSessionArtifacts,
-  useGatewayDataStore,
-  type OpenClawArtifactSummary,
-} from '@/stores/gatewayDataStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { exportChatMarkdown } from '@/utils/exportChat';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { debugError } from '@/utils/debugLog';
-import { useSkillsStore } from '@/stores/skillsStore';
-import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
 import { SessionRuntimeControl } from './session-runtime/SessionRuntimeControl';
 import { EffectiveToolsControl } from './EffectiveToolsControl';
 import { BrowserControlCenter } from './BrowserControlCenter';
 import { SessionInspectionControl } from './SessionInspectionControl';
 import { SessionBranchesControl } from './SessionBranchesControl';
 import { SessionArtifactsControl } from './SessionArtifactsControl';
-import { SessionDiffControl } from './SessionDiffControl';
-import { SessionFilesControl } from './SessionFilesControl';
-import { requestSessionCompanionOpen } from './sessionCompanionUi';
+import { ChatIconButton } from './ChatIconButton';
 import { desktopFileRuntime } from '@/services/chat/desktopFileRuntime';
 import { getGatewaySessionContextBudgetNotice } from '@/services/gateway/sessionContextBudgetStatus';
 
@@ -111,169 +101,19 @@ function WorkspacePicker({ agentId, current }: { agentId: string; current?: stri
   );
 }
 
-function formatArtifactSize(sizeBytes?: number): string | null {
-  if (sizeBytes === undefined || !Number.isFinite(sizeBytes) || sizeBytes < 0) return null;
-  if (sizeBytes >= 1024 * 1024) return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
-  if (sizeBytes >= 1024) return `${Math.round(sizeBytes / 1024)} KB`;
-  return `${sizeBytes} B`;
-}
-
-function SessionArtifactsButton({ sessionKey, agentId }: { sessionKey: string; agentId: string }) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const artifacts = useGatewayDataStore((state) => selectSessionArtifacts(state, sessionKey));
-  const loading = useGatewayDataStore((state) => state.sessionArtifactsLoading)
-    && useGatewayDataStore((state) => state.sessionArtifactsLoadingKey) === sessionKey;
-  const error = useGatewayDataStore((state) => state.sessionArtifactsError);
-
-  const refresh = useCallback(() => {
-    setSaveError(null);
-    void ensureSessionArtifactsFresh(sessionKey, undefined, agentId);
-  }, [agentId, sessionKey]);
-
-  useEffect(() => {
-    if (open) refresh();
-  }, [open, refresh]);
-
-  const handleSave = useCallback(async (artifact: OpenClawArtifactSummary) => {
-    if (savingId || artifact.download.mode === 'unsupported') return;
-    setSavingId(artifact.id);
-    setSaveError(null);
-    const result = await saveSessionArtifact(sessionKey, artifact.id, agentId);
-    setSavingId(null);
-    if (!result.success && !result.canceled) setSaveError(result.errorCode ?? 'OPENCLAW_ARTIFACT_SAVE_FAILED');
-  }, [agentId, savingId, sessionKey]);
-
-  const errorLabel = error === 'OPENCLAW_ARTIFACTS_UNSUPPORTED'
-    ? t('chat.artifacts.unavailable')
-    : t('chat.artifacts.error');
-  const saveErrorLabel = saveError === 'OPENCLAW_ARTIFACT_DOWNLOAD_UNSUPPORTED'
-    ? t('chat.artifacts.unsupported')
-    : t('chat.artifacts.saveFailed');
-
-  return (
-    <div className="relative no-drag">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        aria-label={t('chat.artifacts.open')}
-        title={t('chat.artifacts.open')}
-        className="relative inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
-      >
-        <FileText size={11} />
-        {artifacts.length > 0 ? (
-          <span className="ms-0.5 min-w-3 text-[9px] font-mono tabular-nums">{artifacts.length}</span>
-        ) : null}
-      </button>
-      {open ? (
-        <div className="absolute end-0 top-full z-50 mt-1 w-[min(92vw,420px)] overflow-hidden rounded-xl border border-aegis-border bg-aegis-menu-bg shadow-float">
-          <div className="flex items-center gap-2 border-b border-[rgb(var(--aegis-overlay)/0.08)] px-3 py-2">
-            <FileText size={13} className="shrink-0 text-aegis-primary" aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[12px] font-semibold text-aegis-text">{t('chat.artifacts.title')}</p>
-              <p className="truncate text-[10px] text-aegis-text-dim">{sessionKey}</p>
-            </div>
-            <button
-              type="button"
-              onClick={refresh}
-              disabled={loading}
-              aria-label={t('chat.artifacts.refresh')}
-              title={t('chat.artifacts.refresh')}
-              className="grid size-7 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text disabled:cursor-wait disabled:opacity-50"
-            >
-              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              aria-label={t('common.close')}
-              title={t('common.close')}
-              className="grid size-7 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text"
-            >
-              <X size={12} aria-hidden="true" />
-            </button>
-          </div>
-          <div className="max-h-[min(62vh,420px)] overflow-y-auto p-2">
-            {loading && artifacts.length === 0 ? (
-              <div className="flex items-center gap-2 px-2 py-6 text-[11px] text-aegis-text-dim" role="status">
-                <RefreshCw size={13} className="animate-spin" aria-hidden="true" />
-                {t('chat.artifacts.loading')}
-              </div>
-            ) : error && artifacts.length === 0 ? (
-              <div className="flex items-start gap-2 rounded-lg border border-aegis-warning/25 bg-aegis-warning/5 px-2.5 py-2.5 text-[11px] text-aegis-text-secondary">
-                <AlertCircle size={13} className="mt-0.5 shrink-0 text-aegis-warning" aria-hidden="true" />
-                <span>{errorLabel}</span>
-              </div>
-            ) : artifacts.length === 0 ? (
-              <div className="px-2 py-6 text-center text-[11px] text-aegis-text-dim">
-                {t('chat.artifacts.empty')}
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {artifacts.map((artifact) => {
-                  const size = formatArtifactSize(artifact.sizeBytes);
-                  const unsupported = artifact.download.mode === 'unsupported';
-                  return (
-                    <div key={artifact.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.03)] px-2.5 py-2">
-                      <FileText size={14} className="shrink-0 text-aegis-text-muted" aria-hidden="true" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[11px] font-medium text-aegis-text" title={artifact.title}>{artifact.title}</p>
-                        <p className="truncate text-[10px] text-aegis-text-dim">
-                          {[artifact.type, size, artifact.mimeType].filter(Boolean).join(' · ')}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleSave(artifact)}
-                        disabled={unsupported || savingId !== null}
-                        aria-label={unsupported
-                          ? t('chat.artifacts.unsupported')
-                          : t('chat.artifacts.save')}
-                        title={unsupported
-                          ? t('chat.artifacts.unsupported')
-                          : t('chat.artifacts.save')}
-                        className="grid size-7 shrink-0 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-aegis-primary/10 hover:text-aegis-primary disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {savingId === artifact.id ? <RefreshCw size={12} className="animate-spin" aria-hidden="true" /> : <FileDown size={12} aria-hidden="true" />}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {saveError ? (
-              <p className="mt-2 flex items-center gap-1.5 px-1 text-[10px] text-aegis-warning" role="status">
-                <AlertCircle size={12} aria-hidden="true" />
-                {saveErrorLabel}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function SessionContextBar() {
   const { t } = useTranslation();
   const { tokenUsage, renderBlocks, activeSessionKey, sessions, compactionStatusBySession } = useChatStore();
   const agents = useGatewayDataStore((s) => s.agents);
-  const skills = useSkillsStore((s) => s.skills);
-  const refreshSkills = useSkillsStore((s) => s.refresh);
   const navigate = useNavigate();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRefreshed, setIsRefreshed] = useState(false);
-
   // Parse agentId from session key (same logic as ChatTabs)
   const keyParts = activeSessionKey.split(':');
   const agentId = keyParts.length >= 3 ? (keyParts[1] ?? '') : '';
   const agent = agents.find((a) => a.id === agentId);
   const mainAgentName = getAgentDisplayName(agents.find((a) => a.id === 'main'), t('agents.mainAgent'));
   const agentDisplayName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
-  const enabledSkillCount = Object.values(skills).filter((skill) => skill.enabled !== false).length;
   const activeSession = sessions.find((session) => session.key === activeSessionKey);
   const compactionActive = Boolean(compactionStatusBySession[activeSessionKey]);
   const contextBudgetNotice = getGatewaySessionContextBudgetNotice(activeSession?.contextBudgetStatus);
@@ -291,10 +131,6 @@ export function SessionContextBar() {
         status: t(`chat.sessionGoalStatus.${activeSession.goal.status}`),
       })
     : null;
-
-  useEffect(() => {
-    void refreshSkills();
-  }, [refreshSkills]);
 
   const usedTokens = tokenUsage?.contextTokens || 0;
   const maxTokens = tokenUsage?.maxTokens || 0;
@@ -388,32 +224,6 @@ export function SessionContextBar() {
       )}
       <div className="ms-auto flex items-center gap-2 pl-2 border-l border-[rgb(var(--aegis-overlay)/0.06)]">
         <div className="hidden items-center gap-0.5 lg:flex">
-          <SessionArtifactsButton sessionKey={activeSessionKey} agentId={agentId} />
-          <button
-            type="button"
-            onClick={() => requestSessionCompanionOpen()}
-            className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
-            title={t('chat.sessionCompanion.open')}
-            aria-label={t('chat.sessionCompanion.open')}
-          >
-            <MessageSquareText size={11} />
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/skills')}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
-            title={t('activity.skillsHint')}
-          >
-            <Puzzle size={11} />{enabledSkillCount}
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate(OPENCLAW_TOOLS_ROUTE)}
-            className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
-            title={t('activity.openClawToolsHint')}
-          >
-            <Wrench size={11} />
-          </button>
           <EffectiveToolsControl
             sessionKey={activeSessionKey}
             agentId={agentId}
@@ -423,16 +233,6 @@ export function SessionContextBar() {
           <SessionBranchesControl sessionKey={activeSessionKey} agentId={agentId} />
           <SessionInspectionControl sessionKey={activeSessionKey} agentId={agentId} />
           <SessionArtifactsControl sessionKey={activeSessionKey} agentId={agentId} />
-          <SessionDiffControl sessionKey={activeSessionKey} agentId={agentId} />
-          <SessionFilesControl sessionKey={activeSessionKey} agentId={agentId} />
-          <button
-            type="button"
-            onClick={() => navigate('/activity')}
-            className="inline-flex items-center rounded-md px-1.5 py-1 text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary"
-            title={t('activity.open')}
-          >
-            <Activity size={11} />
-          </button>
         </div>
         {maxTokens > 0 && (
           <span className="text-[10px] text-aegis-text-muted font-mono hidden lg:inline" title={`${usedK}K / ${maxLabel} (${Math.round((usedTokens / maxTokens) * 100)}%)`}>
@@ -440,15 +240,18 @@ export function SessionContextBar() {
           </span>
         )}
         {renderBlocks.length > 0 && (
-          <button
+          <ChatIconButton
+            type="button"
+            label={t('chat.exportMarkdown')}
             onClick={() => exportChatMarkdown(renderBlocks, activeSessionKey)}
             className="p-1.5 rounded-md transition-colors text-aegis-text-dim hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.05)]"
-            title={t('chat.exportMarkdown')}
           >
-            <Download size={13} />
-          </button>
+            <Download size={13} aria-hidden="true" />
+          </ChatIconButton>
         )}
-        <button
+        <ChatIconButton
+          type="button"
+          label={isRefreshed ? t('chat.refreshDone') : t('chat.refresh')}
           onClick={() => {
             if (isRefreshing) return;
             setIsRefreshed(false);
@@ -465,12 +268,11 @@ export function SessionContextBar() {
             isRefreshing && 'opacity-50 cursor-wait',
             isRefreshed && 'text-aegis-success hover:text-aegis-success',
           )}
-          title={isRefreshed ? t('chat.refreshDone') : t('chat.refresh')}
         >
           {isRefreshed
-            ? <Check size={13} />
-            : <RotateCcw size={13} className={clsx('transition-transform', isRefreshing && 'animate-spin')} />}
-        </button>
+            ? <Check size={13} aria-hidden="true" />
+            : <RotateCcw size={13} className={clsx('transition-transform', isRefreshing && 'animate-spin')} aria-hidden="true" />}
+        </ChatIconButton>
       </div>
     </div>
   );

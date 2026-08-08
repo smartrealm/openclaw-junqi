@@ -23,7 +23,7 @@ const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
   'components/Terminal/terminalShared.ts': 20, // xterm 回退契约
   'components/settings/ThemePicker.tsx': 11, // 主题色板和预览画布
   'pages/AgentRunView.tsx': 0,
-  'pages/SetupPage/WizardScreen.tsx': 2, // 生成二维码位图的前景色和背景色
+  'pages/SetupPage/WizardScreen.tsx': 0, // 向导改由主题令牌呈现，不保留硬编码颜色
   'pages/SetupPage/shared.tsx': 10, // 主题色板
   'pet/PetBubble.tsx': 0,
   'pet/PetCharacter.tsx': 3,

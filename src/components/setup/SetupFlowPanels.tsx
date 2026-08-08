@@ -29,6 +29,7 @@ import {
 } from "@/api/tauri-commands";
 import type { SetupLog } from "@/stores/app-store";
 import type { InstallTarget, SetupFlow, StepState } from "@/hooks/useSetupFlow";
+import { SetupStepScene } from "@/motion/setupStepTransition";
 
 const SETUP_STEPS = [
   { id: "environment", titleKey: "setup.steps.environment.title", titleFallback: "Environment", descriptionKey: "setup.steps.environment.description", descriptionFallback: "OpenClaw / Docker" },
@@ -96,52 +97,57 @@ type SetupNextAction = SetupAction & {
   icon?: "next" | "none";
 };
 
-function Stepper({ active }: { active: number }) {
+function Stepper({ active, activeComplete = false }: { active: number; activeComplete?: boolean }) {
   const { t } = useTranslation();
   return (
     <div className="px-6 pt-6" dir="ltr">
-      <div className="mx-auto flex w-fit max-w-full items-start justify-center gap-2 overflow-x-auto rounded-xl border border-aegis-border bg-aegis-elevated px-3 py-3 shadow-sm">
+      <div className="mx-auto grid w-full max-w-3xl grid-cols-5 items-start rounded-xl border border-aegis-border bg-aegis-elevated px-3 py-3 shadow-sm">
         {SETUP_STEPS.map(({ id, titleKey, titleFallback, descriptionKey, descriptionFallback }, i) => {
           const done = i < active;
           const current = i === active;
+          const currentComplete = current && activeComplete;
           return (
-            <div key={id} className="flex items-start">
-              <div className="flex min-w-[94px] flex-col items-center gap-2 text-center">
-                <div
-                  className={clsx(
-                    "flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-black transition-colors",
-                    done && "border-aegis-primary/45 bg-aegis-primary/10 text-aegis-primary",
-                    current && "border-aegis-primary bg-aegis-bg text-aegis-primary shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.12)]",
-                    !done && !current && "border-aegis-border bg-aegis-surface text-aegis-text-dim",
-                  )}
-                >
-                  {done ? <Check size={15} strokeWidth={3} /> : i + 1}
-                </div>
-                <div>
-                  <div
-                    className={clsx(
-                      "text-xs font-bold",
-                      current && "text-aegis-text",
-                      done && !current && "text-aegis-text-secondary",
-                      !done && !current && "text-aegis-text-dim",
-                    )}
-                    dir="auto"
-                  >
-                    {t(titleKey, titleFallback)}
-                  </div>
-                  <div
-                    className={clsx("mt-0.5 hidden text-[11px] font-medium sm:block", current ? "text-aegis-text-secondary" : "text-aegis-text-dim")}
-                    dir="auto"
-                  >
-                    {t(descriptionKey, descriptionFallback)}
-                  </div>
-                </div>
-              </div>
+            <div key={id} className="relative flex min-w-0 flex-col items-center gap-2 text-center">
               {i < SETUP_STEPS.length - 1 && (
                 <div
-                  className={clsx("mt-4 h-[2px] w-10 rounded-full transition-colors", i < active ? "bg-aegis-primary/35" : "bg-aegis-border")}
+                  aria-hidden="true"
+                  className={clsx(
+                    "absolute left-[calc(50%+1rem)] right-[calc(-50%+1rem)] top-4 h-[2px] rounded-full transition-colors",
+                    i < active ? "bg-aegis-primary/35" : "bg-aegis-border",
+                  )}
                 />
               )}
+              <div
+                data-setup-step-current-complete={currentComplete || undefined}
+                className={clsx(
+                  "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-sm font-black transition-colors",
+                  done && "border-aegis-primary/45 bg-aegis-primary/10 text-aegis-primary",
+                  current && !currentComplete && "border-aegis-primary bg-aegis-bg text-aegis-primary shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.12)]",
+                  currentComplete && "border-aegis-success bg-aegis-success/10 text-aegis-success shadow-[0_0_0_3px_rgb(var(--aegis-success)/0.12)]",
+                  !done && !current && "border-aegis-border bg-aegis-surface text-aegis-text-dim",
+                )}
+              >
+                {done || currentComplete ? <Check size={15} strokeWidth={3} /> : i + 1}
+              </div>
+              <div className="min-w-0 px-1">
+                <div
+                  className={clsx(
+                    "break-words text-xs font-bold leading-4",
+                    current && "text-aegis-text",
+                    done && !current && "text-aegis-text-secondary",
+                    !done && !current && "text-aegis-text-dim",
+                  )}
+                  dir="auto"
+                >
+                  {t(titleKey, titleFallback)}
+                </div>
+                <div
+                  className={clsx("mt-0.5 hidden break-words text-[11px] font-medium leading-4 sm:block", current ? "text-aegis-text-secondary" : "text-aegis-text-dim")}
+                  dir="auto"
+                >
+                  {t(descriptionKey, descriptionFallback)}
+                </div>
+              </div>
             </div>
           );
         })}
@@ -203,6 +209,8 @@ function LogPanel({ logs }: { logs: SetupLog[] }) {
 
 export function SetupShell({
   active,
+  activeComplete = false,
+  eyebrow,
   title,
   subtitle,
   children,
@@ -214,6 +222,8 @@ export function SetupShell({
   showLogToggle = true,
 }: {
   active: number;
+  activeComplete?: boolean;
+  eyebrow?: string;
   title: string;
   subtitle: string;
   children: ReactNode;
@@ -235,30 +245,33 @@ export function SetupShell({
         data-tauri-drag-region
         className="h-[32px] shrink-0 chrome-bg border-b border-aegis-border/30"
       />
-      <Stepper active={active} />
-      <main className="flex min-h-0 flex-1 flex-col items-center overflow-auto px-3 py-4 sm:px-6 sm:py-8">
-        <section className={clsx("w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
-          <div className="mb-4 text-center sm:mb-6">
-            <h1 className="text-2xl font-semibold tracking-normal text-aegis-text sm:text-[30px]" dir="auto">{title}</h1>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
-          </div>
-          <div className={clsx(wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6")}>
-            {children}
-            {isRuntime && showLogToggle && logs.length > 0 && (
-              <div className="mt-5 border-t border-aegis-border pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowLogs((v) => !v)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-aegis-border px-3 py-2 text-xs font-medium text-aegis-text-secondary hover:bg-aegis-surface"
-                >
-                  {showLogs ? <EyeOff size={14} /> : <Eye size={14} />}
-                  {showLogs ? t("setup.hideLogs") : t("setup.viewLogs")}
-                </button>
-                {showLogs && <LogPanel logs={logs} />}
-              </div>
-            )}
-          </div>
-        </section>
+      <Stepper active={active} activeComplete={activeComplete} />
+      <main className="flex min-h-0 flex-1 flex-col items-center overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-6 sm:py-8">
+        <SetupStepScene>
+          <section className={clsx("w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
+            <div className="mb-4 text-center sm:mb-6">
+              {eyebrow && <div className="mb-2 text-xs font-semibold text-aegis-primary" dir="auto">{eyebrow}</div>}
+              <h1 className="text-2xl font-semibold tracking-normal text-aegis-text sm:text-[30px]" dir="auto">{title}</h1>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
+            </div>
+            <div className={clsx(wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6")}>
+              {children}
+              {isRuntime && showLogToggle && logs.length > 0 && (
+                <div className="mt-5 border-t border-aegis-border pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowLogs((v) => !v)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-aegis-border px-3 py-2 text-xs font-medium text-aegis-text-secondary transition-[background-color,border-color,color,transform] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-surface active:scale-[0.98]"
+                  >
+                    {showLogs ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {showLogs ? t("setup.hideLogs") : t("setup.viewLogs")}
+                  </button>
+                  {showLogs && <LogPanel logs={logs} />}
+                </div>
+              )}
+            </div>
+          </section>
+        </SetupStepScene>
       </main>
       {showActions && (
         <footer className="shrink-0 border-t border-aegis-border/60 bg-aegis-bg/95 px-3 py-3 backdrop-blur sm:px-6">
@@ -269,7 +282,7 @@ export function SetupShell({
                 type="button"
                 onClick={previousAction.onClick}
                 disabled={previousAction.disabled}
-                className="inline-flex min-w-[112px] items-center justify-center gap-1.5 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[15px] font-bold text-aegis-text transition shadow-sm hover:bg-aegis-surface disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex min-w-[112px] items-center justify-center gap-1.5 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[15px] font-bold text-aegis-text transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] shadow-sm hover:bg-aegis-surface active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <ChevronLeft size={15} />
                 {previousAction.label ?? t("setup.previousStep")}
@@ -282,7 +295,7 @@ export function SetupShell({
                   type="button"
                   onClick={secondaryAction.onClick}
                   disabled={secondaryAction.disabled || secondaryAction.loading}
-                  className="inline-flex min-w-[112px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[14px] font-bold text-aegis-text-secondary transition hover:bg-aegis-surface disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+                  className="inline-flex min-w-[112px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[14px] font-bold text-aegis-text-secondary transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-surface active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
                 >
                   {secondaryAction.loading && <RefreshCw size={14} className="animate-spin" />}
                   {secondaryAction.label}
@@ -294,7 +307,7 @@ export function SetupShell({
                 type="button"
                 onClick={nextAction.onClick}
                 disabled={nextAction.disabled || nextAction.loading}
-                className="inline-flex w-full min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-primary bg-aegis-primary px-4 py-2.5 text-[15px] font-bold text-[var(--aegis-btn-primary-text)] transition shadow-lg hover:bg-aegis-primary-hover disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
+                className="inline-flex w-full min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-primary bg-aegis-primary px-4 py-2.5 text-[15px] font-bold text-[var(--aegis-btn-primary-text)] transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] shadow-lg hover:bg-aegis-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
               >
                 {nextAction.loading && <RefreshCw size={15} className="animate-spin" />}
                 {nextAction.label}
@@ -951,8 +964,14 @@ export type InstallationConsoleSummary =
   | { kind: "model-checking" }
   | { kind: "model-check-failed"; message: string };
 
+export function installationConsoleMode(
+  summary: InstallationConsoleSummary,
+): "activity" | "checkpoint" {
+  return summary.kind === "installation" ? "activity" : "checkpoint";
+}
+
 type InstallationConsoleProps = {
-  flow: SetupFlow;
+  flow: Pick<SetupFlow, "steps" | "installTarget">;
   logs: SetupLog[];
   setupStep: string;
   summary?: InstallationConsoleSummary;
@@ -966,10 +985,11 @@ export function InstallationConsole({
 }: InstallationConsoleProps) {
   const { t } = useTranslation();
   const [mobileView, setMobileView] = useState<"steps" | "logs">("steps");
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const current = currentStepOf(flow.steps);
   const completed = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || 1;
-  const modelChecking = summary.kind === "model-checking";
+  const consoleMode = installationConsoleMode(summary);
   const modelCheckFailed = summary.kind === "model-check-failed";
   const isReady = setupStep === "ready" || summary.kind === "gateway-ready";
   const percent = isReady
@@ -980,33 +1000,81 @@ export function InstallationConsole({
     if (isError) setMobileView("logs");
   }, [isError]);
   const currentMeta = current ? STEP_META[current.id] : null;
-  const currentTitle = modelChecking
-    ? t("setup.gatewayReadyCheckingTitle", "正在检查 OpenClaw 配置")
-    : modelCheckFailed
-      ? t("setup.gatewayReadyContinueFailedTitle", "无法进入下一步")
-      : summary.kind === "gateway-ready"
-        ? t("setup.gatewayConnected", "Gateway 已就绪")
-        : installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
-  const currentDescription = modelChecking
-    ? t(
-        "setup.gatewayReadyCheckingDescription",
-        "正在验证当前模型是否可用；完成后将进入官方配置向导或完成页。",
-      )
-    : modelCheckFailed
-      ? summary.message
-      : summary.kind === "gateway-ready"
-        ? t("setup.gatewayReadySubtitle", "OpenClaw Gateway 已启动。请点击下一步继续。")
-        : currentMeta
-          ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
-          : t("setup.subtitle");
-  const summaryLabel = modelChecking
-    ? t("setup.gatewayReadyCheckingAction", "正在检查配置…")
-    : isReady
-      ? t("setup.ready", "就绪")
-      : isError
-        ? t("setup.error", "安装遇到问题")
-        : t("setup.installPanel.current", "当前执行");
-  const showProgress = !modelChecking && !modelCheckFailed;
+  const currentTitle = installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
+  const currentDescription = currentMeta
+    ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
+    : t("setup.subtitle");
+  const summaryLabel = isReady
+    ? t("setup.ready", "就绪")
+    : isError
+      ? t("setup.error", "安装遇到问题")
+      : t("setup.installPanel.current", "当前执行");
+  const showProgress = consoleMode === "activity";
+
+  const activityPanel = (
+    <div id="setup-installation-details" className="overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated">
+      <div className="flex gap-1 border-b border-aegis-border p-2 lg:hidden">
+        {(["steps", "logs"] as const).map((view) => (
+          <button
+            key={view}
+            type="button"
+            onClick={() => setMobileView(view)}
+            className={clsx(
+              "flex-1 rounded-md px-3 py-2 text-xs font-semibold transition-colors",
+              mobileView === view
+                ? "bg-aegis-surface text-aegis-text"
+                : "text-aegis-text-dim hover:text-aegis-text-secondary",
+            )}
+          >
+            {view === "steps"
+              ? t("setup.installPanel.timeline", "执行步骤")
+              : t("setup.installPanel.activity", "执行记录")}
+          </button>
+        ))}
+      </div>
+      <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)]">
+        <div className={clsx(mobileView !== "steps" && "hidden lg:block")}>
+          <InstallationTimeline steps={flow.steps} />
+        </div>
+        <div className={clsx(mobileView !== "logs" && "hidden lg:block")}>
+          <InstallLiveLog logs={logs} />
+        </div>
+      </div>
+    </div>
+  );
+
+  if (consoleMode === "checkpoint") {
+    return (
+      <div className="space-y-3">
+        <div
+          data-installation-checkpoint="runtime-complete"
+          className="flex items-center gap-2 rounded-xl border border-aegis-success/35 bg-aegis-success/5 px-4 py-3 text-sm font-medium text-aegis-text-secondary"
+        >
+          <CheckCircle2 size={16} className="shrink-0 text-aegis-success" />
+          <span>
+            {t("setup.installPanel.runtimeChecksComplete", {
+              completed,
+              total,
+              defaultValue: "{{completed}}/{{total}} 项运行时检查完成",
+            })}
+          </span>
+        </div>
+        <button
+          type="button"
+          aria-expanded={detailsOpen}
+          aria-controls="setup-installation-details"
+          onClick={() => setDetailsOpen((open) => !open)}
+          className="inline-flex items-center gap-2 rounded-lg border border-aegis-border px-3 py-2 text-xs font-medium text-aegis-text-secondary transition-[background-color,border-color,color,transform] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-surface active:scale-[0.98]"
+        >
+          {detailsOpen ? <EyeOff size={14} /> : <Eye size={14} />}
+          {detailsOpen
+            ? t("setup.installPanel.hideDetails", "收起安装详情")
+            : t("setup.installPanel.viewDetails", "查看安装详情")}
+        </button>
+        {detailsOpen && activityPanel}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -1017,13 +1085,11 @@ export function InstallationConsole({
       )}>
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-aegis-text-muted">
-            {modelChecking
-              ? <RefreshCw size={15} className="animate-spin text-aegis-primary" />
-              : isReady
-                ? <CheckCircle2 size={15} className="text-aegis-success" />
-                : isError
-                  ? <X size={15} className="text-red-300" />
-                  : <CircleDot size={15} className="text-aegis-primary" />}
+            {isReady
+              ? <CheckCircle2 size={15} className="text-aegis-success" />
+              : isError
+                ? <X size={15} className="text-red-300" />
+                : <CircleDot size={15} className="text-aegis-primary" />}
             {summaryLabel}
           </div>
           <div className="text-lg font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
@@ -1055,35 +1121,7 @@ export function InstallationConsole({
         )}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated">
-        <div className="flex gap-1 border-b border-aegis-border p-2 lg:hidden">
-          {(["steps", "logs"] as const).map((view) => (
-            <button
-              key={view}
-              type="button"
-              onClick={() => setMobileView(view)}
-              className={clsx(
-                "flex-1 rounded-md px-3 py-2 text-xs font-semibold transition-colors",
-                mobileView === view
-                  ? "bg-aegis-surface text-aegis-text"
-                  : "text-aegis-text-dim hover:text-aegis-text-secondary",
-              )}
-            >
-              {view === "steps"
-                ? t("setup.installPanel.timeline", "执行步骤")
-                : t("setup.installPanel.activity", "执行记录")}
-            </button>
-          ))}
-        </div>
-        <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)]">
-          <div className={clsx(mobileView !== "steps" && "hidden lg:block")}>
-            <InstallationTimeline steps={flow.steps} />
-          </div>
-          <div className={clsx(mobileView !== "logs" && "hidden lg:block")}>
-            <InstallLiveLog logs={logs} />
-          </div>
-        </div>
-      </div>
+      {activityPanel}
     </div>
   );
 }

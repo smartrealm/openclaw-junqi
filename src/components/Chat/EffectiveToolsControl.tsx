@@ -7,6 +7,7 @@ import { gateway } from '@/services/gateway';
 import { useEffectiveTools } from '@/hooks/useEffectiveTools';
 import type { EffectiveToolEntry, EffectiveToolGroup, EffectiveToolRisk, EffectiveToolSource } from '@/services/gateway/toolsEffective';
 import type { ToolsInvokeResult } from '@/services/gateway/toolsInvoke';
+import { ChatIconButton } from './ChatIconButton';
 
 interface EffectiveToolsControlProps {
   sessionKey: string;
@@ -120,8 +121,9 @@ export function EffectiveToolsControl({ sessionKey, agentId, onOpenConfiguration
   };
   return (
     <div ref={rootRef} className="relative no-drag">
-      <button
+      <ChatIconButton
         type="button"
+        label={t('chat.effectiveTools.open')}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -130,12 +132,10 @@ export function EffectiveToolsControl({ sessionKey, agentId, onOpenConfiguration
           'hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary',
           open && 'bg-[rgb(var(--aegis-overlay)/0.07)] text-aegis-text',
         )}
-        title={t('chat.effectiveTools.open')}
-        aria-label={t('chat.effectiveTools.open')}
       >
-        <Wrench size={11} />
+        <Wrench size={11} aria-hidden="true" />
         {total > 0 && <span className="text-[9px] font-mono">{total}</span>}
-      </button>
+      </ChatIconButton>
 
       {open && (
         <div

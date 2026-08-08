@@ -18,3 +18,9 @@ test('skill removal separates one installation from deleting the hub source', ()
   assert.doesNotMatch(source, /\binvoke\(/);
   assert.match(source, /Delete skill/);
 });
+
+test('local Skill Hub stays visibly separate from Gateway-managed skills', () => {
+  assert.match(source, /localLinkManagerBoundary/);
+  assert.match(source, /JunQi-local|JunQi 本地增强/);
+  assert.match(source, /does not read|不读取|Gateway/);
+});

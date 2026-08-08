@@ -11,7 +11,7 @@ import { Play, RotateCcw, Check, X, Plus, Search, Heart, Zap, RefreshCw, Radio, 
 import { Lightning, Note, MagnifyingGlass, SoccerBall } from '@phosphor-icons/react';
 import { gateway, type OpenClawCronRunEntry, type OpenClawCronStatus } from '@/services/gateway';
 import { OpenClawCronStatusUnsupportedError } from '@/services/gateway/OpenClawCronStatusClient';
-import type { OpenClawCronJobDetails } from '@/services/gateway/cronRuns';
+import type { CronScheduleDetails, OpenClawCronJobDetails } from '@/services/gateway/cronRuns';
 import {
   buildCronAgentTurnAddParams,
   cronAgentUpdatePatch,
@@ -44,30 +44,7 @@ import {
 // Types
 // ═══════════════════════════════════════════════════════════
 
-interface CronJob {
-  id: string;
-  name: string;
-  agentId?: string;
-  schedule: any;
-  enabled: boolean;
-  nextRun: string | null;
-  lastRun: string | null;
-  sessionTarget: string;
-  payload: any;
-  // Gateway 2026.2.25+: stagger and exact timing flags
-  stagger?: string;   // e.g. "2m", "5m" — delays run by random duration up to this value
-  exact?: boolean;    // if true, disables auto-spread for top-of-hour jobs
-  state?: {
-    nextRunAtMs?: number;
-    lastRunAtMs?: number;
-    lastStatus?: string;
-    lastError?: string;
-    lastDurationMs?: number;
-    // Gateway 2026.2.22+: split run vs delivery status
-    lastRunStatus?: string;
-    lastDeliveryStatus?: string;
-  };
-}
+type CronJob = OpenClawCronJobDetails;
 
 type RunEntry = OpenClawCronRunEntry;
 
@@ -104,22 +81,20 @@ const getJobIcon = (name: string): React.ReactNode => {
   return <Clock size={14} strokeWidth={1.75} />;
 }
 
-const getNextRun = (job: CronJob) => job.state?.nextRunAtMs || job.nextRun;
-const getLastRun = (job: CronJob) => job.state?.lastRunAtMs || job.lastRun;
+const getNextRun = (job: CronJob) => job.state.nextRunAtMs ?? job.nextRunAtMs;
+const getLastRun = (job: CronJob) => job.state.lastRunAtMs ?? job.lastRunAtMs;
 const getStatus = (job: CronJob): 'active' | 'error' | 'paused' => {
   if (!job.enabled) return 'paused';
-  // Check both legacy lastStatus and new split fields (Gateway 2026.2.22+)
-  const runStatus = job.state?.lastRunStatus || job.state?.lastStatus;
+  const runStatus = job.state.lastRunStatus ?? job.state.lastStatus;
   if (runStatus === 'error') return 'error';
   return 'active';
 };
 
-/** Get delivery status for display (Gateway 2026.2.22+) */
 const getDeliveryStatus = (job: CronJob): 'delivered' | 'failed' | 'unknown' | null => {
-  const ds = job.state?.lastDeliveryStatus;
-  if (!ds || ds === 'not-delivered') return null; // Not available or isolated job (no delivery target)
-  if (ds === 'delivered' || ds === 'ok') return 'delivered';
-  if (ds === 'failed' || ds === 'error') return 'failed';
+  const ds = job.state.lastDeliveryStatus;
+  if (!ds || ds === 'not-requested') return null;
+  if (ds === 'not-delivered') return 'failed';
+  if (ds === 'delivered') return 'delivered';
   return 'unknown';
 };
 
@@ -158,17 +133,18 @@ function getCronTemplates(t: (key: string) => string) {
 
 // ── Formatting ──
 
-function formatSchedule(schedule: any): string {
-  if (!schedule) return '—';
+function formatSchedule(schedule: CronScheduleDetails): string {
   if (schedule.kind === 'every') {
-    const mins = Math.round((schedule.everyMs || 0) / 60000);
+    const mins = Math.round(schedule.everyMs / 60000);
     if (mins < 60) return `Every ${mins}m`;
     const h = Math.floor(mins / 60), m = mins % 60;
     return m > 0 ? `Every ${h}h ${m}m` : `Every ${h}h`;
   }
   if (schedule.kind === 'at') return new Date(schedule.at).toLocaleString();
+  if (schedule.kind === 'on-exit') return `On exit: ${schedule.command}`;
+  if (schedule.kind === 'stream') return `Stream: ${schedule.command.join(' ')}`;
   if (schedule.kind === 'cron') {
-    const parts = (schedule.expr || '').split(' ');
+    const parts = schedule.expr.split(' ');
     if (parts.length >= 5) {
       const [min, hour, dom, mon] = parts;
       if (dom !== '*' && mon === '*' && hour !== '*') return `Monthly ${dom}${ordSuffix(dom)} ${fmtTime(hour, min)}`;
@@ -221,7 +197,11 @@ function formatDuration(ms?: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-function cronRunInFlight(status: 'queued' | 'waiting' | 'ok' | 'error' | 'skipped' | undefined): boolean {
+function cronRunInFlight(status: 'queued' | 'waiting' | 'pending' | 'ok' | 'error' | 'skipped' | undefined): boolean {
+  return status === 'queued' || status === 'waiting' || status === 'pending';
+}
+
+function cronRunLoading(status: 'queued' | 'waiting' | 'pending' | 'ok' | 'error' | 'skipped' | undefined): boolean {
   return status === 'queued' || status === 'waiting';
 }
 
@@ -242,7 +222,7 @@ export function CronMonitorPage() {
   // lang removed — templates now use i18n keys directly
 
   // ── State (jobs from central store) ──
-  const storeJobs = useGatewayDataStore((s) => s.cronJobs) as CronJob[];
+  const storeJobs = useGatewayDataStore((s) => s.cronJobs);
   const cronStatus = useGatewayDataStore((s) => s.cronStatus);
   const cronStatusError = useGatewayDataStore((s) => s.cronStatusError);
   const agents = useGatewayDataStore((s) => s.agents);
@@ -251,7 +231,7 @@ export function CronMonitorPage() {
   const agentsLoading = useGatewayDataStore((s) => s.loading.agents);
   const agentsError = useGatewayDataStore((s) => s.errors.agents);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [runResult, setRunResult] = useState<Record<string, 'queued' | 'waiting' | 'ok' | 'error' | 'skipped'>>({});
+  const [runResult, setRunResult] = useState<Record<string, 'queued' | 'waiting' | 'pending' | 'ok' | 'error' | 'skipped'>>({});
   const [templateResult, setTemplateResult] = useState<Record<string, 'ok' | 'error'>>({});
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedJobDetails, setSelectedJobDetails] = useState<OpenClawCronJobDetails | null>(null);
@@ -581,7 +561,9 @@ export function CronMonitorPage() {
           return;
         }
         if (Date.now() - startedAt >= OPENCLAW_CRON_RUN_WAIT_TIMEOUT_MS) {
-          throw new Error(t('cron.runWaitTimedOut'));
+          setRunResult(p => ({ ...p, [jobId]: 'pending' }));
+          setRunsError(t('cron.runPendingVerification', 'OpenClaw has not recorded a terminal result; run remains pending verification.'));
+          return;
         }
         setRunResult(p => ({ ...p, [jobId]: 'waiting' }));
         await new Promise<void>((resolve) => window.setTimeout(resolve, OPENCLAW_CRON_RUN_POLL_INTERVAL_MS));
@@ -849,9 +831,9 @@ export function CronMonitorPage() {
                           </span>
                         )}
                         {isPaused && <span className="text-aegis-warning/50">{t('cronDetail.paused').toLowerCase()}</span>}
-                        {(job.exact || job.schedule?.exact) && (
+                        {job.schedule.kind === 'cron' && job.schedule.staggerMs !== undefined && (
                           <span className="text-[9px] font-bold text-aegis-warning/50 bg-aegis-warning/[0.08] px-1.5 py-0.5 rounded shrink-0">
-                            {t('cron.exactTiming')}
+                            {t('cron.stagger')}: {formatDuration(job.schedule.staggerMs)}
                           </span>
                         )}
                       </div>
@@ -886,20 +868,24 @@ export function CronMonitorPage() {
                         disabled={!!actionLoading || cronRunInFlight(runResult[job.id])}
                         title={runResult[job.id] === 'queued' ? t('cron.runQueued')
                           : runResult[job.id] === 'waiting' ? t('cron.runWaiting')
+                            : runResult[job.id] === 'pending' ? t('cron.runPendingVerification')
                             : t('cron.runNow')}
                         aria-label={runResult[job.id] === 'queued' ? t('cron.runQueued')
                           : runResult[job.id] === 'waiting' ? t('cron.runWaiting')
+                            : runResult[job.id] === 'pending' ? t('cron.runPendingVerification')
                             : t('cron.runNow')}
                         className={clsx(
                           'w-7 h-7 rounded-lg flex items-center justify-center border transition-all text-[11px] shrink-0',
                           runResult[job.id] === 'ok' ? 'bg-aegis-primary/10 border-aegis-primary/30 text-aegis-primary'
                           : runResult[job.id] === 'error' || runResult[job.id] === 'skipped' ? 'bg-aegis-danger/10 border-aegis-danger/30 text-aegis-danger'
+                          : runResult[job.id] === 'pending' ? 'bg-aegis-warning/10 border-aegis-warning/30 text-aegis-warning'
                           : isError ? 'border-aegis-danger/20 text-aegis-danger/50 hover:text-aegis-danger hover:border-aegis-danger/40'
                           : 'border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim hover:text-aegis-accent hover:border-aegis-accent/30 hover:bg-aegis-accent/[0.04]',
                         )}>
-                        {actionLoading === `run-${job.id}` || cronRunInFlight(runResult[job.id]) ? <LoadingIndicator size={11} />
+                        {actionLoading === `run-${job.id}` || cronRunLoading(runResult[job.id]) ? <LoadingIndicator size={11} />
                           : runResult[job.id] === 'ok' ? <Check size={11} />
                           : runResult[job.id] === 'error' || runResult[job.id] === 'skipped' ? <X size={11} />
+                          : runResult[job.id] === 'pending' ? <Clock size={11} />
                           : isError ? <RotateCcw size={11} />
                           : <Play size={11} fill="currentColor" />}
                       </button>
@@ -933,31 +919,10 @@ export function CronMonitorPage() {
                       <span className="text-[11px] text-aegis-text-muted">
                         {t('cron.agent')}: {agentName(selectedJob.agentId)}
                       </span>
-                      {/* Stagger badge — Gateway 2026.2.25+ */}
-                      {(selectedJob.stagger || selectedJob.schedule?.stagger) && (
+                      {selectedJob.schedule.kind === 'cron' && selectedJob.schedule.staggerMs !== undefined && (
                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded
                           bg-aegis-accent/10 border border-aegis-accent/20 text-aegis-accent/70 shrink-0">
-                          {t('cron.stagger')}: {selectedJob.stagger || selectedJob.schedule?.stagger}
-                        </span>
-                      )}
-                      {/* Exact badge — Gateway 2026.2.25+ */}
-                      {(selectedJob.exact || selectedJob.schedule?.exact) && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded
-                          bg-aegis-warning/10 border border-aegis-warning/20 text-aegis-warning/70 shrink-0">
-                          {t('cron.exactTiming')}
-                        </span>
-                      )}
-                      {/* Auto-spread note — only for top-of-hour cron jobs without --exact */}
-                      {selectedJob.schedule?.kind === 'cron' &&
-                        /^0 /.test(selectedJob.schedule?.expr || '') &&
-                        !selectedJob.exact && !selectedJob.schedule?.exact && (
-                        <span
-                          className="text-[9px] px-1.5 py-0.5 rounded cursor-help
-                            bg-[rgb(var(--aegis-overlay)/0.04)] border border-[rgb(var(--aegis-overlay)/0.06)]
-                            text-aegis-text-dim shrink-0"
-                          title={t('cron.autoSpreadTitle')}
-                        >
-                          {t('cron.autoSpread')}
+                          {t('cron.stagger')}: {formatDuration(selectedJob.schedule.staggerMs)}
                         </span>
                       )}
                     </div>
@@ -1099,12 +1064,15 @@ export function CronMonitorPage() {
                     className="flex-1 py-2 rounded-md text-center text-[11px] font-semibold
                       bg-aegis-primary/[0.08] border border-aegis-primary/20 text-aegis-primary
                       hover:bg-aegis-primary/15 transition-colors disabled:opacity-40">
-                    {actionLoading === `run-${selectedJob.id}` || cronRunInFlight(runResult[selectedJob.id])
+                    {actionLoading === `run-${selectedJob.id}` || cronRunLoading(runResult[selectedJob.id])
                       ? <span className="flex items-center justify-center gap-1.5"><LoadingIndicator size={12} />
-                        {runResult[selectedJob.id] === 'queued' ? t('cron.runQueued') : t('cron.runWaiting')}</span>
+                        {runResult[selectedJob.id] === 'queued' ? t('cron.runQueued')
+                          : runResult[selectedJob.id] === 'pending' ? t('cron.runPendingVerification')
+                            : t('cron.runWaiting')}</span>
                       : runResult[selectedJob.id] === 'ok' ? t('cronDetail.done')
                         : runResult[selectedJob.id] === 'skipped' ? t('cron.runSkipped')
-                          : runResult[selectedJob.id] === 'error' ? t('cron.failed') : t('cronDetail.runNow')}
+                          : runResult[selectedJob.id] === 'pending' ? t('cron.runPendingVerification')
+                            : runResult[selectedJob.id] === 'error' ? t('cron.failed') : t('cronDetail.runNow')}
                   </button>
                   <button onClick={() => toggleJob(selectedJob.id, !selectedJob.enabled)}
                     disabled={!!actionLoading}

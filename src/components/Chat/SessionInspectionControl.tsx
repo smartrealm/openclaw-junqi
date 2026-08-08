@@ -7,6 +7,7 @@ import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { notifyNativeSessionCommit } from '@/utils/sessionLifecycle';
+import { ChatIconButton } from './ChatIconButton';
 import type {
   SessionCompactionCheckpoint,
   SessionPreviewItem,
@@ -174,8 +175,9 @@ export function SessionInspectionControl({ sessionKey, agentId }: SessionInspect
 
   return (
     <div ref={rootRef} className="relative no-drag">
-      <button
+      <ChatIconButton
         type="button"
+        label={t('chat.sessionInspection.open')}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -184,11 +186,9 @@ export function SessionInspectionControl({ sessionKey, agentId }: SessionInspect
           'hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text-secondary',
           open && 'bg-[rgb(var(--aegis-overlay)/0.07)] text-aegis-text',
         )}
-        title={t('chat.sessionInspection.open')}
-        aria-label={t('chat.sessionInspection.open')}
       >
-        <Eye size={11} />
-      </button>
+        <Eye size={11} aria-hidden="true" />
+      </ChatIconButton>
 
       {open && (
         <div

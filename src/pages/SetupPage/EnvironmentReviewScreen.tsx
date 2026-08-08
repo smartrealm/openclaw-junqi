@@ -6,12 +6,23 @@ import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
 import { SetupShell, StatusPanel } from "@/components/setup/SetupFlowPanels";
 
+export function environmentReviewActionsDisabled(
+  checkingDocker: boolean,
+  environmentReviewBusy: boolean,
+): boolean {
+  return checkingDocker || environmentReviewBusy;
+}
+
 export function EnvironmentReviewScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const nativeReady = flow.openclawStatus?.installed === true && !flow.openclawStatus.relocation_required;
   const dockerInstalled = flow.dockerStatus?.available === true;
   const dockerReady = dockerInstalled && flow.dockerStatus?.daemon_running === true;
   const selectedRuntimeReady = flow.installMode === "docker" ? dockerReady : nativeReady;
+  const actionsDisabled = environmentReviewActionsDisabled(
+    flow.checkingDocker,
+    flow.environmentReviewBusy,
+  );
 
   return (
     <SetupShell
@@ -19,18 +30,19 @@ export function EnvironmentReviewScreen({ flow, logs }: { flow: SetupFlow; logs:
       title={t("setup.runtimeTitle")}
       subtitle={t("setup.runtimeSubtitle")}
       logs={logs}
-      previousAction={{ onClick: flow.goBack, disabled: flow.checkingDocker }}
+      previousAction={{ onClick: flow.goBack, disabled: actionsDisabled }}
       secondaryAction={{
         label: flow.checkingDocker
           ? t("setup.recheckingEnvironment", "正在重新检测…")
           : t("setup.recheckEnvironment", "重新检测"),
         onClick: flow.redetectEnvironment,
         loading: flow.checkingDocker,
+        disabled: actionsDisabled,
       }}
       nextAction={{
         label: t("setup.nextStep", "下一步"),
         onClick: flow.continueAfterEnvironmentReview,
-        disabled: flow.checkingDocker,
+        disabled: actionsDisabled,
       }}
     >
       <div className="grid gap-4">

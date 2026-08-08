@@ -119,6 +119,10 @@ export type {
 } from '@/services/gateway/OpenClawSessionSearchClient';
 import { listOpenClawSessionLifecycle } from '@/services/gateway/OpenClawSessionListClient';
 import { parseCronStatus, type OpenClawCronStatusSummary } from '@/services/gateway/cronStatus';
+import {
+  parseCronJobDetails,
+  type OpenClawCronJobDetails,
+} from '@/services/gateway/cronRuns';
 import { sessionListMutationFence } from '@/utils/sessionListMutationFence';
 
 // ═══════════════════════════════════════════════════════════
@@ -240,19 +244,7 @@ export interface SessionsUsageQuery {
   timeZone?: string;
 }
 
-export interface CronJob {
-  id: string;
-  name?: string;
-  agentId?: string;
-  schedule?: any;
-  enabled?: boolean;
-  lastRun?: string;
-  state?: any;
-  // Gateway 2026.2.22+: split run vs delivery status
-  lastRunStatus?: string;
-  lastDeliveryStatus?: string;
-  [k: string]: any;
-}
+export type CronJob = OpenClawCronJobDetails;
 
 // task_id to session_key map, populated by task-session events
 const taskToSession = new Map<string, string>();
@@ -871,6 +863,7 @@ const SESSION_ARTIFACTS_FRESHNESS_MS = 30_000;
 type GatewayRequestParams = Record<string, unknown>;
 type GatewayRequester = {
   request: (method: string, params: GatewayRequestParams) => Promise<unknown>;
+  recordCapabilityInvalidResponse?: (method: string) => void;
   getAttestedConnectionId?: () => string | null;
   requestFenced?: (
     method: string,
@@ -894,25 +887,6 @@ function isAgentInfo(value: unknown): value is AgentInfo {
   return isGatewayRecord(value)
     && typeof value.id === 'string'
     && value.id.trim().length > 0;
-}
-
-function isCronJob(value: unknown): value is CronJob {
-  return isGatewayRecord(value)
-    && typeof value.id === 'string'
-    && value.id.trim().length > 0
-    && (value.agentId === undefined || (typeof value.agentId === 'string' && value.agentId.trim().length > 0))
-    && (value.state === undefined || isGatewayRecord(value.state));
-}
-
-function gatewayCollectionOf<T>(
-  response: unknown,
-  key: string,
-  isItem: (value: unknown) => value is T,
-): T[] | null {
-  const entries = gatewayCollection(response, key);
-  if (!entries) return null;
-  const parsed = entries.filter(isItem);
-  return parsed.length === entries.length ? parsed : null;
 }
 
 const COST_METRIC_KEYS = [
@@ -997,7 +971,13 @@ export function parseGatewayAgentList(response: unknown): {
 }
 
 export function parseGatewayCronJobList(response: unknown): CronJob[] | null {
-  return gatewayCollectionOf(response, 'jobs', isCronJob);
+  const entries = gatewayCollection(response, 'jobs');
+  if (!entries) return null;
+  try {
+    return entries.map((entry) => parseCronJobDetails(entry, 'cron.list'));
+  } catch {
+    return null;
+  }
 }
 
 export function parseGatewayCostSummary(response: unknown): CostSummary | null {
@@ -1401,6 +1381,7 @@ async function fetchCron(): Promise<boolean> {
     }
     const list = parseGatewayCronJobList(jobsResponse.value);
     if (!list) {
+      ticket.connection.recordCapabilityInvalidResponse?.('cron.list');
       rejectGatewayResponse(store, 'cron', 'cron.list');
       return false;
     }
@@ -1410,6 +1391,7 @@ async function fetchCron(): Promise<boolean> {
         store.setCronStatus(parseCronStatus(statusResponse.value));
         store.setCronStatusError(null);
       } catch {
+        ticket.connection.recordCapabilityInvalidResponse?.('cron.status');
         store.setCronStatus(null);
         store.setCronStatusError('Gateway returned an invalid cron.status response');
       }

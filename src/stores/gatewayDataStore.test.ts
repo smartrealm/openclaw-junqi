@@ -45,6 +45,21 @@ const METRICS = {
   missingCostEntries: 0,
 };
 
+const CRON_JOB = {
+  id: 'daily',
+  name: 'Daily report',
+  agentId: 'main',
+  enabled: true,
+  createdAtMs: NOW,
+  updatedAtMs: NOW,
+  schedule: { kind: 'every', everyMs: 86_400_000 },
+  sessionTarget: 'isolated',
+  wakeMode: 'now',
+  payload: { kind: 'agentTurn', message: 'Generate the report' },
+  payloadKind: 'agentTurn',
+  state: { nextRunAtMs: 100 },
+} as const;
+
 test('会话产物缺失时复用稳定空快照', () => {
   const state = { sessionArtifacts: {} };
   const first = selectSessionArtifacts(state, 'agent:main:missing');
@@ -126,7 +141,7 @@ test('cron events refresh the authoritative list without manufacturing local run
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [{ id: 'main' }] };
-      if (method === 'cron.list') return [{ id: 'daily', agentId: 'main', state: { nextRunAtMs: 100 } }];
+      if (method === 'cron.list') return [{ ...CRON_JOB, state: { nextRunAtMs: 100 } }];
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -134,11 +149,7 @@ test('cron events refresh the authoritative list without manufacturing local run
   stopPolling();
   startPolling(gateway);
   try {
-    useGatewayDataStore.getState().setCronJobs([{
-      id: 'daily',
-      agentId: 'main',
-      state: { nextRunAtMs: 1 },
-    }]);
+    useGatewayDataStore.getState().setCronJobs([{ ...CRON_JOB, state: { nextRunAtMs: 1 } }]);
 
     handleGatewayEvent('cron.run.started', { jobId: 'daily' });
     assert.deepEqual(useGatewayDataStore.getState().cronJobs[0]?.state, { nextRunAtMs: 1 });
@@ -157,7 +168,20 @@ test('Gateway polling decoders reject malformed responses instead of inventing e
     agents: [{ id: 'main' }], defaultAgentId: 'main', mainSessionKey: 'agent:main:main', scope: 'per-sender',
   });
   assert.equal(parseGatewayAgentList({ agents: [{ name: 'missing-id' }] }), null);
-  assert.deepEqual(parseGatewayCronJobList([{ id: 'daily', agentId: 'ops' }]), [{ id: 'daily', agentId: 'ops' }]);
+  assert.deepEqual(parseGatewayCronJobList([{ ...CRON_JOB, agentId: 'ops' }]), [{
+    id: 'daily',
+    name: 'Daily report',
+    enabled: true,
+    agentId: 'ops',
+    createdAtMs: NOW,
+    updatedAtMs: NOW,
+    schedule: { kind: 'every', everyMs: 86_400_000 },
+    sessionTarget: 'isolated',
+    wakeMode: 'now',
+    payloadKind: 'agentTurn',
+    state: { nextRunAtMs: 100 },
+  }]);
+  assert.equal(parseGatewayCronJobList([{ id: 'daily', agentId: 'ops' }]), null);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: 'daily', agentId: '' }] }), null);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: '' }] }), null);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: 'daily', state: 'running' }] }), null);

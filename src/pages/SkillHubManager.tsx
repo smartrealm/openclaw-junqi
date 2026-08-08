@@ -1,15 +1,8 @@
 // ═══════════════════════════════════════════════════════════
-// SkillHubManager — minimal Skill Hub view ported from junqi
+// SkillHubManager 是本地 Skill 目录与项目链接管理页。
 //
-// Wires to the backend commands added in commands/skills.rs:
-//   - get_skill_hub_config / set_skill_hub_path / clear_skill_hub
-//   - list_skills / list_skill_installations
-//   - install_skill / delete_skill
-//
-// Why minimal: junqi already has SkillsPage/index.tsx (2k lines, gateway-based).
-// This page is a *companion* view that exercises the new junqi-style fs/symlink
-// backend so the wiring stays valid. UI is deliberately plain so it doesn't
-// compete with the gateway-based SkillsPage.
+// 它只调用 Tauri 的本地目录扫描和符号链接命令，不读取或写入 OpenClaw
+// Gateway 的技能状态，也不参与 Gateway 技能的计数、安装或权限判断。
 // ═══════════════════════════════════════════════════════════
 
 import { useEffect, useMemo, useState } from 'react';
@@ -57,7 +50,7 @@ function healthIcon(h: string | undefined) {
 }
 
 export function SkillHubManager() {
-  useTranslation();
+  const { t } = useTranslation();
   const [config, setConfig] = useState<SkillHubConfig | null>(null);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [installations, setInstallations] = useState<SkillInstallation[]>([]);
@@ -264,11 +257,16 @@ export function SkillHubManager() {
       <div className="px-6 py-4 border-b" style={{ borderColor: 'rgb(var(--aegis-border))' }}>
         <div className="flex items-center gap-2 mb-1">
           <Blocks size={18} className="text-aegis-primary" />
-          <h1 className="text-[16px] font-bold text-aegis-text">Skill Hub Manager</h1>
+          <h1 className="text-[16px] font-bold text-aegis-text">
+            {t('skills.localLinkManagerTitle', '本地 Skill 链接管理')}
+          </h1>
         </div>
         <p className="text-[12px] text-aegis-text-dim">
-          JunQi-style skill hub: frontmatter-parsed skill folders with per-project symlink installs.
+          {t('skills.localLinkManagerHint', '仅扫描用户选择的本地目录并创建项目链接，不代表 OpenClaw Gateway 技能。')}
         </p>
+        <div className="mt-3 rounded-md border border-aegis-warning/30 bg-aegis-warning/[0.06] px-3 py-2 text-[11px] leading-5 text-aegis-warning">
+          {t('skills.localLinkManagerBoundary', '本页的目录、安装和链接状态仅属于 JunQi 本地增强；Gateway 技能请前往技能管理。')}
+        </div>
       </div>
 
       {/* Hub path config */}

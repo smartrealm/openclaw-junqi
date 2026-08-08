@@ -301,6 +301,17 @@ test('OpenClaw session inspection and checkpoint controls use official session R
   assert.match(hook, /gateway\.restoreSessionCompactionCheckpoint/);
 });
 
+test('session context toolbar exposes only session-scoped controls', () => {
+  const contextBar = source('src/components/Chat/SessionContextBar.tsx');
+  assert.doesNotMatch(contextBar, /SessionArtifactsButton/);
+  assert.doesNotMatch(contextBar, /useSkillsStore|OPENCLAW_TOOLS_ROUTE|navigate\('\/activity'\)/);
+  assert.match(contextBar, /<EffectiveToolsControl[\s\S]*?sessionKey=\{activeSessionKey\}/);
+  assert.match(contextBar, /<SessionBranchesControl sessionKey=\{activeSessionKey\}/);
+  assert.match(contextBar, /<SessionInspectionControl sessionKey=\{activeSessionKey\}/);
+  assert.match(contextBar, /<SessionArtifactsControl[\s\S]*?sessionKey=\{activeSessionKey\}/);
+  assert.doesNotMatch(contextBar, /SessionDiffControl|SessionFilesControl|sessionToolsOpen|MoreHorizontal/);
+});
+
 // BUG-WIN-CWD-01: state_dir (data directory) and Gateway cwd must be decoupled.
 // `stable_openclaw_working_dir()` returns the non-root user home dir,
 // while OPENCLAW_STATE_DIR / OPENCLAW_CONFIG_PATH stay on the chosen data drive.

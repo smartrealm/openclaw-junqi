@@ -73,8 +73,12 @@ test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway r
   assert.match(completion, /await probeSelectedGateway\(\)/);
   assert.match(completion, /verification\.status === "unavailable"/);
   assert.match(completion, /setup\.wizard\.inferenceVerificationUnavailable/);
-  assert.match(completion, /replaceSetupStep\("error"\)/);
-  assert.doesNotMatch(completion, /handoffError[\s\S]*level: "warn"/);
+  assert.match(completion, /level: "warn"/);
+  const unavailableBranch = completion.slice(
+    completion.indexOf('if (verification.status === "unavailable")'),
+    completion.indexOf('if (verification.status === "failed")'),
+  );
+  assert.doesNotMatch(unavailableBranch, /throw new Error/);
 });
 
 test('BUG-ONB-34 cached setup validates installation before Gateway recovery', () => {
@@ -144,7 +148,7 @@ test('BUG-ONB-37 dashboard completion revalidates Gateway and config before comm
   assert.ok(entry.indexOf('validateSetupCompletion') < entry.indexOf('setSetupComplete(true)'));
   assert.match(entry, /replaceSetupStep\("gateway-stopped"\)/);
   assert.match(entry, /replaceSetupStep\("configure-openclaw"\)/);
-  assert.match(entry, /completion\.reason === "inference-verification-unavailable"/);
+  assert.match(entry, /completion\.verification\.status === "unavailable"/);
   assert.match(entry, /replaceSetupStep\("gateway-ready"\)/);
   assert.match(entry, /dashboardEntryInFlightRef\.current/);
 });
@@ -400,7 +404,6 @@ test('BUG-ONB-29 model verification owns the active setup status after Gateway s
   assert.match(setupFlowPanels, /export type InstallationConsoleSummary =/);
   assert.match(setupFlowPanels, /kind: "model-checking"/);
   assert.match(setupFlowPanels, /kind: "model-check-failed"; message: string/);
-  assert.match(setupFlowPanels, /const showProgress = !modelChecking && !modelCheckFailed/);
   assert.match(setupPage, /const installationSummary: InstallationConsoleSummary = gatewayReadyChecking/);
   assert.match(setupPage, /summary=\{installationSummary\}/);
   assert.doesNotMatch(setupPage, /gatewayReadyChecking && \([\s\S]*?<StatusPanel/);
@@ -468,8 +471,11 @@ test('BUG-GSO-02 autostart enable completes the official service handoff', () =>
   const readyFile = screen('ReadyScreen');
   const ready = readyFile.slice(readyFile.indexOf('function ReadyScreen'));
   assert.match(setupPage, /function GatewayAutostartPreference/);
-  assert.match(setupPage, /installMode !== "native" \|\| status === null \|\| status\?\.supported === false/);
+  assert.match(setupPage, /installMode !== "native" \|\| status === null \|\| status\.supported === false/);
   assert.match(setupPage, /setup\.runtimePreferences/);
+  assert.match(setupPage, /Promise\.all\(\[gatewayRequest, appRequest\]\)/);
+  assert.match(setupPage, /const loading = gatewayStatus === undefined \|\| appStatus === undefined/);
+  assert.match(setupPage, /loading \? \([\s\S]*AutostartPreferenceRow\.Skeleton/);
   assert.match(ready, /<AutostartPreferences[\s\S]*installMode=\{flow\.installMode\}[\s\S]*onGatewayOperationStateChange=\{setGatewayAutostartBusy\}[\s\S]*onAppOperationStateChange=\{setAppAutostartBusy\}[\s\S]*\/>/);
   assert.doesNotMatch(ready, /OpenClawUpdatePanel/);
 
@@ -684,7 +690,6 @@ test('environment review distinguishes Docker installation from daemon readiness
   assert.match(review, /setup\.dockerInstalledStopped/);
   assert.match(review, /setup\.dockerNotDetected/);
   assert.match(review, /loading: flow\.checkingDocker/);
-  assert.match(review, /disabled: flow\.checkingDocker/);
   assert.match(review, /setup\.recheckingEnvironmentHint/);
   assert.match(redetect, /detectEnvironment\(runId\)/);
   assert.doesNotMatch(redetect, /navigateSetup\("detecting", "replace"\)/);

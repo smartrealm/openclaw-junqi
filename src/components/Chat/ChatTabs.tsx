@@ -1207,11 +1207,11 @@ export function ChatTabs() {
                 aria-selected={isActive}
                 title={fullLabel}
                 onClick={() => isActive ? undefined : setActiveSession(key)}
-                onAuxClick={(e) => !isPinnedMain && handleTabAuxClick(e, key)}
+                onAuxClick={(e) => handleTabAuxClick(e, key)}
                 className={clsx(
                   'isolate flex items-center gap-1.5 h-[38px] pl-3 text-[12px] font-medium select-none relative',
                   'transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none active:scale-[0.985]',
-                  isPinnedMain ? 'pr-3' : 'pr-10',
+                  'pr-10',
                   isActive
                     ? 'text-aegis-text'
                     : 'text-aegis-text-dim hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.03)]',
@@ -1330,19 +1330,17 @@ export function ChatTabs() {
                 )}
 
               </button>
-              {!isPinnedMain && (
-                <span className="absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100">
-                  <IconButton
-                    size="xs"
-                    aria-label={t('chat.closeTab')}
-                    title={t('chat.closeTab')}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => handleTabClose(event, key)}
-                  >
-                    <X size={12} />
-                  </IconButton>
-                </span>
-              )}
+              <span className="absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100">
+                <IconButton
+                  size="xs"
+                  aria-label={t('chat.closeTab')}
+                  title={t('chat.closeTab')}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => handleTabClose(event, key)}
+                >
+                  <X size={12} />
+                </IconButton>
+              </span>
 
             </div>
             </SortableTab>

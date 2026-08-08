@@ -120,7 +120,7 @@
         <rect x="48" y="188" width="160" height="80" rx="6" class="box"/><text x="60" y="204" class="tag">INIT</text><text x="128" y="228" class="name" text-anchor="middle">恢复事务并加载 React</text><text x="128" y="246" class="sub" text-anchor="middle">src-tauri/lib.rs</text>
         <polygon points="320,180 368,228 320,276 272,228" class="decision"/><text x="320" y="220" class="name" text-anchor="middle">完成标记</text><text x="320" y="237" class="sub" text-anchor="middle">= 3 ?</text>
         <rect x="256" y="332" width="128" height="48" rx="6" class="box-soft"/><text x="320" y="354" class="name" text-anchor="middle">欢迎与环境检测</text><text x="320" y="369" class="sub" text-anchor="middle">language / theme</text>
-        <rect x="260" y="386" width="120" height="16" rx="4" class="status-fixed"/><text x="320" y="397" class="status-text-fixed" text-anchor="middle">已修复 · 通知延后</text>
+        <rect x="220" y="386" width="200" height="16" rx="4" class="status-fixed"/><text x="320" y="397" class="status-text-fixed" text-anchor="middle">已修复 · 无闪白、横向溢出和重复摘要</text>
         <rect x="432" y="352" width="192" height="56" rx="6" class="box"/><text x="444" y="368" class="tag">STORAGE</text><text x="528" y="386" class="name" text-anchor="middle">配置数据与运行时位置</text><text x="528" y="401" class="sub" text-anchor="middle">configure_storage</text>
         <rect x="456" y="416" width="144" height="16" rx="4" class="status-fixed"/><text x="528" y="427" class="status-text-fixed" text-anchor="middle">已修复 · 窄屏底栏分区</text>
         <rect x="432" y="212" width="192" height="88" rx="6" class="box"/><text x="444" y="228" class="tag">RUNTIME</text><text x="528" y="250" class="name" text-anchor="middle">确认运行方式并复用环境</text><text x="528" y="268" class="sub" text-anchor="middle">Native / Docker</text><text x="528" y="284" class="sub" text-anchor="middle">缺失才安装 · 异常才修复</text>
@@ -130,13 +130,14 @@
         <rect x="880" y="384" width="192" height="56" rx="6" class="box"/><text x="892" y="400" class="tag">HANDOFF</text><text x="976" y="420" class="name" text-anchor="middle">官方服务所有权交接</text>
         <rect x="880" y="252" width="192" height="64" rx="6" class="box"/><text x="892" y="268" class="tag">READY</text><text x="976" y="288" class="name" text-anchor="middle">完成页与独立自启动</text><text x="976" y="304" class="sub" text-anchor="middle">Gateway + JunQi Desktop</text>
         <rect x="926" y="322" width="100" height="16" rx="4" class="status-fixed"/><text x="976" y="333" class="status-text-fixed" text-anchor="middle">已修复 · BUSY 门禁</text>
+        <rect x="900" y="338" width="152" height="16" rx="4" class="status-fixed"/><text x="976" y="349" class="status-text-fixed" text-anchor="middle">已修复 · 偏好并行加载骨架</text>
         <rect x="880" y="156" width="192" height="48" rx="6" class="box-accent"/><text x="976" y="178" class="name" text-anchor="middle">提交 setupComplete</text><text x="976" y="193" class="sub" text-anchor="middle">verified handoff</text>
         <rect x="918" y="210" width="116" height="16" rx="4" class="status-fixed"/><text x="976" y="221" class="status-text-fixed" text-anchor="middle">已修复 · 最终探测</text>
         <rect x="912" y="72" width="128" height="40" rx="20" class="box"/><text x="976" y="97" class="name" text-anchor="middle">工作台可用</text>
       </svg>
     </div>
     <div class="cards">
-      <div class="card"><p class="card-kicker">TRUST MODEL</p><h3>安装完成不等于可进入工作台</h3><ul><li>必须验证选定 Gateway 的运行模式与身份</li><li>必须完成认证或管理员配对</li><li>默认模型需要官方实时验证成功；方法不可用时保持待核验，不误报凭据错误</li></ul></div>
+      <div class="card"><p class="card-kicker">TRUST MODEL</p><h3>安装完成不等于模型已验证</h3><ul><li>必须验证选定 Gateway 的运行模式与身份</li><li>必须完成认证或管理员配对</li><li>官方实时验证可用时必须通过；方法不可用时保留待核验并允许进入工作台</li></ul></div>
       <div class="card"><p class="card-kicker">PERSISTENCE</p><h3>两类持久状态</h3><ul><li>Rust Bootstrap：目录、runtime、迁移事务</li><li>Renderer localStorage：setup-done 与 UI 偏好</li></ul></div>
       <div class="card"><p class="card-kicker">INSTALL LATENCY</p><h3>最短安全等待</h3><ul><li>Node release index 与 checksum authority 并发解析</li><li>现有环境、npm cache 与 SHA-256 验证的 runtime 下载缓存优先复用</li><li>Windows x86 复用稳定 MinGit fallback，缺失才下载；完整性与事务门禁不省略</li></ul></div>
       <div class="card"><p class="card-kicker">RECOVERY</p><h3>失败与重装残留保守恢复</h3><ul><li>目录事务与运行模式切换可恢复或回滚</li><li>Windows 半安装只有在 Scheduled Task / 登录项不存在、目标端口空闲、无 managed child 且无 pending recovery 时继续</li><li>残留服务、未知监听或探测失败均不停止、不覆盖，先恢复 OpenClaw 后执行官方所有权验证</li></ul></div>
@@ -246,10 +247,13 @@
         <rect x="944" y="96" width="112" height="172" rx="6" class="box-security"/><text x="960" y="116" class="tag">权限边界</text><text x="960" y="144" class="name">Gateway 配对</text><text x="960" y="162" class="sub">设备凭据</text><text x="960" y="194" class="name">Admin Scope</text><text x="960" y="212" class="sub">operator.admin</text><text x="960" y="244" class="sub">≠ Windows UAC</text>
       </svg>
     </div>
+    <div class="cards">
+      <div class="card"><p class="card-kicker">RUNTIME CHECKPOINT</p><h3>Gateway 就绪仍属于第三阶段</h3><ul><li>顶部“运行时”保持高亮并使用完成勾选，不新增短暂的独立步骤</li><li>页面保留 Gateway 就绪说明、运行时完成度与下一步操作</li><li>安装时间线和实时日志默认折叠，用户可通过“查看安装详情”展开</li><li>下一步核验后，只有需要官方 Wizard 时才进入第四阶段；已有有效配置可直接进入完成阶段</li></ul></div>
+    </div>
   </section>
 
   <section id="workspace">
-    <div class="section-head"><span class="number">FIG. 04</span><h2>Ready 到工作台的交接</h2><p class="section-note">设置页提交 verified-gateway-handoff，使工作台复用已验证连接；Dashboard 可先呈现，数据随后渐进补齐。首次进入经身份、配置和模型复核的总览时显示开始使用任务区；关闭后仅由顶部全局入口显式重新打开。</p></div>
+    <div class="section-head"><span class="number">FIG. 04</span><h2>Ready 到工作台的交接</h2><p class="section-note">设置页提交 verified-gateway-handoff，使工作台复用已验证连接；Setup 步骤切换使用 200ms 的当前页入场过渡，上一步与下一步方向相反，旧步骤页在状态提交后立即卸载；Ready 页的运行偏好先并行读取，未完成时保持同尺寸骨架，避免一行一行闪跳。首次进入经身份、配置和模型复核的总览时显示开始使用任务区；关闭后仅由顶部全局入口显式重新打开。</p></div>
     <div class="diagram">
       <svg viewBox="0 0 1120 500" role="img" aria-label="进入工作台流程">
         <defs><marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4f5d75"/></marker><marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#eb6c36"/></marker><marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2e5aa8"/></marker></defs>
@@ -306,7 +310,7 @@
     </div>
   </section>
 
-  <footer><span>JunQi Desktop · First-run to Workspace</span><span>Updated code audit visualization · 2026-08-03</span></footer>
+  <footer><span>JunQi Desktop · First-run to Workspace</span><span>Updated code audit visualization · 2026-08-08</span></footer>
 </main>
 </body>
 </html>

@@ -23,11 +23,13 @@ The Ready screen has two separate login-time policies:
 While either operation is in progress, the Ready-screen navigation controls
 remain unavailable so the selected state cannot be left half-applied.
 
-Both policies use the same preference-row component. Before either status has
-returned, the row keeps its icon, text and switch footprint as a skeleton.
-During a change, the switch remains in place but is disabled, with a visible
-spinner and an announced progress message. This avoids swapping a switch for a
-button or exposing an incomplete control during the first render.
+Both policies use the same preference-row component. The two initial status
+reads start together and the Ready page keeps the complete preference block in
+the skeleton state until both reads have settled. The final rows therefore
+appear as one stable layout instead of replacing one row at a time. During a
+change, the switch remains in place but is disabled, with a visible spinner and
+an announced progress message. This avoids swapping a switch for a button or
+exposing an incomplete control during the first render.
 
 ## Validation
 
@@ -37,6 +39,8 @@ button or exposing an incomplete control during the first render.
   preserve the Gateway official-service handoff contract.
 - The shared preference-row regression verifies loading, ready and in-progress
   states keep an accessible switch action surface.
+- The Ready-screen regression verifies the two initial status reads share one
+  loading gate and render a full-size skeleton before either final row appears.
 - `pnpm exec tsc --noEmit`, focused frontend tests, `cargo fmt -- --check`,
   `cargo check --lib`, `cargo test --lib app_autostart`, and `git diff --check`
   passed.

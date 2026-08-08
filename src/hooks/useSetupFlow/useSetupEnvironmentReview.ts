@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
 import { useTranslation } from "react-i18next";
 import {
   checkDocker,
@@ -11,6 +11,11 @@ import {
 import type { PostStorageStep } from "@/stores/app-store";
 import type { InstallMode, SetupStep } from "@/stores/setup-navigation";
 import { cacheGatewayTarget } from "./helpers";
+import {
+  isEnvironmentReviewActionInFlight,
+  transitionEnvironmentReviewAction,
+  type EnvironmentReviewActionState,
+} from "./environmentReviewAction";
 import type { InstallTarget, StepState } from "./types";
 
 interface SetupEnvironmentReviewPorts {
@@ -67,8 +72,27 @@ export function useSetupEnvironmentReview({
   navigateSetup,
 }: SetupEnvironmentReviewPorts) {
   const { t } = useTranslation();
-  const environmentActionInFlightRef = useRef(false);
+  const environmentActionStateRef = useRef<EnvironmentReviewActionState>("idle");
+  const [environmentActionState, setEnvironmentActionState] = useState<EnvironmentReviewActionState>("idle");
   const dockerDetectingRef = useRef(false);
+
+  const updateEnvironmentAction = useCallback((
+    event: Parameters<typeof transitionEnvironmentReviewAction>[1],
+  ): EnvironmentReviewActionState => {
+    const next = transitionEnvironmentReviewAction(environmentActionStateRef.current, event);
+    environmentActionStateRef.current = next;
+    setEnvironmentActionState(next);
+    return next;
+  }, []);
+
+  const beginEnvironmentNavigation = useCallback((): boolean => {
+    if (isEnvironmentReviewActionInFlight(environmentActionStateRef.current)) return false;
+    return updateEnvironmentAction({ type: "begin", action: "navigating" }) === "navigating";
+  }, [updateEnvironmentAction]);
+
+  const finishEnvironmentAction = useCallback(() => {
+    updateEnvironmentAction({ type: "finished" });
+  }, [updateEnvironmentAction]);
 
   const detectEnvironment = useCallback(async (runId: number): Promise<PostStorageStep | null> => {
     const cancelled = () => !isRunActive(runId) || navigationLeavingRef.current;
@@ -135,26 +159,26 @@ export function useSetupEnvironmentReview({
     })();
   }, [beginRun, detectEnvironment, isRunActive, navigateSetup, navigationLeavingRef, report, setPostStorageStep, setupStep, t]);
 
-  useEffect(() => {
-    if (setupStep !== "environment-review") environmentActionInFlightRef.current = false;
-  }, [setupStep]);
+  useLayoutEffect(() => {
+    updateEnvironmentAction({ type: "step-entered" });
+  }, [setupStep, updateEnvironmentAction]);
 
   const continueAfterEnvironmentReview = useCallback(() => {
     if (setupStep !== "environment-review"
       || navigationLeavingRef.current
-      || environmentActionInFlightRef.current
+      || isEnvironmentReviewActionInFlight(environmentActionStateRef.current)
       || dockerDetectingRef.current) return;
-    environmentActionInFlightRef.current = true;
+    if (!beginEnvironmentNavigation()) return;
     report(t("storage.title", "选择 OpenClaw 数据位置"), 24);
     navigateSetup("storage", "push");
-  }, [navigateSetup, navigationLeavingRef, report, setupStep, t]);
+  }, [beginEnvironmentNavigation, navigateSetup, navigationLeavingRef, report, setupStep, t]);
 
   const redetectEnvironment = useCallback(async () => {
     if (setupStep !== "environment-review"
       || navigationLeavingRef.current
-      || environmentActionInFlightRef.current
+      || isEnvironmentReviewActionInFlight(environmentActionStateRef.current)
       || dockerDetectingRef.current) return;
-    environmentActionInFlightRef.current = true;
+    updateEnvironmentAction({ type: "begin", action: "redetecting" });
     dockerDetectingRef.current = true;
     const runId = beginRun();
     setCheckingDocker(true);
@@ -170,10 +194,10 @@ export function useSetupEnvironmentReview({
       report(t("setup.runtimeTitle"), 18);
     } finally {
       dockerDetectingRef.current = false;
-      environmentActionInFlightRef.current = false;
+      finishEnvironmentAction();
       setCheckingDocker(false);
     }
-  }, [beginRun, detectEnvironment, isRunActive, navigationLeavingRef, report, setCheckingDocker, setDockerStatus, setPostStorageStep, setupStep, t]);
+  }, [beginRun, detectEnvironment, finishEnvironmentAction, isRunActive, navigationLeavingRef, report, setCheckingDocker, setDockerStatus, setPostStorageStep, setupStep, t, updateEnvironmentAction]);
 
   useEffect(() => {
     if (setupStep === "welcome" || dockerStatus || dockerDetectingRef.current) return;
@@ -194,7 +218,10 @@ export function useSetupEnvironmentReview({
   return {
     continueAfterEnvironmentReview,
     redetectEnvironment,
-    environmentActionInFlightRef,
+    environmentActionStateRef,
+    environmentReviewBusy: isEnvironmentReviewActionInFlight(environmentActionState),
+    beginEnvironmentNavigation,
+    finishEnvironmentAction,
     dockerDetectingRef,
   };
 }

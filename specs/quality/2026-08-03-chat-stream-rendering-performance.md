@@ -53,6 +53,15 @@ OpenClaw 向 JunQi 发送累计流快照。`ChatHandler` 已合并双文本流�
 - 只在当前响应的临时 UI 中呈现 Gateway 报告的阶段与耗时；不得持久化或用于 Stop、重试、队列和 Task 状态转换。
 - Run 结算、会话删除、重置或 identity 轮换必须清除该投影。
 
+### STREAM-PERF-05 动态岛跨窗口发布
+
+动态岛快照是 JunQi 的本地 UI 派生状态，不得改变 OpenClaw 的权威状态。高频聊天流更新期间：
+
+- `dynamic-island:update` 事件应合并为有界的尾部发布，而不是为每个 React 渲染批次发送一次；
+- 发布必须读取最新快照，中间快照可以被合并但不能用旧快照覆盖新状态；
+- 动态岛显示、隐藏、`ready` 初次同步和销毁必须分别保持即时同步、取消待发布回调或阻止过期回调；
+- 调整只影响跨窗口 UI 投影频率，不得改变 session、run、task、transcript 或工具副作用语义。
+
 ## Acceptance
 
 - [ ] 常规尾部流更新只替换最后一个 ResponseGroup。
@@ -63,3 +72,5 @@ OpenClaw 向 JunQi 发送累计流快照。`ChatHandler` 已合并双文本流�
 - [ ] TypeScript、边界检查、完整前端测试和构建通过。
 - [ ] 真实 Tauri 长会话性能仍明确标记为未验证，除非实际完成录制。
 - [ ] `chat.send_timing` 的畸形、过期或错 Run 事件不会改变当前响应视图。
+- [x] 动态岛高频更新由调度器合并发布，且取消和销毁不会发送过期快照。
+- [ ] 真实 Tauri 窗口的聊天流、终端高输出和窗口拖拽帧时间已录制；未录制前保持未验证。

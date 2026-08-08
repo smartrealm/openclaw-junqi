@@ -19,7 +19,7 @@ export interface OnboardingPresentation {
  * 安装器、Gateway 与 OpenClaw Wizard 各自保留真实业务转换，避免 UI 伪造运行时状态。
  */
 const PRESENTATION_STATES = {
-  welcome: { state: 'welcome', stage: 0, kind: 'decision' },
+  welcome: { state: 'welcome', stage: -1, kind: 'decision' },
   detecting: { state: 'detecting', stage: 0, kind: 'operation' },
   'environment-review': { state: 'environment-review', stage: 0, kind: 'decision' },
   storage: { state: 'storage', stage: 1, kind: 'decision' },

@@ -42,6 +42,23 @@ test('cron agent-turn creation omits an unpinned default agent', () => {
   assert.equal(params.wakeMode, 'now');
 });
 
+test('cron schedule input retains the official event-driven schedule variants', () => {
+  const streamSchedule = {
+    kind: 'stream' as const,
+    command: ['node', 'watch.mjs'],
+    mode: 'match' as const,
+    match: '^ready$',
+    batchMs: 250,
+  };
+  const params = buildCronAgentTurnAddParams({
+    name: 'Stream watcher',
+    message: 'Process the stream batch.',
+    schedule: streamSchedule,
+  });
+
+  assert.deepEqual(params.schedule, streamSchedule);
+});
+
 test('cron Agent updates distinguish pinning from clearing', () => {
   assert.deepEqual(cronAgentUpdatePatch('writer'), { agentId: 'writer' });
   assert.deepEqual(cronAgentUpdatePatch(''), { agentId: null });

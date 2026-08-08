@@ -4,7 +4,17 @@ export type CronWakeMode = 'next-heartbeat' | 'now';
 export type CronSchedule =
   | { kind: 'at'; at: string }
   | { kind: 'every'; everyMs: number; anchorMs?: number }
-  | { kind: 'cron'; expr: string; tz?: string; staggerMs?: number };
+  | { kind: 'cron'; expr: string; tz?: string; staggerMs?: number }
+  | { kind: 'on-exit'; command: string; cwd?: string }
+  | {
+    kind: 'stream';
+    command: string[];
+    cwd?: string;
+    mode?: 'line' | 'match';
+    match?: string;
+    batchMs?: number;
+    maxBatchBytes?: number;
+  };
 
 export interface CronAgentTurnPayload {
   kind: 'agentTurn';

@@ -22,6 +22,7 @@ import { prepareFocusNavigation } from '@/focus/openFocus';
 import { useFocusProjection } from '@/focus/useFocusProjection';
 import { useOpenClawSessionObserver } from '@/hooks/useOpenClawSessionObserver';
 import type { OpenClawSessionObserverDigest } from '@/services/gateway';
+import { DynamicIslandUpdateScheduler } from './DynamicIslandUpdateScheduler';
 import {
   isVoiceActivePhase,
   isDynamicIslandVoiceInputActive,
@@ -92,6 +93,7 @@ export default function DynamicIslandRuntime() {
   }
   const terminalPulseTimerRef = useRef<number | null>(null);
   const previousTaskStatusesRef = useRef<Map<string, string> | null>(null);
+  const snapshotUpdateSchedulerRef = useRef<DynamicIslandUpdateScheduler | null>(null);
   resourceDropRef.current = resourceDrop;
 
   const observerVisible = enabled && openClawSessionObserverEnabled && mainMinimized && connected;
@@ -237,6 +239,15 @@ export default function DynamicIslandRuntime() {
   }), [activeSessionKey, autoExpand, connected, connecting, dndMode, executionPlan, focus, petEnabled, pomodoro, previewActive, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voiceInput, voicePhase, voiceQueueLength]);
   const latestSnapshotRef = useRef(snapshot);
   latestSnapshotRef.current = snapshot;
+  if (!snapshotUpdateSchedulerRef.current) {
+    snapshotUpdateSchedulerRef.current = new DynamicIslandUpdateScheduler({
+      schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
+      clear: (timer) => window.clearTimeout(timer),
+      publish: () => {
+        void emitTauriEvent('dynamic-island:update', latestSnapshotRef.current).catch(() => undefined);
+      },
+    });
+  }
 
   useEffect(() => {
     visibilityControllerRef.current?.reconcile({
@@ -247,8 +258,11 @@ export default function DynamicIslandRuntime() {
   }, [shouldShow]);
 
   useEffect(() => {
-    if (!shouldShow) return;
-    void emitTauriEvent('dynamic-island:update', snapshot).catch(() => undefined);
+    if (!shouldShow) {
+      snapshotUpdateSchedulerRef.current?.cancel();
+      return;
+    }
+    snapshotUpdateSchedulerRef.current?.request();
   }, [shouldShow, snapshot]);
 
   useEffect(() => {
@@ -368,6 +382,7 @@ export default function DynamicIslandRuntime() {
     if (resourceDropTimerRef.current !== null) window.clearTimeout(resourceDropTimerRef.current);
     previewRef.current?.dispose();
     visibilityControllerRef.current?.dispose();
+    snapshotUpdateSchedulerRef.current?.dispose();
     if (terminalPulseTimerRef.current !== null) window.clearTimeout(terminalPulseTimerRef.current);
   }, []);
 

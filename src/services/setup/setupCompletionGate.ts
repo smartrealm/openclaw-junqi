@@ -20,8 +20,8 @@ export function toSetupInferenceVerification(
 }
 
 export type SetupCompletionResult =
-  | { ready: true }
-  | { ready: false; reason: 'gateway-unavailable' | 'onboarding-required' | 'inference-unverified' | 'inference-verification-unavailable'; verification?: SetupInferenceVerification };
+  | { ready: true; verification: SetupInferenceVerification }
+  | { ready: false; reason: 'gateway-unavailable' | 'onboarding-required' | 'inference-unverified'; verification?: SetupInferenceVerification };
 
 /** 按 OpenClaw 原生跳过引导条件验证选定运行时。 */
 export async function validateSetupCompletion(
@@ -35,11 +35,13 @@ export async function validateSetupCompletion(
   }
   const verification = await dependencies.verifyConfiguredInference();
   if (verification.status === "unavailable") {
-    return { ready: false, reason: 'inference-verification-unavailable', verification };
+    // 当前稳定版 Gateway 可能没有提供实时验证 RPC；这不是配置或凭据失败。
+    // 保留未知状态，允许官方配置完成后的桌面流程继续，不把未知伪报为成功。
+    return { ready: true, verification };
   }
   if (verification.status !== "verified") {
     return { ready: false, reason: 'inference-unverified', verification };
   }
 
-  return { ready: true };
+  return { ready: true, verification };
 }

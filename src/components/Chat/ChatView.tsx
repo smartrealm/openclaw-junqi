@@ -86,8 +86,6 @@ import { ChatTraceSourceMessagePanel } from './ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from './useChatSidePanel';
 import { getToolLabelKey } from './toolCallPresentation';
 import { TaskExecutionRecoveryBanner } from './TaskExecutionRecoveryBanner';
-import { SessionCompanionPanel } from './SessionCompanionPanel';
-import { subscribeSessionCompanionOpen } from './sessionCompanionUi';
 import { useGatewaySessionHistoryCapabilities } from '@/hooks/useGatewaySessionHistoryCapabilities';
 import {
   hasConfirmedEmptyTranscript,
@@ -277,9 +275,6 @@ function ChatViewContent() {
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const sessionHistoryCapabilities = useGatewaySessionHistoryCapabilities();
   const sidePanel = useChatSidePanel(activeSessionKey);
-  const [sessionCompanion, setSessionCompanion] = useState<{ open: boolean; question?: string }>({ open: false });
-  useEffect(() => subscribeSessionCompanionOpen((question) => setSessionCompanion({ open: true, ...(question ? { question } : {}) })), []);
-  useEffect(() => setSessionCompanion({ open: false }), [activeSessionKey]);
   const loadTraceAuditEvents = useCallback(
     (runId: string) => gateway.listAuditEvents({ runId, limit: 500 }),
     [],
@@ -1663,14 +1658,6 @@ function ChatViewContent() {
           />
         ) : null;
       })()}
-      {sessionCompanion.open && (
-        <SessionCompanionPanel
-          sessionKey={activeSessionKey}
-          connected={connected}
-          initialQuestion={sessionCompanion.question}
-          onClose={() => setSessionCompanion({ open: false })}
-        />
-      )}
   </div>
   );
 }
