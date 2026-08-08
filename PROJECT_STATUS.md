@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-完成 Jarvis 首次启动、Gateway 能力证据、会话工具栏与 Cron 写入并发围栏收敛；修复会话组织操作错误请求
+完成 Jarvis 首次启动、Gateway 能力证据、会话工具栏、模型目录与 Cron 写入并发围栏收敛；修复会话组织操作错误请求
 管理员权限的问题，将智能体中心 Office 扩展为配置工位与真实运行投影共存的工作区域，并保持 Windows Gateway
 冷启动与新建空会话链路可恢复。
 
@@ -23,6 +23,8 @@
   `sessionId`、Agent 身份和 `activeLeafEntryId: null`，新会话不再误触发历史加载。
 - Cron Job 的安全投影保留 Gateway 返回的可选 `configRevision`；启停与 Agent 路由更新仅在该真实令牌存在时将其
   原样传给官方 `cron.update` 的 `expectedConfigRevision`，不生成本地令牌。
+- Provider 编辑页不再维护独立的宽松 `models.list` 解码器；它复用严格的 Gateway 目录投影，只展示结构正确且
+  明确 `available: true` 的当前运行时模型。
 
 ## 关键技术决策
 
@@ -33,6 +35,8 @@
 - 新会话是否为空只接受 OpenClaw 创建确认的身份与空 leaf，不依据空消息数组推断，也不跳过已有会话的权威历史读取。
 - Kun 的 Graph、Loop、调度与恢复均属于 Kun 自有运行时语义，且项目采用 PolyForm Noncommercial 许可证。JunQi
   仅记录其“前端投影宿主真实状态”的设计参考，不复制代码、资源或以其能力补足 OpenClaw 协议。
+- 官方 `openclaw.setup.auth.start` 的 `authChoice` 是 `openclaw.setup.detect` 返回的选择标识，不能由 JunQi 的
+  Provider 模板或 profile 标识推导；因此 Provider 页保持现有官方 CLI 入口，不伪造为 Gateway Wizard 调用。
 
 ## 核心文件
 
@@ -45,6 +49,8 @@
   Gateway 冷启动身份、默认主会话固定和新建会话状态合并。
 - `src/services/gateway/cronRuns.ts`、`src/services/gateway/OpenClawCronManagementClient.ts`、`src/pages/CronMonitor.tsx`：
   Cron 修订令牌读取、传递与读后确认。
+- `src/pages/ConfigManager/providerGatewayCatalog.ts`、`src/pages/ConfigManager/ProvidersTab.tsx`、
+  `src/services/gateway/modelCatalog.ts`：Provider 编辑页和会话选择器共用的模型可用性投影。
 - `docs/collaboration/agent-hub-office-default-design-2026-08-08.md`、`docs/installation/junqi-installation-flow.md`、`docs/quality/openclaw-session-diff-files-removal-2026-08-08.md`：设计与验证记录。
 - `docs/quality/windows-gateway-cold-start-and-main-session-pinning-2026-08-08.md`、
   `docs/quality/openclaw-confirmed-empty-session-audit-2026-08-05.md`：Windows 冷启动和新建空会话竞态记录。
@@ -60,6 +66,8 @@
 - 本轮以 OpenClaw 官方源码当前 `main` 提交 `3075acd549a5c76ad776cd8be5edff8ee6d47b55` 复核
   `sessions.create`、`openclaw.setup.verify`、`models.probe` 与 `cron.*` schema/handler；Cron 定向 18 项测试、
   `pnpm lint`、完整 `pnpm test`、`pnpm build` 和 `git diff --check` 均已执行通过。
+- 模型目录收敛已通过 3 项定向回归、`pnpm lint`、完整 `pnpm test`、`pnpm build`、`git diff --check` 和本次文件的
+  Emoji 扫描；全量测试输出既有 Radix SSR `useLayoutEffect` 与 Node 弃用警告，但命令成功结束。
 
 ## 已知问题
 

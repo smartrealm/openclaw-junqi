@@ -13,6 +13,8 @@ JunQi 把 OpenClaw `models.list` 的空结果继续补为配置、静态目录�
 - 调用失败、空结果和无效结果必须失败关闭为无可选模型，不能用配置、历史 session 或静态
   catalog 填充。
 - Provider 配置编辑和健康提示可以读取其已有权威来源，但不得写回 `availableModels`。
+- Provider 编辑页从 `models.list` 读取建议模型时，必须复用严格的 `available: true` 投影；不得接受
+  字符串、猜测字段或未标记可用的条目。
 
 ## 验收条件
 
@@ -20,4 +22,5 @@ JunQi 把 OpenClaw `models.list` 的空结果继续补为配置、静态目录�
 - [x] 权威响应为空、结构无效或只含不可用条目时，后续 loader 不得运行且结果为空。
 - [x] 明确可用的 Gateway 模型保留 provider、label、alias 和图像能力投影。
 - [x] 删除仅为旧回退链存在的配置、静态目录和 agent/session 模型加载代码及其测试。
+- [x] Provider 编辑页复用严格 Gateway 目录投影，不再维护独立宽松解码器。
 - [x] TypeScript、相关回归、全量测试、构建和差异检查通过。

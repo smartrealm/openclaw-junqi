@@ -38,6 +38,10 @@ import { MaskedInput, ChipInput } from './components';
 import { buildProviderSubmissionModelIds } from './providerModelSelection';
 import { resolveExplicitProviderDefault } from './providerDefaultSelection';
 import {
+  projectProviderGatewayCatalog,
+  type ProviderGatewayCatalogModel,
+} from './providerGatewayCatalog';
+import {
   gateway,
   openClawModelAuthStatusClient,
   openClawModelAuthLogoutClient,
@@ -247,14 +251,6 @@ function authModeNeedsApiKey(mode: unknown): boolean {
   return AUTH_MODE_INFO[normalizeProviderAuthMode(mode)].hasApiKeyField;
 }
 
-type GatewayModelOption = {
-  id: string;
-  provider?: string;
-  model?: string;
-  alias?: string;
-  supportsImage?: boolean;
-};
-
 function buildConfiguredImageSupportMap(models: Record<string, ModelEntry>): Map<string, boolean> {
   const map = new Map<string, boolean>();
   for (const [id, entry] of Object.entries(models)) {
@@ -273,50 +269,6 @@ function isModelImageCapable(modelRef: string, imageSupportMap?: Map<string, boo
     return explicitSupport;
   }
   return false;
-}
-
-function parseGatewayModelsResponse(res: unknown): GatewayModelOption[] {
-  const out: GatewayModelOption[] = [];
-  const pushModel = (value: any) => {
-    if (!value) return;
-    if (typeof value === 'string') {
-      out.push({ id: value });
-      return;
-    }
-    if (typeof value !== 'object') return;
-    const id = String(value.id ?? value.model ?? '').trim();
-    const provider = String(value.provider ?? '').trim() || undefined;
-    const model = String(value.model ?? '').trim() || undefined;
-    const alias = String(value.alias ?? value.name ?? '').trim() || undefined;
-    const supportsImage = resolveModelSupportsImage(value);
-    if (id) {
-      out.push({ id, provider, model, alias, supportsImage });
-      return;
-    }
-    if (provider && model) {
-      out.push({ id: `${provider}/${model}`, provider, model, alias, supportsImage });
-    }
-  };
-
-  if (Array.isArray(res)) {
-    for (const item of res) pushModel(item);
-  } else if (res && typeof res === 'object') {
-    const obj = res as Record<string, unknown>;
-    if (Array.isArray(obj.models)) {
-      for (const item of obj.models) pushModel(item);
-    } else if (obj.models && typeof obj.models === 'object') {
-      for (const [id, cfg] of Object.entries(obj.models as Record<string, any>)) {
-        pushModel({ id, ...(cfg ?? {}) });
-      }
-    }
-  }
-
-  const deduped = new Map<string, GatewayModelOption>();
-  for (const item of out) {
-    if (!item.id) continue;
-    if (!deduped.has(item.id)) deduped.set(item.id, item);
-  }
-  return Array.from(deduped.values());
 }
 
 function getModelsForProvider(
@@ -1153,11 +1105,11 @@ function FetchModelsButton({ providerId, allModels, onChange, saving, t }: {
     setFetchResult(null);
     try {
       const response = await gateway.getAvailableModels('configured');
-      const fetchedModels = parseGatewayModelsResponse(response)
-        .filter((model) => normalizeProviderIdForCatalog(String(model.provider ?? '')) === providerId)
+      const fetchedModels = projectProviderGatewayCatalog(response)
+        .filter((model) => normalizeProviderIdForCatalog(model.provider) === providerId)
         .map((model) => ({
-          id: String(model.id ?? ''),
-          alias: String(model.alias ?? model.id ?? ''),
+          id: model.id,
+          alias: model.alias ?? model.id,
           supportsImage: model.supportsImage === true,
         }))
         .filter((model) => model.id);
@@ -2275,7 +2227,7 @@ function ConfigureStep({
   const [customProviderIcon, setCustomProviderIcon] = useState('');
   const [textPrimaryModel, setTextPrimaryModel] = useState('');
   const [imagePrimaryModel, setImagePrimaryModel] = useState('');
-  const [gatewayModels, setGatewayModels] = useState<GatewayModelOption[]>([]);
+  const [gatewayModels, setGatewayModels] = useState<ProviderGatewayCatalogModel[]>([]);
   const [loadingGatewayModels, setLoadingGatewayModels] = useState(false);
   const [officialAuthReady, setOfficialAuthReady] = useState(false);
   const [loadingOfficialAuth, setLoadingOfficialAuth] = useState(false);
@@ -2361,17 +2313,8 @@ function ConfigureStep({
     if (!isCustomLike) return [];
     const values = gatewayModels
       .map((item) => {
-        const full = String(item.id ?? '').trim();
-        if (!full) return null;
-        const ref = full.includes('/')
-          ? full
-          : item.provider && item.model
-            ? `${item.provider}/${item.model}`
-            : full;
-        const provider = ref.includes('/') ? ref.split('/')[0] : (item.provider ?? '');
-        if (!provider) return null;
-        if (normalizeProviderIdForCatalog(provider) !== effectiveProviderCatalogId) return null;
-        return ref;
+        if (normalizeProviderIdForCatalog(item.provider) !== effectiveProviderCatalogId) return null;
+        return item.id;
       })
       .filter((id): id is string => Boolean(id));
     return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
@@ -2506,7 +2449,7 @@ function ConfigureStep({
     gateway.getAvailableModels('configured')
       .then((res) => {
         if (cancelled) return;
-        setGatewayModels(parseGatewayModelsResponse(res));
+        setGatewayModels(projectProviderGatewayCatalog(res));
       })
       .catch(() => {
         if (cancelled) return;
