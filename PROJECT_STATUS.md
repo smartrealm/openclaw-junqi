@@ -33,6 +33,8 @@
 - `packages/junqi-dingtalk` 提供 OpenClaw 插件清单、DWS 运行器、工具 schema、Agent 授权和运行时探测；桌面侧只负责受 Runtime Identity 围栏保护的安装与启用。
 - 业务应用页已收敛为钉钉工作台的列表、就绪状态、能力表格、参数详情和活动记录，不在 React 或 Tauri 中直接执行 DWS。
 - 钉钉工具调用沿 OpenClaw `tools.effective`、`tools.invoke` 和插件审批链路投影；缺少插件、Gateway 工具、身份或授权时保留真实的未就绪语义。
+- 钉钉插件安装反馈按目标身份核对、等待 Gateway 安装与启用、结果和重启要求分阶段呈现；外部或远程 Gateway、身份未核验、端点或路径不匹配时明确阻断，不伪造 Gateway 进度。
+- 业务能力表格默认优先展示，左侧筛选栏默认收起；搜索、业务域和操作效果筛选集中在表格顶部，租户身份只在工具详情中作为当前调用参数显式传递。
 - 合并来源包含插件资源、Tauri 安装命令和生成的 bundle；真实 Gateway、DWS 租户和跨平台安装仍需验收。
 
 ## 关键技术决策
@@ -72,6 +74,7 @@
 - 全量 `pnpm test` 通过；仅输出既有 Radix SSR `useLayoutEffect` 与 Node 弃用警告。`pnpm lint`、`pnpm build` 和
   `git diff --check` 也已通过。
 - 合并 main 后已通过 TypeScript、模块边界、版本一致性、完整 `pnpm test`（2829 项应用测试与 243 项脚本测试）和 `pnpm build`。
+- 本次合并 Jarvis 钉钉工作台改动后已通过 `pnpm lint`、钉钉安装反馈与渠道向导定向测试、完整 `pnpm test`（2845 项应用测试与 243 项脚本测试）和 `pnpm build`。
 - Windows Gateway 端点、默认主会话固定和新建会话竞态回归继续通过；`git diff --check` 与 Emoji 扫描在提交前再次执行。
 
 ## 已知问题
@@ -83,6 +86,7 @@
 - 尚未以真实 Gateway 验收 Cron 管理员授权、手动执行与日历副作用；`everyMs` 跨夏令时遵循 OpenClaw 固定间隔
   语义，无法准确表达的有界或复杂月年规则明确显示为未支持。
 - 尚未在真实 Gateway 中验收钉钉插件加载、`tools.effective`、`tools.invoke`、插件审批往返和 DWS 业务响应；当前本地构建只证明源码、bundle 和类型契约成立。
+- 钉钉能力表格优先布局与安装反馈尚未在真实 Tauri 的亮色、暗色、窄窗口和键盘焦点下人工验收。
 - 尚未在 macOS、Windows、Linux 真机上完成首次引导渠道插件授权、二维码或设备代码交互；这些行为仍以目标 Gateway 和官方插件返回为准。
 
 ## 已放弃方案
