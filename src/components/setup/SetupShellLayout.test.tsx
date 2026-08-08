@@ -8,6 +8,8 @@ test('setup shell keeps navigation actions reachable below overflowing step cont
   const html = renderToStaticMarkup(
     <SetupShell
       active={2}
+      activeComplete
+      eyebrow="Step 3 · Runtime"
       title="Data location"
       subtitle="Choose storage"
       logs={[]}
@@ -19,6 +21,8 @@ test('setup shell keeps navigation actions reachable below overflowing step cont
   );
 
   assert.match(html, /<main[^>]*overflow-auto/);
+  assert.match(html, /data-setup-step-current-complete="true"/);
+  assert.match(html, /Step 3 · Runtime/);
   assert.match(html, /class="flex w-full justify-center"/);
   assert.match(html, /<section[^>]*class="w-full max-w-3xl"/);
   assert.doesNotMatch(html, /<section[^>]*class="[^"]*my-auto/);

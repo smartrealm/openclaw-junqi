@@ -38,15 +38,33 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
     step: currentInstallTitle,
     defaultValue: "正在执行：{{step}}",
   });
+  const gatewayCheckpointTitle = gatewayReadyChecking
+    ? t("setup.gatewayReadyCheckingTitle", "正在检查 OpenClaw 配置")
+    : gatewayReadyError
+      ? t("setup.gatewayReadyContinueFailedTitle", "无法进入下一步")
+      : t("setup.gatewayConnected", "Gateway 已就绪");
+  const gatewayCheckpointSubtitle = gatewayReadyChecking
+    ? t(
+        "setup.gatewayReadyCheckingDescription",
+        "正在验证当前模型是否可用；完成后将进入官方配置向导或完成页。",
+      )
+    : gatewayReadyError ?? t("setup.gatewayReadySubtitle", "OpenClaw Gateway 已启动。请点击下一步继续。");
 
   return (
     <SetupShell
       active={flow.presentation.stage}
-      title={setupStep === "ready" ? t("setup.ready") : isGatewayReady ? t("setup.gatewayConnected") : t("setup.settingUp")}
-      subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isGatewayReady ? t("setup.gatewayReadySubtitle") : t("setup.subtitle")}
+      activeComplete={isGatewayReady}
+      eyebrow={isGatewayReady
+        ? t("setup.stageEyebrow", {
+            step: flow.presentation.stage + 1,
+            title: t("setup.steps.runtime.title"),
+          })
+        : undefined}
+      title={setupStep === "ready" ? t("setup.ready") : isGatewayReady ? gatewayCheckpointTitle : t("setup.settingUp")}
+      subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isGatewayReady ? gatewayCheckpointSubtitle : t("setup.subtitle")}
       logs={logs}
       wide
-      showLogToggle={isGatewayReady}
+      showLogToggle={false}
       previousAction={setupStep === "error" || isGatewayReady ? {
         onClick: () => flow.goBack(),
         disabled: flow.repairing || gatewayReadyChecking,

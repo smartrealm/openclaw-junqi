@@ -97,7 +97,7 @@ type SetupNextAction = SetupAction & {
   icon?: "next" | "none";
 };
 
-function Stepper({ active }: { active: number }) {
+function Stepper({ active, activeComplete = false }: { active: number; activeComplete?: boolean }) {
   const { t } = useTranslation();
   return (
     <div className="px-6 pt-6" dir="ltr">
@@ -105,18 +105,21 @@ function Stepper({ active }: { active: number }) {
         {SETUP_STEPS.map(({ id, titleKey, titleFallback, descriptionKey, descriptionFallback }, i) => {
           const done = i < active;
           const current = i === active;
+          const currentComplete = current && activeComplete;
           return (
             <div key={id} className="flex items-start">
               <div className="flex min-w-[94px] flex-col items-center gap-2 text-center">
                 <div
+                  data-setup-step-current-complete={currentComplete || undefined}
                   className={clsx(
                     "flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-black transition-colors",
                     done && "border-aegis-primary/45 bg-aegis-primary/10 text-aegis-primary",
-                    current && "border-aegis-primary bg-aegis-bg text-aegis-primary shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.12)]",
+                    current && !currentComplete && "border-aegis-primary bg-aegis-bg text-aegis-primary shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.12)]",
+                    currentComplete && "border-aegis-success bg-aegis-success/10 text-aegis-success shadow-[0_0_0_3px_rgb(var(--aegis-success)/0.12)]",
                     !done && !current && "border-aegis-border bg-aegis-surface text-aegis-text-dim",
                   )}
                 >
-                  {done ? <Check size={15} strokeWidth={3} /> : i + 1}
+                  {done || currentComplete ? <Check size={15} strokeWidth={3} /> : i + 1}
                 </div>
                 <div>
                   <div
@@ -204,6 +207,8 @@ function LogPanel({ logs }: { logs: SetupLog[] }) {
 
 export function SetupShell({
   active,
+  activeComplete = false,
+  eyebrow,
   title,
   subtitle,
   children,
@@ -215,6 +220,8 @@ export function SetupShell({
   showLogToggle = true,
 }: {
   active: number;
+  activeComplete?: boolean;
+  eyebrow?: string;
   title: string;
   subtitle: string;
   children: ReactNode;
@@ -236,11 +243,12 @@ export function SetupShell({
         data-tauri-drag-region
         className="h-[32px] shrink-0 chrome-bg border-b border-aegis-border/30"
       />
-      <Stepper active={active} />
+      <Stepper active={active} activeComplete={activeComplete} />
       <main className="flex min-h-0 flex-1 flex-col items-center overflow-auto px-3 py-4 sm:px-6 sm:py-8">
         <SetupStepScene>
           <section className={clsx("w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
             <div className="mb-4 text-center sm:mb-6">
+              {eyebrow && <div className="mb-2 text-xs font-semibold text-aegis-primary" dir="auto">{eyebrow}</div>}
               <h1 className="text-2xl font-semibold tracking-normal text-aegis-text sm:text-[30px]" dir="auto">{title}</h1>
               <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
             </div>
@@ -956,12 +964,12 @@ export type InstallationConsoleSummary =
 
 export function installationConsoleMode(
   summary: InstallationConsoleSummary,
-): "activity" | "completion" {
-  return summary.kind === "gateway-ready" ? "completion" : "activity";
+): "activity" | "checkpoint" {
+  return summary.kind === "installation" ? "activity" : "checkpoint";
 }
 
 type InstallationConsoleProps = {
-  flow: SetupFlow;
+  flow: Pick<SetupFlow, "steps" | "installTarget">;
   logs: SetupLog[];
   setupStep: string;
   summary?: InstallationConsoleSummary;
@@ -975,6 +983,7 @@ export function InstallationConsole({
 }: InstallationConsoleProps) {
   const { t } = useTranslation();
   const [mobileView, setMobileView] = useState<"steps" | "logs">("steps");
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const current = currentStepOf(flow.steps);
   const completed = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || 1;
@@ -1018,14 +1027,76 @@ export function InstallationConsole({
         : t("setup.installPanel.current", "当前执行");
   const showProgress = !modelChecking && !modelCheckFailed;
 
-  if (consoleMode === "completion") {
-    return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-aegis-success/35 bg-aegis-success/5 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-aegis-text-secondary">
-          <CheckCircle2 size={16} className="shrink-0 text-aegis-success" />
-          <span>{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}</span>
+  const activityPanel = (
+    <div id="setup-installation-details" className="overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated">
+      <div className="flex gap-1 border-b border-aegis-border p-2 lg:hidden">
+        {(["steps", "logs"] as const).map((view) => (
+          <button
+            key={view}
+            type="button"
+            onClick={() => setMobileView(view)}
+            className={clsx(
+              "flex-1 rounded-md px-3 py-2 text-xs font-semibold transition-colors",
+              mobileView === view
+                ? "bg-aegis-surface text-aegis-text"
+                : "text-aegis-text-dim hover:text-aegis-text-secondary",
+            )}
+          >
+            {view === "steps"
+              ? t("setup.installPanel.timeline", "执行步骤")
+              : t("setup.installPanel.activity", "执行记录")}
+          </button>
+        ))}
+      </div>
+      <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)]">
+        <div className={clsx(mobileView !== "steps" && "hidden lg:block")}>
+          <InstallationTimeline steps={flow.steps} />
         </div>
-        <div className="text-lg font-semibold tabular-nums text-aegis-success">100%</div>
+        <div className={clsx(mobileView !== "logs" && "hidden lg:block")}>
+          <InstallLiveLog logs={logs} />
+        </div>
+      </div>
+    </div>
+  );
+
+  if (consoleMode === "checkpoint") {
+    return (
+      <div className="space-y-3">
+        <div className={clsx(
+          "flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3",
+          modelChecking
+            ? "border-aegis-primary/30 bg-aegis-primary/5"
+            : isError
+              ? "border-red-500/35 bg-red-500/5"
+              : "border-aegis-success/35 bg-aegis-success/5",
+        )}>
+          <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-aegis-text-secondary">
+            {modelChecking
+              ? <RefreshCw size={16} className="shrink-0 animate-spin text-aegis-primary" />
+              : isError
+                ? <X size={16} className="shrink-0 text-red-300" />
+                : <CheckCircle2 size={16} className="shrink-0 text-aegis-success" />}
+            <span>{summaryLabel}</span>
+            <span className="text-aegis-text-dim">{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}</span>
+          </div>
+          <div className={clsx(
+            "text-lg font-semibold tabular-nums",
+            modelChecking ? "text-aegis-primary" : isError ? "text-red-300" : "text-aegis-success",
+          )}>{percent}%</div>
+        </div>
+        <button
+          type="button"
+          aria-expanded={detailsOpen}
+          aria-controls="setup-installation-details"
+          onClick={() => setDetailsOpen((open) => !open)}
+          className="inline-flex items-center gap-2 rounded-lg border border-aegis-border px-3 py-2 text-xs font-medium text-aegis-text-secondary transition-[background-color,border-color,color,transform] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-surface active:scale-[0.98]"
+        >
+          {detailsOpen ? <EyeOff size={14} /> : <Eye size={14} />}
+          {detailsOpen
+            ? t("setup.installPanel.hideDetails", "收起安装详情")
+            : t("setup.installPanel.viewDetails", "查看安装详情")}
+        </button>
+        {detailsOpen && activityPanel}
       </div>
     );
   }
@@ -1077,35 +1148,7 @@ export function InstallationConsole({
         )}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated">
-        <div className="flex gap-1 border-b border-aegis-border p-2 lg:hidden">
-          {(["steps", "logs"] as const).map((view) => (
-            <button
-              key={view}
-              type="button"
-              onClick={() => setMobileView(view)}
-              className={clsx(
-                "flex-1 rounded-md px-3 py-2 text-xs font-semibold transition-colors",
-                mobileView === view
-                  ? "bg-aegis-surface text-aegis-text"
-                  : "text-aegis-text-dim hover:text-aegis-text-secondary",
-              )}
-            >
-              {view === "steps"
-                ? t("setup.installPanel.timeline", "执行步骤")
-                : t("setup.installPanel.activity", "执行记录")}
-            </button>
-          ))}
-        </div>
-        <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)]">
-          <div className={clsx(mobileView !== "steps" && "hidden lg:block")}>
-            <InstallationTimeline steps={flow.steps} />
-          </div>
-          <div className={clsx(mobileView !== "logs" && "hidden lg:block")}>
-            <InstallLiveLog logs={logs} />
-          </div>
-        </div>
-      </div>
+      {activityPanel}
     </div>
   );
 }
