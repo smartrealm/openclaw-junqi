@@ -1,0 +1,87 @@
+{
+  "id": "junqi-dingtalk",
+  "name": "JunQi DingTalk Business",
+  "version": "0.1.0",
+  "description": "DingTalk business tools executed by DWS through the OpenClaw Gateway.",
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "junqi_dingtalk_runtime_status",
+      "junqi_dingtalk_tool_schema",
+      "junqi_dingtalk_contact_me",
+      "junqi_dingtalk_contact_search_users",
+      "junqi_dingtalk_contact_search_departments",
+      "junqi_dingtalk_contact_department_members",
+      "junqi_dingtalk_approval_forms",
+      "junqi_dingtalk_approval_pending",
+      "junqi_dingtalk_approval_submitted",
+      "junqi_dingtalk_approval_detail",
+      "junqi_dingtalk_approval_form_schema",
+      "junqi_dingtalk_attendance_record",
+      "junqi_dingtalk_attendance_summary",
+      "junqi_dingtalk_attendance_rules",
+      "junqi_dingtalk_attendance_shifts",
+      "junqi_dingtalk_calendar_events",
+      "junqi_dingtalk_calendar_event",
+      "junqi_dingtalk_calendar_busy",
+      "junqi_dingtalk_calendar_rooms",
+      "junqi_dingtalk_todo_tasks",
+      "junqi_dingtalk_todo_detail",
+      "junqi_dingtalk_calendar_create",
+      "junqi_dingtalk_calendar_update",
+      "junqi_dingtalk_todo_create",
+      "junqi_dingtalk_todo_update",
+      "junqi_dingtalk_todo_set_done",
+      "junqi_dingtalk_approval_create",
+      "junqi_dingtalk_approval_approve",
+      "junqi_dingtalk_approval_reject",
+      "junqi_dingtalk_approval_revoke"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "allowedAgentIds": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "uniqueItems": true,
+        "default": []
+      },
+      "dwsPath": {
+        "type": "string",
+        "minLength": 1
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 120000,
+        "default": 30000
+      },
+      "maxOutputBytes": {
+        "type": "integer",
+        "minimum": 65536,
+        "maximum": 8388608,
+        "default": 2097152
+      }
+    }
+  },
+  "uiHints": {
+    "allowedAgentIds": {
+      "label": "Allowed OpenClaw agents",
+      "help": "Required. Only these agents may invoke JunQi DingTalk tools; an empty list fails closed."
+    },
+    "dwsPath": {
+      "label": "DWS executable path",
+      "help": "Optional absolute path. Required when PATH resolves to more than one DWS executable."
+    },
+    "timeoutMs": {
+      "label": "Command timeout"
+    },
+    "maxOutputBytes": {
+      "label": "Maximum output bytes"
+    }
+  }
+}

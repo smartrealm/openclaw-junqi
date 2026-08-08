@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run build:shared",
-    "build:shared": "npm run collab:bundle && tsc && vite build",
+    "build:shared": "npm run collab:bundle && npm run dingtalk:bundle && tsc && vite build",
     "build:hosted-release": "npm run build:shared",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -31,7 +31,12 @@
     "test:collab:gateway:smoke": "node --test scripts/verify-collaboration-real-gateway.test.mjs",
     "collab:gateway:behavioral": "node scripts/verify-collaboration-behavioral-gateway.mjs",
     "test:collab:gateway:behavioral": "node --test scripts/collaboration-deterministic-provider.test.mjs scripts/verify-collaboration-behavioral-gateway.test.mjs",
-    "collab:release:evidence": "node scripts/run-collaboration-release-evidence.mjs"
+    "collab:release:evidence": "node scripts/run-collaboration-release-evidence.mjs",
+    "dingtalk:build": "npm --prefix packages/junqi-dingtalk run build",
+    "dingtalk:test": "npm --prefix packages/junqi-dingtalk run test",
+    "dingtalk:pack": "npm --prefix packages/junqi-dingtalk run pack:plugin",
+    "dingtalk:validate": "npm --prefix packages/junqi-dingtalk run validate:plugin",
+    "dingtalk:bundle": "node scripts/build-dingtalk-plugin-bundle.mjs"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",
