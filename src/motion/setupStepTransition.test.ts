@@ -15,8 +15,8 @@ test('setup step transition keeps the initial scene stationary', () => {
 });
 
 test('setup step transition animates only the entering current scene', () => {
-  assert.deepEqual(setupStepEntryState(-1, false), { opacity: 0, x: 16, y: 0 });
-  assert.deepEqual(setupStepEntryState(1, false), { opacity: 0, x: -16, y: 0 });
+  assert.deepEqual(setupStepEntryState(-1, false), { opacity: 0, x: 24, y: 0 });
+  assert.deepEqual(setupStepEntryState(1, false), { opacity: 0, x: -24, y: 0 });
   assert.deepEqual(setupStepEntryState(0, false), { opacity: 0, x: 0, y: 0 });
 });
 
@@ -30,5 +30,5 @@ test('setup step transition uses ambient motion for runtime states', () => {
   assert.equal(setupStepMotionMode('operation'), 'ambient');
   assert.equal(setupStepMotionMode('gateway-ready'), 'ambient');
   assert.equal(setupStepMotionMode('failure'), 'ambient');
-  assert.deepEqual(setupStepEntryState(1, false, 'ambient'), { opacity: 0, x: 0, y: 8 });
+  assert.deepEqual(setupStepEntryState(1, false, 'ambient'), { opacity: 0, x: 0, y: 12 });
 });

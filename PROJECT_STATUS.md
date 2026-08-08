@@ -41,7 +41,7 @@
 - 已完成会话工具栏加固：顶部图标统一复用 `ChatIconButton` 的可见 Tooltip、`aria-label` 和 `title` 兜底；低频的分支、检查点、产物、会话变更和会话文件入口收进会话工具浮层，有效工具和浏览器保持直接入口。
 - 已补充安装与首次启动端到端总览 `docs/installation/junqi-installation-flow.md`，将运行时选择、数据位置、Gateway 交接、官方 Wizard、
   三重完成门禁、Ready/Dashboard 进入、恢复语义和跨平台未验证边界统一串联，并从 `docs/README.md` 提供唯一总览入口。
-- 已优化 Setup 上一步/下一步过渡：稳定步骤条和底部操作栏不再随页面横移，标题与内容通过 `SetupStepScene` 单独过渡；用户决策态使用 16px 方向入场，检测、安装、Gateway 和失败运行态使用轻微淡入，旧页面立即卸载约束保持不变。
+- 已优化 Setup 上一步/下一步过渡：稳定步骤条和底部操作栏不再随页面横移，标题与内容通过保持居中的 `SetupStepScene` 单独过渡；用户决策态使用 24px 方向入场，检测、安装、Gateway 和失败运行态使用 12px 轻微淡入，旧页面立即卸载约束保持不变。
 - 已增强会话变更和会话文件的真实状态呈现：`sessions.diff` 保留 Gateway 的授权失败及缺失 scope，不自动提权；会话文件预览按缺失、类型不支持、内容不可用和未知原因区分，并展示 Gateway 返回的安全元数据。
 - 已移除当前 Gateway 未提供的会话旁问入口、专属 RPC 客户端、Hook、测试、国际化文案和本地 `/btw`/`/side` 拦截；普通问题恢复为主会话发送。官方能力与未来恢复边界记录在
   `docs/quality/openclaw-session-companion-removal-2026-08-07.md`。
@@ -114,13 +114,13 @@
 - 会话变更特权连接回归已覆盖优先调用特权 lane；真实 Gateway admin 设备授权仍未完成。
 - Ready 运行偏好并行加载与完整骨架回归已通过：`setupOnboardingRegression.test.ts`、`AutostartPreferenceRow.test.tsx`、`pnpm exec tsc --noEmit`；桌面真机首次进入的视觉帧仍未录制。
 - Setup 当前页入场、环境动作门禁和下一步—上一步—下一步往返定向回归共 29 项通过；`pnpm lint`、`pnpm build` 和完整 `pnpm test` 均通过。完整测试前端 2825 项、脚本 243 项，首次运行发现的一条旧源码表达式断言已删除并由行为测试替代。
-- 已基于当前工作区重新构建并校验 macOS arm64 DMG 验收包：`src-tauri/target/release/bundle/dmg/JunQi Desktop_2.2.10_aarch64.dmg`。`hdiutil verify` 通过，文件大小为 8742951 字节，SHA-256 为 `5596ef0e483f41e47987806f9639298656573b816777fcaf0895e505d5c591fb`。该包未正式签名或公证；本轮尚未重新执行安装后的真机走查。
+- 已基于当前工作区重新构建并校验 macOS arm64 DMG 验收包：`src-tauri/target/release/bundle/dmg/JunQi Desktop_2.2.10_aarch64.dmg`。`hdiutil verify` 通过，文件大小为 8743254 字节，SHA-256 为 `d6c4cef78fa97d14d125c9051a92e95421ea7300f936650d49654f891f33646c`。该包未正式签名或公证；本轮尚未重新执行安装后的真机走查。
 - 本轮助手头像视觉调整已包含在当前安装的 `.app` 中；亮暗主题与窄窗口的最终视觉验收仍待完成。
 - 已完成会话助手头像视觉调整；本轮聊天相关测试、`pnpm lint`、完整 `pnpm test` 和 `pnpm build` 均通过，亮暗主题与窄窗口的最终视觉验收仍待完成。
 - 本轮已通过聚焦回归：Gateway 能力证据、Gateway Skills 欢迎页、本地 Skill Hub 边界、Cron contract/parser、Cron runs、Cron store
   和 Gateway 连接安全测试；`pnpm exec tsc --noEmit` 与 `git diff --check` 通过。
 - 本轮安装流程总览仅新增文档和索引入口，未改变运行时代码；已完成链接、路径和 Emoji 扫描。
-- 本轮 Setup 过渡优化已通过动效定向测试、SetupShell 渲染测试、`pnpm lint`、完整 `pnpm test`、`pnpm build`、边界检查和 `git diff --check`；已重新构建并校验 macOS arm64 DMG。真实桌面视觉验收仍待完成。
+- 本轮 Setup 居中约束与可感知动效修正已通过动效定向测试、SetupShell 渲染测试、`pnpm lint`、完整 `pnpm test`、`pnpm build`、边界检查和 `git diff --check`，并已重新打包 macOS arm64 DMG。真实桌面视觉验收仍待完成。
 - 已审查并合并 `Blues-Code/code` 分支的 `7f0d208c`；合并提交为 `fa094888`。该分支只新增两份会话能力分析文档，未引入
   源码、配置、OpenClaw RPC 或运行时行为；文档已标明基于旧快照的证据边界，不作为当前功能契约。
 
@@ -141,7 +141,7 @@
 - 本机 OpenClaw `2026.7.1-2` 尚未提供 `sessions.companion.*` 方法；JunQi 已移除对应入口，不再触发无效旁问请求。未来恢复必须基于真实 Gateway RPC 验证。
 - 动态岛节流降低了聊天流期间的跨窗口 IPC 频率，但尚未完成真实 Tauri 窗口的聊天流、终端高输出或拖拽调整大小帧时间录制；若卡顿仍存在，需要分别测量终端渲染器和分割器事件链路。
 - Ready 页运行偏好状态读取已改为统一骨架门禁；若 Tauri IPC 长时间不返回，页面会如实保持加载态，当前未增加固定超时或本地默认值。
-- Setup 步骤切换动效尚未完成真实 Tauri 帧时间与低性能设备验收；当前已验证方向计算、场景级入场状态、稳定步骤条与底部操作栏、减少动态效果、完整测试和生产构建，不把动画完成当作业务状态完成。
+- Setup 步骤切换动效尚未完成真实 Tauri 帧时间与低性能设备验收；当前已验证方向计算、场景级入场状态、稳定步骤条与底部操作栏、减少动态效果、完整测试和生产构建；本轮居中与可感知动效修正需要重新验证，不把动画完成当作业务状态完成。
 - Cron 创建编辑器仍只开放已验证的 agentTurn 写操作；command、script、heartbeat、delivery 和 failureAlert 已可严格读取，
   尚未在 UI 中增加未经确认的编辑入口。
 - 插件通用目录、Nodes/Canvas 和聚合安全姿态仍未实现；相关能力继续保持未接入，不用本地 WebView 或独立 runtime 伪造。

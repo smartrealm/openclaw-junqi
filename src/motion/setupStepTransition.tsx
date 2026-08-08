@@ -56,10 +56,10 @@ export function setupStepEntryState(
   if (reducedMotion) {
     return { opacity: 1, x: 0, y: 0 };
   }
-  if (mode === 'ambient') return { opacity: 0, x: 0, y: 8 };
+  if (mode === 'ambient') return { opacity: 0, x: 0, y: 12 };
   return {
     opacity: 0,
-    x: direction === 0 ? 0 : direction * -16,
+    x: direction === 0 ? 0 : direction * -24,
     y: 0,
   };
 }
@@ -98,7 +98,7 @@ export function SetupStepTransition({
 
 export function SetupStepScene({ children }: { children: ReactNode }) {
   const context = useContext(SetupStepTransitionContext);
-  if (!context) return <div className="w-full">{children}</div>;
+  if (!context) return <div className="flex w-full justify-center">{children}</div>;
 
   const { direction, mode, reducedMotion, step } = context;
   return (
@@ -107,10 +107,10 @@ export function SetupStepScene({ children }: { children: ReactNode }) {
       initial={setupStepEntryState(direction, reducedMotion, mode)}
       animate={{ opacity: 1, x: 0, y: 0 }}
       transition={{
-        duration: reducedMotion ? 0 : mode === 'ambient' ? 0.18 : 0.24,
+        duration: reducedMotion ? 0 : mode === 'ambient' ? 0.22 : 0.26,
         ease: [0.22, 1, 0.36, 1],
       }}
-      className="w-full"
+      className="flex w-full justify-center"
       data-setup-scene-motion={mode}
     >
       {children}

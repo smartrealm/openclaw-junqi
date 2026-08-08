@@ -19,6 +19,7 @@ test('setup shell keeps navigation actions reachable below overflowing step cont
   );
 
   assert.match(html, /<main[^>]*overflow-auto/);
+  assert.match(html, /class="flex w-full justify-center"/);
   assert.match(html, /<section[^>]*class="w-full max-w-3xl"/);
   assert.doesNotMatch(html, /<section[^>]*class="[^"]*my-auto/);
   assert.match(html, /<footer[^>]*shrink-0/);
