@@ -14,6 +14,7 @@ import {
   selectableAgentHubOfficeRuns,
   selectAgentHubOfficeRun,
 } from './agentHubOfficeRunSelection';
+import { AgentHubConfiguredOffice } from './AgentHubConfiguredOffice';
 
 interface AgentHubOfficePanelProps {
   connected: boolean;
@@ -52,6 +53,7 @@ export function AgentHubOfficePanel({
     [runs, selectedRunId],
   );
   const snapshot = selectedRun ? snapshotsByRunId[selectedRun.runId] : undefined;
+  const configuredAgents = capabilities?.configuredAgents ?? [];
   const text = useCallback<CollaborationTranslate>((key, fallback, values) => (
     String(t(key, { defaultValue: fallback, ...values }))
   ), [t]);
@@ -192,26 +194,30 @@ export function AgentHubOfficePanel({
         </div>
       )}
 
-      {!loading && !error && !selectedRun && (
-        <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-xl border border-aegis-border bg-aegis-surface-solid px-5 text-center">
-          <Bot size={22} className="text-aegis-text-dim" aria-hidden />
-          <div>
-            <h3 className="text-sm font-semibold text-aegis-text-secondary">{t('agentHub.office.emptyTitle', '暂无协作运行')}</h3>
-            <p className="mt-1 max-w-md text-xs leading-5 text-aegis-text-muted">{t('agentHub.office.emptyDescription', '当前没有可投影到办公室的未归档协作运行。智能体配置不会被当作运行成员。')}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onShowAgentList}
-            className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-aegis-border bg-aegis-bg px-2.5 text-[11px] font-medium text-aegis-text-secondary transition-colors hover:border-aegis-border-hover hover:bg-aegis-elevated-solid"
-          >
-            {t('agentHub.office.showAgentList', '查看智能体列表')}
-            <ChevronRight size={13} aria-hidden />
-          </button>
-        </div>
-      )}
+      {!loading && !error && (
+        <div className="space-y-3" data-agent-hub-office-workspace>
+          <AgentHubConfiguredOffice agents={configuredAgents} />
 
-      {snapshot && selectedRun && (
-        <div className="space-y-2">
+          {!selectedRun && (
+            <div className="flex min-h-36 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-aegis-border bg-aegis-surface-solid px-5 text-center">
+              <Bot size={20} className="text-aegis-text-dim" aria-hidden />
+              <div>
+                <h3 className="text-sm font-semibold text-aegis-text-secondary">{t('agentHub.office.emptyTitle', '暂无协作运行')}</h3>
+                <p className="mt-1 max-w-md text-xs leading-5 text-aegis-text-muted">{t('agentHub.office.emptyDescription', '当前没有可投影到办公室的未归档协作运行。')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={onShowAgentList}
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-aegis-border bg-aegis-bg px-2.5 text-[11px] font-medium text-aegis-text-secondary transition-colors hover:border-aegis-border-hover hover:bg-aegis-elevated-solid"
+              >
+                {t('agentHub.office.showAgentList', '查看智能体列表')}
+                <ChevronRight size={13} aria-hidden />
+              </button>
+            </div>
+          )}
+
+          {snapshot && selectedRun && (
+            <div className="space-y-2 rounded-xl border border-aegis-border bg-aegis-surface-solid p-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-aegis-text-muted">
             <div className="flex min-w-0 items-center gap-1.5">
               <CollaborationRunStatusIcon status={selectedRun.status} size={13} />
@@ -234,10 +240,12 @@ export function AgentHubOfficePanel({
           </div>
           <AgentOfficeView
             snapshot={snapshot}
-            configuredAgents={capabilities?.configuredAgents ?? []}
+            configuredAgents={configuredAgents}
             coordinatorAgentId={capabilities?.coordinatorAgentId ?? null}
             text={text}
           />
+            </div>
+          )}
         </div>
       )}
     </section>
