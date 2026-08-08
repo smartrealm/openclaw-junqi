@@ -15,6 +15,7 @@
 - 已完成紧凑 DWS readiness 状态条；按实际运行结果引导插件安装、Gateway 重启、Agent 授权、DWS 官方安装交接、身份确认和重新检测，不自动安装 DWS 或伪造授权结果。
 - 已完成钉钉业务活动的双层审计投影：优先展示当前 Gateway 跨 Session 的 OpenClaw metadata-only 钉钉工具账本，补充本窗口受控调用的 runtime、Session、Agent、Profile、审批和 DWS 关联元数据；无上游委派证据时不推断关系。
 - 已完成 DWS 缺失安装交接弹层：按 Gateway 运行位置说明安装目标，提供官方 macOS/Linux、Windows、npm 入口、登录命令、复制、官方文档和重新检测；不执行远程脚本或读取 token。
+- 已完成钉钉业务插件未就绪时的“在 JunQi 安装”入口；安装仍受当前 Gateway 身份验证和桌面变更权限约束，完成后必须重启 Gateway 并重新读取当前 Session 工具。
 - DWS runner 已收紧为最小环境白名单，不继承 Gateway token、DWS access token 或其他无关进程密钥。
 - 环境白名单回归、插件重新打包和最新 `pnpm build` 已通过，桌面资源中的插件归档已核对包含该实现。
 - 已完成业务页生产迁移：钉钉单平台、当前 Session 工具投影、左筛选/中表格/右详情三栏、拖拽和收起、参数 schema 展示、调用状态与脱敏活动投影。
