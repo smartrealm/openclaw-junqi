@@ -5,6 +5,8 @@ import type { BrokenGatewayPlugin } from "@/services/gateway/pluginRecovery";
 import type { OpenClawWizardResult, OpenClawWizardStep } from "@/services/openclawWizard";
 import type { OnboardingPresentation } from "@/services/setup/onboardingPresentation";
 
+export type ChannelWizardPhase = "decision" | "active" | "completed" | "error";
+
 export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
 
 export interface StepState {
@@ -58,6 +60,12 @@ export interface SetupFlow {
   wizardActivity: string | null;
   wizardError: string | null;
   wizardRecoveryRequired: boolean;
+  channelWizardPhase: ChannelWizardPhase;
+  channelWizardStep: OpenClawWizardStep | null;
+  channelWizardSubmitting: boolean;
+  channelWizardActivity: string | null;
+  channelWizardError: string | null;
+  channelWizardConfiguredAccounts: Array<{ channel: string; accountId: string }>;
   needsOnboarding: boolean;
   gatewayReadyContinuation: GatewayReadyContinuation;
   repairing: boolean;
@@ -76,6 +84,12 @@ export interface SetupFlow {
   pollWizard: () => Promise<OpenClawWizardResult | null>;
   retryWizard: () => Promise<OpenClawWizardResult | null>;
   reclaimWizard: () => Promise<OpenClawWizardResult | null>;
+  startChannelWizard: () => Promise<OpenClawWizardResult | null>;
+  submitChannelWizardStep: (stepId: string, value?: unknown) => Promise<OpenClawWizardResult | null>;
+  pollChannelWizard: () => Promise<OpenClawWizardResult | null>;
+  retryChannelWizard: () => Promise<OpenClawWizardResult | null>;
+  deferChannelConfiguration: () => void;
+  completeChannelConfiguration: () => void;
   runNativeSetup: () => Promise<boolean>;
   runDockerSetup: () => Promise<boolean>;
   retrySetup: () => Promise<boolean>;

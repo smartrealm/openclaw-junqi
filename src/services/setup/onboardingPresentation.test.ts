@@ -25,7 +25,7 @@ test('引导呈现状态区分官方配置、失败和已验证完成', () => {
   });
   assert.deepEqual(machine.transition('ready'), {
     state: 'ready',
-    stage: 4,
+    stage: 5,
     kind: 'complete',
   });
 });
@@ -47,8 +47,9 @@ test('引导呈现状态机为每个持久化页面状态提供确定的用户�
     ['install-openclaw', 2, 'operation'],
     ['gateway-ready', 2, 'gateway-ready'],
     ['configure-openclaw', 3, 'official-wizard'],
+    ['configure-channels', 4, 'official-wizard'],
     ['error', 2, 'failure'],
-    ['ready', 4, 'complete'],
+    ['ready', 5, 'complete'],
   ] as const;
 
   for (const [state, stage, kind] of expectations) {

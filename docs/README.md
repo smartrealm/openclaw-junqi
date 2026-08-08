@@ -62,6 +62,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [Wizard 配置、重启与 Gateway 重装链路加固方案](installation/wizard-config-restart-reinstall-hardening-2026-08-01.md)
 - [首次安装底部操作区响应式修复](installation/setup-footer-responsive-actions-2026-08-02.md)
 - [Setup runtime 与渠道兼容审计](installation/openclaw-setup-runtime-and-channel-audit-2026-07-27.md)
+- [首次引导可选渠道配置审计](installation/openclaw-optional-channel-setup-audit-2026-08-08.md)
 - [中国大陆网络与安装源策略](installation/mainland-china-network-policy.md)
 
 对应规格与计划：
@@ -82,6 +83,8 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [`../plans/installation/2026-08-05-onboarding-orchestration-redesign.md`](../plans/installation/2026-08-05-onboarding-orchestration-redesign.md)
 - [`../specs/installation/2026-08-08-setup-round-trip-navigation.md`](../specs/installation/2026-08-08-setup-round-trip-navigation.md)
 - [`../plans/installation/2026-08-08-setup-round-trip-navigation.md`](../plans/installation/2026-08-08-setup-round-trip-navigation.md)
+- [`../specs/installation/2026-08-08-optional-channel-setup.md`](../specs/installation/2026-08-08-optional-channel-setup.md)
+- [`../plans/installation/2026-08-08-optional-channel-setup.md`](../plans/installation/2026-08-08-optional-channel-setup.md)
 
 ## Gateway 生命周期与服务归属
 

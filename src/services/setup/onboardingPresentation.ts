@@ -33,7 +33,8 @@ const PRESENTATION_STATES = {
   'install-openclaw': { state: 'install-openclaw', stage: 2, kind: 'operation' },
   'gateway-ready': { state: 'gateway-ready', stage: 2, kind: 'gateway-ready' },
   'configure-openclaw': { state: 'configure-openclaw', stage: 3, kind: 'official-wizard' },
-  ready: { state: 'ready', stage: 4, kind: 'complete' },
+  'configure-channels': { state: 'configure-channels', stage: 4, kind: 'official-wizard' },
+  ready: { state: 'ready', stage: 5, kind: 'complete' },
   error: { state: 'error', stage: 2, kind: 'failure' },
 } as const satisfies Record<SetupStep, OnboardingPresentation>;
 

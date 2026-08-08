@@ -13,6 +13,7 @@ export type SetupStep =
   | "install-openclaw"
   | "gateway-ready"
   | "configure-openclaw"
+  | "configure-channels"
   | "ready"
   | "error";
 
@@ -60,6 +61,8 @@ export function setupStepMessageKey(step: SetupStep): string {
       return "setup.gatewayConnected";
     case "configure-openclaw":
       return "setup.wizard.title";
+    case "configure-channels":
+      return "setup.channelWizard.title";
   }
 }
 
@@ -86,6 +89,8 @@ export function setupStepProgress(step: SetupStep): number {
       return 74;
     case "configure-openclaw":
       return 82;
+    case "configure-channels":
+      return 90;
     case "ready":
       return 100;
   }

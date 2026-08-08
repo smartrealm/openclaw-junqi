@@ -129,7 +129,7 @@ export function useSetupEnvironmentReview({
         if (reachable) {
           setGatewayRunning(true);
           commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
-          return onboardingRequired ? "configure-openclaw" : "ready";
+          return onboardingRequired ? "configure-openclaw" : "configure-channels";
         }
       } catch {
         if (cancelled()) return null;

@@ -308,11 +308,11 @@ export function useWizardSession({
       setWizardError(null);
       setWizardRecoveryRequired(false);
       setSetupError(null);
-      setPostStorageStep("ready");
+      setPostStorageStep("configure-channels");
       await refreshGatewayConnectionTarget();
       assertWizardOperationCurrent(operationId);
-      report(t("setup.ready"), 100);
-      replaceSetupStep("ready");
+      report(t("setup.channelWizard.title", "配置消息渠道"), 90);
+      replaceSetupStep("configure-channels");
       return result;
     }
     if (!result.step) {

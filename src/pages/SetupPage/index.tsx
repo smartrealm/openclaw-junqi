@@ -17,6 +17,7 @@ import { GatewayStartingScreen } from "./GatewayStartingScreen";
 import { ModeSelectScreen } from "./ModeSelectScreen";
 import { ProgressScreen } from "./ProgressScreen";
 import { WizardScreen } from "./WizardScreen";
+import { ChannelWizardScreen } from "./ChannelWizardScreen";
 import { ReadyScreen } from "./ReadyScreen";
 import { GitMissingScreen } from "./GitMissingScreen";
 import { NodeMissingScreen } from "./NodeMissingScreen";
@@ -94,6 +95,7 @@ export function SetupPage() {
       case "gateway-ready":
       case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
       case "configure-openclaw": return <WizardScreen flow={flow} logs={sharedLogs} />;
+      case "configure-channels": return <ChannelWizardScreen flow={flow} logs={sharedLogs} />;
       case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;
       case "node-missing": return <NodeMissingScreen flow={flow} logs={sharedLogs} />;
       default: return <DetectingScreen flow={flow} logs={sharedLogs} />;

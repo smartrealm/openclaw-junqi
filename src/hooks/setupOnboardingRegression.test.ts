@@ -237,13 +237,13 @@ test('BUG-ONB-49 wizard recovery is bounded, status-aware, and keeps healthy tra
 
 test('BUG-WFR-03 wizard failures are visible first and change the primary action to Retry', () => {
   const wizard = screen('WizardScreen');
-  const errorPosition = wizard.indexOf('{flow.wizardError && <div');
+  const errorPosition = wizard.indexOf('{wizard.wizardError && <div');
   const firstStepControl = wizard.indexOf('{presentedStep.type === "text" && (');
 
   assert.ok(errorPosition >= 0 && errorPosition < firstStepControl);
-  assert.match(wizard, /label: flow\.wizardError[\s\S]*?setup\.wizard\.retry/);
-  assert.match(wizard, /if \(flow\.wizardError\) \{[\s\S]*?flow\.retryWizard\(\)/);
-  assert.match(wizard, /icon: flow\.wizardError \? "none" : "next"/);
+  assert.match(wizard, /label: wizard\.wizardError[\s\S]*?setup\.wizard\.retry/);
+  assert.match(wizard, /if \(wizard\.wizardError\) \{[\s\S]*?wizard\.retryWizard\(\)/);
+  assert.match(wizard, /icon: wizard\.wizardError \? "none" : "next"/);
 });
 
 test('BUG-ONB-24 URL-only settings changes preserve endpoint-scoped credentials', () => {
@@ -347,14 +347,16 @@ test('BUG-ONB-15 setup navigation has one complete five-step translation contrac
     environment: { title: '环境检测', description: 'OpenClaw / Docker' },
     storage: { title: '数据位置', description: '配置与工作区' },
     runtime: { title: '运行时', description: '安装并启动 Gateway' },
-    configuration: { title: 'OpenClaw 配置', description: '模型、凭据与渠道' },
+    configuration: { title: 'OpenClaw 配置', description: '模型与凭据' },
+    channels: { title: '消息渠道', description: '配置或稍后决定' },
     ready: { title: '完成', description: '进入仪表盘' },
   };
   const enExpected = {
     environment: { title: 'Environment', description: 'OpenClaw / Docker' },
     storage: { title: 'Data location', description: 'Configuration / Workspace' },
     runtime: { title: 'Runtime', description: 'Install and start Gateway' },
-    configuration: { title: 'OpenClaw setup', description: 'Models / credentials / channels' },
+    configuration: { title: 'OpenClaw setup', description: 'Models / credentials' },
+    channels: { title: 'Channels', description: 'Configure or decide later' },
     ready: { title: 'Ready', description: 'Enter dashboard' },
   };
 
@@ -564,7 +566,7 @@ test('BUG-ONB-42 授权步骤不因文本内容自动推进', () => {
     wizard.indexOf('return (', wizard.indexOf('const submitCurrentStep = async')),
   );
 
-  assert.match(submit, /await flow\.submitWizardStep\(step\.id, value\)/);
+  assert.match(submit, /await wizard\.submitWizardStep\(step\.id, value\)/);
   assert.doesNotMatch(submit, /continueOpenClawWizardQrAuthorization|wizardScanQrUrl/);
 });
 
@@ -613,7 +615,7 @@ test('BUG-ONB-46 Gateway 执行的进度步骤只由官方会话轮询', () => {
 
   assert.match(wizard, /step\?\.type === "progress" && step\.executor === "gateway"/);
   assert.match(wizard, /autoPolledProgressStepRef\.current === step\.id/);
-  assert.match(wizard, /void flow\.pollWizard\(\)/);
+  assert.match(wizard, /void wizard\.pollWizard\(\)/);
   assert.match(wizardHook, /pollWizard: pollOfficialOnboarding/);
   assert.doesNotMatch(wizard, /terminalQrCaptureActive|terminalQrFallback|wizardScanQrUrl/);
 });
@@ -621,7 +623,7 @@ test('BUG-ONB-46 Gateway 执行的进度步骤只由官方会话轮询', () => {
 test('a superseded wizard submit releases its re-entry guard', () => {
   // 向导提交期间允许在错误状态下重试；接管操作必须同步释放旧提交的所有权，
   // 否则旧请求的 finally 不会清理守卫，后续向导操作会永久失去响应。
-  assert.match(setupPage, /disabled: flow\.wizardSubmitting && !flow\.wizardError/);
+  assert.match(setupPage, /disabled: wizard\.wizardSubmitting && !wizard\.wizardError/);
   assert.match(
     setupFlow,
     /const beginWizardOperation = useCallback\(\(\) => \{[\s\S]*?wizardSubmitInFlightRef\.current = false;[\s\S]*?return operationId;/,

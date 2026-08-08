@@ -11,7 +11,7 @@ import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 
 export type { InstallMode, SetupStep } from "./setup-navigation";
 
-export type PostStorageStep = "choosing-mode" | "gateway-stopped" | "configure-openclaw" | "ready";
+export type PostStorageStep = "choosing-mode" | "gateway-stopped" | "configure-openclaw" | "configure-channels" | "ready";
 /**
  * Runtime-only context for entering the workbench. It intentionally is not
  * persisted: a new application launch is a cold start, while setup can hand

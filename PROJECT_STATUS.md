@@ -4,8 +4,8 @@
 
 ## 当前目标
 
-完成 OpenClaw Cron 执行权限、日历提醒调度投影和 Cron 页面展示层收敛；保持所有计划、运行记录和权限
-语义以官方 Gateway 协议为准，不在 JunQi 本地扩展调度器。
+完成首次引导中 OpenClaw 官方可选渠道配置的显式用户决策链路；保持所有渠道、授权、账号和路由
+语义以官方 Gateway 协议为准，不在 JunQi 本地扩展渠道状态机。
 
 ## 已完成内容
 
@@ -25,6 +25,8 @@
   的月年规则均有明确处理，不再以错误 Cron 表达式或无限 pending 伪装成功。
 - Cron 模板与日历提醒内容改从 i18n 资源和运行时本地时区生成；Cron 页面将模板、状态推导与本地化格式化抽至
   独立展示模块，移除按任务名称猜测业务图标的做法。
+- 首次引导在模型与凭据核验后新增消息渠道决策页；配置时调用官方 `wizard.start { flow: "channels" }`，稍后配置时取消当前官方会话并记录真实用户选择，不创建或伪造渠道状态。
+- 核心 OpenClaw Wizard 与渠道 Wizard 共用结构化步骤呈现器，加载、授权、失败、会话失效和完成结果保持一致；渠道账号数量只展示 Gateway 返回的真实 `accounts`。
 
 ## 合并的业务应用与钉钉运行时
 
@@ -45,6 +47,7 @@
 
 - `src/pages/AgentHub/AgentHubOfficePanel.tsx`、`src/pages/AgentHub/agentHubOfficeRunSelection.ts`、`src/pages/AgentHub/index.tsx`：智能体中心 Office 投影、稳定选择与默认视图。
 - `src/services/setup/setupCompletionGate.ts`、`src/hooks/useSetupFlow/index.ts`、`src/hooks/useSetupFlow/useWizardSession.ts`：首次启动完成门禁与交接呈现。
+- `src/hooks/useSetupFlow/useChannelWizardSession.ts`、`src/pages/SetupPage/ChannelWizardScreen.tsx`：官方渠道向导会话和首次引导用户决策页面。
 - `src/services/gateway/GatewayCapabilityRegistry.ts`、`src/services/gateway/Connection.ts`：Gateway 能力证据。
 - `src/components/Chat/SessionContextBar.tsx`、`src/services/gateway/index.ts`：会话工具栏和无消费者会话能力的移除。
 - `src/services/gateway/SessionSettingsClient.ts`、`src/services/gateway/OpenClawSessionOrganizationClient.ts`、`src/utils/sessionRename.ts`：会话组织字段的最小权限请求与确认投影。
@@ -61,6 +64,7 @@
 ## 测试与验证
 
 - main 合并前已通过 63 项首次启动与 Office 定向测试、2822 项全量测试、TypeScript、模块边界、语言 JSON 解析、`pnpm build`、官方文档链接验证与 `git diff --check`。
+- 本轮渠道向导定向测试已通过；`pnpm lint`、三份语言 JSON 解析、完整 `pnpm test` 与 `pnpm build` 均已通过。
 - 最新办公室工作区改动已通过 9 项 Office 定向测试、TypeScript、模块边界、语言 JSON 解析与 `git diff --check`。
 - 会话组织权限修复已通过 TypeScript 及 86 项会话设置、组织、生命周期、重命名与 store 定向测试。
 - Cron 本轮已通过 20 项定向测试：权限通道、运行记录、日历跨日与间隔规则、无效日期拒绝、Cron 关联、提醒时间本地化和
@@ -79,6 +83,7 @@
 - 尚未以真实 Gateway 验收 Cron 管理员授权、手动执行与日历副作用；`everyMs` 跨夏令时遵循 OpenClaw 固定间隔
   语义，无法准确表达的有界或复杂月年规则明确显示为未支持。
 - 尚未在真实 Gateway 中验收钉钉插件加载、`tools.effective`、`tools.invoke`、插件审批往返和 DWS 业务响应；当前本地构建只证明源码、bundle 和类型契约成立。
+- 尚未在 macOS、Windows、Linux 真机上完成首次引导渠道插件授权、二维码或设备代码交互；这些行为仍以目标 Gateway 和官方插件返回为准。
 
 ## 已放弃方案
 
@@ -89,6 +94,6 @@
 
 ## 下一步顺序
 
-1. 在真实 Tauri 和真实 Gateway 中验收 Cron 管理、日历提醒创建更新删除以及管理员授权错误呈现。
+1. 在真实 Tauri 和真实 Gateway 中验收首次引导渠道配置、Cron 管理、日历提醒创建更新删除以及管理员授权错误呈现。
 2. 在真实 Gateway 中验收钉钉插件安装、工具刷新、只读调用、写操作审批和错误恢复。
 3. 在目标平台继续验收首次启动、智能体中心 Office、Windows 新建会话和 Gateway 重启恢复。

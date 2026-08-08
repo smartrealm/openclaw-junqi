@@ -4008,12 +4008,39 @@
       },
       "configuration": {
         "title": "OpenClaw 配置",
-        "description": "模型、憑據與渠道"
+        "description": "模型與憑據"
+      },
+      "channels": {
+        "title": "訊息渠道",
+        "description": "現在配置或稍後決定"
       },
       "ready": {
         "title": "完成",
         "description": "進入儀表盤"
       }
+    },
+    "channelWizard": {
+      "title": "配置訊息渠道",
+      "subtitle": "OpenClaw 將展示目前執行環境支援的渠道、授權和帳號路由。渠道可稍後配置，但不會被自動跳過。",
+      "decisionTitle": "要連接訊息渠道嗎？",
+      "decisionDescription": "此步驟使用 OpenClaw 官方渠道配置向導。可以現在配置，也可以明確選擇稍後在「通道」頁面配置。",
+      "configure": "配置渠道",
+      "defer": "稍後配置",
+      "retry": "重新開始",
+      "deferredLog": "已選擇稍後配置訊息渠道；可在工作台的「通道」頁面重新打開 OpenClaw 官方渠道配置。",
+      "starting": "正在啟動 OpenClaw 官方渠道配置…",
+      "retrying": "正在恢復 OpenClaw 官方渠道配置…",
+      "failed": "OpenClaw 官方渠道配置失敗。",
+      "missingStep": "OpenClaw 官方渠道配置沒有返回下一步。",
+      "sessionExpired": "官方渠道配置會話已失效，請重新開始。",
+      "completedTitle": "渠道配置已完成",
+      "completedDescription": "OpenClaw 已完成本次渠道配置。進入工作台後可在「通道」中查看真實運行狀態。",
+      "completedNoChanges": "本次未修改渠道配置",
+      "completedAccounts": "已配置 {{count}} 個渠道帳號",
+      "completedStatusHint": "該結果僅來自 OpenClaw 官方渠道向導，不代表所有渠道已連接或可用。",
+      "completionVerification": "OpenClaw 已結束本次渠道配置。進入工作台後可在「通道」頁面查看 Gateway 返回的真實狀態。",
+      "continue": "繼續完成引導",
+      "laterHint": "稍後配置不會創建渠道、帳號或路由；僅結束本次引導。"
     },
     "installPanel": {
       "current": "當前執行",

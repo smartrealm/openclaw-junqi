@@ -22,7 +22,7 @@ test('setup shell keeps navigation actions reachable below overflowing step cont
 
   assert.match(html, /<main[^>]*overflow-x-hidden/);
   assert.match(html, /<main[^>]*overflow-y-auto/);
-  assert.match(html, /grid-cols-5/);
+  assert.match(html, /grid-cols-6/);
   assert.doesNotMatch(html, /overflow-x-auto/);
   assert.match(html, /data-setup-step-current-complete="true"/);
   assert.match(html, /Step 3 · Runtime/);

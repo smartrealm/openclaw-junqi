@@ -11,6 +11,7 @@ import {
   OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS,
   OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS,
   OpenClawWizardOperationSupersededError,
+  OPENCLAW_WIZARD_SESSION_STORAGE_KEYS,
   createScopedOpenClawWizardSessionStore,
   requiresOpenClawOnboarding,
 } from './openclawWizard';
@@ -61,7 +62,7 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
     return { done: true, status: 'done' };
   });
 
-  const started = await client.start(' /tmp/workspace ');
+  const started = await client.start({ flow: 'setup', workspace: ' /tmp/workspace ' });
   assert.deepEqual(started.step?.options?.[0], {
     label: 'Skip for now',
     value: '__skip__',
@@ -81,6 +82,59 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
     },
   ]);
   await assert.rejects(() => client.next('provider', 'again'), /not running/);
+});
+
+test('wizard client starts the official channel flow without inventing channel metadata', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const client = new OpenClawWizardClient(async (method, params) => {
+    calls.push({ method, params });
+    return {
+      sessionId: 'channel-session-1',
+      done: false,
+      status: 'running',
+      step: { id: 'channel', type: 'select' },
+    };
+  });
+
+  await client.start({ flow: 'channels', channel: 'telegram' });
+
+  assert.deepEqual(calls, [{
+    method: 'wizard.start',
+    params: { flow: 'channels', channel: 'telegram' },
+  }]);
+});
+
+test('channel wizard sessions use a separate scoped local record from setup', () => {
+  const values = new Map<string, string>();
+  const previousLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); },
+    },
+  });
+  try {
+    const scope = { runtimeMode: 'native' as const, gatewayWsUrl: 'ws://127.0.0.1:18789' };
+    const setupStore = createScopedOpenClawWizardSessionStore(() => scope);
+    const channelStore = createScopedOpenClawWizardSessionStore(
+      () => scope,
+      OPENCLAW_WIZARD_SESSION_STORAGE_KEYS.channels,
+    );
+    const scopeKey = setupStore.scopeKey();
+    assert.ok(scopeKey);
+    setupStore.save(scopeKey, 'setup-session');
+    channelStore.save(scopeKey, 'channel-session');
+    assert.equal(setupStore.load(scopeKey), 'setup-session');
+    assert.equal(channelStore.load(scopeKey), 'channel-session');
+  } finally {
+    if (previousLocalStorage) {
+      Object.defineProperty(globalThis, 'localStorage', previousLocalStorage);
+    } else {
+      Reflect.deleteProperty(globalThis, 'localStorage');
+    }
+  }
 });
 
 test('wizard client retains its session when a bounded interactive request times out', async () => {

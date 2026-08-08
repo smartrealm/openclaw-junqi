@@ -230,7 +230,7 @@
         <rect x="438" y="394" width="116" height="16" rx="4" class="status-pending"/><text x="496" y="405" class="status-text-pending" text-anchor="middle">待 scope 升级实测</text>
         <rect x="424" y="414" width="144" height="16" rx="4" class="status-fixed"/><text x="496" y="425" class="status-text-fixed" text-anchor="middle">代码已修复 · 结构化错误</text>
         <rect x="448" y="200" width="96" height="48" rx="6" class="box"/><text x="496" y="222" class="name" text-anchor="middle">提交当前答案</text><text x="496" y="237" class="sub" text-anchor="middle">wizard.next</text>
-        <rect x="448" y="96" width="96" height="48" rx="6" class="box-accent"/><text x="496" y="118" class="name" text-anchor="middle">Wizard 完成</text><text x="496" y="133" class="sub" text-anchor="middle">terminal result</text>
+        <rect x="448" y="96" width="96" height="48" rx="6" class="box-accent"/><text x="496" y="118" class="name" text-anchor="middle">OpenClaw 配置完成</text><text x="496" y="133" class="sub" text-anchor="middle">setup terminal result</text>
         <rect x="560" y="364" width="96" height="48" rx="6" class="box-soft"/><text x="608" y="386" class="name" text-anchor="middle">保留当前步骤</text><text x="608" y="401" class="sub" text-anchor="middle">不接受失败答案</text>
         <rect x="560" y="480" width="96" height="48" rx="6" class="box-soft"/><text x="608" y="502" class="name" text-anchor="middle">重试或恢复</text><text x="608" y="517" class="sub" text-anchor="middle">fenced resume · no replay</text>
         <rect x="536" y="534" width="144" height="16" rx="4" class="status-fixed"/><text x="608" y="545" class="status-text-fixed" text-anchor="middle">已修复 · 严格响应与取消契约</text>
@@ -248,7 +248,7 @@
       </svg>
     </div>
     <div class="cards">
-      <div class="card"><p class="card-kicker">RUNTIME CHECKPOINT</p><h3>Gateway 就绪仍属于第三阶段</h3><ul><li>顶部“运行时”保持高亮并使用完成勾选，不新增短暂的独立步骤</li><li>页面保留 Gateway 就绪说明、运行时完成度与下一步操作</li><li>安装时间线和实时日志默认折叠，用户可通过“查看安装详情”展开</li><li>下一步核验后，只有需要官方 Wizard 时才进入第四阶段；已有有效配置可直接进入完成阶段</li></ul></div>
+      <div class="card"><p class="card-kicker">RUNTIME CHECKPOINT</p><h3>Gateway 就绪后仍由用户决定渠道</h3><ul><li>顶部“运行时”保持高亮并使用完成勾选，不新增短暂的独立步骤</li><li>模型和凭据通过官方核验后，进入独立的“消息渠道”决策阶段</li><li>选择配置时调用官方 <code>wizard.start { flow: "channels" }</code>；选择稍后时只结束本次引导，不创建或伪造渠道状态</li><li>渠道步骤、授权、失败和账号数量均由 Gateway 返回，进入工作台后仍可在“通道”页面重新打开</li></ul></div>
     </div>
   </section>
 

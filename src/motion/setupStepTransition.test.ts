@@ -6,6 +6,7 @@ test('setup step transition moves forward from right to left and back from left 
   assert.equal(setupStepMotionDirection('welcome', 'environment-review'), -1);
   assert.equal(setupStepMotionDirection('environment-review', 'welcome'), 1);
   assert.equal(setupStepMotionDirection('configure-openclaw', 'ready'), -1);
+  assert.equal(setupStepMotionDirection('configure-openclaw', 'configure-channels'), -1);
   assert.equal(setupStepMotionDirection('ready', 'configure-openclaw'), 1);
 });
 

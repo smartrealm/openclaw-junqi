@@ -1,4 +1,4 @@
-// Step `configure-openclaw` — the official OpenClaw wizard.
+// OpenClaw 官方向导步骤的通用呈现层。
 import { CheckCircle2, Copy, Circle, ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -75,9 +75,55 @@ export function WizardAuthorizationHint({
   );
 }
 
-export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
+type WizardController = Pick<SetupFlow,
+  | "wizardStep"
+  | "wizardSubmitting"
+  | "wizardActivity"
+  | "wizardError"
+  | "wizardRecoveryRequired"
+  | "submitWizardStep"
+  | "pollWizard"
+  | "retryWizard"
+  | "reclaimWizard"
+>;
+
+export type WizardScreenCopy = {
+  titleKey: string;
+  titleFallback: string;
+  subtitleKey: string;
+  subtitleFallback: string;
+  connectingKey: string;
+  connectingFallback: string;
+  completionVerificationKey: string;
+  completionVerificationFallback: string;
+};
+
+const DEFAULT_WIZARD_COPY: WizardScreenCopy = {
+  titleKey: "setup.wizard.title",
+  titleFallback: "配置 OpenClaw",
+  subtitleKey: "setup.wizard.subtitle",
+  subtitleFallback: "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。",
+  connectingKey: "setup.wizard.connecting",
+  connectingFallback: "正在连接 OpenClaw 官方配置向导…",
+  completionVerificationKey: "setup.wizard.completionVerification",
+  completionVerificationFallback: "OpenClaw 向导已结束。点击完成后，JunQi 仍会验证当前 Gateway 连接和所选模型；验证未通过时不会进入工作台。",
+};
+
+export function WizardScreen({
+  flow,
+  logs,
+  wizard = flow,
+  copy = DEFAULT_WIZARD_COPY,
+  secondaryAction,
+}: {
+  flow: SetupFlow;
+  logs: SetupLog[];
+  wizard?: WizardController;
+  copy?: WizardScreenCopy;
+  secondaryAction?: { label: string; onClick: () => void; disabled?: boolean };
+}) {
   const { t } = useTranslation();
-  const step = flow.wizardStep;
+  const step = wizard.wizardStep;
   const [value, setValue] = useState<unknown>(() => step ? wizardInitialValue(step) : undefined);
   const autoPolledProgressStepRef = useRef<string | null>(null);
   const autoPollProgress = step?.type === "progress" && step.executor === "gateway";
@@ -90,34 +136,35 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
     if (
       !step
       || !autoPollProgress
-      || flow.wizardSubmitting
-      || flow.wizardError
+      || wizard.wizardSubmitting
+      || wizard.wizardError
       || autoPolledProgressStepRef.current === step.id
     ) return;
     autoPolledProgressStepRef.current = step.id;
-    void flow.pollWizard();
-  }, [autoPollProgress, flow, step]);
+    void wizard.pollWizard();
+  }, [autoPollProgress, step, wizard]);
 
   if (!step) {
     return (
       <SetupShell
         active={flow.presentation.stage}
-        title={t("setup.wizard.title", "配置 OpenClaw")}
-        subtitle={t("setup.wizard.connecting", "正在连接 OpenClaw 官方配置向导…")}
+        title={t(copy.titleKey, copy.titleFallback)}
+        subtitle={t(copy.connectingKey, copy.connectingFallback)}
         logs={logs}
-        previousAction={{ onClick: flow.goBack, disabled: flow.wizardSubmitting }}
+        previousAction={{ onClick: flow.goBack, disabled: wizard.wizardSubmitting }}
+        secondaryAction={secondaryAction}
         nextAction={{
-          label: flow.wizardRecoveryRequired
+          label: wizard.wizardRecoveryRequired
             ? t("setup.wizard.reclaim", "重新接管向导")
-            : flow.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
-          onClick: () => void (flow.wizardRecoveryRequired ? flow.reclaimWizard() : flow.retryWizard()),
-          disabled: flow.wizardSubmitting && !flow.wizardError,
-          loading: flow.wizardSubmitting,
+            : wizard.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
+          onClick: () => void (wizard.wizardRecoveryRequired ? wizard.reclaimWizard() : wizard.retryWizard()),
+          disabled: wizard.wizardSubmitting && !wizard.wizardError,
+          loading: wizard.wizardSubmitting,
           icon: "none",
         }}
       >
-        <div className={clsx("rounded-lg border p-4 text-sm leading-6", flow.wizardError ? "border-red-500/25 bg-red-500/5 text-red-300" : "border-aegis-primary/25 bg-aegis-primary/5 text-aegis-text-secondary")}>
-          {flow.wizardError || flow.wizardActivity || t("setup.wizard.connecting", "正在连接 OpenClaw 官方配置向导…")}
+        <div className={clsx("rounded-lg border p-4 text-sm leading-6", wizard.wizardError ? "border-red-500/25 bg-red-500/5 text-red-300" : "border-aegis-primary/25 bg-aegis-primary/5 text-aegis-text-secondary")}>
+          {wizard.wizardError || wizard.wizardActivity || t(copy.connectingKey, copy.connectingFallback)}
         </div>
       </SetupShell>
     );
@@ -141,14 +188,14 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
     && presentedStep.type !== "select"
     && presentedStep.type !== "multiselect"
     && presentedStep.type !== "confirm";
-  const wizardTitle = presentedStep.title || t("setup.wizard.title", "配置 OpenClaw");
+  const wizardTitle = presentedStep.title || t(copy.titleKey, copy.titleFallback);
   const wizardSubtitle = messageRenderedInBody
-    ? t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。")
-    : presentedStep.message || t("setup.wizard.subtitle", "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。");
+    ? t(copy.subtitleKey, copy.subtitleFallback)
+    : presentedStep.message || t(copy.subtitleKey, copy.subtitleFallback);
   const completionStep = isOpenClawWizardCompletionStep(presentedStep);
   const nonBlockingProbeFailure = isOpenClawWizardNonBlockingProbeFailure(presentedStep);
   const submitCurrentStep = async () => {
-    await flow.submitWizardStep(step.id, value);
+    await wizard.submitWizardStep(step.id, value);
   };
 
   return (
@@ -160,10 +207,11 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
       previousAction={{
         label: t("setup.wizard.pauseAndReturn", "暂停并返回"),
         onClick: flow.goBack,
-        disabled: flow.wizardSubmitting,
+        disabled: wizard.wizardSubmitting,
       }}
+      secondaryAction={secondaryAction}
       nextAction={{
-        label: flow.wizardError
+        label: wizard.wizardError
           ? t("setup.wizard.retry", "重试")
           : completionStep
             ? t("setup.wizard.finish", "完成")
@@ -171,19 +219,19 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
             ? t("setup.wizard.processing", "正在处理…")
             : step.type === "action" ? t("setup.wizard.run", "执行") : t("setup.nextStep", "下一步"),
         onClick: () => {
-          if (flow.wizardError) {
-            void flow.retryWizard();
+          if (wizard.wizardError) {
+            void wizard.retryWizard();
             return;
           }
           void submitCurrentStep();
         },
-        disabled: flow.wizardSubmitting || autoPollProgress || (!flow.wizardError && blocked),
-        loading: flow.wizardSubmitting || autoPollProgress,
-        icon: flow.wizardError ? "none" : "next",
+        disabled: wizard.wizardSubmitting || autoPollProgress || (!wizard.wizardError && blocked),
+        loading: wizard.wizardSubmitting || autoPollProgress,
+        icon: wizard.wizardError ? "none" : "next",
       }}
     >
       <div className="space-y-4" dir="auto">
-        {flow.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{flow.wizardError}</div>}
+        {wizard.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{wizard.wizardError}</div>}
         {presentedStep.type === "text" && (
           <input
             type={presentedStep.sensitive ? "password" : "text"}
@@ -244,8 +292,8 @@ export function WizardScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[]
             {completionStep && (
               <p className="mt-3 border-t border-aegis-border pt-3 text-xs leading-5 text-aegis-text-muted">
                 {t(
-                  "setup.wizard.completionVerification",
-                  "OpenClaw 向导已结束。点击完成后，JunQi 仍会验证当前 Gateway 连接和所选模型；验证未通过时不会进入工作台。",
+                  copy.completionVerificationKey,
+                  copy.completionVerificationFallback,
                 )}
               </p>
             )}

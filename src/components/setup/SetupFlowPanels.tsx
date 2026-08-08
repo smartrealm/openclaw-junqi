@@ -35,7 +35,8 @@ const SETUP_STEPS = [
   { id: "environment", titleKey: "setup.steps.environment.title", titleFallback: "Environment", descriptionKey: "setup.steps.environment.description", descriptionFallback: "OpenClaw / Docker" },
   { id: "storage", titleKey: "setup.steps.storage.title", titleFallback: "Data location", descriptionKey: "setup.steps.storage.description", descriptionFallback: "Configuration / Workspace" },
   { id: "runtime", titleKey: "setup.steps.runtime.title", titleFallback: "Runtime", descriptionKey: "setup.steps.runtime.description", descriptionFallback: "Install and start Gateway" },
-  { id: "configuration", titleKey: "setup.steps.configuration.title", titleFallback: "OpenClaw setup", descriptionKey: "setup.steps.configuration.description", descriptionFallback: "Models / credentials / channels" },
+  { id: "configuration", titleKey: "setup.steps.configuration.title", titleFallback: "OpenClaw setup", descriptionKey: "setup.steps.configuration.description", descriptionFallback: "Models / credentials" },
+  { id: "channels", titleKey: "setup.steps.channels.title", titleFallback: "Channels", descriptionKey: "setup.steps.channels.description", descriptionFallback: "Configure or decide later" },
   { id: "ready", titleKey: "setup.steps.ready.title", titleFallback: "Complete", descriptionKey: "setup.steps.ready.description", descriptionFallback: "Enter dashboard" },
 ] as const;
 
@@ -101,7 +102,7 @@ function Stepper({ active, activeComplete = false }: { active: number; activeCom
   const { t } = useTranslation();
   return (
     <div className="px-6 pt-6" dir="ltr">
-      <div className="mx-auto grid w-full max-w-3xl grid-cols-5 items-start rounded-xl border border-aegis-border bg-aegis-elevated px-3 py-3 shadow-sm">
+      <div className="mx-auto grid w-full max-w-4xl grid-cols-6 items-start rounded-xl border border-aegis-border bg-aegis-elevated px-3 py-3 shadow-sm">
         {SETUP_STEPS.map(({ id, titleKey, titleFallback, descriptionKey, descriptionFallback }, i) => {
           const done = i < active;
           const current = i === active;

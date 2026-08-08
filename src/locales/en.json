@@ -4071,12 +4071,39 @@
       },
       "configuration": {
         "title": "OpenClaw setup",
-        "description": "Models / credentials / channels"
+        "description": "Models / credentials"
+      },
+      "channels": {
+        "title": "Channels",
+        "description": "Configure or decide later"
       },
       "ready": {
         "title": "Ready",
         "description": "Enter dashboard"
       }
+    },
+    "channelWizard": {
+      "title": "Configure channels",
+      "subtitle": "OpenClaw will show the channels, authorization, and account routes supported by the current runtime. You can configure channels later, but JunQi will not skip this decision silently.",
+      "decisionTitle": "Connect messaging channels now?",
+      "decisionDescription": "This step uses the official OpenClaw channel wizard. Configure now, or explicitly choose to continue later from the Channels page.",
+      "configure": "Configure channels",
+      "defer": "Later",
+      "retry": "Start again",
+      "deferredLog": "Channel setup deferred by the user. The official OpenClaw channel wizard remains available from the Channels page.",
+      "starting": "Starting the official OpenClaw channel wizard…",
+      "retrying": "Recovering the official OpenClaw channel wizard…",
+      "failed": "The official OpenClaw channel wizard failed.",
+      "missingStep": "The official OpenClaw channel wizard did not return a next step.",
+      "sessionExpired": "The official channel setup session expired. Start again.",
+      "completedTitle": "Channel setup complete",
+      "completedDescription": "OpenClaw finished this channel setup. After entering the workspace, check the real Gateway status on the Channels page.",
+      "completedNoChanges": "No channel configuration was changed",
+      "completedAccounts": "Configured {{count}} channel accounts",
+      "completedStatusHint": "This result came from the official OpenClaw wizard and does not claim that every channel is connected or available.",
+      "completionVerification": "OpenClaw finished this channel setup. After entering the workspace, check the real Gateway status on the Channels page.",
+      "continue": "Continue setup",
+      "laterHint": "Choosing later creates no channel, account, or route; it only ends this setup step."
     },
     "installPanel": {
       "current": "Current action",
