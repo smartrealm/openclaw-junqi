@@ -46,6 +46,7 @@ plans/
 
 ## Quality
 
+- [Windows Gateway 冷启动与默认主会话固定实施计划](quality/2026-08-08-windows-gateway-cold-start-and-main-session-pinning.md)
 - [JunQi 隐私锁能力移除实施计划](quality/2026-08-07-privacy-lock-removal.md)
 - [桌面原生通知投递实施计划](quality/2026-08-05-native-notification-delivery.md)
 - [统一文件预览呈现实施计划](quality/2026-08-05-unified-file-preview-surface.md)

@@ -13,6 +13,9 @@
 7. [x] 处理全套 `pnpm test` 的既有主题语义颜色别名断言失败；当前全套前端与脚本测试已通过。
 8. [x] 在 `chatStore.setSessions` 的同身份列表协调中保留已确认的空 leaf，并用 store 与纯函数回归测试覆盖稀疏行、明确 leaf 和身份变化。
 9. [x] 按 OpenClaw `SessionRowSchema` 核对稀疏列表行：`agentId` 可省略，JunQi 从官方 session key 的 agent 段投影身份后再协调创建确认事实。
+10. [x] 增加 `sessions.list` 先于本地创建提交的失败回归，并让 `addNativeSession` 在同 key 已存在时
+    合并权威创建确认，而不是只切换页签。
+11. [x] 重新验证历史加载分流、首发可用性、完整测试和生产构建，并记录 Windows 真机未验证边界。
 
 ## 文件范围
 

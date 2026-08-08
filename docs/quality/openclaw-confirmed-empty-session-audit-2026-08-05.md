@@ -146,3 +146,25 @@ Gateway 返回的 session key 使用该规范形式。JunQi 旧校验直接比�
 - [x] `git diff --check` 与修改文件 Emoji 扫描通过。
 - [x] BUG-01 至 BUG-04 已完成代码修复，并建立对应 plan/spec。
 - [ ] macOS、Windows、Ubuntu、CentOS 的真实 Gateway 桌面操作仍需分别验收。
+
+## 2026-08-08 Windows 新建会话竞态复核
+
+Windows 验收再次出现新建会话进入“正在加载历史记录”的问题。全链复核确认，历史读取分流函数本身
+仍会正确跳过已确认空 transcript；丢失发生在 `sessions.create` 确认和本地提交之间。
+
+OpenClaw 会先持久化新会话条目，再返回 `sessions.create`。在返回到达 JunQi 本地提交前，Gateway
+会话列表刷新可能已经把相同 key 的稀疏行写入 `chatStore.sessions`。此时 `addNativeSession` 发现 key
+已存在，只切换活动页签，没有把创建响应中权威的 `sessionId`、`agentId` 和
+`activeLeafEntryId: null` 合并回该行。随后 `ChatView` 只能把 leaf 视为未知并执行 `chat.history`。
+Windows 的事件和 RPC 时序更容易暴露该竞态，但问题属于跨平台状态合并，不是 Windows 专属协议。
+
+目标修复是在 `addNativeSession` 的单一提交边界始终把 `sessions.create` 确认结果合并到同 key 行；
+列表中已有的其他元数据继续保留，创建确认字段优先。该规则只处理同一次官方创建的结果，不根据空
+消息数组推断新会话，也不跳过普通历史会话的 `chat.history`。
+
+### 复核结果
+
+- 已增加失败回归，修复前确认 `sessionId` 丢失并触发未知 transcript 分支，修复后创建确认完整合并。
+- 新会话在列表先到竞态下仍保持 `activeLeafEntryId: null`，历史加载判据返回 false。
+- 已通过 70 项新建会话与历史分流聚焦测试、`pnpm lint`、完整 `pnpm test` 和 `pnpm build`。
+- Windows 真机新建会话、输入框首发和重启后的完整桌面链路仍待安装包验收。

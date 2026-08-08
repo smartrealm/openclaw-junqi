@@ -26,6 +26,9 @@
 - [x] 未确认、未知 leaf、fork 或初始 turn 会话仍在首发前读取权威历史。
 - [x] 同一 key 且未明确给出新身份的稀疏 `sessions.list` 行不得抹除创建确认的 sessionId、agent 和空 leaf；Gateway
   明确给出新的 sessionId、key、agent 身份或 leaf 时必须以 Gateway 投影为准。
+- [x] `sessions.list` 稀疏行先于本地创建提交进入状态时，后到的 `sessions.create` 确认必须补齐同 key
+  行的 sessionId、agent 和空 leaf；不能因为该 key 已存在而只切换页签。
+- [x] 上述竞态下新会话不触发前台 `chat.history`，输入框和首次发送不进入历史加载门禁。
 
 ## 平台与运行时边界
 

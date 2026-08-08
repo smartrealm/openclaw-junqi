@@ -103,21 +103,12 @@ export const INITIAL_DOCKER_STEPS: StepState[] = [
   { id: "gateway",   label: "Gateway",       status: "pending" },
 ];
 
-export function cacheGatewayTarget(port?: number | null, _token?: string | null): void {
+export function cacheGatewayTarget(port?: number | null): void {
   if (!port) return;
   try {
-    const current = JSON.parse(localStorage.getItem("aegis-config") || "{}");
-    const next = {
-      ...current,
-      ...(port ? { gatewayUrl: defaultGatewayWsUrl(port) } : {}),
-    };
-    // Gateway credentials belong to the native OpenClaw config boundary, not
-    // renderer localStorage. Remove legacy cached values while refreshing the
-    // selected endpoint so old installs do not keep a second credential copy.
-    delete next.gatewayToken;
-    localStorage.setItem("aegis-config", JSON.stringify(next));
+    localStorage.setItem("aegis-gateway-url", defaultGatewayWsUrl(port));
   } catch {
-    // Best effort: connection resolution can still fall back to config files.
+    // 端点偏好写入失败时，连接解析仍以 OpenClaw 当前配置为准。
   }
 }
 

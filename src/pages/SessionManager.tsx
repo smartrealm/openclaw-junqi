@@ -134,6 +134,7 @@ interface SessionCardProps {
 
 function SessionCard({ session, agentNameById, preview }: SessionCardProps) {
   const { t } = useTranslation();
+  const defaultMainSessionKey = useChatStore((state) => state.defaultMainSessionKey);
   const inputRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
   const [draftLabel, setDraftLabel] = useState('');
@@ -154,7 +155,7 @@ function SessionCard({ session, agentNameById, preview }: SessionCardProps) {
     genericSessionLabel: t('dashboard.session', 'Session'),
   });
   const isAgentKey  = session.key.startsWith('agent:');
-  const canDelete = !isAgentMainSession(session.key);
+  const canDelete = session.key !== defaultMainSessionKey && !isAgentMainSession(session.key);
   const inputId = `session-rename-${session.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const errorId = `${inputId}-error`;
 

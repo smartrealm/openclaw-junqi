@@ -35,6 +35,10 @@ function dependencies(
 test('selected runtime token skips an unnecessary device credential lookup', async () => {
   let credentialLookups = 0;
   const target = await resolveGatewayConnectionTarget({}, dependencies({
+    getDeviceCredential: async () => {
+      credentialLookups += 1;
+      return { runtimeKey: 'endpoint', token: 'device-token', persistence: 'system', migrated: false };
+    },
   }));
 
   assert.deepEqual(target, {
@@ -43,6 +47,22 @@ test('selected runtime token skips an unnecessary device credential lookup', asy
     token: 'selected-runtime-token',
     deviceToken: '',
   });
+  assert.equal(credentialLookups, 0);
+});
+
+test('loopback aliases keep the selected runtime token after desktop restart', async () => {
+  let credentialLookups = 0;
+  const target = await resolveGatewayConnectionTarget({}, dependencies({
+    getSavedUrl: () => 'ws://localhost:18789/',
+    getDeviceCredential: async () => {
+      credentialLookups += 1;
+      return { runtimeKey: 'endpoint', token: 'device-token', persistence: 'system', migrated: false };
+    },
+  }));
+
+  assert.equal(target.wsUrl, 'ws://localhost:18789/');
+  assert.equal(target.token, 'selected-runtime-token');
+  assert.equal(target.deviceToken, '');
   assert.equal(credentialLookups, 0);
 });
 

@@ -246,16 +246,6 @@ test('BUG-WFR-03 wizard failures are visible first and change the primary action
   assert.match(wizard, /icon: flow\.wizardError \? "none" : "next"/);
 });
 
-test('BUG-ONB-17 setup endpoint cache removes legacy renderer Gateway credentials', () => {
-  const cache = setupFlow.slice(
-    setupFlow.indexOf('function cacheGatewayTarget'),
-    setupFlow.indexOf('export function useSetupFlow'),
-  );
-
-  assert.match(cache, /delete next\.gatewayToken/);
-  assert.doesNotMatch(cache, /next\.gatewayToken\s*=/);
-});
-
 test('BUG-ONB-24 URL-only settings changes preserve endpoint-scoped credentials', () => {
   assert.doesNotMatch(settingsStore, /setItem\(['"]aegis-gateway-token/);
   assert.match(settingsStore, /localStorage\.setItem\('aegis-gateway-url', url\)/);

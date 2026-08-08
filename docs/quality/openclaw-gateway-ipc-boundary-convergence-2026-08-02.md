@@ -15,14 +15,14 @@
 - 渠道受管插件的 npm 包映射只存在于 Rust。官方 catalog 仅向前端公开 `managedInstall` 能力，安装回执也只返回渠道和确认状态；页面据此呈现安装操作，不能复制或猜测 npm 包选择。
 - Provider catalog、候选配置探测、OAuth profile、Channel catalog、能力、状态和日志也统一通过同一 typed command 边界。服务负责把 OpenClaw JSON 规范化为页面 DTO，页面不再直接访问 `window.aegis` 运行时对象。
 - 选中运行时的 OpenClaw 配置文件由 `openclawConfigRuntime` 统一访问。App、Setup、配置中心、渠道中心与 Agent 设置不再从 `window.aegis.config` 读取、校验、解析或写入该文件。
-- 兼容适配器中的 `config.get()` 仅保留给本地 Gateway 连接偏好和设备凭据迁移；它不是 OpenClaw 配置文件的业务出口，不能承载配置编辑或运行时校验。
+- 本地 Gateway 连接偏好只保存当前端点；设备凭据不经过浏览器存储或兼容适配器迁移。OpenClaw 配置读取不是配置编辑或运行时校验的替代出口。
 - 正常 WebSocket 连接和 Wizard 完成后的重连直接通过 `detect_gateway_config`、`get_gateway_token` 与系统凭据库解析选中 runtime 的端点和凭据，不再读取兼容适配器的 `config.get()`。
 - `GatewayConnectionManager` 将连接、Native 启动与 Docker 启动作为可注入执行端口；默认实现只使用 typed command，生命周期测试不再依赖预加载全局对象。
 - `gatewayProcessObservation` 现在是进程状态端口：它区分进程存活与认证就绪、串行执行状态轮询，并在在途观察结束后补发一次排队观察。管理器仅消费端口快照与生命周期结果。
 - `GatewayErrorScreen` 通过 `useGatewayProcessRecovery` 订阅同一 selected-runtime 观测端口。只有已认证的 `ready` 状态且没有观测错误才能关闭错误页，进程仍在运行并不足以判定恢复。
 - App 启动恢复通过同一观测端口决定静默 WebSocket 重连或生命周期恢复；聊天连接横幅和命令面板只请求 `GatewayConnectionManager` 重连，渠道日志清空直接使用 typed command。本地 Gateway URL 偏好不再写入 OpenClaw 配置文件。
 - `GatewayConnectionTargetResolver` 是唯一的端点与凭据解析器：它合并显式 URL、用户保存的 URL、选中运行时 URL、typed token 和系统凭据库。选中运行时 bootstrap token 绝不会随手动 URL 发送到另一端点；显式 token 只在本次连接使用。
-- 兼容适配器只保留历史 `window.aegis` API 的外形与本地偏好读写；端点等价比较、credential runtime key、浏览器旧值迁移、系统旧凭据迁移和 token 轮换持久化均委托给 `GatewayConnectionTargetResolver`，不得在适配器内重建第二套凭据归属规则。
+- 端点等价比较和 credential runtime key 由 `GatewayConnectionTargetResolver` 统一负责；浏览器旧值迁移与兼容凭据路径已删除，系统凭据恢复和 token 轮换仍通过原生凭据边界完成，不得在适配器内重建第二套凭据归属规则。
 - Gateway 救援模型发现与诊断聊天、OpenClaw 媒体预览、Gateway 监督器快照、Control UI 就绪探测和旧凭据迁移均已进入 typed command 层。聊天媒体不再以旧桥接回退到任意文件读取。
 - Chat 文件打开、显示、文本读取、预览 URL 和 Markdown 本地链接只通过 `managedFileRuntime` 调用已注册的 typed command；历史 `uploads` 和 `window.aegis.managedFiles` 兼容对象均已删除，不得作为回退或会话清理任务。托管上传/输出索引需要独立的 Rust 契约后才能恢复入口。
 - Chat 截图交互、全屏、窗口枚举与窗口截图只通过 `screenshotRuntime` 调用 registered command。该服务统一转换权限拒绝、用户取消和其他运行时失败；组件不得解析平台错误或访问 `window.aegis.screenshot`。

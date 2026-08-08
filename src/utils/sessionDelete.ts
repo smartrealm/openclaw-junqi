@@ -63,9 +63,14 @@ function resumeQueuedMessages(sessionKey: string): void {
   });
 }
 
+function isProtectedMainSession(sessionKey: string): boolean {
+  return sessionKey === useChatStore.getState().defaultMainSessionKey
+    || isAgentMainSession(sessionKey);
+}
+
 export function applyConfirmedSessionDeletion(rawSessionKey: string, confirmedSessionId?: string): boolean {
   const sessionKey = normalizeSessionKey(rawSessionKey);
-  if (!sessionKey || isAgentMainSession(sessionKey)) return false;
+  if (!sessionKey || isProtectedMainSession(sessionKey)) return false;
 
   const chatStore = useChatStore.getState();
   const sessionId = confirmedSessionId
@@ -116,7 +121,7 @@ async function performSessionDeletion(sessionKey: string): Promise<boolean> {
 
 export function deleteSessionEverywhere(rawSessionKey: string): Promise<boolean> {
   const sessionKey = normalizeSessionKey(rawSessionKey);
-  if (!sessionKey || isAgentMainSession(sessionKey)) return Promise.resolve(false);
+  if (!sessionKey || isProtectedMainSession(sessionKey)) return Promise.resolve(false);
 
   const existing = deletionInFlight.get(sessionKey);
   if (existing) return existing;

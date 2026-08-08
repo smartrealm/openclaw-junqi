@@ -460,7 +460,7 @@ V1 的 capability 响应固定为 `workboard.supported: false`，代码中没有
 
 1. Gateway shared token 只用于 bootstrap/pairing；日常连接优先使用按 `collaborationInstanceId` 隔离的 paired-device token。
 2. Gateway/paired-device token 迁移到操作系统凭据库或原生 Gateway 代理，不再持久化到 browser storage；不允许使用明文文件 fallback。
-3. WebView 只在内存中短暂持有连接凭据；升级时清理旧 `aegis-gateway-token` 和 `aegis-config.gatewayToken`。
+3. WebView 只在内存中短暂持有连接凭据；客户端不读取或写入历史 browser storage 凭据键。
 4. Chat/Collaboration 使用 `operator.read + operator.write` 连接。
 5. Agent CRUD、配置、配对等 admin 操作使用显式、短生命周期的高权限路径。
 6. 停止为所有 operator 设备自动扩展 admin/approvals/pairing scopes。

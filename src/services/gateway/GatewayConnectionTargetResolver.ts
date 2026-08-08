@@ -76,14 +76,7 @@ export function resolveGatewayConnectionCredentialRuntimeKey(
 
 function readSavedGatewayUrl(): string {
   try {
-    const direct = localStorage.getItem('aegis-gateway-url')?.trim();
-    if (direct) return direct;
-    const legacy = JSON.parse(localStorage.getItem('aegis-config') || '{}');
-    if (!legacy || typeof legacy !== 'object' || Array.isArray(legacy)) return '';
-    const config = legacy as Record<string, unknown>;
-    return typeof config.gatewayUrl === 'string'
-      ? config.gatewayUrl.trim()
-      : (typeof config.gatewayWsUrl === 'string' ? config.gatewayWsUrl.trim() : '');
+    return localStorage.getItem('aegis-gateway-url')?.trim() ?? '';
   } catch {
     return '';
   }
@@ -135,7 +128,7 @@ export async function resolveGatewayConnectionTarget(
   const savedUrl = request.useSavedUrl === false ? '' : normalizeUrl(dependencies.getSavedUrl());
   const explicitUrl = normalizeUrl(request.preferredUrl);
   const wsUrl = explicitUrl || savedUrl || configuredUrl || defaultGatewayWsUrl();
-  const sameSelectedRuntime = Boolean(configuredUrl) && wsUrl === configuredUrl;
+  const sameSelectedRuntime = Boolean(configuredUrl) && gatewayEndpointsMatch(wsUrl, configuredUrl);
   const token = request.useTokenOverride
     ? (request.tokenOverride?.trim() ?? '')
     : sameSelectedRuntime

@@ -11,6 +11,10 @@ import { normalizeHistoryMessage } from '@/processing/normalizeHistoryMessage';
 import { gateway } from '@/services/gateway';
 import { OpenClawSessionGroupsUnsupportedError } from '@/services/gateway/OpenClawSessionGroupsClient';
 import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIdentityTransition';
+import {
+  hasConfirmedEmptyTranscript,
+  shouldLoadActiveSessionHistory,
+} from '@/utils/confirmedEmptyTranscript';
 import { markSessionDeleted, restoreSessionKey } from '@/utils/sessionLifecycle';
 
 const MAIN_KEY = 'agent:main:main';
@@ -422,6 +426,45 @@ test('只含 key 的轻量 sessions.list 行保留已确认空会话的完整身
   assert.equal(session?.activeLeafEntryId, null);
 });
 
+test('sessions.list 先到时，创建确认仍补齐空会话身份并跳过历史加载', () => {
+  const createdKey = 'agent:architect:dashboard:confirmed-after-list';
+  useChatStore.setState({
+    sessions: [{
+      key: createdKey,
+      label: '',
+      model: 'openai/gpt-5.6',
+    }],
+    openTabs: [MAIN_KEY],
+    activeSessionKey: MAIN_KEY,
+    messagesPerSession: {},
+    _blocksCache: {},
+    _groupsCache: {},
+  });
+
+  useChatStore.getState().addNativeSession({
+    key: createdKey,
+    sessionId: 'confirmed-session-id',
+    agentId: 'architect',
+    label: '',
+    activeLeafEntryId: null,
+  });
+
+  const state = useChatStore.getState();
+  const session = state.sessions.find((candidate) => candidate.key === createdKey);
+  assert.equal(session?.sessionId, 'confirmed-session-id');
+  assert.equal(session?.agentId, 'architect');
+  assert.equal(session?.activeLeafEntryId, null);
+  assert.equal(session?.model, 'openai/gpt-5.6');
+  assert.equal(state.activeSessionKey, createdKey);
+  assert.equal(hasConfirmedEmptyTranscript(session), true);
+  assert.equal(shouldLoadActiveSessionHistory({
+    previousSessionKey: MAIN_KEY,
+    activeSessionKey: createdKey,
+    messageCount: 0,
+    confirmedEmptyTranscript: hasConfirmedEmptyTranscript(session),
+  }), false);
+});
+
 test('a sessions.list leaf or identity change remains authoritative over a confirmed empty leaf', () => {
   const createdKey = 'agent:architect:empty-session';
   useChatStore.setState({
@@ -745,7 +788,7 @@ test('removeSession closes the tab, switches active session, and persists tab or
   assert.equal(localStorage.getItem('aegis-open-tabs'), JSON.stringify([MAIN_KEY]));
 });
 
-test('closeTab can close a main session tab without deleting its Gateway session', () => {
+test('closeTab keeps the default main session fixed as the first tab', () => {
   const conversationKey = 'agent:worker:conversation-tab';
   useChatStore.setState({
     sessions: [
@@ -763,10 +806,46 @@ test('closeTab can close a main session tab without deleting its Gateway session
   useChatStore.getState().closeTab(MAIN_KEY);
 
   const state = useChatStore.getState();
-  assert.deepEqual(state.openTabs, [conversationKey]);
-  assert.equal(state.activeSessionKey, conversationKey);
+  assert.deepEqual(state.openTabs, [MAIN_KEY, conversationKey]);
+  assert.equal(state.activeSessionKey, MAIN_KEY);
   assert.equal(state.sessions.some((session) => session.key === MAIN_KEY), true);
-  assert.equal(localStorage.getItem('aegis-open-tabs'), JSON.stringify([conversationKey]));
+});
+
+test('reorderTabs keeps the default main session first and reorders the remaining tabs', () => {
+  const firstKey = 'agent:worker:first';
+  const secondKey = 'agent:worker:second';
+  useChatStore.setState({
+    openTabs: [MAIN_KEY, firstKey, secondKey],
+    activeSessionKey: firstKey,
+  });
+
+  useChatStore.getState().reorderTabs([secondKey, firstKey, MAIN_KEY]);
+
+  assert.deepEqual(useChatStore.getState().openTabs, [MAIN_KEY, secondKey, firstKey]);
+  assert.equal(
+    localStorage.getItem('aegis-open-tabs'),
+    JSON.stringify([MAIN_KEY, secondKey, firstKey]),
+  );
+});
+
+test('official mainKey replaces the default main tab pin identity', () => {
+  const officialMainKey = 'agent:captain:home';
+  const conversationKey = 'agent:captain:desktop:conversation';
+  useChatStore.setState({
+    openTabs: [MAIN_KEY, conversationKey],
+    activeSessionKey: conversationKey,
+  });
+
+  useChatStore.getState().setDefaultMainSessionKey(officialMainKey);
+
+  const state = useChatStore.getState();
+  assert.equal(state.defaultMainSessionKey, officialMainKey);
+  assert.deepEqual(state.openTabs, [officialMainKey, MAIN_KEY, conversationKey]);
+  assert.equal(
+    localStorage.getItem('aegis-open-tabs'),
+    JSON.stringify([officialMainKey, MAIN_KEY, conversationKey]),
+  );
+  useChatStore.getState().setDefaultMainSessionKey(MAIN_KEY);
 });
 
 test('opening or replacing the active tab does not create a local unread marker', () => {

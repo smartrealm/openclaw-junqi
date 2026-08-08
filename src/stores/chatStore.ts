@@ -65,8 +65,20 @@ function persistOpenTabs(tabs: string[]): void {
   try {
     localStorage.setItem(OPEN_TABS_PREFS_KEY, JSON.stringify(tabs));
   } catch {
-    // ignore persistence errors
+    // 本地偏好写入失败不应阻断当前会话操作。
   }
+}
+
+function normalizeOpenTabs(tabs: readonly string[], defaultMainSessionKey: string): string[] {
+  const mainKey = defaultMainSessionKey.trim() || MAIN_SESSION;
+  const seen = new Set<string>([mainKey]);
+  const remaining = tabs.flatMap((candidate) => {
+    const key = typeof candidate === 'string' ? candidate.trim() : '';
+    if (!key || seen.has(key)) return [];
+    seen.add(key);
+    return [key];
+  });
+  return [mainKey, ...remaining];
 }
 
 export type HistoryLoaderOptions = { force?: boolean; background?: boolean };
@@ -529,6 +541,8 @@ interface ChatState {
   clearSessionTokens: (key: string) => void;
 
   // Tabs
+  defaultMainSessionKey: string;
+  setDefaultMainSessionKey: (key: string) => void;
   openTabs: string[];
   openTab: (key: string) => void;
   closeTab: (key: string) => void;
@@ -1508,8 +1522,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const clearedSessions = updateSession(state.sessions, key, clearSessionAttentionState);
     const session = clearedSessions.find((s) => s.key === key) ?? state.sessions.find((s) => s.key === key);
     const titleBar = titleBarStateFromSession(session, state.sessionDefaults);
-    const openTabs = state.openTabs.includes(key) ? state.openTabs : [...state.openTabs, key];
-    if (openTabs !== state.openTabs) persistOpenTabs(openTabs);
+    const openTabs = normalizeOpenTabs(
+      state.openTabs.includes(key) ? state.openTabs : [...state.openTabs, key],
+      state.defaultMainSessionKey,
+    );
+    persistOpenTabs(openTabs);
     set({
       sessions: clearedSessions,
       openTabs,
@@ -1557,18 +1574,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return { sessions: updateSession(state.sessions, key, clearSessionAttentionState) };
   }),
 
-  /** Commit a confirmed Gateway session and make it the active desktop tab. */
+  /** 提交 Gateway 已确认的会话，并将其设为当前桌面页签。 */
   addNativeSession: (session) => {
     restoreSessionKey(session.key);
     set((state) => {
-      const exists = state.sessions.some((s) => s.key === session.key);
-      const openTabs = state.openTabs.includes(session.key) ? state.openTabs : [...state.openTabs, session.key];
-      if (openTabs !== state.openTabs) persistOpenTabs(openTabs);
+      const existingSession = state.sessions.find((candidate) => candidate.key === session.key);
+      const confirmedSession = existingSession
+        ? { ...existingSession, ...session }
+        : session;
+      const openTabs = normalizeOpenTabs(
+        state.openTabs.includes(session.key) ? state.openTabs : [...state.openTabs, session.key],
+        state.defaultMainSessionKey,
+      );
+      persistOpenTabs(openTabs);
       const msgs = state.messagesPerSession[session.key] || [];
       const blocks = state._blocksCache[session.key];
       const groups = state._groupsCache[session.key];
-      const nativeSession = session;
-      const titleBar = titleBarStateFromSession(nativeSession, state.sessionDefaults);
+      const titleBar = titleBarStateFromSession(confirmedSession, state.sessionDefaults);
       const activeState = {
         openTabs,
         activeSessionKey: session.key,
@@ -1579,12 +1601,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         quickReplies: state.quickRepliesBySession[session.key] || [],
         ...titleBar,
       };
-      if (exists) {
-        return activeState;
-      }
       return {
         ...activeState,
-        sessions: [...state.sessions, nativeSession],
+        sessions: existingSession
+          ? state.sessions.map((candidate) => (
+              candidate.key === session.key ? confirmedSession : candidate
+            ))
+          : [...state.sessions, confirmedSession],
       };
     });
   },
@@ -1802,7 +1825,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       : { preparedAttachments: { ...state.preparedAttachments, [key]: files } }
   )),
 
-  // ── Tabs ──
+  // ── 会话页签 ──
+  defaultMainSessionKey: MAIN_SESSION,
+  setDefaultMainSessionKey: (key) => set((state) => {
+    const normalizedKey = key.trim();
+    if (!normalizedKey) return state;
+    const openTabs = normalizeOpenTabs(state.openTabs, normalizedKey);
+    persistOpenTabs(openTabs);
+    return {
+      defaultMainSessionKey: normalizedKey,
+      openTabs,
+    };
+  }),
   openTabs: (() => {
     try {
       const raw = localStorage.getItem(OPEN_TABS_PREFS_KEY);
@@ -1811,7 +1845,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (!Array.isArray(arr) || arr.length === 0) return [MAIN_SESSION];
       const valid = arr.filter((k) => typeof k === 'string' && k.trim());
       if (valid.length === 0) return [MAIN_SESSION];
-      return valid.includes(MAIN_SESSION) ? valid : [MAIN_SESSION, ...valid];
+      return normalizeOpenTabs(valid, MAIN_SESSION);
     } catch { return [MAIN_SESSION]; }
   })(),
 
@@ -1841,7 +1875,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const msgs = state.messagesPerSession[key] || [];
     const blocks = state._blocksCache[key];
     const groups = state._groupsCache[key];
-    const newTabs = [...state.openTabs, key];
+    const newTabs = normalizeOpenTabs([...state.openTabs, key], state.defaultMainSessionKey);
     persistOpenTabs(newTabs);
     return {
       sessions: clearedSessions,
@@ -1859,8 +1893,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   }),
 
   closeTab: (key) => set((state) => {
-    const newTabs = state.openTabs.filter((t) => t !== key);
-    if (newTabs.length === 0) newTabs.push(MAIN_SESSION);
+    if (key === state.defaultMainSessionKey) return state;
+    const newTabs = normalizeOpenTabs(
+      state.openTabs.filter((tabKey) => tabKey !== key),
+      state.defaultMainSessionKey,
+    );
     persistOpenTabs(newTabs);
     const newActive = state.activeSessionKey === key
       ? newTabs[newTabs.length - 1]
@@ -1887,15 +1924,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
   }),
 
-  reorderTabs: (keys) => {
-    persistOpenTabs(keys);
-    set({ openTabs: keys });
-  },
+  reorderTabs: (keys) => set((state) => {
+    const openTabs = normalizeOpenTabs(keys, state.defaultMainSessionKey);
+    persistOpenTabs(openTabs);
+    return { openTabs };
+  }),
 
   removeSession: (key) => set((state) => {
-    if (isAgentMainSession(key)) return state;
-    const newTabs = state.openTabs.filter((t) => t !== key);
-    if (newTabs.length === 0) newTabs.push(MAIN_SESSION);
+    if (key === state.defaultMainSessionKey || isAgentMainSession(key)) return state;
+    const newTabs = normalizeOpenTabs(
+      state.openTabs.filter((tabKey) => tabKey !== key),
+      state.defaultMainSessionKey,
+    );
     persistOpenTabs(newTabs);
     const newActive = state.activeSessionKey === key
       ? newTabs[newTabs.length - 1]

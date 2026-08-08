@@ -37,7 +37,7 @@ test('OpenClaw config reads and imports share the Rust JSON5 contract', () => {
 
 test('renderer does not expose a direct OpenClaw config write command', () => {
   assert.doesNotMatch(commands, /writeOpenclawConfig|write_config/);
-  assert.match(adapter, /clearLegacyOpenClawConfigBackups\(\)/);
+  assert.doesNotMatch(adapter, /aegis-config-backups/);
   assert.doesNotMatch(configManager, /aegis-config-backups/);
   assert.doesNotMatch(configManager, /config\.read\([^)]/);
   assert.doesNotMatch(channelsCenter, /config\.read\(detected\.path\)/);

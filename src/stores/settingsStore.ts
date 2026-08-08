@@ -187,8 +187,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   audioAutoPlay: localStorage.getItem(AUDIO_AUTO_PLAY_STORAGE_KEY) === 'true',
   voiceAutoSpeak: localStorage.getItem(VOICE_AUTO_SPEAK_STORAGE_KEY) === 'true',
   gatewayUrl: localStorage.getItem('aegis-gateway-url') || '',
-  // Gateway credentials are restored through credentialProvider after the
-  // runtime target is known. Browser storage is legacy migration input only.
+  // Gateway 凭据只在 runtime 目标确认后通过原生凭据边界恢复，浏览器存储不承载凭据。
   gatewayToken: '',
   sidebarCollapsed: savedSidebarMode === 'mini',
   sidebarMode: savedSidebarMode,

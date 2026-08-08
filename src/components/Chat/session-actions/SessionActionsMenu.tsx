@@ -105,12 +105,13 @@ export function SessionActionsMenu({
     ensureSessionGroup,
     sessionGroupCatalog,
     refreshSessionGroupCatalog,
+    defaultMainSessionKey,
   } = useChatStore();
   const menuRef = useRef<HTMLDivElement>(null);
   const groupTriggerRef = useRef<HTMLButtonElement>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
-  const isMainSession = isAgentMainSession(session.key);
+  const isMainSession = session.key === defaultMainSessionKey || isAgentMainSession(session.key);
   const sessionCategories = useMemo(() => {
     const categories = new Map<string, string>();
     for (const category of sessionGroupCatalog) {

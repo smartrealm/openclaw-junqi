@@ -4,17 +4,18 @@
 
 ## 发现
 
-OpenClaw 2026.7.1-2 将每个 Agent 的 direct-chat 主会话固定投影为
-`agent:<agentId>:main`。JunQi AgentHub 原先把所有非 cron/subagent 会话归为 `main`，并
-从排序后的 sessions 列表取第一条，因此普通渠道会话或 fork 会话可能显示为主 Agent。ChatTabs
-也只把 `agent:main:main` 当作不可关闭的主标签。
+OpenClaw 官方会话模型将 Agent 的 direct-chat 根会话投影为 `agent:<agentId>:main`，并通过
+`agents.list.mainKey` 返回当前默认智能体主会话的权威身份。JunQi AgentHub 原先把所有非
+cron/subagent 会话归为 `main`，并从排序后的 sessions 列表取第一条，因此普通渠道会话或 fork
+会话可能显示为主 Agent。
 
 ## 修复
 
 - `src/utils/sessionPresentation.ts` 增加 canonical main 分类和按 Agent 精确查找函数。
 - AgentHub 只把 `agent:<agentId>:main` 归为 main，普通会话归为 conversation；main card 不再
   依赖 sessions 列表顺序。
-- ChatTabs 对所有 Agent 的 canonical main 使用统一的不可拖拽/关闭保护。
+- 默认主会话由 `agents.list.mainKey` 确认，并在会话状态层固定为第一个不可拖拽、不可关闭页签；
+  其他 Agent 的 canonical main 仍受远端删除保护，但不冒充默认主会话固定入口。
 - 没有写入 OpenClaw 配置，也没有新增本地 Thread 或 transcript 存储。
 
 ## 验证

@@ -20,19 +20,6 @@ import { debugWarn } from '@/utils/debugLog';
 
 export type { SystemMetricsPayload } from './tauriAdapterContracts';
 
-const LEGACY_CONFIG_BACKUPS_STORAGE_KEY = 'aegis-config-backups';
-
-function clearLegacyOpenClawConfigBackups(): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.removeItem(LEGACY_CONFIG_BACKUPS_STORAGE_KEY);
-  } catch {
-    // Storage can be unavailable in a browser preview; no config is retained there.
-  }
-}
-
-clearLegacyOpenClawConfigBackups();
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

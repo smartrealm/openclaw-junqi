@@ -137,7 +137,9 @@ export default function App() {
     markSessionCompleted,
     setSessions,
     setAvailableModels,
+    setDefaultMainSessionKey,
   } = useChatStore();
+  const officialMainSessionKey = useGatewayDataStore((state) => state.mainSessionKey);
 
   // ── Auto-Pairing State ──
   const [pairingIssue, setPairingIssue] = useState<GatewayAuthorizationIssue | null>(null);
@@ -207,6 +209,10 @@ export default function App() {
     previousVoiceSessionRef.current = activeSessionKey;
   }, [activeSessionKey]);
   const openControlUiAfterRecoveryRef = useRef(false);
+
+  useEffect(() => {
+    if (officialMainSessionKey) setDefaultMainSessionKey(officialMainSessionKey);
+  }, [officialMainSessionKey, setDefaultMainSessionKey]);
 
   // The local marker is only a cache. Validate the durable installation before
   // entering the workspace, but leave process readiness to cold-start recovery.

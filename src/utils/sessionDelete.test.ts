@@ -18,6 +18,7 @@ function seed(): Session[] {
     sessions,
     openTabs: [MAIN_KEY, TEST_KEY],
     activeSessionKey: TEST_KEY,
+    defaultMainSessionKey: MAIN_KEY,
   });
   useGatewayDataStore.setState({ sessions: sessions.map(({ key, label }) => ({ key, label })) });
   return sessions;
@@ -135,6 +136,17 @@ describe('deleteSessionEverywhere', () => {
     assert.equal(result, false);
     assert.deepEqual(requests, []);
     assert.equal(useChatStore.getState().sessions.some((session) => session.key === MAIN_KEY), true);
+  });
+
+  test('never deletes the default mainKey reported by OpenClaw', async () => {
+    const officialMainKey = 'agent:captain:home';
+    seed();
+    useChatStore.getState().setDefaultMainSessionKey(officialMainKey);
+
+    const result = await deleteSessionEverywhere(officialMainKey);
+
+    assert.equal(result, false);
+    assert.deepEqual(requests, []);
   });
 
 });

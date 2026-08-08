@@ -32,8 +32,8 @@ import { ActiveTabIndicator } from '@/components/shared/TabMotion';
 import { FloatingMenuPortal } from '@/components/shared/FloatingMenuPortal';
 
 // ═══════════════════════════════════════════════════════════
-// ChatTabs — Browser-style tab bar
-// Layout: [Main ●] [Session A ×] [Session B ×]   [↺] [+]
+// ChatTabs — 桌面会话页签栏
+// 布局：默认主会话固定在最左侧，其余会话按用户顺序排列。
 // ═══════════════════════════════════════════════════════════
 
 /**
@@ -849,7 +849,7 @@ function NewSessionPicker({
 // ═══════════════════════════════════════════════════════════
 // ChatTabs — Main export
 // ═══════════════════════════════════════════════════════════
-// ── SortableTab ── a single tab wrapped for @dnd-kit drag-to-reorder ──────
+// ── SortableTab：为可重排会话提供拖拽容器 ──────
 
 function SortableTab({ id, children, disabled }: { id: string; children: React.ReactNode; disabled?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
@@ -862,7 +862,7 @@ function SortableTab({ id, children, disabled }: { id: string; children: React.R
   };
   return (
     <div ref={setNodeRef} style={style} {...attributes} className="group shrink-0">
-      {/* Drag handle: a thin grip icon on the left side of each tab */}
+      {/* 拖拽手柄只对可重排会话显示。 */}
       {!disabled && (
         <button
           type="button"
@@ -889,6 +889,7 @@ export function ChatTabs() {
     openTab,
     closeTab,
     reorderTabs,
+    defaultMainSessionKey,
     setActiveSession,
     connected,
     connecting,
@@ -896,9 +897,8 @@ export function ChatTabs() {
     currentThinking,
     sessionDefaults,
   } = useChatStore();
-  const mainSessionKey = useGatewayDataStore((s) => s.mainSessionKey);
 
-  // ── Drag-to-reorder sensors ──
+  // ── 会话页签拖拽传感器 ──
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
@@ -907,6 +907,7 @@ export function ChatTabs() {
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
+    if (String(active.id) === defaultMainSessionKey) return;
     const oldOrder = openTabs;
     const oldIdx = oldOrder.indexOf(String(active.id));
     const newIdx = oldOrder.indexOf(String(over.id));
@@ -915,13 +916,10 @@ export function ChatTabs() {
     reordered.splice(oldIdx, 1);
     reordered.splice(newIdx, 0, oldOrder[oldIdx]);
     reorderTabs(reordered);
-  }, [openTabs, reorderTabs]);
+  }, [defaultMainSessionKey, openTabs, reorderTabs]);
 
   const activeTabIndex = openTabs.indexOf(activeSessionKey);
   const hasMultipleTabs = openTabs.length > 1;
-  const displayTabs = mainSessionKey && openTabs.includes(mainSessionKey)
-    ? [mainSessionKey, ...openTabs.filter((key) => key !== mainSessionKey)]
-    : openTabs;
   const canSwitchPrev = activeTabIndex > 0;
   const canSwitchNext = activeTabIndex >= 0 && activeTabIndex < openTabs.length - 1;
   const switchRelativeTab = useCallback((direction: -1 | 1) => {
@@ -1159,10 +1157,10 @@ export function ChatTabs() {
       {/* ── Scrollable tab strip ── */}
       <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div ref={scrollContainerRef} className="flex-1 flex items-end h-full overflow-x-auto scrollbar-none min-w-0 pl-1">
-        <SortableContext items={displayTabs} strategy={horizontalListSortingStrategy}>
-        {displayTabs.map((key) => {
+        <SortableContext items={openTabs} strategy={horizontalListSortingStrategy}>
+        {openTabs.map((key) => {
           const isActive = key === activeSessionKey;
-          const isPinnedMain = mainSessionKey === key;
+          const isPinnedMain = defaultMainSessionKey === key;
           const { isMainSession } = parseSessionKey(key);
           const session = sessions.find((s) => s.key === key);
           const label = sessionLabel(
@@ -1207,11 +1205,11 @@ export function ChatTabs() {
                 aria-selected={isActive}
                 title={fullLabel}
                 onClick={() => isActive ? undefined : setActiveSession(key)}
-                onAuxClick={(e) => handleTabAuxClick(e, key)}
+                onAuxClick={(e) => !isPinnedMain && handleTabAuxClick(e, key)}
                 className={clsx(
                   'isolate flex items-center gap-1.5 h-[38px] pl-3 text-[12px] font-medium select-none relative',
                   'transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none active:scale-[0.985]',
-                  'pr-10',
+                  isPinnedMain ? 'pr-3' : 'pr-10',
                   isActive
                     ? 'text-aegis-text'
                     : 'text-aegis-text-dim hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.03)]',
@@ -1330,17 +1328,19 @@ export function ChatTabs() {
                 )}
 
               </button>
-              <span className="absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100">
-                <IconButton
-                  size="xs"
-                  aria-label={t('chat.closeTab')}
-                  title={t('chat.closeTab')}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => handleTabClose(event, key)}
-                >
-                  <X size={12} />
-                </IconButton>
-              </span>
+              {!isPinnedMain && (
+                <span className="absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100">
+                  <IconButton
+                    size="xs"
+                    aria-label={t('chat.closeTab')}
+                    title={t('chat.closeTab')}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => handleTabClose(event, key)}
+                  >
+                    <X size={12} />
+                  </IconButton>
+                </span>
+              )}
 
             </div>
             </SortableTab>
