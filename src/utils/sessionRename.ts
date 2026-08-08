@@ -1,10 +1,8 @@
 /**
- * Native OpenClaw session-label mutations.
+ * OpenClaw 原生会话标签变更。
  *
- * `sessions.patch({ key, label })` is the persistent source of truth.  The
- * renderer only updates its stores after the Gateway confirms the mutation;
- * this prevents a disconnected client from showing a name that was never
- * saved.
+ * `sessions.patch({ key, label })` 是持久化事实来源。渲染层只在 Gateway
+ * 确认变更后更新状态，避免断线时显示未保存的名称。
  */
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
@@ -22,13 +20,13 @@ export type SessionRenameResult =
   | { ok: false; error: string };
 
 type SessionRenameDeps = {
-  patchLabel: (sessionKey: string, sessionId: string, label: string | null) => Promise<unknown>;
+  patchLabel: (sessionKey: string, label: string | null) => Promise<unknown>;
   warn: (...args: unknown[]) => void;
   notifyFailure: (detail: string) => void;
 };
 
 const defaultSessionRenameDeps: SessionRenameDeps = {
-  patchLabel: (sessionKey, sessionId, label) => gateway.setSessionLabel(label, sessionKey, sessionId),
+  patchLabel: (sessionKey, label) => gateway.setSessionLabel(label, sessionKey),
   warn: (...args) => debugWarn('app', ...args),
   notifyFailure: (detail) => {
     useNotificationStore.getState().addToast('error', '重命名会话失败', detail);
@@ -88,9 +86,8 @@ function applyConfirmedLabel(sessionKey: string, label: string): void {
 }
 
 /**
- * Rename a session through the Gateway. Passing an empty value clears the
- * custom label (`label: null`), allowing OpenClaw to return to its own
- * display-name fallback.
+ * 通过 Gateway 重命名会话。空值会写入 `label: null`，让 OpenClaw 恢复自身的
+ * 展示名称推导。
  */
 async function performSessionRename(
   sessionKey: string,
@@ -98,11 +95,11 @@ async function performSessionRename(
   operationId: number,
 ): Promise<SessionRenameResult> {
   if (isSessionDeleted(sessionKey)) return { ok: false, error: 'Session has been deleted' };
-  const sessionId = useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.sessionId;
-  if (!sessionId) return { ok: false, error: 'Session identity is unavailable' };
-
+  if (!useChatStore.getState().sessions.some((session) => session.key === sessionKey)) {
+    return { ok: false, error: 'Session identity is unavailable' };
+  }
   try {
-    const response = await sessionRenameDeps.patchLabel(sessionKey, sessionId, requestedLabel || null);
+    const response = await sessionRenameDeps.patchLabel(sessionKey, requestedLabel || null);
     const failure = gatewayMutationFailure(response, 'Gateway rejected session label mutation');
     if (failure) throw new Error(failure);
     const label = confirmedLabel(response, sessionKey, requestedLabel);

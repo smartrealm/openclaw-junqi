@@ -8,3 +8,6 @@
 6. 按置顶、分组、未分组、归档重组侧栏，并提供分组创建、重命名、删除与移动操作。
 7. 补协议、生命周期、组织状态和菜单回归测试；运行 TypeScript、边界检查、测试和生产构建。
 8. [x] 收敛 `sessions.list` 读取入口：按当前 schema 分别请求活跃和归档会话，合并投影，并限制旧协议降级条件。
+9. [x] 按 OpenClaw 字段级权限重构会话组织写入：重命名、置顶、未读、归档和分组统一由共享
+   Gateway 客户端发送仅含 `key` 与组织字段的 `sessions.patch`，走 `operator.write`；移除会导致
+   `operator.admin` 的 `expectedSessionId`，并以 Gateway 确认回执作为唯一更新依据。

@@ -13,7 +13,9 @@
 ## 目标行为
 
 1. 新建和分叉必须调用 `sessions.create`，仅在返回 `{ ok: true, key, sessionId, entry }` 后向界面提交会话。
-2. 重命名必须调用 `sessions.patch`；重置、删除必须调用其对应管理员权限方法。失败不得修改本地生命周期状态。
+2. 重命名、置顶、未读、归档和分组必须只发送 OpenClaw 写权限允许的 `sessions.patch` 字段；不得附带
+   `expectedSessionId` 等会提升为 `operator.admin` 的生命周期比较字段。重置、删除仍调用对应管理员权限方法。
+   失败不得修改本地生命周期状态。
 3. 普通 transcript 分叉使用 `sessions.create({ parentSessionKey, fork: true })`；仅传 `parentSessionKey` 的普通子会话不复制 transcript。压缩检查点分叉仅在已选择 checkpoint 后调用 `sessions.compaction.branch`，两种语义不得混用。
 4. 置顶、显式未读、归档和用户分组优先写入 Gateway 原生字段；仅当 Gateway 明确返回未知方法或未知组织字段时，降级为按 `session key + sessionId` 绑定的桌面元数据。推导标题始终是桌面展示元数据。
 5. 侧栏行和标签页右键必须复用同一会话操作菜单与能力判断。会话行承担打开会话，菜单按官方 `SessionMenu` 顺序提供置顶/取消置顶、标记已读/未读、重命名、分叉、移动分组、归档/还原和删除；不得混入关闭标签页或重置会话等非组织操作。
@@ -26,6 +28,7 @@
 
 - 没有 `localOnly`、本地伪造 session key 或未物化会话分支。
 - 组织状态不会泄漏到同 key 的新 `sessionId`。
+- 写权限组织变更只携带 `key` 与对应组织字段；不为保留 CAS 而请求 `operator.admin` 或伪造本地确认。
 - 遗留的 pin/archive/topic 偏好在首次获得 session identity 时迁移。
 - 所有菜单文案覆盖 zh、zh-TW 和 en。
 - 协议响应、组织仓库与新建会话均有回归测试。

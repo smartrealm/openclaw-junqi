@@ -15,7 +15,7 @@ function response(entry: Record<string, unknown> = {}) {
 }
 
 describe('SessionSettingsClient', () => {
-  it('uses an operator.admin request for every persistent sessions.patch mutation', async () => {
+  it('按字段权限将会话 patch 路由到最小权限连接', async () => {
     const calls: Array<{ lane: 'daily' | 'admin'; method: string; params: Record<string, unknown> }> = [];
     const client = new SessionSettingsClient({
       runMutation: (_key, operation) => operation(),
@@ -43,7 +43,7 @@ describe('SessionSettingsClient', () => {
     await client.setResponseUsage(SESSION_KEY, null);
     await client.setReasoning(SESSION_KEY, 'stream');
     await client.setReasoning(SESSION_KEY, null);
-    await client.setLabel(SESSION_KEY, 'session-main', 'Planning');
+    await client.setLabel(SESSION_KEY, 'Planning');
 
     assert.deepEqual(calls, [
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, model: 'openai/gpt-5.6' } },
@@ -60,7 +60,7 @@ describe('SessionSettingsClient', () => {
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, responseUsage: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, reasoningLevel: 'stream' } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, reasoningLevel: null } },
-      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, expectedSessionId: 'session-main', label: 'Planning' } },
+      { lane: 'daily', method: 'sessions.patch', params: { key: SESSION_KEY, label: 'Planning' } },
     ]);
   });
 

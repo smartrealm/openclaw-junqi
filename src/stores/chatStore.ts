@@ -188,11 +188,10 @@ const clearSessionAttentionState = (session: Session): Session => ({
 const sessionReadWrites = new Set<string>();
 
 function persistSessionAsRead(session: Session | undefined): void {
-  if (!session?.sessionId || unreadCount(session.unread) === 0) return;
-  const identity = `${session.key}#${session.sessionId}`;
-  if (sessionReadWrites.has(identity)) return;
-  sessionReadWrites.add(identity);
-  void gateway.setSessionUnread(false, session.key, session.sessionId).then(() => {
+  if (!session || unreadCount(session.unread) === 0) return;
+  if (sessionReadWrites.has(session.key)) return;
+  sessionReadWrites.add(session.key);
+  void gateway.setSessionUnread(false, session.key).then(() => {
     useChatStore.setState((state) => ({
       sessions: updateSession(state.sessions, session.key, (item) => ({
         ...item,
@@ -200,7 +199,7 @@ function persistSessionAsRead(session: Session | undefined): void {
         hasPendingCompletion: false,
       })),
     }));
-  }).catch(() => undefined).finally(() => sessionReadWrites.delete(identity));
+  }).catch(() => undefined).finally(() => sessionReadWrites.delete(session.key));
 }
 
 function unreadCount(value: number | boolean | undefined): number {
@@ -1694,23 +1693,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   togglePinSession: async (key) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
-    if (!session?.sessionId) return;
+    if (!session) return;
     const pinned = !session.pinned;
-    await gateway.setSessionPinned(pinned, key, session.sessionId);
+    await gateway.setSessionPinned(pinned, key);
     set((state) => ({ sessions: updateSession(state.sessions, key, (item) => ({ ...item, pinned })) }));
   },
 
   setSessionArchived: async (key, archived) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
-    if (!session?.sessionId) return;
-    await gateway.setSessionArchived(archived, key, session.sessionId);
+    if (!session) return;
+    await gateway.setSessionArchived(archived, key);
     set((state) => ({ sessions: updateSession(state.sessions, key, (item) => ({ ...item, archived })) }));
   },
 
   setSessionUnread: async (key, unread) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
-    if (!session?.sessionId) return;
-    await gateway.setSessionUnread(unread, key, session.sessionId);
+    if (!session) return;
+    await gateway.setSessionUnread(unread, key);
     set((state) => ({
       sessions: updateSession(state.sessions, key, (item) => ({
         ...item,
@@ -1722,8 +1721,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setSessionCategory: async (key, category) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
-    if (!session?.sessionId) return;
-    const confirmedCategory = await gateway.setSessionCategory(category, key, session.sessionId);
+    if (!session) return;
+    const confirmedCategory = await gateway.setSessionCategory(category, key);
     set((state) => ({
       sessions: updateSession(state.sessions, key, (item) => ({
         ...item,

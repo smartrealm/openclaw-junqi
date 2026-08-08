@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-完成 Jarvis 首次启动、Gateway 能力证据与会话工具栏收敛，并将智能体中心 Office 扩展为配置工位与真实运行投影共存的工作区域。
+完成 Jarvis 首次启动、Gateway 能力证据与会话工具栏收敛；修复会话组织操作错误请求管理员权限的问题，并将智能体中心 Office 扩展为配置工位与真实运行投影共存的工作区域。
 
 ## 已完成内容
 
@@ -13,11 +13,13 @@
 - 会话工具栏移除会话旁问、会话变更与会话文件的本地入口、专属 Gateway 客户端、测试和文案；保留实际工具、浏览器控制、分支、会话上下文与会话产物的直接入口。
 - Gateway 能力证据注册表记录保守的 hello 发现以及真实 RPC 成功、未授权、未知方法、连接失效和待核验结果，不把方法列表缺项视作不支持。
 - 安装向导、Gateway 第三阶段和 Ready 页已收敛加载、交接、动效与窄窗口行为；三处发行版本在合并来源中统一为 `2.2.11`。
+- 会话重命名、置顶、未读、归档和分组不再向 `sessions.patch` 发送 `expectedSessionId`，统一按 OpenClaw 字段级最小权限走 `operator.write`；模型与运行参数仍保留 `operator.admin`。
 
 ## 关键技术决策
 
 - OpenClaw 官方 `openclaw.setup.verify` 可用时是实时模型验证依据；方法不可用只能表达待核验，不能伪报模型成功或凭据失败。
 - OpenClaw 当前未提供或产品不再消费的会话能力不保留隐藏入口、兼容层或本地替代实现。
+- OpenClaw 的 `expectedSessionId` 虽是正式 patch schema 字段，但最新官方字段级授权将其归入管理员路径；日常组织操作不得携带它，也不得用客户端 CAS 代替。
 - Office 不将配置智能体伪装为运行参与者；无 Run 时的员工席位明确标记为配置目录，默认选择最近更新的未归档 Run，用户操作只导航到既有协作详情。
 
 ## 核心文件
@@ -26,12 +28,14 @@
 - `src/services/setup/setupCompletionGate.ts`、`src/hooks/useSetupFlow/index.ts`、`src/hooks/useSetupFlow/useWizardSession.ts`：首次启动完成门禁与交接呈现。
 - `src/services/gateway/GatewayCapabilityRegistry.ts`、`src/services/gateway/Connection.ts`：Gateway 能力证据。
 - `src/components/Chat/SessionContextBar.tsx`、`src/services/gateway/index.ts`：会话工具栏和无消费者会话能力的移除。
+- `src/services/gateway/SessionSettingsClient.ts`、`src/services/gateway/OpenClawSessionOrganizationClient.ts`、`src/utils/sessionRename.ts`：会话组织字段的最小权限请求与确认投影。
 - `docs/collaboration/agent-hub-office-default-design-2026-08-08.md`、`docs/installation/junqi-installation-flow.md`、`docs/quality/openclaw-session-diff-files-removal-2026-08-08.md`：设计与验证记录。
 
 ## 测试与验证
 
 - 合并后已通过 63 项首次启动与 Office 定向测试、2822 项全量测试、TypeScript、模块边界、语言 JSON 解析、`pnpm build`、官方文档链接验证与 `git diff --check`。
 - 最新办公室工作区改动已通过 9 项 Office 定向测试、TypeScript、模块边界、语言 JSON 解析与 `git diff --check`。
+- 会话组织权限修复已通过 TypeScript 及 86 项会话设置、组织、生命周期、重命名与 store 定向测试。
 - 全量测试仅输出既有 Radix SSR `useLayoutEffect` 与 Node 弃用警告，命令成功结束。
 
 ## 已知问题
