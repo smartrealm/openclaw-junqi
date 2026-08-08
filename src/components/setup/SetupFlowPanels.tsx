@@ -29,6 +29,7 @@ import {
 } from "@/api/tauri-commands";
 import type { SetupLog } from "@/stores/app-store";
 import type { InstallTarget, SetupFlow, StepState } from "@/hooks/useSetupFlow";
+import { SetupStepScene } from "@/motion/setupStepTransition";
 
 const SETUP_STEPS = [
   { id: "environment", titleKey: "setup.steps.environment.title", titleFallback: "Environment", descriptionKey: "setup.steps.environment.description", descriptionFallback: "OpenClaw / Docker" },
@@ -237,28 +238,30 @@ export function SetupShell({
       />
       <Stepper active={active} />
       <main className="flex min-h-0 flex-1 flex-col items-center overflow-auto px-3 py-4 sm:px-6 sm:py-8">
-        <section className={clsx("w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
-          <div className="mb-4 text-center sm:mb-6">
-            <h1 className="text-2xl font-semibold tracking-normal text-aegis-text sm:text-[30px]" dir="auto">{title}</h1>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
-          </div>
-          <div className={clsx(wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6")}>
-            {children}
-            {isRuntime && showLogToggle && logs.length > 0 && (
-              <div className="mt-5 border-t border-aegis-border pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowLogs((v) => !v)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-aegis-border px-3 py-2 text-xs font-medium text-aegis-text-secondary hover:bg-aegis-surface"
-                >
-                  {showLogs ? <EyeOff size={14} /> : <Eye size={14} />}
-                  {showLogs ? t("setup.hideLogs") : t("setup.viewLogs")}
-                </button>
-                {showLogs && <LogPanel logs={logs} />}
-              </div>
-            )}
-          </div>
-        </section>
+        <SetupStepScene>
+          <section className={clsx("w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
+            <div className="mb-4 text-center sm:mb-6">
+              <h1 className="text-2xl font-semibold tracking-normal text-aegis-text sm:text-[30px]" dir="auto">{title}</h1>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
+            </div>
+            <div className={clsx(wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6")}>
+              {children}
+              {isRuntime && showLogToggle && logs.length > 0 && (
+                <div className="mt-5 border-t border-aegis-border pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowLogs((v) => !v)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-aegis-border px-3 py-2 text-xs font-medium text-aegis-text-secondary transition-[background-color,border-color,color,transform] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-surface active:scale-[0.98]"
+                  >
+                    {showLogs ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {showLogs ? t("setup.hideLogs") : t("setup.viewLogs")}
+                  </button>
+                  {showLogs && <LogPanel logs={logs} />}
+                </div>
+              )}
+            </div>
+          </section>
+        </SetupStepScene>
       </main>
       {showActions && (
         <footer className="shrink-0 border-t border-aegis-border/60 bg-aegis-bg/95 px-3 py-3 backdrop-blur sm:px-6">
@@ -269,7 +272,7 @@ export function SetupShell({
                 type="button"
                 onClick={previousAction.onClick}
                 disabled={previousAction.disabled}
-                className="inline-flex min-w-[112px] items-center justify-center gap-1.5 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[15px] font-bold text-aegis-text transition shadow-sm hover:bg-aegis-surface disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex min-w-[112px] items-center justify-center gap-1.5 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[15px] font-bold text-aegis-text transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] shadow-sm hover:bg-aegis-surface active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <ChevronLeft size={15} />
                 {previousAction.label ?? t("setup.previousStep")}
@@ -282,7 +285,7 @@ export function SetupShell({
                   type="button"
                   onClick={secondaryAction.onClick}
                   disabled={secondaryAction.disabled || secondaryAction.loading}
-                  className="inline-flex min-w-[112px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[14px] font-bold text-aegis-text-secondary transition hover:bg-aegis-surface disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+                  className="inline-flex min-w-[112px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[14px] font-bold text-aegis-text-secondary transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-surface active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
                 >
                   {secondaryAction.loading && <RefreshCw size={14} className="animate-spin" />}
                   {secondaryAction.label}
@@ -294,7 +297,7 @@ export function SetupShell({
                 type="button"
                 onClick={nextAction.onClick}
                 disabled={nextAction.disabled || nextAction.loading}
-                className="inline-flex w-full min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-primary bg-aegis-primary px-4 py-2.5 text-[15px] font-bold text-[var(--aegis-btn-primary-text)] transition shadow-lg hover:bg-aegis-primary-hover disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
+                className="inline-flex w-full min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-primary bg-aegis-primary px-4 py-2.5 text-[15px] font-bold text-[var(--aegis-btn-primary-text)] transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] shadow-lg hover:bg-aegis-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
               >
                 {nextAction.loading && <RefreshCw size={15} className="animate-spin" />}
                 {nextAction.label}

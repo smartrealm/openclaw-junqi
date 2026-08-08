@@ -100,5 +100,5 @@ export function SetupPage() {
     }
   })();
 
-  return <SetupStepTransition step={setupStep}>{screen}</SetupStepTransition>;
+  return <SetupStepTransition step={setupStep} kind={flow.presentation.kind}>{screen}</SetupStepTransition>;
 }

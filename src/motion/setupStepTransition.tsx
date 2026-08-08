@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { SetupStep } from '@/stores/setup-navigation';
+import type { OnboardingPresentationKind } from '@/services/setup/onboardingPresentation';
 
 const SETUP_STEP_INDEX: Record<SetupStep, number> = {
   welcome: 0,
@@ -22,6 +23,22 @@ const SETUP_STEP_INDEX: Record<SetupStep, number> = {
 };
 
 export type SetupStepMotionDirection = -1 | 0 | 1;
+export type SetupStepMotionMode = 'directional' | 'ambient';
+
+interface SetupStepTransitionContextValue {
+  readonly direction: SetupStepMotionDirection;
+  readonly mode: SetupStepMotionMode;
+  readonly reducedMotion: boolean;
+  readonly step: SetupStep;
+}
+
+const SetupStepTransitionContext = createContext<SetupStepTransitionContextValue | null>(null);
+
+export function setupStepMotionMode(kind: OnboardingPresentationKind): SetupStepMotionMode {
+  return kind === 'decision' || kind === 'official-wizard' || kind === 'complete'
+    ? 'directional'
+    : 'ambient';
+}
 
 export function setupStepMotionDirection(
   previous: SetupStep | null,
@@ -34,42 +51,69 @@ export function setupStepMotionDirection(
 export function setupStepEntryState(
   direction: SetupStepMotionDirection,
   reducedMotion: boolean,
-): { opacity: number; x: number } {
+  mode: SetupStepMotionMode = 'directional',
+): { opacity: number; x: number; y: number } {
   if (reducedMotion) {
-    return { opacity: 1, x: 0 };
+    return { opacity: 1, x: 0, y: 0 };
   }
+  if (mode === 'ambient') return { opacity: 0, x: 0, y: 8 };
   return {
     opacity: 0,
-    x: direction === 0 ? 0 : direction * -28,
+    x: direction === 0 ? 0 : direction * -16,
+    y: 0,
   };
 }
 
-export function SetupStepTransition({ step, children }: { step: SetupStep; children: ReactNode }) {
+export function SetupStepTransition({
+  step,
+  kind = 'decision',
+  children,
+}: {
+  step: SetupStep;
+  kind?: OnboardingPresentationKind;
+  children: ReactNode;
+}) {
   const previousStepRef = useRef<SetupStep | null>(null);
   const direction = setupStepMotionDirection(previousStepRef.current, step);
   const reducedMotion = useReducedMotion() ?? false;
+  const mode = setupStepMotionMode(kind);
 
   useLayoutEffect(() => {
     previousStepRef.current = step;
   }, [step]);
 
   return (
-    <div className="relative h-screen w-full overflow-hidden">
-      <motion.div
-        key={step}
-        initial={setupStepEntryState(direction, reducedMotion)}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{
-          duration: reducedMotion ? 0 : 0.2,
-          ease: [0.22, 1, 0.36, 1],
-        }}
-        className="h-full w-full"
+    <SetupStepTransitionContext.Provider value={{ direction, mode, reducedMotion, step }}>
+      <div
+        className="relative h-screen w-full overflow-hidden"
         data-setup-step-lifecycle="current-only"
         data-setup-step-transition={direction}
         data-setup-step-scene={step}
       >
         {children}
-      </motion.div>
-    </div>
+      </div>
+    </SetupStepTransitionContext.Provider>
+  );
+}
+
+export function SetupStepScene({ children }: { children: ReactNode }) {
+  const context = useContext(SetupStepTransitionContext);
+  if (!context) return <div className="w-full">{children}</div>;
+
+  const { direction, mode, reducedMotion, step } = context;
+  return (
+    <motion.div
+      key={step}
+      initial={setupStepEntryState(direction, reducedMotion, mode)}
+      animate={{ opacity: 1, x: 0, y: 0 }}
+      transition={{
+        duration: reducedMotion ? 0 : mode === 'ambient' ? 0.18 : 0.24,
+        ease: [0.22, 1, 0.36, 1],
+      }}
+      className="w-full"
+      data-setup-scene-motion={mode}
+    >
+      {children}
+    </motion.div>
   );
 }
