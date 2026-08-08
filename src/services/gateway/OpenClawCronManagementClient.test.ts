@@ -27,12 +27,15 @@ describe('OpenClawCronManagementClient', () => {
     });
 
     assert.deepEqual(await client.addAgentTurn(agentTurn), { id: 'job-add' });
-    assert.deepEqual(await client.update('job-update', { enabled: false }), { id: 'job-update' });
+    assert.deepEqual(await client.update('job-update', { enabled: false }, 'revision-1'), { id: 'job-update' });
     await client.remove('job-remove');
 
     assert.deepEqual(calls, [
       { method: 'cron.add', params: agentTurn },
-      { method: 'cron.update', params: { id: 'job-update', patch: { enabled: false } } },
+      {
+        method: 'cron.update',
+        params: { id: 'job-update', patch: { enabled: false }, expectedConfigRevision: 'revision-1' },
+      },
       { method: 'cron.remove', params: { id: 'job-remove' } },
     ]);
   });
@@ -73,6 +76,10 @@ describe('OpenClawCronManagementClient', () => {
     assert.equal(calls, 3);
     await assert.rejects(invalidPatch.update('job-update', {}), /Invalid OpenClaw cron update patch/);
     await assert.rejects(invalidPatch.update('job-update', { agentId: '  ' }), /Invalid OpenClaw cron agent id/);
+    await assert.rejects(
+      invalidPatch.update('job-update', { enabled: true }, '  '),
+      /Invalid OpenClaw cron config revision/,
+    );
   });
 
   it('maps authoritative method-not-found responses to unsupported without masking other Gateway errors', async () => {

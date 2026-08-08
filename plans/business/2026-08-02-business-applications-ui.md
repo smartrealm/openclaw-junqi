@@ -1,5 +1,7 @@
 # 业务应用 UI 实施计划
 
+> 历史计划：当前实施顺序已由[钉钉业务工作台运行时实施计划](2026-08-08-dingtalk-business-runtime.md)取代，不再执行静态多平台目录和 Chat bridge 路线。
+
 日期：2026-08-02
 
 对应规格：[业务应用 UI 与 Chat 双入口规格](../../specs/business/2026-08-02-business-applications-ui.md)

@@ -17,6 +17,7 @@ const job = {
   enabled: true,
   createdAtMs: 1_754_000_000_000,
   updatedAtMs: 1_754_000_001_000,
+  configRevision: 'revision-1',
   schedule: { kind: 'cron', expr: '0 9 * * *', tz: 'Asia/Shanghai', staggerMs: 0 },
   sessionTarget: 'isolated',
   wakeMode: 'now',
@@ -49,6 +50,7 @@ test('projects cron.get into a safe typed job detail without retaining payload c
   const parsed = parseCronJobDetails(job);
   assert.equal(parsed.id, 'job-1');
   assert.equal(parsed.payloadKind, 'agentTurn');
+  assert.equal(parsed.configRevision, 'revision-1');
   assert.deepEqual(parsed.schedule, job.schedule);
   assert.equal('payload' in parsed, false);
 });
@@ -109,6 +111,7 @@ test('projects the current automation schedule, payload, delivery, and failure p
 test('fails closed when cron.get or cron.runs violates the official response shape', () => {
   assert.throws(() => parseCronJobDetails({ ...job, state: undefined }), /state/);
   assert.throws(() => parseCronJobDetails({ ...job, schedule: { kind: 'cron' } }), /schedule\.expr/);
+  assert.throws(() => parseCronJobDetails({ ...job, configRevision: '' }), /configRevision/);
   assert.throws(() => parseCronRunsPage({ ...page, entries: [{ ...finishedRun, action: 'started' }] }), /action/);
   assert.throws(() => parseCronRunsPage({ ...page, nextOffset: -1 }), /nextOffset/);
 });

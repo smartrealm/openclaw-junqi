@@ -50,3 +50,10 @@ CronMonitor 和 Calendar 通过日常 Gateway 连接调用 `cron.add`、`cron.up
 
 - 官方权限、方法与成功响应必须以官方源码和文档为准；本地安装版本用于确认当前打包兼容性。
 - Windows、macOS、CentOS 和 Ubuntu 的真实 Gateway 授权与 Cron 持久化仍须在对应桌面环境验收。
+
+## 修订令牌并发围栏
+
+1. 当 Gateway Job 包含非空 `configRevision` 时，JunQi 的启停与 Agent 路由更新必须将其作为
+   `expectedConfigRevision` 发送。
+2. 该字段缺失时必须省略，不能由客户端生成或缓存为伪令牌。
+3. Gateway 返回的并发冲突是未确认写入；页面必须保留错误并通过后续官方读取收敛。

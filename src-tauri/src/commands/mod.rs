@@ -17,6 +17,7 @@ pub mod console;
 pub mod device_identity;
 pub mod device_pairing;
 pub mod diagnostic_output;
+pub mod dingtalk_plugin;
 pub(crate) mod directory_transaction;
 pub mod docker;
 pub mod dynamic_island;

@@ -26,6 +26,13 @@
 - Cron 模板与日历提醒内容改从 i18n 资源和运行时本地时区生成；Cron 页面将模板、状态推导与本地化格式化抽至
   独立展示模块，移除按任务名称猜测业务图标的做法。
 
+## 合并的业务应用与钉钉运行时
+
+- `packages/junqi-dingtalk` 提供 OpenClaw 插件清单、DWS 运行器、工具 schema、Agent 授权和运行时探测；桌面侧只负责受 Runtime Identity 围栏保护的安装与启用。
+- 业务应用页已收敛为钉钉工作台的列表、就绪状态、能力表格、参数详情和活动记录，不在 React 或 Tauri 中直接执行 DWS。
+- 钉钉工具调用沿 OpenClaw `tools.effective`、`tools.invoke` 和插件审批链路投影；缺少插件、Gateway 工具、身份或授权时保留真实的未就绪语义。
+- 合并来源包含插件资源、Tauri 安装命令和生成的 bundle；真实 Gateway、DWS 租户和跨平台安装仍需验收。
+
 ## 关键技术决策
 
 - OpenClaw 官方 `openclaw.setup.verify` 可用时是实时模型验证依据；方法不可用只能表达待核验，不能伪报模型成功或凭据失败。
@@ -71,6 +78,7 @@
 - Windows 真机新建会话、首条消息发送和重启后 Gateway 恢复尚未完成安装包验收。
 - 尚未以真实 Gateway 验收 Cron 管理员授权、手动执行与日历副作用；`everyMs` 跨夏令时遵循 OpenClaw 固定间隔
   语义，无法准确表达的有界或复杂月年规则明确显示为未支持。
+- 尚未在真实 Gateway 中验收钉钉插件加载、`tools.effective`、`tools.invoke`、插件审批往返和 DWS 业务响应；当前本地构建只证明源码、bundle 和类型契约成立。
 
 ## 已放弃方案
 
@@ -82,4 +90,5 @@
 ## 下一步顺序
 
 1. 在真实 Tauri 和真实 Gateway 中验收 Cron 管理、日历提醒创建更新删除以及管理员授权错误呈现。
-2. 在目标平台继续验收首次启动、智能体中心 Office、Windows 新建会话和 Gateway 重启恢复。
+2. 在真实 Gateway 中验收钉钉插件安装、工具刷新、只读调用、写操作审批和错误恢复。
+3. 在目标平台继续验收首次启动、智能体中心 Office、Windows 新建会话和 Gateway 重启恢复。

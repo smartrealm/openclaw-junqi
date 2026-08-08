@@ -4,19 +4,18 @@
 
 ## 权威依据
 
-- [OpenClaw Gateway protocol](https://docs.openclaw.ai/gateway/protocol) 与本仓库安装的
-  `node_modules/.pnpm/openclaw@2026.7.1-2/node_modules/openclaw/docs/gateway/protocol.md`
-  均定义 `models.list` 为运行时允许的模型目录；`view: "configured"` 是普通模型选择器使用的
-  精简视图。
-- 同一安装包的 `dist/models-list-result-*.js` 先应用当前配置、模型可见性、运行时 provider
-  与只读认证可用性，再为公开条目生成 `available`。
-- 同一安装包的 `dist/gateway-chat-*.js` 的 `listModels()` 只返回 `models.list` 响应中的
-  `models` 数组，不以 `config.get`、本地文件或会话记录补充模型选择器。
+- [OpenClaw Gateway protocol](https://docs.openclaw.ai/gateway/protocol) 与 OpenClaw 官方源码
+  `packages/gateway-protocol/src/schema/agents-models-skills.ts` 定义 `models.list` 为运行时模型目录；
+  `view: "configured"` 是当前已配置模型的精简视图。
+- 官方 `src/gateway/server-methods/models.ts` 经 `buildModelsListResult` 生成条目；可选模型必须以
+  `available: true` 作为 Gateway 的实时可用性证据。
+- 官方 Control UI 与 JunQi 的会话模型选择都只投影 `models.list` 响应中的 `models` 数组，不以
+  `config.get`、本地文件或会话记录补充模型选择器。
 
 ## 审计范围
 
-审查 `App.tsx` 的 `loadAvailableModels`、`modelLoaders.ts`、`modelCatalog.ts`，以及
-`availableModels` 在会话模型选择、Dashboard 与业务引导中的消费方式。
+审查 `App.tsx` 的 `loadAvailableModels`、`modelLoaders.ts`、`modelCatalog.ts`、Provider 编辑页的
+`providerGatewayCatalog.ts`，以及 `availableModels` 在会话模型选择、Dashboard 与业务引导中的消费方式。
 
 ## 发现
 
@@ -29,6 +28,14 @@
 后果是 `availableModels` 中可能出现 Gateway 已标记不可用、未授权或未列入当前 picker 的条目，
 并被会话模型选择器作为可选操作呈现。
 
+### MCA-02 中：Provider 编辑页采用宽松的独立解码
+
+Provider 编辑页曾接受字符串、任意对象字段及未标记可用的 `models.list` 条目。这会让配置编辑页展示
+未获得 Gateway 当前可用性证据的模型，且与会话模型选择器的严格投影产生分歧。
+
+现改为复用 `modelCatalog.ts` 的严格解码，再派生 Provider 所需的 `id`、Provider、别名和图像能力字段。
+无效 envelope、字符串、不可用条目与缺少协议 `id` 的条目均不进入编辑页。
+
 ## 目标行为
 
 1. 会话模型选择器只调用 `models.list { view: "configured" }`。
@@ -36,6 +43,7 @@
 3. 调用失败、响应结构不合法或权威目录为空时，结果保持为空；不以本地配置、静态生成目录、
    agent 或 session 历史补充可选模型。
 4. 配置页的编辑目录和本地 provider 健康提示保持原有职责，不能反向成为会话运行时能力来源。
+5. Provider 编辑页读取 Gateway 目录时与会话模型选择器使用同一严格可用性投影。
 
 ## 未验证边界
 

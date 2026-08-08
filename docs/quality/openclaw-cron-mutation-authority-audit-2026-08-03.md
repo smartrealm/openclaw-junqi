@@ -65,3 +65,11 @@ CronMonitor 已支持创建、启停、运行和 Agent 路由，但没有删除�
 `cron.get`、`cron.list`、`cron.status`、`cron.runs` 使用 `operator.read`，`cron.add`、`cron.update`、
 `cron.remove`、`cron.run` 使用 `operator.admin`。当前实现与详细验证证据见
 `docs/quality/openclaw-cron-calendar-integrity-2026-08-08.md`。
+
+## 后续复审：修订令牌并发围栏
+
+日期：2026-08-08
+
+OpenClaw 官方 Cron 更新契约支持由 `cron.list` 或 `cron.get` 返回的 `configRevision` 作为
+`expectedConfigRevision`。JunQi 只在 Gateway 真实返回该修订值时原样传入 `cron.update`，不生成客户端修订号；
+缺少修订值时省略可选字段，冲突响应继续作为真实错误呈现。

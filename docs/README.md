@@ -123,6 +123,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [智能体中心默认办公室投影设计与验证记录](collaboration/agent-hub-office-default-design-2026-08-08.md)
 - [发布证据审计](collaboration/openclaw-collaboration-release-evidence-audit.md)
 - [Workflow Template 与 Run 边界 ADR](adr/0001-workflow-template-and-run-boundary.md)
+- [钉钉业务运行时归属 ADR](adr/0002-openclaw-plugin-owned-dingtalk-business-runtime.md)
 
 根目录 [`CONTEXT.md`](../CONTEXT.md) 定义协作领域的规范术语。
 
@@ -130,6 +131,9 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 
 目录：[`business/`](business/)
 
+- [钉钉主线单平台业务应用 UI 设计](business/dingtalk-single-platform-ui-design-2026-08-08.md)
+- [钉钉业务工作台运行时实施设计](business/dingtalk-business-runtime-implementation-design-2026-08-08.md)
+- [钉钉业务工作台领域上下文](business/CONTEXT.md)
 - [业务应用多平台 UI 设计](business/business-applications-ui-design-2026-08-02.md)
 - [业务应用 UI 验证记录](business/business-applications-ui-validation-2026-08-02.md)
 - [钉钉 OA 请假审批接入设计](business/dingtalk-leave-approval-integration-design-2026-08-02.md)

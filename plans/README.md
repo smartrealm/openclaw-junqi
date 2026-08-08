@@ -39,6 +39,7 @@ plans/
 
 ## Business
 
+- [钉钉业务工作台运行时](business/2026-08-08-dingtalk-business-runtime.md)
 - [业务应用 UI 实施计划](business/2026-08-02-business-applications-ui.md)
 
 ## Workbench
