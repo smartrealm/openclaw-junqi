@@ -1239,6 +1239,22 @@
       "inheritWorkspace": "Inherit default workspace",
       "nameUpdateWarningTitle": "Agent created; display name needs attention",
       "nameUpdateWarning": "The agent was created, but its display name could not be saved. Open the agent settings and try again."
+    },
+    "office": {
+      "title": "Collaboration office",
+      "description": "A read-only view derived from the current collaboration run snapshot.",
+      "disconnectedTitle": "Collaboration office is unavailable",
+      "disconnectedDescription": "Connect to the Gateway to read authoritative collaboration run state.",
+      "runSelectorLabel": "Select collaboration run",
+      "untitledRun": "Untitled collaboration run",
+      "refresh": "Refresh",
+      "loadFailed": "Failed to read collaboration run",
+      "loading": "Reading collaboration run…",
+      "emptyTitle": "No collaboration run",
+      "emptyDescription": "There is no active collaboration run to project into the office. Configured Agents are not treated as run participants.",
+      "showAgentList": "Show Agent list",
+      "updatedAt": "Updated {{time}}",
+      "openRun": "Open execution details"
     }
   },
   "analytics": {
@@ -2766,6 +2782,7 @@
     "remUnavailable": "REM preview unavailable"
   },
   "agentHubExtra": {
+    "officeView": "Office",
     "treeView": "Tree",
     "gridView": "Grid",
     "activityView": "Activity",

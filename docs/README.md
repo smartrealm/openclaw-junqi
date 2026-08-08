@@ -105,6 +105,7 @@ docs/
 - [协作实施计划](collaboration/openclaw-agent-collaboration-implementation-plan.md)
 - [本机 System Service 协作启用归属修复验证](collaboration/local-system-service-collaboration-enablement-validation-2026-07-31.md)
 - [Agent Office 只读协作投影设计与验证记录](collaboration/agent-office-read-only-projection-design-2026-08-03.md)
+- [智能体中心默认办公室投影设计与验证记录](collaboration/agent-hub-office-default-design-2026-08-08.md)
 - [发布证据审计](collaboration/openclaw-collaboration-release-evidence-audit.md)
 - [Workflow Template 与 Run 边界 ADR](adr/0001-workflow-template-and-run-boundary.md)
 
