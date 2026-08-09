@@ -9,7 +9,7 @@
 3. 完成：实现 Gateway client、状态 hook、Provider 页面呈现与定向回归。
 4. 完成：仅按官方 `logoutSupported` 能力增加 Provider 级注销确认，通过临时 `operator.admin` 调用 `models.authLogout` 并刷新状态。
 5. 完成：增加用户确认后的官方 `models.probe` 实时验证，限制安全投影并在认证快照变化时清除旧结果。
-6. 实施：更新验证记录，执行完整检查和扫描。
+6. 完成：将认证健康收敛到 Provider 卡片，删除独立面板和重复信息，更新验证记录并执行完整检查与扫描。
 7. 完成：区分首次快照读取与用户触发的强制刷新，令后者传递官方 `models.authStatus.refresh` 参数并补回归测试。
 
 ## 文件范围
@@ -22,15 +22,14 @@
 - `src/services/gateway/OpenClawModelProbeClient.test.ts`
 - `src/services/gateway/index.ts`
 - `src/hooks/useOpenClawModelAuthStatus.ts`
-- `src/components/settings/OpenClawModelAuthStatusPanel.tsx`
-- `src/components/settings/OpenClawModelAuthStatusPanel.test.tsx`
 - `src/pages/ConfigManager/ProvidersTab.tsx`
+- `src/pages/ConfigManager/ProvidersTab.modelAuthStatus.test.tsx`
 - `src/locales/{en,zh,zh-TW}.json`
 - `docs/quality/`、`specs/quality/`、`plans/quality/` 及索引
 
 ## 验证
 
-- 定向 Gateway client 和 Provider 状态面板回归
+- 定向 Gateway client 和 Provider 卡片认证摘要回归
 - `pnpm lint`
 - `pnpm test`
 - `pnpm verify:openclaw-docs`

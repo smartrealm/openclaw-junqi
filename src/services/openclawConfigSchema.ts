@@ -46,7 +46,7 @@ function resolveReference(
   return resolved ? resolveReference(root, resolved, seen) : undefined;
 }
 
-/** Resolve a field from the current Runtime's JSON schema. `*` traverses additionalProperties. */
+/** 从当前 Runtime 的 JSON schema 解析字段，`*` 表示遍历 additionalProperties。 */
 export function configFieldSchema(
   schema: unknown,
   path: string | readonly string[],
@@ -83,16 +83,114 @@ export function providerModelFieldSchemas(schema: unknown): Record<string, OpenC
   return configObjectFieldSchemas(schema, 'models.providers.*.models.[]');
 }
 
-let configSchemaPromise: Promise<Record<string, unknown>> | undefined;
+export interface OpenClawConfigSchemaClientDependencies {
+  captureConnectionId: () => string | null;
+  isConnectionCurrent: (connectionId: string) => boolean;
+  callPrivileged: (method: string, params: Record<string, unknown>) => Promise<unknown>;
+}
 
-export function loadOpenClawConfigSchema(): Promise<Record<string, unknown>> {
-  if (!configSchemaPromise) {
-    configSchemaPromise = (gateway.callPrivileged('config.schema', {}) as Promise<Record<string, unknown>>).catch((error) => {
-      configSchemaPromise = undefined;
-      throw error;
-    });
+export interface LoadOpenClawConfigSchemaOptions {
+  force?: boolean;
+}
+
+interface OpenClawConfigSchemaResponse {
+  schema: Record<string, unknown>;
+  uiHints: Record<string, unknown>;
+  version: string;
+  generatedAt: string;
+}
+
+interface ConfigSchemaCacheEntry {
+  connectionId: string;
+  promise: Promise<Record<string, unknown>>;
+}
+
+export class OpenClawConfigSchemaUnavailableError extends Error {
+  readonly code = 'OPENCLAW_CONFIG_SCHEMA_UNAVAILABLE';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'OpenClawConfigSchemaUnavailableError';
   }
-  return configSchemaPromise;
+}
+
+export class OpenClawConfigSchemaResponseError extends Error {
+  readonly code = 'OPENCLAW_CONFIG_SCHEMA_RESPONSE_INVALID';
+
+  constructor() {
+    super('The OpenClaw Gateway returned an invalid config.schema response');
+    this.name = 'OpenClawConfigSchemaResponseError';
+  }
+}
+
+function schemaResponseRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function requiredSchemaResponseText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export function parseOpenClawConfigSchemaResponse(value: unknown): OpenClawConfigSchemaResponse {
+  const response = schemaResponseRecord(value);
+  const schema = schemaResponseRecord(response?.schema);
+  const uiHints = schemaResponseRecord(response?.uiHints);
+  const version = requiredSchemaResponseText(response?.version);
+  const generatedAt = requiredSchemaResponseText(response?.generatedAt);
+  if (!response || !schema || !uiHints || !version || !generatedAt) {
+    throw new OpenClawConfigSchemaResponseError();
+  }
+  return { schema, uiHints, version, generatedAt };
+}
+
+export class OpenClawConfigSchemaClient {
+  private cache: ConfigSchemaCacheEntry | null = null;
+
+  constructor(private readonly dependencies: OpenClawConfigSchemaClientDependencies) {}
+
+  load(options: LoadOpenClawConfigSchemaOptions = {}): Promise<Record<string, unknown>> {
+    const connectionId = this.dependencies.captureConnectionId();
+    if (!connectionId || !this.dependencies.isConnectionCurrent(connectionId)) {
+      return Promise.reject(new OpenClawConfigSchemaUnavailableError(
+        'No attested Gateway connection is available for config.schema',
+      ));
+    }
+    if (!options.force && this.cache?.connectionId === connectionId) {
+      return this.cache.promise;
+    }
+
+    const promise = this.request(connectionId);
+    const entry = { connectionId, promise };
+    this.cache = entry;
+    void promise.catch(() => {
+      if (this.cache === entry) this.cache = null;
+    });
+    return promise;
+  }
+
+  private async request(connectionId: string): Promise<Record<string, unknown>> {
+    const response = await this.dependencies.callPrivileged('config.schema', {});
+    if (!this.dependencies.isConnectionCurrent(connectionId)) {
+      throw new OpenClawConfigSchemaUnavailableError(
+        'Gateway connection changed while reading config.schema',
+      );
+    }
+    return parseOpenClawConfigSchemaResponse(response).schema;
+  }
+}
+
+const configSchemaClient = new OpenClawConfigSchemaClient({
+  captureConnectionId: () => gateway.captureConnectionId(),
+  isConnectionCurrent: (connectionId) => gateway.isConnectionCurrent(connectionId),
+  callPrivileged: (method, params) => gateway.callPrivileged(method, params),
+});
+
+export function loadOpenClawConfigSchema(
+  options: LoadOpenClawConfigSchemaOptions = {},
+): Promise<Record<string, unknown>> {
+  return configSchemaClient.load(options);
 }
 
 export function schemaStringOptions(schema: OpenClawFieldSchema): string[] {

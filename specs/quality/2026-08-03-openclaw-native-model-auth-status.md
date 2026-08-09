@@ -16,7 +16,8 @@ Secret 和实际模型调用结果相互独立。
    和 label；expired 状态的 `remainingMs` 可为负值。
 4. 前端投影只可包含 provider id/display name、provider/profile status、expiry 和官方 `logoutSupported` 能力。
    不得包含 API-key source、环境变量、profile id、reason code、usage、账户信息、计划、计费或 Secret。
-5. 页面必须将 Gateway 状态与本地 Provider 配置事实分开呈现；不存在状态、未支持和无效回包均不得显示为已认证。
+5. Gateway 状态可进入对应 Provider 卡片，但必须在语义上覆盖而非改写本地配置结论：有官方投影时显示官方认证健康，
+   没有投影时只显示本地“凭据已配置”等配置事实。不存在状态、未支持和无效回包均不得显示为已认证。
 6. 只有至少一个官方 Profile 明确返回 `logoutSupported: true` 时，才能显示 Provider 级注销入口。
 7. 注销必须由用户二次确认，并通过临时 `operator.admin` 连接调用 `models.authLogout { provider }`；不得传入从 UI
    猜测的 Profile id，不得直接修改认证存储或本地配置。
@@ -38,8 +39,11 @@ Secret 和实际模型调用结果相互独立。
 
 ## 验收
 
-1. 已广告的 Gateway 上显示严格验证后的认证状态；不支持、断线和错误状态如实显示。
+1. 已广告的 Gateway 上在对应 Provider 卡片显示严格验证后的认证状态；不支持或断线时不生成冗余空块或健康状态，
+   无效回包在 Provider 列表附近显示明确警告。
 2. 敏感或不必要的上游字段不进入 React 状态或 UI。
 3. 官方可注销能力出现时，用户确认后由 OpenClaw 完成注销并刷新状态；不可注销 Profile 不暴露操作。
 4. 用户确认后可运行官方有界探测；页面加载不会触发探测，旧 Runtime 不支持时明确失败且没有 CLI fallback。
 5. 定向回归、静态检查、完整验证、文档和跨平台未验证边界均有明确记录。
+6. 页面不存在独立认证面板、重复 Provider 行或 Profile 数量展示；刷新位于列表标题，实时验证位于卡片摘要，注销只在
+   展开区出现。

@@ -692,19 +692,19 @@ function EffectiveToolsPanel() {
   );
 }
 
-/**
- * Tools and web-provider capabilities change with OpenClaw plugins. Render the
- * selected Runtime's schema instead of maintaining a JunQi provider/plugin map.
- */
+/** 工具与网络提供方能力由 OpenClaw 插件决定，界面只渲染当前 Runtime 返回的 schema。 */
 export function ToolsTab({ config, onChange }: ToolsTabProps) {
   const { t } = useTranslation();
   const [fields, setFields] = useState<Record<string, OpenClawFieldSchema>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [schemaRequestRevision, setSchemaRequestRevision] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    loadOpenClawConfigSchema()
+    setLoading(true);
+    setError('');
+    loadOpenClawConfigSchema({ force: schemaRequestRevision > 0 })
       .then((schema) => {
         if (cancelled) return;
         setFields(configObjectFieldSchemas(schema, 'tools'));
@@ -712,25 +712,57 @@ export function ToolsTab({ config, onChange }: ToolsTabProps) {
       })
       .catch((reason: unknown) => {
         if (cancelled) return;
+        setFields({});
         setError(reason instanceof Error ? reason.message : String(reason));
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [schemaRequestRevision]);
 
   if (loading) {
     return <p className="text-sm text-aegis-text-muted">{t('common.loading', 'Loading…')}</p>;
   }
 
-  if (error || Object.keys(fields).length === 0) {
+  if (error) {
     return (
       <div className="space-y-4">
-        <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-300">
+        <div className="rounded-xl border border-aegis-danger/30 bg-aegis-danger/10 px-4 py-3" role="alert">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 text-sm font-medium text-aegis-danger">
+                <AlertTriangle size={15} aria-hidden="true" />
+                {t('config.toolsSchemaLoadFailed', 'Unable to read tool settings from the selected OpenClaw Runtime.')}
+              </div>
+              <p className="mt-1 break-words text-xs text-aegis-text-muted">{error}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSchemaRequestRevision((revision) => revision + 1)}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-aegis-border bg-aegis-elevated px-3 text-xs font-medium text-aegis-text transition-colors hover:border-aegis-primary/40 hover:text-aegis-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35"
+            >
+              <RefreshCw size={13} aria-hidden="true" />
+              {t('config.retryRuntimeSchema', 'Retry')}
+            </button>
+          </div>
+        </div>
+        <ToolsCatalogPanel />
+        <EffectiveToolsPanel />
+        <ToolInvokePanel />
+      </div>
+    );
+  }
+
+  if (Object.keys(fields).length === 0) {
+    return (
+      <div className="space-y-4">
+        <div
+          className="rounded-xl border border-aegis-warning/30 bg-aegis-warning/10 px-4 py-3 text-sm text-aegis-warning"
+          role="status"
+        >
           {t(
-            'config.runtimeSchemaRequired',
-            'The selected OpenClaw Runtime schema is unavailable. Tool settings are read-only; use the raw editor or official OpenClaw Wizard after the Runtime is available.',
+            'config.toolsSchemaFieldsMissing',
+            'The selected OpenClaw Runtime schema does not expose editable tool settings.',
           )}
-          {error ? <p className="mt-1 text-xs opacity-80">{error}</p> : null}
         </div>
         <ToolsCatalogPanel />
         <EffectiveToolsPanel />

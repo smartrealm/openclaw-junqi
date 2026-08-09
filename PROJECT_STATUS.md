@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-保持 JunQi 作为 OpenClaw 桌面客户端的边界：首次启动由官方 Wizard 统一编排，钉钉业务能力由 OpenClaw 插件和 DWS 官方 CLI 提供，Jarvis 只呈现当前 Gateway 已证明的手动 Talk 能力。本阶段继续收敛默认智能体、Gateway 主会话和其他智能体直聊主会话的展示与操作边界。
+保持 JunQi 作为 OpenClaw 桌面客户端的边界：首次启动由官方 Wizard 统一编排，钉钉业务能力由 OpenClaw 插件和 DWS 官方 CLI 提供，模型认证和配置字段只呈现当前 Gateway 已证明的状态。本阶段收敛 Provider 页认证信息密度，并修复配置中心共用的 OpenClaw Runtime schema 信封解析与连接身份边界。
 
 ## 已完成内容
 
@@ -19,6 +19,10 @@
 - 默认智能体仅由 `agents.list.defaultId` 决定新会话归属；全局固定、关闭保护和删除保护仅匹配解析后的完整默认主会话 key。其他智能体已有的直聊主会话按普通会话处理。
 - “打开主会话”不再构造 `agent:<id>:main`。仅当 Gateway 已返回默认主会话或会话列表已确认对应直聊会话时打开；否则提示不可用并保留官方 `sessions.create` 新建路径。
 - 聊天通知只由带 OpenClaw 原生 `runId` 的流式终态发布；持久转录只更新会话、历史和未读状态，不参与通知。
+- Provider 页不再单列“OpenClaw 认证状态”面板。官方认证健康、必要的到期信息和实时验证入口合并到对应 Provider 卡片；注销只在展开区出现，Gateway 不支持时不生成空白区域，畸形回包在列表标题下就近提示。
+- 原独立认证面板、专属测试和无引用多语言文案已删除；新的行为测试直接覆盖卡片认证摘要和展开区操作，不再通过源码字符串断言实现写法。
+- 配置中心公共 schema 服务严格解析官方 `config.schema` 响应信封，只将 `schema` 字段交给结构化编辑器；成功缓存绑定当前已认证 Gateway 连接 ID，连接切换后的迟到结果失败关闭。
+- 工具页不再把请求失败和 Runtime 未公开 `tools` 字段混成同一提示。读取失败提供显式重试，字段缺失保持真实只读语义，工具目录、有效工具和受控调用仍独立呈现其官方 RPC 状态。
 
 ## 关键技术决策
 
@@ -26,6 +30,7 @@
 - DWS 认证、Profile、token 与业务执行属于 DWS 和 OpenClaw 插件。桌面侧不读取 token、不写入 transcript、不执行远程脚本，也不重放未知副作用。
 - `talk.catalog.realtime.ready=false` 仅表示 Gateway 实时语音未就绪，客户端不会切换到本地语音实现或伪报可用。
 - OpenClaw 官方 `openclaw.setup.verify` 可用时才作为模型实时验证依据；能力不可用时保持待核验。
+- OpenClaw `config.schema` 的权威响应是包含 `schema`、`uiHints`、`version` 和 `generatedAt` 的信封；JunQi 不接受裸 schema、别名字段、版本 fallback 或方法广告门禁。
 
 ## 核心文件
 
@@ -36,6 +41,8 @@
 - `src/services/gateway/TalkGatewayClient.ts`、`src/services/voice/TalkConversationCoordinator.ts`、`src/components/settings/JarvisVoiceSettingsPanel.tsx`：Talk 状态和 Voice Wake 配置边界。
 - `src/utils/sessionLifecycle.ts`、`src/utils/sessionDelete.ts`、`src/stores/chatStore.ts`、`src/utils/sessionLabel.ts`：主会话身份、删除、页签固定与标签投影。
 - `src/components/Chat/ChatTabs.tsx`、`src/components/Layout/NavSidebar.tsx`、`src/pages/Dashboard/index.tsx`、`src/pages/AgentHub/index.tsx`：默认智能体与 Gateway 主会话展示入口。
+- `src/pages/ConfigManager/ProvidersTab.tsx`、`src/pages/ConfigManager/ProvidersTab.modelAuthStatus.test.tsx`：Provider 卡片内的 Gateway 认证健康、实时验证与受控注销展示。
+- `src/services/openclawConfigSchema.ts`、`src/services/openclawConfigSchema.test.ts`、`src/pages/ConfigManager/ToolsTab.tsx`：官方配置 schema 信封解析、连接围栏、缓存和工具页状态呈现。
 
 ## 测试与验证
 
@@ -43,6 +50,8 @@
 - 本次 Jarvis 与 `main` 合并后已通过 `pnpm lint`、完整 `pnpm test`（前端 2851 项、脚本 243 项）、`cargo fmt -- --check`、`cargo check --lib` 和 `cargo test --lib`。测试输出仅包含既有 Node 弃用与 Radix SSR 警告，没有失败。
 - 本次通知收敛已通过 `pnpm test`（前端 2851 项、脚本 243 项）、`cargo fmt -- --check`、`cargo check --lib` 与 `cargo test --lib commands::notification`（15 项）。
 - 默认智能体与主会话本轮审计确认 `agents.list.mainKey` 是会话后缀，完整默认主会话按 `defaultId`、`mainKey` 和 `scope` 解析。已通过 `pnpm lint`、113 项定向会话与 Gateway 回归、完整 `pnpm test`、`pnpm build`、`git diff --check` 和完整 Emoji 扫描；测试仅输出既有 Node 弃用与 Radix SSR 警告。
+- Provider 认证状态重设计已通过 15 项认证链路定向回归、完整 `pnpm test`（前端 2845 项、脚本 243 项）、`pnpm lint`、`pnpm build`、`pnpm verify:openclaw-docs`、locale JSON 解析、`git diff --check` 和完整修改文件 Emoji 扫描。最终键盘交互调整后再次通过定向回归、lint 与 build。
+- Runtime 配置 schema 修复已通过 11 项定向回归、`pnpm lint`、完整 `pnpm test` 和 `pnpm build`。完整测试包含前端与服务 2851 项、脚本 243 项，无失败；输出仅有既有 Node 弃用和 Radix 服务端渲染警告。
 
 ## 已知问题
 
@@ -52,9 +61,13 @@
 - OpenClaw 目前没有提供适用于 Windows、Ubuntu 或 CentOS 通用桌面客户端的 Voice Wake 运行时命中事件；JunQi 不能宣称跨平台后台唤醒已实现。
 - 尚未用返回非传统 `defaultId` 或 `mainKey` 的真实 Gateway 完成 Tauri 真机视觉验收；本次自动化覆盖了该身份差异的纯函数、删除与会话列表边界。
 - 本机 OpenClaw 运行时代码和随包文档对自定义 `session.mainKey` 是否生效存在差异；JunQi 仅处理当前 Gateway 已返回的字段。最新版官方线上文档本轮请求服务不可用，未完成线上版本复核。
+- 尚未在真实 Gateway 验收 Provider 卡片中的 OAuth/token 到期、实时探测、注销和畸形回包；尚未在真实 Tauri 完成该页面亮色、暗色、窄窗口、键盘焦点、加载、失败和空数据状态的视觉验收。
+- 尚未在真实 Native、Docker 和跨平台 Gateway 中验收工具 schema 加载、插件扩展字段、连接切换与重试；工具页亮色、暗色、窄窗口和键盘焦点仍需 Tauri 真机验证。
 
 ## 下一步顺序
 
 1. 在真实 Tauri 和真实 Gateway 中验收默认 Wizard、钉钉插件安装与授权、工具审批和错误恢复。
 2. 在目标平台验收手动 Talk 的麦克风、实时提供方和音频设备；官方桌面 Voice Wake 扩展点出现前不实现后台唤醒。
 3. 使用非传统默认智能体和主会话 key 的真实 Gateway 验收页签固定、关闭删除、打开直聊主会话和官方新建会话。
+4. 在真实 Gateway 和 Tauri 中验收 Provider 卡片认证摘要、实时验证确认、受控注销及主题与窄窗口表现。
+5. 在 Native 和 Docker Runtime 中切换 Gateway，验收工具配置 schema 重新加载、空字段、授权失败和重试状态。
