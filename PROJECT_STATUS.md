@@ -10,6 +10,12 @@
 
 ## 本阶段已完成
 
+- 已完成参考 Kun 窗口信息架构后的钉钉工作台密度增强；只采用紧凑侧栏、上下文摘要和审计密度，不复制 Kun 运行时或 Agent 语义。
+- 已在业务侧栏增加当前平台、Session、Agent、有效工具摘要和最近本窗口操作，数据只来自当前 Session、`tools.effective` 与本地派生投影。
+- 已删除筛选栏重复 Profile 输入，增加真实业务域与操作效果计数；Profile 仍只在工具详情调用边界维护。
+- 已为操作审计增加官方、本窗口、参与 Agent、处理中和需关注摘要，以及来源范围和文本筛选；不推断 Agent 委派关系。
+- 已为插件安装和 Gateway 重启增加不定进度，确认失败保留弹层并内联显示错误；插件更新后的重启提示优先于安装提示。
+- 已将接入与授权工作区扩展为接入检查、当前业务身份和当前核验证据三列，并更新独立 HTML 预览。
 - 已将业务应用左侧栏收敛为“有效工具”“操作审计”“接入与授权”三个稳定入口，删除页面内部重复页签和无业务价值的说明占位。
 - 已新增独立接入工作区，分别呈现 Session、插件、Agent 双层授权和 DWS 身份核验，并展示 DWS 返回的头像、用户、组织、Profile、状态、到期时间和授权域。
 - 已在 Agent 授权阻断状态提供 OpenClaw 工具策略与插件 `allowedAgentIds` 配置入口；最终有效状态仍只由当前 Session 的 `tools.effective` 核验。
@@ -114,6 +120,8 @@
 - `src-tauri/src/commands/dingtalk_plugin.rs`、`src/api/tauri-commands.ts`：受 Runtime Identity 围栏保护的插件状态、安装和启用 IPC。
 - `src/pages/BusinessApplicationsPage.tsx`、`src/business-applications/businessApplicationsView.ts`、`dingtalkTools.ts`、`activityStore.ts`：稳定视图路由、当前 Session 的钉钉工具投影、直接调用与脱敏活动记录。
 - `src/components/BusinessApplications/`：接入检查、DWS 身份与授权、分组工具表、详情、活动和无障碍可拖拽分隔条。
+- `src/components/Layout/NavSidebarPanels.tsx`：钉钉业务侧栏的当前平台、Session、Agent、工具和最近操作摘要。
+- `src/components/shared/AlertDialog.tsx`、`src/styles/index.css`：异步确认的不定进度和失败内联反馈。
 - `docs/business/dingtalk-single-platform-ui-design-2026-08-08.md`：钉钉单平台窗口结构、状态语义、响应式和实现边界。
 - `docs/previews/junqi-dingtalk-business-workspace.html`：包含侧栏、检查器、主题和页内选中态交互的独立设计预览。
 - `docs/business/dingtalk-business-runtime-implementation-design-2026-08-08.md`：OpenClaw 插件、DWS、身份、审批、幂等、投影和分期架构。
@@ -154,6 +162,7 @@
 
 ## 测试与验证
 
+- 本轮已通过 5 项新增聚焦回归、完整 `pnpm test`（2830 项前端测试、243 项脚本测试）、`pnpm lint`、`pnpm dingtalk:test`、`pnpm dingtalk:validate` 和 `pnpm build`。聚焦回归覆盖插件更新后的重启优先级、插件缺失安装入口、审计摘要派生和不定进度条。
 - 本轮钉钉 UI 收敛已通过 11 项聚焦测试、完整 `pnpm test`（前端 2825 项及脚本测试）、`pnpm lint`、`pnpm dingtalk:test`（12 项）、`pnpm dingtalk:validate`、`pnpm build`、`pnpm verify:openclaw-docs` 和预览标签栈/脚本/语言资源解析。完整测试仅输出既有第三方 Radix 服务端渲染警告。
 - 当前未执行真实 Tauri 窗口中的亮暗主题、键盘焦点、窄窗口和像素级视觉验收；本轮页面结构已由生产构建验证，真实视觉边界记录于 `docs/business/dingtalk-workspace-ui-validation-2026-08-09.md`。
 - 设计预览已通过 HTML 标签栈、内联脚本语法、拖拽与收起控件标识、隐藏平台文案、相对链接和 Emoji 静态检查。

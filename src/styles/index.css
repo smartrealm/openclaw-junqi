@@ -1219,14 +1219,33 @@ html {
   30% { opacity: 1; transform: scale(1); }
 }
 
+.aegis-indeterminate-progress {
+  animation: aegis-indeterminate-progress 1.15s ease-in-out infinite;
+  transform: translateX(-115%);
+  will-change: transform;
+}
+
+@keyframes aegis-indeterminate-progress {
+  0% { transform: translateX(-115%); }
+  55% { transform: translateX(95%); }
+  100% { transform: translateX(250%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .aegis-loading-indicator__spinner,
-  .aegis-loading-indicator__dots circle {
+  .aegis-loading-indicator__dots circle,
+  .aegis-indeterminate-progress {
     animation: none;
   }
 
   .aegis-loading-indicator__dots circle {
     opacity: 0.65;
+    transform: none;
+  }
+
+  .aegis-indeterminate-progress {
+    width: 100%;
+    opacity: 0.55;
     transform: none;
   }
 }

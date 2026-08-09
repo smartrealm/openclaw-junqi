@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Activity, ArrowUpRight, BarChart3, Blocks, BookOpenText, Bot, Brain, Calendar, Clock, Cpu, Database, FileText, Folder, History, ListChecks, MessageSquare, Plus, Puzzle, Settings, Settings2, Terminal, Wrench } from 'lucide-react';
+import { Activity, ArrowUpRight, BarChart3, BookOpenText, Bot, Brain, Building2, Calendar, Clock, Cpu, Database, FileText, Folder, History, ListChecks, MessageSquare, Plus, Puzzle, Settings, Settings2, Terminal, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
@@ -12,6 +12,8 @@ import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigati
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { agentIdFromSessionKey, projectSessionActivity } from '@/utils/sessionPresentation';
 import { SidebarPrimaryAction } from './SidebarPrimaryAction';
+import { collectDingTalkTools } from '@/business-applications/dingtalkTools';
+import { useBusinessActivityStore } from '@/business-applications/activityStore';
 
 type NavigationItem = FeatureLinkedItem & { to: string; icon: React.ReactNode; label: string };
 
@@ -247,34 +249,109 @@ export function BusinessApplicationsPanel() {
   const navigate = useNavigate();
   const location = useLocation();
   const view = new URLSearchParams(location.search).get('view');
+  const activeSessionKey = useChatStore((state) => state.activeSessionKey);
+  const sessions = useChatStore((state) => state.sessions);
+  const effective = useGatewayDataStore((state) => state.toolsEffective[activeSessionKey]);
+  const toolsLoading = useGatewayDataStore((state) => (
+    state.toolsEffectiveLoading && state.toolsEffectiveLoadingSessionKey === activeSessionKey
+  ));
+  const attempts = useBusinessActivityStore((state) => state.attempts);
+  const activeSession = sessions.find((session) => session.key === activeSessionKey) ?? null;
+  const toolCount = useMemo(() => collectDingTalkTools(effective?.groups).length, [effective]);
+  const agentId = effective?.agentId ?? activeSession?.agentId ?? null;
+  const latestAttempt = attempts[0] ?? null;
+  const toolsMeta = toolsLoading
+    ? t('businessApplications.sidebarToolsLoading', '正在读取当前 Session')
+    : activeSession
+      ? t('businessApplications.sidebarToolsCount', '{{count}} 个当前有效工具', { count: toolCount })
+      : t('businessApplications.sidebarNoSession', '尚未选择有效 Session');
+  const activityMeta = attempts.length > 0
+    ? t('businessApplications.sidebarActivityCount', '{{count}} 条本窗口投影', { count: attempts.length })
+    : t('businessApplications.sidebarAuditBoundary', '官方审计与本窗口投影');
   const openWorkbench = (nextView: 'tools' | 'activity' | 'runtime') => {
     navigate(nextView === 'tools' ? '/business-applications' : `/business-applications?view=${nextView}`);
   };
   return (
     <>
-      <SidebarPrimaryAction icon={<Blocks size={16} />} onClick={() => openWorkbench('tools')}>
-        {t('businessApplications.openCatalog', '打开业务应用')}
-      </SidebarPrimaryAction>
+      <div className="mx-2 mb-3 mt-1 rounded-lg border border-aegis-border/75 bg-aegis-surface/55 p-2.5">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-aegis-primary/25 bg-aegis-primary/10 text-aegis-primary">
+            <Building2 size={15} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[12.5px] font-semibold text-aegis-text">
+              {t('businessApplications.sidebarPlatformName', '钉钉工作台')}
+            </div>
+            <div className="mt-0.5 truncate text-[10.5px] text-aegis-text-dim">
+              {t('businessApplications.sidebarPlatformContext', '当前唯一业务平台')}
+            </div>
+          </div>
+          <span className="h-2 w-2 shrink-0 rounded-full bg-aegis-primary" aria-label={t('businessApplications.sidebarPlatformActive', '当前平台')} />
+        </div>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <SidebarSection label={t('businessApplications.sidebarTitle', '业务平台')}>
+        <SidebarSection label={t('businessApplications.sidebarTitle', '工作区')}>
           <SidebarRow
             icon={<Wrench size={14} />}
             title={t('businessApplications.workspaceTools', '有效工具')}
+            meta={toolsMeta}
             active={location.pathname === '/business-applications' && view !== 'activity' && view !== 'runtime'}
             onClick={() => openWorkbench('tools')}
           />
           <SidebarRow
             icon={<ListChecks size={14} />}
             title={t('businessApplications.workspaceActivity', '操作审计')}
+            meta={activityMeta}
             active={location.pathname === '/business-applications' && view === 'activity'}
             onClick={() => openWorkbench('activity')}
           />
           <SidebarRow
             icon={<Settings2 size={14} />}
             title={t('businessApplications.workspaceRuntime', '接入与授权')}
+            meta={t('businessApplications.sidebarRuntimeBoundary', 'Session、插件、Agent、DWS')}
             active={location.pathname === '/business-applications' && view === 'runtime'}
             onClick={() => openWorkbench('runtime')}
           />
+        </SidebarSection>
+        <SidebarSection label={t('businessApplications.sidebarCurrentContext', '当前上下文')}>
+          <div className="mx-2 rounded-md border border-aegis-border/70 bg-aegis-overlay/[0.025] px-2.5 py-2.5">
+            <dl className="grid grid-cols-[48px_minmax(0,1fr)] gap-x-2 gap-y-1.5 text-[10.5px]">
+              <dt className="text-aegis-text-dim">Session</dt>
+              <dd className="truncate font-mono text-aegis-text-secondary" title={activeSessionKey || undefined}>{activeSession ? activeSessionKey : t('businessApplications.sidebarNotSelected', '未选择')}</dd>
+              <dt className="text-aegis-text-dim">Agent</dt>
+              <dd className="truncate font-mono text-aegis-text-secondary" title={agentId ?? undefined}>{agentId ?? t('businessApplications.sidebarNotReturned', '未返回')}</dd>
+            </dl>
+          </div>
+        </SidebarSection>
+        <SidebarSection label={t('businessApplications.sidebarRecentActivity', '最近操作')}>
+          <button
+            type="button"
+            onClick={() => openWorkbench('activity')}
+            className="group mx-2 flex w-[calc(100%_-_1rem)] items-start gap-2 rounded-md border border-transparent px-2.5 py-2 text-left transition-colors hover:border-aegis-border hover:bg-aegis-hover/35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+          >
+            <span className={clsx(
+              'mt-1 h-1.5 w-1.5 shrink-0 rounded-full',
+              latestAttempt?.state === 'succeeded'
+                ? 'bg-aegis-success'
+                : latestAttempt?.state === 'failed'
+                  ? 'bg-aegis-danger'
+                  : latestAttempt ? 'bg-aegis-warning' : 'bg-aegis-text-dim/55',
+            )} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[11.5px] font-medium text-aegis-text-secondary">
+                {latestAttempt?.toolLabel ?? t('businessApplications.sidebarNoActivity', '本窗口尚无业务操作')}
+              </span>
+              <span className="mt-0.5 block truncate text-[10px] text-aegis-text-dim">
+                {latestAttempt
+                  ? t('businessApplications.sidebarActivityState', '{{state}} · {{agent}}', {
+                    state: latestAttempt.state,
+                    agent: latestAttempt.agentId ?? t('businessApplications.sidebarNotReturned', '未返回'),
+                  })
+                  : t('businessApplications.sidebarNoActivityHint', '打开操作审计查看官方记录')}
+              </span>
+            </span>
+            <ArrowUpRight size={11} className="mt-0.5 shrink-0 text-aegis-text-dim opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+          </button>
         </SidebarSection>
       </div>
     </>
