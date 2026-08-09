@@ -12,7 +12,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { CollaborationCapabilities } from '@/services/collaboration/types';
+import type { CollaborationCapabilities } from '@/types/collaboration';
 import {
   useCollaborationText,
   type CollaborationTranslate,

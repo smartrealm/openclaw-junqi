@@ -126,7 +126,7 @@ test("BUG-WIN-CANCEL-05 a running install always offers a cancellation path", ()
 test("BUG-WFR-05 stale Wizard completion cannot commit official-service handoff UI", () => {
   const applyResult = flow.slice(
     flow.indexOf("const applyWizardResult = useCallback"),
-    flow.indexOf("const recoverLostWizardSession = useCallback"),
+    flow.indexOf("const recoverAfterGatewayHandoff = useCallback"),
   );
   assert.match(applyResult, /result: OpenClawWizardResult,\s*operationId: number/);
   assert.match(applyResult, /await handoffGatewayToOfficialService\(\);\s*assertWizardOperationCurrent\(operationId\)/);

@@ -266,7 +266,6 @@ export function useSetupFlow(
     setupStep,
     report,
     patchStep,
-    resolveActiveRuntimeOnboardingRequirement,
     verifyConfiguredInference: verifyActiveRuntimeInference,
     updateOnboardingRequirement,
     appendSetupLog,

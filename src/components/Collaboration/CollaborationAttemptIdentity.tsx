@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { CollaborationAttemptSnapshot } from '@/services/collaboration/types';
+import type { CollaborationAttemptSnapshot } from '@/types/collaboration';
 import {
   useCollaborationText,
   type CollaborationTranslate,

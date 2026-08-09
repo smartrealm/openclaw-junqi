@@ -28,7 +28,7 @@ test('TopBar maps persisted notification fields and localized body', () => {
 
 test('TopBar and notification service use the persistent notification contract', () => {
   const topBar = readFileSync(new URL('./TopBar.tsx', import.meta.url), 'utf8');
-  const service = readFileSync(new URL('../../services/notifications.ts', import.meta.url), 'utf8');
+  const service = readFileSync(new URL('../../runtime/notifications.ts', import.meta.url), 'utf8');
 
   assert.match(topBar, /usePersistentNotifications\(\)/);
   assert.doesNotMatch(topBar, /useNotificationStore/);

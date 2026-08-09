@@ -7,8 +7,6 @@ export interface WizardStepRendererProps {
   value: unknown;
   setValue: Dispatch<SetStateAction<unknown>>;
   t: TFunction;
-  completionVerification?: string;
-  nonBlockingProbeFailure?: boolean;
 }
 
 export type WizardStepRendererComponent = (props: WizardStepRendererProps) => ReactElement | null;

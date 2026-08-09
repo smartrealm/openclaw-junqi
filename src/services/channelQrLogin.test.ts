@@ -4,18 +4,25 @@ import {
   ChannelQrLoginSession,
   safeChannelQrContent,
   safeChannelQrDataUrl,
-  type ChannelGatewayRpc,
+  type ChannelQrLoginGateway,
 } from './channelQrLogin';
 
-function rpc(results: Array<unknown | Error>): ChannelGatewayRpc & { calls: Array<{ method: string; params: Record<string, unknown> }> } {
+function rpc(results: Array<unknown | Error>): ChannelQrLoginGateway & { calls: Array<{ method: string; params: Record<string, unknown> }> } {
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const next = () => {
+    const result = results.shift();
+    if (result instanceof Error) throw result;
+    return result;
+  };
   return {
     calls,
-    async call(method, params) {
-      calls.push({ method, params });
-      const result = results.shift();
-      if (result instanceof Error) throw result;
-      return result;
+    async start(params) {
+      calls.push({ method: 'web.login.start', params });
+      return next();
+    },
+    async wait(params) {
+      calls.push({ method: 'web.login.wait', params });
+      return next();
     },
   };
 }
@@ -63,11 +70,12 @@ describe('ChannelQrLoginSession', () => {
 
   test('cancel prevents an old wait request from publishing stale success', async () => {
     let resolveWait: ((value: unknown) => void) | undefined;
-    const gateway: ChannelGatewayRpc = {
-      async call(method) {
-        if (method === 'web.login.start') return { qrDataUrl: 'data:image/png;base64,AAAA' };
-        if (method === 'web.login.wait') return new Promise((resolve) => { resolveWait = resolve; });
-        return { cancelled: true };
+    const gateway: ChannelQrLoginGateway = {
+      async start() {
+        return { qrDataUrl: 'data:image/png;base64,AAAA' };
+      },
+      async wait() {
+        return new Promise((resolve) => { resolveWait = resolve; });
       },
     };
     const session = new ChannelQrLoginSession(gateway, 'whatsapp');
@@ -109,13 +117,15 @@ describe('ChannelQrLoginSession', () => {
 
   test('关闭对话框只停止本地投影，不调用不存在的取消 RPC', async () => {
     let resolveWait: ((value: unknown) => void) | undefined;
-    const gateway: ChannelGatewayRpc & { calls: Array<{ method: string; params: Record<string, unknown> }> } = {
+    const gateway: ChannelQrLoginGateway & { calls: Array<{ method: string; params: Record<string, unknown> }> } = {
       calls: [],
-      async call(method, params) {
-        this.calls.push({ method, params });
-        if (method === 'web.login.start') return { qrContent: 'https://example.com/qr', sessionId: 'session-1' };
-        if (method === 'web.login.wait') return new Promise((resolve) => { resolveWait = resolve; });
-        throw new Error(`Unexpected Gateway method: ${method}`);
+      async start(params) {
+        this.calls.push({ method: 'web.login.start', params });
+        return { qrContent: 'https://example.com/qr', sessionId: 'session-1' };
+      },
+      async wait(params) {
+        this.calls.push({ method: 'web.login.wait', params });
+        return new Promise((resolve) => { resolveWait = resolve; });
       },
     };
     const session = new ChannelQrLoginSession(gateway, 'qqbot', 'primary');
@@ -161,15 +171,17 @@ describe('ChannelQrLoginSession', () => {
   test('刷新二维码时以本地代际围栏丢弃先前等待结果', async () => {
     let resolveFirstWait: ((value: unknown) => void) | undefined;
     const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
-    const gateway: ChannelGatewayRpc = {
-      async call(method, params) {
-        calls.push({ method, params });
-        if (method === 'web.login.start' && calls.filter((call) => call.method === method).length === 1) {
+    const gateway: ChannelQrLoginGateway = {
+      async start(params) {
+        calls.push({ method: 'web.login.start', params });
+        if (calls.filter((call) => call.method === 'web.login.start').length === 1) {
           return { qrContent: 'https://example.com/first', sessionId: 'first-session' };
         }
-        if (method === 'web.login.start') return { connected: true };
-        if (method === 'web.login.wait') return new Promise((resolve) => { resolveFirstWait = resolve; });
-        throw new Error(`Unexpected Gateway method: ${method}`);
+        return { connected: true };
+      },
+      async wait(params) {
+        calls.push({ method: 'web.login.wait', params });
+        return new Promise((resolve) => { resolveFirstWait = resolve; });
       },
     };
     const session = new ChannelQrLoginSession(gateway, 'qqbot');

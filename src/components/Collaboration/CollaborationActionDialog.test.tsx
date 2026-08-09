@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import en from '@/locales/en.json';
 import zh from '@/locales/zh.json';
-import type { CollaborationRunSnapshot } from '@/services/collaboration/types';
+import type { CollaborationRunSnapshot } from '@/types/collaboration';
 import { CollaborationActionDialog } from './CollaborationActionDialog';
 
 function snapshot(allowedActions: string[]): CollaborationRunSnapshot {

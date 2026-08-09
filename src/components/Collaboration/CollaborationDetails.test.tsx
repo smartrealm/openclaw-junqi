@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { CollaborationEvent, CollaborationRunSnapshot } from '@/services/collaboration/types';
+import type { CollaborationEvent, CollaborationRunSnapshot } from '@/types/collaboration';
 import { CollaborationDetails } from './CollaborationDetails';
 
 const NOW = Date.parse('2026-07-16T09:00:00Z');

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { latestAgentRunTerminalStatus, listAuditEvents, listAuditLedger, parseAuditListPage } from './auditLedger';
+import { latestAgentRunTerminalStatus, listAuditEvents, listAuditLedger, parseAuditListPage } from '@/processing/auditLedger';
 
 const event = {
   eventId: 'event-1',

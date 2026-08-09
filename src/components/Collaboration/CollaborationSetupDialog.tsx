@@ -33,7 +33,7 @@ import {
   type CollaborationAgentConfigurationDraft,
   type CollaborationSetupResult,
 } from '@/stores/collaborationSetupStore';
-import type { CollaborationCapabilities } from '@/services/collaboration/types';
+import type { CollaborationCapabilities } from '@/types/collaboration';
 import {
   deriveCollaborationSetupView,
   useCollaborationSetupStore,

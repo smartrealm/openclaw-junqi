@@ -59,24 +59,6 @@ export interface OpenClawWizardStartOptions {
   workspace?: string;
 }
 
-const WIZARD_PROBE_TITLE = /(?:connection|connectivity|channel).{0,20}(?:test|check|probe|verification)|(?:连接|連線|渠道|通道).{0,20}(?:测试|測試|检查|檢查|验证|驗證)/i;
-const WIZARD_PROBE_FAILURE = /(?:connection|probe|verification|check).{0,20}(?:failed|error)|(?:failed|error).{0,20}(?:connection|probe|verification|check)|(?:连接|連線|探测|探測|验证|驗證|检查|檢查).{0,20}(?:失败|失敗|错误|錯誤)|(?:失败|失敗|错误|錯誤).{0,20}(?:连接|連線|探测|探測|验证|驗證|检查|檢查)|status code\s+[45]\d\d|http\s+[45]\d\d/i;
-
-/**
- * OpenClaw's WizardSessionPrompter.outro() emits exactly a client note titled
- * "Done". Provider notes use note(), so checking this protocol-owned title
- * avoids interpreting channel success prose as terminal state.
- */
-export function isOpenClawWizardCompletionStep(step?: OpenClawWizardStep | null): boolean {
-  return Boolean(step?.type === 'note' && step.title === 'Done');
-}
-
-/** A channel-owned probe failure is informative and does not terminate the wizard protocol. */
-export function isOpenClawWizardNonBlockingProbeFailure(step?: OpenClawWizardStep | null): boolean {
-  if (!step || step.type !== 'note') return false;
-  return WIZARD_PROBE_TITLE.test(step.title ?? '') && WIZARD_PROBE_FAILURE.test(step.message ?? '');
-}
-
 function isWizardOption(value: unknown): value is OpenClawWizardOption {
   if (!value || typeof value !== 'object') return false;
   const option = value as Record<string, unknown>;
@@ -648,6 +630,11 @@ export class OpenClawWizardClient {
   async retry(): Promise<OpenClawWizardResult> {
     this.synchronizeStoredSession();
     if (this.sessionId) return await this.resume();
+    return await this.start(this.startOptions);
+  }
+
+  async restartAfterSessionLoss(): Promise<OpenClawWizardResult> {
+    this.forgetSession();
     return await this.start(this.startOptions);
   }
 

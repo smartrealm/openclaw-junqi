@@ -20,7 +20,7 @@ import {
   Search, FolderOpen, Clock, Zap, MessageSquare, Puzzle, Plus, ArrowUp, ArrowDown, Target,
 } from 'lucide-react';
 import { gateway } from '@/services/gateway';
-import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { readOpenClawConfigSnapshot } from '@/services/gateway/OpenClawConfigSnapshot';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';

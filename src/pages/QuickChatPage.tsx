@@ -21,10 +21,10 @@ import { X, FileText, Folder, Sparkles, GripVertical, Square } from 'lucide-reac
 import clsx from 'clsx';
 import { selectSessionRequestActive, useChatStore } from '@/stores/chatStore';
 import { gateway } from '@/services/gateway';
-import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { voiceRuntime } from '@/runtime/VoiceRuntime';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
-import { chatSendCoordinator } from '@/services/chat/sendTransaction';
+import { chatSendCoordinator } from '@/runtime/chatSendCoordinator';
 import {
   createPreparedAttachment,
   displayAttachments,
@@ -201,7 +201,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     try {
       const clientMessageId = createClientMessageId();
       const prepared = await Promise.all(files.filter((file) => !file.isDir).map(async (seed) => {
-        const { desktopFileRuntime } = await import('@/services/chat/desktopFileRuntime');
+        const { desktopFileRuntime } = await import('@/runtime/desktopFileRuntime');
         const file = await desktopFileRuntime.readAttachment(seed.path);
         if (!file) throw new Error(`Unable to read ${seed.name}`);
         return createPreparedAttachment({

@@ -3,9 +3,9 @@ import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { ComposerActionMenu, ComposerActionMenuItem } from './ComposerActionMenu';
 import { ComposerSuggestionMenus } from './ComposerSuggestionMenus';
-import type { useComposerAttachments } from './useComposerAttachments';
+import type { useComposerAttachments } from '@/hooks/chat/useComposerAttachments';
 import type { useComposerMenu } from './useComposerMenu';
-import type { useComposerSuggestions } from './useComposerSuggestions';
+import type { useComposerSuggestions } from '@/hooks/chat/useComposerSuggestions';
 
 interface ComposerInputSurfaceProps {
   activeSessionKey: string;

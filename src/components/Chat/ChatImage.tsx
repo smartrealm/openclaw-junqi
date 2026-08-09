@@ -6,9 +6,9 @@ import clsx from 'clsx';
 import { debugError, debugLog } from '@/utils/debugLog';
 import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { resolveOpenClawMediaPreviewUrl } from '@/services/chat/openclawMediaPreview';
+import { resolveOpenClawMediaPreviewUrl } from '@/runtime/openClawMediaPreview';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
-import { saveChatMedia } from '@/services/chat/mediaSaveRuntime';
+import { saveChatMedia } from '@/runtime/mediaSaveRuntime';
 
 // ═══════════════════════════════════════════════════════════
 // ChatImage — Image display with save, zoom, and lightbox

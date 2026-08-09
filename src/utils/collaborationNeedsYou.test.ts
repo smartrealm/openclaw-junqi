@@ -3,7 +3,7 @@ import test from 'node:test';
 import type {
   CollaborationRunSnapshot,
   CollaborationRunSummary,
-} from '@/services/collaboration/types';
+} from '@/types/collaboration';
 import { collaborationNeedsYouItems } from './collaborationNeedsYou';
 
 function run(overrides: Partial<CollaborationRunSummary> = {}): CollaborationRunSummary {

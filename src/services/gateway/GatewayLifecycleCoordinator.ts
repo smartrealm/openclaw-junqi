@@ -2,7 +2,7 @@ import {
   createGatewayMigrationRetryCoordinator,
   gatewayMigrationRetryDelayMs,
   type GatewayMigrationRetryCoordinator,
-} from './openclawRepair';
+} from '@/runtime/openclawRepair';
 import type { GatewayRecoveryStatus } from './recoveryProgress';
 
 export type GatewayLifecycleAction = 'reconnect' | 'recover' | 'restart';

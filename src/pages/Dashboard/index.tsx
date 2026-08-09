@@ -36,8 +36,8 @@ import {
   notifyOpenClawSessionCompaction,
   notifyOpenClawSessionCompactionFailure,
   requireOpenClawSessionCompactionTarget,
-} from '@/services/gateway/sessionCompactionFeedback';
-import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
+} from '@/processing/sessionCompactionFeedback';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { useSetupProgress } from '@/hooks/useSetupProgress';

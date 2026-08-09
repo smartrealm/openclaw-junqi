@@ -1,4 +1,4 @@
-import type { CollaborationRunSummary } from '@/services/collaboration/types';
+import type { CollaborationRunSummary } from '@/types/collaboration';
 
 export const DEFAULT_AGENT_HUB_VIEW = 'office' as const;
 

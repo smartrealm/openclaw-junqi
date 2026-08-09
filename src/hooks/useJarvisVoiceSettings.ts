@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { gateway, talkGatewayClient, voiceWakeGatewayClient } from '@/services/gateway';
 import { VoiceWakeGatewayUnavailableError } from '@/services/gateway/VoiceWakeGatewayClient';
-import type { VoiceWakeRoutingConfig } from '@/services/gateway/voiceWakeTypes';
+import type { VoiceWakeRoutingConfig } from '@/types/voiceWake';
 import { subscribeVoiceWakeSettingsProjection } from '@/services/voice/VoiceWakeSettingsProjection';
 import { debugError } from '@/utils/debugLog';
 import { JarvisVoiceSettingsOperationGate } from './JarvisVoiceSettingsOperationGate';

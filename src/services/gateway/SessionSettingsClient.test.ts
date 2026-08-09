@@ -46,8 +46,8 @@ describe('SessionSettingsClient', () => {
     await client.setLabel(SESSION_KEY, 'Planning');
 
     assert.deepEqual(calls, [
-      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, model: 'openai/gpt-5.6' } },
-      { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, model: null } },
+      { lane: 'daily', method: 'sessions.patch', params: { key: SESSION_KEY, model: 'openai/gpt-5.6' } },
+      { lane: 'daily', method: 'sessions.patch', params: { key: SESSION_KEY, model: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, thinkingLevel: 'high' } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, thinkingLevel: null } },
       { lane: 'admin', method: 'sessions.patch', params: { key: SESSION_KEY, fastMode: 'auto' } },
@@ -70,16 +70,17 @@ describe('SessionSettingsClient', () => {
     let releaseFirst!: () => void;
     const firstPending = new Promise<void>((resolve) => { releaseFirst = resolve; });
     let requestCount = 0;
+    const orderedRequest = async () => {
+      requestCount += 1;
+      order.push(`start-${requestCount}`);
+      if (requestCount === 1) await firstPending;
+      order.push(`end-${requestCount}`);
+      return response() as never;
+    };
     const client = new SessionSettingsClient({
       runMutation: (key, operation) => coordinator.runMutation(key, operation),
-      request: async () => response() as never,
-      requestPrivileged: async () => {
-        requestCount += 1;
-        order.push(`start-${requestCount}`);
-        if (requestCount === 1) await firstPending;
-        order.push(`end-${requestCount}`);
-        return response() as never;
-      },
+      request: orderedRequest,
+      requestPrivileged: orderedRequest,
     });
 
     const first = client.setModel(SESSION_KEY, 'openai/gpt-5.6');

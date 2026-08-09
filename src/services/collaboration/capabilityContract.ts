@@ -2,7 +2,7 @@ import {
   COLLABORATION_PLUGIN_BUNDLE,
   type CollaborationPluginBundleMetadata,
 } from './bundledPlugin';
-import type { CollaborationCapabilities } from './types';
+import type { CollaborationCapabilities } from '@/types/collaboration';
 
 export const REQUIRED_COLLABORATION_FEATURES = [
   'SQLITE_AUTHORITY',

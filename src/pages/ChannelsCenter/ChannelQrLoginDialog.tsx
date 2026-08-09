@@ -1,21 +1,24 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle2, Copy, QrCode, RefreshCw, X } from 'lucide-react';
-import { gateway } from '@/services/gateway';
 import {
   ChannelQrLoginSession,
   createOfficialChannelConnectedVerifier,
   type ChannelQrState,
+  type ChannelQrLoginGateway,
+  type ChannelStatusGateway,
 } from '@/services/channelQrLogin';
 import { renderLocalQrDataUrl } from '@/services/qrPresentation';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 export function ChannelQrLoginDialog({
+  client,
   channelId,
   accountId,
   onClose,
   onConnected,
 }: {
+  client: ChannelQrLoginGateway & ChannelStatusGateway;
   channelId: string;
   accountId?: string;
   onClose: () => void;
@@ -24,12 +27,12 @@ export function ChannelQrLoginDialog({
   const { t } = useTranslation();
   const titleId = useId();
   const verifyConnected = useMemo(
-    () => createOfficialChannelConnectedVerifier(gateway, channelId, accountId),
-    [accountId, channelId],
+    () => createOfficialChannelConnectedVerifier(client, channelId, accountId),
+    [accountId, channelId, client],
   );
   const session = useMemo(
-    () => new ChannelQrLoginSession(gateway, channelId, accountId, verifyConnected),
-    [accountId, channelId, verifyConnected],
+    () => new ChannelQrLoginSession(client, channelId, accountId, verifyConnected),
+    [accountId, channelId, client, verifyConnected],
   );
   const [state, setState] = useState<ChannelQrState>(() => session.snapshot());
   const [renderedQrDataUrl, setRenderedQrDataUrl] = useState<string | null>(null);

@@ -4,58 +4,77 @@
 
 ## 当前目标
 
-保持 JunQi 作为 OpenClaw 桌面客户端的边界：首次启动由官方 Wizard 统一编排，钉钉业务能力由 OpenClaw 插件和 DWS 官方 CLI 提供，Jarvis 只呈现当前 Gateway 已证明的手动 Talk 能力。默认智能体、Gateway 主会话和其他智能体直聊主会话必须按官方路由规则呈现；首次引导步骤页采用仅当前页的定向入场：前进从左向右收敛，返回从右向左收敛。
+以最新版 OpenClaw 官方源码为权威，收敛 JunQi Gateway 原生协议、插件扩展、Tauri 本地能力和前端投影
+之间的权限、事件、终态、凭据与模块边界。当前代码已完成直接协议错误和已确认循环整改，正在等待真实
+Gateway、三平台真机和剩余契约测试迁移。
 
 ## 已完成内容
 
-- 首次引导将 Gateway 就绪和 OpenClaw 配置核验统一在同一阶段。默认仅调用官方 `wizard.start`，不创建独立渠道流程，也不发送未经官方会话证明的 `flow` 或 `skipChannels` 参数。
-- 官方 Wizard 的 `note`、`text`、`select`、`multiselect`、`confirm`、`progress` 与 `action` 通过独立步骤渲染器注册表呈现，JunQi 不按步骤标识或渠道名称推断流程。
-- 首次引导前进内容从左侧轻量滑入并向右收敛，返回内容从右侧轻量滑入并向左收敛。旧页面不参与退出动画，减少动态效果偏好下立即呈现；Gateway 配置核验与官方 Wizard 继续原地替换内容。
-- 钉钉工作台只从当前 Session 的 `tools.effective` 投影能力，并通过 `tools.invoke` 与插件审批调用。DWS 业务命令不由 React 或 Tauri 直接执行。
-- DWS 缺失时，已核验的 Native 或 Docker 运行时可启动官方 npm 安装或设备授权流程。输出仅临时投影到当前窗口并做敏感信息隐藏；完成后重新读取插件、Profile 和 Session 工具状态。
-- 钉钉插件安装、Agent 双重授权、Gateway 重启和运行时身份围栏均保留真实未就绪与失败语义，不以本地状态推断成功。
-- Jarvis 设置页明确区分 Gateway Voice Wake 配置和 JunQi 手动 Talk。`talk.catalog` 的目录无效、实时提供方未就绪、原生音频中继不兼容均作为结构化失败呈现。
-- 智能体中心 Office 只将配置席位呈现为虚拟工位。真实协作参与、在线和执行状态只来自 OpenClaw 协作 Run 证据。
-- 会话组织操作使用 OpenClaw 最小 `operator.write` 权限；默认主会话由 `defaultId`、`mainKey` 和 `scope` 按官方路由规则解析，新会话创建确认保留空 leaf，避免错误加载历史。
-- 默认智能体仅由 `agents.list.defaultId` 决定新会话归属；全局固定、关闭保护和删除保护仅匹配解析后的完整默认主会话 key。其他智能体已有的直聊主会话按普通会话处理。
-- “打开主会话”不再构造 `agent:<id>:main`。仅当 Gateway 已返回默认主会话或会话列表已确认对应直聊会话时打开；否则提示不可用并保留官方 `sessions.create` 新建路径。
-- 聊天通知只由带 OpenClaw 原生 `runId` 的流式终态发布；持久转录只更新会话、历史和未读状态，不参与通知。
+- 使用 OpenClaw 官方 `origin/main` 提交 `7a8eee4a363b6fd097a40d221aedcff14e61cc8c` 核对方法、
+  动态会话权限、Wizard、Chat 事件、事件目录和插件注册 API。
+- 重写模块边界扫描器，生产与测试复用同一实现；别名、相对路径、类型、动态和再导出使用同一路径语义。
+- 将 130 个已发现边界违规收敛为零，拆除 `Connection/gatewayDataStore` 和
+  `chatStore/gateway/ChatHandler` 循环。
+- 二维码登录的 `web.login.start/wait` 只走管理员连接，渠道状态读取走普通连接。
+- Chat 支持官方 `deltaText`、累计快照、`replace` 和启动 phase；发送协调器与 store、Gateway facade
+  完成依赖倒置。
+- Wizard 不再从本地配置、超时、标题或消息文本推断完成与失败语义；会话丢失只通过官方流程恢复。
+- 会话模型 patch 使用普通写连接；管理员运行参数保持原权限边界。
+- 删除非官方 Gateway 顶层 session、agent 和 task 事件分支。
+- 删除 `gateway-config` token 事件、旧配置 resolver、写死供应商 OAuth 和六个无消费者的供应商密钥
+  command；系统凭据库只保留 Gateway 设备凭据实际使用的窄接口。
+- 按职责迁移组件、运行时、副作用、纯投影、状态与类型文件；旧路径和无消费者包装一并删除。
+- 新增审计、规格、计划和验证记录：
+  - `docs/quality/gateway-native-extension-consistency-audit-2026-08-09.md`
+  - `docs/quality/gateway-native-extension-consistency-validation-2026-08-09.md`
+  - `specs/quality/2026-08-09-gateway-native-extension-consistency-remediation.md`
+  - `plans/quality/2026-08-09-gateway-native-extension-consistency-remediation.md`
 
 ## 关键技术决策
 
-- OpenClaw 是 Agent、会话、工具、Transcript、任务和运行时状态的唯一权威；JunQi 仅保存绑定运行时身份的派生投影。
-- DWS 认证、Profile、token 与业务执行属于 DWS 和 OpenClaw 插件。桌面侧不读取 token、不写入 transcript、不执行远程脚本，也不重放未知副作用。
-- `talk.catalog.realtime.ready=false` 仅表示 Gateway 实时语音未就绪，客户端不会切换到本地语音实现或伪报可用。
-- OpenClaw 官方 `openclaw.setup.verify` 可用时才作为模型实时验证依据；能力不可用时保持待核验。
+- OpenClaw 核心 RPC、事件、Wizard、Chat、会话和工具语义只由最新版官方源码、协议和真实回执定义。
+- 普通、管理员和本地 Tauri 能力通过窄端口在组合根注入；业务状态机不能自行选择更高权限连接。
+- transport 不持有 store，store 不导入含运行时副作用的总 facade；纯投影进入 `processing`，副作用组合进入
+  `runtime`，稳定值类型进入 `types`。
+- Wizard outcome、配置存在、Gateway 身份和模型验证是独立事实，任何一个都不能替代官方终态。
+- 通用供应商 OAuth 和明文 API Key 读取不属于 JunQi 的 OpenClaw 客户端边界，已直接删除而非保留兼容层。
 
 ## 核心文件
 
-- `src/pages/SetupPage/OpenClawConfigurationScreen.tsx`、`src/pages/SetupPage/WizardScreen.tsx`、`src/pages/SetupPage/wizard/`、`src/services/openclawWizard.ts`：首次引导和官方 Wizard 步骤投影。
-- `src/pages/BusinessApplicationsPage.tsx`、`src/components/BusinessApplications/`、`src/business-applications/dingtalkTools.ts`：钉钉工作台的能力、就绪状态、调用和活动投影。
-- `src-tauri/src/commands/dws_operation.rs`、`src/api/tauri-commands.ts`：DWS 官方安装与设备授权、输出脱敏、取消及 IPC 契约。
-- `packages/junqi-dingtalk/`、`src-tauri/src/commands/dingtalk_plugin.rs`：OpenClaw 钉钉插件、打包资源和运行时身份围栏。
-- `src/services/gateway/TalkGatewayClient.ts`、`src/services/voice/TalkConversationCoordinator.ts`、`src/components/settings/JarvisVoiceSettingsPanel.tsx`：Talk 状态和 Voice Wake 配置边界。
-- `src/utils/sessionLifecycle.ts`、`src/utils/sessionDelete.ts`、`src/stores/chatStore.ts`、`src/utils/sessionLabel.ts`：主会话身份、删除、页签固定与标签投影。
-- `src/components/Chat/ChatTabs.tsx`、`src/components/Layout/NavSidebar.tsx`、`src/pages/Dashboard/index.tsx`、`src/pages/AgentHub/index.tsx`：默认智能体与 Gateway 主会话展示入口。
+- `scripts/check-boundaries.mjs`、`scripts/check-boundaries.test.mjs`：唯一模块边界扫描实现与行为测试。
+- `src/services/gateway/OpenClawChannelQrLoginClient.ts`：二维码管理员请求端口。
+- `src/processing/openClawChatEvent.ts`、`src/runtime/OpenClawChatEventRuntime.ts`：Chat 解码与运行投影。
+- `src/hooks/useSetupFlow/useWizardSession.ts`、`src/services/openclawWizard.ts`：官方 Wizard 会话与恢复。
+- `src/stores/chatGatewayOperations.ts`、`src/runtime/chatSendCoordinator.ts`：store 与发送副作用的组合边界。
+- `src/stores/gatewayDataStore.ts`：官方 Gateway 数据投影。
+- `src-tauri/src/commands/secret_store.rs`、`src-tauri/src/commands/gateway_credentials.rs`：系统凭据库窄接口。
 
 ## 测试与验证
 
-- 合并前首次引导重构已通过 `pnpm lint`、完整 `pnpm test`、`pnpm build`、`pnpm verify:openclaw-docs`、语言 JSON 解析、`git diff --check` 和完整 Emoji 扫描。
-- 首次引导动效方向调整已通过 `src/motion/setupStepTransition.test.ts` 的 6 项回归和 `pnpm lint`。
-- 当前合并提交已通过 `pnpm lint`、113 项定向会话与 Gateway 回归、完整 `pnpm test` 与 `pnpm build`。测试输出仅包含既有 Node 弃用和 Radix 服务端渲染警告，没有失败。
+- `pnpm lint` 通过；边界扫描检查 920 个生产文件，零违规。
+- `pnpm test` 通过：前端 2849 项、脚本 234 项。
+- `cargo fmt -- --check`、`cargo check --lib` 通过。
+- `cargo test --lib` 通过：687 项通过、2 项明确忽略。
+- `pnpm build` 通过，包括协作和钉钉资源打包、TypeScript 与 Vite 生产构建。
+- `pnpm collab:test && pnpm collab:validate` 通过：368 项与插件包契约。
+- `pnpm dingtalk:test && pnpm dingtalk:validate` 通过：12 项与插件包契约。
+- `pnpm verify:openclaw-docs` 通过。
+- `git diff --check` 和全部修改后文件的 Unicode Emoji 扫描通过。
 
 ## 已知问题
 
-- 尚未在真实 Gateway 验收钉钉插件安装、`tools.effective`、`tools.invoke`、插件审批、DWS 授权和真实租户业务响应。
-- 尚未在 macOS、Windows、Linux、Docker Gateway 中验证 DWS 安装、凭据、取消和重连的真实行为。
-- 尚未在真实 Tauri 验收首次启动、钉钉工作台和 Jarvis 页面在亮色、暗色、窄窗口和键盘焦点下的视觉表现。
-- 尚未在真实 Tauri 验收首次引导新的前进与返回方向在亮色、暗色、窄窗口和键盘焦点下的视觉表现。
-- OpenClaw 目前没有提供适用于 Windows、Ubuntu 或 CentOS 通用桌面客户端的 Voice Wake 运行时命中事件；JunQi 不能宣称跨平台后台唤醒已实现。
-- 尚未用返回非传统 `defaultId` 或 `mainKey` 的真实 Gateway 完成 Tauri 真机视觉验收；本次自动化覆盖了该身份差异的纯函数、删除与会话列表边界。
-- 本机 OpenClaw 运行时代码和随包文档对自定义 `session.mainKey` 是否生效存在差异；JunQi 仅处理当前 Gateway 已返回的字段。最新版官方线上文档本轮请求服务不可用，未完成线上版本复核。
+- Agent stream 尚未完成与 Chat 同等级的严格判别解码。
+- 全部 Tauri command 尚未生成 WebView、Rust 内部、插件和测试消费者矩阵；未证明的项没有删除。
+- `src/api/tauriCommandsContract.test.ts` 等历史测试仍存在源码文本断言，需要逐步迁移为可执行契约。
+- `src/runtime/OpenClawChatEventRuntime.ts` 与 `src/pages/ChatView.tsx` 仍偏大，后续应按事件协调和历史视图
+  继续拆分，但本轮不为缩短文件引入无消费者抽象。
+- 尚未在最新版真实 Gateway 验证二维码、Chat、Wizard、协作插件和钉钉插件。
+- 尚未完成 macOS、Windows、Linux 真机、安装包、正式签名、公证和 Release 验证。
 
 ## 下一步顺序
 
-1. 在真实 Tauri 和真实 Gateway 中验收默认 Wizard、钉钉插件安装与授权、工具审批和错误恢复。
-2. 在目标平台验收手动 Talk 的麦克风、实时提供方和音频设备；官方桌面 Voice Wake 扩展点出现前不实现后台唤醒。
-3. 使用非传统默认智能体和主会话 key 的真实 Gateway 验收页签固定、关闭删除、打开直聊主会话和官方新建会话。
+1. 为 Agent stream 建立官方判别联合，并让畸形事件在解码边界失败关闭。
+2. 生成完整 Tauri command 消费者矩阵，逐项删除经运行入口证明无消费者的 command。
+3. 将高风险源码文本守护迁移为解析器、序列化 fixture 或真实 handler 测试。
+4. 在受控最新版 Gateway 回放二维码、Chat、Wizard、协作和钉钉插件。
+5. 在 macOS、Windows、Linux 完成凭据库、WebView、窗口和真实 UI 验收。

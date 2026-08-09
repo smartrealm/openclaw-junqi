@@ -12,28 +12,35 @@ const AppRoutes = lazy(() => import('@/AppRoutes'));
 const PetRuntime = lazy(() => import('@/pet/PetRuntime'));
 const SetupPage = lazy(() => import('@/pages/SetupPage').then(m => ({ default: m.SetupPage })));
 const PairingScreen = lazy(() => import('@/components/PairingScreen').then(m => ({ default: m.PairingScreen })));
-const GatewayErrorScreen = lazy(() => import('@/components/GatewayErrorScreen').then(m => ({ default: m.GatewayErrorScreen })));
+const GatewayErrorScreen = lazy(() => import('@/pages/GatewayErrorScreen').then(m => ({ default: m.GatewayErrorScreen })));
 const DragDropRuntime = lazy(() => import('@/runtime/DragDropRuntime'));
 const DynamicIslandRuntime = lazy(() => import('@/dynamic-island/DynamicIslandRuntime'));
 const OpenClawSessionViewerPresenceRuntime = lazy(() => import('@/runtime/OpenClawSessionViewerPresenceRuntime'));
 const NotificationPreferencesRuntime = lazy(() => import('@/runtime/NotificationPreferencesRuntime'));
 import { useChatStore } from '@/stores/chatStore';
+import { configureChatGatewayOperations } from '@/stores/chatGatewayOperations';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { usePetStore } from '@/stores/petStore';
 import { useBootSequenceStore } from '@/stores/bootSequenceStore';
-import { refreshGroup, useGatewayDataStore } from '@/stores/gatewayDataStore';
+import {
+  refreshGroup,
+  startPolling,
+  stopPolling,
+  useGatewayDataStore,
+} from '@/stores/gatewayDataStore';
 import {
   hasCurrentWorkspaceBootstrapData,
   hasCurrentWorkspaceBootstrapFailure,
 } from '@/services/gateway/workspaceBootstrapReadiness';
 import {
   gateway,
+  openClawGatewayDataRequester,
   subscribePrivilegedAuthorizationIssues,
   subscribePrivilegedAuthorizationResolved,
 } from '@/services/gateway';
 import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawChatRunProjection';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
-import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { openSelectedGatewayControlUi } from '@/services/gateway/GatewayControlUi';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
 import {
@@ -69,7 +76,7 @@ import { startRecoverableTask } from '@/utils/recoverableTask';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
-import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { voiceRuntime } from '@/runtime/VoiceRuntime';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
@@ -81,6 +88,8 @@ import {
   createWorkspaceBootstrapReadiness,
   shouldReleaseWorkspaceAfterGatewayRetryExhaustion,
 } from '@/runtime/workspaceBootstrapReadiness';
+
+configureChatGatewayOperations(gateway);
 
 function ThemeRuntime() {
   useTheme();
@@ -104,7 +113,7 @@ async function notifyLazy(options: {
   dedupeKey?: string;
   url?: string | null;
 }) {
-  const mod = await import('@/services/notifications');
+  const mod = await import('@/runtime/notifications');
   mod.notifications.notify(options);
 }
 
@@ -848,7 +857,12 @@ export default function App() {
       },
       onStatusChange: (status) => {
         setConnectionStatus(status);
-        // Feed WS lifecycle events into the state machine
+        if (status.connected) {
+          startPolling(openClawGatewayDataRequester);
+        } else if (!status.connecting) {
+          stopPolling();
+        }
+        // 将 WebSocket 生命周期交给连接状态机统一收敛。
         if (status.connected) {
           gatewayManager.notifyWsOpen();
           if (verifiedGatewayHandoffRef.current) {

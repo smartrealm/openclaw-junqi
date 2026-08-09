@@ -5,7 +5,8 @@ import type { ResponseGroup } from '@/types/ResponseGroup';
 import { normalizeGatewayMessage } from '@/processing/normalizeGatewayMessage';
 import { buildSemanticBlocks, projectSemanticBlocksToRenderBlocks } from '@/processing/buildSemanticBlocks';
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
-import { gateway, isGatewayChatSendDeliveryUncertain } from '@/services/gateway';
+import type { OpenClawChatRunStartup } from '@/processing/openClawChatEvent';
+import { isOpenClawChatSendDeliveryUncertain } from '@/processing/openClawChatEvent';
 import { OpenClawSessionGroupsUnsupportedError } from '@/services/gateway/OpenClawSessionGroupsClient';
 import type {
   OutboundChatPayload,
@@ -35,11 +36,12 @@ import {
 } from '@/utils/sessionLifecycle';
 import { preserveConfirmedEmptyTranscriptLeaf } from '@/utils/confirmedEmptyTranscript';
 import type { OpenClawChatSendTiming } from '@/services/gateway/chatSendTiming';
-import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
+import type { GatewayThinkingLevelOption } from '@/processing/sessionThinkingProfile';
 import type { GatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
 import type { GatewaySessionAgentStatus } from '@/services/gateway/sessionAgentStatus';
-import type { GatewaySessionContextBudgetStatus } from '@/services/gateway/sessionContextBudgetStatus';
+import type { GatewaySessionContextBudgetStatus } from '@/processing/sessionContextBudgetStatus';
 import type { GatewaySessionGoal } from '@/services/gateway/sessionGoal';
+import { getChatGatewayOperations } from './chatGatewayOperations';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
@@ -202,7 +204,7 @@ function persistSessionAsRead(session: Session | undefined): void {
   if (!session || unreadCount(session.unread) === 0) return;
   if (sessionReadWrites.has(session.key)) return;
   sessionReadWrites.add(session.key);
-  void gateway.setSessionUnread(false, session.key).then(() => {
+  void getChatGatewayOperations().setSessionUnread(false, session.key).then(() => {
     useChatStore.setState((state) => ({
       sessions: updateSession(state.sessions, session.key, (item) => ({
         ...item,
@@ -585,6 +587,9 @@ interface ChatState {
   typingBySession: Record<string, boolean>;
   /** Started timestamps keep background activity surfaces truthful and measurable. */
   typingStartedAtBySession: Record<string, number>;
+  /** OpenClaw 在首个可见活动前返回的官方运行启动阶段。 */
+  chatRunStartupBySession: Record<string, OpenClawChatRunStartup>;
+  setChatRunStartup: (sessionKey: string, startup: OpenClawChatRunStartup | null) => void;
   /** Read-only Gateway timing for the currently projected response, never persisted. */
   chatSendTimingBySession: Record<string, OpenClawChatSendTiming>;
   setChatSendTiming: (sessionKey: string, timing: OpenClawChatSendTiming | null) => void;
@@ -716,6 +721,7 @@ function clearTranscriptStateForIdentityChanges(
     typingBySession: withoutSessionKeys(state.typingBySession, sessionKeys),
     compactionStatusBySession: withoutSessionKeys(state.compactionStatusBySession, sessionKeys),
     typingStartedAtBySession: withoutSessionKeys(state.typingStartedAtBySession, sessionKeys),
+    chatRunStartupBySession: withoutSessionKeys(state.chatRunStartupBySession, sessionKeys),
     chatSendTimingBySession: withoutSessionKeys(state.chatSendTimingBySession, sessionKeys),
     quickRepliesBySession: withoutSessionKeys(state.quickRepliesBySession, sessionKeys),
     thinkingBySession: withoutSessionKeys(state.thinkingBySession, sessionKeys),
@@ -1266,6 +1272,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       typingStartedAtBySession: Object.fromEntries(
         Object.entries(state.typingStartedAtBySession).filter(([key]) => key !== targetKey),
       ),
+      chatRunStartupBySession: Object.fromEntries(
+        Object.entries(state.chatRunStartupBySession).filter(([key]) => key !== targetKey),
+      ),
       chatSendTimingBySession: Object.fromEntries(
         Object.entries(state.chatSendTimingBySession).filter(([key]) => key !== targetKey),
       ),
@@ -1339,6 +1348,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       typingBySession: { ...state.typingBySession, [key]: false },
       typingStartedAtBySession: Object.fromEntries(
         Object.entries(state.typingStartedAtBySession).filter(([sessionKey]) => sessionKey !== key),
+      ),
+      chatRunStartupBySession: Object.fromEntries(
+        Object.entries(state.chatRunStartupBySession).filter(([sessionKey]) => sessionKey !== key),
       ),
       chatSendTimingBySession: Object.fromEntries(
         Object.entries(state.chatSendTimingBySession).filter(([sessionKey]) => sessionKey !== key),
@@ -1717,21 +1729,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const session = get().sessions.find((candidate) => candidate.key === key);
     if (!session) return;
     const pinned = !session.pinned;
-    await gateway.setSessionPinned(pinned, key);
+    await getChatGatewayOperations().setSessionPinned(pinned, key);
     set((state) => ({ sessions: updateSession(state.sessions, key, (item) => ({ ...item, pinned })) }));
   },
 
   setSessionArchived: async (key, archived) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
     if (!session) return;
-    await gateway.setSessionArchived(archived, key);
+    await getChatGatewayOperations().setSessionArchived(archived, key);
     set((state) => ({ sessions: updateSession(state.sessions, key, (item) => ({ ...item, archived })) }));
   },
 
   setSessionUnread: async (key, unread) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
     if (!session) return;
-    await gateway.setSessionUnread(unread, key);
+    await getChatGatewayOperations().setSessionUnread(unread, key);
     set((state) => ({
       sessions: updateSession(state.sessions, key, (item) => ({
         ...item,
@@ -1744,7 +1756,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSessionCategory: async (key, category) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
     if (!session) return;
-    const confirmedCategory = await gateway.setSessionCategory(category, key);
+    const confirmedCategory = await getChatGatewayOperations().setSessionCategory(category, key);
     set((state) => ({
       sessions: updateSession(state.sessions, key, (item) => ({
         ...item,
@@ -1755,7 +1767,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
   },
   ensureSessionGroup: async (name) => {
-    const groups = await gateway.ensureSessionGroup(name);
+    const groups = await getChatGatewayOperations().ensureSessionGroup(name);
     set({
       sessionGroupCatalog: groups.map((group) => group.name),
       sessionGroupCatalogAvailability: 'ready',
@@ -1766,7 +1778,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   refreshSessionGroupCatalog: async () => {
     if (get().sessionGroupCatalogAvailability === 'unavailable') return;
     try {
-      const groups = await gateway.listSessionGroups();
+      const groups = await getChatGatewayOperations().listSessionGroups();
       set({
         sessionGroupCatalog: groups.map((group) => group.name),
         sessionGroupCatalogAvailability: 'ready',
@@ -1948,6 +1960,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { [key]: _groupsRm, ...restGroupsCache } = state._groupsCache;
     const { [key]: _typingRm, ...restTyping } = state.typingBySession;
     const { [key]: _typingStartedAt, ...restTypingStartedAt } = state.typingStartedAtBySession;
+    const { [key]: _startupRm, ...restChatRunStartup } = state.chatRunStartupBySession;
     const { [key]: _timingRm, ...restChatSendTiming } = state.chatSendTimingBySession;
     const { [key]: _qr, ...restQuickReplies } = state.quickRepliesBySession;
     const { [key]: _thinking, ...restThinking } = state.thinkingBySession;
@@ -1973,6 +1986,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       _groupsCache: restGroupsCache,
       typingBySession: restTyping,
       typingStartedAtBySession: restTypingStartedAt,
+      chatRunStartupBySession: restChatRunStartup,
       chatSendTimingBySession: restChatSendTiming,
       quickRepliesBySession: restQuickReplies,
       thinkingBySession: restThinking,
@@ -2045,6 +2059,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── UI State ──
   typingBySession: {},
   typingStartedAtBySession: {},
+  chatRunStartupBySession: {},
+  setChatRunStartup: (sessionKey, startup) => set((state) => {
+    const targetKey = sessionKey.trim();
+    if (!targetKey || isSessionDeleted(targetKey)) return state;
+    const next = { ...state.chatRunStartupBySession };
+    if (!startup) {
+      delete next[targetKey];
+      return { chatRunStartupBySession: next };
+    }
+    if (!state.typingBySession[targetKey]) return state;
+    next[targetKey] = startup;
+    return { chatRunStartupBySession: next };
+  }),
   chatSendTimingBySession: {},
   setChatSendTiming: (sessionKey, timing) => set((state) => {
     const targetKey = sessionKey.trim();
@@ -2160,11 +2187,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         get().setIsTyping(false, sessionKey);
         return;
       }
-      const result = await gateway.sendMessage(next.text, next.attachments, sessionKey, {
+      const result = await getChatGatewayOperations().sendMessage(next.text, next.attachments, sessionKey, {
         clientMessageId: next.id,
         sessionId: next.sessionId,
       }) as { queued?: boolean } | undefined;
-      const deliveryUncertain = isGatewayChatSendDeliveryUncertain(result);
+      const deliveryUncertain = isOpenClawChatSendDeliveryUncertain(result);
       get().updateMessage(sessionKey, next.id, deliveryUncertain
         ? { status: 'pending', deliveryError: undefined, retryPayload }
         : {
@@ -2276,10 +2303,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (isSessionDeleted(targetKey)) return state;
       const wasTyping = state.typingBySession[targetKey] === true;
       const typingStartedAtBySession = { ...state.typingStartedAtBySession };
+      const chatRunStartupBySession = { ...state.chatRunStartupBySession };
       const chatSendTimingBySession = { ...state.chatSendTimingBySession };
       if (typing && !wasTyping) typingStartedAtBySession[targetKey] = Date.now();
       if (!typing) {
         delete typingStartedAtBySession[targetKey];
+        delete chatRunStartupBySession[targetKey];
         delete chatSendTimingBySession[targetKey];
       }
       return {
@@ -2288,6 +2317,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           [targetKey]: typing,
         },
         typingStartedAtBySession,
+        chatRunStartupBySession,
         chatSendTimingBySession,
       };
     }),
@@ -2295,12 +2325,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const targetKey = sessionKey ?? state.activeSessionKey;
     if (isSessionDeleted(targetKey)) return state;
     const typingStartedAtBySession = { ...state.typingStartedAtBySession };
+    const chatRunStartupBySession = { ...state.chatRunStartupBySession };
     const chatSendTimingBySession = { ...state.chatSendTimingBySession };
     delete typingStartedAtBySession[targetKey];
+    delete chatRunStartupBySession[targetKey];
     delete chatSendTimingBySession[targetKey];
     return {
       typingBySession: { ...state.typingBySession, [targetKey]: false },
       typingStartedAtBySession,
+      chatRunStartupBySession,
       chatSendTimingBySession,
       thinkingBySession: {
         ...state.thinkingBySession,

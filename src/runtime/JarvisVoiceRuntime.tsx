@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from 'react';
 import { JarvisVoiceOverlay } from '@/components/Chat/JarvisVoiceOverlay';
-import { useComposerVoice } from '@/components/Chat/message-input/useComposerVoice';
+import { useComposerVoice } from '@/hooks/chat/useComposerVoice';
 import { useChatStore } from '@/stores/chatStore';
 import { debugError } from '@/utils/debugLog';
 import {

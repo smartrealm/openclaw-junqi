@@ -1681,6 +1681,12 @@
       "post-dispatch-completed": "响应已完成",
       "detail": "{{phase}} - Gateway {{ms}} 毫秒"
     },
+    "runStartup": {
+      "preparing_workspace": "正在准备工作区",
+      "provisioning_environment": "正在配置运行环境",
+      "preparing_context": "正在准备上下文",
+      "starting_model": "正在启动模型"
+    },
     "untrustedWorkshopCommandIgnored": "已忽略不可信的文本命令，请改用经过授权的工作台操作。",
     "deliveryNotConfirmed": "OpenClaw 未确认收到此消息，您可以安全重试。",
     "availableSessions": "可用会话",
@@ -4293,8 +4299,6 @@
       "textInput": "OpenClaw 配置值",
       "readyForStep": "此步骤由 OpenClaw 执行。",
       "deviceCodeHint": "请在授权页面输入一次性代码。",
-      "nonBlockingProbeFailure": "这是渠道插件返回的非阻断检查结果，不代表 OpenClaw 或 Gateway 安装失败。可以继续完成向导，启动后再以渠道实际运行状态为准。",
-      "completionVerification": "OpenClaw 向导已结束。点击完成后，JunQi 仍会验证当前 Gateway 连接和所选模型；验证未通过时不会进入工作台。",
       "qrAlt": "扫描授权二维码",
       "scanQrHint": "看不清终端里的字符画二维码？扫这张图，或者复制链接在浏览器里打开。",
       "authorizationContinueHint": "在浏览器中完成授权后，返回这里点击“我已完成授权，继续”。随后将由 OpenClaw 查询授权结果。",

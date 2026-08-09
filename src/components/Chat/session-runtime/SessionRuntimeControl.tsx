@@ -19,8 +19,8 @@ import {
   type SessionResponseUsageLevel,
   type SessionTraceLevel,
   type SessionVerboseLevel,
-} from './sessionRuntimeDomain';
-import { useSessionRuntimeSettings } from './useSessionRuntimeSettings';
+} from '@/processing/sessionRuntimeDomain';
+import { useSessionRuntimeSettings } from '@/hooks/chat/useSessionRuntimeSettings';
 
 export function SessionRuntimeControl() {
   const { t } = useTranslation();

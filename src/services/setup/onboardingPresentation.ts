@@ -1,4 +1,4 @@
-import type { SetupStep } from '@/stores/setup-navigation';
+import type { SetupStep } from '@/types/setupNavigation';
 
 export type OnboardingPresentationKind =
   | 'decision'

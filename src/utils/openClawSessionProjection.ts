@@ -4,10 +4,10 @@ import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
 import { parseGatewaySessionAbortedLastRun } from '@/services/gateway/sessionAbortedLastRun';
 import { parseGatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
 import { parseGatewaySessionAgentStatus } from '@/services/gateway/sessionAgentStatus';
-import { parseGatewaySessionContextBudgetStatus } from '@/services/gateway/sessionContextBudgetStatus';
+import { parseGatewaySessionContextBudgetStatus } from '@/processing/sessionContextBudgetStatus';
 import { parseGatewaySessionGoal } from '@/services/gateway/sessionGoal';
 import { parseGatewaySessionLastRunError } from '@/services/gateway/sessionLastRunError';
-import { parseGatewaySessionThinkingProfile } from '@/services/gateway/sessionThinkingProfile';
+import { parseGatewaySessionThinkingProfile } from '@/processing/sessionThinkingProfile';
 import type { Session } from '@/stores/chatStore';
 import { agentIdFromSessionKey } from './sessionPresentation';
 

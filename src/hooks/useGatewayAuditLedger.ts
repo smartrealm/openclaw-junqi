@@ -6,7 +6,7 @@ import {
   type AuditKind,
   type AuditStatus,
   type OpenClawAuditEvent,
-} from '@/services/gateway/auditLedger';
+} from '@/processing/auditLedger';
 import { useVisibleInterval } from './useVisibleInterval';
 
 interface GatewayAuditLedgerState {

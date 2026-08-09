@@ -19,7 +19,7 @@ import {
   type CollaborationWriteMethod,
   type CollaborationWriteRequest,
   type CollaborationWriteResponse,
-} from '@/services/collaboration/types';
+} from '@/types/collaboration';
 import { subscribeCollaborationChangedHints } from '@/services/gateway/collaborationEventBridge';
 
 export interface CollaborationCommandState {

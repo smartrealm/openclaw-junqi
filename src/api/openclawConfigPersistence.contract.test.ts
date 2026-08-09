@@ -18,7 +18,7 @@ const configManager = source('../pages/ConfigManager/index.tsx');
 const secretsTab = source('../pages/ConfigManager/SecretsTab.tsx');
 const channelsCenter = source('../pages/ChannelsCenter/index.tsx');
 const agentSettings = source('../pages/AgentHub/AgentSettingsPanel.tsx');
-const gatewayErrorScreen = source('../components/GatewayErrorScreen.tsx');
+const gatewayErrorScreen = source('../pages/GatewayErrorScreen.tsx');
 const channelsTab = source('../pages/ConfigManager/ChannelsTab.tsx');
 const agentHub = source('../pages/AgentHub/index.tsx');
 const rustConfig = source('../../src-tauri/src/commands/config.rs');
@@ -118,8 +118,8 @@ test('runtime data access has one typed desktop bridge', () => {
 });
 
 test('managed chat files use typed commands instead of the legacy desktop bridge', () => {
-  const managedRuntime = source('../services/chat/managedFileRuntime.ts');
-  const filePreview = source('../services/chat/filePreview.ts');
+  const managedRuntime = source('../runtime/managedFileRuntime.ts');
+  const filePreview = source('../runtime/filePreview.ts');
   const resultCards = source('../components/Chat/ResultCards.tsx');
   const markdownRenderer = source('../components/Chat/ChatMarkdownRenderer.tsx');
 
@@ -140,7 +140,7 @@ test('managed chat files use typed commands instead of the legacy desktop bridge
 });
 
 test('chat screenshots use the typed runtime instead of the legacy desktop bridge', () => {
-  const screenshotRuntime = source('../services/chat/screenshotRuntime.ts');
+  const screenshotRuntime = source('../runtime/screenshotRuntime.ts');
   const screenshotPicker = source('../components/Chat/ScreenshotPicker.tsx');
 
   assert.match(commands, /export const captureInteractiveScreenshot/);
@@ -157,7 +157,7 @@ test('chat screenshots use the typed runtime instead of the legacy desktop bridg
 });
 
 test('share packages use the typed runtime instead of the legacy desktop bridge', () => {
-  const shareRuntime = source('../services/sharePackagesRuntime.ts');
+  const shareRuntime = source('../runtime/sharePackagesRuntime.ts');
   const shareDialog = source('../components/shared/SharePackageDialog.tsx');
 
   assert.match(commands, /export const scanSharePackageSource/);

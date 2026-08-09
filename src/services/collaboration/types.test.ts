@@ -6,8 +6,8 @@ import {
   hasUnresolvedResidualExecutionRisk,
   isTerminalCollaborationRun,
   parseCollaborationChangedHint,
-} from './types';
-import type { CollaborationRunSnapshot } from './types';
+} from '@/types/collaboration';
+import type { CollaborationRunSnapshot } from '@/types/collaboration';
 import { COLLABORATION_ERROR_CODES as PLUGIN_ERROR_CODES } from '../../../packages/junqi-collab/src/errors';
 
 test('Desktop recognizes every stable collaboration plugin error code', () => {

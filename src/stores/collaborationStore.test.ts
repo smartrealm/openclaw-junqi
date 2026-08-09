@@ -10,7 +10,7 @@ import type {
   CollaborationRunSnapshot,
   CollaborationRunSummary,
   CollaborationTombstone,
-} from '@/services/collaboration/types';
+} from '@/types/collaboration';
 import { publishCollaborationChangedEvent } from '@/services/gateway/collaborationEventBridge';
 import {
   createCollaborationStore,

@@ -8,8 +8,13 @@ export interface ChannelQrState {
   error: string;
 }
 
-export interface ChannelGatewayRpc {
-  call(method: string, params: Record<string, unknown>): Promise<unknown>;
+export interface ChannelQrLoginGateway {
+  start(params: Record<string, unknown>): Promise<unknown>;
+  wait(params: Record<string, unknown>): Promise<unknown>;
+}
+
+export interface ChannelStatusGateway {
+  status(params: Record<string, unknown>): Promise<unknown>;
 }
 
 type QrLoginOutcome = 'waiting' | 'connected' | 'denied' | 'expired' | 'error';
@@ -68,8 +73,7 @@ function statusAccountConnected(payload: unknown, channelId: string, accountId?:
   if (account?.connected === true) return true;
   if (account?.linked === true && account.running === true) return true;
 
-  // A channel-level summary is only safe for the default account. Never let
-  // another account's healthy status confirm the account that was scanned.
+  // 渠道级汇总只能核验默认账号，不能用其他账号的健康状态确认当前扫码账号。
   if (expectedAccountId) return false;
   const channelMap = root.channels;
   const channel = channelMap && typeof channelMap === 'object'
@@ -83,7 +87,7 @@ function statusAccountConnected(payload: unknown, channelId: string, accountId?:
 }
 
 export function createOfficialChannelConnectedVerifier(
-  gateway: ChannelGatewayRpc,
+  gateway: ChannelStatusGateway,
   channelId: string,
   accountId?: string,
 ): ConnectedVerifier {
@@ -95,7 +99,7 @@ export function createOfficialChannelConnectedVerifier(
     for (let attempt = 0; attempt < CHANNEL_STATUS_ATTEMPTS; attempt += 1) {
       if (signal.aborted) return false;
       try {
-        const status = await gateway.call('channels.status', {
+        const status = await gateway.status({
           channel: channelId,
           probe: true,
           timeoutMs: CHANNEL_STATUS_TIMEOUT_MS,
@@ -125,9 +129,7 @@ export function safeChannelQrDataUrl(value: unknown): string | null {
 export function safeChannelQrContent(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const content = value.trim();
-  // The Gateway advertises QR login only for the selected local provider.
-  // Provider QR payloads can be URLs, deep links, or opaque device codes; the
-  // desktop encodes them locally and never loads or executes their contents.
+  // 二维码载荷可能是链接、深链或不透明设备码；桌面端只在本地编码，不加载或执行其内容。
   return content.length > 0
     && content.length <= MAX_QR_CONTENT_LENGTH
     && !/[\u0000-\u001F\u007F]/.test(content)
@@ -181,7 +183,7 @@ export class ChannelQrLoginSession {
   };
 
   constructor(
-    private readonly gateway: ChannelGatewayRpc,
+    private readonly gateway: ChannelQrLoginGateway,
     private readonly channelId: string,
     private readonly accountId?: string,
     private readonly verifyConnected?: ConnectedVerifier,
@@ -209,7 +211,7 @@ export class ChannelQrLoginSession {
     this.sessionId = null;
     this.publish({ phase: 'preparing', qrDataUrl: null, qrContent: null, message: '', error: '' });
     try {
-      const result = resultRecord(await this.gateway.call('web.login.start', {
+      const result = resultRecord(await this.gateway.start({
         channel: this.channelId,
         ...this.accountParams(),
         force,
@@ -275,7 +277,7 @@ export class ChannelQrLoginSession {
         this.publish({ phase: 'expired', qrDataUrl: null, qrContent: null, message: '', error: 'qr_expired' });
         return;
       }
-      const result = resultRecord(await this.gateway.call('web.login.wait', {
+      const result = resultRecord(await this.gateway.wait({
         channel: this.channelId,
         ...this.accountParams(),
         ...(this.sessionId ? { sessionId: this.sessionId } : {}),

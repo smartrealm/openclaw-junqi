@@ -15,11 +15,11 @@ import {
   type AgentOfficeAgentProjection,
   type AgentOfficeAgentState,
   type AgentOfficeZoneId,
-} from '@/services/collaboration/agentOfficeProjection';
+} from '@/processing/agentOfficeProjection';
 import type {
   CollaborationCapabilityAgent,
   CollaborationRunSnapshot,
-} from '@/services/collaboration/types';
+} from '@/types/collaboration';
 import {
   collaborationWorkItemStatusLabel,
   type CollaborationTranslate,

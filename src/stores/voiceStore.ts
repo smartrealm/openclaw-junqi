@@ -3,7 +3,7 @@ import type {
   VoiceGlobalClaim,
   VoicePhase,
   VoiceRuntimeSnapshot,
-} from '@/services/voice/types';
+} from '@/types/voice';
 
 interface VoiceStore extends VoiceRuntimeSnapshot {
   /** Output owned by another WebView; local capture state remains independent. */

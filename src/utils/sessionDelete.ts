@@ -1,5 +1,5 @@
 /** Shared native OpenClaw session deletion flow. */
-import { executeSessionLifecycleMutation } from '@/services/collaboration/sessionLifecycle';
+import { executeSessionLifecycleMutation } from '@/runtime/sessionLifecycle';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';

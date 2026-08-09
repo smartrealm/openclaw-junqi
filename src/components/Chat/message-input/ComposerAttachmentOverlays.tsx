@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ImageLightbox } from '../ChatImage';
-import type { useComposerAttachments } from './useComposerAttachments';
+import type { useComposerAttachments } from '@/hooks/chat/useComposerAttachments';
 
 const ScreenshotPicker = lazy(() => import('../ScreenshotPicker').then((module) => ({ default: module.ScreenshotPicker })));
 

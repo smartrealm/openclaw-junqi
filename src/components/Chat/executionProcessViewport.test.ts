@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const viewSource = readFileSync(new URL('./ChatView.tsx', import.meta.url), 'utf8');
+const viewSource = readFileSync(new URL('../../pages/ChatView.tsx', import.meta.url), 'utf8');
 const groupSource = readFileSync(new URL('./ExecutionProcessGroup.tsx', import.meta.url), 'utf8');
 
 test('execution expansion preserves the current virtual-list reading position', () => {

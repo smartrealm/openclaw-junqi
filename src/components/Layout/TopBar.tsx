@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useRef, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { useTranslation } from 'react-i18next';
 import { AppWindow, ArrowLeft, ChevronDown, PanelLeftOpen, PanelLeftClose, PanelLeft, Bell, Search, LayoutGrid } from 'lucide-react';
 import clsx from 'clsx';

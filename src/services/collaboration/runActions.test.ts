@@ -13,11 +13,11 @@ import {
   type CollaborationDeletePreview,
   type CollaborationPartialPreview,
   type CollaborationRunActionSubmission,
-} from './runActions';
+} from '@/runtime/collaborationRunActions';
 import type {
   CollaborationRunSnapshot,
   CollaborationWriteMethod,
-} from './types';
+} from '@/types/collaboration';
 
 const TEST_INSTANCE_ID = 'instance-1';
 const DELETE_DIGEST = 'd'.repeat(64);

@@ -7,8 +7,8 @@ import { AlertCircle, Paperclip, RotateCcw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const ChatTabs = lazy(() => import('@/components/Chat/ChatTabs').then((m) => ({ default: m.ChatTabs })));
-const ChatView = lazy(() => import('@/components/Chat/ChatView').then((m) => ({ default: m.ChatView })));
-const SessionContextBar = lazy(() => import('@/components/Chat/SessionContextBar').then((m) => ({ default: m.SessionContextBar })));
+const ChatView = lazy(() => import('@/pages/ChatView').then((m) => ({ default: m.ChatView })));
+const SessionContextBar = lazy(() => import('@/runtime/SessionContextBar').then((m) => ({ default: m.SessionContextBar })));
 
 function ChatPageFallback() {
   return (

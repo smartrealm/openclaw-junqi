@@ -8,7 +8,7 @@ import {
 import type {
   CollaborationCapabilities,
   CollaborationWriteResponse,
-} from './types';
+} from '@/types/collaboration';
 import type { CollaborationAbsenceProof } from './CollaborationAbsenceAttestation';
 
 function capabilities(

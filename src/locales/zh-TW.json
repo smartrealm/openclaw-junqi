@@ -1652,6 +1652,12 @@
       "post-dispatch-completed": "回應已完成",
       "detail": "{{phase}} - Gateway {{ms}} 毫秒"
     },
+    "runStartup": {
+      "preparing_workspace": "正在準備工作區",
+      "provisioning_environment": "正在配置執行環境",
+      "preparing_context": "正在準備上下文",
+      "starting_model": "正在啟動模型"
+    },
     "untrustedWorkshopCommandIgnored": "已忽略不可信的文本命令，請改用經過授權的工作台操作。",
     "availableSessions": "可用會話",
     "newTab": "新建標籤頁",
@@ -4262,8 +4268,6 @@
       "textInput": "OpenClaw 配置值",
       "readyForStep": "此步驟由 OpenClaw 執行。",
       "deviceCodeHint": "請在授權頁面輸入一次性代碼。",
-      "nonBlockingProbeFailure": "這是渠道外掛程式返回的非阻斷檢查結果，不代表 OpenClaw 或 Gateway 安裝失敗。可以繼續完成設定精靈，啟動後再以渠道實際運行狀態為準。",
-      "completionVerification": "OpenClaw 設定精靈已結束。按下完成後，JunQi 仍會驗證目前的 Gateway 連線和所選模型；驗證未通過時不會進入工作區。",
       "qrAlt": "掃描授權二維碼",
       "scanQrHint": "看不清終端裡的字元畫二維碼？掃這張圖，或者複製連結在瀏覽器裡打開。",
       "authorizationContinueHint": "在瀏覽器完成授權後，返回此處點擊「我已完成授權，繼續」。隨後將由 OpenClaw 查詢授權結果。",

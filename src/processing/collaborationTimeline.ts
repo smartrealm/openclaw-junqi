@@ -1,4 +1,4 @@
-import type { CollaborationRunSummary } from '@/services/collaboration/types';
+import type { CollaborationRunSummary } from '@/types/collaboration';
 import type { ChatMessage } from '@/stores/chatStore';
 import type { ResponseGroup } from '@/types/ResponseGroup';
 

@@ -2,7 +2,7 @@ import type {
   VoiceWakeGatewayEvent,
   VoiceWakeGatewayEventListener,
 } from '@/services/gateway/voiceWakeEventBridge';
-import type { VoiceWakeRoutingConfig } from '@/services/gateway/voiceWakeTypes';
+import type { VoiceWakeRoutingConfig } from '@/types/voiceWake';
 
 export type VoiceWakeGatewayEventSubscriber = (
   listener: VoiceWakeGatewayEventListener,

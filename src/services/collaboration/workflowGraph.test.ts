@@ -3,8 +3,8 @@ import test from 'node:test';
 import {
   buildWorkflowGraphProjection,
   workflowGraphEdgePath,
-} from './workflowGraph';
-import type { CollaborationWorkItemSnapshot } from './types';
+} from '@/processing/collaborationWorkflowGraph';
+import type { CollaborationWorkItemSnapshot } from '@/types/collaboration';
 
 function item(
   logicalId: string,

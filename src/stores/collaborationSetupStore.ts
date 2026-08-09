@@ -13,7 +13,7 @@ import {
   desktopBootstrapService,
   type DesktopBootstrapTransport,
 } from '@/services/collaboration/DesktopBootstrapService';
-import type { CollaborationCapabilities } from '@/services/collaboration/types';
+import type { CollaborationCapabilities } from '@/types/collaboration';
 import {
   bindCollaborationRuntimeIdentity,
   getCurrentRuntimeIdentity,

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { setupStepMessageKey } from '@/stores/setup-navigation';
 
 function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -121,7 +122,7 @@ test('BUG-GSC01 ordinary application lifecycle requests use one coordinator', ()
   const app = source('src/App.tsx');
   const channels = source('src/pages/ChannelsCenter/index.tsx');
   const settings = source('src/pages/SettingsPage.tsx');
-  const palette = source('src/components/CommandPalette.tsx');
+  const palette = source('src/runtime/CommandPalette.tsx');
   const setup = sourceDirTs('src/hooks/useSetupFlow');
   const ordinaryUi = [
     app,
@@ -281,7 +282,7 @@ test('OpenClaw session inspection and checkpoint controls use official session R
   const gateway = source('src/services/gateway/index.ts');
   const compaction = source('src/services/gateway/SessionCompactionClient.ts');
   const checkpoints = source('src/services/gateway/OpenClawSessionCompactionCheckpointsClient.ts');
-  const contextBar = source('src/components/Chat/SessionContextBar.tsx');
+  const contextBar = source('src/runtime/SessionContextBar.tsx');
   const hook = source('src/hooks/useSessionInspection.ts');
   assert.match(gateway, /connection\.request\('sessions\.preview'/);
   assert.match(gateway, /connection\.request\(\s*'sessions\.resolve'/);
@@ -302,7 +303,7 @@ test('OpenClaw session inspection and checkpoint controls use official session R
 });
 
 test('session context toolbar exposes only session-scoped controls', () => {
-  const contextBar = source('src/components/Chat/SessionContextBar.tsx');
+  const contextBar = source('src/runtime/SessionContextBar.tsx');
   assert.doesNotMatch(contextBar, /SessionArtifactsButton/);
   assert.doesNotMatch(contextBar, /useSkillsStore|OPENCLAW_TOOLS_ROUTE|navigate\('\/activity'\)/);
   assert.match(contextBar, /<EffectiveToolsControl[\s\S]*?sessionKey=\{activeSessionKey\}/);
@@ -427,12 +428,11 @@ test('BUG-ST01 storage bootstrap is stable and environment overrides remain supp
 
 test('BUG-ST02 storage decision is an explicit post-detection setup step', () => {
   const store = source('src/stores/app-store.ts');
-  const navigation = source('src/stores/setup-navigation.ts');
   const flow = sourceDirTs('src/hooks/useSetupFlow');
   const setup = sourceDir('src/pages/SetupPage');
   const gate = source('src/components/setup/StorageSetupGate.tsx');
   const main = source('src/main.tsx');
-  assert.match(navigation, /\| "storage"/);
+  assert.equal(setupStepMessageKey('storage'), 'storage.title');
   assert.match(store, /postStorageStep/);
   // Detection records the post-storage destination on a stable Environment
   // result page. Storage is pushed only after explicit confirmation so Back
@@ -520,7 +520,7 @@ test('BUG-GSO-03 selected service restart failures are fail-closed', () => {
 
 test('BUG-03 gateway manager snapshots include collected logs', () => {
   const manager = source('src/services/gateway/GatewayConnectionManager.ts');
-  const errorScreen = source('src/components/GatewayErrorScreen.tsx');
+  const errorScreen = source('src/pages/GatewayErrorScreen.tsx');
   assert.match(manager, /logs: this\.logs/);
   assert.match(errorScreen, /logs=\{combinedLogs\}/);
 });
@@ -666,7 +666,7 @@ test('BUG-GL10 status polling is serial and invalidates in-flight results on cle
 });
 
 test('BUG-05 recovery log surfaces retain useful diagnostic context', () => {
-  const errorScreen = source('src/components/GatewayErrorScreen.tsx');
+  const errorScreen = source('src/pages/GatewayErrorScreen.tsx');
   assert.match(errorScreen, /const combinedLogs =/);
   assert.match(errorScreen, /max-h-48/);
   assert.match(errorScreen, /logs=\{combinedLogs\}/);
@@ -758,7 +758,7 @@ test('OpenClaw updates reuse boot recovery UI without racing the updater restart
 
 test('migration-lock failures wait for OpenClaw expiry before another restart attempt', () => {
   const app = source('src/App.tsx');
-  const recovery = source('src/services/gateway/openclawRepair.ts');
+  const recovery = source('src/runtime/openclawRepair.ts');
   const coordinator = source('src/services/gateway/GatewayLifecycleCoordinator.ts');
   const progress = source('src/services/gateway/recoveryProgress.ts');
 
@@ -775,7 +775,7 @@ test('BUG-GSC11 an authenticated external Gateway cancels a stale migration retr
   const app = source('src/App.tsx');
   const observation = source('src/services/gateway/gatewayProcessObservation.ts');
   const manager = source('src/services/gateway/GatewayConnectionManager.ts');
-  const recovery = source('src/services/gateway/openclawRepair.ts');
+  const recovery = source('src/runtime/openclawRepair.ts');
 
   assert.match(observation, /await probeSelectedGateway\(status\.port\)/);
   assert.match(manager, /selectedGatewayReady/);

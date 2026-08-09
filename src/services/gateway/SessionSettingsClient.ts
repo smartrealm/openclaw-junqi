@@ -84,7 +84,8 @@ function confirmedPatchResult(result: unknown, sessionKey: string): SessionPatch
 
 /**
  * `sessions.patch` 是 OpenClaw 控制平面变更。用户级会话组织字段走日常
- * operator.write 连接，模型与运行参数字段才走短生命周期的 operator.admin 连接。
+ * operator.write 连接；只有官方动态权限规则要求管理员权限的运行参数才走短生命周期
+ * operator.admin 连接。
  */
 export class SessionSettingsClient {
   constructor(private readonly deps: SessionSettingsClientDeps) {}
@@ -106,7 +107,7 @@ export class SessionSettingsClient {
   }
 
   setModel(sessionKey: string, model: string | null): Promise<SessionPatchResult> {
-    return this.patch(sessionKey, { model }, true);
+    return this.patch(sessionKey, { model }, false);
   }
 
   setThinking(sessionKey: string, thinkingLevel: string | null): Promise<SessionPatchResult> {

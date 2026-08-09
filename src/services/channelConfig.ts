@@ -492,7 +492,7 @@ export const gatewayChannelConfigRepository: ChannelConfigRepository = {
     await openClawRuntimeConfigClient.replace(config, snapshot);
   },
   async restart() {
-    const { gatewayLifecycle } = await import('@/services/gateway/gatewayLifecycle');
+    const { gatewayLifecycle } = await import('@/runtime/gatewayLifecycle');
     return gatewayLifecycle.restart('channel-config-repository').catch(() => null);
   },
 };

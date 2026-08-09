@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getFileName, getFileParentFolder } from './filePresentation';
+import { getFileName, getFileParentFolder } from '@/utils/filePresentation';
 
 test('CHAT-12 compact file rows retain the filename and nearest parent folder only', () => {
   const path = '/Users/wei/Desktop/大夏集团/2026-06-08-培训项目/企业AI落地培训课件/index.html';

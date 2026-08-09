@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { formatTraceTimestamp } from '@/components/Chat/chatResponseTracePresentation';
 import { useGatewayAuditLedger } from '@/hooks/useGatewayAuditLedger';
-import { AUDIT_KINDS, AUDIT_STATUSES, type AuditKind, type AuditStatus, type OpenClawAuditEvent } from '@/services/gateway/auditLedger';
+import { AUDIT_KINDS, AUDIT_STATUSES, type AuditKind, type AuditStatus, type OpenClawAuditEvent } from '@/processing/auditLedger';
 
 function statusTone(status: AuditStatus): string {
   if (status === 'succeeded') return 'text-aegis-success';

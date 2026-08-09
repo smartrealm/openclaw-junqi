@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   getGatewaySessionContextBudgetNotice,
   parseGatewaySessionContextBudgetStatus,
-} from './sessionContextBudgetStatus';
+} from '@/processing/sessionContextBudgetStatus';
 
 const valid = {
   schemaVersion: 1,

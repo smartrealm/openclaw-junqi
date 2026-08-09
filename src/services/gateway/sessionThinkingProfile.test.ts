@@ -4,7 +4,7 @@ import {
   gatewayThinkingLevelLabel,
   parseGatewaySessionThinkingProfile,
   parseGatewayThinkingLevels,
-} from './sessionThinkingProfile';
+} from '@/processing/sessionThinkingProfile';
 
 test('Gateway 思考能力集保留 provider 下发的 id 和显示标签', () => {
   assert.deepEqual(parseGatewayThinkingLevels([

@@ -16,7 +16,7 @@ import type {
   CollaborationWriteMethod,
   CollaborationWriteRequest,
   CollaborationWriteResponse,
-} from './types';
+} from '@/types/collaboration';
 
 const BASE_REQUEST: SessionMutationRequest = {
   collaborationInstanceId: 'instance-1',

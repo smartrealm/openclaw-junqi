@@ -19,14 +19,14 @@ import {
   type CollaborationRunActionPreview,
   type CollaborationRunActionSubmission,
   type CollaborationAttemptUnknownResolution,
-} from '@/services/collaboration/runActions';
+} from '@/runtime/collaborationRunActions';
 import type {
   CollaborationAttemptSnapshot,
   CollaborationDeliverySnapshot,
   CollaborationOriginRef,
   CollaborationRunSnapshot,
   CollaborationWorkItemSnapshot,
-} from '@/services/collaboration/types';
+} from '@/types/collaboration';
 import { useCollaborationText, type CollaborationTranslate } from './CollaborationCard';
 import { CollaborationAttemptIdentity } from './CollaborationAttemptIdentity';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';

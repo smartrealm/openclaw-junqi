@@ -1,0 +1,280 @@
+import { useEffect, useRef, useState } from 'react';
+import { AlertCircle, Check, ChevronDown, CircleStop, Download, Folder, Gauge, ListTodo, MessageSquareText, Plus, RotateCcw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
+import clsx from 'clsx';
+import { gateway } from '@/services/gateway';
+import { useChatStore } from '@/stores/chatStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { exportChatMarkdown } from '@/utils/exportChat';
+import { getAgentDisplayName } from '@/utils/agentDisplayName';
+import { debugError } from '@/utils/debugLog';
+import { SessionRuntimeControl } from '@/components/Chat/session-runtime/SessionRuntimeControl';
+import { EffectiveToolsControl } from './EffectiveToolsControl';
+import { BrowserControlCenter } from '@/components/Chat/BrowserControlCenter';
+import { SessionInspectionControl } from '@/components/Chat/SessionInspectionControl';
+import { SessionBranchesControl } from '@/components/Chat/SessionBranchesControl';
+import { SessionArtifactsControl } from '@/components/Chat/SessionArtifactsControl';
+import { ChatIconButton } from '@/components/Chat/ChatIconButton';
+import { desktopFileRuntime } from '@/runtime/desktopFileRuntime';
+import { getGatewaySessionContextBudgetNotice } from '@/processing/sessionContextBudgetStatus';
+
+function WorkspacePicker({ agentId, current }: { agentId: string; current?: string }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [recents, setRecents] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('aegis:recent-workspaces') || '[]'); } catch { return []; }
+  });
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const persist = (ws: string) => {
+    const next = [ws, ...recents.filter((w) => w !== ws)].slice(0, 8);
+    setRecents(next);
+    localStorage.setItem('aegis:recent-workspaces', JSON.stringify(next));
+  };
+  const switchTo = async (ws: string) => {
+    setOpen(false);
+    setQuery('');
+    persist(ws);
+    try { await gateway.updateAgent(agentId, { workspace: ws }); } catch (e) { debugError('app', '[WorkspacePicker] switch failed:', e); }
+  };
+  const pickFolder = async () => {
+    const directory = await desktopFileRuntime.selectDirectory();
+    if (directory) await switchTo(directory);
+  };
+  const label = current ? (current.split(/[\\/]/).pop() || current) : t('chat.workspaceDefault');
+  const filtered = query.trim()
+    ? recents.filter((ws) => ws.toLowerCase().includes(query.toLowerCase()) || (ws.split(/[\\/]/).pop() || '').toLowerCase().includes(query.toLowerCase()))
+    : recents;
+
+  return (
+    <div ref={ref} className="relative no-drag">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] text-aegis-text-muted hover:text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.06)] transition-colors"
+        title={current || t('chat.workspaceDefault')}
+      >
+        <Folder size={11} />
+        <span className="font-mono max-w-[120px] truncate">{label}</span>
+        <ChevronDown size={9} className={clsx('transition-transform duration-150', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 w-[260px] rounded-xl overflow-hidden bg-aegis-menu-bg border border-aegis-menu-border" style={{ boxShadow: 'var(--aegis-menu-shadow)' }}>
+          <div className="p-2 border-b border-[rgb(var(--aegis-overlay)/0.06)]">
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t('chat.workspaceSearch')}
+              className="w-full rounded-md bg-[rgb(var(--aegis-overlay)/0.06)] px-2 py-1 text-[11px] text-aegis-text placeholder:text-aegis-text-dim outline-none focus:bg-[rgb(var(--aegis-overlay)/0.1)]"
+            />
+          </div>
+          <div className="max-h-[200px] overflow-y-auto scrollbar-hidden">
+            {filtered.length > 0 ? filtered.map((ws) => {
+              const isActive = current === ws;
+              const name = ws.split(/[\\/]/).pop() || ws;
+              return (
+                <button key={ws} onClick={() => switchTo(ws)} className={clsx('w-full text-start px-3 py-1.5 text-[11px] truncate font-mono transition-colors', isActive ? 'bg-aegis-primary/10 text-aegis-primary' : 'text-aegis-text-secondary hover:bg-[rgb(var(--aegis-overlay)/0.06)]')} title={ws}>
+                  <span className="font-sans font-medium">{name}</span>
+                  <span className="ml-1.5 text-[10px] text-aegis-text-dim">{ws}</span>
+                </button>
+              );
+            }) : (
+              <div className="px-3 py-2 text-[11px] text-aegis-text-dim">{t('chat.workspaceNoResults')}</div>
+            )}
+          </div>
+          <div className="border-t border-[rgb(var(--aegis-overlay)/0.06)]">
+            <button onClick={pickFolder} className="w-full flex items-center gap-1.5 text-start px-3 py-2 text-[11px] text-aegis-primary hover:bg-aegis-primary/10 transition-colors">
+              <Plus size={11} /> {t('chat.workspacePick')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function SessionContextBar() {
+  const { t } = useTranslation();
+  const { tokenUsage, renderBlocks, activeSessionKey, sessions, compactionStatusBySession } = useChatStore();
+  const agents = useGatewayDataStore((s) => s.agents);
+  const defaultAgentId = useGatewayDataStore((s) => s.defaultAgentId);
+  const navigate = useNavigate();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRefreshed, setIsRefreshed] = useState(false);
+  // Parse agentId from session key (same logic as ChatTabs)
+  const keyParts = activeSessionKey.split(':');
+  const agentId = keyParts.length >= 3 ? (keyParts[1] ?? '') : '';
+  const agent = agents.find((a) => a.id === agentId);
+  const defaultAgentName = getAgentDisplayName(agents.find((a) => a.id === defaultAgentId), t('agents.mainAgent'));
+  const agentDisplayName = getAgentDisplayName(agent, agentId === defaultAgentId ? defaultAgentName : agentId);
+  const activeSession = sessions.find((session) => session.key === activeSessionKey);
+  const compactionActive = Boolean(compactionStatusBySession[activeSessionKey]);
+  const contextBudgetNotice = getGatewaySessionContextBudgetNotice(activeSession?.contextBudgetStatus);
+  const contextBudgetLabel = contextBudgetNotice === 'compact'
+    ? t('chat.sessionContextBudgetCompact')
+    : contextBudgetNotice === 'trim-tools'
+      ? t('chat.sessionContextBudgetTrimTools')
+      : contextBudgetNotice === 'compact-and-trim-tools'
+        ? t('chat.sessionContextBudgetCompactAndTrimTools')
+        : null;
+  const sessionGoalObjective = activeSession?.goal?.objective ?? null;
+  const sessionGoalLabel = activeSession?.goal
+    ? t('chat.sessionGoal', {
+        objective: sessionGoalObjective,
+        status: t(`chat.sessionGoalStatus.${activeSession.goal.status}`),
+      })
+    : null;
+
+  const usedTokens = tokenUsage?.contextTokens || 0;
+  const maxTokens = tokenUsage?.maxTokens || 0;
+  const usedK = Math.round(usedTokens / 1000);
+  const maxLabel = maxTokens >= 1_000_000
+    ? `${(maxTokens / 1_000_000).toFixed(maxTokens % 1_000_000 === 0 ? 0 : 1)}M`
+    : `${Math.round(maxTokens / 1000)}K`;
+
+  return (
+    <div className="relative z-40 h-[32px] shrink-0 flex items-center gap-2 px-3 border-b border-[rgb(var(--aegis-overlay)/0.06)] bg-[var(--aegis-bg-frosted-60)]">
+      <span className="text-[10px] uppercase tracking-[0.5px] text-aegis-text-dim" title={agentDisplayName}>
+        {agentDisplayName}
+      </span>
+      <WorkspacePicker agentId={agentId} current={agent?.workspace} />
+      <SessionRuntimeControl />
+      {compactionActive && (
+        <span
+          role="status"
+          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-aegis-warning/10 px-1.5 py-0.5 text-[10px] text-aegis-warning"
+          title={t('chat.compactionInProgress')}
+          aria-label={t('chat.compactionInProgress')}
+        >
+          <RotateCcw size={11} className="animate-spin" aria-hidden="true" />
+          <span>{t('chat.compactionInProgress')}</span>
+        </span>
+      )}
+      {activeSession?.agentStatus && (
+        <span
+          role="status"
+          className="inline-flex min-w-0 max-w-[min(38vw,340px)] items-center gap-1 text-aegis-text-muted"
+          aria-label={t('chat.sessionAgentStatus', { note: activeSession.agentStatus.note })}
+          title={t('chat.sessionAgentStatus', { note: activeSession.agentStatus.note })}
+        >
+          <MessageSquareText size={11} className="shrink-0" aria-hidden="true" />
+          <span className="hidden truncate text-[10px] lg:inline">
+            {activeSession.agentStatus.note}
+          </span>
+        </span>
+      )}
+      {contextBudgetLabel && (
+        <span
+          role="status"
+          className="inline-flex min-w-0 max-w-[min(38vw,340px)] items-center gap-1 text-aegis-warning"
+          aria-label={contextBudgetLabel}
+          title={contextBudgetLabel}
+        >
+          <Gauge size={11} className="shrink-0" aria-hidden="true" />
+          <span className="hidden truncate text-[10px] lg:inline">
+            {contextBudgetLabel}
+          </span>
+        </span>
+      )}
+      {sessionGoalLabel && (
+        <span
+          role="status"
+          className="inline-flex min-w-0 max-w-[min(38vw,340px)] items-center gap-1 text-aegis-primary"
+          aria-label={sessionGoalLabel}
+          title={sessionGoalLabel}
+        >
+          <ListTodo size={11} className="shrink-0" aria-hidden="true" />
+          <span className="hidden truncate text-[10px] lg:inline">
+            {sessionGoalObjective}
+          </span>
+        </span>
+      )}
+      {activeSession?.lastRunError && (
+        <span
+          role="status"
+          className="inline-flex min-w-0 max-w-[min(38vw,340px)] items-center gap-1 text-aegis-danger"
+          aria-label={t('chat.sessionLastRunFailed', { reason: activeSession.lastRunError })}
+          title={t('chat.sessionLastRunFailed', { reason: activeSession.lastRunError })}
+        >
+          <AlertCircle size={11} className="shrink-0" aria-hidden="true" />
+          <span className="hidden truncate text-[10px] lg:inline">
+            {t('chat.sessionLastRunFailedShort')}
+          </span>
+        </span>
+      )}
+      {activeSession?.abortedLastRun && (
+        <span
+          role="status"
+          className="inline-flex min-w-0 items-center gap-1 text-aegis-text-muted"
+          aria-label={t('chat.sessionLastRunAborted')}
+          title={t('chat.sessionLastRunAborted')}
+        >
+          <CircleStop size={11} className="shrink-0" aria-hidden="true" />
+          <span className="hidden truncate text-[10px] lg:inline">
+            {t('chat.sessionLastRunAbortedShort')}
+          </span>
+        </span>
+      )}
+      <div className="ms-auto flex items-center gap-2 pl-2 border-l border-[rgb(var(--aegis-overlay)/0.06)]">
+        <div className="hidden items-center gap-0.5 lg:flex">
+          <EffectiveToolsControl
+            sessionKey={activeSessionKey}
+            agentId={agentId}
+            onOpenConfiguration={() => navigate('/tools')}
+          />
+          <BrowserControlCenter />
+          <SessionBranchesControl sessionKey={activeSessionKey} agentId={agentId} />
+          <SessionInspectionControl sessionKey={activeSessionKey} agentId={agentId} />
+          <SessionArtifactsControl sessionKey={activeSessionKey} agentId={agentId} />
+        </div>
+        {maxTokens > 0 && (
+          <span className="text-[10px] text-aegis-text-muted font-mono hidden lg:inline" title={`${usedK}K / ${maxLabel} (${Math.round((usedTokens / maxTokens) * 100)}%)`}>
+            {usedK}K/{maxLabel}
+          </span>
+        )}
+        {renderBlocks.length > 0 && (
+          <ChatIconButton
+            type="button"
+            label={t('chat.exportMarkdown')}
+            onClick={() => exportChatMarkdown(renderBlocks, activeSessionKey)}
+            className="p-1.5 rounded-md transition-colors text-aegis-text-dim hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.05)]"
+          >
+            <Download size={13} aria-hidden="true" />
+          </ChatIconButton>
+        )}
+        <ChatIconButton
+          type="button"
+          label={isRefreshed ? t('chat.refreshDone') : t('chat.refresh')}
+          onClick={() => {
+            if (isRefreshing) return;
+            setIsRefreshed(false);
+            setIsRefreshing(true);
+            window.dispatchEvent(new Event('aegis:refresh'));
+            setTimeout(() => {
+              setIsRefreshing(false);
+              setIsRefreshed(true);
+              setTimeout(() => setIsRefreshed(false), 1200);
+            }, 800);
+          }}
+          className={clsx(
+            'p-1.5 rounded-md transition-colors text-aegis-text-dim hover:text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.05)]',
+            isRefreshing && 'opacity-50 cursor-wait',
+            isRefreshed && 'text-aegis-success hover:text-aegis-success',
+          )}
+        >
+          {isRefreshed
+            ? <Check size={13} aria-hidden="true" />
+            : <RotateCcw size={13} className={clsx('transition-transform', isRefreshing && 'animate-spin')} aria-hidden="true" />}
+        </ChatIconButton>
+      </div>
+    </div>
+  );
+}

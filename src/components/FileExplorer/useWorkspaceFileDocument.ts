@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Extension } from "@codemirror/state";
 import { loadCodeMirrorLanguage } from "@/utils/codeMirrorLanguages";
 import type { WorkspaceFilePreview } from "@/utils/filePreviewCapabilities";
-import { readFilePreview, readFileText } from "@/services/workspaceFs";
+import { readFilePreview, readFileText } from "@/workspace-files/runtime/workspaceFs";
 import { subscribeLocalWorkspacePath } from "@/workspace-files/services/localWatchCoordinator";
 import type { EditorDocumentSnapshot } from "@/workspace-files/services/editorDocumentManager";
 import { acquireLocalEditorDocument } from "@/workspace-files/services/localEditorDocuments";

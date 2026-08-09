@@ -3,7 +3,7 @@ import { QuickChatPage } from './QuickChatPage';
 import { gateway } from '@/services/gateway';
 import { GatewayClientLease } from '@/services/gateway/GatewayClientLease';
 import { useChatStore } from '@/stores/chatStore';
-import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { voiceRuntime } from '@/runtime/VoiceRuntime';
 import { normalizeHistoryMessages } from '@/processing/normalizeHistoryMessage';
 import { dedupeHistoryMessages, reconcileHistoryMessageIds } from '@/processing/historyReconcile';
 import { useTheme } from '@/theme/useTheme';

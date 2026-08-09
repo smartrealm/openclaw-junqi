@@ -220,6 +220,19 @@ test('Gateway polling decoders reject malformed responses instead of inventing e
   assert.equal(parseGatewaySessionsUsage({ sessions: {} }), null);
 });
 
+test('非官方顶层事件不会修改 OpenClaw 会话投影', () => {
+  const sessionKey = 'agent:main:gateway-event-boundary';
+  useGatewayDataStore.getState().setSessions([{ key: sessionKey, running: false }]);
+
+  handleGatewayEvent('session.started', { key: 'agent:main:invented-session' });
+  handleGatewayEvent('task-session', { task_id: 'local-task', session_id: sessionKey });
+  handleGatewayEvent('task-status', { task_id: 'local-task', status: 'running' });
+
+  const sessions = useGatewayDataStore.getState().sessions;
+  assert.equal(sessions.some((session) => session.key === 'agent:main:invented-session'), false);
+  assert.equal(sessions.find((session) => session.key === sessionKey)?.running, false);
+});
+
 test('sessions.usage requests keep the official date range beside the all-agent scope', () => {
   assert.deepEqual(buildSessionsUsageRequest(2000, { range: 'all' }), {
     limit: 2000,

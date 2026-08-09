@@ -1,6 +1,6 @@
 import type { AgentWorkspaceTask, AgentWorkspaceTaskStatus } from '@/stores/agentWorkspaceStore';
 import type { PomodoroState } from '@/stores/petStore';
-import type { VoicePhase } from '@/services/voice/types';
+import type { VoicePhase } from '@/types/voice';
 import type {
   VoiceInputMode,
   VoiceInputPhase,

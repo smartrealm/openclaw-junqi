@@ -6,7 +6,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
 import { debugError } from '@/utils/debugLog';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
-import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
+import { voiceFileRuntime } from '@/runtime/voiceFileRuntime';
 import type { VoiceRecordingStopResult } from '@/api/tauri-commands';
 
 interface VoiceRecorderProps {

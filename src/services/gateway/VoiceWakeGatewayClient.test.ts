@@ -5,7 +5,7 @@ import {
   VoiceWakeGatewayUnavailableError,
 } from './VoiceWakeGatewayClient';
 import type { VoiceWakeGatewayEventListener } from './voiceWakeEventBridge';
-import type { VoiceWakeRoutingConfig } from './voiceWakeTypes';
+import type { VoiceWakeRoutingConfig } from '@/types/voiceWake';
 
 function clientWith(
   responses: unknown[],

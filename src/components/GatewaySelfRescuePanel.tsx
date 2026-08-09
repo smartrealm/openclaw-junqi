@@ -9,7 +9,7 @@ import {
   runOpenClawRepair,
   useOpenClawRepairing,
   type GatewayRecoveryRecommendation,
-} from '@/services/gateway/openclawRepair';
+} from '@/runtime/openclawRepair';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 export interface GatewaySelfRescuePanelProps {

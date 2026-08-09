@@ -1,4 +1,4 @@
-import { executeSessionLifecycleMutation } from '@/services/collaboration/sessionLifecycle';
+import { executeSessionLifecycleMutation } from '@/runtime/sessionLifecycle';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';

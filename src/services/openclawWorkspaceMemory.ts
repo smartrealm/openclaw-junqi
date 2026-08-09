@@ -3,7 +3,7 @@ import {
   readDir,
   readFilePreview,
   type FsEntry,
-} from '@/services/workspaceFs';
+} from '@/workspace-files/runtime/workspaceFs';
 
 const MEMORY_DIRECTORY_NAME = 'memory';
 const PRIMARY_MEMORY_FILE_NAME = 'MEMORY.md';

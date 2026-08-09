@@ -10,7 +10,7 @@ import type {
   CollaborationWriteMethod,
   CollaborationWriteRequest,
   CollaborationWriteResponse,
-} from './types';
+} from '@/types/collaboration';
 import {
   collaborationAbsenceAttestor,
   type CollaborationAbsenceProof,
