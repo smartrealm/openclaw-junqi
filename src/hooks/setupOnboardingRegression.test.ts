@@ -237,10 +237,12 @@ test('BUG-ONB-49 wizard recovery is bounded, status-aware, and keeps healthy tra
 
 test('BUG-WFR-03 wizard failures are visible first and change the primary action to Retry', () => {
   const wizard = screen('WizardScreen');
+  const renderer = readFileSync(new URL('../pages/SetupPage/wizard/WizardStepRenderer.tsx', import.meta.url), 'utf8');
   const errorPosition = wizard.indexOf('{wizard.wizardError && <div');
-  const firstStepControl = wizard.indexOf('{presentedStep.type === "text" && (');
+  const firstStepControl = wizard.indexOf('<WizardStepRenderer');
 
   assert.ok(errorPosition >= 0 && errorPosition < firstStepControl);
+  assert.match(renderer, /WIZARD_STEP_RENDERERS/);
   assert.match(wizard, /label: wizard\.wizardError[\s\S]*?setup\.wizard\.retry/);
   assert.match(wizard, /if \(wizard\.wizardError\) \{[\s\S]*?wizard\.retryWizard\(\)/);
   assert.match(wizard, /icon: wizard\.wizardError \? "none" : "next"/);
@@ -302,10 +304,11 @@ test('BUG-ONB-06 every setup message is complete in all supported locales', () =
 test('BUG-ONB-07 wizard body messages are not duplicated as subtitles', () => {
   const wizard = screen('WizardScreen');
 
-  assert.match(wizard, /const messageRenderedInBody = presentedStep\.type !== "text"/);
-  assert.match(wizard, /&& presentedStep\.type !== "confirm"/);
+  assert.match(wizard, /isWizardBodyMessageStep\(presentedStep\.type\)/);
+  assert.match(wizard, /WizardStepRenderer/);
   assert.match(wizard, /subtitle=\{wizardSubtitle\}/);
-  assert.match(wizard, /aria-label=\{presentedStep\.title \|\| t\("setup\.wizard\.textInput"/);
+  const textStep = readFileSync(new URL('../pages/SetupPage/wizard/WizardTextStep.tsx', import.meta.url), 'utf8');
+  assert.match(textStep, /aria-label=\{step\.title \|\| t\("setup\.wizard\.textInput"/);
 });
 
 test('BUG-ONB-08 the product summary is not constrained to an awkward narrow line length', () => {
@@ -347,16 +350,14 @@ test('BUG-ONB-15 setup navigation has one complete five-step translation contrac
     environment: { title: '环境检测', description: 'OpenClaw / Docker' },
     storage: { title: '数据位置', description: '配置与工作区' },
     runtime: { title: '运行时', description: '安装并启动 Gateway' },
-    configuration: { title: 'OpenClaw 配置', description: '模型与凭据' },
-    channels: { title: '消息渠道', description: '配置或稍后决定' },
+    configuration: { title: 'OpenClaw 配置', description: '模型、凭据与可选消息渠道' },
     ready: { title: '完成', description: '进入仪表盘' },
   };
   const enExpected = {
     environment: { title: 'Environment', description: 'OpenClaw / Docker' },
     storage: { title: 'Data location', description: 'Configuration / Workspace' },
     runtime: { title: 'Runtime', description: 'Install and start Gateway' },
-    configuration: { title: 'OpenClaw setup', description: 'Models / credentials' },
-    channels: { title: 'Channels', description: 'Configure or decide later' },
+    configuration: { title: 'OpenClaw setup', description: 'Models / credentials / optional channels' },
     ready: { title: 'Ready', description: 'Enter dashboard' },
   };
 
@@ -392,13 +393,15 @@ test('BUG-ONB-28 a verified setup Gateway hands off without replaying cold boot'
   assert.match(gatewayClient, /refreshConnectionStatus\(\) \{ connection\.emitStatus\(\); \}/);
 });
 
-test('BUG-ONB-29 model verification owns the active setup status after Gateway startup', () => {
-  assert.match(setupFlowPanels, /export type InstallationConsoleSummary =/);
-  assert.match(setupFlowPanels, /kind: "model-checking"/);
-  assert.match(setupFlowPanels, /kind: "model-check-failed"; message: string/);
-  assert.match(setupPage, /const installationSummary: InstallationConsoleSummary = gatewayReadyChecking/);
-  assert.match(setupPage, /summary=\{installationSummary\}/);
-  assert.doesNotMatch(setupPage, /gatewayReadyChecking && \([\s\S]*?<StatusPanel/);
+test('BUG-ONB-29 Gateway 核验与官方配置向导共享同一配置呈现容器', () => {
+  const configurationScreen = screen('OpenClawConfigurationScreen');
+
+  assert.match(setupPage, /case "gateway-ready": return <OpenClawConfigurationScreen/);
+  assert.match(setupPage, /case "configure-openclaw": return <OpenClawConfigurationScreen/);
+  assert.match(configurationScreen, /<WizardScreen flow=\{flow\} logs=\{logs\} \/>/);
+  assert.match(configurationScreen, /void flow\.continueAfterGatewayReady\(\)/);
+  assert.match(configurationScreen, /setup\.gatewayReadyCheckAction/);
+  assert.match(configurationScreen, /setup\.gatewayReadyRetryAction/);
 });
 
 test('BUG-ONB-30 verified Gateway handoff cannot start cold recovery', () => {
@@ -522,41 +525,38 @@ test('BUG-ONB-25 lost terminal sessions reconcile observable completion before r
 });
 
 test('BUG-IW-04 wizard presentation stays within the installed strict schema', () => {
-  const wizard = screen('WizardScreen');
-  assert.match(wizard, /presentedStep\.externalUrl/);
-  assert.match(wizard, /presentedStep\.deviceCode/);
+  const authorization = readFileSync(new URL('../pages/SetupPage/wizard/WizardAuthorizationHint.tsx', import.meta.url), 'utf8');
+  assert.match(authorization, /externalUrl/);
+  assert.match(authorization, /deviceCode/);
   assert.match(wizardClient, /externalUrl.*deviceCode/);
-  // The step type set stays closed; only its expression moved to a constant.
+  // 步骤类型集合保持封闭，仅将其表达式抽取为常量。
   assert.match(wizardClient, /WIZARD_STEP_TYPES = \[/);
   assert.match(wizardClient, /WIZARD_STEP_TYPES as readonly string\[\]\)\.includes\(raw\.type\)/);
-  // Unknown keys are dropped by projection rather than reaching the UI.
+  // 未知字段必须在投影阶段丢弃，不能进入界面层。
   assert.match(wizardClient, /for \(const key of WIZARD_STEP_KEYS\)/);
-  assert.match(setupPage, /function WizardAuthorizationHint/);
-  assert.match(setupPage, /@tauri-apps\/plugin-shell/);
+  assert.match(authorization, /@tauri-apps\/plugin-shell/);
 });
 
 test('BUG-ONB-27 官方授权字段通过桌面 Shell 呈现', () => {
-  const wizardFile = screen('WizardScreen');
-  const wizard = wizardFile.slice(
-    wizardFile.indexOf('function WizardAuthorizationHint'),
-    wizardFile.indexOf('function WizardScreen'),
-  );
+  const wizard = readFileSync(new URL('../pages/SetupPage/wizard/WizardAuthorizationHint.tsx', import.meta.url), 'utf8');
 
   assert.match(wizard, /openWizardExternalUrl\(externalUrl\)/);
   assert.match(wizard, /deviceCode\.code/);
   assert.doesNotMatch(wizard, /target="_blank"/);
   assert.doesNotMatch(setupPage, /openclawWizardQr|openclawTerminalQr|getGatewayLogs/);
-  assert.match(setupPage, /<WizardAuthorizationHint/);
+  assert.match(wizard, /<button/);
 });
 
 test('BUG-ONB-41 授权呈现只依赖官方结构化字段', () => {
   const wizardService = readFileSync(new URL('../services/openclawWizard.ts', import.meta.url), 'utf8');
+  const authorization = readFileSync(new URL('../pages/SetupPage/wizard/WizardAuthorizationHint.tsx', import.meta.url), 'utf8');
 
   assert.match(wizardService, /isWizardDeviceCode/);
   assert.match(wizardService, /isWizardConfiguredAccount/);
   assert.match(wizardService, /WIZARD_STEP_TYPES as readonly string\[\]\)\.includes\(raw\.type\)/);
   assert.match(wizardService, /for \(const key of WIZARD_STEP_KEYS\)/);
-  assert.match(setupPage, /WizardAuthorizationHint/);
+  assert.match(authorization, /externalUrl/);
+  assert.match(authorization, /deviceCode/);
 });
 
 test('BUG-ONB-42 授权步骤不因文本内容自动推进', () => {
@@ -581,6 +581,7 @@ test('BUG-ONB-40 official Gateway finalizer refreshes credentials and reconciles
 
 test('BUG-ONB-45 a terminal note survives the final Gateway restart without a false timeout', () => {
   const wizardHook = hookFile('useWizardSession');
+  const notice = readFileSync(new URL('../pages/SetupPage/wizard/WizardNoticeStep.tsx', import.meta.url), 'utf8');
   const submit = wizardHook.slice(
     wizardHook.indexOf('const submitWizardStep'),
     wizardHook.indexOf('const retryOfficialOnboarding'),
@@ -593,8 +594,8 @@ test('BUG-ONB-45 a terminal note survives the final Gateway restart without a fa
   assert.match(submit, /resolveActiveRuntimeOnboardingRequirement\(\)/);
   assert.match(submit, /applyWizardResult\(\{ done: true, status: "done" \}, operationId\)/);
   assert.match(wizard, /isOpenClawWizardNonBlockingProbeFailure\(presentedStep\)/);
-  assert.match(wizard, /setup\.wizard\.nonBlockingProbeFailure/);
-  assert.match(wizard, /setup\.wizard\.completionVerification/);
+  assert.match(notice, /setup\.wizard\.nonBlockingProbeFailure/);
+  assert.match(notice, /completionVerification/);
 });
 
 test('BUG-ONB-50 retry recovers an upstream-reaped Wizard session instead of surfacing wizard not found', () => {

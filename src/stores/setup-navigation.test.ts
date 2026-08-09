@@ -90,7 +90,7 @@ test("a step that reports a run is never a Back destination", () => {
   for (const step of ["detecting", "gateway-stopped", "checking", "install-git", "install-node", "install-openclaw", "error"] as const) {
     assert.equal(isStaleSetupBackDestination(step), true, step);
   }
-  for (const step of ["welcome", "storage", "choosing-mode", "gateway-ready", "configure-openclaw", "configure-channels", "ready", "git-missing", "node-missing"] as const) {
+  for (const step of ["welcome", "storage", "choosing-mode", "gateway-ready", "configure-openclaw", "ready", "git-missing", "node-missing"] as const) {
     assert.equal(isStaleSetupBackDestination(step), false, step);
   }
 });

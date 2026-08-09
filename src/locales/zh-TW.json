@@ -4008,39 +4008,12 @@
       },
       "configuration": {
         "title": "OpenClaw 配置",
-        "description": "模型與憑據"
-      },
-      "channels": {
-        "title": "訊息渠道",
-        "description": "現在配置或稍後決定"
+        "description": "模型、憑據與可選訊息渠道"
       },
       "ready": {
         "title": "完成",
         "description": "進入儀表盤"
       }
-    },
-    "channelWizard": {
-      "title": "配置訊息渠道",
-      "subtitle": "OpenClaw 將展示目前執行環境支援的渠道、授權和帳號路由。渠道可稍後配置，但不會被自動跳過。",
-      "decisionTitle": "要連接訊息渠道嗎？",
-      "decisionDescription": "此步驟使用 OpenClaw 官方渠道配置向導。可以現在配置，也可以明確選擇稍後在「通道」頁面配置。",
-      "configure": "配置渠道",
-      "defer": "稍後配置",
-      "retry": "重新開始",
-      "deferredLog": "已選擇稍後配置訊息渠道；可在工作台的「通道」頁面重新打開 OpenClaw 官方渠道配置。",
-      "starting": "正在啟動 OpenClaw 官方渠道配置…",
-      "retrying": "正在恢復 OpenClaw 官方渠道配置…",
-      "failed": "OpenClaw 官方渠道配置失敗。",
-      "missingStep": "OpenClaw 官方渠道配置沒有返回下一步。",
-      "sessionExpired": "官方渠道配置會話已失效，請重新開始。",
-      "completedTitle": "渠道配置已完成",
-      "completedDescription": "OpenClaw 已完成本次渠道配置。進入工作台後可在「通道」中查看真實運行狀態。",
-      "completedNoChanges": "本次未修改渠道配置",
-      "completedAccounts": "已配置 {{count}} 個渠道帳號",
-      "completedStatusHint": "該結果僅來自 OpenClaw 官方渠道向導，不代表所有渠道已連接或可用。",
-      "completionVerification": "OpenClaw 已結束本次渠道配置。進入工作台後可在「通道」頁面查看 Gateway 返回的真實狀態。",
-      "continue": "繼續完成引導",
-      "laterHint": "稍後配置不會創建渠道、帳號或路由；僅結束本次引導。"
     },
     "installPanel": {
       "current": "當前執行",
@@ -4270,6 +4243,7 @@
       "confirm": "確認並繼續",
       "textInput": "OpenClaw 配置值",
       "readyForStep": "此步驟由 OpenClaw 執行。",
+      "deviceCodeHint": "請在授權頁面輸入一次性代碼。",
       "nonBlockingProbeFailure": "這是渠道外掛程式返回的非阻斷檢查結果，不代表 OpenClaw 或 Gateway 安裝失敗。可以繼續完成設定精靈，啟動後再以渠道實際運行狀態為準。",
       "completionVerification": "OpenClaw 設定精靈已結束。按下完成後，JunQi 仍會驗證目前的 Gateway 連線和所選模型；驗證未通過時不會進入工作區。",
       "qrAlt": "掃描授權二維碼",
@@ -4820,12 +4794,14 @@
   "gateway.progress.connectionFailed": "Gateway 恢復操作已結束，但未能建立認證連線。",
   "setup.installComplete": "必需組件已安裝完成",
   "setup.gatewayConnected": "Gateway 已就緒",
-  "setup.gatewayReadySubtitle": "運行時檢查已完成，下一步將核驗 OpenClaw 配置。",
-  "setup.gatewayReadyCheckingAction": "正在檢查配置…",
-  "setup.gatewayReadyCheckingTitle": "正在檢查 OpenClaw 配置",
-  "setup.gatewayReadyCheckingDescription": "正在驗證目前模型是否可用；完成後將進入官方配置嚮導或完成頁。",
-  "setup.gatewayReadyContinueFailedTitle": "無法進入下一步",
-  "setup.gatewayReadyContinueFailed": "無法進入下一步：{{error}}",
+  "setup.gatewayReadySubtitle": "運行時檢查已完成。請核驗 OpenClaw 配置後繼續。",
+  "setup.gatewayReadyCheckAction": "核驗配置",
+  "setup.gatewayReadyRetryAction": "重新核驗",
+  "setup.gatewayReadyCheckingAction": "正在核驗配置…",
+  "setup.gatewayReadyCheckingTitle": "正在核驗 OpenClaw 配置",
+  "setup.gatewayReadyCheckingDescription": "正在核驗目前配置與模型。完成後會在此處呈現官方配置步驟或真實錯誤。",
+  "setup.gatewayReadyContinueFailedTitle": "配置核驗未完成",
+  "setup.gatewayReadyContinueFailed": "配置核驗未完成：{{error}}",
   "setup.runtimeSetupFailedUnchanged": "安裝或啟動失敗，目前運行模式未發生變化",
   "setup.runtimeCompensationIncomplete": "運行模式切換失敗，部分復原操作未完成；請檢查 Gateway 狀態後重試",
   "setup.installCompleteSubtitle": "安裝與配置已完成。下一步只會啟動 Gateway，啟動後仍需手動進入儀表盤。",

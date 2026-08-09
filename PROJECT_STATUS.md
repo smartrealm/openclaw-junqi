@@ -1,11 +1,11 @@
 # 项目交接状态
 
-更新时间：2026-08-08
+更新时间：2026-08-09
 
 ## 当前目标
 
-完成首次引导中 OpenClaw 官方可选渠道配置的显式用户决策链路；保持所有渠道、授权、账号和路由
-语义以官方 Gateway 协议为准，不在 JunQi 本地扩展渠道状态机。
+统一首次引导中 Gateway 就绪与 OpenClaw 配置核验的用户界面，并使默认 OpenClaw Wizard 成为渠道选择与跳过的唯一权威：
+用户在同一个配置阶段内显式核验并原地进入官方 Wizard；JunQi 不创建额外渠道步骤，不发送未由当前会话证明的 `flow` 或 `skipChannels` 参数。
 
 ## 已完成内容
 
@@ -25,8 +25,11 @@
   的月年规则均有明确处理，不再以错误 Cron 表达式或无限 pending 伪装成功。
 - Cron 模板与日历提醒内容改从 i18n 资源和运行时本地时区生成；Cron 页面将模板、状态推导与本地化格式化抽至
   独立展示模块，移除按任务名称猜测业务图标的做法。
-- 首次引导在模型与凭据核验后新增消息渠道决策页；配置时调用官方 `wizard.start { flow: "channels" }`，稍后配置时取消当前官方会话并记录真实用户选择，不创建或伪造渠道状态。
-- 核心 OpenClaw Wizard 与渠道 Wizard 共用结构化步骤呈现器，加载、授权、失败、会话失效和完成结果保持一致；渠道账号数量只展示 Gateway 返回的真实 `accounts`。
+- 首次引导只启动默认 OpenClaw `wizard.start`。模型、凭据、工作区、可选消息渠道以及官方跳过说明均在同一个 Gateway 会话中返回和展示。
+- 官方 Wizard 的 `note`、`text`、`select`、`multiselect`、`confirm`、`progress`、`action` 由独立渲染器和协议类型注册表分派；JunQi 不按渠道或步骤 id 推断流程。
+- Gateway 运行时就绪现在直接投影到“配置 OpenClaw”阶段：用户点击“核验配置”前不启动 Wizard；核验中的加载、真实失败和官方 Wizard 在同一 `SetupShell` 内替换。`gateway-ready` 与 `configure-openclaw` 共享场景键，底层状态交接不重挂载入场动效。
+- 已删除无人使用的安装控制台 Gateway 检查点摘要、模型检查摘要及其专属测试；安装控制台只负责安装活动和失败诊断，配置核验由配置阶段容器独占呈现。
+- 已删除无消费者的独立渠道向导状态、页面、会话存储、失败分类、语言资源、测试与文档；渠道官方跳过说明保留在默认向导会话中呈现。
 
 ## 合并的业务应用与钉钉运行时
 
@@ -49,7 +52,10 @@
 
 - `src/pages/AgentHub/AgentHubOfficePanel.tsx`、`src/pages/AgentHub/agentHubOfficeRunSelection.ts`、`src/pages/AgentHub/index.tsx`：智能体中心 Office 投影、稳定选择与默认视图。
 - `src/services/setup/setupCompletionGate.ts`、`src/hooks/useSetupFlow/index.ts`、`src/hooks/useSetupFlow/useWizardSession.ts`：首次启动完成门禁与交接呈现。
-- `src/hooks/useSetupFlow/useChannelWizardSession.ts`、`src/pages/SetupPage/ChannelWizardScreen.tsx`：官方渠道向导会话和首次引导用户决策页面。
+- `src/services/openclawWizard.ts`、`src/services/openclawWizard.test.ts`：默认官方向导请求、会话恢复与协议回归。
+- `src/pages/SetupPage/WizardScreen.tsx`、`src/pages/SetupPage/wizard/`：官方步骤容器、类型注册表和独立步骤渲染器。
+- `src/pages/SetupPage/OpenClawConfigurationScreen.tsx`、`src/motion/setupStepTransition.tsx`：统一的 Gateway 配置核验呈现与稳定场景键。
+- `src/services/setup/onboardingPresentation.ts`、`src/pages/SetupPage/ProgressScreen.tsx`：配置阶段投影和收敛后的安装进度职责。
 - `src/services/gateway/GatewayCapabilityRegistry.ts`、`src/services/gateway/Connection.ts`：Gateway 能力证据。
 - `src/components/Chat/SessionContextBar.tsx`、`src/services/gateway/index.ts`：会话工具栏和无消费者会话能力的移除。
 - `src/services/gateway/SessionSettingsClient.ts`、`src/services/gateway/OpenClawSessionOrganizationClient.ts`、`src/utils/sessionRename.ts`：会话组织字段的最小权限请求与确认投影。
@@ -66,7 +72,7 @@
 ## 测试与验证
 
 - main 合并前已通过 63 项首次启动与 Office 定向测试、2822 项全量测试、TypeScript、模块边界、语言 JSON 解析、`pnpm build`、官方文档链接验证与 `git diff --check`。
-- 本轮渠道向导定向测试已通过；`pnpm lint`、三份语言 JSON 解析、完整 `pnpm test` 与 `pnpm build` 均已通过。
+- 本轮默认向导与结构化步骤渲染器的定向测试待运行；完成后需执行三份语言 JSON 解析、完整 `pnpm test` 与 `pnpm build`。
 - 最新办公室工作区改动已通过 9 项 Office 定向测试、TypeScript、模块边界、语言 JSON 解析与 `git diff --check`。
 - 会话组织权限修复已通过 TypeScript 及 86 项会话设置、组织、生命周期、重命名与 store 定向测试。
 - Cron 本轮已通过 20 项定向测试：权限通道、运行记录、日历跨日与间隔规则、无效日期拒绝、Cron 关联、提醒时间本地化和
@@ -77,6 +83,8 @@
 - 本次合并 Jarvis 钉钉工作台改动后已通过 `pnpm lint`、钉钉安装反馈与渠道向导定向测试、完整 `pnpm test`（2845 项应用测试与 243 项脚本测试）和 `pnpm build`。
 - `v2.3.0` 已推送至 GitHub；本机 macOS ARM64 DMG 已生成并通过 `hdiutil verify`，包内版本为 `2.3.0`。
 - Windows Gateway 端点、默认主会话固定和新建会话竞态回归继续通过；`git diff --check` 与 Emoji 扫描在提交前再次执行。
+- 配置阶段统一已通过 62 项定向测试、`pnpm lint`、完整 `pnpm test`、`pnpm build`、官方 OpenClaw 文档链接验证和 `git diff --check`；三份语言 JSON 与本次完整 Emoji 扫描通过。
+- 本轮移除独立渠道流程后，已通过默认向导与步骤渲染器定向回归、TypeScript、`pnpm lint`、完整 `pnpm test`、`pnpm build`、语言 JSON 解析、官方文档链接、`git diff --check` 与完整 Emoji 扫描。测试过程仅有既有 Radix 服务端渲染与 Node 弃用警告，无失败。
 
 ## 已知问题
 
@@ -89,7 +97,9 @@
 - 尚未在真实 Gateway 中验收钉钉插件加载、`tools.effective`、`tools.invoke`、插件审批往返和 DWS 业务响应；当前本地构建只证明源码、bundle 和类型契约成立。
 - 钉钉能力表格优先布局与安装反馈尚未在真实 Tauri 的亮色、暗色、窄窗口和键盘焦点下人工验收。
 - 本地 `pnpm tauri build --bundles app,dmg` 在 DMG 生成后因缺少 `TAURI_SIGNING_PRIVATE_KEY` 无法生成 updater 签名；该本地包仅用于安装验证，不能替代 GitHub 发布制品。
-- 尚未在 macOS、Windows、Linux 真机上完成首次引导渠道插件授权、二维码或设备代码交互；这些行为仍以目标 Gateway 和官方插件返回为准。
+- 尚未在 macOS、Windows、Linux 真机上完成默认首次向导中的渠道插件授权、二维码或设备代码交互；这些行为仍以目标 Gateway 和官方插件返回为准。
+- 尚未在真实 Tauri 中人工验收统一配置阶段的亮色、暗色、窄窗口、键盘焦点和真实 Gateway Wizard 交接；自动化只证明组件、状态机与协议调用边界。
+- 尚未在真实 Gateway 中完成默认首次向导对渠道跳过说明、插件授权、二维码或设备代码的端到端验收。
 
 ## 已放弃方案
 
@@ -100,6 +110,7 @@
 
 ## 下一步顺序
 
-1. 在真实 Tauri 和真实 Gateway 中验收首次引导渠道配置、Cron 管理、日历提醒创建更新删除以及管理员授权错误呈现。
+1. 在真实 Tauri 中验收默认 OpenClaw Wizard 的渠道选择、跳过说明、插件授权、Cron 管理、日历提醒创建更新删除以及管理员授权错误呈现。
 2. 在真实 Gateway 中验收钉钉插件安装、工具刷新、只读调用、写操作审批和错误恢复。
 3. 在目标平台继续验收首次启动、智能体中心 Office、Windows 新建会话和 Gateway 重启恢复。
+4. 在真实 Tauri 和真实 Gateway 中验收统一配置阶段的核验、失败、官方 Wizard 交接以及亮暗主题和窄窗口表现。

@@ -4071,39 +4071,12 @@
       },
       "configuration": {
         "title": "OpenClaw setup",
-        "description": "Models / credentials"
-      },
-      "channels": {
-        "title": "Channels",
-        "description": "Configure or decide later"
+        "description": "Models / credentials / optional channels"
       },
       "ready": {
         "title": "Ready",
         "description": "Enter dashboard"
       }
-    },
-    "channelWizard": {
-      "title": "Configure channels",
-      "subtitle": "OpenClaw will show the channels, authorization, and account routes supported by the current runtime. You can configure channels later, but JunQi will not skip this decision silently.",
-      "decisionTitle": "Connect messaging channels now?",
-      "decisionDescription": "This step uses the official OpenClaw channel wizard. Configure now, or explicitly choose to continue later from the Channels page.",
-      "configure": "Configure channels",
-      "defer": "Later",
-      "retry": "Start again",
-      "deferredLog": "Channel setup deferred by the user. The official OpenClaw channel wizard remains available from the Channels page.",
-      "starting": "Starting the official OpenClaw channel wizard…",
-      "retrying": "Recovering the official OpenClaw channel wizard…",
-      "failed": "The official OpenClaw channel wizard failed.",
-      "missingStep": "The official OpenClaw channel wizard did not return a next step.",
-      "sessionExpired": "The official channel setup session expired. Start again.",
-      "completedTitle": "Channel setup complete",
-      "completedDescription": "OpenClaw finished this channel setup. After entering the workspace, check the real Gateway status on the Channels page.",
-      "completedNoChanges": "No channel configuration was changed",
-      "completedAccounts": "Configured {{count}} channel accounts",
-      "completedStatusHint": "This result came from the official OpenClaw wizard and does not claim that every channel is connected or available.",
-      "completionVerification": "OpenClaw finished this channel setup. After entering the workspace, check the real Gateway status on the Channels page.",
-      "continue": "Continue setup",
-      "laterHint": "Choosing later creates no channel, account, or route; it only ends this setup step."
     },
     "installPanel": {
       "current": "Current action",
@@ -4333,6 +4306,7 @@
       "confirm": "Confirm and continue",
       "textInput": "OpenClaw configuration value",
       "readyForStep": "OpenClaw will perform this step.",
+      "deviceCodeHint": "Enter the one-time code on the authorization page.",
       "nonBlockingProbeFailure": "This is a non-blocking check reported by the channel plugin; it does not mean that OpenClaw or Gateway installation failed. Continue the wizard, then verify the channel's actual runtime status after startup.",
       "completionVerification": "The OpenClaw wizard has ended. After you select Finish, JunQi will still verify the current Gateway connection and selected model. It will not enter the workspace if verification fails.",
       "qrAlt": "Scan authorization QR code",
@@ -4853,7 +4827,7 @@
   "gateway.progress.connectionFailed": "Gateway recovery finished, but the authenticated connection could not be established.",
   "setup.installComplete": "Required components installed",
   "setup.gatewayConnected": "Gateway is ready",
-  "setup.gatewayReadySubtitle": "Runtime checks are complete. Next, JunQi will verify the OpenClaw configuration.",
+  "setup.gatewayReadySubtitle": "Runtime checks are complete. Verify the OpenClaw configuration to continue.",
   "setup.installCompleteSubtitle": "Installation and configuration are complete. The next step only starts Gateway; you still enter the dashboard manually afterward.",
   "setup.installCompleteGatewayPending": "Gateway configuration is ready. Start Gateway to continue.",
   "setup.gatewayPrepareWillRetry": "Gateway preparation did not complete: {{error}}. Starting Gateway will retry automatically.",
@@ -5088,11 +5062,13 @@
   "setup.openclawUpdate.subtitle": "Use the official OpenClaw updater to detect the install type, channel, and available version. Checking never blocks the next step.",
   "setup.openclawUpdate.currentVersion": "Current",
   "setup.gatewayReadyTitle": "Runtime ready",
-  "setup.gatewayReadyCheckingAction": "Checking configuration…",
-  "setup.gatewayReadyCheckingTitle": "Checking OpenClaw configuration",
-  "setup.gatewayReadyCheckingDescription": "Verifying the current model. You will continue to the official setup wizard or the completion screen when the check finishes.",
-  "setup.gatewayReadyContinueFailedTitle": "Unable to continue",
-  "setup.gatewayReadyContinueFailed": "Unable to continue: {{error}}",
+  "setup.gatewayReadyCheckAction": "Verify configuration",
+  "setup.gatewayReadyRetryAction": "Verify again",
+  "setup.gatewayReadyCheckingAction": "Verifying configuration…",
+  "setup.gatewayReadyCheckingTitle": "Verifying OpenClaw configuration",
+  "setup.gatewayReadyCheckingDescription": "Verifying the current configuration and model. The official setup steps or the actual error will appear here when complete.",
+  "setup.gatewayReadyContinueFailedTitle": "Configuration verification incomplete",
+  "setup.gatewayReadyContinueFailed": "Configuration verification incomplete: {{error}}",
   "setup.runtimeSetupFailedUnchanged": "Setup or startup failed; the selected runtime mode did not change",
   "setup.runtimeCompensationIncomplete": "Runtime switching failed and some recovery operations did not complete; check the Gateway state and retry",
   "storage.save": "Save location",

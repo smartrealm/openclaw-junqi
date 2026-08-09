@@ -18,7 +18,6 @@ const ALL_SETUP_STEPS: SetupStep[] = [
   "install-openclaw",
   "gateway-ready",
   "configure-openclaw",
-  "configure-channels",
   "ready",
   "error",
 ];
@@ -41,7 +40,6 @@ test("every setup page has an explicit Back side-effect policy", () => {
       ["install-openclaw", "cancel-install"],
       ["gateway-ready", "navigate"],
       ["configure-openclaw", "navigate"],
-      ["configure-channels", "navigate"],
       ["ready", "navigate"],
       ["error", "navigate"],
     ],

@@ -439,7 +439,7 @@ test('BUG-ST02 storage decision is an explicit post-detection setup step', () =>
   // returns to step 2 without replaying probes.
   assert.match(flow, /const detectEnvironment[\s\S]*?return "choosing-mode"/);
   assert.match(flow, /const detectEnvironment[\s\S]*?return "gateway-stopped"/);
-  assert.match(flow, /return onboardingRequired \? "configure-openclaw" : "configure-channels"/);
+  assert.match(flow, /return onboardingRequired \? "configure-openclaw" : "ready"/);
   assert.match(flow, /const next = await detectEnvironment\(runId\);[\s\S]*?setPostStorageStep\(next\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
   assert.match(flow, /const continueAfterEnvironmentReview[\s\S]*?navigateSetup\("storage", "push"\)/);
   assert.match(setup, /case "storage"[\s\S]*<StorageSetupStep/);
@@ -447,7 +447,7 @@ test('BUG-ST02 storage decision is an explicit post-detection setup step', () =>
   assert.match(gate, /configure_storage/);
   assert.match(gate, /migrateExisting/);
   assert.match(gate, /createdFresh:/);
-  assert.match(flow, /createdFresh && \([\s\S]*?postStorageStep === "configure-openclaw"[\s\S]*?postStorageStep === "configure-channels"[\s\S]*?"gateway-stopped"/);
+  assert.match(flow, /createdFresh && \([\s\S]*?postStorageStep === "configure-openclaw"[\s\S]*?"gateway-stopped"/);
   assert.match(setup, /onReady=\{flow\.completeStorageSetup\}/);
   assert.match(main, /import\('\.\/App'\)/);
   assert.doesNotMatch(main, /DesktopRoot/);

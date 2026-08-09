@@ -18,9 +18,8 @@ const SETUP_STEP_INDEX: Record<SetupStep, number> = {
   'install-openclaw': 11,
   'gateway-ready': 12,
   'configure-openclaw': 13,
-  'configure-channels': 14,
-  ready: 15,
-  error: 16,
+  ready: 14,
+  error: 15,
 };
 
 export type SetupStepMotionDirection = -1 | 0 | 1;
@@ -31,6 +30,7 @@ interface SetupStepTransitionContextValue {
   readonly mode: SetupStepMotionMode;
   readonly reducedMotion: boolean;
   readonly step: SetupStep;
+  readonly scene: SetupStep;
 }
 
 const SetupStepTransitionContext = createContext<SetupStepTransitionContextValue | null>(null);
@@ -47,6 +47,11 @@ export function setupStepMotionDirection(
 ): SetupStepMotionDirection {
   if (!previous || previous === next) return 0;
   return SETUP_STEP_INDEX[next] >= SETUP_STEP_INDEX[previous] ? -1 : 1;
+}
+
+export function setupStepScene(step: SetupStep): SetupStep {
+  // Gateway 就绪检查与官方配置向导属于同一用户可见阶段，状态交接时只替换内容。
+  return step === 'gateway-ready' ? 'configure-openclaw' : step;
 }
 
 export function setupStepEntryState(
@@ -78,18 +83,19 @@ export function SetupStepTransition({
   const direction = setupStepMotionDirection(previousStepRef.current, step);
   const reducedMotion = useReducedMotion() ?? false;
   const mode = setupStepMotionMode(kind);
+  const scene = setupStepScene(step);
 
   useLayoutEffect(() => {
     previousStepRef.current = step;
   }, [step]);
 
   return (
-    <SetupStepTransitionContext.Provider value={{ direction, mode, reducedMotion, step }}>
+    <SetupStepTransitionContext.Provider value={{ direction, mode, reducedMotion, step, scene }}>
       <div
         className="relative h-screen w-full overflow-hidden"
         data-setup-step-lifecycle="current-only"
         data-setup-step-transition={direction}
-        data-setup-step-scene={step}
+        data-setup-step-scene={scene}
       >
         {children}
       </div>
@@ -103,10 +109,10 @@ export function SetupStepScene({ children }: { children: ReactNode }) {
     return <div className="flex w-full min-w-0 max-w-full justify-center overflow-x-clip">{children}</div>;
   }
 
-  const { direction, mode, reducedMotion, step } = context;
+  const { direction, mode, reducedMotion, scene } = context;
   return (
     <motion.div
-      key={step}
+      key={scene}
       initial={setupStepEntryState(direction, reducedMotion, mode)}
       animate={{ opacity: 1, x: 0, y: 0 }}
       transition={{

@@ -47,7 +47,6 @@ export function setupBackPolicy(step: SetupStep): SetupBackPolicy {
     case "environment-review":
     case "gateway-ready":
     case "configure-openclaw":
-    case "configure-channels":
     case "ready":
     case "error":
       return "navigate";

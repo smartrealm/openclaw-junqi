@@ -26,6 +26,7 @@ plans/
 - [Windows 卸载流程](installation/2026-07-26-windows-uninstall-flow.md)
 - [Setup runtime 与渠道兼容](installation/2026-07-27-setup-runtime-and-channel-compatibility.md)
 - [首次启动往返导航修复](installation/2026-08-08-setup-round-trip-navigation.md)
+- [首次引导配置阶段统一](installation/2026-08-08-configuration-stage-unification.md)
 
 ## Gateway
 

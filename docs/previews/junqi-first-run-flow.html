@@ -248,7 +248,7 @@
       </svg>
     </div>
     <div class="cards">
-      <div class="card"><p class="card-kicker">RUNTIME CHECKPOINT</p><h3>Gateway 就绪后仍由用户决定渠道</h3><ul><li>顶部“运行时”保持高亮并使用完成勾选，不新增短暂的独立步骤</li><li>模型和凭据通过官方核验后，进入独立的“消息渠道”决策阶段</li><li>选择配置时调用官方 <code>wizard.start { flow: "channels" }</code>；选择稍后时只结束本次引导，不创建或伪造渠道状态</li><li>渠道步骤、授权、失败和账号数量均由 Gateway 返回，进入工作台后仍可在“通道”页面重新打开</li></ul></div>
+      <div class="card"><p class="card-kicker">UNIFIED CONFIGURATION STAGE</p><h3>Gateway 就绪后原地核验 OpenClaw 配置</h3><ul><li>运行时步骤完成后，顶部直接激活“配置 OpenClaw”；Gateway 就绪仅作为该页面中的真实检查结果</li><li>用户点击核验配置后，加载、真实错误或官方 Wizard 步骤在同一页面替换，不自动跳转或重放操作</li><li>首次配置只启动默认 <code>wizard.start</code>；模型、凭据、工作区和可选消息渠道均在同一个官方向导会话中呈现</li><li>官方跳过渠道时，JunQi 在当前会话的结构化说明步骤中展示 Gateway 返回的原因；不会额外创建渠道步骤或静默跳过</li></ul></div>
     </div>
   </section>
 

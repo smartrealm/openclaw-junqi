@@ -37,7 +37,6 @@ import {
 
 
 import { usePluginRecovery } from "./usePluginRecovery";
-import { useChannelWizardSession } from "./useChannelWizardSession";
 import { useWizardSession } from "./useWizardSession";
 import { useSetupOperationCoordinator } from "./useSetupOperationCoordinator";
 import { useSetupProgressEvents } from "./useSetupProgressEvents";
@@ -278,25 +277,6 @@ export function useSetupFlow(
     navigationLeavingRef: setupNavigationLeavingRef,
   });
 
-  const {
-    phase: channelWizardPhase,
-    wizardStep: channelWizardStep,
-    wizardSubmitting: channelWizardSubmitting,
-    wizardActivity: channelWizardActivity,
-    wizardError: channelWizardError,
-    configuredAccounts: channelWizardConfiguredAccounts,
-    startChannelWizard,
-    submitChannelWizardStep,
-    pollChannelWizard,
-    retryChannelWizard,
-    cancelChannelWizard,
-    isChannelWizardOperationInFlight,
-  } = useChannelWizardSession({
-    setupStep,
-    appendSetupLog,
-    navigationLeavingRef: setupNavigationLeavingRef,
-  });
-
   // ── Actions ──
   const startGatewayAction = useCallback(async (
     requestedMode?: InstallMode,
@@ -327,7 +307,7 @@ export function useSetupFlow(
       setGatewayRunning(true);
       // Gateway 已真实就绪：此前的插件启动验证记录随之失效。
       pluginHealAttemptedRef.current.clear();
-      setPostStorageStep(needsOnboardingRef.current ? "configure-openclaw" : "configure-channels");
+      setPostStorageStep(needsOnboardingRef.current ? "configure-openclaw" : "ready");
       if (stepsRef.current.some((s) => s.id === "gateway")) {
         patchStep("gateway", "done");
       } else {
@@ -401,8 +381,8 @@ export function useSetupFlow(
         return;
       }
 
-      report(t("setup.channelWizard.title", "配置消息渠道"), 90);
-      navigateSetup("configure-channels", "push");
+      report(t("setup.ready"), 100);
+      navigateSetup("ready", "push");
     } catch (error) {
       const detail = sanitizeSetupDiagnostic(error instanceof Error ? error.message : error);
       const message = t("setup.gatewayReadyContinueFailed", {
@@ -588,7 +568,6 @@ export function useSetupFlow(
       : createdFresh && (
         postStorageStep === "ready"
         || postStorageStep === "configure-openclaw"
-        || postStorageStep === "configure-channels"
       )
       ? "gateway-stopped"
       : postStorageStep;
@@ -597,8 +576,6 @@ export function useSetupFlow(
       report(t("setup.ready"), 100);
     } else if (nextStep === "configure-openclaw") {
       report(t("setup.wizard.title", "配置 OpenClaw"), 82);
-    } else if (nextStep === "configure-channels") {
-      report(t("setup.channelWizard.title", "配置消息渠道"), 90);
     } else if (nextStep === "gateway-stopped") {
       report(t("setup.gatewayNotRunning"), 30);
     } else {
@@ -649,7 +626,6 @@ export function useSetupFlow(
       || gatewayReadyContinuationInFlightRef.current
       || dashboardEntryInFlightRef.current
       || isWizardOperationInFlight()
-      || isChannelWizardOperationInFlight()
     ),
   });
 
@@ -663,7 +639,6 @@ export function useSetupFlow(
       || dashboardEntryInFlightRef.current
       || isPluginRecoveryInFlight()
       || isWizardOperationInFlight()
-      || isChannelWizardOperationInFlight()
     ) return false;
     retrySetupInFlightRef.current = true;
     setSetupError(null);
@@ -673,13 +648,10 @@ export function useSetupFlow(
     } finally {
       retrySetupInFlightRef.current = false;
     }
-  }, [installMode, isChannelWizardOperationInFlight, isPluginRecoveryInFlight, isWizardOperationInFlight, setSetupError, setNeedsGit, runDockerSetup, runNativeSetup]);
+  }, [installMode, isPluginRecoveryInFlight, isWizardOperationInFlight, setSetupError, setNeedsGit, runDockerSetup, runNativeSetup]);
 
   const performGoBack = useCallback(async () => {
     setupNavigationLeavingRef.current = true;
-    if (setupStep === "configure-channels") {
-      await cancelChannelWizard();
-    }
     invalidateWizardOperations();
     setWizardSubmitting(false);
     // 退出官方向导表示暂停并复核，不表示丢弃进度。持久化其不透明标识后，
@@ -739,7 +711,7 @@ export function useSetupFlow(
     // 导航和重试保留同一条诊断时间线，便于检查已完成阶段并与后续尝试对照。
     presentSetupStep(destination);
     setupNavigationLeavingRef.current = false;
-  }, [setupStep, cancelChannelWizard, invalidateActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, presentSetupStep, rollbackRuntimeReconfiguration, appendSetupLog, report, replaceSetupStep, setForceStorageSelection]);
+  }, [setupStep, invalidateActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, presentSetupStep, rollbackRuntimeReconfiguration, appendSetupLog, report, replaceSetupStep, setForceStorageSelection]);
 
   const goBack = useCallback(async () => {
     if (
@@ -754,7 +726,6 @@ export function useSetupFlow(
       || dashboardEntryInFlightRef.current
       || isPluginRecoveryInFlight()
       || isWizardOperationInFlight()
-      || isChannelWizardOperationInFlight()
     ) return;
     setupBackInFlightRef.current = true;
     if (setupStep === "environment-review" && !beginEnvironmentNavigation()) {
@@ -768,7 +739,7 @@ export function useSetupFlow(
       finishEnvironmentAction();
       setupBackInFlightRef.current = false;
     }
-  }, [beginEnvironmentNavigation, finishEnvironmentAction, isChannelWizardOperationInFlight, isPluginRecoveryInFlight, isWizardOperationInFlight, performGoBack, setupStep]);
+  }, [beginEnvironmentNavigation, finishEnvironmentAction, isPluginRecoveryInFlight, isWizardOperationInFlight, performGoBack, setupStep]);
 
   const cancelSetupRun = useCallback(async () => {
     if (
@@ -861,24 +832,6 @@ export function useSetupFlow(
       if (dependencyRetryInFlightRef.current === "node") dependencyRetryInFlightRef.current = null;
     });
   }, [isPluginRecoveryInFlight, isWizardOperationInFlight, setSetupError, runNativeSetup]);
-
-  const deferChannelConfiguration = useCallback(async () => {
-    if (channelWizardPhase === "completed") return;
-    if (channelWizardPhase === "active") await cancelChannelWizard();
-    const message = t(
-      "setup.channelWizard.deferredLog",
-      "已选择稍后配置消息渠道；可在工作台的“通道”页面重新打开 OpenClaw 官方渠道配置。",
-    );
-    appendSetupLog({ source: "setup", step: "channels", message, level: "info" });
-    report(t("setup.ready"), 100);
-    navigateSetup("ready", "push");
-  }, [appendSetupLog, cancelChannelWizard, channelWizardPhase, navigateSetup, report, t]);
-
-  const completeChannelConfiguration = useCallback(() => {
-    if (channelWizardPhase !== "completed") return;
-    report(t("setup.ready"), 100);
-    navigateSetup("ready", "push");
-  }, [channelWizardPhase, navigateSetup, report, t]);
 
   const enterDashboard = useCallback(async (origin?: Element | null) => {
     if (dashboardEntryInFlightRef.current) return;
@@ -994,7 +947,7 @@ export function useSetupFlow(
       needsOnboarding = await resolveActiveRuntimeOnboardingRequirement();
       if (!isRunActive(runId)) return { status: null, gatewayRunning: false, needsOnboarding };
       updateOnboardingRequirement(needsOnboarding);
-      setPostStorageStep(needsOnboarding ? "configure-openclaw" : "configure-channels");
+      setPostStorageStep(needsOnboarding ? "configure-openclaw" : "ready");
     }
     const currentSteps = stepsRef.current;
     if (currentSteps.some((step) => step.id === "gateway")) {
@@ -1016,12 +969,6 @@ export function useSetupFlow(
     wizardActivity,
     wizardError,
     wizardRecoveryRequired,
-    channelWizardPhase,
-    channelWizardStep,
-    channelWizardSubmitting,
-    channelWizardActivity,
-    channelWizardError,
-    channelWizardConfiguredAccounts,
     needsOnboarding,
     gatewayReadyContinuation,
     repairing,
@@ -1041,12 +988,6 @@ export function useSetupFlow(
     pollWizard,
     retryWizard,
     reclaimWizard,
-    startChannelWizard,
-    submitChannelWizardStep,
-    pollChannelWizard,
-    retryChannelWizard,
-    deferChannelConfiguration,
-    completeChannelConfiguration,
     runNativeSetup,
     runDockerSetup,
     retrySetup,

@@ -55,12 +55,8 @@ export interface OpenClawWizardStartResult extends OpenClawWizardResult {
   sessionId: string;
 }
 
-export type OpenClawWizardFlow = 'setup' | 'channels';
-
 export interface OpenClawWizardStartOptions {
-  flow: OpenClawWizardFlow;
   workspace?: string;
-  channel?: string;
 }
 
 const WIZARD_PROBE_TITLE = /(?:connection|connectivity|channel).{0,20}(?:test|check|probe|verification)|(?:连接|連線|渠道|通道).{0,20}(?:测试|測試|检查|檢查|验证|驗證)/i;
@@ -224,7 +220,6 @@ export interface OpenClawWizardSessionScope {
 
 export const OPENCLAW_WIZARD_SESSION_STORAGE_KEYS = {
   setup: 'junqi.openclaw-wizard-session',
-  channels: 'junqi.openclaw-channel-wizard-session',
 } as const;
 
 function wizardSessionScopeKey(scope: OpenClawWizardSessionScope): string | null {
@@ -459,7 +454,7 @@ export class OpenClawWizardClient {
   private failedSessionId: string | null = null;
   private currentStep: OpenClawWizardStep | null = null;
   private failedStep: OpenClawWizardStep | null = null;
-  private startOptions: OpenClawWizardStartOptions = { flow: 'setup' };
+  private startOptions: OpenClawWizardStartOptions = {};
 
   constructor(
     private readonly callGateway: GatewayCaller,
@@ -527,7 +522,7 @@ export class OpenClawWizardClient {
     this.failedSessionId = null;
   }
 
-  async start(options: OpenClawWizardStartOptions = { flow: 'setup' }): Promise<OpenClawWizardStartResult> {
+  async start(options: OpenClawWizardStartOptions = {}): Promise<OpenClawWizardStartResult> {
     this.synchronizeStoredSession();
     const operation = this.captureOperation();
     // 刷新或返回可能留下仍在运行的官方会话；新建前必须先释放它，避免单会话约束阻塞后续配置。
@@ -535,27 +530,20 @@ export class OpenClawWizardClient {
       await this.cancel();
     }
     const workspace = options.workspace?.trim() || undefined;
-    const channel = options.channel?.trim() || undefined;
     this.startOptions = {
-      flow: options.flow,
       ...(workspace ? { workspace } : {}),
-      ...(channel ? { channel } : {}),
     };
     this.currentStep = null;
     this.failedStep = null;
     this.failedSessionId = null;
-    const params = this.startOptions.flow === 'channels'
-      ? {
-          flow: 'channels' as const,
-          ...(this.startOptions.channel ? { channel: this.startOptions.channel } : {}),
-        }
-      : {
-          mode: 'local' as const,
-          ...(this.startOptions.workspace ? { workspace: this.startOptions.workspace } : {}),
-        };
+    // 首次配置只启动官方完整向导。渠道选择或跳过均由该会话返回的步骤说明，
+    // 客户端不能追加未被当前运行时证明可用的 flow 参数。
     const result = assertWizardStartResult(await this.callGateway(
       'wizard.start',
-      params,
+      {
+        mode: 'local' as const,
+        ...(this.startOptions.workspace ? { workspace: this.startOptions.workspace } : {}),
+      },
       { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
     ));
     this.assertOperationCurrent(operation);

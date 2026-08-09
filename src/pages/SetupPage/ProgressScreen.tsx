@@ -1,28 +1,16 @@
-// Steps `checking`/`install-*`/`gateway-ready`/`error` — install progress.
+// checking、install-* 与 error 状态呈现安装进度和失败诊断。
 import { Package } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/stores/app-store";
 import { setupBackPolicy } from "@/hooks/useSetupFlow/helpers";
 import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
-import { InstallationConsole, currentStepOf, installStepTitle, type InstallationConsoleSummary, SetupShell, StatusPanel } from "@/components/setup/SetupFlowPanels";
+import { InstallationConsole, currentStepOf, installStepTitle, SetupShell, StatusPanel } from "@/components/setup/SetupFlowPanels";
 import { GatewayAiDiagnosticDisclosure } from "@/components/GatewayAiDiagnosticDisclosure";
 
 export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const { setupStep, setupError } = useAppStore();
-  const isGatewayReady = setupStep === "gateway-ready";
-  const gatewayReadyChecking = isGatewayReady && flow.gatewayReadyContinuation.status === "checking";
-  const gatewayReadyError = isGatewayReady && flow.gatewayReadyContinuation.status === "failed"
-    ? flow.gatewayReadyContinuation.error
-    : null;
-  const installationSummary: InstallationConsoleSummary = gatewayReadyChecking
-    ? { kind: "model-checking" }
-    : gatewayReadyError
-      ? { kind: "model-check-failed", message: gatewayReadyError }
-      : isGatewayReady
-        ? { kind: "gateway-ready" }
-        : { kind: "installation" };
   const isInstalling = setupBackPolicy(setupStep) === "cancel-install";
   const currentInstallStep = currentStepOf(flow.steps);
   const diagnosticLogs = logs
@@ -38,36 +26,17 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
     step: currentInstallTitle,
     defaultValue: "正在执行：{{step}}",
   });
-  const gatewayCheckpointTitle = gatewayReadyChecking
-    ? t("setup.gatewayReadyCheckingTitle", "正在检查 OpenClaw 配置")
-    : gatewayReadyError
-      ? t("setup.gatewayReadyContinueFailedTitle", "无法进入下一步")
-      : t("setup.gatewayConnected", "Gateway 已就绪");
-  const gatewayCheckpointSubtitle = gatewayReadyChecking
-    ? t(
-        "setup.gatewayReadyCheckingDescription",
-        "正在验证当前模型是否可用；完成后将进入官方配置向导或完成页。",
-      )
-    : gatewayReadyError ?? t("setup.gatewayReadySubtitle", "运行时检查已完成，下一步将核验 OpenClaw 配置。");
-
   return (
     <SetupShell
       active={flow.presentation.stage}
-      activeComplete={isGatewayReady}
-      eyebrow={isGatewayReady
-        ? t("setup.stageEyebrow", {
-            step: flow.presentation.stage + 1,
-            title: t("setup.steps.runtime.title"),
-          })
-        : undefined}
-      title={setupStep === "ready" ? t("setup.ready") : isGatewayReady ? gatewayCheckpointTitle : t("setup.settingUp")}
-      subtitle={setupStep === "ready" ? t("setup.readySubtitle") : isGatewayReady ? gatewayCheckpointSubtitle : t("setup.subtitle")}
+      title={t("setup.settingUp")}
+      subtitle={t("setup.subtitle")}
       logs={logs}
       wide
       showLogToggle={false}
-      previousAction={setupStep === "error" || isGatewayReady ? {
+      previousAction={setupStep === "error" ? {
         onClick: () => flow.goBack(),
-        disabled: flow.repairing || gatewayReadyChecking,
+        disabled: flow.repairing,
       } : isInstalling ? {
         label: t("setup.cancelInstall", "取消安装"),
         onClick: () => { void flow.cancelSetupRun(); },
@@ -78,19 +47,7 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
         disabled: flow.repairing,
       } : undefined}
       nextAction={
-        setupStep === "ready"
-          ? { label: t("setup.enterDashboard"), onClick: (event) => flow.enterDashboard(event.currentTarget) }
-          : isGatewayReady
-            ? {
-                label: gatewayReadyChecking
-                  ? t("setup.gatewayReadyCheckingAction", "正在检查配置…")
-                  : t("setup.nextStep", "下一步"),
-                onClick: () => { void flow.continueAfterGatewayReady(); },
-                disabled: gatewayReadyChecking,
-                loading: gatewayReadyChecking,
-                icon: gatewayReadyChecking ? "none" : "next",
-              }
-          : hasBrokenPlugins
+        hasBrokenPlugins
             ? {
                 label: flow.repairing
                   ? t("setup.pluginDisablingBtn", "正在禁用插件…")
@@ -144,7 +101,6 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
         flow={flow}
         logs={logs}
         setupStep={setupStep}
-        summary={installationSummary}
       />
       {setupStep === "error" && (
         <GatewayAiDiagnosticDisclosure

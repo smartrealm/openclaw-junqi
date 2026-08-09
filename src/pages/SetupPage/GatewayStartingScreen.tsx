@@ -49,7 +49,7 @@ export function GatewayStartingScreen({ flow, logs }: { flow: SetupFlow; logs: S
             onUpdated={async () => {
               const refreshed = await flow.refreshRuntime();
               if (refreshed.gatewayRunning) {
-                navigateSetup(refreshed.needsOnboarding ? 'configure-openclaw' : 'configure-channels');
+                navigateSetup(refreshed.needsOnboarding ? 'configure-openclaw' : 'ready');
               }
             }}
           />

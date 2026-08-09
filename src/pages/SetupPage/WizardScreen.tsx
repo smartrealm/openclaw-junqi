@@ -1,5 +1,4 @@
-// OpenClaw 官方向导步骤的通用呈现层。
-import { CheckCircle2, Copy, Circle, ExternalLink } from "lucide-react";
+// OpenClaw 官方向导步骤的容器层。
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SetupLog } from "@/stores/app-store";
@@ -11,6 +10,10 @@ import {
   isOpenClawWizardNonBlockingProbeFailure,
   type OpenClawWizardStep,
 } from "@/services/openclawWizard";
+import { isWizardBodyMessageStep, WizardStepRenderer } from "./wizard/WizardStepRenderer";
+import { wizardValuesEqual } from "./wizard/WizardStepValue";
+
+export { WizardAuthorizationHint } from "./wizard/WizardAuthorizationHint";
 
 export function wizardInitialValue(step: OpenClawWizardStep): unknown {
   if (step.type === "confirm") return Boolean(step.initialValue);
@@ -24,55 +27,6 @@ export function wizardInitialValue(step: OpenClawWizardStep): unknown {
   if (step.type === "text") return typeof step.initialValue === "string" ? step.initialValue : "";
   if (step.type === "action") return true;
   return undefined;
-}
-
-export function wizardValuesEqual(left: unknown, right: unknown): boolean {
-  if (Object.is(left, right)) return true;
-  try { return JSON.stringify(left) === JSON.stringify(right); } catch { return false; }
-}
-
-async function openWizardExternalUrl(value?: string): Promise<void> {
-  if (!value) return;
-  try {
-    const { open } = await import('@tauri-apps/plugin-shell');
-    await open(value);
-  } catch {
-    // 外部授权地址由 Gateway 明确提供；桌面 Shell 不可用时不以浏览器回退伪造成功。
-  }
-}
-
-export function WizardAuthorizationHint({
-  externalUrl,
-  deviceCode,
-}: Pick<OpenClawWizardStep, 'externalUrl' | 'deviceCode'>) {
-  const { t } = useTranslation();
-  if (!externalUrl && !deviceCode) return null;
-  return (
-    <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-aegis-border pt-4">
-      <div className="min-w-0 flex-1 space-y-2">
-        {deviceCode && <div className="rounded-md border border-aegis-border bg-aegis-surface px-3 py-2">
-          <p className="text-xs text-aegis-text-muted">{deviceCode.message || t('setup.wizard.deviceCodeHint', '请在授权页面输入一次性代码。')}</p>
-          <code className="mt-1 block break-all text-sm font-semibold text-aegis-text">{deviceCode.code}</code>
-        </div>}
-        {externalUrl && <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => void navigator.clipboard.writeText(externalUrl).catch(() => undefined)}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-aegis-primary hover:underline"
-          >
-            <Copy size={13} />{t('common.copy', 'Copy link')}
-          </button>
-          <button
-            type="button"
-            onClick={() => void openWizardExternalUrl(externalUrl)}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-aegis-primary hover:underline"
-          >
-            <ExternalLink size={13} />{t('setup.wizard.openInBrowser', '在浏览器中打开')}
-          </button>
-        </div>}
-      </div>
-    </div>
-  );
 }
 
 type WizardController = Pick<SetupFlow,
@@ -170,24 +124,12 @@ export function WizardScreen({
     );
   }
 
-  // 向导展示与语言由 Gateway 定义，桌面端只呈现其返回的结构化步骤。
+  // 向导内容与分支均由 Gateway 定义，容器仅选择已支持的协议类型渲染器。
   const presentedStep = step;
   const options = Array.isArray(presentedStep.options) ? presentedStep.options : [];
-  const selectedValues = Array.isArray(value) ? value : [];
-  const toggleMulti = (optionValue: unknown) => {
-    setValue((current: unknown) => {
-      const values = Array.isArray(current) ? current : [];
-      return values.some((item) => wizardValuesEqual(item, optionValue))
-        ? values.filter((item) => !wizardValuesEqual(item, optionValue))
-        : [...values, optionValue];
-    });
-  };
   const blocked = (step.type === "select" || step.type === "multiselect")
     && options.length === 0;
-  const messageRenderedInBody = presentedStep.type !== "text"
-    && presentedStep.type !== "select"
-    && presentedStep.type !== "multiselect"
-    && presentedStep.type !== "confirm";
+  const messageRenderedInBody = isWizardBodyMessageStep(presentedStep.type);
   const wizardTitle = presentedStep.title || t(copy.titleKey, copy.titleFallback);
   const wizardSubtitle = messageRenderedInBody
     ? t(copy.subtitleKey, copy.subtitleFallback)
@@ -232,74 +174,16 @@ export function WizardScreen({
     >
       <div className="space-y-4" dir="auto">
         {wizard.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{wizard.wizardError}</div>}
-        {presentedStep.type === "text" && (
-          <input
-            type={presentedStep.sensitive ? "password" : "text"}
-            value={typeof value === "string" ? value : ""}
-            onChange={(event) => setValue(event.target.value)}
-            placeholder={presentedStep.placeholder}
-            aria-label={presentedStep.title || t("setup.wizard.textInput", "OpenClaw 配置值")}
-            autoComplete={presentedStep.sensitive ? "new-password" : "off"}
-            className="w-full rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2.5 text-sm text-aegis-text outline-none focus:border-aegis-primary"
-          />
-        )}
-        {presentedStep.type === "confirm" && (
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-aegis-border bg-aegis-surface p-4 text-sm text-aegis-text">
-            <input type="checkbox" checked={Boolean(value)} onChange={(event) => setValue(event.target.checked)} className="h-4 w-4 accent-[rgb(var(--aegis-primary))]" />
-            <span>{presentedStep.message || t("setup.wizard.confirm", "确认并继续")}</span>
-          </label>
-        )}
-        {presentedStep.type === "select" && (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {options.map((option, index) => {
-              const selected = wizardValuesEqual(value, option.value);
-              return (
-                <button key={`${step.id}-${index}`} type="button" onClick={() => setValue(option.value)} className={clsx("flex min-h-[64px] items-start gap-3 rounded-lg border p-3 text-start transition", selected ? "border-aegis-primary bg-aegis-primary/8" : "border-aegis-border bg-aegis-surface hover:border-aegis-primary/40")}>
-                  {selected ? <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-aegis-primary" /> : <Circle size={17} className="mt-0.5 shrink-0 text-aegis-text-dim" />}
-                  <span>
-                    <span className="block text-sm font-semibold text-aegis-text">{option.label}</span>
-                    {option.hint && <span className="mt-1 block text-xs leading-5 text-aegis-text-muted">{option.hint}</span>}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-        {presentedStep.type === "multiselect" && (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {options.map((option, index) => {
-              const selected = selectedValues.some((item) => wizardValuesEqual(item, option.value));
-              return (
-                <label key={`${step.id}-${index}`} className={clsx("flex cursor-pointer items-start gap-3 rounded-lg border p-3", selected ? "border-aegis-primary bg-aegis-primary/8" : "border-aegis-border bg-aegis-surface")}>
-                  <input type="checkbox" checked={selected} onChange={() => toggleMulti(option.value)} className="mt-0.5 h-4 w-4 accent-[rgb(var(--aegis-primary))]" />
-                  <span><span className="block text-sm font-semibold text-aegis-text">{option.label}</span>{option.hint && <span className="mt-1 block text-xs leading-5 text-aegis-text-muted">{option.hint}</span>}</span>
-                </label>
-              );
-            })}
-          </div>
-        )}
-        {messageRenderedInBody && (
-          <div className="rounded-lg border border-aegis-primary/25 bg-aegis-primary/5 p-4 text-sm leading-6 text-aegis-text-secondary">
-            <pre className="whitespace-pre-wrap break-words font-[inherit]">{presentedStep.message || t("setup.wizard.readyForStep", "此步骤由 OpenClaw 执行。")}</pre>
-            {nonBlockingProbeFailure && (
-              <p className="mt-3 border-t border-aegis-border pt-3 text-xs leading-5 text-aegis-text-muted">
-                {t(
-                  "setup.wizard.nonBlockingProbeFailure",
-                  "这是渠道插件返回的非阻断检查结果，不代表 OpenClaw 或 Gateway 安装失败。可以继续完成向导，启动后再以渠道实际运行状态为准。",
-                )}
-              </p>
-            )}
-            {completionStep && (
-              <p className="mt-3 border-t border-aegis-border pt-3 text-xs leading-5 text-aegis-text-muted">
-                {t(
-                  copy.completionVerificationKey,
-                  copy.completionVerificationFallback,
-                )}
-              </p>
-            )}
-            <WizardAuthorizationHint externalUrl={presentedStep.externalUrl} deviceCode={presentedStep.deviceCode} />
-          </div>
-        )}
+        <WizardStepRenderer
+          step={presentedStep}
+          value={value}
+          setValue={setValue}
+          t={t}
+          nonBlockingProbeFailure={nonBlockingProbeFailure}
+          completionVerification={completionStep
+            ? t(copy.completionVerificationKey, copy.completionVerificationFallback)
+            : undefined}
+        />
       </div>
     </SetupShell>
   );
