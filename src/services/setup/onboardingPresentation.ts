@@ -31,7 +31,8 @@ const PRESENTATION_STATES = {
   'node-missing': { state: 'node-missing', stage: 2, kind: 'decision' },
   'install-node': { state: 'install-node', stage: 2, kind: 'operation' },
   'install-openclaw': { state: 'install-openclaw', stage: 2, kind: 'operation' },
-  'gateway-ready': { state: 'gateway-ready', stage: 2, kind: 'gateway-ready' },
+  // Gateway 已就绪后立即进入配置阶段的统一容器；底层状态仍保留运行时事实。
+  'gateway-ready': { state: 'gateway-ready', stage: 3, kind: 'gateway-ready' },
   'configure-openclaw': { state: 'configure-openclaw', stage: 3, kind: 'official-wizard' },
   ready: { state: 'ready', stage: 4, kind: 'complete' },
   error: { state: 'error', stage: 2, kind: 'failure' },

@@ -55,6 +55,10 @@ export interface OpenClawWizardStartResult extends OpenClawWizardResult {
   sessionId: string;
 }
 
+export interface OpenClawWizardStartOptions {
+  workspace?: string;
+}
+
 const WIZARD_PROBE_TITLE = /(?:connection|connectivity|channel).{0,20}(?:test|check|probe|verification)|(?:连接|連線|渠道|通道).{0,20}(?:测试|測試|检查|檢查|验证|驗證)/i;
 const WIZARD_PROBE_FAILURE = /(?:connection|probe|verification|check).{0,20}(?:failed|error)|(?:failed|error).{0,20}(?:connection|probe|verification|check)|(?:连接|連線|探测|探測|验证|驗證|检查|檢查).{0,20}(?:失败|失敗|错误|錯誤)|(?:失败|失敗|错误|錯誤).{0,20}(?:连接|連線|探测|探測|验证|驗證|检查|檢查)|status code\s+[45]\d\d|http\s+[45]\d\d/i;
 
@@ -214,7 +218,9 @@ export interface OpenClawWizardSessionScope {
   gatewayWsUrl: string;
 }
 
-const WIZARD_SESSION_STORAGE_KEY = 'junqi.openclaw-wizard-session';
+export const OPENCLAW_WIZARD_SESSION_STORAGE_KEYS = {
+  setup: 'junqi.openclaw-wizard-session',
+} as const;
 
 function wizardSessionScopeKey(scope: OpenClawWizardSessionScope): string | null {
   try {
@@ -234,6 +240,7 @@ function wizardSessionScopeKey(scope: OpenClawWizardSessionScope): string | null
  */
 export function createScopedOpenClawWizardSessionStore(
   resolveScope: () => OpenClawWizardSessionScope | null,
+  storageKey: string = OPENCLAW_WIZARD_SESSION_STORAGE_KEYS.setup,
 ): OpenClawWizardScopedSessionStore {
   return {
     scopeKey: () => {
@@ -242,7 +249,7 @@ export function createScopedOpenClawWizardSessionStore(
     },
     load: (scopeKey) => {
       try {
-        return globalThis.localStorage?.getItem(`${WIZARD_SESSION_STORAGE_KEY}:${encodeURIComponent(scopeKey)}`) || null;
+        return globalThis.localStorage?.getItem(`${storageKey}:${encodeURIComponent(scopeKey)}`) || null;
       } catch {
         return null;
       }
@@ -250,7 +257,7 @@ export function createScopedOpenClawWizardSessionStore(
     save: (scopeKey, sessionId) => {
       try {
         if (!scopeKey) return;
-        globalThis.localStorage?.setItem(`${WIZARD_SESSION_STORAGE_KEY}:${encodeURIComponent(scopeKey)}`, sessionId);
+        globalThis.localStorage?.setItem(`${storageKey}:${encodeURIComponent(scopeKey)}`, sessionId);
       } catch {
         // 本地恢复记录不可阻止官方 Wizard 继续执行。
       }
@@ -258,7 +265,7 @@ export function createScopedOpenClawWizardSessionStore(
     clear: (scopeKey) => {
       try {
         if (!scopeKey) return;
-        globalThis.localStorage?.removeItem(`${WIZARD_SESSION_STORAGE_KEY}:${encodeURIComponent(scopeKey)}`);
+        globalThis.localStorage?.removeItem(`${storageKey}:${encodeURIComponent(scopeKey)}`);
       } catch {
         // 本地恢复记录不可阻止官方 Wizard 继续执行。
       }
@@ -447,7 +454,7 @@ export class OpenClawWizardClient {
   private failedSessionId: string | null = null;
   private currentStep: OpenClawWizardStep | null = null;
   private failedStep: OpenClawWizardStep | null = null;
-  private workspace: string | undefined;
+  private startOptions: OpenClawWizardStartOptions = {};
 
   constructor(
     private readonly callGateway: GatewayCaller,
@@ -515,23 +522,30 @@ export class OpenClawWizardClient {
     this.failedSessionId = null;
   }
 
-  async start(workspace?: string): Promise<OpenClawWizardStartResult> {
+  async start(options: OpenClawWizardStartOptions = {}): Promise<OpenClawWizardStartResult> {
     this.synchronizeStoredSession();
     const operation = this.captureOperation();
-    // A refresh/back navigation can leave the official server-side session
-    // alive. Reconcile it before starting a new session so OpenClaw's
-    // single-session guard cannot strand onboarding on "already running".
+    // 刷新或返回可能留下仍在运行的官方会话；新建前必须先释放它，避免单会话约束阻塞后续配置。
     if (this.sessionId) {
       await this.cancel();
     }
-    this.workspace = workspace?.trim() || undefined;
+    const workspace = options.workspace?.trim() || undefined;
+    this.startOptions = {
+      ...(workspace ? { workspace } : {}),
+    };
     this.currentStep = null;
     this.failedStep = null;
     this.failedSessionId = null;
-    const result = assertWizardStartResult(await this.callGateway('wizard.start', {
-      mode: 'local',
-      ...(this.workspace ? { workspace: this.workspace } : {}),
-    }, { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS }));
+    // 首次配置只启动官方完整向导。渠道选择或跳过均由该会话返回的步骤说明，
+    // 客户端不能追加未被当前运行时证明可用的 flow 参数。
+    const result = assertWizardStartResult(await this.callGateway(
+      'wizard.start',
+      {
+        mode: 'local' as const,
+        ...(this.startOptions.workspace ? { workspace: this.startOptions.workspace } : {}),
+      },
+      { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
+    ));
     this.assertOperationCurrent(operation);
     const returnedSessionId = result.sessionId;
     const terminal = isTerminalWizardResult(result);
@@ -629,14 +643,12 @@ export class OpenClawWizardClient {
   }
 
   /**
-   * Resume a live official session. A terminal failure starts a fresh official
-   * session and lets OpenClaw read any state it durably committed; accepted
-   * answers are never retained or replayed by the desktop.
+   * 恢复仍在运行的官方会话。终态失败才重新启动对应 flow；桌面端不保存或重放已提交答案。
    */
   async retry(): Promise<OpenClawWizardResult> {
     this.synchronizeStoredSession();
     if (this.sessionId) return await this.resume();
-    return await this.start(this.workspace);
+    return await this.start(this.startOptions);
   }
 
   forgetSession(): void {

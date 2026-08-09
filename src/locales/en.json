@@ -797,7 +797,14 @@
     "schedulerUnavailable": "Scheduler status unavailable",
     "nextWakeIn": "Next wake {{time}}",
     "jobDetailLoading": "Reading OpenClaw job details",
-    "jobDetailUnavailable": "Job details unavailable; showing the list snapshot"
+    "jobDetailUnavailable": "Job details unavailable; showing the list snapshot",
+    "format": {
+      "every": "Every {{interval}}",
+      "onExit": "On exit: {{command}}",
+      "stream": "Stream: {{command}}",
+      "unavailable": "Unavailable",
+      "now": "Now"
+    }
   },
   "agents": {
     "title": "Agent Hub",
@@ -2649,7 +2656,15 @@
     "checkInName": "Check-In",
     "checkInDesc": "Periodic nudge if anything needs attention",
     "healthName": "System Health",
-    "healthDesc": "Disk, RAM, uptime, and process monitoring"
+    "healthDesc": "Disk, RAM, uptime, and process monitoring",
+    "morningJobName": "Morning Briefing",
+    "morningMessage": "Prepare a concise morning briefing: check local weather, major news, and pending work, reminders, or deadlines in memory.",
+    "weeklyJobName": "Weekly Digest",
+    "weeklyMessage": "Complete a weekly review: read this week's memory, summarize key events and decisions, update important information, and remove stale content.",
+    "checkInJobName": "Check-In",
+    "checkInMessage": "Review recent memory and sessions for pending work. Contact the user only when something needs follow-up; otherwise remain silent.",
+    "healthJobName": "System Health Check",
+    "healthMessage": "Check disk space, memory use, uptime, and unusual processes. Report only issues that require attention."
   },
   "dashboardExtra": {
     "contextCompacted": "Context compacted ×{{n}}"
@@ -3713,7 +3728,20 @@
       "scheduled": "Scheduled",
       "pending": "Pending",
       "fired": "Sent",
-      "failed": "Failed"
+      "failed": "Failed",
+      "unsupported": "This recurrence cannot be scheduled accurately by OpenClaw Cron"
+    },
+    "reminderContent": {
+      "jobName": "Calendar reminder: {{title}}",
+      "title": "Calendar reminder: {{title}}",
+      "time": "Time: {{start}}{{end}}",
+      "timeEnd": " to {{end}}",
+      "allDay": "All-day event",
+      "location": "Location: {{location}}",
+      "notes": "Notes: {{notes}}",
+      "lastChannel": "Send this reminder to the user through the most recently active channel.",
+      "namedChannel": "Send this reminder through channel {{channel}} using that channel's message tool.",
+      "leadTime": "The event starts in {{minutes}} minutes."
     },
     "delivery": {
       "label": "Deliver to",
@@ -4060,7 +4088,7 @@
       },
       "configuration": {
         "title": "OpenClaw setup",
-        "description": "Models / credentials / channels"
+        "description": "Models / credentials / optional channels"
       },
       "ready": {
         "title": "Ready",
@@ -4295,6 +4323,7 @@
       "confirm": "Confirm and continue",
       "textInput": "OpenClaw configuration value",
       "readyForStep": "OpenClaw will perform this step.",
+      "deviceCodeHint": "Enter the one-time code on the authorization page.",
       "nonBlockingProbeFailure": "This is a non-blocking check reported by the channel plugin; it does not mean that OpenClaw or Gateway installation failed. Continue the wizard, then verify the channel's actual runtime status after startup.",
       "completionVerification": "The OpenClaw wizard has ended. After you select Finish, JunQi will still verify the current Gateway connection and selected model. It will not enter the workspace if verification fails.",
       "qrAlt": "Scan authorization QR code",
@@ -4815,7 +4844,7 @@
   "gateway.progress.connectionFailed": "Gateway recovery finished, but the authenticated connection could not be established.",
   "setup.installComplete": "Required components installed",
   "setup.gatewayConnected": "Gateway is ready",
-  "setup.gatewayReadySubtitle": "Runtime checks are complete. Next, JunQi will verify the OpenClaw configuration.",
+  "setup.gatewayReadySubtitle": "Runtime checks are complete. Verify the OpenClaw configuration to continue.",
   "setup.installCompleteSubtitle": "Installation and configuration are complete. The next step only starts Gateway; you still enter the dashboard manually afterward.",
   "setup.installCompleteGatewayPending": "Gateway configuration is ready. Start Gateway to continue.",
   "setup.gatewayPrepareWillRetry": "Gateway preparation did not complete: {{error}}. Starting Gateway will retry automatically.",
@@ -5050,11 +5079,13 @@
   "setup.openclawUpdate.subtitle": "Use the official OpenClaw updater to detect the install type, channel, and available version. Checking never blocks the next step.",
   "setup.openclawUpdate.currentVersion": "Current",
   "setup.gatewayReadyTitle": "Runtime ready",
-  "setup.gatewayReadyCheckingAction": "Checking configuration…",
-  "setup.gatewayReadyCheckingTitle": "Checking OpenClaw configuration",
-  "setup.gatewayReadyCheckingDescription": "Verifying the current model. You will continue to the official setup wizard or the completion screen when the check finishes.",
-  "setup.gatewayReadyContinueFailedTitle": "Unable to continue",
-  "setup.gatewayReadyContinueFailed": "Unable to continue: {{error}}",
+  "setup.gatewayReadyCheckAction": "Verify configuration",
+  "setup.gatewayReadyRetryAction": "Verify again",
+  "setup.gatewayReadyCheckingAction": "Verifying configuration…",
+  "setup.gatewayReadyCheckingTitle": "Verifying OpenClaw configuration",
+  "setup.gatewayReadyCheckingDescription": "Verifying the current configuration and model. The official setup steps or the actual error will appear here when complete.",
+  "setup.gatewayReadyContinueFailedTitle": "Configuration verification incomplete",
+  "setup.gatewayReadyContinueFailed": "Configuration verification incomplete: {{error}}",
   "setup.runtimeSetupFailedUnchanged": "Setup or startup failed; the selected runtime mode did not change",
   "setup.runtimeCompensationIncomplete": "Runtime switching failed and some recovery operations did not complete; check the Gateway state and retry",
   "storage.save": "Save location",

@@ -565,7 +565,10 @@ export function useSetupFlow(
 
     const nextStep = runtimeReconfigurationRequired
       ? "choosing-mode"
-      : createdFresh && (postStorageStep === "ready" || postStorageStep === "configure-openclaw")
+      : createdFresh && (
+        postStorageStep === "ready"
+        || postStorageStep === "configure-openclaw"
+      )
       ? "gateway-stopped"
       : postStorageStep;
 

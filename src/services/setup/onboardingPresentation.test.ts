@@ -45,7 +45,7 @@ test('引导呈现状态机为每个持久化页面状态提供确定的用户�
     ['node-missing', 2, 'decision'],
     ['install-node', 2, 'operation'],
     ['install-openclaw', 2, 'operation'],
-    ['gateway-ready', 2, 'gateway-ready'],
+    ['gateway-ready', 3, 'gateway-ready'],
     ['configure-openclaw', 3, 'official-wizard'],
     ['error', 2, 'failure'],
     ['ready', 4, 'complete'],

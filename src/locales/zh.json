@@ -797,7 +797,14 @@
     "schedulerUnavailable": "调度器状态不可用",
     "nextWakeIn": "下次唤醒 {{time}}",
     "jobDetailLoading": "正在读取 OpenClaw 任务详情",
-    "jobDetailUnavailable": "任务详情暂不可用，当前显示列表快照"
+    "jobDetailUnavailable": "任务详情暂不可用，当前显示列表快照",
+    "format": {
+      "every": "每 {{interval}}",
+      "onExit": "退出后：{{command}}",
+      "stream": "流式：{{command}}",
+      "unavailable": "暂无",
+      "now": "现在"
+    }
   },
   "agents": {
     "title": "智能体中心",
@@ -2647,7 +2654,15 @@
     "checkInName": "定期提醒",
     "checkInDesc": "周期性提醒你查看是否有待处理事项",
     "healthName": "系统健康",
-    "healthDesc": "监控磁盘、内存、运行时间和进程"
+    "healthDesc": "监控磁盘、内存、运行时间和进程",
+    "morningJobName": "晨间简报",
+    "morningMessage": "请准备一份简洁的晨间简报：核对所在地天气、今日重要新闻以及记忆中的待办、提醒和截止事项。",
+    "weeklyJobName": "每周总结",
+    "weeklyMessage": "请完成本周回顾：阅读本周记忆，汇总关键事件和决策，更新重要信息并清理过期内容。",
+    "checkInJobName": "定期检查",
+    "checkInMessage": "请检查近期记忆和会话中的待办事项。仅在有需要跟进的内容时联系用户，否则保持静默。",
+    "healthJobName": "系统健康检查",
+    "healthMessage": "请检查磁盘空间、内存使用、运行时间和异常进程。仅在发现需要处理的问题时报告。"
   },
   "dashboardExtra": {
     "contextCompacted": "上下文已压缩 ×{{n}}"
@@ -3681,7 +3696,20 @@
       "scheduled": "已计划",
       "pending": "待发送",
       "fired": "已发送",
-      "failed": "发送失败"
+      "failed": "发送失败",
+      "unsupported": "当前重复规则无法由 OpenClaw 定时任务准确执行"
+    },
+    "reminderContent": {
+      "jobName": "日历提醒：{{title}}",
+      "title": "日历提醒：{{title}}",
+      "time": "时间：{{start}}{{end}}",
+      "timeEnd": "至{{end}}",
+      "allDay": "全天事件",
+      "location": "地点：{{location}}",
+      "notes": "备注：{{notes}}",
+      "lastChannel": "请通过最近活跃渠道向用户发送此提醒。",
+      "namedChannel": "请通过渠道 {{channel}} 向用户发送此提醒，并使用该渠道的消息工具。",
+      "leadTime": "事件将在 {{minutes}} 分钟后开始。"
     },
     "delivery": {
       "label": "发送到",
@@ -4028,7 +4056,7 @@
       },
       "configuration": {
         "title": "OpenClaw 配置",
-        "description": "模型、凭据与渠道"
+        "description": "模型、凭据与可选消息渠道"
       },
       "ready": {
         "title": "完成",
@@ -4263,6 +4291,7 @@
       "confirm": "确认并继续",
       "textInput": "OpenClaw 配置值",
       "readyForStep": "此步骤由 OpenClaw 执行。",
+      "deviceCodeHint": "请在授权页面输入一次性代码。",
       "nonBlockingProbeFailure": "这是渠道插件返回的非阻断检查结果，不代表 OpenClaw 或 Gateway 安装失败。可以继续完成向导，启动后再以渠道实际运行状态为准。",
       "completionVerification": "OpenClaw 向导已结束。点击完成后，JunQi 仍会验证当前 Gateway 连接和所选模型；验证未通过时不会进入工作台。",
       "qrAlt": "扫描授权二维码",
@@ -4813,7 +4842,7 @@
   "gateway.progress.connectionFailed": "Gateway 恢复操作已结束，但未能建立认证连接。",
   "setup.installComplete": "必需组件已安装完成",
   "setup.gatewayConnected": "Gateway 已就绪",
-  "setup.gatewayReadySubtitle": "运行时检查已完成，下一步将核验 OpenClaw 配置。",
+  "setup.gatewayReadySubtitle": "运行时检查已完成。请核验 OpenClaw 配置后继续。",
   "setup.installCompleteSubtitle": "安装与配置已完成。下一步只会启动 Gateway，启动后仍需手动进入仪表盘。",
   "setup.installCompleteGatewayPending": "Gateway 配置已准备，点击启动 Gateway 继续。",
   "setup.gatewayPrepareWillRetry": "Gateway 准备检查未完成：{{error}}。点击启动时将自动重试。",
@@ -5048,11 +5077,13 @@
   "setup.openclawUpdate.subtitle": "使用 OpenClaw 官方更新器识别安装方式、渠道和可用版本。检查更新不会阻止你继续下一步。",
   "setup.openclawUpdate.currentVersion": "当前版本",
   "setup.gatewayReadyTitle": "运行时已就绪",
-  "setup.gatewayReadyCheckingAction": "正在检查配置…",
-  "setup.gatewayReadyCheckingTitle": "正在检查 OpenClaw 配置",
-  "setup.gatewayReadyCheckingDescription": "正在验证当前模型是否可用；完成后将进入官方配置向导或完成页。",
-  "setup.gatewayReadyContinueFailedTitle": "无法进入下一步",
-  "setup.gatewayReadyContinueFailed": "无法进入下一步：{{error}}",
+  "setup.gatewayReadyCheckAction": "核验配置",
+  "setup.gatewayReadyRetryAction": "重新核验",
+  "setup.gatewayReadyCheckingAction": "正在核验配置…",
+  "setup.gatewayReadyCheckingTitle": "正在核验 OpenClaw 配置",
+  "setup.gatewayReadyCheckingDescription": "正在核验当前配置与模型。完成后会原地呈现官方配置步骤或真实错误。",
+  "setup.gatewayReadyContinueFailedTitle": "配置核验未完成",
+  "setup.gatewayReadyContinueFailed": "配置核验未完成：{{error}}",
   "setup.runtimeSetupFailedUnchanged": "安装或启动失败，当前运行模式未发生变化",
   "setup.runtimeCompensationIncomplete": "运行时切换失败，部分恢复操作未完成；请检查 Gateway 状态后重试",
   "storage.save": "保存位置",

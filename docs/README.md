@@ -62,6 +62,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [Wizard 配置、重启与 Gateway 重装链路加固方案](installation/wizard-config-restart-reinstall-hardening-2026-08-01.md)
 - [首次安装底部操作区响应式修复](installation/setup-footer-responsive-actions-2026-08-02.md)
 - [Setup runtime 与渠道兼容审计](installation/openclaw-setup-runtime-and-channel-audit-2026-07-27.md)
+- [首次引导配置阶段统一记录](installation/configuration-stage-unification-audit-2026-08-08.md)
 - [中国大陆网络与安装源策略](installation/mainland-china-network-policy.md)
 
 对应规格与计划：
@@ -82,6 +83,8 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [`../plans/installation/2026-08-05-onboarding-orchestration-redesign.md`](../plans/installation/2026-08-05-onboarding-orchestration-redesign.md)
 - [`../specs/installation/2026-08-08-setup-round-trip-navigation.md`](../specs/installation/2026-08-08-setup-round-trip-navigation.md)
 - [`../plans/installation/2026-08-08-setup-round-trip-navigation.md`](../plans/installation/2026-08-08-setup-round-trip-navigation.md)
+- [`../specs/installation/2026-08-08-configuration-stage-unification.md`](../specs/installation/2026-08-08-configuration-stage-unification.md)
+- [`../plans/installation/2026-08-08-configuration-stage-unification.md`](../plans/installation/2026-08-08-configuration-stage-unification.md)
 
 ## Gateway 生命周期与服务归属
 
@@ -319,6 +322,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [OpenClaw Cron 调度器状态验证](quality/openclaw-cron-scheduler-status-validation-2026-08-03.md)
 - [OpenClaw Cron 写操作授权与日历一致性审计](quality/openclaw-cron-mutation-authority-audit-2026-08-03.md)
 - [OpenClaw Cron 写操作授权与日历一致性验证](quality/openclaw-cron-mutation-authority-validation-2026-08-03.md)
+- [OpenClaw Cron 与日历提醒一致性验证](quality/openclaw-cron-calendar-integrity-2026-08-08.md)
 - [Tauri 适配器遗留 IPC 审计](quality/tauri-adapter-legacy-ipc-audit-2026-08-03.md)
 - [Tauri 适配器遗留 IPC 验证](quality/tauri-adapter-legacy-ipc-validation-2026-08-03.md)
 - [Chat 响应追溯与 OpenClaw 审计账本](quality/chat-response-trace-audit-ledger-2026-08-03.md)

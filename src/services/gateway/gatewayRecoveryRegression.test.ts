@@ -447,7 +447,7 @@ test('BUG-ST02 storage decision is an explicit post-detection setup step', () =>
   assert.match(gate, /configure_storage/);
   assert.match(gate, /migrateExisting/);
   assert.match(gate, /createdFresh:/);
-  assert.match(flow, /createdFresh && \(postStorageStep === "ready" \|\| postStorageStep === "configure-openclaw"\)[\s\S]*"gateway-stopped"/);
+  assert.match(flow, /createdFresh && \([\s\S]*?postStorageStep === "configure-openclaw"[\s\S]*?"gateway-stopped"/);
   assert.match(setup, /onReady=\{flow\.completeStorageSetup\}/);
   assert.match(main, /import\('\.\/App'\)/);
   assert.doesNotMatch(main, /DesktopRoot/);

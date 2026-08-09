@@ -26,6 +26,7 @@ plans/
 - [Windows 卸载流程](installation/2026-07-26-windows-uninstall-flow.md)
 - [Setup runtime 与渠道兼容](installation/2026-07-27-setup-runtime-and-channel-compatibility.md)
 - [首次启动往返导航修复](installation/2026-08-08-setup-round-trip-navigation.md)
+- [首次引导配置阶段统一](installation/2026-08-08-configuration-stage-unification.md)
 
 ## Gateway
 
@@ -170,6 +171,7 @@ plans/
 - [OpenClaw Cron 日历投影](quality/2026-08-03-openclaw-cron-calendar-projection.md)
 - [OpenClaw Cron 调度器状态](quality/2026-08-03-openclaw-cron-scheduler-status.md)
 - [OpenClaw Cron 写操作授权与日历一致性](quality/2026-08-03-openclaw-cron-mutation-authority.md)
+- [Cron 与日历提醒完整性](quality/2026-08-08-cron-calendar-integrity.md)
 - [Tauri 适配器遗留 IPC 契约](quality/2026-08-03-tauri-adapter-legacy-ipc.md)
 - [Collaboration Bootstrap Target 子域拆分](quality/2026-08-03-collaboration-bootstrap-target-slice.md)
 - [Collaboration Bootstrap Agent Policy 子域拆分](quality/2026-08-03-collaboration-bootstrap-agent-policy-slice.md)

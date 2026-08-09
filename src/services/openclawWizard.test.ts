@@ -61,7 +61,7 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
     return { done: true, status: 'done' };
   });
 
-  const started = await client.start(' /tmp/workspace ');
+  const started = await client.start({ workspace: ' /tmp/workspace ' });
   assert.deepEqual(started.step?.options?.[0], {
     label: 'Skip for now',
     value: '__skip__',
@@ -81,6 +81,37 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
     },
   ]);
   await assert.rejects(() => client.next('provider', 'again'), /not running/);
+});
+
+test('首次引导只启动官方完整向导并保留渠道跳过说明', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const client = new OpenClawWizardClient(async (method, params) => {
+    calls.push({ method, params });
+    return {
+      sessionId: 'setup-session-1',
+      done: false,
+      status: 'running',
+      step: {
+        id: 'channels-skipped',
+        type: 'note',
+        title: 'Channels',
+        message: 'Channel configuration was skipped by OpenClaw.',
+      },
+    };
+  });
+
+  const result = await client.start();
+
+  assert.deepEqual(calls, [{
+    method: 'wizard.start',
+    params: { mode: 'local' },
+  }]);
+  assert.deepEqual(result.step, {
+    id: 'channels-skipped',
+    type: 'note',
+    title: 'Channels',
+    message: 'Channel configuration was skipped by OpenClaw.',
+  });
 });
 
 test('wizard client retains its session when a bounded interactive request times out', async () => {

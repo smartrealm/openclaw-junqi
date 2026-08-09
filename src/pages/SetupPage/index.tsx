@@ -16,7 +16,7 @@ import { EnvironmentReviewScreen } from "./EnvironmentReviewScreen";
 import { GatewayStartingScreen } from "./GatewayStartingScreen";
 import { ModeSelectScreen } from "./ModeSelectScreen";
 import { ProgressScreen } from "./ProgressScreen";
-import { WizardScreen } from "./WizardScreen";
+import { OpenClawConfigurationScreen } from "./OpenClawConfigurationScreen";
 import { ReadyScreen } from "./ReadyScreen";
 import { GitMissingScreen } from "./GitMissingScreen";
 import { NodeMissingScreen } from "./NodeMissingScreen";
@@ -90,10 +90,10 @@ export function SetupPage() {
       case "checking":
       case "install-git":
       case "install-node":
-      case "install-openclaw":
-      case "gateway-ready":
+      case "install-openclaw": return <ProgressScreen flow={flow} logs={sharedLogs} />;
+      case "gateway-ready": return <OpenClawConfigurationScreen flow={flow} logs={sharedLogs} phase="verification" />;
       case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
-      case "configure-openclaw": return <WizardScreen flow={flow} logs={sharedLogs} />;
+      case "configure-openclaw": return <OpenClawConfigurationScreen flow={flow} logs={sharedLogs} phase="wizard" />;
       case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;
       case "node-missing": return <NodeMissingScreen flow={flow} logs={sharedLogs} />;
       default: return <DetectingScreen flow={flow} logs={sharedLogs} />;

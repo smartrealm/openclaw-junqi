@@ -768,7 +768,14 @@
     "schedulerUnavailable": "調度器狀態不可用",
     "nextWakeIn": "下次喚醒 {{time}}",
     "jobDetailLoading": "正在讀取 OpenClaw 任務詳情",
-    "jobDetailUnavailable": "任務詳情暫不可用，目前顯示列表快照"
+    "jobDetailUnavailable": "任務詳情暫不可用，目前顯示列表快照",
+    "format": {
+      "every": "每 {{interval}}",
+      "onExit": "退出後：{{command}}",
+      "stream": "串流：{{command}}",
+      "unavailable": "暫無",
+      "now": "現在"
+    }
   },
   "agents": {
     "title": "智能體中心",
@@ -2616,7 +2623,15 @@
     "checkInName": "定期提醒",
     "checkInDesc": "週期性提醒你查看是否有待處理事項",
     "healthName": "系統健康",
-    "healthDesc": "監控磁盤、內存、運行時間和進程"
+    "healthDesc": "監控磁盤、內存、運行時間和進程",
+    "morningJobName": "晨間簡報",
+    "morningMessage": "請準備一份簡潔的晨間簡報：核對所在地天氣、今日重要新聞以及記憶中的待辦、提醒和截止事項。",
+    "weeklyJobName": "每週總結",
+    "weeklyMessage": "請完成本週回顧：閱讀本週記憶，彙整關鍵事件和決策，更新重要資訊並清理過期內容。",
+    "checkInJobName": "定期檢查",
+    "checkInMessage": "請檢查近期記憶和會話中的待辦事項。僅在有需要跟進的內容時聯絡使用者，否則保持靜默。",
+    "healthJobName": "系統健康檢查",
+    "healthMessage": "請檢查磁碟空間、記憶體使用、運行時間和異常程序。僅在發現需要處理的問題時報告。"
   },
   "dashboardExtra": {
     "contextCompacted": "上下文已壓縮 ×{{n}}"
@@ -3650,7 +3665,20 @@
       "scheduled": "已計劃",
       "pending": "待發送",
       "fired": "已發送",
-      "failed": "發送失敗"
+      "failed": "發送失敗",
+      "unsupported": "目前重複規則無法由 OpenClaw 定時任務準確執行"
+    },
+    "reminderContent": {
+      "jobName": "日曆提醒：{{title}}",
+      "title": "日曆提醒：{{title}}",
+      "time": "時間：{{start}}{{end}}",
+      "timeEnd": "至{{end}}",
+      "allDay": "全天事件",
+      "location": "地點：{{location}}",
+      "notes": "備註：{{notes}}",
+      "lastChannel": "請透過最近活躍渠道向使用者傳送此提醒。",
+      "namedChannel": "請透過渠道 {{channel}} 向使用者傳送此提醒，並使用該渠道的訊息工具。",
+      "leadTime": "事件將在 {{minutes}} 分鐘後開始。"
     },
     "delivery": {
       "label": "發送到",
@@ -3997,7 +4025,7 @@
       },
       "configuration": {
         "title": "OpenClaw 配置",
-        "description": "模型、憑據與渠道"
+        "description": "模型、憑據與可選訊息渠道"
       },
       "ready": {
         "title": "完成",
@@ -4232,6 +4260,7 @@
       "confirm": "確認並繼續",
       "textInput": "OpenClaw 配置值",
       "readyForStep": "此步驟由 OpenClaw 執行。",
+      "deviceCodeHint": "請在授權頁面輸入一次性代碼。",
       "nonBlockingProbeFailure": "這是渠道外掛程式返回的非阻斷檢查結果，不代表 OpenClaw 或 Gateway 安裝失敗。可以繼續完成設定精靈，啟動後再以渠道實際運行狀態為準。",
       "completionVerification": "OpenClaw 設定精靈已結束。按下完成後，JunQi 仍會驗證目前的 Gateway 連線和所選模型；驗證未通過時不會進入工作區。",
       "qrAlt": "掃描授權二維碼",
@@ -4782,12 +4811,14 @@
   "gateway.progress.connectionFailed": "Gateway 恢復操作已結束，但未能建立認證連線。",
   "setup.installComplete": "必需組件已安裝完成",
   "setup.gatewayConnected": "Gateway 已就緒",
-  "setup.gatewayReadySubtitle": "運行時檢查已完成，下一步將核驗 OpenClaw 配置。",
-  "setup.gatewayReadyCheckingAction": "正在檢查配置…",
-  "setup.gatewayReadyCheckingTitle": "正在檢查 OpenClaw 配置",
-  "setup.gatewayReadyCheckingDescription": "正在驗證目前模型是否可用；完成後將進入官方配置嚮導或完成頁。",
-  "setup.gatewayReadyContinueFailedTitle": "無法進入下一步",
-  "setup.gatewayReadyContinueFailed": "無法進入下一步：{{error}}",
+  "setup.gatewayReadySubtitle": "運行時檢查已完成。請核驗 OpenClaw 配置後繼續。",
+  "setup.gatewayReadyCheckAction": "核驗配置",
+  "setup.gatewayReadyRetryAction": "重新核驗",
+  "setup.gatewayReadyCheckingAction": "正在核驗配置…",
+  "setup.gatewayReadyCheckingTitle": "正在核驗 OpenClaw 配置",
+  "setup.gatewayReadyCheckingDescription": "正在核驗目前配置與模型。完成後會在此處呈現官方配置步驟或真實錯誤。",
+  "setup.gatewayReadyContinueFailedTitle": "配置核驗未完成",
+  "setup.gatewayReadyContinueFailed": "配置核驗未完成：{{error}}",
   "setup.runtimeSetupFailedUnchanged": "安裝或啟動失敗，目前運行模式未發生變化",
   "setup.runtimeCompensationIncomplete": "運行模式切換失敗，部分復原操作未完成；請檢查 Gateway 狀態後重試",
   "setup.installCompleteSubtitle": "安裝與配置已完成。下一步只會啟動 Gateway，啟動後仍需手動進入儀表盤。",

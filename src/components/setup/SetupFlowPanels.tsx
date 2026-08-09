@@ -35,7 +35,7 @@ const SETUP_STEPS = [
   { id: "environment", titleKey: "setup.steps.environment.title", titleFallback: "Environment", descriptionKey: "setup.steps.environment.description", descriptionFallback: "OpenClaw / Docker" },
   { id: "storage", titleKey: "setup.steps.storage.title", titleFallback: "Data location", descriptionKey: "setup.steps.storage.description", descriptionFallback: "Configuration / Workspace" },
   { id: "runtime", titleKey: "setup.steps.runtime.title", titleFallback: "Runtime", descriptionKey: "setup.steps.runtime.description", descriptionFallback: "Install and start Gateway" },
-  { id: "configuration", titleKey: "setup.steps.configuration.title", titleFallback: "OpenClaw setup", descriptionKey: "setup.steps.configuration.description", descriptionFallback: "Models / credentials / channels" },
+  { id: "configuration", titleKey: "setup.steps.configuration.title", titleFallback: "OpenClaw setup", descriptionKey: "setup.steps.configuration.description", descriptionFallback: "Models / credentials / optional channels" },
   { id: "ready", titleKey: "setup.steps.ready.title", titleFallback: "Complete", descriptionKey: "setup.steps.ready.description", descriptionFallback: "Enter dashboard" },
 ] as const;
 
@@ -101,7 +101,7 @@ function Stepper({ active, activeComplete = false }: { active: number; activeCom
   const { t } = useTranslation();
   return (
     <div className="px-6 pt-6" dir="ltr">
-      <div className="mx-auto grid w-full max-w-3xl grid-cols-5 items-start rounded-xl border border-aegis-border bg-aegis-elevated px-3 py-3 shadow-sm">
+      <div className="mx-auto grid w-full max-w-4xl grid-cols-5 items-start rounded-xl border border-aegis-border bg-aegis-elevated px-3 py-3 shadow-sm">
         {SETUP_STEPS.map(({ id, titleKey, titleFallback, descriptionKey, descriptionFallback }, i) => {
           const done = i < active;
           const current = i === active;
@@ -958,44 +958,24 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
   );
 }
 
-export type InstallationConsoleSummary =
-  | { kind: "installation" }
-  | { kind: "gateway-ready" }
-  | { kind: "model-checking" }
-  | { kind: "model-check-failed"; message: string };
-
-export function installationConsoleMode(
-  summary: InstallationConsoleSummary,
-): "activity" | "checkpoint" {
-  return summary.kind === "installation" ? "activity" : "checkpoint";
-}
-
 type InstallationConsoleProps = {
   flow: Pick<SetupFlow, "steps" | "installTarget">;
   logs: SetupLog[];
   setupStep: string;
-  summary?: InstallationConsoleSummary;
 };
 
 export function InstallationConsole({
   flow,
   logs,
   setupStep,
-  summary = { kind: "installation" },
 }: InstallationConsoleProps) {
   const { t } = useTranslation();
   const [mobileView, setMobileView] = useState<"steps" | "logs">("steps");
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const current = currentStepOf(flow.steps);
   const completed = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || 1;
-  const consoleMode = installationConsoleMode(summary);
-  const modelCheckFailed = summary.kind === "model-check-failed";
-  const isReady = setupStep === "ready" || summary.kind === "gateway-ready";
-  const percent = isReady
-    ? 100
-    : installationCompletionPercent(flow.steps);
-  const isError = setupStep === "error" || modelCheckFailed;
+  const percent = installationCompletionPercent(flow.steps);
+  const isError = setupStep === "error";
   useEffect(() => {
     if (isError) setMobileView("logs");
   }, [isError]);
@@ -1004,12 +984,9 @@ export function InstallationConsole({
   const currentDescription = currentMeta
     ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
     : t("setup.subtitle");
-  const summaryLabel = isReady
-    ? t("setup.ready", "就绪")
-    : isError
-      ? t("setup.error", "安装遇到问题")
-      : t("setup.installPanel.current", "当前执行");
-  const showProgress = consoleMode === "activity";
+  const summaryLabel = isError
+    ? t("setup.error", "安装遇到问题")
+    : t("setup.installPanel.current", "当前执行");
 
   const activityPanel = (
     <div id="setup-installation-details" className="overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated">
@@ -1043,53 +1020,18 @@ export function InstallationConsole({
     </div>
   );
 
-  if (consoleMode === "checkpoint") {
-    return (
-      <div className="space-y-3">
-        <div
-          data-installation-checkpoint="runtime-complete"
-          className="flex items-center gap-2 rounded-xl border border-aegis-success/35 bg-aegis-success/5 px-4 py-3 text-sm font-medium text-aegis-text-secondary"
-        >
-          <CheckCircle2 size={16} className="shrink-0 text-aegis-success" />
-          <span>
-            {t("setup.installPanel.runtimeChecksComplete", {
-              completed,
-              total,
-              defaultValue: "{{completed}}/{{total}} 项运行时检查完成",
-            })}
-          </span>
-        </div>
-        <button
-          type="button"
-          aria-expanded={detailsOpen}
-          aria-controls="setup-installation-details"
-          onClick={() => setDetailsOpen((open) => !open)}
-          className="inline-flex items-center gap-2 rounded-lg border border-aegis-border px-3 py-2 text-xs font-medium text-aegis-text-secondary transition-[background-color,border-color,color,transform] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-surface active:scale-[0.98]"
-        >
-          {detailsOpen ? <EyeOff size={14} /> : <Eye size={14} />}
-          {detailsOpen
-            ? t("setup.installPanel.hideDetails", "收起安装详情")
-            : t("setup.installPanel.viewDetails", "查看安装详情")}
-        </button>
-        {detailsOpen && activityPanel}
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       <div className={clsx(
         "grid gap-3 rounded-xl border p-4",
-        showProgress && "md:grid-cols-[1fr_168px]",
-        isError ? "border-red-500/35 bg-red-500/5" : isReady ? "border-aegis-success/35 bg-aegis-success/5" : "border-aegis-primary/30 bg-aegis-primary/5",
+        "md:grid-cols-[1fr_168px]",
+        isError ? "border-red-500/35 bg-red-500/5" : "border-aegis-primary/30 bg-aegis-primary/5",
       )}>
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-aegis-text-muted">
-            {isReady
-              ? <CheckCircle2 size={15} className="text-aegis-success" />
-              : isError
-                ? <X size={15} className="text-red-300" />
-                : <CircleDot size={15} className="text-aegis-primary" />}
+            {isError
+              ? <X size={15} className="text-red-300" />
+              : <CircleDot size={15} className="text-aegis-primary" />}
             {summaryLabel}
           </div>
           <div className="text-lg font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
@@ -1098,27 +1040,23 @@ export function InstallationConsole({
             <InstallTargetCard target={flow.installTarget} />
           )}
         </div>
-        {showProgress && (
-          <div className="flex flex-col justify-center rounded-xl border border-aegis-border/70 bg-aegis-bg/55 px-4 py-3">
-            <div className="text-[11px] font-semibold text-aegis-text-dim">{t("setup.installPanel.progress", "总进度")}</div>
-            <div className="mt-1 text-2xl font-semibold tabular-nums text-aegis-text">{percent}%</div>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-aegis-surface">
-              <div
-                className={clsx("h-full rounded-full transition-all duration-500", !isReady && !isError && "animate-pulse")}
-                style={{
-                  width: `${percent}%`,
-                  background: isError
-                    ? 'rgb(248 113 113)'
-                    : isReady
-                      ? 'rgb(var(--aegis-success))'
-                      : 'linear-gradient(90deg, rgb(var(--aegis-primary)), rgb(var(--aegis-success)))',
-                  boxShadow: isError || isReady ? 'none' : '0 0 14px rgb(var(--aegis-primary) / 0.72)',
-                }}
-              />
-            </div>
-            <div className="mt-2 text-[11px] text-aegis-text-dim">{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}</div>
+        <div className="flex flex-col justify-center rounded-xl border border-aegis-border/70 bg-aegis-bg/55 px-4 py-3">
+          <div className="text-[11px] font-semibold text-aegis-text-dim">{t("setup.installPanel.progress", "总进度")}</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums text-aegis-text">{percent}%</div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-aegis-surface">
+            <div
+              className={clsx("h-full rounded-full transition-all duration-500", !isError && "animate-pulse")}
+              style={{
+                width: `${percent}%`,
+                background: isError
+                  ? 'rgb(248 113 113)'
+                  : 'linear-gradient(90deg, rgb(var(--aegis-primary)), rgb(var(--aegis-success)))',
+                boxShadow: isError ? 'none' : '0 0 14px rgb(var(--aegis-primary) / 0.72)',
+              }}
+            />
           </div>
-        )}
+          <div className="mt-2 text-[11px] text-aegis-text-dim">{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}</div>
+        </div>
       </div>
 
       {activityPanel}
