@@ -12,7 +12,8 @@ OpenClaw 配置字段、枚举、默认值、约束、渠道/provider/plugin 能
 - 有测试与版本边界的 legacy migration；
 - UI 文案、测试夹具和不参与写配置的示例。
 
-审查依据为仓库锁定的 `openclaw@2026.7.1`、本机安装的 `OpenClaw 2026.7.1-2` 及其 `openclaw config schema` 输出。
+该历史审计当时使用仓库锁定版本和本机安装 Runtime 复现问题。当前实现契约以最新版 OpenClaw 官方文档、官方
+源码和正式协议为准；本地版本仅用于记录复现范围，不能作为能力门禁。
 
 ## [critical] BUG-OCA-01 · Agent 配置枚举与约束由 JunQi 静态维护且已经漂移
 
@@ -28,7 +29,7 @@ OpenClaw 配置字段、枚举、默认值、约束、渠道/provider/plugin 能
 
 页面静态维护 Web Search provider 集合、plugin ID、认证复用映射、环境变量名、API Key/Base URL 要求及配置落点，并在保存前自动选择 provider。这些事实会随 OpenClaw 内置工具和插件 schema 漂移，且当前 `tools.web.search.provider` 官方 schema 只是动态字符串，不授权 JunQi 维护 provider 全集。
 
-**修复结果**：已完成普通 Tools 配置面。删除静态 provider/plugin/env 写入映射与自动 provider 选择；Tools 编辑器改为当前 Runtime schema 驱动。schema 不可用时 fail closed，并引导使用 raw editor/官方 Wizard。
+**修复结果**：已完成普通 Tools 配置面。删除静态 provider/plugin/env 写入映射与自动 provider 选择；Tools 编辑器改为当前 Runtime schema 驱动。2026-08-09 复核发现公共加载器曾把官方响应信封误当成根 schema，且错误提示包含未经当前入口证明的原始编辑器和 Wizard 引导。后续修复改为严格读取 `response.schema`、绑定 Gateway 连接身份，并区分读取失败与工具字段缺失；详见 [OpenClaw Runtime 配置 Schema 信封审计](openclaw-runtime-config-schema-envelope-audit-2026-08-09.md)。
 
 ## [critical] BUG-OCA-03 · 本地 TypeScript/Rust 校验复制了不完整 OpenClaw schema
 

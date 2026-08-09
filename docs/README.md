@@ -135,6 +135,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 目录：[`business/`](business/)
 
 - [钉钉主线单平台业务应用 UI 设计](business/dingtalk-single-platform-ui-design-2026-08-08.md)
+- [钉钉业务工作台 UI 收敛验证](business/dingtalk-workspace-ui-validation-2026-08-09.md)
 - [钉钉业务工作台运行时实施设计](business/dingtalk-business-runtime-implementation-design-2026-08-08.md)
 - [钉钉业务工作台领域上下文](business/CONTEXT.md)
 - [业务应用多平台 UI 设计](business/business-applications-ui-design-2026-08-02.md)
@@ -150,6 +151,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 
 - [Gateway 原生能力与扩展一致性审计](quality/gateway-native-extension-consistency-audit-2026-08-09.md)
 - [Gateway 原生能力与扩展一致性验证](quality/gateway-native-extension-consistency-validation-2026-08-09.md)
+- [OpenClaw Runtime 配置 Schema 信封审计](quality/openclaw-runtime-config-schema-envelope-audit-2026-08-09.md)
 - [Windows Gateway 冷启动与默认主会话固定审计](quality/windows-gateway-cold-start-and-main-session-pinning-2026-08-08.md)
 - [JunQi 隐私锁能力移除记录](quality/privacy-lock-removal-2026-08-07.md)
 - [OpenClaw 会话生命周期收敛审计](quality/openclaw-session-lifecycle-convergence-audit-2026-08-06.md)

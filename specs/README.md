@@ -47,6 +47,7 @@ specs/
 
 ## Quality
 
+- [OpenClaw Runtime 配置 Schema 信封修复](quality/2026-08-09-openclaw-runtime-config-schema-envelope.md)
 - [默认智能体与主会话边界](quality/2026-08-09-default-agent-and-main-session-boundary.md)
 - [Windows Gateway 冷启动与默认主会话固定](quality/2026-08-08-windows-gateway-cold-start-and-main-session-pinning.md)
 - [JunQi 隐私锁能力移除](quality/2026-08-07-privacy-lock-removal.md)

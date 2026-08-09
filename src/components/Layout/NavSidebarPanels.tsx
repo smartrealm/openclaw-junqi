@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Activity, ArrowUpRight, BarChart3, Blocks, BookOpenText, Bot, Brain, Calendar, Clock, Cpu, Database, FileText, Folder, History, ListChecks, MessageSquare, Plus, Puzzle, Settings, Terminal, Wrench } from 'lucide-react';
+import { Activity, ArrowUpRight, BarChart3, Blocks, BookOpenText, Bot, Brain, Calendar, Clock, Cpu, Database, FileText, Folder, History, ListChecks, MessageSquare, Plus, Puzzle, Settings, Settings2, Terminal, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
@@ -246,9 +246,9 @@ export function BusinessApplicationsPanel() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const isActivity = new URLSearchParams(location.search).get('view') === 'activity';
-  const openWorkbench = (view: 'tools' | 'activity') => {
-    navigate({ pathname: '/business-applications', search: view === 'activity' ? '?view=activity' : '' });
+  const view = new URLSearchParams(location.search).get('view');
+  const openWorkbench = (nextView: 'tools' | 'activity' | 'runtime') => {
+    navigate({ pathname: '/business-applications', search: nextView === 'tools' ? '' : `?view=${nextView}` });
   };
   return (
     <>
@@ -260,14 +260,20 @@ export function BusinessApplicationsPanel() {
           <SidebarRow
             icon={<Wrench size={14} />}
             title={t('businessApplications.workspaceTools', '有效工具')}
-            active={location.pathname === '/business-applications' && !isActivity}
+            active={location.pathname === '/business-applications' && view !== 'activity' && view !== 'runtime'}
             onClick={() => openWorkbench('tools')}
           />
           <SidebarRow
             icon={<ListChecks size={14} />}
             title={t('businessApplications.workspaceActivity', '操作审计')}
-            active={location.pathname === '/business-applications' && isActivity}
+            active={location.pathname === '/business-applications' && view === 'activity'}
             onClick={() => openWorkbench('activity')}
+          />
+          <SidebarRow
+            icon={<Settings2 size={14} />}
+            title={t('businessApplications.workspaceRuntime', '接入与授权')}
+            active={location.pathname === '/business-applications' && view === 'runtime'}
+            onClick={() => openWorkbench('runtime')}
           />
         </SidebarSection>
       </div>

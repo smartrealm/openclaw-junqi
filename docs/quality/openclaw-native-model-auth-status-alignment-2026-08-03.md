@@ -8,9 +8,10 @@ JunQi 的 Provider 页面此前主要根据选定 runtime 的配置判断“已�
 配置形状，不能说明 Gateway 计算出的 OAuth、token 或静态凭据是否已缺失、即将到期或过期。
 
 当前 OpenClaw 提供 `models.authStatus` 的 `operator.read` 状态投影、`models.authLogout` 的
-`operator.admin` 受控注销，以及 `models.probe` 的 `operator.admin` 有界实时验证。JunQi 将认证状态作为 Provider 页的
-独立 Gateway 事实区呈现，不再把本地配置推断为认证成功；只有官方状态明确标记可注销的已保存 OAuth/token Profile
-时，才向用户提供二次确认后的官方注销操作。实时验证只在用户确认后执行，不随页面加载自动消耗 Token。
+`operator.admin` 受控注销，以及 `models.probe` 的 `operator.admin` 有界实时验证。JunQi 将认证状态作为 Provider 卡片内
+独立于本地配置结论的 Gateway 事实呈现，不再把本地配置推断为认证成功；只有官方状态明确标记可注销的已保存
+OAuth/token Profile 时，才在卡片展开区提供二次确认后的官方注销操作。实时验证只在用户确认后执行，不随页面加载
+自动消耗 Token。
 
 ## 权威依据
 
@@ -34,8 +35,13 @@ provider/profile health status、可选 expiry、API-key 来源和可选 usage�
 - React 状态只保留 provider id/display name、provider/profile status、expiry 和官方 `logoutSupported` 布尔能力。
   API-key source、环境变量名、profile id、reason code、usage、account email、billing、plan 和任何 Secret 均不进入前端
   状态、日志、持久化或 UI。
-- Provider 页将 Gateway 认证状态与本地配置卡片并列呈现。首次加载读取当前快照；用户手动刷新和注销后的同步
-  明确发送官方 `models.authStatus { refresh: true }`，不把刷新解释为登录、凭据修复或后续模型请求一定成功。
+- Provider 页把 Gateway 认证状态合并到对应 Provider 卡片的摘要区，但不改变本地配置事实：有官方投影时，状态标签、
+  状态点和必要的到期时间显示官方认证健康；没有官方投影时仍只显示“凭据已配置”等本地配置结论。首次加载读取当前
+  快照；用户手动刷新和注销后的同步明确发送官方 `models.authStatus { refresh: true }`，不把刷新解释为登录、凭据修复
+  或后续模型请求一定成功。
+- 删除原独立认证面板及其标题、说明、Profile 数量和重复 Provider 行。Gateway 不支持该方法时不占用页面空间，也不
+  伪报健康；畸形回包在 Provider 列表标题下显示就近警告。全局刷新收敛为列表标题操作，Provider 级实时验证保留在
+  卡片摘要区，注销只在展开区作为次要危险操作出现。
 - 可注销 Provider 显示官方认证注销入口。用户确认后，JunQi 通过临时 `operator.admin` 连接调用
   `models.authLogout { provider }`，由 OpenClaw 删除该 Provider 当前 Agent 下可删除的 OAuth/token Profile、刷新
   运行时认证快照，并按官方规则中止需要中止的运行。JunQi 不传 Profile id、不读取认证存储，也不自行删除配置。
@@ -61,14 +67,19 @@ provider/profile health status、可选 expiry、API-key 来源和可选 usage�
   `models.authLogout`，但未包含 `models.probe` handler，因此实际调用会明确进入旧 Runtime 不支持路径，不使用 CLI
   fallback 或伪造结果。
 - TypeScript 无输出类型检查通过。
-- 7 项定向回归通过，覆盖安全投影、敏感字段剔除、畸形 enum/expiry 拒绝、过期负 duration 保留、方法发现遗漏仍请求、未知方法、断线、
-  connection fence、已切换 Gateway 的旧响应丢弃，以及 UI 不可用状态。
+- Provider 卡片认证摘要 3 项行为回归通过，覆盖官方状态覆盖本地配置标签、到期信息与实时验证入口、展开区探测证据与
+  注销入口，以及缺少 Gateway 投影时保留本地配置结论。
+- Gateway client 定向回归覆盖安全投影、敏感字段剔除、畸形 enum/expiry 拒绝、过期负 duration 保留、方法发现遗漏仍
+  请求、未知方法、断线、connection fence 和已切换 Gateway 的旧响应丢弃。
 - `pnpm lint`、`pnpm test`、`pnpm verify:openclaw-docs`、`pnpm collab:test`、`pnpm collab:validate` 和
   `pnpm build` 均通过。
-- 提交前已执行 `git diff --check`、locale JSON 解析和全部修改文件 Emoji 扫描。
+- 本轮重设计后重新执行 `pnpm lint`、15 项认证链路定向回归、完整 `pnpm test`、`pnpm build`、
+  `pnpm verify:openclaw-docs`、`git diff --check`、locale JSON 解析和全部修改文件 Emoji 扫描，结果均通过。
 
 ## 未验证边界
 
 - 当前工作区未连接真实 Gateway，尚未验证实际 provider OAuth/token 到期、静态 key、外部 CLI 凭据、实时探测
   的 Token 消耗、计费、限流和 Gateway 认证错误的页面呈现。
 - 尚未在 macOS、Windows、CentOS、Ubuntu 的 Tauri 安装包上完成真机验收。
+- 尚未在真实 Tauri 中完成亮色、暗色、窄窗口、键盘焦点、加载、失败和空数据状态的视觉验收；当前自动化仅验证结构
+  和显示契约。

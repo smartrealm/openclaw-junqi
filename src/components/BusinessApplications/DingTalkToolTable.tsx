@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 import { ChevronRight, Wrench } from 'lucide-react';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { dingTalkDomainLabel, type DingTalkEffectiveTool } from '@/business-applications/dingtalkTools';
+import { dingTalkDomainLabel, type DingTalkDomain, type DingTalkEffectiveTool } from '@/business-applications/dingtalkTools';
 
 function effectLabel(effect: DingTalkEffectiveTool['effect']): string {
   if (effect === 'read') return '读取';
@@ -14,6 +14,26 @@ function riskLabel(risk: DingTalkEffectiveTool['entry']['risk']): string {
   if (risk === 'medium') return '中';
   if (risk === 'high') return '高';
   return '未验证';
+}
+
+export interface DingTalkToolTableGroup {
+  readonly domain: DingTalkDomain;
+  readonly label: string;
+  readonly tools: readonly DingTalkEffectiveTool[];
+}
+
+export function groupDingTalkToolsForTable(tools: readonly DingTalkEffectiveTool[]): DingTalkToolTableGroup[] {
+  const groups = new Map<DingTalkDomain, DingTalkEffectiveTool[]>();
+  for (const tool of tools) {
+    const group = groups.get(tool.domain) ?? [];
+    group.push(tool);
+    groups.set(tool.domain, group);
+  }
+  return [...groups.entries()].map(([domain, groupedTools]) => ({
+    domain,
+    label: dingTalkDomainLabel(domain),
+    tools: groupedTools,
+  }));
 }
 
 export function DingTalkToolTable({
@@ -40,6 +60,7 @@ export function DingTalkToolTable({
       />
     );
   }
+  const groups = groupDingTalkToolsForTable(tools);
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
@@ -54,8 +75,14 @@ export function DingTalkToolTable({
             <th className="w-8" aria-label="打开详情" />
           </tr>
         </thead>
-        <tbody>
-          {tools.map((tool) => {
+        {groups.map((group) => (
+          <tbody key={group.domain} aria-label={`${group.label}工具`}>
+            <tr className="h-7 border-b border-aegis-border bg-aegis-surface/65">
+              <th colSpan={6} scope="rowgroup" className="px-3 text-[9.5px] font-semibold tracking-[0.08em] text-aegis-text-dim">
+                {group.label}<span className="ml-2 font-normal tabular-nums">{group.tools.length}</span>
+              </th>
+            </tr>
+          {group.tools.map((tool) => {
             const selected = selectedId === tool.entry.id;
             const verified = tool.effect !== 'unknown' && Boolean(tool.entry.risk);
             return (
@@ -96,7 +123,8 @@ export function DingTalkToolTable({
               </tr>
             );
           })}
-        </tbody>
+          </tbody>
+        ))}
       </table>
     </div>
   );

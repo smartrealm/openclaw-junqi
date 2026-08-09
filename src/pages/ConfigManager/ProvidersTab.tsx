@@ -8,7 +8,7 @@ import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, RefreshCw, Download, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, ArrowUp, ArrowDown, Circle, Zap, ShieldCheck, ExternalLink } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CheckCircle, Save, Trash2, Search, X, RefreshCw, Download, AlertTriangle, Plug, FileText, Key, Monitor, Bot, Palette, Film, ArrowUp, ArrowDown, Circle, Zap, ShieldCheck, ExternalLink, LogOut } from 'lucide-react';
 import clsx from 'clsx';
 import {
   getCustomProviderIcon,
@@ -100,7 +100,6 @@ import {
 } from './providerPolicy';
 import { DefaultModelControls, modelDisplayLabel } from './DefaultModelControls';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
-import { OpenClawModelAuthStatusPanel } from '@/components/settings/OpenClawModelAuthStatusPanel';
 import { useOpenClawModelAuthStatus } from '@/hooks/useOpenClawModelAuthStatus';
 import { OpenClawProviderUsagePanel } from '@/components/settings/OpenClawProviderUsagePanel';
 import { useOpenClawProviderUsage } from '@/hooks/useOpenClawProviderUsage';
@@ -904,33 +903,139 @@ function maskPreviewSecrets(value: any, path = ''): any {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ProviderCardShell — one consistent frame for all three provider sources.
-// Renders the summary header (icon · name · type badge · subtitle · model count
-// · semantic status dot · chevron/action) plus a collapsible body. This is what
-// makes every provider read the same in the list regardless of whether it came
-// from auth.profiles, models.providers, or env.vars — the per-source editor
-// still lives in each row's `children`.
+// ProviderCardShell 为三类 Provider 来源提供统一外框。
+// 摘要区统一承载名称、类型、模型数与实时认证状态，展开区保留各来源自己的配置编辑器。
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Semantic provider status: ready (key configured) / needs a key / custom or
- *  runtime-supplied. Drives the dot, the type badge, and the open-accent. */
-type ProviderStatusTone = 'ok' | 'warn' | 'info';
+/** Provider 状态语义，同时驱动状态点、类型标签和展开边框。 */
+type ProviderStatusTone = 'ok' | 'warn' | 'danger' | 'info';
 
 const PROVIDER_STATUS_DOT: Record<ProviderStatusTone, string> = {
-  ok:   'bg-emerald-400 shadow-[0_0_6px_rgb(var(--aegis-success)/0.5)]',
-  warn: 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.5)]',
-  info: 'bg-blue-400 shadow-[0_0_6px_rgba(96,165,250,0.5)]',
+  ok: 'bg-aegis-success shadow-[0_0_6px_rgb(var(--aegis-success)/0.5)]',
+  warn: 'bg-aegis-warning shadow-[0_0_6px_rgb(var(--aegis-warning)/0.45)]',
+  danger: 'bg-aegis-danger shadow-[0_0_6px_rgb(var(--aegis-danger)/0.45)]',
+  info: 'bg-aegis-primary shadow-[0_0_6px_rgb(var(--aegis-primary)/0.45)]',
 };
 const PROVIDER_ACCENT_BORDER: Record<ProviderStatusTone, string> = {
-  ok:   'border-aegis-primary/20',
-  warn: 'border-amber-500/25',
-  info: 'border-blue-500/20',
+  ok: 'border-aegis-success/25',
+  warn: 'border-aegis-warning/25',
+  danger: 'border-aegis-danger/25',
+  info: 'border-aegis-primary/20',
 };
 const PROVIDER_BADGE_CLS: Record<ProviderStatusTone, string> = {
-  ok:   'bg-aegis-success/12 text-aegis-success border-aegis-success/25',
-  warn: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
-  info: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
+  ok: 'border-aegis-success/25 bg-aegis-success/10 text-aegis-success',
+  warn: 'border-aegis-warning/25 bg-aegis-warning/10 text-aegis-warning',
+  danger: 'border-aegis-danger/25 bg-aegis-danger/10 text-aegis-danger',
+  info: 'border-aegis-primary/25 bg-aegis-primary/10 text-aegis-primary',
 };
+
+type RuntimeAuthStatus = 'ok' | 'expiring' | 'expired' | 'missing' | 'static';
+
+export interface ProviderRuntimeAuthControl {
+  displayName: string;
+  status: RuntimeAuthStatus;
+  expiryLabel?: string;
+  logoutSupported: boolean;
+  loggingOut: boolean;
+  probing: boolean;
+  busy: boolean;
+  probeResult?: OpenClawModelProbeResult;
+  onProbe: () => void;
+  onLogout: () => void;
+}
+
+function runtimeAuthTone(status: RuntimeAuthStatus): ProviderStatusTone {
+  if (status === 'ok' || status === 'static') return 'ok';
+  if (status === 'expiring') return 'warn';
+  return 'danger';
+}
+
+interface ProviderCardStatusProps {
+  statusTone: ProviderStatusTone;
+  statusLabel?: string;
+  runtimeAuth?: ProviderRuntimeAuthControl;
+}
+
+export function ProviderCardStatus({ statusTone, statusLabel, runtimeAuth }: ProviderCardStatusProps) {
+  const { t } = useTranslation();
+  const effectiveTone = runtimeAuth ? runtimeAuthTone(runtimeAuth.status) : statusTone;
+  const effectiveStatusLabel = runtimeAuth
+    ? t(`config.gatewayAuthStatus.status.${runtimeAuth.status}`)
+    : statusLabel;
+
+  return (
+    <>
+      {effectiveStatusLabel && (
+        <span
+          className={clsx(
+            'hidden sm:inline-flex max-w-[150px] truncate rounded-full border px-2 py-0.5',
+            'text-[10px] font-semibold leading-4',
+            PROVIDER_BADGE_CLS[effectiveTone],
+          )}
+          title={effectiveStatusLabel}
+        >
+          {effectiveStatusLabel}
+        </span>
+      )}
+      {runtimeAuth?.expiryLabel && (runtimeAuth.status === 'expiring' || runtimeAuth.status === 'expired') && (
+        <span className="hidden text-[10px] tabular-nums text-aegis-text-muted md:inline">
+          {t('config.gatewayAuthStatus.expiresIn', { value: runtimeAuth.expiryLabel })}
+        </span>
+      )}
+      <span className={clsx('h-2 w-2 rounded-full', PROVIDER_STATUS_DOT[effectiveTone])} title={effectiveStatusLabel} />
+      {runtimeAuth && (
+        <button
+          type="button"
+          disabled={runtimeAuth.busy}
+          onClick={runtimeAuth.onProbe}
+          className="inline-flex h-7 items-center gap-1 rounded-md border border-aegis-border px-2 text-[10px] font-medium text-aegis-text-muted transition-colors hover:border-aegis-primary/40 hover:text-aegis-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35 disabled:cursor-wait disabled:opacity-45"
+          aria-label={t('config.gatewayAuthStatus.probeProvider', { provider: runtimeAuth.displayName })}
+        >
+          {runtimeAuth.probing ? <LoadingIndicator size={11} /> : <ShieldCheck size={11} aria-hidden="true" />}
+          <span className="hidden lg:inline">{t('config.gatewayAuthStatus.probe')}</span>
+        </button>
+      )}
+    </>
+  );
+}
+
+export function ProviderRuntimeAuthDetails({ runtimeAuth }: { runtimeAuth: ProviderRuntimeAuthControl }) {
+  const { t } = useTranslation();
+  if (!runtimeAuth.probeResult && !runtimeAuth.logoutSupported) return null;
+
+  return (
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-aegis-border/70 pb-3">
+      <div className="min-w-0 text-[11px] text-aegis-text-muted" role={runtimeAuth.probeResult ? 'status' : undefined}>
+        {runtimeAuth.probeResult ? (
+          <span className={clsx(
+            runtimeAuth.probeResult.status === 'ok'
+              ? 'text-aegis-success'
+              : runtimeAuth.probeResult.status === 'rate_limit' || runtimeAuth.probeResult.status === 'timeout' || runtimeAuth.probeResult.status === 'unknown'
+                ? 'text-aegis-warning'
+                : 'text-aegis-danger',
+          )}>
+            {t(`config.gatewayAuthStatus.probeStatus.${runtimeAuth.probeResult.status}`)}
+            {runtimeAuth.probeResult.latencyMs !== undefined
+              ? ` · ${t('config.gatewayAuthStatus.probeLatency', { value: runtimeAuth.probeResult.latencyMs })}`
+              : ''}
+          </span>
+        ) : t('config.gatewayAuthStatus.compactHint')}
+      </div>
+      {runtimeAuth.logoutSupported && (
+        <button
+          type="button"
+          disabled={runtimeAuth.busy}
+          onClick={runtimeAuth.onLogout}
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[10px] font-medium text-aegis-text-muted transition-colors hover:bg-aegis-danger/8 hover:text-aegis-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35 disabled:cursor-wait disabled:opacity-45"
+          aria-label={t('config.gatewayAuthStatus.logoutProvider', { provider: runtimeAuth.displayName })}
+        >
+          {runtimeAuth.loggingOut ? <LoadingIndicator size={11} /> : <LogOut size={11} aria-hidden="true" />}
+          {t('config.gatewayAuthStatus.logout')}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function providerCredentialStatusLabel(
   t: TFunction,
@@ -957,108 +1062,109 @@ interface ProviderCardShellProps {
   providerId: string;
   title: ReactNode;
   subtitle?: ReactNode;
-  /** Small type chip next to the title (e.g. "Custom", "ENV Key Only"). */
+  /** 标题旁的小型 Provider 类型标签。 */
   badge?: { label: ReactNode; tone: ProviderStatusTone };
   statusTone: ProviderStatusTone;
-  /** Tooltip on the status dot, e.g. "API Key configured". */
+  /** 状态点的可访问说明。 */
   statusLabel?: string;
   modelCount: number;
-  /** Expandable cards show a chevron and body; env-only cards don't. */
+  /** 可展开卡片显示箭头和内容区，纯环境变量卡片保持紧凑。 */
   expandable?: boolean;
   open?: boolean;
   onToggle?: () => void;
-  /** Inline action rendered on the right (e.g. env-only "Configure"). */
+  /** 摘要区右侧的来源专属操作。 */
   rightAction?: ReactNode;
+  runtimeAuth?: ProviderRuntimeAuthControl;
   children?: ReactNode;
 }
 
 function ProviderCardShell({
   providerId, title, subtitle, badge, statusTone, statusLabel,
-  modelCount, expandable = true, open = false, onToggle, rightAction, children,
+  modelCount, expandable = true, open = false, onToggle, rightAction, runtimeAuth, children,
 }: ProviderCardShellProps) {
   const { t } = useTranslation();
+  const effectiveTone = runtimeAuth ? runtimeAuthTone(runtimeAuth.status) : statusTone;
+  const identityContent = (
+    <>
+      <div className="grid size-9 shrink-0 place-items-center rounded-md border border-aegis-border bg-aegis-elevated text-aegis-text-secondary">
+        <ProviderIcon providerId={providerId} size={18} />
+      </div>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-sm font-semibold text-aegis-text">{title}</span>
+          {badge && (
+            <span className={clsx(
+              'inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold',
+              PROVIDER_BADGE_CLS[badge.tone],
+            )}>
+              {badge.label}
+            </span>
+          )}
+        </div>
+        {subtitle && <div className="truncate text-[11px] text-aegis-text-muted">{subtitle}</div>}
+      </div>
+    </>
+  );
   return (
     <div className="mb-2">
-      {/* ── Summary header ── */}
+      {/* Provider 摘要区 */}
       <div
-        onClick={expandable ? onToggle : undefined}
-        role={expandable ? 'button' : undefined}
-        tabIndex={expandable ? 0 : undefined}
-        aria-expanded={expandable ? open : undefined}
-        onKeyDown={expandable ? (event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            onToggle?.();
-          }
-        } : undefined}
         className={clsx(
           'flex items-center justify-between px-3.5 py-3',
           'bg-aegis-elevated border border-aegis-border rounded-xl',
           'transition-all duration-200',
-          expandable && 'cursor-pointer hover:border-aegis-border-hover hover:bg-white/[0.02]',
-          open && clsx('rounded-b-none', PROVIDER_ACCENT_BORDER[statusTone]),
+          expandable && 'hover:border-aegis-border-hover hover:bg-white/[0.02]',
+          open && clsx('rounded-b-none', PROVIDER_ACCENT_BORDER[effectiveTone]),
         )}
       >
-        {/* left */}
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="grid size-9 shrink-0 place-items-center rounded-md border border-aegis-border bg-aegis-elevated text-aegis-text-secondary">
-            <ProviderIcon providerId={providerId} size={18} />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-sm text-aegis-text truncate">{title}</span>
-              {badge && (
-                <span className={clsx(
-                  'inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold',
-                  PROVIDER_BADGE_CLS[badge.tone],
-                )}>
-                  {badge.label}
-                </span>
-              )}
-            </div>
-            {subtitle && <div className="text-[11px] text-aegis-text-muted truncate">{subtitle}</div>}
-          </div>
-        </div>
+        {/* 左侧身份信息 */}
+        {expandable ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={open}
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35"
+          >
+            {identityContent}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-3">{identityContent}</div>
+        )}
 
-        {/* right */}
+        {/* 右侧状态与操作 */}
         <div className="flex items-center gap-2.5 flex-shrink-0">
           {modelCount > 0 && (
             <span className="text-[11px] text-aegis-text-muted bg-aegis-surface border border-aegis-border rounded-full px-2.5 py-0.5">
               {t('config.modelCount', { count: modelCount })}
             </span>
           )}
-          {statusLabel && (
-            <span
-              className={clsx(
-                'hidden sm:inline-flex max-w-[150px] truncate rounded-full border px-2 py-0.5',
-                'text-[10px] font-semibold leading-4',
-                PROVIDER_BADGE_CLS[statusTone],
-              )}
-              title={statusLabel}
-            >
-              {statusLabel}
-            </span>
-          )}
-          <span className={clsx('w-2 h-2 rounded-full', PROVIDER_STATUS_DOT[statusTone])} title={statusLabel} />
+          <ProviderCardStatus statusTone={statusTone} statusLabel={statusLabel} runtimeAuth={runtimeAuth} />
           {rightAction}
           {expandable && (
-            <ChevronRight
-              size={14}
-              className={clsx(
-                'text-aegis-text-muted transition-transform duration-200',
-                open && 'rotate-90',
-              )}
-            />
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={open}
+              aria-label={t(open ? 'config.hideProviderDetails' : 'config.showProviderDetails')}
+              className="grid size-7 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35"
+            >
+              <ChevronRight
+                size={14}
+                aria-hidden="true"
+                className={clsx('transition-transform duration-200', open && 'rotate-90')}
+              />
+            </button>
           )}
         </div>
       </div>
 
-      {/* ── Expanded body ── */}
+      {/* 展开后的配置与认证操作 */}
       {expandable && open && (
         <div className={clsx(
           'border border-t-0 rounded-b-xl bg-white/[0.01] p-4 space-y-4',
-          PROVIDER_ACCENT_BORDER[statusTone],
+          PROVIDER_ACCENT_BORDER[effectiveTone],
         )}>
+          {runtimeAuth && <ProviderRuntimeAuthDetails runtimeAuth={runtimeAuth} />}
           {children}
         </div>
       )}
@@ -1086,6 +1192,7 @@ interface ProfileRowProps {
   apiProtocolOptions: string[];
   onChange: (updater: (prev: GatewayRuntimeConfig) => GatewayRuntimeConfig) => void;
   saving?: boolean;
+  runtimeAuth?: ProviderRuntimeAuthControl;
 }
 
 // ── Fetch Models Button (inline in expanded provider card) ──
@@ -1188,6 +1295,7 @@ function ProfileRow({
   apiProtocolOptions,
   onChange,
   saving = false,
+  runtimeAuth,
 }: ProfileRowProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -1406,6 +1514,7 @@ function ProfileRow({
       modelCount={modelCount}
       open={open}
       onToggle={() => setOpen((o) => !o)}
+      runtimeAuth={runtimeAuth}
     >
           {/* Profile name + Auth mode */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1700,9 +1809,10 @@ interface ModelsProviderRowProps {
   imageSupportMap?: Map<string, boolean>;
   apiProtocolOptions: string[];
   saving?: boolean;
+  runtimeAuth?: ProviderRuntimeAuthControl;
 }
 
-function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, imagePrimaryModel, imageSupportMap, apiProtocolOptions, saving = false }: ModelsProviderRowProps) {
+function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, imagePrimaryModel, imageSupportMap, apiProtocolOptions, saving = false, runtimeAuth }: ModelsProviderRowProps) {
   const [open, setOpen] = useState(false);
   const { provider, modelsProvider, template, envKeyFound, credentialSource, credentialUnverified } = unifiedProvider;
   const { t } = useTranslation();
@@ -1763,6 +1873,7 @@ function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, im
       modelCount={Object.keys(editableModels).length}
       open={open}
       onToggle={() => setOpen((o) => !o)}
+      runtimeAuth={runtimeAuth}
     >
           {customAppearance && (
             <div className="flex flex-col gap-1">
@@ -1944,9 +2055,10 @@ function ModelsProviderRow({ config, unifiedProvider, onChange, primaryModel, im
 interface EnvOnlyRowProps {
   unifiedProvider: UnifiedProvider;
   onConfigure: (template: ProviderTemplate) => void;
+  runtimeAuth?: ProviderRuntimeAuthControl;
 }
 
-function EnvOnlyRow({ unifiedProvider, onConfigure }: EnvOnlyRowProps) {
+function EnvOnlyRow({ unifiedProvider, onConfigure, runtimeAuth }: EnvOnlyRowProps) {
   const { t } = useTranslation();
   const { provider, template, modelCount, credentialSource } = unifiedProvider;
   const envKeyName = template?.envKey;
@@ -1975,6 +2087,7 @@ function EnvOnlyRow({ unifiedProvider, onConfigure }: EnvOnlyRowProps) {
       statusLabel={providerCredentialStatusLabel(t, true, credentialSource)}
       modelCount={modelCount}
       expandable={false}
+      runtimeAuth={runtimeAuth}
       rightAction={template ? (
         <button
           onClick={() => onConfigure(template)}
@@ -3313,18 +3426,6 @@ export function ProvidersTab({
           ))}
         </div>
 
-        <OpenClawModelAuthStatusPanel
-          status={modelAuthStatus.status}
-          loading={modelAuthStatus.loading}
-          failure={modelAuthStatus.failure}
-          logoutProvider={logoutProvider}
-          probeProvider={probeProvider}
-          probeResults={probeResults}
-          onRefresh={() => { void modelAuthStatus.refresh({ force: true }); }}
-          onLogoutProvider={requestProviderAuthLogout}
-          onProbeProvider={requestProviderProbe}
-        />
-
         <OpenClawProviderUsagePanel
           usage={providerUsage.usage}
           loading={providerUsage.loading}
@@ -3517,8 +3618,25 @@ export function ProvidersTab({
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-aegis-border">
           <h3 className="text-xs font-bold uppercase tracking-widest text-aegis-text-secondary">
               <Plug size={20} strokeWidth={1.75} /> {t('config.providers')}
-            </h3>
+          </h3>
+          {modelAuthStatus.failure !== 'unavailable' && (
+            <button
+              type="button"
+              onClick={() => { void modelAuthStatus.refresh({ force: true }); }}
+              disabled={modelAuthStatus.loading}
+              className="grid size-8 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35 disabled:cursor-wait disabled:opacity-45"
+              aria-label={t('config.gatewayAuthStatus.refresh')}
+              title={t('config.gatewayAuthStatus.refresh')}
+            >
+              {modelAuthStatus.loading ? <LoadingIndicator size={12} /> : <RefreshCw size={13} aria-hidden="true" />}
+            </button>
+          )}
         </div>
+        {modelAuthStatus.failure === 'invalid' && (
+          <p className="border-b border-aegis-border px-5 py-2 text-[11px] text-aegis-warning" role="status">
+            {t('config.gatewayAuthStatus.invalid')}
+          </p>
+        )}
         <div className="p-4">
           {unifiedProviders.length === 0 ? (
             /* Empty state */
@@ -3543,6 +3661,21 @@ export function ProvidersTab({
           ) : (
             <>
               {unifiedProviders.map((up) => {
+                const authProvider = modelAuthStatus.status?.providers.find((candidate) => (
+                  providerNamespaceMatches(candidate.provider, up.provider)
+                ));
+                const runtimeAuth: ProviderRuntimeAuthControl | undefined = authProvider ? {
+                  displayName: authProvider.displayName,
+                  status: authProvider.status,
+                  expiryLabel: authProvider.expiry?.label,
+                  logoutSupported: authProvider.profiles.some((profile) => profile.logoutSupported),
+                  loggingOut: logoutProvider === authProvider.provider,
+                  probing: probeProvider === authProvider.provider,
+                  busy: Boolean(logoutProvider) || Boolean(probeProvider),
+                  probeResult: probeResults[authProvider.provider],
+                  onProbe: () => requestProviderProbe(authProvider.provider, authProvider.displayName),
+                  onLogout: () => requestProviderAuthLogout(authProvider.provider, authProvider.displayName),
+                } : undefined;
                 if (up.source === 'auth') {
                   return (
                     <ProfileRow
@@ -3561,6 +3694,7 @@ export function ProvidersTab({
                       apiProtocolOptions={apiProtocolOptions}
                       onChange={onChange}
                       saving={saving}
+                      runtimeAuth={runtimeAuth}
                     />
                   );
                 }
@@ -3576,6 +3710,7 @@ export function ProvidersTab({
                       imageSupportMap={allModelImageSupportMap}
                       apiProtocolOptions={apiProtocolOptions}
                       saving={saving}
+                      runtimeAuth={runtimeAuth}
                     />
                   );
                 }
@@ -3585,6 +3720,7 @@ export function ProvidersTab({
                     key={up.key}
                     unifiedProvider={up}
                     onConfigure={(tmpl) => openModal(tmpl)}
+                    runtimeAuth={runtimeAuth}
                   />
                 );
               })}

@@ -13,12 +13,11 @@ test('shared tab motion uses one reduced-motion-aware indicator contract', async
   assert.match(source, /duration: 0/);
 });
 
-test('primary navigation and high-frequency tabs consume the shared indicator', async () => {
+test('surfaces that retain tabs consume the shared indicator', async () => {
   const sources = await Promise.all([
     read('../Layout/TabBar.tsx'),
     read('../../pages/ConfigManager/index.tsx'),
     read('../../pages/SettingsPage.tsx'),
-    read('../../pages/BusinessApplicationsPage.tsx'),
     read('../Chat/ChatTabs.tsx'),
     read('../../pages/SkillsPage/index.tsx'),
     read('../../pages/AgentWorkspace/index.tsx'),
