@@ -91,10 +91,13 @@ test('session state colors use theme semantic tokens without fixed palette color
   assert.doesNotMatch(source, /hover:bg-red-|hover:text-red-|ring-red-/);
 });
 
-test('会话范围控件复用共享选择器和菜单，并以当前智能体创建会话', () => {
-  assert.match(scopeControlsSource, /from '@\/components\/ui\/select'/);
+test('会话范围控件复用共享菜单并保留智能体切换、新建和设置操作', () => {
   assert.match(scopeControlsSource, /from '@\/components\/ui\/dropdown-menu'/);
+  assert.match(scopeControlsSource, /onSelect=\{onCreateAgent\}/);
+  assert.match(scopeControlsSource, /onSelect=\{onOpenAgentSettings\}/);
   assert.match(source, /createNativeSession\(\{ agentId: selectedAgentId \}\)/);
+  assert.match(source, /navigate\('\/agents\?new=1'\)/);
+  assert.match(source, /navigate\(`\/agents\?agent=\$\{encodeURIComponent\(selectedAgentId\)\}`\)/);
   assert.match(source, /navigate\('\/sessions'\)/);
 });
 
@@ -144,6 +147,9 @@ test('session state labels exist in every active product language', () => {
     'chat.deleteSession',
     'sidebar.sessions.title',
     'sidebar.sessions.agentScope',
+    'sidebar.sessions.agentMenu',
+    'sidebar.sessions.agents',
+    'sidebar.sessions.agentSettings',
     'sidebar.sessions.noAgent',
     'sidebar.sessions.loadingAgents',
     'sidebar.sessions.agentsUnavailable',

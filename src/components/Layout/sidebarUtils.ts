@@ -30,6 +30,7 @@ export interface SidebarSessionProjectionInput<T extends Session> {
   readonly defaultMainSessionKey: string | null | undefined;
   readonly grouping: SidebarSessionGrouping;
   readonly sortMode: SidebarSessionSortMode;
+  readonly createdOrder?: ReadonlyMap<string, number>;
   readonly categoryOrder?: readonly string[];
 }
 
@@ -54,6 +55,36 @@ export function sessionActivityTime(session: Session): number {
 
 export function sessionCreatedTime(session: Session): number {
   return timestamp(session.createdAt);
+}
+
+export function extendSidebarSessionCreatedOrder(
+  current: ReadonlyMap<string, number>,
+  sessions: readonly Pick<Session, 'key'>[],
+): ReadonlyMap<string, number> {
+  let next: Map<string, number> | null = null;
+  for (const session of sessions) {
+    if (current.has(session.key) || next?.has(session.key)) continue;
+    next ??= new Map(current);
+    next.set(session.key, next.size);
+  }
+  return next ?? current;
+}
+
+export function promoteSidebarSessionCreatedOrder(
+  current: ReadonlyMap<string, number>,
+  sessionKey: string,
+): ReadonlyMap<string, number> {
+  const key = normalized(sessionKey);
+  if (!key || current.get(key) === 0) return current;
+  const previousOrder = current.get(key);
+  const next = new Map(current);
+  for (const [candidateKey, order] of current) {
+    if (candidateKey !== key && (previousOrder === undefined || order < previousOrder)) {
+      next.set(candidateKey, order + 1);
+    }
+  }
+  next.set(key, 0);
+  return next;
 }
 
 export function resolveSidebarSessionAgentId(
@@ -92,13 +123,20 @@ export function sortSessionsByActivity<T extends Session>(sessions: readonly T[]
 export function sortSidebarSessions<T extends Session>(
   sessions: readonly T[],
   mode: SidebarSessionSortMode,
+  createdOrder?: ReadonlyMap<string, number>,
 ): T[] {
   const originalIndex = new Map(sessions.map((session, index) => [session.key, index]));
   return [...sessions].sort((left, right) => {
-    const leftTime = mode === 'created' ? sessionCreatedTime(left) : sessionActivityTime(left);
-    const rightTime = mode === 'created' ? sessionCreatedTime(right) : sessionActivityTime(right);
-    const timeDelta = rightTime - leftTime;
-    if (timeDelta !== 0) return timeDelta;
+    if (mode === 'created' && createdOrder) {
+      const orderDelta = (createdOrder.get(left.key) ?? Number.MAX_SAFE_INTEGER)
+        - (createdOrder.get(right.key) ?? Number.MAX_SAFE_INTEGER);
+      if (orderDelta !== 0) return orderDelta;
+    } else {
+      const leftTime = mode === 'created' ? sessionCreatedTime(left) : sessionActivityTime(left);
+      const rightTime = mode === 'created' ? sessionCreatedTime(right) : sessionActivityTime(right);
+      const timeDelta = rightTime - leftTime;
+      if (timeDelta !== 0) return timeDelta;
+    }
     const orderDelta = (originalIndex.get(left.key) ?? 0) - (originalIndex.get(right.key) ?? 0);
     return orderDelta || left.key.localeCompare(right.key);
   });
@@ -135,10 +173,12 @@ export function projectSidebarSessions<T extends Session>(
   const pinnedSessions = sortSidebarSessions(
     ordinarySessions.filter((session) => session.pinned === true),
     input.sortMode,
+    input.createdOrder,
   );
   const unpinnedSessions = sortSidebarSessions(
     ordinarySessions.filter((session) => session.pinned !== true),
     input.sortMode,
+    input.createdOrder,
   );
   if (input.grouping === 'none') {
     return {

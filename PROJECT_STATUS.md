@@ -65,6 +65,7 @@
 - 本次钉钉分支合并已通过 8 项视图、工具分组与共享页签动效定向回归、`pnpm lint`、完整 `pnpm test` 和 `pnpm build`。生产构建重新生成并校验协作插件与钉钉插件资源包；输出仅有既有 Node 弃用和 Radix 服务端渲染警告。
 - 智能体作用域会话侧栏已通过 74 项定向侧栏、新建会话与 ChatStore 回归、完整 `pnpm test`（2855 项）、`pnpm lint`、生产 `pnpm build`、locale JSON 解析和 `git diff --check`。完整测试首次发现旧守护仍要求侧栏从活动会话推断新建目标，已按新的显式智能体选择契约更新后复跑通过；输出仅包含既有 Node 弃用和 Radix 服务端渲染警告。
 - 已基于提交 `9305a53d` 使用 `pnpm tauri build --bundles dmg` 成功生成 macOS arm64 本地验收包 `src-tauri/target/release/bundle/dmg/JunQi Desktop_2.3.0_aarch64.dmg`。DMG 校验通过，文件大小为 8808362 字节，SHA-256 为 `0eee3a0eda566542c6306f75cf4d3f2199905f958973448c6b104a38820fcd53`。本次未生成正式 updater 签名，也未执行开发者证书签名和公证，因此该制品只能用于本机验收，不能描述为正式发布包。
+- 会话侧栏后续复审确认首轮智能体作用域改造误把 OpenClaw 智能体菜单缩减为纯选择器，并且创建排序无法在缺少 `createdAt` 的旧会话上保持稳定。本轮已恢复智能体切换、新建智能体和当前智能体设置入口，并按官方侧栏模型维护稳定创建顺序和已确认新会话提升。14 项定向测试、完整 `pnpm test`、`pnpm lint`、生产 `pnpm build`、locale JSON 解析与 `git diff --check` 均通过；尚未完成真实 Tauri 窗口的菜单定位、键盘焦点和窄窗口视觉验收。
 
 ## 已知问题
 

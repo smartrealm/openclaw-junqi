@@ -14,8 +14,10 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showConfirm } from '@/components/shared/alertStore';
 import { resolveTab, type SidebarTab } from './tab-utils';
 import {
+  extendSidebarSessionCreatedOrder,
   filterSidebarSessionsByAgent,
   normalizeSidebarSessionGrouping,
+  promoteSidebarSessionCreatedOrder,
   projectSidebarSessions,
   resolveSidebarSessionAgentId,
   sessionActivityTime,
@@ -393,6 +395,9 @@ function WorkbenchPanel() {
   const agentIds = useMemo(() => agents.map((agent) => agent.id), [agents]);
   const activeAgentId = resolveNewSessionAgentId(activeKey, agentIds, defaultAgentId);
   const [selectedAgentId, setSelectedAgentId] = useState(activeAgentId ?? '');
+  const [sessionCreatedOrder, setSessionCreatedOrder] = useState<ReadonlyMap<string, number>>(
+    () => new Map(),
+  );
   const previousActiveSessionKeyRef = useRef(activeKey);
 
   useEffect(() => {
@@ -408,6 +413,10 @@ function WorkbenchPanel() {
   useEffect(() => {
     void refreshSessionGroupCatalog().catch(() => undefined);
   }, [refreshSessionGroupCatalog]);
+
+  useEffect(() => {
+    setSessionCreatedOrder((current) => extendSidebarSessionCreatedOrder(current, sessions));
+  }, [sessions]);
 
   const agentOptions = useMemo(() => agents.map((agent) => ({
     id: agent.id,
@@ -454,12 +463,14 @@ function WorkbenchPanel() {
     defaultMainSessionKey,
     grouping,
     sortMode,
+    createdOrder: sessionCreatedOrder,
     categoryOrder: sessionGroupCatalog,
-  }), [defaultAgentId, defaultMainSessionKey, grouping, selectedAgentId, sessionGroupCatalog, sortMode, visibleSessions]);
+  }), [defaultAgentId, defaultMainSessionKey, grouping, selectedAgentId, sessionCreatedOrder, sessionGroupCatalog, sortMode, visibleSessions]);
   const archivedSessions = useMemo(() => sortSidebarSessions(
     scopedSessions.filter((session) => session.archived),
     sortMode,
-  ), [scopedSessions, sortMode]);
+    sessionCreatedOrder,
+  ), [scopedSessions, sessionCreatedOrder, sortMode]);
   const activityProjection = useMemo(() => projectSessionActivity({
     sessions: scopedSessions.filter((session) => !session.archived),
     activeSessionKey: activeKey,
@@ -521,6 +532,10 @@ function WorkbenchPanel() {
     if (!selectedAgentId) return;
     void createNativeSession({ agentId: selectedAgentId }).then((result) => {
       if (result.ok) {
+        setSessionCreatedOrder((current) => promoteSidebarSessionCreatedOrder(
+          extendSidebarSessionCreatedOrder(current, [result.session]),
+          result.session.key,
+        ));
         navigate('/chat');
         return;
       }
@@ -561,6 +576,10 @@ function WorkbenchPanel() {
         onGroupingChange={changeGrouping}
         onSortModeChange={setSortMode}
         onCreateSession={createSelectedAgentSession}
+        onCreateAgent={() => navigate('/agents?new=1')}
+        onOpenAgentSettings={() => {
+          if (selectedAgentId) navigate(`/agents?agent=${encodeURIComponent(selectedAgentId)}`);
+        }}
       />
 
       <div className="flex-1 overflow-y-auto min-h-0 px-1">

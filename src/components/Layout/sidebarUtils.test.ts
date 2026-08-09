@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Session } from '@/stores/chatStore';
 import {
+  extendSidebarSessionCreatedOrder,
   filterSidebarSessionsByAgent,
   normalizeSidebarSessionGrouping,
+  promoteSidebarSessionCreatedOrder,
   projectSidebarSessions,
   resolveSidebarSessionAgentId,
   sortSessionsByActivity,
@@ -120,5 +122,41 @@ test('不分组模式按所选时间字段排序并保持相同时间的 Gateway
   assert.deepEqual(
     sortSidebarSessions(sessions, 'updated').map((session) => session.key),
     ['agent:main:third', 'agent:main:first', 'agent:main:second'],
+  );
+});
+
+test('创建排序在缺少 createdAt 时保持首次 Gateway 相对顺序', () => {
+  const firstSnapshot = [
+    sx({ key: 'agent:main:first', agentId: 'main' }),
+    sx({ key: 'agent:main:second', agentId: 'main' }),
+    sx({ key: 'agent:main:third', agentId: 'main' }),
+  ];
+  const createdOrder = extendSidebarSessionCreatedOrder(new Map(), firstSnapshot);
+  const refreshed = [firstSnapshot[2], firstSnapshot[0], firstSnapshot[1]];
+
+  assert.deepEqual(
+    sortSidebarSessions(refreshed, 'created', createdOrder).map((session) => session.key),
+    ['agent:main:first', 'agent:main:second', 'agent:main:third'],
+  );
+});
+
+test('已确认的新会话提升到稳定创建顺序首位', () => {
+  const sessions = [
+    sx({ key: 'agent:main:first', agentId: 'main' }),
+    sx({ key: 'agent:main:second', agentId: 'main' }),
+  ];
+  const initialOrder = extendSidebarSessionCreatedOrder(new Map(), sessions);
+  const withCreated = extendSidebarSessionCreatedOrder(initialOrder, [
+    ...sessions,
+    sx({ key: 'agent:main:new', agentId: 'main' }),
+  ]);
+  const promoted = promoteSidebarSessionCreatedOrder(withCreated, 'agent:main:new');
+
+  assert.deepEqual(
+    sortSidebarSessions([
+      ...sessions,
+      sx({ key: 'agent:main:new', agentId: 'main' }),
+    ], 'created', promoted).map((session) => session.key),
+    ['agent:main:new', 'agent:main:first', 'agent:main:second'],
   );
 });

@@ -1,22 +1,16 @@
-import { ListFilter, Plus } from 'lucide-react';
+import { ChevronDown, ListFilter, Plus, Settings2, UserPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import type { SidebarSessionGrouping, SidebarSessionSortMode } from './sidebarUtils';
 
 export interface SessionScopeAgentOption {
@@ -36,6 +30,8 @@ interface SessionScopeControlsProps {
   readonly onGroupingChange: (grouping: SidebarSessionGrouping) => void;
   readonly onSortModeChange: (mode: SidebarSessionSortMode) => void;
   readonly onCreateSession: () => void;
+  readonly onCreateAgent: () => void;
+  readonly onOpenAgentSettings: () => void;
 }
 
 export function SessionScopeControls({
@@ -50,6 +46,8 @@ export function SessionScopeControls({
   onGroupingChange,
   onSortModeChange,
   onCreateSession,
+  onCreateAgent,
+  onOpenAgentSettings,
 }: SessionScopeControlsProps) {
   const { t } = useTranslation();
   const selectGrouping = (value: string) => {
@@ -63,6 +61,13 @@ export function SessionScopeControls({
     'hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
     'disabled:cursor-not-allowed disabled:opacity-40',
   );
+  const selectedAgentLabel = agents.find((agent) => agent.id === selectedAgentId)?.label;
+  const agentScopeLabel = selectedAgentLabel
+    ?? (agentsLoading
+      ? t('sidebar.sessions.loadingAgents', '正在加载智能体')
+      : agentsFailed
+        ? t('sidebar.sessions.agentsUnavailable', '智能体不可用')
+        : t('sidebar.sessions.noAgent', '暂无智能体'));
 
   return (
     <div className="shrink-0 px-3 pb-2">
@@ -70,25 +75,57 @@ export function SessionScopeControls({
         <span className="shrink-0 text-[12px] font-semibold text-aegis-text-secondary">
           {t('sidebar.sessions.title', '会话')}
         </span>
-        <Select value={selectedAgentId} onValueChange={onAgentChange} disabled={agents.length === 0}>
-          <SelectTrigger
-            aria-label={t('sidebar.sessions.agentScope', '智能体会话范围')}
-            className="h-8 min-w-0 flex-1 rounded-lg border-aegis-border/70 bg-aegis-elevated/70 px-2.5 text-[12px] font-semibold text-aegis-text-secondary focus:ring-aegis-primary/30"
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={t('sidebar.sessions.agentMenu', '智能体菜单')}
+              className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-aegis-border/70 bg-aegis-elevated/70 px-2.5 text-left text-[12px] font-semibold text-aegis-text-secondary transition-colors hover:bg-aegis-hover/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/50"
+            >
+              <span className="min-w-0 flex-1 truncate">{agentScopeLabel}</span>
+              <ChevronDown size={13} className="shrink-0 text-aegis-text-dim" aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="min-w-[220px] border-aegis-menu-border bg-aegis-menu-bg p-1.5 text-aegis-text shadow-[var(--aegis-menu-shadow)]"
           >
-            <SelectValue placeholder={agentsLoading
-              ? t('sidebar.sessions.loadingAgents', '正在加载智能体')
-              : agentsFailed
-                ? t('sidebar.sessions.agentsUnavailable', '智能体不可用')
-                : t('sidebar.sessions.noAgent', '暂无智能体')} />
-          </SelectTrigger>
-          <SelectContent className="border-aegis-menu-border bg-aegis-menu-bg text-aegis-text">
-            {agents.map((agent) => (
-              <SelectItem key={agent.id} value={agent.id} className="text-[12px]">
-                {agent.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            {agents.length > 0 ? (
+              <>
+                <DropdownMenuLabel className="px-2 pb-1 pt-0.5 text-[10px] text-aegis-text-dim">
+                  {t('sidebar.sessions.agents', '智能体')}
+                </DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={selectedAgentId} onValueChange={onAgentChange}>
+                  {agents.map((agent) => (
+                    <DropdownMenuRadioItem
+                      key={agent.id}
+                      value={agent.id}
+                      className="h-8 text-[12px] text-aegis-text-secondary focus:bg-aegis-hover/40 focus:text-aegis-text"
+                    >
+                      {agent.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator className="bg-aegis-border/70" />
+              </>
+            ) : null}
+            <DropdownMenuItem
+              onSelect={onCreateAgent}
+              className="h-8 justify-start text-[12px] text-aegis-text-secondary focus:bg-aegis-hover/40 focus:text-aegis-text"
+            >
+              <UserPlus size={14} aria-hidden="true" />
+              <span>{t('sidebar.newAgent', '新建智能体')}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={onOpenAgentSettings}
+              disabled={!selectedAgentId}
+              className="h-8 justify-start text-[12px] text-aegis-text-secondary focus:bg-aegis-hover/40 focus:text-aegis-text"
+            >
+              <Settings2 size={14} aria-hidden="true" />
+              <span>{t('sidebar.sessions.agentSettings', '智能体设置')}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <button
           type="button"
           onClick={onCreateSession}
