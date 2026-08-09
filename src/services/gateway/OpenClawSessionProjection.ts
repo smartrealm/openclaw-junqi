@@ -23,6 +23,15 @@ export interface OpenClawAgentListProjection {
   readonly agents: ReadonlyArray<Record<string, unknown> & { id: string }>;
 }
 
+/** 根据 OpenClaw 的会话路由规则还原默认智能体的完整主会话 key。 */
+export function resolveOpenClawDefaultMainSessionKey(snapshot: Pick<
+  OpenClawAgentListProjection,
+  'defaultId' | 'mainKey' | 'scope'
+>): string {
+  if (snapshot.scope === 'global') return 'global';
+  return `agent:${snapshot.defaultId}:${snapshot.mainKey}`;
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>

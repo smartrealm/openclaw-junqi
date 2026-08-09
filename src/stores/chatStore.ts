@@ -29,7 +29,6 @@ import { useSettingsStore } from './settingsStore';
 import {
   coalesceSessionsByKey,
   hasSessionIdentityChanged,
-  isAgentMainSession,
   isSessionDeleted,
   restoreSessionKey,
   withoutDeletedSessions,
@@ -1443,10 +1442,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     ));
     const nextSessions = [...mergedSessions, ...retainedPreviousSessions];
     const hasAuthoritativeMainSession = lifecycleSafeIncomingSessions
-      .some((session) => isAgentMainSession(session.key));
+      .some((session) => session.key === stateBeforeMerge.defaultMainSessionKey);
     const removedCanonicalSessionKeys = canPruneMissingSessions && hasAuthoritativeMainSession
       ? previousSessions.flatMap((session) => {
-          if (incomingKeys.has(session.key) || isAgentMainSession(session.key)) return [];
+          if (incomingKeys.has(session.key) || session.key === stateBeforeMerge.defaultMainSessionKey) return [];
           return [session.key];
         })
       : [];
@@ -1930,7 +1929,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   }),
 
   removeSession: (key) => set((state) => {
-    if (key === state.defaultMainSessionKey || isAgentMainSession(key)) return state;
+    if (key === state.defaultMainSessionKey) return state;
     const newTabs = normalizeOpenTabs(
       state.openTabs.filter((tabKey) => tabKey !== key),
       state.defaultMainSessionKey,

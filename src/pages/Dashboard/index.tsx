@@ -27,6 +27,7 @@ import { themeColorVar } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { formatTokens } from '@/utils/format';
 import { isIsolatedExecutionSessionKey, projectSessionActivity } from '@/utils/sessionPresentation';
+import { isGatewayMainSession } from '@/utils/sessionLifecycle';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { useSceneRecovery } from '@/motion/sceneRecovery';
 import { useGatewayUptime } from './useGatewayUptime';
@@ -124,6 +125,7 @@ export function DashboardPage() {
 
   // ── Data from central store ─────────────────────────────────
   const sessions  = useGatewayDataStore((s) => s.sessions);
+  const gatewayMainSessionKey = useGatewayDataStore((s) => s.mainSessionKey);
   const costData  = useGatewayDataStore((s) => s.costSummary);
   const usageData = useGatewayDataStore((s) => s.sessionsUsage);
   const costLoading = useGatewayDataStore((s) => s.loading.cost);
@@ -284,7 +286,7 @@ export function DashboardPage() {
   const tokensToday  = tokensIn + tokensOut;
 
   // Context usage from main session
-  const mainSession  = sessions.find((s: any) => s.key === 'agent:main:main');
+  const mainSession  = sessions.find((s: any) => isGatewayMainSession(s.key, gatewayMainSessionKey));
   const mainModel    = hasProviders ? (mainSession?.model || '—') : '—';
   const shortModel   = mainModel.split('/').pop() || mainModel;
   const ctxUsed      = mainSession?.totalTokens   || 0;
@@ -310,10 +312,10 @@ export function DashboardPage() {
       if (activityProjection.bySessionKey.get(s.key)?.active
         || s.hasPendingCompletion || s.lastMessage || s.lastTimestamp || s.lastActive) return true;
       if ((s.totalTokens || 0) > 0) return true;
-      if (s.key === 'agent:main:main') return true;
+      if (isGatewayMainSession(s.key, gatewayMainSessionKey)) return true;
       return Boolean(s.label && s.label !== 'Main Session');
     })).slice(0, 5);
-  }, [activityProjection, sessions, chatSessions]);
+  }, [activityProjection, gatewayMainSessionKey, sessions, chatSessions]);
 
   // OpenClaw returns continuous date buckets. Zero cost is still valid data
   // (for example when pricing is unavailable), so it must retain the X axis.
@@ -405,7 +407,7 @@ export function DashboardPage() {
     return recentSessions
       .map((s: any) => {
         const key = s.key || 'unknown';
-        const isMain = key === 'agent:main:main';
+        const isMain = isGatewayMainSession(key, gatewayMainSessionKey);
         const merged = { ...s, ...(chatSessionByKey.get(key) ?? {}) };
         const timestamp = sessionActivityTime(merged);
         const sessionModel = merged.model || s.model;
@@ -414,6 +416,7 @@ export function DashboardPage() {
           : agents.find((agent: any) => agent.id === agentIdFromKey(key))?.model;
         const label = getSessionDisplayLabel(merged, {
           mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
+          mainSessionKey: gatewayMainSessionKey,
           genericSessionLabel: t('dashboard.session', 'Session'),
         });
         return {
@@ -433,7 +436,7 @@ export function DashboardPage() {
       })
       .filter((item) => item.timestamp > 0 || item.running)
       .slice(0, 5);
-  }, [activityProjection, recentSessions, chatSessionByKey, agents, agentIdFromKey, agentNameFor, t]);
+  }, [activityProjection, recentSessions, chatSessionByKey, agents, agentIdFromKey, agentNameFor, gatewayMainSessionKey, t]);
 
   // ── Render ───────────────────────────────────────────────────
   return (
@@ -944,9 +947,10 @@ export function DashboardPage() {
             {recentSessions.map((s: any) => {
               const key   = s.key || 'unknown';
               const merged = { ...s, ...(chatSessionByKey.get(key) ?? {}) };
-              const isMain = key === 'agent:main:main';
+              const isMain = isGatewayMainSession(key, gatewayMainSessionKey);
               const label = getSessionDisplayLabel(merged, {
                 mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
+                mainSessionKey: gatewayMainSessionKey,
                 genericSessionLabel: t('dashboard.session', 'Session'),
               });
               const sModel = shortModelName(merged.model || s.model);

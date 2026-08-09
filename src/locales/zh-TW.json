@@ -1658,6 +1658,7 @@
     "newConversationWith": "與以下智能體新會話",
     "selectAgent": "選擇智能體",
     "openMainSession": "打開主會話",
+    "mainSessionUnavailable": "Gateway 尚未回傳此智能體的主會話，請新增會話或重新整理後再試。",
     "newDesktopSession": "新建桌面會話",
     "persona": "人格",
     "personaChip": "人格：{{name}}",

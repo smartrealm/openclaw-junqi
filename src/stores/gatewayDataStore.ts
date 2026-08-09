@@ -61,6 +61,7 @@ import { saveChatMedia } from '@/services/chat/mediaSaveRuntime';
 import {
   parseOpenClawAgentList,
   projectOpenClawSession,
+  resolveOpenClawDefaultMainSessionKey,
 } from '@/services/gateway/OpenClawSessionProjection';
 
 export type { OpenClawSessionPreviewEntry } from '@/services/gateway/OpenClawSessionPreviewClient';
@@ -962,7 +963,7 @@ export function parseGatewayAgentList(response: unknown): {
     return {
       agents: [...snapshot.agents],
       defaultAgentId: snapshot.defaultId,
-      mainSessionKey: snapshot.mainKey,
+      mainSessionKey: resolveOpenClawDefaultMainSessionKey(snapshot),
       scope: snapshot.scope,
     };
   } catch {

@@ -128,7 +128,7 @@ describe('deleteSessionEverywhere', () => {
     assert.equal(warnings.length, 1);
   });
 
-  test('never sends a native delete for an agent main session', async () => {
+  test('never sends a native delete for the Gateway default main session', async () => {
     seed();
 
     const result = await deleteSessionEverywhere(MAIN_KEY);
@@ -136,6 +136,22 @@ describe('deleteSessionEverywhere', () => {
     assert.equal(result, false);
     assert.deepEqual(requests, []);
     assert.equal(useChatStore.getState().sessions.some((session) => session.key === MAIN_KEY), true);
+  });
+
+  test('allows deleting another agent\'s direct main session after Gateway confirmation', async () => {
+    const directMainKey = 'agent:research:main';
+    seed();
+    useChatStore.setState((state) => ({
+      sessions: [...state.sessions, { key: directMainKey, label: 'Research main' }],
+      openTabs: [...state.openTabs, directMainKey],
+      activeSessionKey: directMainKey,
+    }));
+
+    const result = await deleteSessionEverywhere(directMainKey);
+
+    assert.equal(result, true);
+    assert.deepEqual(requests, [directMainKey]);
+    assert.equal(useChatStore.getState().sessions.some((session) => session.key === directMainKey), false);
   });
 
   test('never deletes the default mainKey reported by OpenClaw', async () => {
