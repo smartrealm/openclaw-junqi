@@ -34,15 +34,29 @@ test('uses the official derived title and preview fields in their documented ord
   assert.equal(getSessionDisplayLabel({ key: 'agent:research:desktop-derived', lastMessagePreview: 'Preview' }, labels), 'Preview');
 });
 
-test('uses the supplied transcript fallback before a canonical main-session fallback', () => {
+test('uses the supplied transcript fallback before the Gateway main-session fallback', () => {
   assert.equal(
     getSessionDisplayLabel(
       { key: 'agent:main:main' },
       {
         ...labels,
+        mainSessionKey: 'agent:main:main',
         messageFallback: 'Plan the release rollout.',
       },
     ),
     'Plan the release rollout.',
+  );
+});
+
+test('does not label another agent direct main session as the Gateway main session', () => {
+  assert.equal(
+    getSessionDisplayLabel(
+      { key: 'agent:research:main' },
+      {
+        ...labels,
+        mainSessionKey: 'agent:orchestrator:main',
+      },
+    ),
+    'main',
   );
 });

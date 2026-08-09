@@ -30,7 +30,6 @@ import { isChannelConfigurationMetadataKey } from '@/services/channelConfigMerge
 import {
   buildGatewayAgentCreatePayload,
   GATEWAY_AGENT_ID_RE,
-  MAIN_GATEWAY_AGENT_ID,
   normalizeGatewayAgentId,
   suggestDedicatedGatewayAgentWorkspace,
 } from '@/utils/gatewayAgentFlow';
@@ -39,9 +38,9 @@ import { themeHex, themeAlpha, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import {
   classifyAgentSessionKind,
-  findCanonicalAgentMainSession,
   type AgentSessionKind,
 } from '@/utils/sessionPresentation';
+import { isGatewayMainSession } from '@/utils/sessionLifecycle';
 import { OpenClawAgentWorkspacePanel } from '@/components/Workspace/OpenClawAgentWorkspacePanel';
 import { parseAgentWorkspaceSkills, type AgentWorkspaceSkill } from './agentWorkspaceSkills';
 import { persistAgentCreationOverrides } from './agentCreationConfig';
@@ -314,13 +313,13 @@ function formatChannelBinding(t: ReturnType<typeof useTranslation>['t'], binding
 
 function parseSessions(
   raw: any[],
-  labels: { mainSessionLabel: string; genericSessionLabel: string },
+  labels: { mainSessionLabel: string; genericSessionLabel: string; mainSessionKey?: string | null },
 ): SessionInfo[] {
   return raw.map((s) => {
     const key = s.key || '';
     const type = classifyAgentSessionKind(key);
     const parts = key.split(':');
-    const agentId = parts[1] || 'main';
+    const agentId = parts[1] || '';
     const label = type === 'cron'
       ? (s.label || `cron:${parts[3]?.substring(0, 8) || '?'}`)
       : getSessionDisplayLabel(s, labels);
@@ -336,38 +335,39 @@ function parseSessions(
 // Tree View — SVG connections + animated dots
 // ═══════════════════════════════════════════════════════════
 
-function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick }: {
+function TreeView({ mainSession, registeredAgents, workers, agents, defaultAgentId, onAgentClick }: {
   mainSession: SessionInfo | undefined;
   registeredAgents: AgentInfo[];
   workers: SessionInfo[];
   agents: AgentInfo[];
+  defaultAgentId: string | null;
   onAgentClick?: (agent: AgentInfo) => void;
 }) {
   const { t } = useTranslation();
   const runningSubAgents = useGatewayDataStore((s) => s.runningSubAgents);
   const agentCount = registeredAgents.length;
-  const mainName = agents.find(a => a.id === 'main')?.name || t('agents.mainAgent', 'Main Agent');
+  const mainName = agents.find(a => a.id === defaultAgentId)?.name || t('agents.mainAgent', 'Main Agent');
 
-  // Group workers by parent agent
+  // 按 Gateway 返回的智能体标识归集工作会话。
   const workersByAgent = useMemo(() => {
     const map: Record<string, SessionInfo[]> = {};
     workers.forEach(w => {
-      const pid = w.agentId || 'main';
+      const pid = w.agentId || defaultAgentId || '';
       if (!map[pid]) map[pid] = [];
       map[pid].push(w);
     });
     return map;
-  }, [workers]);
+  }, [defaultAgentId, workers]);
 
-  // Count active children per agent (for spawn badges)
+  // 统计每个智能体的子会话数量，用于展示数量徽标。
   const spawnCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    counts['main'] = registeredAgents.length;
+    if (defaultAgentId) counts[defaultAgentId] = registeredAgents.length;
     registeredAgents.forEach(a => {
       counts[a.id] = (workersByAgent[a.id] || []).length;
     });
     return counts;
-  }, [registeredAgents, workersByAgent]);
+  }, [defaultAgentId, registeredAgents, workersByAgent]);
 
   // Calculate child X positions for SVG (viewBox 0-1000)
   const agentPositions = useMemo(() =>
@@ -382,11 +382,11 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
       const ws = workersByAgent[agent.id] || [];
       ws.forEach(w => items.push({ worker: w, parentX: agentPositions[ai] }));
     });
-    // Also add workers under 'main' that aren't under a registered agent
-    const mainWorkers = workersByAgent['main'] || [];
+    // 没有注册席位归属的工作会话仅归到 Gateway 默认智能体。
+    const mainWorkers = defaultAgentId ? workersByAgent[defaultAgentId] || [] : [];
     mainWorkers.forEach(w => items.push({ worker: w, parentX: 500 }));
     return items;
-  }, [registeredAgents, workersByAgent, agentPositions]);
+  }, [agentPositions, defaultAgentId, registeredAgents, workersByAgent]);
 
   // X positions for depth-2 nodes
   const depth2Positions = useMemo(() => {
@@ -406,10 +406,10 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
       <div className="flex justify-center mb-0">
         <div className="relative">
           {/* Spawn badge */}
-          {(spawnCounts['main'] || 0) > 0 && (
+          {defaultAgentId && (spawnCounts[defaultAgentId] || 0) > 0 && (
             <div className="absolute -top-1.5 -end-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-extrabold border-2 border-[var(--aegis-bg-solid)] z-10"
               style={{ background: mainColor(), color: 'var(--aegis-bg-solid)' }}>
-              {spawnCounts['main']}
+              {spawnCounts[defaultAgentId]}
             </div>
           )}
           <div className="relative rounded-2xl border-2 px-6 py-4 min-w-[280px] overflow-hidden transition-all hover:-translate-y-0.5"
@@ -644,7 +644,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, onAgentClick
 // Activity Feed — Live event log built from sessions
 // ═══════════════════════════════════════════════════════════
 
-function ActivityFeed({ sessions, agents }: { sessions: SessionInfo[]; agents: AgentInfo[] }) {
+function ActivityFeed({ sessions, agents, defaultAgentId }: { sessions: SessionInfo[]; agents: AgentInfo[]; defaultAgentId: string | null }) {
   const { t } = useTranslation();
 
   // Build activity entries from session data
@@ -654,7 +654,7 @@ function ActivityFeed({ sessions, agents }: { sessions: SessionInfo[]; agents: A
       .slice(0, 20)
       .map(s => {
         const agentName = agents.find(a => a.id === s.agentId)?.name || s.agentId;
-        const cfg = s.agentId === 'main' ? { icon: 'O', color: mainColor() } : getTreeNodeConfig(s.agentId);
+        const cfg = s.agentId === defaultAgentId ? { icon: 'O', color: mainColor() } : getTreeNodeConfig(s.agentId);
         const workerMeta = getWorkerMeta(s.label, s.type);
 
         let text = '';
@@ -675,7 +675,7 @@ function ActivityFeed({ sessions, agents }: { sessions: SessionInfo[]; agents: A
           running: s.running,
         };
       });
-  }, [sessions, agents]);
+  }, [agents, defaultAgentId, sessions]);
 
   if (activities.length === 0) {
     return (
@@ -728,6 +728,8 @@ export function AgentHubPage() {
   const { connected, availableModels } = useChatStore();
   const rawSessions = useGatewayDataStore((s) => s.sessions);
   const agents = useGatewayDataStore((s) => s.agents) as AgentInfo[];
+  const defaultAgentId = useGatewayDataStore((s) => s.defaultAgentId);
+  const gatewayMainSessionKey = useGatewayDataStore((s) => s.mainSessionKey);
   const runningSubAgents = useGatewayDataStore((s) => s.runningSubAgents);
   const loading = useGatewayDataStore((s) => s.loading.sessions || s.loading.agents);
   const hasHydratedAgentData = useGatewayDataStore(
@@ -740,8 +742,9 @@ export function AgentHubPage() {
 
   const sessionLabels = useMemo(() => ({
     mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
+    mainSessionKey: gatewayMainSessionKey,
     genericSessionLabel: t('dashboard.session', 'Session'),
-  }), [t]);
+  }), [gatewayMainSessionKey, t]);
   const sessions = useMemo(
     () => parseSessions(rawSessions as any[], sessionLabels),
     [rawSessions, sessionLabels],
@@ -899,9 +902,9 @@ export function AgentHubPage() {
     [agents, agentModels, agentExplicitModels, defaultAgentModel]
   );
   const normalizedNewAgentId = normalizeGatewayAgentId(newAgent.id);
-  const newAgentIdExists = !!normalizedNewAgentId && (normalizedNewAgentId === MAIN_GATEWAY_AGENT_ID || agents.some((agent) => agent.id.toLowerCase() === normalizedNewAgentId));
+  const newAgentIdExists = !!normalizedNewAgentId && (normalizedNewAgentId === defaultAgentId || agents.some((agent) => agent.id.toLowerCase() === normalizedNewAgentId));
   const newAgentIdInvalid = !!normalizedNewAgentId && !GATEWAY_AGENT_ID_RE.test(normalizedNewAgentId);
-  const effectiveDefaultAgentWorkspace = defaultAgentWorkspace || agents.find((agent) => agent.id === MAIN_GATEWAY_AGENT_ID)?.workspace || '';
+  const effectiveDefaultAgentWorkspace = defaultAgentWorkspace || agents.find((agent) => agent.id === defaultAgentId)?.workspace || '';
   const suggestedDedicatedWorkspace = suggestDedicatedGatewayAgentWorkspace(
     effectiveDefaultAgentWorkspace,
     normalizedNewAgentId,
@@ -952,7 +955,7 @@ export function AgentHubPage() {
     if (!imported?.id || !GATEWAY_AGENT_ID_RE.test(imported.id)) {
       return 'The package does not contain a valid Agent ID.';
     }
-    if (imported.id === MAIN_GATEWAY_AGENT_ID || agents.some((agent) => agent.id.toLowerCase() === imported.id.toLowerCase())) {
+    if (imported.id === defaultAgentId || agents.some((agent) => agent.id.toLowerCase() === imported.id.toLowerCase())) {
       return `An Agent named "${imported.id}" already exists.`;
     }
     if (!connected) return 'Connect to the Gateway before importing an Agent.';
@@ -1026,7 +1029,7 @@ export function AgentHubPage() {
       setAgentFormError(t('agentHub.wizard.fallbackRequired', 'Add at least one fallback to enable ordered failover.'));
       return;
     }
-    const duplicate = agents.some((agent) => agent.id.toLowerCase() === normalizedNewAgentId) || normalizedNewAgentId === MAIN_GATEWAY_AGENT_ID;
+    const duplicate = agents.some((agent) => agent.id.toLowerCase() === normalizedNewAgentId) || normalizedNewAgentId === defaultAgentId;
     if (duplicate) {
       setAgentFormError(t('agentHub.addForm.duplicateId', 'This agent ID already exists.'));
       return;
@@ -1164,9 +1167,9 @@ export function AgentHubPage() {
   };
 
   // ── Derived data ──
-  const mainSession = findCanonicalAgentMainSession(sessions, 'main');
+  const mainSession = sessions.find((session) => isGatewayMainSession(session.key, gatewayMainSessionKey));
   const workers = sessions.filter(s => s !== mainSession && (s.type === 'cron' || s.type === 'subagent'));
-  const registeredAgents = enrichedAgents.filter(a => a.id !== 'main');
+  const registeredAgents = enrichedAgents.filter(a => a.id !== defaultAgentId);
   const selectedAgent = registeredAgents.find(a => a.id === selectedAgentId) ?? null;
   const getAgentSessions = (agentId: string) => sessions.filter(s => s.agentId === agentId && s.type !== 'main');
   const enabledSkills = useMemo(
@@ -1381,7 +1384,7 @@ export function AgentHubPage() {
           {/* 树状视图 */}
           {/* ══════════════════════════════════════════════ */}
           <AgentHubViewPanel active={viewMode === 'tree'}>
-            <TreeView mainSession={mainSession} registeredAgents={registeredAgents} workers={workers} agents={enrichedAgents} onAgentClick={setSettingsAgent} />
+            <TreeView mainSession={mainSession} registeredAgents={registeredAgents} workers={workers} agents={enrichedAgents} defaultAgentId={defaultAgentId} onAgentClick={setSettingsAgent} />
           </AgentHubViewPanel>
 
           {/* ══════════════════════════════════════════════ */}
@@ -1392,7 +1395,7 @@ export function AgentHubPage() {
               <div className="text-[10px] text-aegis-text-dim uppercase tracking-widest font-bold mb-2 px-3 pt-2">
                 {t('agentHub.liveActivityFeed', 'Live Activity Feed')}
               </div>
-              <ActivityFeed sessions={sessions} agents={enrichedAgents} />
+              <ActivityFeed sessions={sessions} agents={enrichedAgents} defaultAgentId={defaultAgentId} />
             </GlassCard>
           </AgentHubViewPanel>
 
@@ -1414,7 +1417,7 @@ export function AgentHubPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[18px] font-extrabold text-aegis-text">
-                          {enrichedAgents.find(a => a.id === 'main')?.name || t('agents.mainAgent', 'Main Agent')}
+                          {enrichedAgents.find(a => a.id === defaultAgentId)?.name || t('agents.mainAgent', 'Main Agent')}
                         </div>
                         <div className="text-[11px] text-aegis-text-muted font-mono mt-0.5">{mainSession.model.split('/').pop() || '—'}</div>
                         <div className="text-[10px] text-aegis-text-dim mt-1">{t('agents.lastActive', 'Last active')}: {timeAgo(mainSession.updatedAt)}</div>
@@ -1440,7 +1443,7 @@ export function AgentHubPage() {
                       </div>
                       <div className="flex-1">
                         <div className="text-[18px] font-extrabold text-aegis-text-muted">
-                          {enrichedAgents.find(a => a.id === 'main')?.name || t('agents.mainAgent', 'Main Agent')}
+                          {enrichedAgents.find(a => a.id === defaultAgentId)?.name || t('agents.mainAgent', 'Main Agent')}
                         </div>
                         <div className="text-[11px] text-aegis-text-dim mt-0.5">{t('agents.notConnected', 'Not connected')}</div>
                       </div>

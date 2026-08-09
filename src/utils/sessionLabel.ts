@@ -1,5 +1,5 @@
 import { isWeakSessionTopic } from '@/stores/chatStore';
-import { isAgentMainSession } from '@/utils/sessionLifecycle';
+import { isGatewayMainSession } from '@/utils/sessionLifecycle';
 
 type SessionLike = {
   key?: string;
@@ -14,6 +14,8 @@ type SessionLike = {
 export interface SessionDisplayLabelOptions {
   readonly mainSessionLabel: string;
   readonly genericSessionLabel: string;
+  /** Gateway 路由规则解析出的完整默认主会话 key，缺失时不把任意 `:main` 当作全局主会话。 */
+  readonly mainSessionKey?: string | null;
   /** Read-only transcript preview when the Gateway has not named the session. */
   readonly messageFallback?: string;
 }
@@ -62,8 +64,8 @@ export function getSessionDisplayLabel(
   ));
   if (lastMessage) return lastMessage;
 
-  // Only an unnamed canonical main session uses the agent-provided fallback.
-  if (isAgentMainSession(key)) return mainSessionLabel;
+  // 只有 Gateway 明确返回的主会话才能使用主会话展示名。
+  if (isGatewayMainSession(key, options.mainSessionKey)) return mainSessionLabel;
 
   const lastKeyPart = key.split(':').pop() || key;
   if (/^desktop-[a-z0-9-]+$/i.test(lastKeyPart)) return genericSessionLabel;

@@ -8,6 +8,8 @@ import {
   __resetSessionLifecycleForTest,
   coalesceSessionsByKey,
   createLatestRequestGate,
+  isGatewayMainSession,
+  resolveKnownAgentMainSessionKey,
   isSessionDeleted,
   notifyNativeSessionCommit,
   subscribeNativeSessionCommit,
@@ -76,6 +78,47 @@ beforeEach(() => {
 });
 
 describe('session lifecycle regression fixes', () => {
+  test('only the Gateway mainKey is treated as the globally protected main session', () => {
+    const gatewayMainKey = 'agent:research:main';
+    assert.equal(isGatewayMainSession(gatewayMainKey, gatewayMainKey), true);
+    assert.equal(isGatewayMainSession('agent:main:main', gatewayMainKey), false);
+    assert.equal(isGatewayMainSession('agent:research:main', null), false);
+  });
+
+  test('opening an agent main session only uses a Gateway-confirmed key', () => {
+    const mainKey = 'agent:orchestrator:main';
+    assert.equal(
+      resolveKnownAgentMainSessionKey('orchestrator', 'orchestrator', mainKey, []),
+      mainKey,
+    );
+    assert.equal(
+      resolveKnownAgentMainSessionKey('research', 'orchestrator', mainKey, ['agent:research:main']),
+      'agent:research:main',
+    );
+    assert.equal(
+      resolveKnownAgentMainSessionKey('research', 'orchestrator', mainKey, []),
+      null,
+    );
+    assert.equal(
+      resolveKnownAgentMainSessionKey(
+        'research',
+        'orchestrator',
+        'agent:orchestrator:home',
+        ['agent:research:home'],
+      ),
+      'agent:research:home',
+    );
+    assert.equal(
+      resolveKnownAgentMainSessionKey(
+        'research',
+        'orchestrator',
+        'agent:orchestrator:home',
+        ['agent:research:main'],
+      ),
+      null,
+    );
+  });
+
   test('session snapshots collapse by normalized key and keep the newest label', () => {
     const sessions = coalesceSessionsByKey([
       { key: ` ${SESSION_KEY} `, label: '旧名称', updatedAt: '2026-07-20T08:00:00Z' },

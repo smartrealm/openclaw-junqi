@@ -105,6 +105,7 @@ export function SessionContextBar() {
   const { t } = useTranslation();
   const { tokenUsage, renderBlocks, activeSessionKey, sessions, compactionStatusBySession } = useChatStore();
   const agents = useGatewayDataStore((s) => s.agents);
+  const defaultAgentId = useGatewayDataStore((s) => s.defaultAgentId);
   const navigate = useNavigate();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRefreshed, setIsRefreshed] = useState(false);
@@ -112,8 +113,8 @@ export function SessionContextBar() {
   const keyParts = activeSessionKey.split(':');
   const agentId = keyParts.length >= 3 ? (keyParts[1] ?? '') : '';
   const agent = agents.find((a) => a.id === agentId);
-  const mainAgentName = getAgentDisplayName(agents.find((a) => a.id === 'main'), t('agents.mainAgent'));
-  const agentDisplayName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
+  const defaultAgentName = getAgentDisplayName(agents.find((a) => a.id === defaultAgentId), t('agents.mainAgent'));
+  const agentDisplayName = getAgentDisplayName(agent, agentId === defaultAgentId ? defaultAgentName : agentId);
   const activeSession = sessions.find((session) => session.key === activeSessionKey);
   const compactionActive = Boolean(compactionStatusBySession[activeSessionKey]);
   const contextBudgetNotice = getGatewaySessionContextBudgetNotice(activeSession?.contextBudgetStatus);

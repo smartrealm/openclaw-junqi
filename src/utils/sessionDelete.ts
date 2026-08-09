@@ -8,7 +8,6 @@ import { useCollaborationStore } from '@/stores/collaborationStore';
 import { debugWarn } from '@/utils/debugLog';
 import {
   gatewayMutationFailure,
-  isAgentMainSession,
   isSessionDeleted,
   markSessionDeleted,
   normalizeSessionKey,
@@ -64,8 +63,7 @@ function resumeQueuedMessages(sessionKey: string): void {
 }
 
 function isProtectedMainSession(sessionKey: string): boolean {
-  return sessionKey === useChatStore.getState().defaultMainSessionKey
-    || isAgentMainSession(sessionKey);
+  return sessionKey === useChatStore.getState().defaultMainSessionKey;
 }
 
 export function applyConfirmedSessionDeletion(rawSessionKey: string, confirmedSessionId?: string): boolean {

@@ -21,7 +21,7 @@ import { toSafeIsoTimestamp } from '@/utils/isoTimestamp';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
-import { isAgentMainSession } from '@/utils/sessionLifecycle';
+import { isAgentMainSession, isGatewayMainSession } from '@/utils/sessionLifecycle';
 import { isSubagentSessionKey } from '@/utils/sessionPresentation';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import type {
@@ -134,7 +134,7 @@ interface SessionCardProps {
 
 function SessionCard({ session, agentNameById, preview }: SessionCardProps) {
   const { t } = useTranslation();
-  const defaultMainSessionKey = useChatStore((state) => state.defaultMainSessionKey);
+  const gatewayMainSessionKey = useGatewayDataStore((state) => state.mainSessionKey);
   const inputRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
   const [draftLabel, setDraftLabel] = useState('');
@@ -152,10 +152,11 @@ function SessionCard({ session, agentNameById, preview }: SessionCardProps) {
 
   const displayName = getSessionDisplayLabel(session, {
     mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
+    mainSessionKey: gatewayMainSessionKey,
     genericSessionLabel: t('dashboard.session', 'Session'),
   });
   const isAgentKey  = session.key.startsWith('agent:');
-  const canDelete = session.key !== defaultMainSessionKey && !isAgentMainSession(session.key);
+  const canDelete = !isGatewayMainSession(session.key, gatewayMainSessionKey);
   const inputId = `session-rename-${session.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const errorId = `${inputId}-error`;
 

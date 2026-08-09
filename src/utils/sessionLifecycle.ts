@@ -45,13 +45,48 @@ export function isAgentMainSession(sessionKey: string): boolean {
   return /^agent:[^:]+:main$/.test(normalizeSessionKey(sessionKey));
 }
 
+/** 只有 Gateway 返回的 mainKey 才是 JunQi 当前窗口的全局主会话。 */
+export function isGatewayMainSession(sessionKey: string, mainSessionKey: string | null | undefined): boolean {
+  const key = normalizeSessionKey(sessionKey);
+  const mainKey = normalizeSessionKey(mainSessionKey ?? '');
+  return Boolean(key && mainKey && key === mainKey);
+}
+
+/**
+ * 仅从 Gateway 已返回的会话中解析指定智能体的直聊主会话。
+ * 不拼接或猜测 session key，避免把“打开主会话”误当成“创建新会话”。
+ */
+export function resolveKnownAgentMainSessionKey(
+  agentId: string,
+  defaultAgentId: string | null | undefined,
+  defaultMainSessionKey: string | null | undefined,
+  knownSessionKeys: readonly string[],
+): string | null {
+  const normalizedAgentId = normalizeSessionKey(agentId);
+  if (!normalizedAgentId) return null;
+
+  const normalizedDefaultAgentId = normalizeSessionKey(defaultAgentId ?? '');
+  const gatewayMainKey = normalizeSessionKey(defaultMainSessionKey ?? '');
+  if (normalizedAgentId === normalizedDefaultAgentId && gatewayMainKey) {
+    return gatewayMainKey;
+  }
+
+  const mainSessionSuffix = /^agent:[^:]+:(.+)$/i.exec(gatewayMainKey)?.[1];
+  if (!mainSessionSuffix) return null;
+
+  return knownSessionKeys.find((key) => {
+    const match = /^agent:([^:]+):(.+)$/i.exec(normalizeSessionKey(key));
+    return match?.[1] === normalizedAgentId && match[2] === mainSessionSuffix;
+  }) ?? null;
+}
+
 function normalizeSessionId(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 export function markSessionDeleted(sessionKey: string, sessionId?: string | null): void {
   const key = normalizeSessionKey(sessionKey);
-  if (key && !isAgentMainSession(key)) {
+  if (key) {
     deletedSessionIdentities.set(key, normalizeSessionId(sessionId));
   }
 }

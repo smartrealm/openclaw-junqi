@@ -16,7 +16,7 @@ import clsx from 'clsx';
 import { showConfirm } from '@/components/shared/alertStore';
 import type { Session } from '@/stores/chatStore';
 import { useChatStore } from '@/stores/chatStore';
-import { isAgentMainSession } from '@/utils/sessionLifecycle';
+import { isGatewayMainSession } from '@/utils/sessionLifecycle';
 import { createNativeSession } from '@/utils/sessionCreate';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { useNotificationStore } from '@/stores/notificationStore';
@@ -111,7 +111,7 @@ export function SessionActionsMenu({
   const groupTriggerRef = useRef<HTMLButtonElement>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
-  const isMainSession = session.key === defaultMainSessionKey || isAgentMainSession(session.key);
+  const isMainSession = isGatewayMainSession(session.key, defaultMainSessionKey);
   const sessionCategories = useMemo(() => {
     const categories = new Map<string, string>();
     for (const category of sessionGroupCatalog) {

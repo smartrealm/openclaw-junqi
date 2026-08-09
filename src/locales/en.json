@@ -1690,6 +1690,7 @@
     "newConversationWith": "New conversation with",
     "selectAgent": "Select agent",
     "openMainSession": "Open main session",
+    "mainSessionUnavailable": "Gateway has not returned this agent's main session. Create a new session or refresh and try again.",
     "newDesktopSession": "New desktop conversation",
     "persona": "Persona",
     "personaChip": "Persona: {{name}}",

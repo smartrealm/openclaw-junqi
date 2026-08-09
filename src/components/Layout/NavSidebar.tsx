@@ -110,13 +110,14 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
   const { t } = useTranslation();
   const navigate = useNavigate();
   const agents = useGatewayDataStore((st) => st.agents);
+  const defaultAgentId = useGatewayDataStore((st) => st.defaultAgentId);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(currentTitle);
   const [renamingInFlight, setRenamingInFlight] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const agentId = sessionAgentId(session, sessionKey);
-  const agentFallbackName = agentId === 'main' ? t('agents.mainAgent', 'Main Agent') : agentId;
+  const agentFallbackName = agentId === defaultAgentId ? t('agents.mainAgent', 'Main Agent') : agentId;
   const agentName = getAgentDisplayName(agents.find((agent: any) => agent?.id === agentId), agentFallbackName);
   const agentLabel = compactMeta(agentName, 20);
   const channelPresentation = resolveSessionChannelPresentation(session);
@@ -371,6 +372,7 @@ function WorkbenchPanel() {
   const navigate = useNavigate();
   const location = useLocation();
   const sessions = useChatStore((st) => st.sessions);
+  const defaultMainSessionKey = useChatStore((st) => st.defaultMainSessionKey);
   const cronJobs = useGatewayDataStore((st) => st.cronJobs);
   const agents = useGatewayDataStore((st) => st.agents);
   const defaultAgentId = useGatewayDataStore((st) => st.defaultAgentId);
@@ -404,9 +406,10 @@ function WorkbenchPanel() {
   }, [messagesPerSession]);
   const displaySessionTitle = useCallback((session: Session) => getSessionDisplayLabel(session, {
     mainSessionLabel: t('agents.mainAgent', 'Main Agent'),
+    mainSessionKey: defaultMainSessionKey,
     genericSessionLabel: t('chat.newSessionLabel'),
     messageFallback: firstUserByKey[session.key],
-  }), [firstUserByKey, t]);
+  }), [defaultMainSessionKey, firstUserByKey, t]);
 
   const presentation = useMemo(
     () => partitionSessionsForPresentation(

@@ -14,7 +14,12 @@ import { themeHex, dataColor } from '@/utils/theme-colors';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
-import { isAgentMainSession, resolveNewSessionAgentId } from '@/utils/sessionLifecycle';
+import {
+  isAgentMainSession,
+  isGatewayMainSession,
+  resolveKnownAgentMainSessionKey,
+  resolveNewSessionAgentId,
+} from '@/utils/sessionLifecycle';
 import { createNativeSession } from '@/utils/sessionCreate';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
@@ -182,18 +187,20 @@ function compactTabLabel(label: string, max = 36): string {
   return label.length > max ? `${label.slice(0, max - 1).trim()}…` : label;
 }
 
-/** Readable label for a session tab — prioritize topic over generic session ids or timestamps */
+/** 会话页签优先展示主题，避免直接暴露通用会话标识或时间戳。 */
 function sessionLabel(
   session: Session | undefined,
   key: string,
   agents: AgentInfo[],
   mainAgentName: string,
+  defaultAgentId: string | null,
+  defaultMainSessionKey: string,
   cachedMessages: Array<{ role: string; content: unknown }> | undefined,
   genericSessionLabel: string,
 ): string {
   const { agentId } = parseSessionKey(key);
   const agent = agents.find((a) => a.id === agentId);
-  const agentDisplayName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
+  const agentDisplayName = getAgentDisplayName(agent, agentId === defaultAgentId ? mainAgentName : agentId);
   const cachedPreview = [...(cachedMessages ?? [])]
     .reverse()
     .filter((message) => message.role === 'user' || message.role === 'assistant' || message.role === 'system')
@@ -205,6 +212,7 @@ function sessionLabel(
   };
   const label = getSessionDisplayLabel(merged, {
     mainSessionLabel: agentDisplayName,
+    mainSessionKey: defaultMainSessionKey,
     genericSessionLabel,
   });
   return compactTabLabel(label, 28);
@@ -380,7 +388,7 @@ function NewSessionPicker({
   open: boolean;
   onClose: () => void;
   onOpenExisting: (key: string) => void;
-  onOpenMainSession: (agentId: string, persona?: SkillPersona | null) => void;
+  onOpenMainSession: (agentId: string, persona?: SkillPersona | null) => Promise<boolean>;
   onCreateNativeSession: (agentId: string, persona?: SkillPersona | null) => Promise<boolean>;
   creatingSession: boolean;
   openTabs: string[];
@@ -405,6 +413,7 @@ function NewSessionPicker({
   const { t } = useTranslation();
 
   const defaultAgentId = useGatewayDataStore((state) => state.defaultAgentId);
+  const defaultMainSessionKey = useChatStore((state) => state.defaultMainSessionKey);
   const defaultAgent = agents.find((agent) => agent.id === defaultAgentId);
   const mainDisplayName = getAgentDisplayName(
     defaultAgent,
@@ -472,10 +481,17 @@ function NewSessionPicker({
     // Pre-fill with the same display label the row shows so the user sees
     // exactly what they'll replace.
     const display = sessionLabel(
-      session, session.key, agents, mainDisplayName, messagesPerSession[session.key], t('chat.newSessionLabel'),
+      session,
+      session.key,
+      agents,
+      mainDisplayName,
+      defaultAgentId,
+      defaultMainSessionKey,
+      messagesPerSession[session.key],
+      t('chat.newSessionLabel'),
     );
     setPickerRenameValue(display || session.label || '');
-  }, [agents, mainDisplayName, messagesPerSession, t]);
+  }, [agents, defaultAgentId, defaultMainSessionKey, mainDisplayName, messagesPerSession, t]);
 
   const submitPickerRename = useCallback(async () => {
     if (pickerRenaming || !pickerRenamingKey) return;
@@ -496,7 +512,7 @@ function NewSessionPicker({
   }, [pickerRenaming, pickerRenamingKey, pickerRenameValue, cancelPickerRename, setNewSessions]);
 
   const deleteAvailableSession = useCallback((session: Session) => {
-    if (parseSessionKey(session.key).isMainSession) return;
+    if (isGatewayMainSession(session.key, defaultMainSessionKey)) return;
     setPickerCtxMenu(null);
     showConfirm(
       t('chat.deleteSession'),
@@ -506,7 +522,7 @@ function NewSessionPicker({
         if (deleted) onClose();
       }
     );
-  }, [t, onClose]);
+  }, [defaultMainSessionKey, onClose, t]);
 
   const selectedAgent = agentList.find((agent) => agent.id === selectedAgentId);
 
@@ -635,7 +651,12 @@ function NewSessionPicker({
               <button
                 type="button"
                 disabled={!selectedAgentId}
-                onClick={() => { onOpenMainSession(selectedAgentId, effectivePersona); onClose(); }}
+                onClick={() => {
+                  if (!selectedAgentId) return;
+                  void onOpenMainSession(selectedAgentId, effectivePersona).then((opened) => {
+                    if (opened) onClose();
+                  });
+                }}
                 className={clsx(
                   'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-start transition-colors',
                   'hover:bg-[rgb(var(--aegis-overlay)/0.06)] border border-transparent hover:border-[rgb(var(--aegis-overlay)/0.08)]',
@@ -695,11 +716,14 @@ function NewSessionPicker({
                   session.key,
                   agents,
                   mainDisplayName,
+                  defaultAgentId,
+                  defaultMainSessionKey,
                   messagesPerSession[session.key],
                   t('chat.newSessionLabel'),
                 );
                 const fullLabel = getSessionDisplayLabel(session, {
                   mainSessionLabel: mainDisplayName,
+                  mainSessionKey: defaultMainSessionKey,
                   genericSessionLabel: t('chat.newSessionLabel'),
                   messageFallback: getSessionPreview(displayLabel, session, messagesPerSession[session.key]),
                 });
@@ -778,7 +802,7 @@ function NewSessionPicker({
                         >
                           <Pencil size={12} />
                         </IconButton>
-                        {!parseSessionKey(session.key).isMainSession && (
+                        {!isGatewayMainSession(session.key, defaultMainSessionKey) && (
                           <IconButton
                             size="xs"
                             tone="danger"
@@ -827,7 +851,7 @@ function NewSessionPicker({
             <Pencil size={13} className="opacity-60" />
             {t('chat.renameSession')}
           </button>
-          {!parseSessionKey(pickerCtxMenu.session.key).isMainSession && (
+          {!isGatewayMainSession(pickerCtxMenu.session.key, defaultMainSessionKey) && (
             <>
               <div className="my-1 border-t border-[rgb(var(--aegis-overlay)/0.06)]" />
               <button
@@ -880,6 +904,7 @@ function SortableTab({ id, children, disabled }: { id: string; children: React.R
 
 export function ChatTabs() {
   const { t } = useTranslation();
+  const defaultAgentId = useGatewayDataStore((state) => state.defaultAgentId);
   const collaboration = useOptionalCollaborationChat();
   const {
     openTabs,
@@ -981,15 +1006,29 @@ export function ChatTabs() {
     return () => window.removeEventListener('aegis:open-new-session-picker', handler);
   }, [handleOpenNewPicker]);
 
-  const handleOpenMainSession = useCallback((agentId: string, persona?: SkillPersona | null) => {
-    const sessionKey = `agent:${agentId}:main`;
+  const handleOpenMainSession = useCallback(async (agentId: string, persona?: SkillPersona | null): Promise<boolean> => {
+    const sessionKey = resolveKnownAgentMainSessionKey(
+      agentId,
+      defaultAgentId,
+      defaultMainSessionKey,
+      sessions.map((session) => session.key),
+    );
+    if (!sessionKey) {
+      useNotificationStore.getState().addToast(
+        'error',
+        t('chat.openMainSession'),
+        t('chat.mainSessionUnavailable'),
+      );
+      return false;
+    }
     openTab(sessionKey);
     setShowNewPicker(false);
     setPendingPersona(null);
     if (persona && persona.prompt) {
       applyPersonaToSessionDraft(sessionKey, persona);
     }
-  }, [openTab]);
+    return true;
+  }, [defaultAgentId, defaultMainSessionKey, openTab, sessions, t]);
 
   const handleCreateNativeSession = useCallback(async (
     agentId: string,
@@ -1014,7 +1053,7 @@ export function ChatTabs() {
   }, [creatingSession, t]);
 
   const agents = useGatewayDataStore((s) => s.agents);
-  const mainAgentName = agents.find((a) => a.id === 'main')?.name || t('agents.mainAgent');
+  const mainAgentName = agents.find((a) => a.id === defaultAgentId)?.name || t('agents.mainAgent');
 
   // ── Tooltip (hover on any agent's canonical session tab). Rendered in a
   // portal so the tab strip cannot clip it. ──
@@ -1161,13 +1200,21 @@ export function ChatTabs() {
         {openTabs.map((key) => {
           const isActive = key === activeSessionKey;
           const isPinnedMain = defaultMainSessionKey === key;
-          const { isMainSession } = parseSessionKey(key);
+          const isMainSession = isGatewayMainSession(key, defaultMainSessionKey);
           const session = sessions.find((s) => s.key === key);
           const label = sessionLabel(
-            session, key, agents, mainAgentName, messagesPerSession[key], t('chat.newSessionLabel'),
+            session,
+            key,
+            agents,
+            mainAgentName,
+            defaultAgentId,
+            defaultMainSessionKey,
+            messagesPerSession[key],
+            t('chat.newSessionLabel'),
           );
           const fullLabel = getSessionDisplayLabel(session, {
             mainSessionLabel: mainAgentName,
+            mainSessionKey: defaultMainSessionKey,
             genericSessionLabel: t('chat.newSessionLabel'),
             messageFallback: getSessionPreview(label, session, messagesPerSession[key]),
           });
@@ -1403,7 +1450,7 @@ export function ChatTabs() {
               if (!session) return null;
               const { agentId } = parseSessionKey(session.key);
               const agent = agents.find((candidate) => candidate.id === agentId);
-              const agentName = getAgentDisplayName(agent, agentId === 'main' ? mainAgentName : agentId);
+              const agentName = getAgentDisplayName(agent, agentId === defaultAgentId ? mainAgentName : agentId);
               const status = resolveAgentStatusSnapshot({
                 session,
                 activeSessionKey,
@@ -1445,7 +1492,14 @@ export function ChatTabs() {
                 startRename(
                   session.key,
                   sessionLabel(
-                    session, session.key, agents, mainAgentName, messagesPerSession[session.key], t('chat.newSessionLabel'),
+                    session,
+                    session.key,
+                    agents,
+                    mainAgentName,
+                    defaultAgentId,
+                    defaultMainSessionKey,
+                    messagesPerSession[session.key],
+                    t('chat.newSessionLabel'),
                   ),
                 );
               }}
