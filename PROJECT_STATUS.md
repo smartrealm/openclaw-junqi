@@ -4,12 +4,13 @@
 
 ## 当前目标
 
-保持 JunQi 作为 OpenClaw 桌面客户端的边界：首次启动由官方 Wizard 统一编排，钉钉业务能力由 OpenClaw 插件和 DWS 官方 CLI 提供，Jarvis 只呈现当前 Gateway 已证明的手动 Talk 能力。当前阶段正在合并 Jarvis 的钉钉授权可视化与语音边界收敛改动，并完成自动化验证。
+保持 JunQi 作为 OpenClaw 桌面客户端的边界：首次启动由官方 Wizard 统一编排，钉钉业务能力由 OpenClaw 插件和 DWS 官方 CLI 提供，Jarvis 只呈现当前 Gateway 已证明的手动 Talk 能力。首次引导步骤页采用仅当前页的定向入场：前进从左向右收敛，返回从右向左收敛。
 
 ## 已完成内容
 
 - 首次引导将 Gateway 就绪和 OpenClaw 配置核验统一在同一阶段。默认仅调用官方 `wizard.start`，不创建独立渠道流程，也不发送未经官方会话证明的 `flow` 或 `skipChannels` 参数。
 - 官方 Wizard 的 `note`、`text`、`select`、`multiselect`、`confirm`、`progress` 与 `action` 通过独立步骤渲染器注册表呈现，JunQi 不按步骤标识或渠道名称推断流程。
+- 首次引导前进内容从左侧轻量滑入并向右收敛，返回内容从右侧轻量滑入并向左收敛。旧页面不参与退出动画，减少动态效果偏好下立即呈现；Gateway 配置核验与官方 Wizard 继续原地替换内容。
 - 钉钉工作台只从当前 Session 的 `tools.effective` 投影能力，并通过 `tools.invoke` 与插件审批调用。DWS 业务命令不由 React 或 Tauri 直接执行。
 - DWS 缺失时，已核验的 Native 或 Docker 运行时可启动官方 npm 安装或设备授权流程。输出仅临时投影到当前窗口并做敏感信息隐藏；完成后重新读取插件、Profile 和 Session 工具状态。
 - 钉钉插件安装、Agent 双重授权、Gateway 重启和运行时身份围栏均保留真实未就绪与失败语义，不以本地状态推断成功。
@@ -36,12 +37,14 @@
 
 - 合并前首次引导重构已通过 `pnpm lint`、完整 `pnpm test`、`pnpm build`、`pnpm verify:openclaw-docs`、语言 JSON 解析、`git diff --check` 和完整 Emoji 扫描。
 - 本次 Jarvis 合并后已通过 `pnpm lint`、完整 `pnpm test`、`pnpm build`、`cargo fmt -- --check`、`cargo check --lib` 和 `cargo test --lib`。测试输出仅包含既有 Node 弃用与 Radix SSR 警告，没有失败。
+- 本次首次引导动效方向调整已通过 `src/motion/setupStepTransition.test.ts` 的 6 项回归和 `pnpm lint`。
 
 ## 已知问题
 
 - 尚未在真实 Gateway 验收钉钉插件安装、`tools.effective`、`tools.invoke`、插件审批、DWS 授权和真实租户业务响应。
 - 尚未在 macOS、Windows、Linux、Docker Gateway 中验证 DWS 安装、凭据、取消和重连的真实行为。
 - 尚未在真实 Tauri 验收首次启动、钉钉工作台和 Jarvis 页面在亮色、暗色、窄窗口和键盘焦点下的视觉表现。
+- 尚未在真实 Tauri 验收首次引导新的前进与返回方向在亮色、暗色、窄窗口和键盘焦点下的视觉表现。
 - OpenClaw 目前没有提供适用于 Windows、Ubuntu 或 CentOS 通用桌面客户端的 Voice Wake 运行时命中事件；JunQi 不能宣称跨平台后台唤醒已实现。
 
 ## 下一步顺序
