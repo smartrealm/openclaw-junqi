@@ -2,6 +2,8 @@
 
 日期：2026-08-02
 
+状态：历史记录。本文描述的多平台目录、Chat 草稿桥接和静态状态已被 2026-08-08 钉钉单平台实现删除，不能作为当前产品能力说明。当前设计、规格与验证边界以[钉钉主线单平台业务应用 UI 设计](dingtalk-single-platform-ui-design-2026-08-08.md)和[钉钉业务工作台运行时规格](../../specs/business/2026-08-08-dingtalk-business-runtime.md)为准。
+
 ## 已实现
 
 - 新增 `/business-applications` 顶级路由、feature flag、顶部“业务应用”Tab 和对应上下文侧栏。

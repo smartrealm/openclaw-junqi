@@ -91,8 +91,8 @@ export function DingTalkToolDetail({
             </span>
           </div>
           <dl className="mt-3 grid grid-cols-[76px_minmax(0,1fr)] gap-y-1.5 border-y border-aegis-border py-2 text-[10px]">
-            <dt className="text-aegis-text-dim">工具 ID</dt>
-            <dd className="truncate font-mono text-aegis-text-secondary" title={tool.entry.id}>{tool.entry.id}</dd>
+            <dt className="text-aegis-text-dim">业务域</dt>
+            <dd className="text-aegis-text-secondary">{dingTalkDomainLabel(tool.domain)}</dd>
             <dt className="text-aegis-text-dim">效果</dt>
             <dd className="text-aegis-text-secondary">{tool.effect === 'read' ? '读取' : tool.effect === 'write' ? '写入' : '未验证'}</dd>
             <dt className="text-aegis-text-dim">风险</dt>
@@ -121,7 +121,6 @@ export function DingTalkToolDetail({
               {schemaError && <p className="mt-1.5 text-[10px] leading-4 text-aegis-danger">{schemaError}</p>}
               {schema && (
                 <div className="mt-1.5 overflow-hidden rounded-md border border-aegis-border">
-                  <div className="border-b border-aegis-border bg-aegis-hover/35 px-2 py-1 font-mono text-[9px] text-aegis-text-dim" title={schema.canonicalPath}>{schema.canonicalPath}</div>
                   {schema.parameters.length === 0 ? (
                     <div className="px-2 py-2 text-[10px] text-aegis-text-dim">此工具没有业务参数。</div>
                   ) : schema.parameters.map((parameter) => (
@@ -134,14 +133,27 @@ export function DingTalkToolDetail({
                 </div>
               )}
 
-              <label className="mt-3 block text-[10.5px] font-medium text-aegis-text-secondary" htmlFor="dingtalk-arguments">参数 JSON</label>
-              <textarea
-                id="dingtalk-arguments"
-                value={argumentsJson}
-                onChange={(event) => onArgumentsChange(event.target.value)}
-                spellCheck={false}
-                className="mt-1 min-h-[112px] w-full resize-y rounded-md border border-aegis-border bg-aegis-bg p-2 font-mono text-[10.5px] leading-5 text-aegis-text outline-none focus:border-aegis-primary/60 focus:ring-1 focus:ring-aegis-primary/25"
-              />
+              <details className="mt-3 border border-aegis-border bg-aegis-surface/35">
+                <summary className="cursor-pointer px-2.5 py-2 text-[10.5px] font-medium text-aegis-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-aegis-primary/60">高级参数与运行时契约</summary>
+                <div className="border-t border-aegis-border px-2.5 py-2.5">
+                  <dl className="grid grid-cols-[72px_minmax(0,1fr)] gap-y-1.5 text-[9.5px]">
+                    <dt className="text-aegis-text-dim">工具 ID</dt>
+                    <dd className="truncate font-mono text-aegis-text-secondary" title={tool.entry.id}>{tool.entry.id}</dd>
+                    <dt className="text-aegis-text-dim">DWS 路径</dt>
+                    <dd className="truncate font-mono text-aegis-text-secondary" title={schema?.canonicalPath}>{schema?.canonicalPath ?? '待读取'}</dd>
+                    <dt className="text-aegis-text-dim">Schema 摘要</dt>
+                    <dd className="truncate font-mono text-aegis-text-secondary" title={schema?.schemaDigest}>{schema?.schemaDigest ?? '待读取'}</dd>
+                  </dl>
+                  <label className="mt-2.5 block text-[10px] font-medium text-aegis-text-secondary" htmlFor="dingtalk-arguments">参数 JSON</label>
+                  <textarea
+                    id="dingtalk-arguments"
+                    value={argumentsJson}
+                    onChange={(event) => onArgumentsChange(event.target.value)}
+                    spellCheck={false}
+                    className="mt-1 min-h-[112px] w-full resize-y rounded-md border border-aegis-border bg-aegis-bg p-2 font-mono text-[10.5px] leading-5 text-aegis-text outline-none focus:border-aegis-primary/60 focus:ring-1 focus:ring-aegis-primary/25"
+                  />
+                </div>
+              </details>
             </>
           )}
 

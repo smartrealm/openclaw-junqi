@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-保持 JunQi 作为 OpenClaw 桌面客户端的边界：首次启动由官方 Wizard 统一编排，钉钉业务能力由 OpenClaw 插件和 DWS 官方 CLI 提供，模型认证和配置字段只呈现当前 Gateway 已证明的状态。本阶段收敛 Provider 页认证信息密度，并修复配置中心共用的 OpenClaw Runtime schema 信封解析与连接身份边界。
+保持 JunQi 作为 OpenClaw 桌面客户端的边界：首次启动由官方 Wizard 统一编排，钉钉业务能力由 OpenClaw 插件和 DWS 官方 CLI 提供，模型认证和配置字段只呈现当前 Gateway 已证明的状态。本阶段已将本地 `Blues-Code/dingtalk` 分支合并到当前 `Blues-Code/Jarvis`，统一钉钉业务工作台的信息架构，并保留主线已有的真实 DWS 安装、授权和运行时身份围栏。
 
 ## 已完成内容
 
@@ -13,6 +13,9 @@
 - 钉钉工作台只从当前 Session 的 `tools.effective` 投影能力，并通过 `tools.invoke` 与插件审批调用。DWS 业务命令不由 React 或 Tauri 直接执行。
 - DWS 缺失时，已核验的 Native 或 Docker 运行时可启动官方 npm 安装或设备授权流程。输出仅临时投影到当前窗口并做敏感信息隐藏；完成后重新读取插件、Profile 和 Session 工具状态。
 - 钉钉插件安装、Agent 双重授权、Gateway 重启和运行时身份围栏均保留真实未就绪与失败语义，不以本地状态推断成功。
+- 钉钉业务工作台已统一为“有效工具”“操作审计”“接入与授权”三个稳定入口，URL 查询参数只接受这三个已定义视图，未知值回到有效工具，不创建额外状态。
+- 工具表格只按当前 `tools.effective` 返回的真实业务域分组；工具与审计视图仅在存在阻断、错误或待核验状态时显示 readiness，接入视图集中呈现 Session、插件、Agent 双层授权和 DWS 身份证据。
+- 合并冲突按完整调用链收敛：保留主线的本机或 Docker 官方 DWS 安装与设备授权操作、取消和输出投影，同时接入分支的三视图侧栏、分组表格、运行时身份工作区和对应验证文档；未保留任一侧的残缺双轨实现。
 - Jarvis 设置页明确区分 Gateway Voice Wake 配置和 JunQi 手动 Talk。`talk.catalog` 的目录无效、实时提供方未就绪、原生音频中继不兼容均作为结构化失败呈现。
 - 智能体中心 Office 只将配置席位呈现为虚拟工位。真实协作参与、在线和执行状态只来自 OpenClaw 协作 Run 证据。
 - 会话组织操作使用 OpenClaw 最小 `operator.write` 权限；默认主会话由 `defaultId`、`mainKey` 和 `scope` 按官方路由规则解析，新会话创建确认保留空 leaf，避免错误加载历史。
@@ -52,6 +55,7 @@
 - 默认智能体与主会话本轮审计确认 `agents.list.mainKey` 是会话后缀，完整默认主会话按 `defaultId`、`mainKey` 和 `scope` 解析。已通过 `pnpm lint`、113 项定向会话与 Gateway 回归、完整 `pnpm test`、`pnpm build`、`git diff --check` 和完整 Emoji 扫描；测试仅输出既有 Node 弃用与 Radix SSR 警告。
 - Provider 认证状态重设计已通过 15 项认证链路定向回归、完整 `pnpm test`（前端 2845 项、脚本 243 项）、`pnpm lint`、`pnpm build`、`pnpm verify:openclaw-docs`、locale JSON 解析、`git diff --check` 和完整修改文件 Emoji 扫描。最终键盘交互调整后再次通过定向回归、lint 与 build。
 - Runtime 配置 schema 修复已通过 11 项定向回归、`pnpm lint`、完整 `pnpm test` 和 `pnpm build`。完整测试包含前端与服务 2851 项、脚本 243 项，无失败；输出仅有既有 Node 弃用和 Radix 服务端渲染警告。
+- 本次钉钉分支合并已通过 8 项视图、工具分组与共享页签动效定向回归、`pnpm lint`、完整 `pnpm test` 和 `pnpm build`。生产构建重新生成并校验协作插件与钉钉插件资源包；输出仅有既有 Node 弃用和 Radix 服务端渲染警告。
 
 ## 已知问题
 
@@ -63,6 +67,11 @@
 - 本机 OpenClaw 运行时代码和随包文档对自定义 `session.mainKey` 是否生效存在差异；JunQi 仅处理当前 Gateway 已返回的字段。最新版官方线上文档本轮请求服务不可用，未完成线上版本复核。
 - 尚未在真实 Gateway 验收 Provider 卡片中的 OAuth/token 到期、实时探测、注销和畸形回包；尚未在真实 Tauri 完成该页面亮色、暗色、窄窗口、键盘焦点、加载、失败和空数据状态的视觉验收。
 - 尚未在真实 Native、Docker 和跨平台 Gateway 中验收工具 schema 加载、插件扩展字段、连接切换与重试；工具页亮色、暗色、窄窗口和键盘焦点仍需 Tauri 真机验证。
+
+## 尝试过但未采用的方案
+
+- 未直接选择冲突任一侧的 `DingTalkReadinessPanel`。只保留主线会丢失三个稳定工作区，只保留 dingtalk 分支会丢失真实 DWS 安装、授权、取消和输出投影，因此最终使用两条已验证链路的单一组合实现。
+- 合并后恢复旧工作区时，三种语言中的工作区键与分支已落入的同名键重复；重复位置已删除，只保留每种语言唯一键，避免 JSON 解析时静默覆盖。
 
 ## 下一步顺序
 

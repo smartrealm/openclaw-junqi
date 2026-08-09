@@ -3,7 +3,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArchiveRestore, Plus, MessageSquare, BookOpenText, Blocks, Bot, Terminal, Settings, Brain, Folder, Clock, Cpu, FileText, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, Ellipsis, Pin, type LucideIcon } from 'lucide-react';
+import { ArchiveRestore, Plus, MessageSquare, BookOpenText, Bot, Terminal, Settings, Settings2, Brain, Folder, Clock, Cpu, FileText, Trash2, X, Check, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, Activity, Moon, Ellipsis, Pin, ListChecks, Wrench, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -914,7 +914,9 @@ function miniItemsFor(
       { to: '/memory', icon: <Brain size={20} />, label: t('nav.memory', 'Memory'), feature: 'memory' },
     ];
     case 'businessApplications': return [
-      { to: '/business-applications', icon: <Blocks size={20} />, label: t('nav.businessApplications', '业务应用'), feature: 'businessApplications' },
+      { to: '/business-applications', icon: <Wrench size={20} />, label: t('businessApplications.workspaceTools', '有效工具'), feature: 'businessApplications' },
+      { to: '/business-applications?view=activity', icon: <ListChecks size={20} />, label: t('businessApplications.workspaceActivity', '操作审计'), feature: 'businessApplications' },
+      { to: '/business-applications?view=runtime', icon: <Settings2 size={20} />, label: t('businessApplications.workspaceRuntime', '接入与授权'), feature: 'businessApplications' },
     ];
     case 'tools': return [
       { to: '/ai-workspace', icon: <Bot size={20} />, label: t('nav.agentTasks', 'Agent 任务'), feature: 'agentRun' },
