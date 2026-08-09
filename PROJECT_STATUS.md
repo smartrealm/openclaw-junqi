@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-保持 JunQi 作为 OpenClaw 桌面客户端的边界：首次启动由官方 Wizard 统一编排，钉钉业务能力由 OpenClaw 插件和 DWS 官方 CLI 提供，模型认证和配置字段只呈现当前 Gateway 已证明的状态。本阶段已将本地 `Blues-Code/dingtalk` 分支合并到当前 `Blues-Code/Jarvis`，统一钉钉业务工作台的信息架构，并保留主线已有的真实 DWS 安装、授权和运行时身份围栏。当前还在收敛工作台会话侧栏，使智能体范围、主会话入口、分组、排序和新建会话归属与 OpenClaw 官方会话契约一致。
+保持 JunQi 作为 OpenClaw 桌面客户端的边界，按最新版官方源码全量复审安装与 Gateway、会话生命周期、模型与凭据及定时任务链路。当前安装阶段已收敛到官方配置终态，下一阶段继续核对会话新建、恢复、中断、历史与发送队列，随后复审模型控制面和定时任务。
 
 ## 已完成内容
 
@@ -29,13 +29,16 @@
 - 工作台会话侧栏已改为按 `agents.list` 选择智能体，只展示该智能体的 Gateway 会话；新建会话明确绑定当前选择，Gateway 已确认的主会话固定为首行，智能体和会话拉取的加载与失败状态在操作附近真实呈现。
 - 会话侧栏已删除日期分桶、旧分桶偏好和工作台重复导航，改为 OpenClaw 官方的自定义分组或不分组、创建时间或最近更新；底部复用现有 `/sessions` 完整管理入口。
 - 会话分类只保留 OpenClaw 原生 `category`，已删除无消费者的 `groupId` 影子字段及其投影、身份重置和测试断言。
+- 首次安装不再从 `agents.defaults.model` 推断配置完成，也不在官方 Wizard 终态后追加实时模型验证。Gateway 完成认证后统一读取官方 `openclaw.setup.detect.setupComplete`；Ready 到工作台的最终操作只重复核验选定 Gateway 与该官方终态。
+- Setup Gateway 客户端已统一承载 `openclaw.setup.detect` 与明确触发的 `openclaw.setup.verify`，严格拒绝缺少权威字段的畸形响应。旧验证专属客户端、本地模型字段启发式、追加门禁分支、专属文案和测试已一并删除。
 
 ## 关键技术决策
 
 - OpenClaw 是 Agent、会话、工具、Transcript、任务和运行时状态的唯一权威；JunQi 仅保存绑定运行时身份的派生投影。
 - DWS 认证、Profile、token 与业务执行属于 DWS 和 OpenClaw 插件。桌面侧不读取 token、不写入 transcript、不执行远程脚本，也不重放未知副作用。
 - `talk.catalog.realtime.ready=false` 仅表示 Gateway 实时语音未就绪，客户端不会切换到本地语音实现或伪报可用。
-- OpenClaw 官方 `openclaw.setup.verify` 可用时才作为模型实时验证依据；能力不可用时保持待核验。
+- OpenClaw 官方 `openclaw.setup.detect.setupComplete` 是首次安装配置完成的权威判据；`openclaw.setup.verify`
+  只用于与模型或业务就绪有关的实时测试，不得覆盖官方 Wizard 的跳过、继续或完成终态。
 - OpenClaw `config.schema` 的权威响应是包含 `schema`、`uiHints`、`version` 和 `generatedAt` 的信封；JunQi 不接受裸 schema、别名字段、版本 fallback 或方法广告门禁。
 - 会话侧栏复用全局权威 `sessions.list` 缓存做智能体只读投影，不增加第二套轮询、缓存或会话协议；非默认智能体主会话只从 Gateway 已返回的 key 解析。
 - 最新 OpenClaw Control UI 还提供创建者、状态和定时会话过滤；本轮按最小需求不复制这些入口，避免与 JunQi 现有归档区和后台活动区形成双轨。
@@ -53,6 +56,8 @@
 - `src/services/openclawConfigSchema.ts`、`src/services/openclawConfigSchema.test.ts`、`src/pages/ConfigManager/ToolsTab.tsx`：官方配置 schema 信封解析、连接围栏、缓存和工具页状态呈现。
 - `src/components/Layout/NavSidebar.tsx`、`src/components/Layout/SessionScopeControls.tsx`、`src/components/Layout/sidebarUtils.ts`：智能体作用域会话列表、主会话首行、分组排序和完整会话入口。
 - `src/stores/chatStore.ts`、`src/utils/openClawSessionProjection.ts`：移除会话分类影子字段，只保留 Gateway `category`。
+- `src/services/gateway/OpenClawSetupClient.ts`、`src/hooks/useSetupFlow/`、`src/services/setup/setupCompletionGate.ts`：官方配置检测、Wizard 终态交接和工作台准入。
+- `docs/quality/openclaw-installation-completion-contract-audit-2026-08-09.md`、`specs/quality/2026-08-09-openclaw-installation-completion-contract.md`、`plans/quality/2026-08-09-openclaw-installation-completion-contract.md`：安装阶段依据、目标与实施顺序。
 
 ## 测试与验证
 
@@ -66,6 +71,7 @@
 - 智能体作用域会话侧栏已通过 74 项定向侧栏、新建会话与 ChatStore 回归、完整 `pnpm test`（2855 项）、`pnpm lint`、生产 `pnpm build`、locale JSON 解析和 `git diff --check`。完整测试首次发现旧守护仍要求侧栏从活动会话推断新建目标，已按新的显式智能体选择契约更新后复跑通过；输出仅包含既有 Node 弃用和 Radix 服务端渲染警告。
 - 已基于提交 `9305a53d` 使用 `pnpm tauri build --bundles dmg` 成功生成 macOS arm64 本地验收包 `src-tauri/target/release/bundle/dmg/JunQi Desktop_2.3.0_aarch64.dmg`。DMG 校验通过，文件大小为 8808362 字节，SHA-256 为 `0eee3a0eda566542c6306f75cf4d3f2199905f958973448c6b104a38820fcd53`。本次未生成正式 updater 签名，也未执行开发者证书签名和公证，因此该制品只能用于本机验收，不能描述为正式发布包。
 - 会话侧栏后续复审确认首轮智能体作用域改造误把 OpenClaw 智能体菜单缩减为纯选择器，并且创建排序无法在缺少 `createdAt` 的旧会话上保持稳定。本轮已恢复智能体切换、新建智能体和当前智能体设置入口，并按官方侧栏模型维护稳定创建顺序和已确认新会话提升。14 项定向测试、完整 `pnpm test`、`pnpm lint`、生产 `pnpm build`、locale JSON 解析与 `git diff --check` 均通过；尚未完成真实 Tauri 窗口的菜单定位、键盘焦点和窄窗口视觉验收。
+- 安装完成契约复审已通过完整 `pnpm test`、`pnpm lint`、生产 `pnpm build`、`pnpm verify:openclaw-docs`、locale JSON 解析、`git diff --check` 和完整修改文件 Emoji 扫描。旧的直接测试命令因未加载仓库 `test-setup.ts` 而缺少 `localStorage`，改用项目正式测试入口后全部通过。
 
 ## 已知问题
 
@@ -78,18 +84,19 @@
 - 尚未在真实 Gateway 验收 Provider 卡片中的 OAuth/token 到期、实时探测、注销和畸形回包；尚未在真实 Tauri 完成该页面亮色、暗色、窄窗口、键盘焦点、加载、失败和空数据状态的视觉验收。
 - 尚未在真实 Native、Docker 和跨平台 Gateway 中验收工具 schema 加载、插件扩展字段、连接切换与重试；工具页亮色、暗色、窄窗口和键盘焦点仍需 Tauri 真机验证。
 - 尚未在真实多智能体 Gateway 和 Tauri 中验收会话侧栏的智能体切换、全局主会话、分类顺序、归档恢复，以及亮色、暗色和窄窗口视觉表现。
+- 安装完成契约尚未用最新版真实 Gateway 在 Native、Docker、Windows 和 Linux 上完成官方 Wizard 跳过模型验证、服务交接、认证重连与冷启动真机验收。
 
 ## 尝试过但未采用的方案
 
 - 未直接选择冲突任一侧的 `DingTalkReadinessPanel`。只保留主线会丢失三个稳定工作区，只保留 dingtalk 分支会丢失真实 DWS 安装、授权、取消和输出投影，因此最终使用两条已验证链路的单一组合实现。
 - 合并后恢复旧工作区时，三种语言中的工作区键与分支已落入的同名键重复；重复位置已删除，只保留每种语言唯一键，避免 JSON 解析时静默覆盖。
 - 未复制 OpenClaw 最新侧栏的创建者、状态和定时会话过滤；这些能力超出当前确认范围，并会与 JunQi 现有归档和后台活动呈现重复。
+- 未保留官方 Wizard 终态后的客户端 `openclaw.setup.verify` 门禁。该方案会覆盖官方向导允许的跳过或失败后继续选择，并把已经完成的配置重新判定为安装失败。
 
 ## 下一步顺序
 
-1. 在真实 Tauri 和真实 Gateway 中验收默认 Wizard、钉钉插件安装与授权、工具审批和错误恢复。
-2. 在目标平台验收手动 Talk 的麦克风、实时提供方和音频设备；官方桌面 Voice Wake 扩展点出现前不实现后台唤醒。
-3. 使用非传统默认智能体和主会话 key 的真实 Gateway 验收页签固定、关闭删除、打开直聊主会话和官方新建会话。
-4. 在真实 Gateway 和 Tauri 中验收 Provider 卡片认证摘要、实时验证确认、受控注销及主题与窄窗口表现。
-5. 在 Native 和 Docker Runtime 中切换 Gateway，验收工具配置 schema 重新加载、空字段、授权失败和重试状态。
-6. 在真实多智能体 Gateway 中验收侧栏智能体作用域、主会话首行、分类排序、新建会话归属和 `/sessions` 入口，再完成三套桌面平台的主题与窄窗口视觉验收。
+1. 按最新版 OpenClaw 官方会话 handler 复审新建、历史、发送、Stop、恢复与发送队列，删除残留客户端推断。
+2. 复审模型目录、默认模型、Provider 凭据、配置 CAS 与明确实时验证入口。
+3. 复审 `cron.*` 创建、更新、删除、执行、运行历史和待核验状态投影。
+4. 用最新版真实 Gateway 验收 Native 安装与官方 Wizard 的跳过、完成、服务交接、认证重连和冷启动，再扩展到 Docker、Windows 与 Linux。
+5. 继续完成钉钉、Jarvis、Provider、工具页和会话侧栏现有未完成的真实 Tauri 与跨平台验收。

@@ -90,7 +90,7 @@ import { OpenClawSessionUsageLogsClient } from './OpenClawSessionUsageLogsClient
 import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
 import { OpenClawModelAuthLogoutClient } from './OpenClawModelAuthLogoutClient';
 import { OpenClawModelProbeClient } from './OpenClawModelProbeClient';
-import { OpenClawSetupVerificationClient } from './OpenClawSetupVerificationClient';
+import { OpenClawSetupClient } from './OpenClawSetupClient';
 import { OpenClawRuntimeConfigClient } from './OpenClawRuntimeConfigClient';
 import { OpenClawProviderUsageClient } from './OpenClawProviderUsageClient';
 import { OpenClawAgentIdentityClient } from './OpenClawAgentIdentityClient';
@@ -574,7 +574,7 @@ export const openClawModelAuthLogoutClient = new OpenClawModelAuthLogoutClient({
 export const openClawModelProbeClient = new OpenClawModelProbeClient({
   requestPrivileged: (method, params) => requestPrivileged(method, params),
 });
-export const openClawSetupVerificationClient = new OpenClawSetupVerificationClient({
+export const openClawSetupClient = new OpenClawSetupClient({
   requestPrivileged: (method, params) => requestPrivileged(method, params),
 });
 export const openClawRuntimeConfigClient = new OpenClawRuntimeConfigClient({

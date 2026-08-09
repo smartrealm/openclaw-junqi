@@ -2,6 +2,11 @@
 
 日期：2026-08-07
 
+> 2026-08-09 复审修订：本文件原先将 `openclaw.setup.verify` 误列为首次安装完成门禁。最新版官方源码表明，
+> 配置完成状态由 `openclaw.setup.detect.setupComplete` 提供，实时模型验证属于官方 Wizard 内可跳过或失败后
+> 继续的用户决策。当前契约以
+> [安装完成契约审计](./openclaw-installation-completion-contract-audit-2026-08-09.md) 为准。
+
 ## 范围与依据
 
 本审计覆盖 JunQi Desktop 的安装、选定运行时、Gateway 连接、OpenClaw 引导、模型与凭据、会话发送、
@@ -16,32 +21,31 @@
 | 主线 | OpenClaw 官方契约 | JunQi 已核对入口 | 当前结论 |
 | --- | --- | --- | --- |
 | 安装与运行时 | Gateway 配置、认证身份与 selected runtime 必须共同成立 | `useSetupFlow`、Rust `gateway` 与 `config` command | 进行中 |
-| 引导完成条件 | `wizard.*` 管理交互会话，`openclaw.setup.verify` 真实验证默认推理路由 | `openclawWizard`、`useWizardSession`、`setupCompletionGate` | 本轮已修复 |
+| 引导完成条件 | `wizard.*` 管理交互会话，`openclaw.setup.detect.setupComplete` 提供配置终态 | `OpenClawSetupClient`、`useWizardSession`、`setupCompletionGate` | 2026-08-09 复审修复 |
 | 模型与凭据 | `config.get`/`config.set` 的 hash 与 `models.*` Gateway handler | ConfigManager、模型状态与探测客户端 | 进行中 |
 | 会话与发送 | `sessions.create`、`chat.history`、`chat.send` 与 leaf/session CAS | `sessionCreate`、`ChatView`、发送事务 | 本轮已修复，Stop 已核对 |
 | cron 与任务投影 | `cron.*`、Task Ledger、运行事件为唯一事实来源 | `OpenClawCronManagementClient`、CronMonitor、任务视图 | 已核对 |
 
 ## 已证实问题
 
-### A-01 高：引导跳过条件只检查静态模型字段
+### A-01 高：引导跳过条件脱离官方配置终态
 
-**官方依据**：`packages/gateway-protocol/src/schema/openclaw.ts` 定义空参数的
-`openclaw.setup.verify`；`src/gateway/server-methods/system-agent.ts` 调用
-`verifySetupInference`；后者读取当前配置并实时验证默认 Agent 的推理路由。
+**2026-08-09 官方依据复审**：`packages/gateway-protocol/src/schema/openclaw.ts` 定义
+`openclaw.setup.detect`，其响应包含布尔字段 `setupComplete`；`src/gateway/server-methods/system-agent.ts`
+将其实现为只读配置检测。`openclaw.setup.verify` 是明确请求时执行的实时推理验证；官方 Wizard 允许用户
+跳过该验证或在可选验证失败后继续，因此它不是客户端可追加的安装完成条件。
 
-**当前实现**：`src/services/openclawWizard.ts#requiresOpenClawOnboarding` 只要发现
+**初始实现**：`src/services/openclawWizard.ts#requiresOpenClawOnboarding` 只要发现
 `agents.defaults.model.primary` 或字符串模型引用就返回已完成。`src/hooks/useSetupFlow/index.ts`
 与 `src/services/setup/setupCompletionGate.ts` 因而能在 Gateway 可连但凭据失效、路由失效或模型不可用时
 进入工作台。
 
-**目标**：完成门禁必须先通过选定运行时的认证 Gateway 身份，再由官方 `openclaw.setup.verify` 的结构化
-结果决定可否跳过向导。静态配置检查只能用于确定是否可发起验证；不支持、未授权、超时或无有效结果时
-保持待配置或待核验，不伪造成功。
+**复审目标**：完成门禁必须先通过选定运行时的认证 Gateway 身份，再读取官方
+`openclaw.setup.detect.setupComplete`。静态模型字段和客户端实时验证都不能替代该终态。
 
-**处理结果**：新增严格读取官方 `openclaw.setup.verify` 结果的 Gateway 客户端。Gateway 就绪后的
-继续操作、官方 Wizard 返回完成时以及进入工作台前的最终操作，均先检查选定 runtime 的认证 Gateway
-身份、静态配置前置条件和实时推理验证；验证失败、不可用或未认证时回到官方配置流程，不写入任何
-OpenClaw 状态。
+**2026-08-09 处理结果**：统一 Setup 客户端严格解析官方 `setup.detect` 与 `setup.verify` 响应。Gateway
+就绪后和进入工作台前核验选定 runtime 的认证连接与 `setupComplete`；官方 Wizard 返回终态后不再追加
+实时模型验证，从而保留官方流程中的跳过与继续选择。`setup.verify` 仅供明确需要实时模型测试的业务入口使用。
 
 ### A-02 已核对：Stop 与工具中断只保留待核验本地投影
 
@@ -152,9 +156,9 @@ Gateway schema/`models.list` 的可验证能力继续收敛；Gateway 未返回�
 安装可以按官方参数或平台条件跳过。服务安装跳过后，JunQi 只能展示“未由 OpenClaw 服务托管”，不能
 声称后台常驻已完成。
 
-**JunQi 准入条件**：进入工作台前必须核验选定 runtime 的认证 Gateway 和当前配置快照。若 Gateway 提供官方
-`openclaw.setup.verify`，还必须以其结果核验当前默认 Agent 推理路由；该 RPC 不可用时保留模型待核验状态，
-不能伪报 primary 可用，也不能由客户端静默改写配置或自动提升 fallback。
+**2026-08-09 复审后的 JunQi 准入条件**：进入工作台前必须核验选定 runtime 的认证 Gateway，并以官方
+`openclaw.setup.detect.setupComplete` 判断配置是否完成。模型实时验证仍可在用户明确触发的模型或业务就绪
+入口中执行，但不参与首次安装准入，也不能覆盖官方 Wizard 的终态。
 
 **本机复现（2026-08-07）**：Gateway 服务已加载运行，RPC 身份为 `operator` 且具备 `operator.admin`；
 选定 Gateway 对 `openclaw.setup.verify` 与 `models.probe` 均返回 `INVALID_REQUEST: unknown method`。同日核对的
@@ -178,9 +182,8 @@ dashboard session；无初始 turn 的非 fork 会话不加载旧历史，首发
 - Provider 模板和新增 Provider 编辑器尚未完全替换为官方 Wizard 或 Gateway schema 驱动的入口；当前
   模型目录和保存控制面已经对齐，但该编辑入口仍需继续核验。
 - 官方 Wizard 的可选步骤由 Gateway 返回的步骤和 `installDaemon` 结果决定，JunQi 不添加本地跳过规则；
-  当前完成门禁要求选定 Gateway 和配置状态，且在官方 `openclaw.setup.verify` 可用时要求实时模型验证。模型验证
-  失败和官方验证方法不可用是不同状态：前者提示修正模型或凭据并阻断进入，后者保留待核验警告并允许进入；两者
-  均不得伪造模型已验证或自动重跑 Wizard。
+  当前完成门禁要求选定 Gateway 的认证连接和官方 `setupComplete`。用户明确触发模型实时验证时，失败与方法
+  不可用仍是不同状态，但两者都不得反向改写已经完成的官方安装终态或自动重跑 Wizard。
 - 系统凭据授权已移除旧迁移访问，但 macOS Keychain、Windows Credential Manager 和 Linux Secret
   Service 的真实授权次数仍需在各平台安装包中实测。
 - 安装运行时及逐平台真实验收尚未完成，不能据此宣布全局完成。
