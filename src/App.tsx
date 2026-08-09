@@ -764,12 +764,10 @@ export default function App() {
         // Notify when app is minimized/background OR user is on a different page.
         const isOnChat = window.location.hash === '#/chat' || window.location.hash.startsWith('#/chat?');
         const notification = projectChatNotification({
-          source: 'stream-final',
           sessionKey,
           role: 'assistant',
           text: content,
           runId: meta?.runId,
-          nativeMessageId: messageId,
         });
         if ((!document.hasFocus() || !isOnChat) && notification) {
           void notifyLazy({
@@ -809,35 +807,11 @@ export default function App() {
         refreshDurableTranscript(sessionKey);
       },
       onTranscriptMessage: (notice) => {
-        if (notice.liveProjected || isSessionDeleted(notice.sessionKey)) return;
+        if (isSessionDeleted(notice.sessionKey)) return;
         const currentSessionKey = useChatStore.getState().activeSessionKey;
         if (notice.sessionKey !== currentSessionKey) {
           incrementSessionUnread(notice.sessionKey);
           if (notice.role === 'assistant') markSessionCompleted(notice.sessionKey);
-        }
-        const isOnChat = window.location.hash === '#/chat'
-          || window.location.hash.startsWith('#/chat?');
-        const notification = projectChatNotification({
-          source: 'transcript',
-          sessionKey: notice.sessionKey,
-          role: notice.role,
-          text: notice.text,
-          runId: notice.runId,
-          clientMessageId: notice.clientMessageId,
-          nativeMessageId: notice.nativeMessageId,
-          messageSeq: notice.messageSeq,
-          liveProjected: notice.liveProjected,
-        });
-        if ((!document.hasFocus() || !isOnChat || notice.sessionKey !== currentSessionKey) && notification) {
-          void notifyLazy({
-            type: notification.kind,
-            title: notification.kind === 'task_complete'
-              ? t('notifications.replyComplete')
-              : t('notifications.newMessage'),
-            body: notification.body,
-            dedupeKey: notification.dedupeKey,
-            url: notification.url,
-          });
         }
       },
       onRetryState: (retry) => {

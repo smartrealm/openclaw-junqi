@@ -249,14 +249,6 @@ export interface GatewaySessionRunReconciliation {
 export interface GatewayTranscriptMessageNotice {
   sessionKey: string;
   role: string;
-  text: string;
-  /** OpenClaw run identity carried by the durable event when available. */
-  runId?: string;
-  nativeMessageId?: string;
-  clientMessageId?: string;
-  messageSeq?: number;
-  /** True when the same socket already projected this run through live events. */
-  liveProjected: boolean;
 }
 
 export interface GatewayCallbacks {
@@ -271,7 +263,7 @@ export interface GatewayCallbacks {
   onSessionRunReconciliationNeeded?: (sessionKey: string) => void;
   /** An official `session.message` notification changed a durable transcript. */
   onTranscriptChanged?: (sessionKey: string) => void;
-  /** Typed durable message notice for unread and notification projection only. */
+  /** 持久转录消息仅更新未读与会话投影，不作为通知来源。 */
   onTranscriptMessage?: (notice: GatewayTranscriptMessageNotice) => void;
   onStatusChange: (status: { connected: boolean; connecting: boolean; error?: string }) => void;
   onRetryState?: (state: GatewayRetryState) => void;
