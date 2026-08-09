@@ -6,7 +6,6 @@ import {
   Filter,
   PanelLeftClose,
   RefreshCw,
-  RotateCcw,
   Search,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -111,17 +110,33 @@ function useRuntimeIdentitySnapshot() {
 function FilterPane({
   width,
   collapsed,
+  search,
   domain,
+  effect,
+  domainCounts,
+  effectCounts,
+  filteredCount,
   onWidthChange,
   onCollapsedChange,
+  onSearchChange,
   onDomainChange,
+  onEffectChange,
+  onReset,
 }: {
   width: number;
   collapsed: boolean;
+  search: string;
   domain: DomainFilter;
+  effect: EffectFilter;
+  domainCounts: Readonly<Record<DomainFilter, number>>;
+  effectCounts: Readonly<Record<EffectFilter, number>>;
+  filteredCount: number;
   onWidthChange: (value: number) => void;
   onCollapsedChange: (value: boolean) => void;
+  onSearchChange: (value: string) => void;
   onDomainChange: (value: DomainFilter) => void;
+  onEffectChange: (value: EffectFilter) => void;
+  onReset: () => void;
 }) {
   if (collapsed) {
     return (
@@ -129,19 +144,32 @@ function FilterPane({
         <IconButton aria-label="展开筛选" title="展开筛选" onClick={() => onCollapsedChange(false)}>
           <Filter size={14} />
         </IconButton>
+        <span className="mt-2 font-mono text-[9px] tabular-nums text-aegis-text-dim">{filteredCount}</span>
         <span className="mt-3 text-[10px] tracking-[0.18em] text-aegis-text-dim" style={{ writingMode: 'vertical-rl' }}>筛选</span>
       </aside>
     );
   }
+  const filtersActive = search.trim() !== '' || domain !== 'all' || effect !== 'all';
   return (
     <aside className="relative min-h-0 overflow-y-auto border-r border-aegis-border bg-aegis-surface/55 p-3">
-      <PaneResizeHandle side="left" value={width} min={190} max={320} label="调整筛选栏宽度" onChange={onWidthChange} />
+      <PaneResizeHandle side="left" value={width} min={208} max={340} label="调整筛选栏宽度" onChange={onWidthChange} />
       <div className="flex h-7 items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-aegis-text-secondary"><SlidersHorizontal size={13} />筛选</span>
+        <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-aegis-text-secondary"><SlidersHorizontal size={13} />工具范围</span>
         <IconButton aria-label="收起筛选" title="收起筛选" onClick={() => onCollapsedChange(true)}><PanelLeftClose size={14} /></IconButton>
       </div>
-      <p className="mt-3 text-[10px] leading-4 text-aegis-text-dim">搜索和效果筛选位于工具表格上方。这里保留业务域的集中浏览。</p>
-      <fieldset className="mt-3">
+      <label className="mt-3 block text-[10px] font-medium text-aegis-text-dim" htmlFor="dingtalk-tool-search">搜索工具</label>
+      <div className="relative mt-1">
+        <Search size={12} className="pointer-events-none absolute left-2 top-2 text-aegis-text-dim" />
+        <input
+          id="dingtalk-tool-search"
+          type="search"
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="名称或描述"
+          className="h-7 w-full rounded-md border border-aegis-border bg-aegis-bg pl-7 pr-2 text-[10.5px] text-aegis-text outline-none placeholder:text-aegis-text-dim focus:border-aegis-primary/60 focus:ring-1 focus:ring-aegis-primary/25"
+        />
+      </div>
+      <fieldset className="mt-4">
         <legend className="text-[10px] font-medium text-aegis-text-dim">业务域</legend>
         <div className="mt-1 grid grid-cols-2 gap-1">
           {DOMAIN_FILTERS.map((item) => (
@@ -151,17 +179,54 @@ function FilterPane({
               aria-pressed={domain === item}
               onClick={() => onDomainChange(item)}
               className={clsx(
-                'h-7 rounded-md border px-2 text-left text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
+                'flex h-7 items-center justify-between gap-2 rounded-md border px-2 text-left text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
                 domain === item
                   ? 'border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
                   : 'border-transparent text-aegis-text-dim hover:border-aegis-border hover:bg-aegis-hover/45',
               )}
             >
-              {domainFilterLabel(item)}
+              <span className="truncate">{domainFilterLabel(item)}</span>
+              <span className="shrink-0 font-mono tabular-nums opacity-75">{domainCounts[item]}</span>
             </button>
           ))}
         </div>
       </fieldset>
+      <fieldset className="mt-4">
+        <legend className="text-[10px] font-medium text-aegis-text-dim">操作效果</legend>
+        <div className="mt-1 grid grid-cols-3 gap-1 rounded-md border border-aegis-border bg-aegis-bg/55 p-0.5">
+          {(['all', 'read', 'write'] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              aria-pressed={effect === item}
+              onClick={() => onEffectChange(item)}
+              className={clsx(
+                'flex h-7 min-w-0 items-center justify-center gap-1 rounded px-1 text-[9.5px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
+                effect === item ? 'bg-aegis-surface text-aegis-text shadow-sm' : 'text-aegis-text-dim hover:bg-aegis-hover/45',
+              )}
+            >
+              <span>{item === 'all' ? '全部' : item === 'read' ? '读取' : '写入'}</span>
+              <span className="font-mono tabular-nums opacity-70">{effectCounts[item]}</span>
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <div className="mt-4 border-t border-aegis-border pt-3">
+        <div className="flex items-center justify-between gap-2 text-[9.5px] text-aegis-text-dim">
+          <span>当前结果</span>
+          <span className="font-mono tabular-nums">{filteredCount} / {domainCounts.all}</span>
+        </div>
+        <p className="mt-1 text-[9.5px] leading-4 text-aegis-text-dim">仅筛选当前 Session 的真实 <code className="font-mono text-aegis-text-secondary">tools.effective</code> 投影。</p>
+        {filtersActive && (
+          <button
+            type="button"
+            onClick={onReset}
+            className="mt-2 text-[10px] text-aegis-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+          >
+            清除筛选
+          </button>
+        )}
+      </div>
     </aside>
   );
 }
@@ -206,7 +271,7 @@ export function BusinessApplicationsPage() {
   const [invocationError, setInvocationError] = useState<string | null>(null);
   const [pluginStatus, setPluginStatus] = useState<DingTalkPluginStatus | null>(null);
   const [pluginError, setPluginError] = useState<string | null>(null);
-  const [pluginBusy, setPluginBusy] = useState(false);
+  const [pluginOperation, setPluginOperation] = useState<'installing' | 'restarting' | null>(null);
   const [pluginInstallationProgress, setPluginInstallationProgress] = useState<DingTalkPluginInstallProgress>({ phase: 'idle', message: null });
   const [pluginInstallDialogOpen, setPluginInstallDialogOpen] = useState(false);
   const [dwsOperation, setDwsOperation] = useState<DingTalkDwsOperationPresentation | null>(null);
@@ -228,8 +293,25 @@ export function BusinessApplicationsPage() {
       return `${tool.entry.label}\n${tool.entry.description}\n${tool.entry.id}`.toLocaleLowerCase().includes(query);
     });
   }, [allTools, domain, effect, search]);
-  const hasActiveFilters = Boolean(search.trim()) || domain !== 'all' || effect !== 'all';
-
+  const domainCounts = useMemo(() => {
+    const counts: Record<DomainFilter, number> = {
+      all: allTools.length,
+      contact: 0,
+      approval: 0,
+      attendance: 0,
+      calendar: 0,
+      todo: 0,
+      runtime: 0,
+      unknown: 0,
+    };
+    for (const tool of allTools) counts[tool.domain] += 1;
+    return counts;
+  }, [allTools]);
+  const effectCounts = useMemo(() => ({
+    all: allTools.length,
+    read: allTools.filter((tool) => tool.effect === 'read').length,
+    write: allTools.filter((tool) => tool.effect === 'write').length,
+  }), [allTools]);
   const clearFilters = useCallback(() => {
     setSearch('');
     setDomain('all');
@@ -511,7 +593,7 @@ export function BusinessApplicationsPage() {
       setPluginInstallationProgress({ phase: 'failed', message });
       return;
     }
-    setPluginBusy(true);
+    setPluginOperation('installing');
     setPluginInstallationProgress({ phase: 'installing', message: '正在校验内置插件并等待 Gateway 安装、启用' });
     try {
       const status = await installBundledDingTalkPlugin(current.targetFingerprint, current.connectionId);
@@ -523,7 +605,7 @@ export function BusinessApplicationsPage() {
       setPluginError(message);
       setPluginInstallationProgress({ phase: 'failed', message });
     } finally {
-      setPluginBusy(false);
+      setPluginOperation(null);
     }
   }, []);
 
@@ -568,7 +650,7 @@ export function BusinessApplicationsPage() {
   }, [dwsOperation]);
 
   const restartGateway = useCallback(async () => {
-    setPluginBusy(true);
+    setPluginOperation('restarting');
     try {
       const result = await restartSelectedGatewayRuntime();
       if (!result.success) throw new Error(result.error ?? 'Gateway 重启失败');
@@ -577,7 +659,7 @@ export function BusinessApplicationsPage() {
     } catch (error) {
       setPluginError(errorMessage(error));
     } finally {
-      setPluginBusy(false);
+      setPluginOperation(null);
     }
   }, []);
 
@@ -609,7 +691,12 @@ export function BusinessApplicationsPage() {
     installationProgress: pluginInstallationProgress,
     dwsOperation,
     dwsOutput,
-    busy: pluginBusy || toolsLoading || dwsOperation?.phase === 'running',
+    busy: pluginOperation !== null || toolsLoading || dwsOperation?.phase === 'running',
+    operation: pluginOperation,
+    sessionLabel: sessionExists ? activeSessionKey : null,
+    effectiveToolCount: allTools.length,
+    pluginVersion: pluginStatus?.version ?? null,
+    bundledPluginVersion: pluginStatus?.bundledVersion ?? null,
     onRefresh: () => { void refreshTools(); void refreshRuntimeIdentity(); void refreshPluginStatus(); },
     onInstallPlugin: installPlugin,
     onConfigureAgent: () => navigate('/config?tab=tools'),
@@ -643,7 +730,7 @@ export function BusinessApplicationsPage() {
       <DingTalkPluginInstallDialog
         open={pluginInstallDialogOpen}
         progress={pluginInstallationProgress}
-        busy={pluginBusy}
+        busy={pluginOperation === 'installing'}
         onOpenChange={setPluginInstallDialogOpen}
         onConfirm={() => void performPluginInstallation()}
         onRestartGateway={() => void restartGateway()}
@@ -665,60 +752,26 @@ export function BusinessApplicationsPage() {
           <FilterPane
             width={leftWidth}
             collapsed={leftCollapsed}
+            search={search}
             domain={domain}
+            effect={effect}
+            domainCounts={domainCounts}
+            effectCounts={effectCounts}
+            filteredCount={filteredTools.length}
             onWidthChange={setLeftWidth}
             onCollapsedChange={setLeftCollapsed}
+            onSearchChange={setSearch}
             onDomainChange={setDomain}
+            onEffectChange={setEffect}
+            onReset={clearFilters}
           />
           <main className="flex min-h-0 min-w-0 flex-col bg-aegis-surface/20">
-            <div className="flex h-10 shrink-0 items-center gap-2 border-b border-aegis-border px-3">
-              <label className="relative min-w-[152px] flex-1" htmlFor="dingtalk-tool-search">
-                <span className="sr-only">搜索工具</span>
-                <Search size={12} className="pointer-events-none absolute left-2 top-2 text-aegis-text-dim" />
-                <input
-                  id="dingtalk-tool-search"
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="搜索名称、描述或工具 ID"
-                  className="h-7 w-full rounded-md border border-aegis-border bg-aegis-bg pl-7 pr-2 text-[10.5px] text-aegis-text outline-none placeholder:text-aegis-text-dim focus:border-aegis-primary/60 focus:ring-1 focus:ring-aegis-primary/25"
-                />
-              </label>
-              <label className="sr-only" htmlFor="dingtalk-domain-filter">业务域</label>
-              <select
-                id="dingtalk-domain-filter"
-                value={domain}
-                onChange={(event) => {
-                  const next = event.target.value as DomainFilter;
-                  if (DOMAIN_FILTERS.includes(next)) setDomain(next);
-                }}
-                className="h-7 max-w-[112px] rounded-md border border-aegis-border bg-aegis-bg px-2 text-[10.5px] text-aegis-text outline-none focus:border-aegis-primary/60"
-              >
-                {DOMAIN_FILTERS.map((item) => <option key={item} value={item}>{domainFilterLabel(item)}</option>)}
-              </select>
-              <label className="sr-only" htmlFor="dingtalk-effect-filter">操作效果</label>
-              <select
-                id="dingtalk-effect-filter"
-                value={effect}
-                onChange={(event) => {
-                  const next = event.target.value;
-                  if (next === 'all' || next === 'read' || next === 'write') setEffect(next);
-                }}
-                className="h-7 max-w-[92px] rounded-md border border-aegis-border bg-aegis-bg px-2 text-[10.5px] text-aegis-text outline-none focus:border-aegis-primary/60"
-              >
-                <option value="all">全部效果</option>
-                <option value="read">读取</option>
-                <option value="write">写入</option>
-              </select>
-              {hasActiveFilters && (
-                <IconButton aria-label="清除工具筛选" title="清除工具筛选" onClick={clearFilters}>
-                  <RotateCcw size={13} />
-                </IconButton>
-              )}
-              <div className="ml-auto flex min-w-0 items-center gap-2 text-[10px] text-aegis-text-dim">
-                <span className="hidden max-w-[220px] truncate font-mono xl:inline" title={activeSessionKey}>{sessionExists ? activeSessionKey : '未选择有效 Session'}</span>
-                <span className="shrink-0 tabular-nums">{filteredTools.length} / {allTools.length}</span>
+            <div className="flex h-9 shrink-0 items-center justify-between border-b border-aegis-border px-3">
+              <div className="flex min-w-0 items-center gap-2 text-[10.5px] text-aegis-text-dim">
+                <span className="font-medium text-aegis-text-secondary">当前 Session</span>
+                <span className="max-w-[320px] truncate font-mono" title={activeSessionKey}>{sessionExists ? activeSessionKey : '未选择有效 Session'}</span>
               </div>
+              <span className="text-[10px] tabular-nums text-aegis-text-dim">{filteredTools.length} / {allTools.length}</span>
             </div>
             {toolsError && <div className="border-b border-aegis-danger/25 bg-aegis-danger/[0.06] px-3 py-1.5 text-[10px] text-aegis-danger">{toolsError}</div>}
             <DingTalkToolTable

@@ -1,5 +1,5 @@
-// Unified alert/confirm dialog — consistent with ScreenshotPicker.
-// Replaces native alert()/confirm() across the app.
+// 统一提示与确认对话框，保持应用内交互一致。
+// 用于替代原生 alert() 与 confirm()。
 
 import { useEffect, useId, useRef, useState } from 'react';
 import { X, ShieldAlert, AlertTriangle, Info, CheckCircle, HelpCircle, LoaderCircle } from 'lucide-react';
@@ -14,11 +14,11 @@ interface AlertDialogProps {
   message?: string;
   children?: React.ReactNode;
   variant?: AlertVariant;
-  /** Confirm mode: shows Cancel + Confirm buttons */
+  /** 确认模式：展示取消与确认按钮 */
   confirmLabel?: string;
   cancelLabel?: string;
   onConfirm?: () => void | Promise<void>;
-  /** Dismiss-only label */
+  /** 仅关闭模式的按钮文案 */
   dismissLabel?: string;
 }
 
@@ -38,6 +38,19 @@ const VARIANT_COLORS: Record<AlertVariant, { border: string; bg: string; icon: s
   confirm: { border: 'border-aegis-primary/20', bg: 'bg-aegis-primary/5', icon: 'text-aegis-primary', accent: 'text-aegis-primary', btn: 'bg-aegis-primary/15 text-aegis-primary border-aegis-primary/20', btnHover: 'hover:bg-aegis-primary/25' },
 };
 
+export function ConfirmProgress({ active, label }: { active: boolean; label: string }) {
+  if (!active) return null;
+  return (
+    <div
+      role="progressbar"
+      aria-label={label}
+      className="relative h-1 overflow-hidden border-y border-aegis-menu-border bg-aegis-surface"
+    >
+      <span className="aegis-indeterminate-progress absolute inset-y-0 w-2/5 bg-aegis-primary" />
+    </div>
+  );
+}
+
 export function AlertDialog({ open, onClose, title, message, children, variant = 'info', confirmLabel, cancelLabel, onConfirm, dismissLabel }: AlertDialogProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -45,9 +58,13 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
   const cancelRef = useRef<HTMLButtonElement>(null);
   const dismissRef = useRef<HTMLButtonElement>(null);
   const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) setConfirming(false);
+    if (!open) {
+      setConfirming(false);
+      setConfirmError(null);
+    }
   }, [open]);
 
   useEffect(() => {
@@ -79,10 +96,12 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
   const handleConfirm = async () => {
     if (!onConfirm || confirming) return;
     setConfirming(true);
+    setConfirmError(null);
     try {
       await onConfirm();
       onClose();
-    } catch {
+    } catch (error) {
+      setConfirmError(error instanceof Error ? error.message : i18n.t('common.unknownError') as string);
       setConfirming(false);
     }
   };
@@ -101,7 +120,7 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
         style={{ boxShadow: 'var(--aegis-shadow-popover)' }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
+        {/* 标题区 */}
         <div className="flex items-center justify-between px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div className={clsx('w-8 h-8 rounded-lg flex items-center justify-center', colors.bg, colors.border)}>
@@ -114,7 +133,12 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
           </button>
         </div>
 
-        {/* Body */}
+        <ConfirmProgress
+          active={confirming}
+          label={i18n.t('common.operationInProgress', { title }) as string}
+        />
+
+        {/* 内容区 */}
         <div className="px-5 pb-5">
           {(message || children) && (
             <div className="mb-4 ps-[42px] pe-1">
@@ -122,8 +146,13 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
               {children}
             </div>
           )}
+          {confirmError && (
+            <p role="alert" className="mb-4 rounded-md border border-aegis-danger/25 bg-aegis-danger/[0.06] px-3 py-2 text-[11px] leading-4 text-aegis-danger">
+              {confirmError}
+            </p>
+          )}
 
-          {/* Actions */}
+          {/* 操作区 */}
           <div className="flex items-center gap-2 justify-end">
             {confirmLabel && onConfirm && (
               <>
@@ -156,8 +185,8 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
   );
 }
 
-// ── Store-backed global dialog (singleton) ──
-/** Global alert dialog rendered once at the app root. Use `useAlertStore` to show. */
+// 全局单例对话框，由应用根节点统一渲染。
+/** 通过 useAlertStore 触发全局提示或确认。 */
 export function GlobalAlertDialog() {
   const { open, title, message, variant, confirmLabel, cancelLabel, onConfirm, close } = useAlertStore();
   return (

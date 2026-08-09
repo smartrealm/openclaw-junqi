@@ -34,8 +34,10 @@ export function DingTalkPluginInstallDialog({
               <Icon size={14} className={active ? 'animate-spin text-aegis-primary' : completed ? 'text-aegis-success' : failed ? 'text-aegis-danger' : 'text-aegis-text-dim'} aria-hidden="true" />
               <span>{phaseLabel}</span>
             </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-sm bg-aegis-border/65" role="progressbar" aria-label="钉钉业务插件安装进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={active ? undefined : progressValue} aria-valuetext={phaseLabel}>
-              <div className={`h-full bg-aegis-primary transition-[width] duration-200 ${active ? 'animate-pulse' : ''}`} style={{ width: `${progressValue}%` }} />
+            <div className="relative mt-2 h-1.5 overflow-hidden rounded-sm bg-aegis-border/65" role="progressbar" aria-label="钉钉业务插件安装进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressValue ?? undefined} aria-valuetext={phaseLabel}>
+              {active
+                ? <span className="aegis-indeterminate-progress absolute inset-y-0 w-2/5 bg-aegis-primary" />
+                : <div className="h-full bg-aegis-primary transition-[width] duration-200" style={{ width: `${progressValue ?? 0}%` }} />}
             </div>
             <div className="mt-2 grid grid-cols-3 gap-2 text-[9.5px] text-aegis-text-dim">
               <span className={progress.phase === 'idle' ? 'text-aegis-text-secondary' : 'text-aegis-success'}>核对 Gateway</span>

@@ -1085,6 +1085,7 @@
     "dismiss": "知道了",
     "error": "错误",
     "unknownError": "未知错误",
+    "operationInProgress": "{{title}}进行中",
     "deleteFailed": "删除失败",
     "screenRecordPermission": "需要屏幕录制权限",
     "screenRecordHint": "打开系统设置，然后进入隐私与安全性、屏幕录制，",
@@ -5851,105 +5852,26 @@
   "workspace.empty": "工作区为空",
   "workspace.switchPending": "请先处理未保存的文件，然后重试切换工作区。",
   "businessApplications": {
-    "title": "业务应用",
-    "subtitle": "统一管理企业业务平台的能力、确认与追溯。",
-    "previewState": "接入框架展示",
-    "openCatalog": "打开业务应用",
-    "sidebarTitle": "业务平台",
-    "sidebarHint": "应用、授权和操作记录在同一工作区中管理。",
+    "sidebarTitle": "工作区",
     "workspaceTools": "有效工具",
     "workspaceActivity": "操作审计",
     "workspaceRuntime": "接入与授权",
-    "catalogTitle": "应用目录",
-    "catalogState": "仅显示已注册适配器",
-    "connectedTitle": "业务应用目录",
-    "catalogHint": "选择应用以查看它的身份、能力和操作前提。",
-    "catalogAriaLabel": "业务应用目录",
-    "addApplication": "添加业务应用",
-    "addDisabledHint": "新的平台通过已验证的适配器注册后才会显示在目录中。",
-    "detailTabsAriaLabel": "业务应用视图",
-    "tabs": {
-      "overview": "概览",
-      "capabilities": "能力",
-      "operations": "操作"
-    },
-    "states": {
-      "requiresRuntime": "需要运行时",
-      "requiresConfiguration": "需要配置",
-      "requiresAuthorization": "等待授权"
-    },
-    "effects": {
-      "read": "读取",
-      "write": "写入",
-      "highImpact": "需确认"
-    },
-    "runtime": "运行时",
-    "runtimeKinds": {
-      "cli": "本地命令行适配器",
-      "native-api": "受控原生 API 适配器"
-    },
-    "identity": "当前身份",
-    "identityUnverified": "尚未选择已验证身份",
-    "authorization": "授权状态",
-    "authorizationNotStarted": "尚未开始授权",
-    "capabilitySnapshot": "能力快照",
-    "snapshotNotAvailable": "等待运行时验证",
-    "prerequisites": "接入前提",
-    "probeRuntime": "检查运行时",
-    "probeUnavailableHint": "运行时探测尚未接入；不会在展示页面伪造检测结果。",
-    "safeExecutionTitle": "统一确认与追溯",
-    "safeExecutionDescription": "任何写操作都会先生成计划，确认后才会由受控适配器执行。",
-    "viewCapabilities": "查看能力",
-    "capabilitiesTitle": "能力目录",
-    "capabilitiesHint": "可用性来自运行时和授权快照；当前仅展示接入前提。",
-    "planWithAi": "交给 AI 规划",
-    "operationsUnavailableTitle": "暂无可执行操作",
-    "operationsUnavailableDescription": "选择已验证身份并完成能力授权后，操作草稿会在这里出现。AI 提议与手动操作使用同一份确认和记录。",
-    "aiBoundary": "AI 可读取脱敏能力状态并生成操作计划；执行必须经过同一确认与审计边界。",
-    "journalTitle": "操作记录",
-    "journalEmptyTitle": "尚无业务操作",
-    "journalEmptyDescription": "手动操作与 AI 提议确认后都会在此形成同一条可追溯记录。",
-    "journalBoundary": "AI 不读取密钥或原始业务正文，只接收完成计划所需的脱敏结构化上下文。",
-    "chatPrompt": "请为 {{integration}} 的“{{capability}}”整理一个操作计划。先说明所需身份、权限、输入字段和影响范围；不要执行任何写入操作，等待我确认。",
-    "integrations": {
-      "dingtalk": {
-        "name": "钉钉工作台",
-        "description": "通过 DWS 发现企业协作能力。",
-        "prerequisites": "需要已验证的 DWS 运行时、登录状态和精确选择的 profile。"
-      },
-      "feishu": {
-        "name": "飞书",
-        "description": "以用户授权和租户应用权限接入。",
-        "prerequisites": "需要受控应用配置、管理员权限和用户授权回调验证。"
-      },
-      "google": {
-        "name": "Google Workspace",
-        "description": "通过桌面 OAuth 连接日历、文件和邮件。",
-        "prerequisites": "需要已注册的桌面 OAuth 客户端、启用的 API 与最小授权范围。"
-      }
-    },
-    "capabilities": {
-      "approvals": {
-        "title": "审批与待办",
-        "description": "读取审批状态，并在条件满足后创建或处理审批草稿。"
-      },
-      "attendance": {
-        "title": "考勤查询",
-        "description": "读取当前身份有权查看的考勤摘要。"
-      },
-      "calendar": {
-        "title": "日程",
-        "description": "读取可用日程，并在授权后生成日程草稿。"
-      },
-      "documents": {
-        "title": "文档与文件",
-        "description": "按已授权范围检索和引用业务文件。"
-      },
-      "mail": {
-        "title": "邮件",
-        "description": "在明确确认后生成外发邮件草稿。"
-      }
-    }
+    "sidebarPlatformName": "钉钉工作台",
+    "sidebarPlatformContext": "当前唯一业务平台",
+    "sidebarPlatformActive": "当前平台",
+    "sidebarToolsLoading": "正在读取当前 Session",
+    "sidebarToolsCount": "{{count}} 个当前有效工具",
+    "sidebarNoSession": "尚未选择有效 Session",
+    "sidebarActivityCount": "{{count}} 条本窗口投影",
+    "sidebarAuditBoundary": "官方审计与本窗口投影",
+    "sidebarRuntimeBoundary": "Session、插件、Agent、DWS",
+    "sidebarCurrentContext": "当前上下文",
+    "sidebarNotSelected": "未选择",
+    "sidebarNotReturned": "未返回",
+    "sidebarRecentActivity": "最近操作",
+    "sidebarNoActivity": "本窗口尚无业务操作",
+    "sidebarActivityState": "{{state}} · {{agent}}",
+    "sidebarNoActivityHint": "打开操作审计查看官方记录"
   },
   "businessGuide": {
     "title": "开始使用",
