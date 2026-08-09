@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useModalFocusScope } from '@/hooks/useModalFocusScope';
-import { flowReconciliationAbandonmentAudit } from '@/services/collaboration/tombstoneAudit';
+import { flowReconciliationAbandonmentAudit } from '@/processing/collaborationTombstoneAudit';
 import {
   collaborationNeedsYouItems,
   type CollaborationNeedsYouItem,
@@ -23,7 +23,7 @@ import type {
   CollaborationRunSummary,
   CollaborationTombstone,
   CollaborationWorkflowTemplate,
-} from '@/services/collaboration/types';
+} from '@/types/collaboration';
 import {
   CollaborationRunStatusIcon,
   collaborationRunStatusLabel,

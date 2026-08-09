@@ -1,7 +1,7 @@
 import {
   parseCollaborationChangedHint,
   type CollaborationChangedHint,
-} from '@/services/collaboration/types';
+} from '@/types/collaboration';
 
 export type CollaborationChangedHintListener = (hint: CollaborationChangedHint) => void;
 

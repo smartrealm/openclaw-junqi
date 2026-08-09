@@ -3,8 +3,8 @@ import test from 'node:test';
 import type {
   CollaborationCapabilityAgent,
   CollaborationRunSnapshot,
-} from './types';
-import { buildAgentOfficeProjection } from './agentOfficeProjection';
+} from '@/types/collaboration';
+import { buildAgentOfficeProjection } from '@/processing/agentOfficeProjection';
 
 const NOW = Date.parse('2026-08-03T10:00:00Z');
 

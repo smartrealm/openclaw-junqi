@@ -26,7 +26,7 @@ import { GlassCard } from '@/components/shared/GlassCard';
 import { GatewayLifecyclePanel } from './GatewayLifecyclePanel';
 import { OpenClawDiagnosticStabilityPanel } from './OpenClawDiagnosticStabilityPanel';
 import { OpenClawHooksStatusPanel } from './OpenClawHooksStatusPanel';
-import { runOpenClawRepair, useOpenClawRepairing } from '@/services/gateway/openclawRepair';
+import { runOpenClawRepair, useOpenClawRepairing } from '@/runtime/openclawRepair';
 import { useCollaborationMaintenance } from '@/hooks/useCollaborationMaintenance';
 import { useOpenClawDiagnosticStability } from '@/hooks/useOpenClawDiagnosticStability';
 import { useOpenClawHooksStatus } from '@/hooks/useOpenClawHooksStatus';

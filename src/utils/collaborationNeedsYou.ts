@@ -1,7 +1,7 @@
 import type {
   CollaborationRunSnapshot,
   CollaborationRunSummary,
-} from '@/services/collaboration/types';
+} from '@/types/collaboration';
 
 export type CollaborationNeedsYouText = (key: string, fallback: string) => string;
 

@@ -8,7 +8,7 @@ import {
   sendGatewayRescueMessage,
   type GatewayRescueMessage,
   type GatewayRescueTarget,
-} from '@/services/gatewayRescue';
+} from '@/runtime/gatewayRescue';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 interface GatewayRescueChatProps {

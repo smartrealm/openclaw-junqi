@@ -19,7 +19,7 @@ import { useResolvedTheme } from '@/theme/useTheme';
 import { setThemeWithTransition } from '@/motion/themeTransition';
 import { DEFAULT_GATEWAY_PORT } from '@/config/runtimeDefaults';
 import { projectSessionActivity } from '@/utils/sessionPresentation';
-import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 
 export function StatusBar() {
   const { t } = useTranslation();

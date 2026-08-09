@@ -28,14 +28,14 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { hasUnresolvedResidualExecutionRisk } from '@/services/collaboration/types';
+import { hasUnresolvedResidualExecutionRisk } from '@/types/collaboration';
 import type {
   CollaborationRunSnapshot,
   CollaborationRunStatus,
   CollaborationRunSummary,
   CollaborationWorkItemSnapshot,
   CollaborationWorkItemStatus,
-} from '@/services/collaboration/types';
+} from '@/types/collaboration';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 export type CollaborationTranslate = (

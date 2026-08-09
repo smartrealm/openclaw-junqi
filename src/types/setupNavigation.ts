@@ -1,0 +1,17 @@
+export type SetupStep =
+  | 'welcome'
+  | 'detecting'
+  | 'environment-review'
+  | 'storage'
+  | 'gateway-stopped'
+  | 'choosing-mode'
+  | 'checking'
+  | 'install-git'
+  | 'git-missing'
+  | 'node-missing'
+  | 'install-node'
+  | 'install-openclaw'
+  | 'gateway-ready'
+  | 'configure-openclaw'
+  | 'ready'
+  | 'error';

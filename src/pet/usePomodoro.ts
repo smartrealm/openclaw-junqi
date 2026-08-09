@@ -4,7 +4,7 @@ import { usePetStore } from '@/stores/petStore';
 import { minutesToMs, todayStr } from './pomodoroDomain';
 
 function notifyPomodoro(title: string) {
-  void import('@/services/notifications').then((mod) => {
+  void import('@/runtime/notifications').then((mod) => {
     mod.notifications.notify({ type: 'task_complete', title, body: title });
   }).catch(() => undefined);
 }

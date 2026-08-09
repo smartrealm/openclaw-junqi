@@ -287,6 +287,12 @@
       transition: width 160ms ease, min-width 160ms ease;
     }
 
+    .sidebar-scroll {
+      min-height: 0;
+      flex: 1;
+      overflow-y: auto;
+    }
+
     .platform-context {
       height: 46px;
       flex: 0 0 46px;
@@ -346,11 +352,11 @@
     }
 
     .nav-row {
-      height: 31px;
+      min-height: 43px;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 9px;
-      padding: 0 9px;
+      padding: 7px 9px;
       border-radius: 5px;
       background: transparent;
       color: var(--text-muted);
@@ -373,26 +379,99 @@
       width: 14px;
       height: 14px;
       flex: 0 0 14px;
+      margin-top: 2px;
     }
 
-    .sidebar-status {
-      margin-top: auto;
-      padding: 10px 12px;
-      border-top: 1px solid var(--border);
+    .nav-copy {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+
+    .nav-title {
+      color: var(--text-body);
+      font-size: 11px;
+    }
+
+    .nav-meta {
+      overflow: hidden;
       color: var(--text-faint);
+      font-size: 9px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sidebar-card {
+      margin: 0 8px 4px;
+      padding: 8px 9px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.015);
       font-size: 10px;
       line-height: 1.5;
     }
 
-    .sidebar-status div:first-child {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      color: var(--warning);
+    .sidebar-card dl {
+      display: grid;
+      grid-template-columns: 46px minmax(0, 1fr);
+      gap: 5px 7px;
+      margin: 0;
     }
 
-    .sidebar-status .state-dot {
-      background: var(--warning);
+    .sidebar-card dt {
+      color: var(--text-faint);
+    }
+
+    .sidebar-card dd {
+      margin: 0;
+      overflow: hidden;
+      color: var(--text-body);
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sidebar-activity {
+      width: calc(100% - 16px);
+      display: grid;
+      grid-template-columns: 7px minmax(0, 1fr);
+      gap: 8px;
+      margin: 0 8px;
+      padding: 8px 9px;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .sidebar-activity:hover {
+      border-color: var(--border);
+      background: var(--surface-hover);
+    }
+
+    .sidebar-activity .state-dot {
+      margin-top: 5px;
+      background: var(--text-faint);
+    }
+
+    .sidebar-activity strong,
+    .sidebar-activity span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sidebar-activity strong {
+      color: var(--text-body);
+      font-size: 10px;
+    }
+
+    .sidebar-activity span {
+      margin-top: 2px;
+      color: var(--text-faint);
+      font-size: 9px;
     }
 
     .content {
@@ -996,8 +1075,9 @@
     .window.sidebar-compact .brand-copy,
     .window.sidebar-compact .context-copy,
     .window.sidebar-compact .sidebar-label,
-    .window.sidebar-compact .nav-row span,
-    .window.sidebar-compact .sidebar-status {
+    .window.sidebar-compact .nav-copy,
+    .window.sidebar-compact .sidebar-card,
+    .window.sidebar-compact .sidebar-activity {
       display: none;
     }
 
@@ -1047,8 +1127,9 @@
       .brand-copy,
       .context-copy,
       .sidebar-label,
-      .nav-row span,
-      .sidebar-status {
+      .nav-copy,
+      .sidebar-card,
+      .sidebar-activity {
         display: none;
       }
 
@@ -1168,21 +1249,31 @@
           <span class="ding-mark">钉</span>
           <div class="context-copy"><div class="context-title">钉钉工作台</div><div class="context-subtitle">当前唯一业务平台</div></div>
         </div>
-        <div class="sidebar-label">工作区</div>
-        <nav class="sidebar-nav" aria-label="钉钉工作台导航">
-          <button class="nav-row active" type="button" aria-current="page">
-            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg><span>有效工具</span>
+        <div class="sidebar-scroll">
+          <div class="sidebar-label">工作区</div>
+          <nav class="sidebar-nav" aria-label="钉钉工作台导航">
+            <button class="nav-row active" type="button" aria-current="page">
+              <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>
+              <span class="nav-copy"><span class="nav-title">有效工具</span><span class="nav-meta">尚未选择有效 Session</span></span>
+            </button>
+            <button class="nav-row" type="button">
+              <svg viewBox="0 0 24 24"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h10"></path></svg>
+              <span class="nav-copy"><span class="nav-title">操作审计</span><span class="nav-meta">官方审计与本窗口投影</span></span>
+            </button>
+            <button class="nav-row" type="button">
+              <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg>
+              <span class="nav-copy"><span class="nav-title">接入与授权</span><span class="nav-meta">Session、插件、Agent、DWS</span></span>
+            </button>
+          </nav>
+          <div class="sidebar-label">当前上下文</div>
+          <div class="sidebar-card">
+            <dl><dt>Session</dt><dd>未选择</dd><dt>Agent</dt><dd>未返回</dd></dl>
+          </div>
+          <div class="sidebar-label">最近操作</div>
+          <button class="sidebar-activity" type="button">
+            <span class="state-dot"></span>
+            <span><strong>本窗口尚无业务操作</strong><span>打开操作审计查看官方记录</span></span>
           </button>
-          <button class="nav-row" type="button">
-            <svg viewBox="0 0 24 24"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h10"></path></svg><span>操作审计</span>
-          </button>
-          <button class="nav-row" type="button">
-            <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg><span>接入与授权</span>
-          </button>
-        </nav>
-        <div class="sidebar-status">
-          <div><span class="state-dot"></span><span>DWS 待验证</span></div>
-          <div>当前平台：钉钉工作台</div>
         </div>
       </aside>
 
@@ -1225,32 +1316,33 @@
                 <button class="icon-button" id="filterClose" type="button" aria-label="收起筛选" title="收起筛选">
                   <svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"></path></svg>
                 </button>
-                <strong>筛选</strong><span class="count">0</span>
+                <strong>工具范围</strong><span class="count">0</span>
                 <button class="icon-button push" type="button" aria-label="筛选选项" title="筛选选项">
                   <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg>
                 </button>
               </header>
               <div class="filter-scroll">
                 <section class="filter-section">
-                  <div class="filter-section-title"><span>状态</span><span>待返回</span></div>
+                  <div class="filter-section-title"><span>搜索工具</span><span>当前 Session</span></div>
                   <div class="filter-options">
-                    <button class="check-row" type="button"><span class="check-box"></span><span>待运行时验证</span><span class="option-count">—</span></button>
-                    <button class="check-row" type="button"><span class="check-box"></span><span>可用</span><span class="option-count">0</span></button>
-                    <button class="check-row" type="button"><span class="check-box"></span><span>不可用</span><span class="option-count">0</span></button>
+                    <label class="search" style="width: 100%"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><input type="search" placeholder="名称或描述" aria-label="搜索工具"></label>
                   </div>
                 </section>
                 <section class="filter-section">
-                  <div class="filter-section-title"><span>操作类型</span><span>按实际工具</span></div>
+                  <div class="filter-section-title"><span>业务域</span><span>按实际工具</span></div>
                   <div class="filter-options">
-                    <button class="check-row" type="button"><span class="check-box"></span><span>只读</span><span class="option-count">—</span></button>
-                    <button class="check-row" type="button"><span class="check-box"></span><span>写入</span><span class="option-count">—</span></button>
+                    <button class="check-row selected" type="button"><span class="check-box"></span><span>全部</span><span class="option-count">0</span></button>
+                    <button class="check-row" type="button"><span class="check-box"></span><span>通讯录</span><span class="option-count">0</span></button>
+                    <button class="check-row" type="button"><span class="check-box"></span><span>审批</span><span class="option-count">0</span></button>
+                    <button class="check-row" type="button"><span class="check-box"></span><span>考勤</span><span class="option-count">0</span></button>
                   </div>
                 </section>
                 <section class="filter-section">
-                  <div class="filter-section-title"><span>确认级别</span><span>2</span></div>
+                  <div class="filter-section-title"><span>操作效果</span><span>真实计数</span></div>
                   <div class="filter-options">
-                    <button class="check-row" type="button"><span class="check-box"></span><span>普通</span><span class="option-count">4</span></button>
-                    <button class="check-row" type="button"><span class="check-box"></span><span>高影响</span><span class="option-count">2</span></button>
+                    <button class="check-row selected" type="button"><span class="check-box"></span><span>全部</span><span class="option-count">0</span></button>
+                    <button class="check-row" type="button"><span class="check-box"></span><span>读取</span><span class="option-count">0</span></button>
+                    <button class="check-row" type="button"><span class="check-box"></span><span>写入</span><span class="option-count">0</span></button>
                   </div>
                 </section>
               </div>
@@ -1261,18 +1353,10 @@
 
           <main class="table-surface">
             <div class="table-toolbar">
-              <label class="search">
-                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
-                <input type="search" placeholder="搜索工具名称或业务域" aria-label="搜索工具">
-              </label>
-              <button class="button" type="button"><span>全部工具</span><svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"></path></svg></button>
+              <span style="color: var(--text-muted)">当前 Session</span>
+              <code style="color: var(--text-faint)">未选择有效 Session</code>
               <span class="toolbar-spacer"></span>
-              <button class="icon-button" type="button" aria-label="刷新" title="刷新">
-                <svg viewBox="0 0 24 24"><path d="M20 6v5h-5"></path><path d="M4 18v-5h5"></path><path d="M6.1 9a7 7 0 0 1 11.4-2.4L20 11"></path><path d="M4 13l2.5 4.4A7 7 0 0 0 17.9 15"></path></svg>
-              </button>
-              <button class="icon-button" type="button" aria-label="列设置" title="列设置">
-                <svg viewBox="0 0 24 24"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h16"></path><circle cx="9" cy="6" r="2"></circle><circle cx="15" cy="12" r="2"></circle><circle cx="11" cy="18" r="2"></circle></svg>
-              </button>
+              <span style="color: var(--text-faint)">0 / 0</span>
             </div>
 
             <div class="table-scroll">

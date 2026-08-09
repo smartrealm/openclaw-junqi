@@ -11,7 +11,7 @@ import { FileJson, CheckCircle2, AlertCircle, RefreshCw, Bot, Users, MessageSqua
 import clsx from 'clsx';
 import type { GatewayRuntimeConfig } from './types';
 import { gateway, openClawRuntimeConfigClient } from '@/services/gateway';
-import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { FloatingSaveButton, ChangesPill } from './components';
 import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 import { debugLog, debugWarn } from '@/utils/debugLog';

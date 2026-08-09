@@ -1,20 +1,6 @@
-export type SetupStep =
-  | "welcome"
-  | "detecting"
-  | "environment-review"
-  | "storage"
-  | "gateway-stopped"
-  | "choosing-mode"
-  | "checking"
-  | "install-git"
-  | "git-missing"
-  | "node-missing"
-  | "install-node"
-  | "install-openclaw"
-  | "gateway-ready"
-  | "configure-openclaw"
-  | "ready"
-  | "error";
+import type { SetupStep } from '@/types/setupNavigation';
+
+export type { SetupStep } from '@/types/setupNavigation';
 
 export type SetupNavigationMode = "push" | "replace" | "reset";
 export type InstallMode = "native" | "docker";
@@ -121,18 +107,11 @@ export function backSetupNavigation(
   return { setupStep, setupHistory };
 }
 
-/// Steps whose screens describe a run rather than a choice, so returning to one
-/// shows the user a report that the run itself has already superseded.
-///
-/// The progress steps render neither a Back nor a primary action while current,
-/// because the run that owns them drives the next transition — landing on one
-/// leaves nothing to click. `error` does render actions, which is worse: reached
-/// from a later success it offers to repair a failure that is already fixed.
+/// 这些步骤描述一次执行而不是用户选择；执行结束后返回它们只会显示已过期状态。
+/// 进度步骤没有可重复操作，错误步骤则可能误导用户修复已经恢复的问题。
 const STALE_BACK_DESTINATIONS = new Set<SetupStep>([
   "detecting",
-  // This screen immediately starts the selected Gateway and owns no stable
-  // user decision. Returning to it would auto-forward again, making Back look
-  // ineffective and potentially replaying Gateway startup.
+  // 此页面立即启动所选 Gateway，不持有稳定的用户决策；返回会再次自动前进并可能重放启动。
   "gateway-stopped",
   "checking",
   "install-git",
@@ -142,9 +121,6 @@ const STALE_BACK_DESTINATIONS = new Set<SetupStep>([
 ]);
 
 export function isStaleSetupBackDestination(step: SetupStep): boolean {
-  // Setup history represents explicit user-visible decisions, and Back must
-  // never erase a prior configuration, install, or confirmation stage. None of
-  // the steps above is such a decision, and the diagnostics they carried remain
-  // in the activity log, so skipping them loses nothing.
+  // 历史只保留用户可见的明确决策；执行诊断已进入活动日志，因此跳过这些步骤不会丢失事实。
   return STALE_BACK_DESTINATIONS.has(step);
 }

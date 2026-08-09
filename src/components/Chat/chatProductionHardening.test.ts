@@ -44,7 +44,7 @@ test('assistant Markdown typography scales with the available viewport', () => {
 
 test('CHAT-14 persisted OpenClaw media uses a state-scoped preview bridge', () => {
   const image = source('src/components/Chat/ChatImage.tsx');
-  const mediaPreview = source('src/services/chat/openclawMediaPreview.ts');
+  const mediaPreview = source('src/runtime/openClawMediaPreview.ts');
   const commands = source('src/api/tauri-commands.ts');
   const previewCommand = source('src-tauri/src/commands/openclaw_media_preview.rs');
   assert.match(image, /resolveOpenClawMediaPreviewUrl\(src\)/);
@@ -69,8 +69,8 @@ test('CHAT-17 native file actions never fall back to the retired uploads bridge'
 
 test('CHAT-03 composer state and prepared attachments are keyed by session', () => {
   const input = source('src/components/Chat/MessageInput.tsx');
-  const attachments = source('src/components/Chat/message-input/useComposerAttachments.ts');
-  const send = source('src/components/Chat/message-input/useMessageSend.ts');
+  const attachments = source('src/hooks/chat/useComposerAttachments.ts');
+  const send = source('src/hooks/chat/useMessageSend.ts');
   const store = source('src/stores/chatStore.ts');
   assert.match(input, /drafts\[activeSessionKey\]/);
   assert.match(attachments, /preparedAttachments\[activeSessionKey\]/);
@@ -83,7 +83,7 @@ test('CHAT-03 composer state and prepared attachments are keyed by session', () 
 test('CHAT-02 and CHAT-10 expose one cancellable queue and preserve transcript semantics', () => {
   const connection = source('src/services/gateway/Connection.ts');
   const send = source('src/services/chat/sendTransaction.ts');
-  const view = source('src/components/Chat/ChatView.tsx');
+  const view = source('src/pages/ChatView.tsx');
   const bubble = source('src/components/Chat/MessageBubble.tsx');
   const app = source('src/App.tsx');
   assert.doesNotMatch(connection, /enqueueMessage|flushQueue|getQueueSize/);
@@ -113,7 +113,7 @@ test('CHAT-15 never claims durable per-message mutation support from OpenClaw', 
 });
 
 test('CHAT-05 forced history refreshes queue behind the active request', () => {
-  const view = source('src/components/Chat/ChatView.tsx');
+  const view = source('src/pages/ChatView.tsx');
   assert.match(view, /queuedForcedHistoryBySession/);
   assert.match(view, /await inFlightHistoryBySession\.current\[sessionKey\]/);
   assert.match(view, /await loadHistory\(sessionKey, queued\)/);
@@ -127,14 +127,14 @@ test('CHAT-16 App detached history loads stay in the recoverable chat surface', 
 });
 
 test('CHAT-06 history pagination uses chat.history offsets only', () => {
-  const view = source('src/components/Chat/ChatView.tsx');
+  const view = source('src/pages/ChatView.tsx');
   assert.doesNotMatch(view, /fetchSessionHistoryPage|nextCursor/);
   assert.match(view, /\{ offset: requestedOffset \}/);
   assert.match(view, /resolveHistoryPageMetadata/);
 });
 
 test('ChatView does not retain an unmounted Virtuoso header', () => {
-  const view = source('src/components/Chat/ChatView.tsx');
+  const view = source('src/pages/ChatView.tsx');
   assert.doesNotMatch(view, /const Header = useCallback/);
   assert.doesNotMatch(view, /chat\.historyExhausted/);
 });
@@ -166,16 +166,16 @@ test('CHAT-08 Gateway sends user-authored text without private context injection
 });
 
 test('CHAT-09 voice paths use an official attachment and never truncated base64 text', () => {
-  const voice = source('src/components/Chat/message-input/useComposerVoice.ts');
+  const voice = source('src/hooks/chat/useComposerVoice.ts');
   assert.doesNotMatch(voice, /substring\(0,\s*50\)|\[voice:[^\]]*:base64\]/);
   assert.match(voice, /toGatewayAttachments\(\[createPreparedAttachment\(\{/);
-  const files = source('src/services/chat/voiceFileRuntime.ts');
+  const files = source('src/runtime/voiceFileRuntime.ts');
   assert.match(files, /await mkdir\(directory, \{ recursive: true \}\)/);
 });
 
 test('CHAT-11 truncated history has a chat.message.get recovery action', () => {
   const gateway = source('src/services/gateway/index.ts');
-  const view = source('src/components/Chat/ChatView.tsx');
+  const view = source('src/pages/ChatView.tsx');
   assert.match(gateway, /connection\.request<GatewayMessageResponse>\('chat\.message\.get'/);
   assert.match(view, /handleLoadFullMessage/);
 });

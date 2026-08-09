@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveOutputFilePath } from './fileOutputPath';
+import { resolveOutputFilePath } from '@/utils/fileOutputPath';
 
 test('resolves a relative output against the session workspace', () => {
   assert.equal(

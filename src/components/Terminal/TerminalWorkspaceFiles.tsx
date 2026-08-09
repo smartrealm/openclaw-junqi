@@ -25,7 +25,7 @@ import {
   clearTerminalWorkspaceWatches,
   setTerminalWorkspaceWatches,
   type FsEntry,
-} from '@/services/workspaceFs';
+} from '@/workspace-files/runtime/workspaceFs';
 import { debugError } from '@/utils/debugLog';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 import { requestTerminalInput } from './terminalChromeEvents';

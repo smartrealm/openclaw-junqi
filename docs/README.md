@@ -149,7 +149,8 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 
 目录：[`quality/`](quality/)
 
-- [OpenClaw 智能体作用域会话侧栏审计](quality/openclaw-agent-scoped-session-sidebar-audit-2026-08-09.md)
+- [Gateway 原生能力与扩展一致性审计](quality/gateway-native-extension-consistency-audit-2026-08-09.md)
+- [Gateway 原生能力与扩展一致性验证](quality/gateway-native-extension-consistency-validation-2026-08-09.md)
 - [OpenClaw Runtime 配置 Schema 信封审计](quality/openclaw-runtime-config-schema-envelope-audit-2026-08-09.md)
 - [Windows Gateway 冷启动与默认主会话固定审计](quality/windows-gateway-cold-start-and-main-session-pinning-2026-08-08.md)
 - [JunQi 隐私锁能力移除记录](quality/privacy-lock-removal-2026-08-07.md)

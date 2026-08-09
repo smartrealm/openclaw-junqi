@@ -1,0 +1,280 @@
+// ═══════════════════════════════════════════════════════════
+// CommandPalette —— 快捷操作启动器
+// ═══════════════════════════════════════════════════════════
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  LayoutDashboard, MessageCircle, Kanban, DollarSign, Clock, Bot, Brain,
+  Settings, Wifi, WifiOff, Heart, Mail, Calendar, RefreshCw,
+  Globe, Bell, BellOff, BookOpenText, Command, Sparkles, Terminal, Cpu,
+  Activity, FolderKanban,
+  type LucideIcon,
+} from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useChatStore } from '@/stores/chatStore';
+import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+import { changeLanguage } from '@/i18n';
+import { nextPrimaryLanguage } from '@/i18n/languages';
+import { isFeatureEnabled, type EditionFeatureKey } from '@/config/edition';
+import { gateway } from '@/services/gateway';
+import {
+  notifyOpenClawSessionCompaction,
+  notifyOpenClawSessionCompactionFailure,
+  requireOpenClawSessionCompactionTarget,
+} from '@/processing/sessionCompactionFeedback';
+import { useNotificationStore } from '@/stores/notificationStore';
+import clsx from 'clsx';
+
+const QUICK_AGENTS = [
+  { id: 'claude', label: 'Claude Code', desc: 'Anthropic Claude', keywords: ['claude', 'anthropic'] },
+  { id: 'codex', label: 'Codex', desc: 'OpenAI Codex CLI', keywords: ['codex', 'openai'] },
+  { id: 'gemini', label: 'Gemini CLI', desc: 'Google Gemini', keywords: ['gemini', 'google'] },
+  { id: 'pi', label: 'Pi', desc: 'Pi coding agent', keywords: ['pi'] },
+  { id: 'qwen', label: 'Qwen CLI', desc: 'Alibaba Qwen', keywords: ['qwen', 'alibaba', 'tongyi'] },
+  { id: 'ollama', label: 'Ollama', desc: 'Local Ollama models', keywords: ['ollama', 'local'] },
+];
+
+interface PaletteCommand {
+  id: string;
+  icon: LucideIcon;
+  name: string;
+  description?: string;
+  shortcut?: string;
+  keywords: string[];
+  action: () => void;
+  /** If set, command is hidden when the edition feature is off */
+  feature?: EditionFeatureKey;
+}
+
+export function CommandPaletteIcon({ icon: Icon, selected }: { icon: LucideIcon; selected: boolean }) {
+  return (
+    <Icon
+      size={16}
+      className={clsx(selected ? 'text-aegis-primary' : 'text-aegis-text-dim')}
+    />
+  );
+}
+
+export function CommandPalette() {
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+  const { commandPaletteOpen, setCommandPaletteOpen, language, setLanguage, notificationsEnabled, setNotificationsEnabled } = useSettingsStore();
+  const { connected } = useChatStore();
+  const [query, setQuery] = useState('');
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const reconnectWithBestConfig = () => gatewayManager.reconnect();
+
+  // Define commands — all names use i18n keys
+  const commands: PaletteCommand[] = [
+    // Navigation (aligned with `src/config/edition.ts` + NavSidebar)
+    { id: 'nav-dashboard', feature: 'dashboard', icon: LayoutDashboard, name: t('nav.dashboard'), shortcut: 'Ctrl+1', keywords: ['dashboard', 'home', 'لوحة'], action: () => navigate('/') },
+    { id: 'nav-chat', feature: 'chat', icon: MessageCircle, name: t('nav.chat'), shortcut: 'Ctrl+2', keywords: ['chat', 'شات', 'محادثة'], action: () => navigate('/chat') },
+    { id: 'nav-workshop', feature: 'workshop', icon: Kanban, name: t('nav.workshop'), shortcut: 'Ctrl+3', keywords: ['workshop', 'kanban', 'ورشة', 'مهام'], action: () => navigate('/workshop') },
+    { id: 'nav-costs', feature: 'analytics', icon: DollarSign, name: t('nav.usage'), shortcut: 'Ctrl+4', keywords: ['costs', 'تكاليف', 'tokens'], action: () => navigate('/analytics') },
+    { id: 'nav-cron', feature: 'cron', icon: Clock, name: t('nav.cron'), shortcut: 'Ctrl+5', keywords: ['cron', 'schedule', 'جدولة'], action: () => navigate('/cron') },
+    { id: 'nav-agents', feature: 'agents', icon: Bot, name: t('nav.agents'), shortcut: 'Ctrl+6', keywords: ['agents', 'وكلاء', 'sessions'], action: () => navigate('/agents') },
+    { id: 'nav-memory', feature: 'memory', icon: Brain, name: t('nav.memory'), shortcut: 'Ctrl+7', keywords: ['memory', 'ذاكرة', 'search'], action: () => navigate('/memory') },
+    { id: 'nav-activity', feature: 'dashboard', icon: Activity, name: t('nav.activity', 'Activity Center'), keywords: ['activity', 'runs', 'approvals', '活动', '审批'], action: () => navigate('/activity') },
+    { id: 'nav-ai-workspace', feature: 'agentRun', icon: FolderKanban, name: t('nav.aiWorkspace', 'AI Workspace'), keywords: ['workspace', 'agent run', 'tasks', '工作台'], action: () => navigate('/ai-workspace') },
+    { id: 'nav-settings', feature: 'settings', icon: Settings, name: t('nav.settings'), shortcut: 'Ctrl+,', keywords: ['settings', 'إعدادات'], action: () => navigate('/settings') },
+
+    // 操作
+    { id: 'act-heartbeat', icon: Heart, name: t('palette.heartbeat'), keywords: ['heartbeat', 'فحص', 'check'], action: () => {
+      window.dispatchEvent(new CustomEvent('aegis:quick-action', { detail: { message: 'Run a quick heartbeat check — emails, calendar, anything urgent?', autoSend: true } }));
+    }},
+    { id: 'act-emails', icon: Mail, name: t('palette.checkEmails'), keywords: ['email', 'إيميل', 'بريد'], action: () => {
+      window.dispatchEvent(new CustomEvent('aegis:quick-action', { detail: { message: 'Check my unread emails and summarize anything important.', autoSend: true } }));
+    }},
+    { id: 'act-calendar', icon: Calendar, name: t('palette.checkCalendar'), keywords: ['calendar', 'تقويم', 'مواعيد'], action: () => {
+      window.dispatchEvent(new CustomEvent('aegis:quick-action', { detail: { message: "What's on my calendar today and tomorrow?", autoSend: true } }));
+    }},
+    { id: 'act-compact', icon: RefreshCw, name: t('palette.compactContext'), keywords: ['compact', 'ضغط', 'context'], action: () => {
+      const sessionKey = useChatStore.getState().activeSessionKey;
+      void Promise.resolve().then(() => gateway.compactSession(
+        requireOpenClawSessionCompactionTarget(sessionKey),
+      )).then((result) => {
+        notifyOpenClawSessionCompaction(result, t, useNotificationStore.getState().addToast);
+      }).catch((error) => {
+        notifyOpenClawSessionCompactionFailure(error, t, useNotificationStore.getState().addToast);
+      });
+    }},
+
+    // Agent launchers (kooky ⌘P pattern: type to filter, Enter to launch)
+    ...QUICK_AGENTS.map((a) => ({
+      id: `agent-${a.id}`,
+      icon: Sparkles,
+      name: a.label,
+      description: a.desc,
+      keywords: ['agent', 'launch', 'start', ...a.keywords, a.label.toLowerCase()],
+      shortcut: `→ /agent-run?agent=${a.id}`,
+      action: () => navigate(`/agent-run?agent=${a.id}`),
+    })),
+    { id: 'agent-terminal', icon: Terminal, name: t('palette.openTerminal', 'Open Terminal'), keywords: ['terminal', 'shell', 'bash', 'zsh'], shortcut: 'Ctrl+T', action: () => navigate('/terminal') },
+    { id: 'nav-openclaw-commands', feature: 'tools', icon: BookOpenText, name: t('nav.openclawCommands', 'OpenClaw commands'), keywords: ['openclaw', 'commands', 'runtime', '命令', '运行时', 'مرجع'], action: () => navigate('/openclaw-commands') },
+    { id: 'agent-status', icon: Cpu, name: t('palette.systemStatus', 'System Status'), keywords: ['status', 'system', 'health'], action: () => navigate('/perf') },
+
+    // Connection
+    { id: 'conn-reconnect', icon: connected ? Wifi : WifiOff, name: connected ? t('palette.reconnect') : t('palette.connectGateway'), keywords: ['connect', 'reconnect', 'اتصال', 'gateway'], action: async () => {
+      await reconnectWithBestConfig();
+    }},
+
+    // Settings
+    { id: 'set-lang', icon: Globe, name: t('palette.toggleLanguage'), keywords: ['language', '中文', 'english'], action: () => {
+      const newLang = nextPrimaryLanguage(language);
+      setLanguage(newLang);
+      changeLanguage(newLang);
+    }},
+    { id: 'set-notif', icon: notificationsEnabled ? BellOff : Bell, name: t('palette.toggleNotifications'), keywords: ['notifications', 'إشعارات'], action: () => {
+      setNotificationsEnabled(!notificationsEnabled);
+    }},
+  ];
+
+  const enabledCommands = commands.filter((cmd) => !cmd.feature || isFeatureEnabled(cmd.feature));
+
+  // ── Fuzzy matching (kooky FuzzyMatcher.score) ──────────────────────────
+  // Subsequence match with score bonuses: prefix +10, boundary +5, consecutive +3.
+  // Boundary chars: space, -, _, /, .
+  const fuzzyScore = (q: string, target: string): number => {
+    if (!q) return 0;
+    const lowerQ = q.toLowerCase();
+    const lowerT = target.toLowerCase();
+    let qi = 0, score = 0, prevMatchedAt = -2, consecutive = 0;
+    for (let ti = 0; ti < lowerT.length && qi < lowerQ.length; ti++) {
+      if (lowerT[ti] === lowerQ[qi]) {
+        let bonus = 1;
+        if (ti === 0) bonus += 10;
+        else if ([' ', '-', '_', '/', '.'].includes(target[ti - 1])) bonus += 5;
+        if (ti === prevMatchedAt + 1) { consecutive++; bonus += 3 * consecutive; }
+        else { consecutive = 0; }
+        score += bonus;
+        qi++;
+        prevMatchedAt = ti;
+        if (qi === lowerQ.length) break;
+      } else if ([' ', '-', '_', '/', '.'].includes(target[ti])) {
+        consecutive = 0;
+      }
+    }
+    return qi === lowerQ.length ? score : -1;
+  };
+
+  // Filter with fuzzy scoring, sorted by score desc
+  const filtered = query.trim()
+    ? enabledCommands
+        .map((cmd) => {
+          const nameScore = fuzzyScore(query, cmd.name);
+          const descScore = cmd.description ? fuzzyScore(query, cmd.description) : -1;
+          const bestKeywordScore = Math.max(-1, ...cmd.keywords.map((k) => fuzzyScore(query, k)));
+          const best = Math.max(nameScore, descScore, bestKeywordScore);
+          return { cmd, score: best };
+        })
+        .filter(({ score }) => score >= 0)
+        .sort((a, b) => b.score - a.score)
+        .map(({ cmd }) => cmd)
+    : enabledCommands;
+
+  // Reset on open
+  useEffect(() => {
+    if (commandPaletteOpen) {
+      setQuery('');
+      setSelectedIdx(0);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [commandPaletteOpen]);
+
+  // Keyboard nav
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIdx((prev) => Math.min(prev + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIdx((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter' && filtered[selectedIdx]) {
+      e.preventDefault();
+      filtered[selectedIdx].action();
+      setCommandPaletteOpen(false);
+    } else if (e.key === 'Escape') {
+      setCommandPaletteOpen(false);
+    }
+  }, [filtered, selectedIdx, setCommandPaletteOpen]);
+
+  // Keep selection in bounds
+  useEffect(() => {
+    setSelectedIdx((prev) => Math.min(prev, Math.max(0, filtered.length - 1)));
+  }, [filtered.length]);
+
+  if (!commandPaletteOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[2147481000] flex items-start justify-center pt-[15vh] bg-black/50 backdrop-blur-sm animate-[command-palette-backdrop-in_120ms_ease-out]"
+      onClick={() => setCommandPaletteOpen(false)}
+    >
+      <style>
+        {'@keyframes command-palette-backdrop-in{from{opacity:0}to{opacity:1}}@keyframes command-palette-panel-in{from{opacity:0;transform:translateY(-10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}'}
+      </style>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-[520px] rounded-2xl bg-aegis-bg border border-aegis-border/30 shadow-2xl overflow-hidden animate-[command-palette-panel-in_120ms_ease-out]"
+      >
+          {/* Search input */}
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-aegis-border/20">
+            <Command size={16} className="text-aegis-text-dim shrink-0" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={t('palette.searchPlaceholder')}
+              className="flex-1 bg-transparent text-[15px] text-aegis-text placeholder:text-aegis-text-dim/40 focus:outline-none"
+              dir="auto"
+            />
+            <kbd className="text-[10px] text-aegis-text-dim bg-aegis-surface/40 px-1.5 py-0.5 rounded border border-aegis-border/20">ESC</kbd>
+          </div>
+
+          {/* Results */}
+          <div className="max-h-[360px] overflow-y-auto py-1">
+            {filtered.length === 0 && (
+              <div className="text-center py-8 text-[13px] text-aegis-text-dim">{t('commandPaletteFooter.noResults')}</div>
+            )}
+            {filtered.slice(0, 12).map((cmd, i) => {
+              const Icon = cmd.icon;
+              return (
+                <button
+                  key={cmd.id}
+                  onClick={() => { cmd.action(); setCommandPaletteOpen(false); }}
+                  onMouseEnter={() => setSelectedIdx(i)}
+                  className={clsx(
+                    'w-full flex items-center gap-3 px-4 py-2.5 text-start transition-colors',
+                    i === selectedIdx ? 'bg-aegis-primary/10' : 'hover:bg-[rgb(var(--aegis-overlay)/0.03)]'
+                  )}
+                >
+                  <CommandPaletteIcon icon={Icon} selected={i === selectedIdx} />
+                  <div className="flex-1 min-w-0">
+                    <span className={clsx('text-[13px]', i === selectedIdx ? 'text-aegis-text' : 'text-aegis-text-muted')}>
+                      {cmd.name}
+                    </span>
+                  </div>
+                  {cmd.shortcut && (
+                    <kbd className="text-[10px] text-aegis-text-dim/60 bg-aegis-surface/30 px-1.5 py-0.5 rounded border border-aegis-border/15">
+                      {cmd.shortcut}
+                    </kbd>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Footer hint */}
+          <div className="flex items-center gap-3 px-4 py-2 border-t border-aegis-border/15 text-[10px] text-aegis-text-dim/50">
+            <span>↑↓ {t('commandPaletteFooter.navigate')}</span>
+            <span>↵ {t('commandPaletteFooter.execute')}</span>
+            <span>ESC {t('commandPaletteFooter.close')}</span>
+          </div>
+      </div>
+    </div>
+  );
+}

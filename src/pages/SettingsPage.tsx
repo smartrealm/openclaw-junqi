@@ -22,13 +22,13 @@ import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore
 import { useChatStore } from '@/stores/chatStore';
 import { usePetStore } from '@/stores/petStore';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
-import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { openSelectedGatewayControlUi } from '@/services/gateway/GatewayControlUi';
 import {
   getStoredGatewayCredentialToken,
   resolveGatewayConnectionTarget,
 } from '@/services/gateway/GatewayConnectionTargetResolver';
-import { notifications } from '@/services/notifications';
+import { notifications } from '@/runtime/notifications';
 import { openRuntimeDataDirectory } from '@/services/runtimeDataDirectory';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { PET_SKIN_OPTIONS } from '@/pet/skins';
@@ -36,7 +36,7 @@ import { SkinPreview } from '@/pet/SkinPreview';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { changeLanguage } from '@/i18n';
-import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { voiceRuntime } from '@/runtime/VoiceRuntime';
 import { ThemePicker } from '@/components/settings/ThemePicker';
 import { GatewayLogPanel } from '@/components/settings/GatewayLogPanel';
 import { GatewayLifecyclePanel } from '@/components/settings/GatewayLifecyclePanel';

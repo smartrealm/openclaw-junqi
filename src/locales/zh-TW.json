@@ -1056,6 +1056,7 @@
     "dismiss": "知道了",
     "error": "錯誤",
     "unknownError": "未知錯誤",
+    "operationInProgress": "{{title}}進行中",
     "deleteFailed": "刪除失敗",
     "screenRecordPermission": "需要屏幕錄製權限",
     "screenRecordHint": "打開系統設置，然後進入隱私與安全性、屏幕錄製，",
@@ -1651,6 +1652,12 @@
       "dispatch-completed": "Gateway 派送完成",
       "post-dispatch-completed": "回應已完成",
       "detail": "{{phase}} - Gateway {{ms}} 毫秒"
+    },
+    "runStartup": {
+      "preparing_workspace": "正在準備工作區",
+      "provisioning_environment": "正在配置執行環境",
+      "preparing_context": "正在準備上下文",
+      "starting_model": "正在啟動模型"
     },
     "untrustedWorkshopCommandIgnored": "已忽略不可信的文本命令，請改用經過授權的工作台操作。",
     "availableSessions": "可用會話",
@@ -4261,8 +4268,6 @@
       "textInput": "OpenClaw 配置值",
       "readyForStep": "此步驟由 OpenClaw 執行。",
       "deviceCodeHint": "請在授權頁面輸入一次性代碼。",
-      "nonBlockingProbeFailure": "這是渠道外掛程式返回的非阻斷檢查結果，不代表 OpenClaw 或 Gateway 安裝失敗。可以繼續完成設定精靈，啟動後再以渠道實際運行狀態為準。",
-      "completionVerification": "OpenClaw 設定精靈已結束。按下完成後，JunQi 仍會驗證目前的 Gateway 連線和所選模型；驗證未通過時不會進入工作區。",
       "qrAlt": "掃描授權二維碼",
       "scanQrHint": "看不清終端裡的字元畫二維碼？掃這張圖，或者複製連結在瀏覽器裡打開。",
       "authorizationContinueHint": "在瀏覽器完成授權後，返回此處點擊「我已完成授權，繼續」。隨後將由 OpenClaw 查詢授權結果。",
@@ -5432,105 +5437,26 @@
   "workspace.empty": "工作區為空",
   "workspace.switchPending": "請先處理未保存的檔案，然後重試切換工作區。",
   "businessApplications": {
-    "title": "業務應用",
-    "subtitle": "統一管理企業業務平台的能力、確認與追溯。",
-    "previewState": "接入框架展示",
-    "openCatalog": "開啟業務應用",
-    "sidebarTitle": "業務平台",
-    "sidebarHint": "應用、授權和操作記錄在同一工作區中管理。",
+    "sidebarTitle": "工作區",
     "workspaceTools": "有效工具",
     "workspaceActivity": "操作審計",
     "workspaceRuntime": "接入與授權",
-    "catalogTitle": "應用目錄",
-    "catalogState": "僅顯示已註冊適配器",
-    "connectedTitle": "業務應用目錄",
-    "catalogHint": "選擇應用以查看它的身份、能力和操作前提。",
-    "catalogAriaLabel": "業務應用目錄",
-    "addApplication": "新增業務應用",
-    "addDisabledHint": "新的平台通過已驗證的適配器註冊後才會顯示在目錄中。",
-    "detailTabsAriaLabel": "業務應用視圖",
-    "tabs": {
-      "overview": "概覽",
-      "capabilities": "能力",
-      "operations": "操作"
-    },
-    "states": {
-      "requiresRuntime": "需要執行階段",
-      "requiresConfiguration": "需要設定",
-      "requiresAuthorization": "等待授權"
-    },
-    "effects": {
-      "read": "讀取",
-      "write": "寫入",
-      "highImpact": "需確認"
-    },
-    "runtime": "執行階段",
-    "runtimeKinds": {
-      "cli": "本機命令列適配器",
-      "native-api": "受控原生 API 適配器"
-    },
-    "identity": "目前身份",
-    "identityUnverified": "尚未選擇已驗證身份",
-    "authorization": "授權狀態",
-    "authorizationNotStarted": "尚未開始授權",
-    "capabilitySnapshot": "能力快照",
-    "snapshotNotAvailable": "等待執行階段驗證",
-    "prerequisites": "接入前提",
-    "probeRuntime": "檢查執行階段",
-    "probeUnavailableHint": "執行階段探測尚未接入；不會在展示頁面偽造檢測結果。",
-    "safeExecutionTitle": "統一確認與追溯",
-    "safeExecutionDescription": "任何寫入操作都會先產生計畫，確認後才會由受控適配器執行。",
-    "viewCapabilities": "查看能力",
-    "capabilitiesTitle": "能力目錄",
-    "capabilitiesHint": "可用性來自執行階段和授權快照；目前僅展示接入前提。",
-    "planWithAi": "交給 AI 規劃",
-    "operationsUnavailableTitle": "暫無可執行操作",
-    "operationsUnavailableDescription": "選擇已驗證身份並完成能力授權後，操作草稿會在這裡出現。AI 提議與手動操作使用同一份確認和記錄。",
-    "aiBoundary": "AI 可讀取脫敏能力狀態並產生操作計畫；執行必須經過同一確認與稽核邊界。",
-    "journalTitle": "操作記錄",
-    "journalEmptyTitle": "尚無業務操作",
-    "journalEmptyDescription": "手動操作與 AI 提議確認後都會在此形成同一條可追溯記錄。",
-    "journalBoundary": "AI 不讀取金鑰或原始業務正文，只接收完成計畫所需的脫敏結構化上下文。",
-    "chatPrompt": "請為 {{integration}} 的「{{capability}}」整理一個操作計畫。先說明所需身份、權限、輸入欄位和影響範圍；不要執行任何寫入操作，等待我確認。",
-    "integrations": {
-      "dingtalk": {
-        "name": "釘釘工作台",
-        "description": "透過 DWS 發現企業協作能力。",
-        "prerequisites": "需要已驗證的 DWS 執行階段、登入狀態和精確選擇的 profile。"
-      },
-      "feishu": {
-        "name": "飛書",
-        "description": "以使用者授權和租戶應用權限接入。",
-        "prerequisites": "需要受控應用設定、管理員權限和使用者授權回調驗證。"
-      },
-      "google": {
-        "name": "Google Workspace",
-        "description": "透過桌面 OAuth 連接日曆、檔案和郵件。",
-        "prerequisites": "需要已註冊的桌面 OAuth 用戶端、已啟用的 API 與最小授權範圍。"
-      }
-    },
-    "capabilities": {
-      "approvals": {
-        "title": "審批與待辦",
-        "description": "讀取審批狀態，並在條件滿足後建立或處理審批草稿。"
-      },
-      "attendance": {
-        "title": "考勤查詢",
-        "description": "讀取目前身份有權查看的考勤摘要。"
-      },
-      "calendar": {
-        "title": "日程",
-        "description": "讀取可用日程，並在授權後產生日程草稿。"
-      },
-      "documents": {
-        "title": "文件與檔案",
-        "description": "按已授權範圍檢索和引用業務檔案。"
-      },
-      "mail": {
-        "title": "郵件",
-        "description": "在明確確認後產生外發郵件草稿。"
-      }
-    }
+    "sidebarPlatformName": "釘釘工作台",
+    "sidebarPlatformContext": "目前唯一業務平台",
+    "sidebarPlatformActive": "目前平台",
+    "sidebarToolsLoading": "正在讀取目前 Session",
+    "sidebarToolsCount": "{{count}} 個目前有效工具",
+    "sidebarNoSession": "尚未選擇有效 Session",
+    "sidebarActivityCount": "{{count}} 條本視窗投影",
+    "sidebarAuditBoundary": "官方審計與本視窗投影",
+    "sidebarRuntimeBoundary": "Session、外掛、Agent、DWS",
+    "sidebarCurrentContext": "目前上下文",
+    "sidebarNotSelected": "未選擇",
+    "sidebarNotReturned": "未返回",
+    "sidebarRecentActivity": "最近操作",
+    "sidebarNoActivity": "本視窗尚無業務操作",
+    "sidebarActivityState": "{{state}} · {{agent}}",
+    "sidebarNoActivityHint": "開啟操作審計查看官方記錄"
   },
   "businessGuide": {
     "title": "開始使用",

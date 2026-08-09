@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { readFileText } from '@/services/workspaceFs';
+import { readFileText } from '@/workspace-files/runtime/workspaceFs';
 import type { WorkspaceFileScope } from '../domain/types';
 import { EditorDocumentManager } from './editorDocumentManager';
 

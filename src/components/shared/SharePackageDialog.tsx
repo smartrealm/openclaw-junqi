@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { LoadingIndicator } from './LoadingIndicator';
-import { sharePackagesRuntime } from '@/services/sharePackagesRuntime';
+import { sharePackagesRuntime } from '@/runtime/sharePackagesRuntime';
 
 export type SharePackageKind = 'agent' | 'skill';
 

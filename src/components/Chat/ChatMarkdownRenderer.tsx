@@ -7,7 +7,7 @@ import clsx from 'clsx';
 import { debugError } from '@/utils/debugLog';
 import { Icon } from '@/components/shared/icons';
 import { fileExtension, workspaceFileKind } from '@/workspace-files/domain/fileKinds';
-import { openLocalManagedFile } from '@/services/chat/managedFileRuntime';
+import { openLocalManagedFile } from '@/runtime/managedFileRuntime';
 
 const CodeBlock = lazy(() => import('./CodeBlock').then((module) => ({ default: module.CodeBlock })));
 const ChatImage = lazy(() => import('./ChatImage').then((module) => ({ default: module.ChatImage })));

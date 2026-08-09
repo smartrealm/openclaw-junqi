@@ -23,7 +23,7 @@ import {
   type CollaborationWriteMethod,
   type CollaborationWriteRequest,
   type CollaborationWriteResponse,
-} from './types';
+} from '@/types/collaboration';
 import {
   CollaborationWireError,
   decodeSessionMutationImpact,

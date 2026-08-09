@@ -45,7 +45,7 @@ import {
   type CollaborationWorkflowTemplateLink,
   type CollaborationWorkflowTemplateListResponse,
   type CollaborationWriteResponse,
-} from './types';
+} from '@/types/collaboration';
 
 const MAX_COLLECTION_LENGTH = 10_000;
 const CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;

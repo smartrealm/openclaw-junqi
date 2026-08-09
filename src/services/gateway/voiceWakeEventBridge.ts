@@ -3,7 +3,7 @@ import {
   decodeVoiceWakeTriggerSnapshot,
   type VoiceWakeRoutingConfig,
   type VoiceWakeTriggerSnapshot,
-} from './voiceWakeTypes';
+} from '@/types/voiceWake';
 
 export type VoiceWakeGatewayEvent =
   | { type: 'triggers'; snapshot: VoiceWakeTriggerSnapshot }

@@ -2,8 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   classifyOpenClawWizardFailure,
-  isOpenClawWizardCompletionStep,
-  isOpenClawWizardNonBlockingProbeFailure,
   isOpenClawWizardSessionLost,
   isOpenClawWizardStepDesynchronized,
   OpenClawWizardCancelledError,
@@ -12,19 +10,18 @@ import {
   OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS,
   OpenClawWizardOperationSupersededError,
   createScopedOpenClawWizardSessionStore,
+  requiresOpenClawOnboarding,
 } from './openclawWizard';
 
-test('recognizes only provider-neutral final wizard notes', () => {
-  assert.equal(isOpenClawWizardCompletionStep({ id: 'done', type: 'note', title: 'Done', message: 'Onboarding complete. Open the dashboard.' }), true);
-  assert.equal(isOpenClawWizardCompletionStep({ id: 'done-lookalike', type: 'note', title: 'Completed', message: 'Setup complete.' }), false);
-  assert.equal(isOpenClawWizardCompletionStep({ id: 'channel', type: 'note', title: 'DingTalk authorization', message: 'Success! Bot configured.' }), false);
-  assert.equal(isOpenClawWizardCompletionStep({ id: 'model', type: 'select', title: 'Done' }), false);
+test('requires onboarding for a missing or model-less config', () => {
+  assert.equal(requiresOpenClawOnboarding(false, {}), true);
+  assert.equal(requiresOpenClawOnboarding(true, { gateway: { mode: 'local' } }), true);
 });
 
-test('recognizes channel probe failures without coupling to one provider', () => {
-  assert.equal(isOpenClawWizardNonBlockingProbeFailure({ id: 'probe', type: 'note', title: 'DingTalk connection test', message: 'Connection failed: Request failed with status code 403' }), true);
-  assert.equal(isOpenClawWizardNonBlockingProbeFailure({ id: 'probe-2', type: 'note', title: 'Channel verification', message: 'HTTP 401' }), true);
-  assert.equal(isOpenClawWizardNonBlockingProbeFailure({ id: 'auth', type: 'note', title: 'Authorization', message: 'Connection failed' }), false);
+test('requires a primary model instead of trusting wizard run metadata', () => {
+  assert.equal(requiresOpenClawOnboarding(true, { wizard: { lastRunAt: '2026-07-13T00:00:00Z' } }), true);
+  assert.equal(requiresOpenClawOnboarding(true, { agents: { defaults: { model: { primary: 'openai/gpt-5' } } } }), false);
+  assert.equal(requiresOpenClawOnboarding(true, { agents: { defaults: { model: 'openai/gpt-5' } } }), false);
 });
 
 test('wizard client preserves dynamic option values and session lifecycle', async () => {
@@ -69,6 +66,33 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
     },
   ]);
   await assert.rejects(() => client.next('provider', 'again'), /not running/);
+});
+
+test('丢失会话后只以官方 wizard.start 响应恢复，不根据本地配置推断完成', async () => {
+  const calls: string[] = [];
+  let sequence = 0;
+  const client = new OpenClawWizardClient(async (method) => {
+    calls.push(method);
+    sequence += 1;
+    return {
+      sessionId: `session-${sequence}`,
+      done: false,
+      status: 'running',
+      step: {
+        id: `step-${sequence}`,
+        type: 'note',
+        title: `Step ${sequence}`,
+      },
+    };
+  });
+
+  await client.start();
+  const recovered = await client.restartAfterSessionLoss();
+
+  assert.deepEqual(calls, ['wizard.start', 'wizard.start']);
+  assert.equal(recovered.done, false);
+  assert.equal(recovered.status, 'running');
+  assert.equal(recovered.step?.id, 'step-2');
 });
 
 test('首次引导只启动官方完整向导并保留渠道跳过说明', async () => {

@@ -10,7 +10,7 @@ import {
   diagnoseGatewayRecovery,
   gatewayMigrationRetryDelayMs,
   runOpenClawRepair,
-} from "@/services/gateway/openclawRepair";
+} from "@/runtime/openclawRepair";
 import {
   disableOpenclawPlugin,
   healOpenclawPlugin,

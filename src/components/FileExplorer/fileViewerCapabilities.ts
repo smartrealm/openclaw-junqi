@@ -1,4 +1,4 @@
-import { readDir } from "@/services/workspaceFs";
+import { readDir } from "@/workspace-files/runtime/workspaceFs";
 import { resolveWorkspacePreview } from "@/workspace-files/services/previewResolver";
 import { parentPathOf } from "./treeUtils";
 

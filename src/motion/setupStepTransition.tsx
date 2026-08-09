@@ -65,7 +65,7 @@ export function setupStepEntryState(
   if (mode === 'ambient') return { opacity: 0.98, x: 0, y: 4 };
   return {
     opacity: 0.96,
-    x: direction * -12,
+    x: direction * 12,
     y: 0,
   };
 }

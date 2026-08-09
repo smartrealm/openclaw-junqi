@@ -1,7 +1,7 @@
 import { Bot, CircleSlash, Crown, ShieldCheck, UsersRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import type { CollaborationCapabilityAgent } from '@/services/collaboration/types';
+import type { CollaborationCapabilityAgent } from '@/types/collaboration';
 import { buildConfiguredOfficeRoster } from './agentHubConfiguredOfficeRoster';
 
 function initials(name: string): string {

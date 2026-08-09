@@ -2,7 +2,7 @@ import { Cpu, File, Sparkles, TerminalSquare, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { ComposerSuggestionPopover } from './ComposerSuggestionPopover';
-import type { useComposerSuggestions } from './useComposerSuggestions';
+import type { useComposerSuggestions } from '@/hooks/chat/useComposerSuggestions';
 
 type SuggestionController = ReturnType<typeof useComposerSuggestions>;
 

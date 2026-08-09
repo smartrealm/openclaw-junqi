@@ -6,20 +6,20 @@ import { useTranslation } from 'react-i18next';
 import type { DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { ChatIconButton } from './ChatIconButton';
-import { getFileName, getFileParentFolder } from '@/services/chat/filePresentation';
-import { resolveOutputFilePath } from '@/services/chat/fileOutputPath';
+import { getFileName, getFileParentFolder } from '@/utils/filePresentation';
+import { resolveOutputFilePath } from '@/utils/fileOutputPath';
 import {
   getFilePreviewKind,
   loadLocalFilePreview,
   loadLocalMarkdownImage,
   resolveLocalFileReference,
   type LocalFilePreview,
-} from '@/services/chat/filePreview';
+} from '@/runtime/filePreview';
 import {
   localManagedFileExists,
   openLocalManagedFile,
   revealLocalManagedFile,
-} from '@/services/chat/managedFileRuntime';
+} from '@/runtime/managedFileRuntime';
 import { debugError, debugWarn } from '@/utils/debugLog';
 import { ManagedFilePreview } from '@/components/FileExplorer/ManagedFilePreview';
 

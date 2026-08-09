@@ -9,6 +9,7 @@ import {
 } from './chatStore';
 import { normalizeHistoryMessage } from '@/processing/normalizeHistoryMessage';
 import { gateway } from '@/services/gateway';
+import { configureChatGatewayOperations } from './chatGatewayOperations';
 import { OpenClawSessionGroupsUnsupportedError } from '@/services/gateway/OpenClawSessionGroupsClient';
 import { subscribeSessionIdentityTransitions } from '@/services/chat/sessionIdentityTransition';
 import {
@@ -16,6 +17,8 @@ import {
   shouldLoadActiveSessionHistory,
 } from '@/utils/confirmedEmptyTranscript';
 import { markSessionDeleted, restoreSessionKey } from '@/utils/sessionLifecycle';
+
+configureChatGatewayOperations(gateway);
 
 const MAIN_KEY = 'agent:main:main';
 const OTHER_KEY = 'agent:worker:main';
@@ -652,6 +655,9 @@ test('sessionId rotation atomically replaces transcript state and resets identit
       [OTHER_KEY]: [{ id: 'old', role: 'assistant', content: 'old', timestamp: '2026-01-01' }],
     },
     typingBySession: { [OTHER_KEY]: true },
+    chatRunStartupBySession: {
+      [OTHER_KEY]: { runId: 'run-old', phase: 'preparing_context' },
+    },
     chatSendTimingBySession: {
       [OTHER_KEY]: {
         sessionKey: OTHER_KEY,
@@ -675,6 +681,7 @@ test('sessionId rotation atomically replaces transcript state and resets identit
   const state = useChatStore.getState();
   assert.equal(state.messagesPerSession[OTHER_KEY], undefined);
   assert.equal(state.typingBySession[OTHER_KEY], undefined);
+  assert.equal(state.chatRunStartupBySession[OTHER_KEY], undefined);
   assert.equal(state.chatSendTimingBySession[OTHER_KEY], undefined);
   assert.equal(state.thinkingBySession[OTHER_KEY], undefined);
   assert.equal(state.messageQueue[OTHER_KEY], undefined);
@@ -694,6 +701,10 @@ test('settleSessionRunUi atomically clears one session without disturbing anothe
   useChatStore.setState({
     typingBySession: { [MAIN_KEY]: true, [OTHER_KEY]: true },
     typingStartedAtBySession: { [MAIN_KEY]: 1_000, [OTHER_KEY]: 2_000 },
+    chatRunStartupBySession: {
+      [MAIN_KEY]: { runId: 'run-main', phase: 'starting_model' },
+      [OTHER_KEY]: { runId: 'run-other', phase: 'preparing_workspace' },
+    },
     chatSendTimingBySession: {
       [MAIN_KEY]: {
         sessionKey: MAIN_KEY,
@@ -723,10 +734,12 @@ test('settleSessionRunUi atomically clears one session without disturbing anothe
   assert.equal(selectActiveSessionTyping(state), false);
   assert.deepEqual(selectActiveSessionThinking(state), { runId: null, text: '' });
   assert.equal(state.typingStartedAtBySession[MAIN_KEY], undefined);
+  assert.equal(state.chatRunStartupBySession[MAIN_KEY], undefined);
   assert.equal(state.chatSendTimingBySession[MAIN_KEY], undefined);
   assert.equal(state.sendingBySession[MAIN_KEY], false);
   assert.equal(state.typingBySession[OTHER_KEY], true);
   assert.equal(state.typingStartedAtBySession[OTHER_KEY], 2_000);
+  assert.equal(state.chatRunStartupBySession[OTHER_KEY]?.runId, 'run-other');
   assert.equal(state.chatSendTimingBySession[OTHER_KEY]?.runId, 'run-other');
   assert.deepEqual(state.thinkingBySession[OTHER_KEY], { runId: 'run-other', text: 'other thinking' });
   assert.equal(state.sendingBySession[OTHER_KEY], true);

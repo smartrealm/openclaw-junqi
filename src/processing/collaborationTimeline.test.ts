@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { CollaborationRunSummary } from '@/services/collaboration/types';
+import type { CollaborationRunSummary } from '@/types/collaboration';
 import type { ChatMessage } from '@/stores/chatStore';
 import type { ResponseGroup } from '@/types/ResponseGroup';
 import { buildCollaborationChatTimeline } from './collaborationTimeline';

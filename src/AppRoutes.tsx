@@ -3,16 +3,16 @@ import { HashRouter } from 'react-router-dom';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { useAlertStore } from '@/components/shared/alertStore';
 import { useNotificationStore } from '@/stores/notificationStore';
-import { useSessionMutationDialogStore } from '@/services/collaboration/sessionMutationDialogStore';
+import { useSessionMutationDialogStore } from '@/stores/sessionMutationDialogStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { useCollaborationSetupStore } from '@/stores/collaborationSetupStore';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
-import { CollaborationActivityRuntime } from '@/components/Collaboration/CollaborationActivityRuntime';
+import { CollaborationActivityRuntime } from '@/runtime/CollaborationActivityRuntime';
 
 const AppRouteTree = lazy(() => import('@/AppRouteTree'));
 const ToastContainer = lazy(() => import('@/components/Toast/ToastContainer').then(m => ({ default: m.ToastContainer })));
 const GlobalAlertDialog = lazy(() => import('@/components/shared/AlertDialog').then(m => ({ default: m.GlobalAlertDialog })));
-const SessionMutationDialog = lazy(() => import('@/components/Collaboration/SessionMutationDialog').then(m => ({ default: m.SessionMutationDialog })));
+const SessionMutationDialog = lazy(() => import('@/runtime/SessionMutationDialog').then(m => ({ default: m.SessionMutationDialog })));
 const CollaborationSetupDialog = lazy(() => import('@/components/Collaboration/CollaborationSetupDialog').then(m => ({ default: m.CollaborationSetupDialog })));
 
 function LazyToastHost() {

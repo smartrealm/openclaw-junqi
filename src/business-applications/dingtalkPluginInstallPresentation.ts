@@ -4,13 +4,7 @@ export function dingtalkPluginInstallPresentation(progress: DingTalkPluginInstal
   const active = progress.phase === 'checking' || progress.phase === 'installing';
   const completed = progress.phase === 'completed';
   const failed = progress.phase === 'failed';
-  const progressValue = progress.phase === 'checking'
-    ? 25
-    : progress.phase === 'installing'
-      ? 60
-      : progress.phase === 'completed'
-        ? 100
-        : 0;
+  const progressValue = completed ? 100 : failed ? 0 : null;
   const phaseLabel = completed
     ? '安装完成，等待重启 Gateway'
     : failed

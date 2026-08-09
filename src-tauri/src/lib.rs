@@ -124,11 +124,6 @@ pub fn run() {
             commands::gateway_credentials::delete_gateway_credential,
             commands::device_identity::get_gateway_device_identity_reference,
             commands::device_identity::sign_gateway_device_challenge,
-            commands::secret_store::store_provider_secret,
-            commands::secret_store::get_provider_secret,
-            commands::secret_store::delete_provider_secret,
-            commands::secret_store::list_provider_secrets,
-            commands::provider_oauth::start_provider_oauth,
             commands::gateway::get_gateway_token,
             commands::maintenance::run_maintenance_scan,
             // System
@@ -192,7 +187,6 @@ pub fn run() {
             commands::config::read_config,
             commands::config::parse_openclaw_config_text,
             commands::config::validate_openclaw_config,
-            commands::config::read_provider_api_key,
             commands::config::detect_gateway_config,
             commands::config::set_active_gateway_runtime,
             commands::config::rollback_active_gateway_runtime,
@@ -594,21 +588,6 @@ pub fn run() {
                     commands::dynamic_island::remember_main_monitor(&tracked_window);
                 });
             }
-            // Emit gateway config to frontend before it loads (no invoke needed)
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Ok(info) = commands::config::detect_gateway_config().await {
-                    let _ = handle.emit(
-                        "gateway-config",
-                        serde_json::json!({
-                            "token": info.token,
-                            "ws_url": info.ws_url,
-                            "http_url": info.http_url,
-                            "port": info.port,
-                        }),
-                    );
-                }
-            });
             // Pet right-click menu items report their kind here; the main window
             // acts on the "pet-action" event. Tray items have their own handler,
             // so this fires only for the pet's popup context menu.

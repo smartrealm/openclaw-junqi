@@ -14,7 +14,7 @@ const hookSource = readFileSync(new URL('./useChatSidePanel.ts', import.meta.url
 const tracePanelSource = readFileSync(new URL('./ChatResponseTracePanel.tsx', import.meta.url), 'utf8');
 const traceNodeCardSource = readFileSync(new URL('./ChatResponseTraceNodeCard.tsx', import.meta.url), 'utf8');
 const traceSourcePanelSource = readFileSync(new URL('./ChatTraceSourceMessagePanel.tsx', import.meta.url), 'utf8');
-const chatSource = readFileSync(new URL('./ChatView.tsx', import.meta.url), 'utf8');
+const chatSource = readFileSync(new URL('../../pages/ChatView.tsx', import.meta.url), 'utf8');
 const quickChatSource = readFileSync(new URL('../../pages/QuickChatPage.tsx', import.meta.url), 'utf8');
 
 test('message preview uses the official panel-open action without glow effects', () => {

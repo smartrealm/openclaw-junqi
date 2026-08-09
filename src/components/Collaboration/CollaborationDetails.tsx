@@ -16,13 +16,13 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { hasUnresolvedResidualExecutionRisk } from '@/services/collaboration/types';
+import { hasUnresolvedResidualExecutionRisk } from '@/types/collaboration';
 import {
   buildWorkflowGraphProjection,
   workflowGraphEdgePath,
   WORKFLOW_GRAPH_NODE_HEIGHT,
   WORKFLOW_GRAPH_NODE_WIDTH,
-} from '@/services/collaboration/workflowGraph';
+} from '@/processing/collaborationWorkflowGraph';
 import type {
   CollaborationAttemptSnapshot,
   CollaborationCapabilityAgent,
@@ -31,7 +31,7 @@ import type {
   CollaborationInterventionSnapshot,
   CollaborationRunSnapshot,
   CollaborationWorkItemSnapshot,
-} from '@/services/collaboration/types';
+} from '@/types/collaboration';
 import {
   CollaborationActionBar,
   CollaborationResidualExecutionRiskNotice,

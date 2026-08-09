@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setupStepEntryState, setupStepMotionDirection, setupStepMotionMode, setupStepScene } from './setupStepTransition';
 
-test('setup step transition moves forward from right to left and back from left to right', () => {
+test('setup step transition moves forward from left to right and back from right to left', () => {
   assert.equal(setupStepMotionDirection('welcome', 'environment-review'), -1);
   assert.equal(setupStepMotionDirection('environment-review', 'welcome'), 1);
   assert.equal(setupStepMotionDirection('configure-openclaw', 'ready'), -1);
@@ -20,8 +20,8 @@ test('Gateway 配置核验与官方向导共享一个视觉场景', () => {
 });
 
 test('setup step transition animates only the entering current scene', () => {
-  assert.deepEqual(setupStepEntryState(-1, false), { opacity: 0.96, x: 12, y: 0 });
-  assert.deepEqual(setupStepEntryState(1, false), { opacity: 0.96, x: -12, y: 0 });
+  assert.deepEqual(setupStepEntryState(-1, false), { opacity: 0.96, x: -12, y: 0 });
+  assert.deepEqual(setupStepEntryState(1, false), { opacity: 0.96, x: 12, y: 0 });
   assert.deepEqual(setupStepEntryState(0, false), { opacity: 1, x: 0, y: 0 });
 });
 

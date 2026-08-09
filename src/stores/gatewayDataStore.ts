@@ -57,7 +57,7 @@ import {
   OpenClawSessionSearchResponseError,
   type OpenClawSessionSearchResult,
 } from '@/services/gateway/OpenClawSessionSearchClient';
-import { saveChatMedia } from '@/services/chat/mediaSaveRuntime';
+import { saveChatMedia } from '@/runtime/mediaSaveRuntime';
 import {
   parseOpenClawAgentList,
   projectOpenClawSession,
@@ -136,8 +136,7 @@ import { sessionListMutationFence } from '@/utils/sessionListMutationFence';
 //     Mid   (30s):  agents.list + cron    (rarely change)
 //     Slow  (120s): usage.cost + sessions.usage (heavy, slow-changing)
 //
-//   Gateway events (session.started, etc.) update the store
-//   in real-time without polling.
+//   官方 Gateway 事件只触发相应权威投影刷新，不创建本地生命周期语义。
 // ═══════════════════════════════════════════════════════════
 
 // ── Types ────────────────────────────────────────────────
@@ -246,28 +245,6 @@ export interface SessionsUsageQuery {
 }
 
 export type CronJob = OpenClawCronJobDetails;
-
-// task_id to session_key map, populated by task-session events
-const taskToSession = new Map<string, string>();
-function taskIdToSessionKey(taskId: string): string | undefined {
-  return taskToSession.get(taskId);
-}
-
-// ── Pending task-status buffer ────────────────────────────────────────────
-// task-status can arrive before task-session, which maps task_id to session_key.
-// We buffer the latest status per task_id and replay when task-session arrives,
-// instead of falling back to activeSessionKey (which would pollute the wrong session).
-const pendingTaskStatus = new Map<string, { status: string; ts: number }>();
-const PENDING_TASK_TTL = 30_000; // discard unresolved entries after 30s
-
-/** Apply a task-status result to a specific session key. */
-function applyTaskStatus(store: ReturnType<typeof useGatewayDataStore.getState>, sessionKey: string, isActive: boolean) {
-  store.setSessions(
-    store.sessions.map((s) =>
-      s.key === sessionKey ? { ...s, running: isActive, runningUpdatedAt: Date.now() } : s,
-    ),
-  );
-}
 
 // ── Running Sub-Agent Tracking ───────────────────────────
 // Detected from sessions polling (every 10s).
@@ -504,18 +481,18 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   // ── Setters ──
 
   setSessions: (sessions) => {
-    // Merge incoming sessions with existing ones, preserving event-driven fields
-    // (runningUpdatedAt) that the polling API does not return. Without this,
-    // Every 10s poll would wipe the freshness stamp, making isFreshRunning false
-    // and showing the pet as idle while an agent is actively working.
+    // `sessions.list` 是运行状态的权威来源；本地时间戳只记录首次观察到活动状态的时刻。
     const visibleSessions = coalesceSessionsByKey(withoutDeletedSessions(sessions));
     const existing = get().sessions;
     const existingByKey = new Map(existing.map((s) => [s.key, s]));
     const merged = visibleSessions.map((s) => {
       const prev = existingByKey.get(s.key);
-      if (!prev) return s;
-      // A false running state drops the freshness stamp because the task ended.
-      // A true running state without an earlier stamp mints one now.
+      if (!prev) {
+        return {
+          ...s,
+          runningUpdatedAt: s.running ? Date.now() : undefined,
+        };
+      }
       const runningUpdatedAt = s.running === false
         ? undefined
         : (prev.runningUpdatedAt ?? (s.running ? Date.now() : undefined));
@@ -1256,20 +1233,12 @@ async function fetchSessions(): Promise<boolean> {
       };
     });
 
-    // Merge: preserve event-enriched runningUpdatedAt that the server does not return.
-    // IMPORTANT: polling must NEVER generate a new runningUpdatedAt timestamp by itself.
-    // runningUpdatedAt is exclusively set by real-time events (session.started/ended,
-    // task-status). A server poll saying running=true is not a fresh live signal —
-    // it may reflect a session that was active before app launch.
-    // Rule: always carry forward the existing runningUpdatedAt; never mint a new one here.
+    // 保留本地观察时间；最终活动状态仍由当前官方会话快照决定。
     const prev = store.sessions;
     const prevByKey = new Map(prev.map((s) => [s.key, s]));
     const incomingList = rawList.map((s) => {
       const existing = prevByKey.get(s.key);
-      if (!existing) return s; // new session: no runningUpdatedAt — isFreshRunning returns false
-      // Always preserve the event-driven runningUpdatedAt regardless of running state change.
-      // If running changed to false (server confirms stopped), clear the timestamp so
-      // isFreshRunning() correctly returns false for this session going forward.
+      if (!existing) return s;
       return {
         ...s,
         runningUpdatedAt: s.running ? existing.runningUpdatedAt : undefined,
@@ -2579,110 +2548,11 @@ export function handleGatewayEvent(event: string, payload: any) {
       break;
     }
 
-    // ── Session events ──
-    case 'session.started':
-    case 'session.running': {
-      const key = payload?.sessionKey || payload?.key;
-      if (!key) break;
-      const existing = store.sessions.find((s) => s.key === key);
-      if (existing) {
-        store.setSessions(
-          store.sessions.map((s) => s.key === key ? { ...s, running: true, runningUpdatedAt: Date.now() } : s)
-        );
-      } else {
-        // New session — add it
-        // Spread payload first so our explicit fields (running, runningUpdatedAt) always win.
-        store.setSessions([...store.sessions, { ...payload, key, running: true, runningUpdatedAt: Date.now() }]);
-      }
-      debugLog('datastore', '[DataStore] Session started:', key);
-      break;
-    }
-
-    case 'session.ended':
-    case 'session.stopped':
-    case 'session.idle': {
-      const key = payload?.sessionKey || payload?.key;
-      if (!key) break;
-      store.setSessions(
-        store.sessions.map((s) => s.key === key ? { ...s, running: false, runningUpdatedAt: Date.now() } : s),
-      );
-      // Immediately remove from runningSubAgents if this is a sub-agent session,
-      // instead of waiting up to 10s for the next tickFast() poll cycle.
-      if (SUB_AGENT_RE.test(key)) {
-        const filtered = store.runningSubAgents.filter((r) => r.sessionKey !== key);
-        if (filtered.length !== store.runningSubAgents.length) {
-          store.setRunningSubAgents(filtered);
-          debugLog('datastore', '[DataStore] Sub-agent removed on session.ended:', key);
-        }
-      }
-      debugLog('datastore', '[DataStore] Session ended:', key);
-      break;
-    }
-
-    // ── Task status (from backend hook events: PostToolUse/Stop/Notification etc.) ──
-    // Backend emits { task_id, status: 'running' | 'input_required' | ... }.
-    // Map task_id to the session key. The map is populated by task-session
-    // events which carry both fields. The running flag is what the AgentHub uses
-    // to determine active vs idle vs input_required.
-    case 'task-status': {
-      const taskId = payload?.task_id;
-      const status: string = payload?.status || 'running';
-      if (!taskId) break;
-      // Only 'running' is genuinely active. 'input_required' means the agent is
-      // waiting for user confirmation — not actively processing — so we do not set
-      // running=true for it (avoids the pet showing "working" while blocked).
-      const isActive = status === 'running';
-      const sessionKey = taskIdToSessionKey(taskId);
-      if (!sessionKey) {
-        // task-session has not arrived yet — buffer and replay when it does.
-        // Do NOT fall back to activeSessionKey: that would pollute the wrong session.
-        pendingTaskStatus.set(taskId, { status, ts: Date.now() });
-        debugLog('datastore', '[DataStore] task-status buffered (awaiting task-session):', taskId, 'to', status);
-        break;
-      }
-      applyTaskStatus(store, sessionKey, isActive);
-      debugLog('datastore', '[DataStore] task-status:', taskId, 'to', status, '(session:', sessionKey, ')');
-      break;
-    }
-
-    // task-session builds the task_id to session_key map.
-    case 'task-session': {
-      const taskId = payload?.task_id;
-      const sessionId = payload?.session_id;
-      if (taskId && sessionId) {
-        taskToSession.set(taskId, sessionId);
-        // Replay any buffered task-status for this task_id now that the session is known.
-        const pending = pendingTaskStatus.get(taskId);
-        if (pending) {
-          pendingTaskStatus.delete(taskId);
-          const age = Date.now() - pending.ts;
-          if (age < PENDING_TASK_TTL) {
-            const isActive = pending.status === 'running';
-            applyTaskStatus(useGatewayDataStore.getState(), sessionId, isActive);
-            debugLog('datastore', '[DataStore] task-status replayed:', taskId, 'to', pending.status,
-              '(session:', sessionId, ', lag:', age, 'ms)');
-          } else {
-            debugLog('datastore', '[DataStore] task-status pending expired, discarding:', taskId);
-          }
-        }
-      }
-      break;
-    }
-
     // Current OpenClaw documents a `cron` event family but no public payload
     // schema for a local state projection. Treat it as invalidation only.
     case 'cron': {
       void fetchCron();
       debugLog('datastore', '[DataStore] Cron changed; refreshing Gateway projection');
-      break;
-    }
-
-    // ── Agent events ──
-    case 'agent.spawned':
-    case 'agent.created': {
-      // Trigger a full agents refresh to get accurate data
-      fetchAgents();
-      debugLog('datastore', '[DataStore] Agent event - refreshing agents');
       break;
     }
 

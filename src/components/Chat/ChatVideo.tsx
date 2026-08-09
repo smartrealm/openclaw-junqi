@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { debugError, debugLog } from '@/utils/debugLog';
 import { defaultGatewayHttpUrl } from '@/config/runtimeDefaults';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
-import { saveChatMedia } from '@/services/chat/mediaSaveRuntime';
+import { saveChatMedia } from '@/runtime/mediaSaveRuntime';
 
 // ═══════════════════════════════════════════════════════════
 // ChatVideo — Video display with controls, save, and fullscreen

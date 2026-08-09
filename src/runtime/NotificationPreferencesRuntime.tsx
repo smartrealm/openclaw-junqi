@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { notifications } from '@/services/notifications';
+import { notifications } from '@/runtime/notifications';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { applyNotificationPreferences } from './notificationPreferences';
 import { notifyPersistentNotificationsChanged } from '@/services/persistentNotifications';

@@ -9,7 +9,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
 import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
-import { screenshotRuntime, type ScreenshotWindowSource } from '@/services/chat/screenshotRuntime';
+import { screenshotRuntime, type ScreenshotWindowSource } from '@/runtime/screenshotRuntime';
 
 interface ScreenshotPickerProps { open: boolean; onClose: () => void; onCapture: (dataUrl: string) => void; }
 

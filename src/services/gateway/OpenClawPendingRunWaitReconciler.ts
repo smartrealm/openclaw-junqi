@@ -1,5 +1,16 @@
-import type { ChatSessionRunObservation } from './ChatHandler';
 import type { OpenClawAgentWaitResult } from './OpenClawAgentWaitClient';
+import type { OpenClawPendingChatSendPhase } from './OpenClawPendingChatSend';
+
+export interface ChatSessionRunObservation {
+  sessionKey: string;
+  activeRunId: string | null;
+  activeRunGeneration: number | null;
+  hasActiveRun: boolean;
+  typingStartedAt: number | null;
+  pendingRunId: string | null;
+  pendingRunGeneration: number | null;
+  pendingRunPhase: OpenClawPendingChatSendPhase | null;
+}
 
 export interface OpenClawPendingRunWaitReconcilerDependencies {
   captureConnectionId: () => string | null;

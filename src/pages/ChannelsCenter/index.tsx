@@ -5,8 +5,8 @@ import { Activity, AlertCircle, Bot, Check, ChevronDown, Copy, Download, Link2, 
 import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
-import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
-import { gateway } from '@/services/gateway';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
+import { gateway, openClawChannelQrLoginClient } from '@/services/gateway';
 import { clearGatewayLogs, type LogEntry } from '@/api/tauri-commands';
 import { translateGatewayLogPayload } from '@/hooks/gatewayLogEvents';
 import type { AgentConfig, GatewayRuntimeConfig } from '@/types/openclawConfig';
@@ -1316,6 +1316,7 @@ export function ChannelsCenterPage() {
       )}
       {qrTarget && (
         <ChannelQrLoginDialog
+          client={openClawChannelQrLoginClient}
           channelId={qrTarget.channelId}
           accountId={qrTarget.accountId}
           onClose={() => setQrTarget(null)}

@@ -26,7 +26,7 @@ test('BUG-DM-01 and BUG-DM-02 config and catalog refresh never pin a session', (
 
 test('BUG-DM-03 session settings expose the installed null reset contract', () => {
   const client = source('src/services/gateway/SessionSettingsClient.ts');
-  const hook = source('src/components/Chat/session-runtime/useSessionRuntimeSettings.ts');
+  const hook = source('src/hooks/chat/useSessionRuntimeSettings.ts');
   const control = source('src/components/Chat/session-runtime/SessionRuntimeControl.tsx');
 
   assert.match(client, /setModel\(sessionKey: string, model: string \| null\)/);
@@ -37,7 +37,7 @@ test('BUG-DM-03 session settings expose the installed null reset contract', () =
 });
 
 test('BUG-DM-06 model patches rely on the Gateway sessions.changed invalidation only', () => {
-  const hook = source('src/components/Chat/session-runtime/useSessionRuntimeSettings.ts');
+  const hook = source('src/hooks/chat/useSessionRuntimeSettings.ts');
   const app = source('src/App.tsx');
 
   assert.doesNotMatch(hook, /aegis:model-changed/);

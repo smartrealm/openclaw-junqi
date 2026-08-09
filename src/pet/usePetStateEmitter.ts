@@ -292,21 +292,10 @@ export function usePetStateEmitter() {
         || isVoiceInputCapturePhase(voiceMode.phase);
       const voiceSpeaking = voice.remoteOutput !== null || voice.phase === 'queued' || voice.phase === 'speaking';
       const tool = cs.messages.some((m) => m.toolStatus === 'running');
-      // "working" means an agent is actively running. `session.running` is the
-      // authoritative state set by real-time events (session.running / stopped /
-      // task-status); polls only carry it forward and never mint a timestamp.
-      //
-      // Previously a 2-minute ceiling on runningUpdatedAt dropped long-running
-      // agents back to idle during quiet reasoning gaps — but `running:true` IS
-      // the signal that an agent is working, so we must not second-guess it with
-      // a timeout. The only stale case to reject is cold-boot residue: a session
-      // whose running=true came from an old poll with NO event-driven timestamp
-      // (runningUpdatedAt === 0). Any real running session has a timestamp.
-      // chatStore.Session has no runningUpdatedAt field, so only gatewayDataStore
-      // sessions can be trusted for "working" detection (running flag there is
-      // set by real-time events with an event-driven timestamp). Don't merge a
-      // cs.sessions branch that would be dead code.
+      // 优先使用官方会话快照中的活动运行字段；本地时间戳只辅助展示旧式 running 投影。
       const isFreshRunning = (s: any) => {
+        if (typeof s?.hasActiveRun === 'boolean') return s.hasActiveRun;
+        if (typeof s?.hasActiveSubagentRun === 'boolean') return s.hasActiveSubagentRun;
         if (!s?.running) return false;
         return Number(s.runningUpdatedAt || 0) > 0;
       };

@@ -1,6 +1,6 @@
 import type { ArtifactDownloadResult, ArtifactSummary } from '@/services/gateway/artifacts';
 import type { ManagedFilePreview } from './filePreviewCapabilities';
-import { decodeBase64Utf8 } from '@/services/chat/filePreview';
+import { decodeBase64Utf8 } from '@/runtime/filePreview';
 import { fileExtension } from '@/workspace-files/domain/fileKinds';
 
 const MAX_INLINE_ARTIFACT_BYTES = 8 * 1024 * 1024;

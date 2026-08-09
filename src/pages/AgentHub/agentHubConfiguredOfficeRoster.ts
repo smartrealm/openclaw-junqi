@@ -1,4 +1,4 @@
-import type { CollaborationCapabilityAgent } from '@/services/collaboration/types';
+import type { CollaborationCapabilityAgent } from '@/types/collaboration';
 
 export interface ConfiguredOfficeAgent {
   id: string;

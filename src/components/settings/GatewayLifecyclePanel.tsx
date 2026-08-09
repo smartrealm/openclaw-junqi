@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { gatewayLifecycle } from '@/services/gateway/gatewayLifecycle';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import {
   Activity,
   AlertTriangle,

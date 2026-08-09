@@ -9,7 +9,7 @@ import {
 } from '@/components/Collaboration/CollaborationCard';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { useCollaborationStore } from '@/stores/collaborationStore';
-import type { CollaborationRunSummary } from '@/services/collaboration/types';
+import type { CollaborationRunSummary } from '@/types/collaboration';
 import {
   selectableAgentHubOfficeRuns,
   selectAgentHubOfficeRun,

@@ -23,7 +23,7 @@ const pluginRecovery = readFileSync(
   'utf8',
 );
 const openclawRepair = readFileSync(
-  new URL('../services/gateway/openclawRepair.ts', import.meta.url),
+  new URL('../runtime/openclawRepair.ts', import.meta.url),
   'utf8',
 );
 const channelRuntime = readFileSync(
@@ -66,9 +66,9 @@ const gatewayConnectionTargetResolver = readFileSync(
   new URL('../services/gateway/GatewayConnectionTargetResolver.ts', import.meta.url),
   'utf8',
 );
-const gatewayRescue = readFileSync(new URL('../services/gatewayRescue.ts', import.meta.url), 'utf8');
+const gatewayRescue = readFileSync(new URL('../runtime/gatewayRescue.ts', import.meta.url), 'utf8');
 const openclawMediaPreview = readFileSync(
-  new URL('../services/chat/openclawMediaPreview.ts', import.meta.url),
+  new URL('../runtime/openClawMediaPreview.ts', import.meta.url),
   'utf8',
 );
 const gatewayLifecyclePanel = readFileSync(
@@ -88,12 +88,12 @@ const gatewayControlUi = readFileSync(
   'utf8',
 );
 const collaborationChatProvider = readFileSync(
-  new URL('../components/Chat/CollaborationChatProvider.tsx', import.meta.url),
+  new URL('../runtime/CollaborationChatRuntime.tsx', import.meta.url),
   'utf8',
 );
 const settingsPage = readFileSync(new URL('../pages/SettingsPage.tsx', import.meta.url), 'utf8');
 const gatewayErrorScreen = readFileSync(
-  new URL('../components/GatewayErrorScreen.tsx', import.meta.url),
+  new URL('../pages/GatewayErrorScreen.tsx', import.meta.url),
   'utf8',
 );
 const gatewayProcessRecoveryHook = readFileSync(
@@ -105,7 +105,7 @@ const persistentNotificationRepository = readFileSync(
   'utf8',
 );
 const notificationService = readFileSync(
-  new URL('../services/notifications.ts', import.meta.url),
+  new URL('../runtime/notifications.ts', import.meta.url),
   'utf8',
 );
 const persistentNotificationHook = readFileSync(
@@ -129,8 +129,8 @@ const skillHubRuntime = readFileSync(
   'utf8',
 );
 const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
-const commandPalette = readFileSync(new URL('../components/CommandPalette.tsx', import.meta.url), 'utf8');
-const chatView = readFileSync(new URL('../components/Chat/ChatView.tsx', import.meta.url), 'utf8');
+const commandPalette = readFileSync(new URL('../runtime/CommandPalette.tsx', import.meta.url), 'utf8');
+const chatView = readFileSync(new URL('../pages/ChatView.tsx', import.meta.url), 'utf8');
 const gateway = readFileSync(
   new URL('../../src-tauri/src/commands/gateway.rs', import.meta.url),
   'utf8',

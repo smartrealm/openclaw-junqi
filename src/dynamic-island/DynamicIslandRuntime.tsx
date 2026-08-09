@@ -8,7 +8,7 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { usePetStore } from '@/stores/petStore';
 import { useVoiceStore } from '@/stores/voiceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { voiceRuntime } from '@/runtime/VoiceRuntime';
 import type { DynamicIslandAction } from './DynamicIslandActions';
 import { DYNAMIC_ISLAND_PREVIEW_EVENT, DynamicIslandPreview } from './DynamicIslandPreview';
 import { DynamicIslandVisibilityController } from './DynamicIslandVisibilityController';

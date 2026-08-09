@@ -11,7 +11,7 @@ import {
   MAX_VOICE_WAKE_TRIGGERS,
   normalizeVoiceWakeListTrigger,
   normalizeVoiceWakeRouteTrigger,
-} from './voiceWakeTypes';
+} from '@/types/voiceWake';
 
 test('全局唤醒词只裁剪空白而路由键遵循官方匹配规范', () => {
   assert.equal(normalizeVoiceWakeListTrigger(' Hey,  JunQi!! '), 'Hey,  JunQi!!');

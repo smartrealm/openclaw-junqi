@@ -29,7 +29,7 @@ const wizardClient = readFileSync(new URL('../services/openclawWizard.ts', impor
 const adapter = readFileSync(new URL('../api/tauri-adapter.ts', import.meta.url), 'utf8');
 const settingsStore = readFileSync(new URL('../stores/settingsStore.ts', import.meta.url), 'utf8');
 const settingsPage = readFileSync(new URL('../pages/SettingsPage.tsx', import.meta.url), 'utf8');
-const notificationService = readFileSync(new URL('../services/notifications.ts', import.meta.url), 'utf8');
+const notificationService = readFileSync(new URL('../runtime/notifications.ts', import.meta.url), 'utf8');
 const setupCommand = readdirSync(new URL('../../src-tauri/src/commands/setup/', import.meta.url))
   .filter((entry) => entry.endsWith('.rs'))
   .sort()
@@ -491,7 +491,7 @@ test('BUG-ONB-18 unused prepare_gateway bridge is no longer part of the command 
 test('BUG-ONB-21 Ready follows the native Gateway and configuration gates', () => {
   const completion = setupFlow.slice(
     setupFlow.indexOf('if (result.done || result.status === "done")'),
-    setupFlow.indexOf('const recoverLostWizardSession'),
+    setupFlow.indexOf('const recoverAfterGatewayHandoff'),
   );
   const readyTransition = setupFlow.slice(
     setupFlow.indexOf('const continueAfterGatewayReady'),
@@ -501,17 +501,6 @@ test('BUG-ONB-21 Ready follows the native Gateway and configuration gates', () =
   assert.doesNotMatch(completion, /probeActiveRuntimeModel|modelNotReady/);
   assert.match(completion, /updateOnboardingRequirement\(false\)/);
   assert.doesNotMatch(readyTransition, /probeActiveRuntimeModel|probeModel/);
-});
-
-test('BUG-ONB-25 lost terminal sessions reconcile observable completion before restart', () => {
-  const recovery = setupFlow.slice(
-    setupFlow.indexOf('const recoverLostWizardSession'),
-    setupFlow.indexOf('const startOfficialOnboarding'),
-  );
-  assert.match(recovery, /resolveActiveRuntimeOnboardingRequirement\(\)/);
-  assert.doesNotMatch(recovery, /probeActiveRuntimeModel/);
-  assert.match(recovery, /return \{ done: true, status: "done" \}/);
-  assert.ok(recovery.indexOf('return await client.start()') > recovery.indexOf('if \(!structurallyIncomplete\)'));
 });
 
 test('BUG-IW-04 wizard presentation stays within the installed strict schema', () => {
@@ -565,27 +554,8 @@ test('BUG-ONB-40 official Gateway finalizer refreshes credentials and reconciles
   assert.match(setupFlow, /getGatewayDeviceCredentialForUrl\(gatewayWsUrl\)/);
   assert.match(setupFlow, /gatewayManager\.connect\(gatewayWsUrl, token, deviceToken\)/);
   assert.match(setupFlow, /const recoverAfterGatewayHandoff/);
-  assert.match(setupFlow, /return await recoverLostWizardSession\(client\)/);
+  assert.match(setupFlow, /return await client\.restartAfterSessionLoss\(\)/);
   assert.match(setupFlow, /error instanceof GatewayPrivilegedSourceChangedError/);
-});
-
-test('BUG-ONB-45 a terminal note survives the final Gateway restart without a false timeout', () => {
-  const wizardHook = hookFile('useWizardSession');
-  const notice = readFileSync(new URL('../pages/SetupPage/wizard/WizardNoticeStep.tsx', import.meta.url), 'utf8');
-  const submit = wizardHook.slice(
-    wizardHook.indexOf('const submitWizardStep'),
-    wizardHook.indexOf('const retryOfficialOnboarding'),
-  );
-  const wizard = screen('WizardScreen');
-
-  assert.match(submit, /connectionTimedOut/);
-  assert.match(submit, /OpenClawWizardGatewayConnectionTimeoutError/);
-  assert.match(submit, /isOpenClawWizardCompletionStep\(wizardClientRef\.current\?\.currentStepView\)/);
-  assert.match(submit, /resolveActiveRuntimeOnboardingRequirement\(\)/);
-  assert.match(submit, /applyWizardResult\(\{ done: true, status: "done" \}, operationId\)/);
-  assert.match(wizard, /isOpenClawWizardNonBlockingProbeFailure\(presentedStep\)/);
-  assert.match(notice, /setup\.wizard\.nonBlockingProbeFailure/);
-  assert.match(notice, /completionVerification/);
 });
 
 test('BUG-ONB-50 retry recovers an upstream-reaped Wizard session instead of surfacing wizard not found', () => {
@@ -597,7 +567,7 @@ test('BUG-ONB-50 retry recovers an upstream-reaped Wizard session instead of sur
 
   assert.match(retry, /wizardClientRef\.current!\.retry\(\)/);
   assert.match(retry, /isOpenClawWizardSessionLost\(error\)/);
-  assert.match(retry, /recoverLostWizardSession\(wizardClientRef\.current!\)/);
+  assert.match(retry, /wizardClientRef\.current!\.restartAfterSessionLoss\(\)/);
 });
 
 test('BUG-ONB-46 Gateway 执行的进度步骤只由官方会话轮询', () => {

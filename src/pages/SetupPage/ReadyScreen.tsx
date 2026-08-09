@@ -9,7 +9,7 @@ import { appAutostartStatus, disableAppAutostart, disableGatewayAutostart, enabl
 import { SetupShell, STEP_META } from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
 import { type InstallMode } from "@/stores/setup-navigation";
-import { gatewayLifecycle } from "@/services/gateway/gatewayLifecycle";
+import { gatewayLifecycle } from "@/runtime/gatewayLifecycle";
 import { presentGatewayAutostart } from "@/components/settings/gatewayAutostartPresentation";
 import { presentAppAutostart } from "@/components/settings/appAutostartPresentation";
 import { AutostartPreferenceRow } from "@/components/settings/AutostartPreferenceRow";

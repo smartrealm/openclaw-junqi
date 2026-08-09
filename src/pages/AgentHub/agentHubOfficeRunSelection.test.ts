@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { CollaborationRunSummary } from '@/services/collaboration/types';
+import type { CollaborationRunSummary } from '@/types/collaboration';
 import {
   DEFAULT_AGENT_HUB_VIEW,
   selectableAgentHubOfficeRuns,

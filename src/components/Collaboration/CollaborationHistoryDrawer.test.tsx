@@ -7,7 +7,7 @@ import type {
   CollaborationRunSummary,
   CollaborationTombstone,
   CollaborationWorkflowTemplate,
-} from '@/services/collaboration/types';
+} from '@/types/collaboration';
 import { CollaborationHistoryDrawer } from './CollaborationHistoryDrawer';
 
 function run(overrides: Partial<CollaborationRunSummary> = {}): CollaborationRunSummary {

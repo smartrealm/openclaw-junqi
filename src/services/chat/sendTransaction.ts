@@ -1,22 +1,56 @@
-import { gateway, isGatewayChatSendDeliveryUncertain } from '@/services/gateway';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
-import { useChatStore, type ChatMessage } from '@/stores/chatStore';
+import { isOpenClawChatSendDeliveryUncertain } from '@/processing/openClawChatEvent';
 import type { GatewayAttachment, QueuedChatMessage } from './types';
 import { sessionMutationGate } from './sessionMutationGate';
 import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import type { TaskExecutionSource } from '@/task-execution/types';
 import { requireOpenClawSessionTarget } from '@/services/gateway/OpenClawSessionTarget';
 
-interface ChatSendGateway {
-  sendMessage: typeof gateway.sendMessage;
+export interface ChatSendGateway {
+  sendMessage(
+    message: string,
+    attachments: GatewayAttachment[] | undefined,
+    sessionKey: string,
+    identity?: {
+      clientMessageId?: string;
+      sessionId?: string;
+      expectedLeafEntryId?: string | null;
+      delivery?: 'send' | 'steer';
+      supersededRunId?: string;
+    },
+  ): Promise<unknown>;
+}
+
+export interface ChatSendMessage {
+  id: string;
+  clientMessageId?: string;
+  role: 'user';
+  content: string;
+  timestamp: string;
+  status?: 'pending' | 'sent' | 'queued' | 'failed' | 'cancelled';
+  deliveryError?: string;
+  mediaUrl?: string;
+  mediaType?: string;
+  attachments?: Array<{
+    mimeType: string;
+    content: string;
+    fileName?: string;
+  }>;
+  outboundAttachments?: Array<{ fileName?: string; mimeType: string }>;
+  retryPayload?: {
+    text: string;
+    sessionId?: string;
+    attachments?: GatewayAttachment[];
+    displayAttachments?: ChatSendMessage['attachments'];
+  };
 }
 
 type TaskExecutionPort = Pick<typeof taskExecutionCoordinator,
   'prepareSend' | 'prepareSteer' | 'isRunStopRequested' | 'settleRun' | 'reportPersistenceFailure'>;
 
 interface ChatSendState {
-  addMessage: (message: ChatMessage, sessionKey?: string) => void;
-  updateMessage: (sessionKey: string, messageId: string, patch: Partial<ChatMessage>) => void;
+  addMessage: (message: ChatSendMessage, sessionKey?: string) => void;
+  updateMessage: (sessionKey: string, messageId: string, patch: Partial<ChatSendMessage>) => void;
   setIsTyping: (typing: boolean, sessionKey?: string) => void;
   setSessionActiveLeafEntryId?: (
     sessionKey: string,
@@ -38,9 +72,9 @@ export interface ChatSendRequest {
   sessionId?: string;
   message: string;
   attachments?: GatewayAttachment[];
-  displayAttachments?: ChatMessage['attachments'];
+  displayAttachments?: ChatSendMessage['attachments'];
   clientMessageId?: string;
-  optimisticMessage?: Partial<ChatMessage> | false;
+  optimisticMessage?: Partial<ChatSendMessage> | false;
   delivery?: 'steer';
   source?: TaskExecutionSource;
   model?: string | null;
@@ -237,7 +271,7 @@ export class ChatSendCoordinator {
       if (expectedLeafEntryId === null) {
         state.setSessionActiveLeafEntryId?.(sessionKey, undefined);
       }
-      const deliveryUncertain = isGatewayChatSendDeliveryUncertain(result);
+      const deliveryUncertain = isOpenClawChatSendDeliveryUncertain(result);
       if (!deliveryUncertain) {
         state.updateMessage(sessionKey, clientMessageId, {
           status: result?.queued ? 'queued' : 'sent',
@@ -270,8 +304,3 @@ export class ChatSendCoordinator {
     }
   }
 }
-
-export const chatSendCoordinator = new ChatSendCoordinator(
-  gateway,
-  () => useChatStore.getState(),
-);

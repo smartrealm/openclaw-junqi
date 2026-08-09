@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { CollaborationCapabilities } from '@/services/collaboration/types';
+import type { CollaborationCapabilities } from '@/types/collaboration';
 import type { CollaborationBootstrapProbe } from '@/types/collaborationBootstrap';
 import type { RuntimeIdentity } from '@/types/gatewayRuntime';
 import { CollaborationSetupPanel } from './CollaborationSetupDialog';

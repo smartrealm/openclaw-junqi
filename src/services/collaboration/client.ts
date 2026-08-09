@@ -38,8 +38,8 @@ import type {
   CollaborationWriteRequest,
   CollaborationWriteResponse,
   CollaborationErrorCode,
-} from './types';
-import { isCollaborationErrorCode } from './types';
+} from '@/types/collaboration';
+import { isCollaborationErrorCode } from '@/types/collaboration';
 
 export type CollaborationRpcCall = (
   method: string,

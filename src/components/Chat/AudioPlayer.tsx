@@ -3,9 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { Play, Pause, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
-import { voiceRuntime } from '@/services/voice/VoiceRuntime';
-import { VOICE_INTERRUPT_EVENT, VOICE_MEDIA_REQUEST_EVENT } from '@/services/voice/types';
-import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
+import { voiceRuntime } from '@/runtime/VoiceRuntime';
+import { VOICE_INTERRUPT_EVENT, VOICE_MEDIA_REQUEST_EVENT } from '@/types/voice';
+import { voiceFileRuntime } from '@/runtime/voiceFileRuntime';
 
 // ═══════════════════════════════════════════════════════════
 // AudioPlayer — Custom audio player for TTS / voice messages

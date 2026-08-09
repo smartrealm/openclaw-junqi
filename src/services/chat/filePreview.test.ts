@@ -6,7 +6,7 @@ import {
   loadLocalFilePreview,
   resolveLocalFileReference,
   readLocalTextPreview,
-} from './filePreview';
+} from '@/runtime/filePreview';
 
 test('CHAT-12 classifies only formats with a real inline renderer', () => {
   assert.equal(getFilePreviewKind('training/index.html'), 'html');

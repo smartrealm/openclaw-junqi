@@ -6,7 +6,7 @@ import {
   notifyOpenClawSessionCompactionFailure,
   presentOpenClawSessionCompaction,
   requireOpenClawSessionCompactionTarget,
-} from './sessionCompactionFeedback';
+} from '@/processing/sessionCompactionFeedback';
 
 const translate = (key: string, options?: { reason: string }): string => (
   options?.reason ? `${key}:${options.reason}` : key

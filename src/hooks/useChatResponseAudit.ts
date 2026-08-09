@@ -6,7 +6,7 @@ import {
   listAuditEvents,
   type AuditStatus,
   type OpenClawAuditEvent,
-} from '@/services/gateway/auditLedger';
+} from '@/processing/auditLedger';
 
 export interface ChatResponseAuditState {
   loading: boolean;

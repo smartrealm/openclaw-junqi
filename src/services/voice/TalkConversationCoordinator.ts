@@ -16,7 +16,7 @@ import {
   type TalkOutputCancelReason,
   type TalkToolResultOptions,
 } from '@/services/gateway/TalkGatewayClient';
-import type { VoiceInterruptControl } from './types';
+import type { VoiceInterruptControl } from '@/types/voice';
 
 const MAX_PENDING_AUDIO_APPENDS = 4;
 const MAX_TRANSCRIPT_LENGTH = 8_000;

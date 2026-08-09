@@ -5,11 +5,7 @@ import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
 import { SetupShell } from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
-import {
-  isOpenClawWizardCompletionStep,
-  isOpenClawWizardNonBlockingProbeFailure,
-  type OpenClawWizardStep,
-} from "@/services/openclawWizard";
+import type { OpenClawWizardStep } from "@/services/openclawWizard";
 import { isWizardBodyMessageStep, WizardStepRenderer } from "./wizard/WizardStepRenderer";
 import { wizardValuesEqual } from "./wizard/WizardStepValue";
 
@@ -48,8 +44,6 @@ export type WizardScreenCopy = {
   subtitleFallback: string;
   connectingKey: string;
   connectingFallback: string;
-  completionVerificationKey: string;
-  completionVerificationFallback: string;
 };
 
 const DEFAULT_WIZARD_COPY: WizardScreenCopy = {
@@ -59,8 +53,6 @@ const DEFAULT_WIZARD_COPY: WizardScreenCopy = {
   subtitleFallback: "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。",
   connectingKey: "setup.wizard.connecting",
   connectingFallback: "正在连接 OpenClaw 官方配置向导…",
-  completionVerificationKey: "setup.wizard.completionVerification",
-  completionVerificationFallback: "OpenClaw 向导已结束。点击完成后，JunQi 仍会验证当前 Gateway 连接和所选模型；验证未通过时不会进入工作台。",
 };
 
 export function WizardScreen({
@@ -134,8 +126,6 @@ export function WizardScreen({
   const wizardSubtitle = messageRenderedInBody
     ? t(copy.subtitleKey, copy.subtitleFallback)
     : presentedStep.message || t(copy.subtitleKey, copy.subtitleFallback);
-  const completionStep = isOpenClawWizardCompletionStep(presentedStep);
-  const nonBlockingProbeFailure = isOpenClawWizardNonBlockingProbeFailure(presentedStep);
   const submitCurrentStep = async () => {
     await wizard.submitWizardStep(step.id, value);
   };
@@ -155,8 +145,6 @@ export function WizardScreen({
       nextAction={{
         label: wizard.wizardError
           ? t("setup.wizard.retry", "重试")
-          : completionStep
-            ? t("setup.wizard.finish", "完成")
           : autoPollProgress
             ? t("setup.wizard.processing", "正在处理…")
             : step.type === "action" ? t("setup.wizard.run", "执行") : t("setup.nextStep", "下一步"),
@@ -179,10 +167,6 @@ export function WizardScreen({
           value={value}
           setValue={setValue}
           t={t}
-          nonBlockingProbeFailure={nonBlockingProbeFailure}
-          completionVerification={completionStep
-            ? t(copy.completionVerificationKey, copy.completionVerificationFallback)
-            : undefined}
         />
       </div>
     </SetupShell>

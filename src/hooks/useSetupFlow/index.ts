@@ -20,12 +20,20 @@ import {
 } from "@/api/tauri-commands";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
-import { gateway, openClawSetupClient } from "@/services/gateway";
+import { openClawSetupVerificationClient } from "@/services/gateway";
+import { OpenClawSetupVerificationUnavailableError } from "@/services/gateway/OpenClawSetupVerificationClient";
 import { executeRuntimeSelectionTransaction } from "@/services/setup/runtimeSelectionTransaction";
-import { validateSetupCompletion } from "@/services/setup/setupCompletionGate";
+import { toSetupInferenceVerification, validateSetupCompletion, type SetupInferenceVerification } from "@/services/setup/setupCompletionGate";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import { createOnboardingPresentationMachine } from "@/services/setup/onboardingPresentation";
+import {
+  readActiveOpenclawConfig,
+  validateActiveOpenclawConfig,
+} from '@/services/openclawConfigRuntime';
 import { isCurrentSetupOperationProgress } from "@/hooks/setupProgressEvents";
+import {
+  requiresOpenClawOnboarding,
+} from "@/services/openclawWizard";
 
 
 import { usePluginRecovery } from "./usePluginRecovery";
@@ -172,22 +180,31 @@ export function useSetupFlow(
     throw new Error(t("setup.gatewayReadyTimeout", "Gateway did not become ready in time."));
   }, [isRunActive, t]);
 
-  const waitForAuthenticatedGateway = useCallback(async (runId: number, timeoutMs = 20_000) => {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      if (!isRunActive(runId)) throw new Error("setup cancelled");
-      if (gateway.getStatus().connected) return;
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    throw new Error(t(
-      "setup.wizard.connectionTimeout",
-      "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成经认证的 Gateway 连接。",
-    ));
-  }, [isRunActive, t]);
-
   const resolveActiveRuntimeOnboardingRequirement = useCallback(async (): Promise<boolean> => {
-    const detection = await openClawSetupClient.detect();
-    return !detection.setupComplete;
+    try {
+      const detected = await validateActiveOpenclawConfig();
+      const loaded = await readActiveOpenclawConfig();
+      return requiresOpenClawOnboarding(detected.exists, loaded.data);
+    } catch {
+      // A missing or unreadable selected-runtime config must stay in the
+      // official onboarding path instead of allowing an unconfigured workspace.
+      return true;
+    }
+  }, []);
+
+  const verifyActiveRuntimeInference = useCallback(async (): Promise<SetupInferenceVerification> => {
+    try {
+      return toSetupInferenceVerification(await openClawSetupVerificationClient.verify());
+    } catch (error) {
+      if (error instanceof OpenClawSetupVerificationUnavailableError) {
+        return { status: "unavailable", error: sanitizeSetupDiagnostic(error.message) };
+      }
+      return {
+        status: "failed",
+        reason: "unknown",
+        error: sanitizeSetupDiagnostic(error instanceof Error ? error.message : error),
+      };
+    }
   }, []);
 
   const {
@@ -207,7 +224,6 @@ export function useSetupFlow(
     beginRun,
     isRunActive,
     resolveOnboardingRequirement: resolveActiveRuntimeOnboardingRequirement,
-    isGatewayConnected: () => gateway.getStatus().connected,
     updateOnboardingRequirement,
     setGatewayRunning,
     setInstallMode,
@@ -250,7 +266,7 @@ export function useSetupFlow(
     setupStep,
     report,
     patchStep,
-    resolveActiveRuntimeOnboardingRequirement,
+    verifyConfiguredInference: verifyActiveRuntimeInference,
     updateOnboardingRequirement,
     appendSetupLog,
     replaceSetupStep,
@@ -283,7 +299,6 @@ export function useSetupFlow(
       patchStep("gateway", "running", t("setup.gatewayConnecting", "Gateway 已就绪，正在建立连接…"));
       reportPhase("gatewayPort", t("setup.gatewayConnecting", "Gateway 已就绪，正在建立连接…"));
       await waitForGatewayReady(runId, isDockerRuntime ? 30_000 : 10_000, status?.port);
-      await waitForAuthenticatedGateway(runId);
       if (!isRunActive(runId)) return false;
       if (isDockerRuntime) {
         patchStep("container", "done");
@@ -318,7 +333,7 @@ export function useSetupFlow(
       replaceSetupStep("error");
       return false;
     }
-  }, [beginRun, isRunActive, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForAuthenticatedGateway, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
+  }, [beginRun, isRunActive, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
 
   const continueAfterGatewayReady = useCallback(async () => {
     if (gatewayReadyContinuationInFlightRef.current) return;
@@ -337,16 +352,27 @@ export function useSetupFlow(
       const completion = await validateSetupCompletion({
         probeGateway: () => probeSelectedGateway().catch(() => false),
         requiresOnboarding: resolveActiveRuntimeOnboardingRequirement,
+        verifyConfiguredInference: verifyActiveRuntimeInference,
       });
 
       setGatewayReadyContinuation({ status: "idle", error: null });
+      if (completion.ready && completion.verification.status === "unavailable") {
+        const message = t(
+          "setup.wizard.inferenceVerificationUnavailable",
+          "OpenClaw 配置已完成，但当前 Gateway 未提供官方实时模型验证。模型可用性暂未核验，可继续进入工作区。",
+        );
+        appendSetupLog({ source: "setup", step: "gateway", message, level: "warn" });
+      }
       if (!completion.ready) {
         if (completion.reason === "onboarding-required") {
           // 配置页面独占官方向导的启动权；此处只决定去向，避免一次点击创建竞争的向导会话。
           navigateSetup("configure-openclaw", "push");
           return;
         }
-        const message = t("setup.dashboardEntryGatewayUnavailable");
+        const message = t(
+          "setup.wizard.inferenceUnverified",
+          "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",
+        );
         setGatewayReadyContinuation({ status: "failed", error: message });
         setSetupError(message);
         appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
@@ -369,7 +395,7 @@ export function useSetupFlow(
     } finally {
       gatewayReadyContinuationInFlightRef.current = false;
     }
-  }, [appendSetupLog, gatewayRunning, navigateSetup, report, resolveActiveRuntimeOnboardingRequirement, setSetupError, startGatewayAction, t]);
+  }, [appendSetupLog, gatewayRunning, navigateSetup, report, resolveActiveRuntimeOnboardingRequirement, setSetupError, startGatewayAction, t, verifyActiveRuntimeInference]);
 
   // Storage, runtime selection, and the official OpenClaw wizard stay
   // interactive; only the Gateway start above continues on its own.
@@ -422,7 +448,9 @@ export function useSetupFlow(
         stageMode: setActiveGatewayRuntime,
         prepare: async (targetMode) => {
           setInstallMode(targetMode);
+          const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
           if (!isRunActive(runId)) return;
+          updateOnboardingRequirement(onboardingRequired);
           navigateSetup("checking", "push");
           if (targetMode === "native") {
             commitSteps([...INITIAL_NATIVE_STEPS]);
@@ -444,7 +472,9 @@ export function useSetupFlow(
 
       if (outcome.status === "committed" || outcome.status === "superseded") return;
       setInstallMode(previousMode);
+      const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
       if (!isRunActive(runId)) return;
+      updateOnboardingRequirement(onboardingRequired);
 
       if (outcome.compensationErrors?.length) {
         const message = t("setup.runtimeCompensationIncomplete", "运行时切换失败，部分恢复操作未完成；请检查 Gateway 状态后重试");
@@ -481,7 +511,7 @@ export function useSetupFlow(
       report(message);
       replaceSetupStep("error");
     }
-  }, [beginRun, isRunActive, installMode, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, setActiveGatewayRuntime, commitSetupGatewayRuntime, rollbackActiveGatewayRuntime, rollbackRuntimeReconfiguration, gatewayManager, t]);
+  }, [beginRun, isRunActive, installMode, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, updateOnboardingRequirement, resolveActiveRuntimeOnboardingRequirement, setActiveGatewayRuntime, commitSetupGatewayRuntime, rollbackActiveGatewayRuntime, rollbackRuntimeReconfiguration, gatewayManager, t]);
 
   const selectMode = useCallback(async (mode: InstallMode) => {
     if (runtimeSelectionInFlightRef.current || setupBackInFlightRef.current) return;
@@ -813,6 +843,7 @@ export function useSetupFlow(
       const completion = await validateSetupCompletion({
         probeGateway: () => probeSelectedGateway().catch(() => false),
         requiresOnboarding: resolveActiveRuntimeOnboardingRequirement,
+        verifyConfiguredInference: verifyActiveRuntimeInference,
       });
       if (!completion.ready && completion.reason === "gateway-unavailable") {
         const message = t(
@@ -840,6 +871,31 @@ export function useSetupFlow(
         replaceSetupStep("configure-openclaw");
         return;
       }
+      if (!completion.ready) {
+        const message = t(
+          "setup.wizard.inferenceUnverified",
+          "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",
+        );
+        setDashboardEntryError(message);
+        setSetupError(message);
+        appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
+        report(message);
+        replaceSetupStep("gateway-ready");
+        return;
+      }
+
+       if (completion.verification.status === "unavailable") {
+        appendSetupLog({
+          source: "setup",
+          step: "gateway",
+          message: t(
+            "setup.wizard.inferenceVerificationUnavailable",
+            "OpenClaw 配置已完成，但当前 Gateway 未提供官方实时模型验证。模型可用性暂未核验，可继续进入工作区。",
+          ),
+          level: "warn",
+         });
+       }
+
       setSetupError(null);
       void invalidateActiveRun();
       enterWorkspaceWithTransition(() => {
@@ -852,7 +908,7 @@ export function useSetupFlow(
       dashboardEntryInFlightRef.current = false;
       setEnteringDashboard(false);
     }
-  }, [appendSetupLog, invalidateActiveRun, replaceSetupStep, report, resolveActiveRuntimeOnboardingRequirement, setGatewayRunning, setSetupComplete, setSetupError, setWorkspaceStartupMode, t, updateOnboardingRequirement]);
+  }, [appendSetupLog, invalidateActiveRun, replaceSetupStep, report, resolveActiveRuntimeOnboardingRequirement, setGatewayRunning, setSetupComplete, setSetupError, setWorkspaceStartupMode, t, updateOnboardingRequirement, verifyActiveRuntimeInference]);
 
   const detectDocker = useCallback(async () => {
     if (dockerDetectingRef.current) return;

@@ -9,7 +9,7 @@ import React, { useEffect, useLayoutEffect, useState, useRef, useCallback, useSy
 import { APP_PLATFORM } from "./platform";
 import { invoke } from "@tauri-apps/api/core";
 import { debugError } from "@/utils/debugLog";
-import { readTerminalGitFileDiff } from '@/services/workspaceFs';
+import { readTerminalGitFileDiff } from '@/workspace-files/runtime/workspaceFs';
 import {
   BookOpen,
   Check,

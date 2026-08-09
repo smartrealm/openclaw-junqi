@@ -1,201 +1,174 @@
 #!/usr/bin/env node
-/**
- * Module-boundary checker (SPEC §1, T8).
- *
- * Enforces the dependency direction between source folders. The matrix
- * is the single source of truth — change it here and both humans and CI
- * see the same rules.
- *
- * Forbidden imports (per SPEC §1):
- *   theme/*       →  stores/, services/, components/
- *                   (EXCEPT theme/useTheme.ts which is the bridge to the store)
- *   services/*    →  stores/, theme/
- *   components/*  →  services/* directly (must go through stores)
- *   pages/*       →  state/* Rust directly (only via services + IPC)
- *   pages/*       →  @tauri-apps/api/core or direct invoke() (only via typed API wrappers)
- *
- * Bridge files (explicit allowlist for the few cases where the rule
- * needs to bend):
- *   theme/useTheme.ts       → may import from @/stores/settingsStore
- *
- * Run from repo root: node scripts/check-boundaries.mjs
- * Exits 1 on any violation so CI can fail the build.
- */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join, normalize, relative, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import ts from 'typescript';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const SRC = join(__dirname, '..', 'src');
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const DEFAULT_SOURCE_ROOT = join(SCRIPT_DIR, '..', 'src');
 
-// ── Boundary matrix (single source of truth) ─────────────────────────────
-
-/**
- * Each rule:
- *   pattern:  glob of source files this rule applies to (matched against
- *             file's path under SRC, forward slashes)
- *   forbid:   list of glob patterns the matched file MUST NOT import
- *   message:  human-readable error shown on violation
- *   allow:    per-file exceptions (path → set of import prefixes allowed
- *             despite the rule). Used for documented bridges.
- */
-const RULES = [
+export const MODULE_BOUNDARY_RULES = [
   {
-    pattern: /^theme\/(?!useTheme\.ts).*/,   // theme/* except useTheme.ts
-    forbid: [
-      '@/stores/**',
-      '@/services/**',
-      '@/components/**',
-    ],
-    message: 'theme/* is a pure-math + DOM-side-effect module. It must not import from stores/services/components. See SPEC §1.',
+    pattern: /^theme\/(?!useTheme\.ts).*/,
+    forbidRuntime: ['stores/**', 'services/**', 'components/**'],
+    forbidType: ['stores/**', 'services/**', 'components/**'],
+    message: 'theme/* 只能包含纯计算与 DOM 副作用，不能依赖 stores/services/components。',
   },
   {
     pattern: /^theme\/useTheme\.ts$/,
-    forbid: [
-      '@/services/**',
-      '@/components/**',
-    ],
-    message: 'theme/useTheme.ts is a bridge to the store; it may import @/stores/settingsStore but must not reach into services/ or components/.',
+    forbidRuntime: ['services/**', 'components/**'],
+    forbidType: ['services/**', 'components/**'],
+    message: 'theme/useTheme.ts 仅可桥接设置仓库，不能依赖 services/components。',
   },
   {
     pattern: /^services\//,
-    forbid: [
-      '@/stores/**',
-      '@/theme/**',
-    ],
-    message: 'services/* is a thin IPC adapter layer. It must not import from stores/ or theme/ — keep it stateless and pure. See SPEC §1.',
+    forbidRuntime: ['stores/**', 'theme/**'],
+    forbidType: ['stores/**', 'theme/**'],
+    message: 'services/* 必须保持无状态，不能依赖 stores/theme。',
   },
   {
     pattern: /^components\//,
-    forbid: [
-      '@/services/**',
-    ],
-    message: 'components/* must not import services/ directly. Go through stores/ so the state machine owns the side effects. See SPEC §1.',
+    forbidRuntime: ['services/**'],
+    forbidType: [],
+    message: 'components/* 不能直接依赖 services，副作用必须由状态或页面装配层持有。',
   },
   {
     pattern: /^pages\//,
-    forbid: [
-      '@/state/**',
-      '@tauri-apps/api/core',
-    ],
-    message: 'pages/* must not import Rust state/ or Tauri core IPC directly. Use typed API wrappers. See SPEC §1.',
+    forbidRuntime: ['state/**', '@tauri-apps/api/core'],
+    forbidType: ['state/**', '@tauri-apps/api/core'],
+    message: 'pages/* 不能直接依赖 Rust 状态或 Tauri core，必须使用类型化 API 包装。',
   },
 ];
 
-// ── File walker ───────────────────────────────────────────────────────────
+function slash(value) {
+  return value.split(sep).join('/');
+}
 
-function walk(dir, out = []) {
-  for (const entry of readdirSync(dir)) {
-    const p = join(dir, entry);
-    const s = statSync(p);
-    if (s.isDirectory()) walk(p, out);
-    else if (/\.(ts|tsx)$/.test(entry) && !entry.endsWith('.test.ts') && !entry.endsWith('.test.tsx')) {
-      out.push(p);
+function walkSourceFiles(directory, sourceRoot, output = []) {
+  for (const entry of readdirSync(directory)) {
+    const absolutePath = join(directory, entry);
+    const metadata = statSync(absolutePath);
+    if (metadata.isDirectory()) {
+      walkSourceFiles(absolutePath, sourceRoot, output);
+      continue;
     }
+    if (!/\.(ts|tsx)$/.test(entry) || entry.endsWith('.test.ts') || entry.endsWith('.test.tsx')) {
+      continue;
+    }
+    output.push({
+      path: slash(relative(sourceRoot, absolutePath)),
+      content: readFileSync(absolutePath, 'utf8'),
+    });
   }
-  return out;
+  return output;
 }
 
-// ── Import extractor ──────────────────────────────────────────────────────
-
-/**
- * Extract import specifiers from a TS/TSX file. Handles both:
- *   import { x } from 'foo'
- *   import 'foo'
- *   import type { x } from 'foo'
- *   const x = await import('foo')
- * Skips relative imports (those starting with . or /).
- */
-function extractImports(content) {
-  const out = [];
-  // import ... from '...'
-  const importRe = /(?:^|\n)\s*(?:import\s+(?:type\s+)?[\s\S]*?from\s+|import\s+)\s*['"]([^'"]+)['"]/g;
-  for (const m of content.matchAll(importRe)) out.push(m[1]);
-  // dynamic import('...')
-  const dynRe = /import\(\s*['"]([^'"]+)['"]\s*\)/g;
-  for (const m of content.matchAll(dynRe)) out.push(m[1]);
-  return out;
+export function extractModuleImports(content) {
+  const imports = [];
+  const source = ts.createSourceFile('boundary-input.tsx', content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const visit = (node) => {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      const clause = node.importClause;
+      const namedBindings = clause?.namedBindings;
+      const namedTypeOnly = namedBindings && ts.isNamedImports(namedBindings)
+        ? namedBindings.elements.length > 0 && namedBindings.elements.every((element) => element.isTypeOnly)
+        : false;
+      const typeOnly = Boolean(clause?.isTypeOnly)
+        || Boolean(clause && !clause.name && namedTypeOnly);
+      imports.push({ specifier: node.moduleSpecifier.text, typeOnly });
+    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      imports.push({ specifier: node.moduleSpecifier.text, typeOnly: node.isTypeOnly });
+    } else if (
+      ts.isCallExpression(node)
+      && node.expression.kind === ts.SyntaxKind.ImportKeyword
+      && node.arguments.length === 1
+      && ts.isStringLiteral(node.arguments[0])
+    ) {
+      imports.push({ specifier: node.arguments[0].text, typeOnly: false });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return imports;
 }
 
-/** Raw invoke calls bypass the typed command wrappers even without an import. */
-function hasDirectInvoke(content) {
-  return /(?:^|[^\w$.])invoke\s*\(/m.test(content);
-}
-
-// ── Glob matcher ──────────────────────────────────────────────────────────
-
-/** Minimal glob: ** matches any path segment(s), * matches within a segment. */
-function matchGlob(pattern, str) {
+export function matchModuleGlob(pattern, value) {
   const escaped = pattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
     .replace(/\*\*/g, '__GLOBSTAR__')
     .replace(/\*/g, '[^/]*')
     .replace(/__GLOBSTAR__/g, '.*');
-  const re = new RegExp(`^${escaped}$`);
-  return re.test(str);
+  return new RegExp(`^${escaped}$`).test(value);
 }
 
-// ── Path normalizer ───────────────────────────────────────────────────────
-
-/** Turn `@/foo/bar` into `./src/foo/bar` so we can check directory inclusion. */
-function resolveAlias(spec, fromFile) {
-  if (spec.startsWith('@/')) return join(SRC, spec.slice(2));
-  if (spec.startsWith('./') || spec.startsWith('../')) return join(dirname(fromFile), spec);
-  return null; // bare module — ignore
-}
-
-// ── Main check ────────────────────────────────────────────────────────────
-
-const files = walk(SRC);
-const violations = [];
-
-for (const file of files) {
-  const rel = relative(SRC, file).replace(/\\/g, '/');
-  const content = readFileSync(file, 'utf8');
-  const imports = extractImports(content);
-
-  if (/^pages\//.test(rel) && hasDirectInvoke(content)) {
-    violations.push({
-      file: rel,
-      import: 'invoke(...)',
-      rule: 'pages/* must use named typed wrappers from src/api/tauri-commands.ts; direct invoke() is forbidden.',
-      target: 'src/api/tauri-commands.ts',
-    });
+function importTarget(sourcePath, specifier) {
+  if (specifier.startsWith('@/')) return specifier.slice(2);
+  if (specifier.startsWith('./') || specifier.startsWith('../')) {
+    return slash(normalize(join(dirname(sourcePath), specifier)));
   }
+  return specifier;
+}
 
-  for (const rule of RULES) {
-    if (!rule.pattern.test(rel)) continue;
+function containsDirectInvoke(content) {
+  return /(?:^|[^\w$.])invoke\s*\(/m.test(content);
+}
 
-    for (const imp of imports) {
-      const resolved = resolveAlias(imp, file);
-      const targetRel = resolved
-        ? relative(SRC, resolved).replace(/\\/g, '/')
-        : imp;
-      for (const forbidden of rule.forbid) {
-        if (imp === forbidden || matchGlob(forbidden, targetRel)) {
-          violations.push({
-            file: rel,
-            import: imp,
-            rule: rule.message,
-            target: targetRel,
-          });
+export function scanModuleBoundaries(files, rules = MODULE_BOUNDARY_RULES) {
+  const violations = [];
+  for (const file of files) {
+    if (/^pages\//.test(file.path) && containsDirectInvoke(file.content)) {
+      violations.push({
+        file: file.path,
+        import: 'invoke(...)',
+        target: 'api/tauri-commands.ts',
+        rule: 'pages/* 必须使用类型化 Tauri API 包装，不能直接调用 invoke。',
+      });
+    }
+    const imports = extractModuleImports(file.content);
+    for (const rule of rules) {
+      if (!rule.pattern.test(file.path)) continue;
+      for (const dependency of imports) {
+        const target = importTarget(file.path, dependency.specifier);
+        const forbiddenPatterns = dependency.typeOnly ? rule.forbidType : rule.forbidRuntime;
+        for (const forbidden of forbiddenPatterns) {
+          if (target === forbidden || matchModuleGlob(forbidden, target)) {
+            violations.push({
+              file: file.path,
+              import: dependency.specifier,
+              typeOnly: dependency.typeOnly,
+              target,
+              rule: rule.message,
+            });
+          }
         }
       }
     }
   }
+  return violations;
 }
 
-// ── Report ────────────────────────────────────────────────────────────────
-
-if (violations.length === 0) {
-  console.log(`PASS Module boundaries clean (checked ${files.length} files)`);
-  process.exit(0);
+export function scanSourceRoot(sourceRoot = DEFAULT_SOURCE_ROOT) {
+  const root = resolve(sourceRoot);
+  const files = walkSourceFiles(root, root);
+  return { files, violations: scanModuleBoundaries(files) };
 }
 
-console.error(`FAIL Module boundary violations (${violations.length}):\n`);
-for (const v of violations) {
-  console.error(`  ${v.file}`);
-  console.error(`    imports "${v.import}" → ${v.target}`);
-  console.error(`    ${v.rule}\n`);
+export function runBoundaryCheck(sourceRoot = DEFAULT_SOURCE_ROOT) {
+  const { files, violations } = scanSourceRoot(sourceRoot);
+  if (violations.length === 0) {
+    console.log(`PASS Module boundaries clean (checked ${files.length} files)`);
+    return 0;
+  }
+  console.error(`FAIL Module boundary violations (${violations.length}):\n`);
+  for (const violation of violations) {
+    console.error(`  ${violation.file}`);
+    console.error(`    imports "${violation.import}" -> ${violation.target}`);
+    console.error(`    ${violation.rule}\n`);
+  }
+  return 1;
 }
-process.exit(1);
+
+const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : '';
+if (import.meta.url === invokedPath) {
+  process.exitCode = runBoundaryCheck();
+}

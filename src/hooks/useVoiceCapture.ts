@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { startVoiceCapture, stopVoiceCapture } from '@/api/tauri-commands';
 import { decodeVoiceCaptureEvent } from '@/api/voiceCaptureContract';
 import { VoiceCaptureOwnership } from '@/services/voice/VoiceCaptureOwnership';
-import { voiceRuntime } from '@/services/voice/VoiceRuntime';
+import { voiceRuntime } from '@/runtime/VoiceRuntime';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 export type VoiceCapturePhase = 'idle' | 'starting' | 'listening' | 'hearing' | 'error';

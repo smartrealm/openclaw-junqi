@@ -1,6 +1,6 @@
 import type { Session, TokenUsage } from '@/stores/chatStore';
 import type { GatewaySessionAgentRuntime } from '@/services/gateway/sessionAgentRuntime';
-import type { GatewayThinkingLevelOption } from '@/services/gateway/sessionThinkingProfile';
+import type { GatewayThinkingLevelOption } from '@/processing/sessionThinkingProfile';
 
 export interface AgentStatusSnapshot {
   tokenUsage: TokenUsage | null;

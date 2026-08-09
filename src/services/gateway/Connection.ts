@@ -1,11 +1,8 @@
 // ═══════════════════════════════════════════════════════════
-// GatewayConnection — Transport Layer
-// Handles WebSocket lifecycle, heartbeat,
-// request/response, handshake, and pairing.
-// No chat logic, no tool logic — pure transport.
+// GatewayConnection —— 纯传输层
+// 只负责 WebSocket 生命周期、心跳、请求响应、握手与配对。
+// 业务轮询和界面投影由上层组合边界管理。
 // ═══════════════════════════════════════════════════════════
-
-import { startPolling, stopPolling } from '@/stores/gatewayDataStore';
 import {
   MessageRouter,
   classifyGatewayAuthorizationError,
@@ -612,7 +609,6 @@ export class GatewayConnection {
       debugLog('gateway', '[GW] Closed:', event.code, event.reason);
       this.stopHeartbeat();
       this.clearAttemptTimers();
-      if (!this.transient) stopPolling();
       this.connected = false;
       this.connecting = false;
       this.ws = null;
@@ -837,10 +833,8 @@ export class GatewayConnection {
         this.emitRetryState('connected');
         this.emitStatus();
         if (!this.transient) {
-          startPolling(this);
-          // Labels and deletes may be initiated by another OpenClaw client.
-          // Subscribe once per connected socket so those mutations propagate
-          // immediately instead of waiting for the 10s polling interval.
+          // 标签和删除可能来自其他 OpenClaw 客户端；每条已连接 socket 只订阅一次，
+          // 让这些变更即时传播，而不必等待下一轮轮询。
           void this.request('sessions.subscribe', {}).catch((error) => {
             debugWarn('gateway', '[GW] Unable to subscribe to session changes:', error);
           });

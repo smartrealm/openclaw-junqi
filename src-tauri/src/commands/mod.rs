@@ -55,7 +55,6 @@ pub mod pet_backdrop;
 pub mod plugin_recovery;
 pub mod process_control;
 pub mod project_config;
-pub mod provider_oauth;
 pub mod pty_neu;
 pub mod qr;
 pub mod quickchat;

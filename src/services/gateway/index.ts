@@ -16,7 +16,10 @@ import {
   type ChatMessage,
   type MediaInfo,
 } from './Connection';
-import { ChatHandler, type ChatSessionRunObservation } from './ChatHandler';
+import {
+  ChatHandler,
+} from '@/runtime/OpenClawChatEventRuntime';
+import type { ChatSessionRunObservation } from './OpenClawPendingRunWaitReconciler';
 import { parseOpenClawSessionListSnapshot } from './OpenClawChatRunProjection';
 import { OpenClawSessionRunReconciler } from './OpenClawSessionRunResolver';
 import {
@@ -29,7 +32,7 @@ import {
 } from './AgentManagement';
 import { debugWarn } from '@/utils/debugLog';
 import type { GatewayHelloObservation } from '@/types/gatewayRuntime';
-import { voiceFileRuntime } from '@/services/chat/voiceFileRuntime';
+import { voiceFileRuntime } from '@/runtime/voiceFileRuntime';
 import type { GatewayAgentCreatePayload } from '@/utils/gatewayAgentFlow';
 import { routeGatewayEvent } from './collaborationEventBridge';
 import { GatewayApprovalEventSubscription } from './approvalEventBridge';
@@ -47,6 +50,7 @@ import {
 import type { GatewayAuthorizationIssue } from './messageRouter';
 import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordinator';
 import type { GatewayAttachment } from '@/services/chat/types';
+import type { OpenClawChatSendDeliveryUncertain } from '@/processing/openClawChatEvent';
 import { SessionSettingsClient } from './SessionSettingsClient';
 import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
 import { OpenClawSessionOrganizationClient } from './OpenClawSessionOrganizationClient';
@@ -89,6 +93,7 @@ import { OpenClawHooksStatusClient } from './OpenClawHooksStatusClient';
 import { OpenClawSessionUsageLogsClient } from './OpenClawSessionUsageLogsClient';
 import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
 import { OpenClawModelAuthLogoutClient } from './OpenClawModelAuthLogoutClient';
+import { OpenClawChannelQrLoginClient } from './OpenClawChannelQrLoginClient';
 import { OpenClawModelProbeClient } from './OpenClawModelProbeClient';
 import { OpenClawSetupClient } from './OpenClawSetupClient';
 import { OpenClawRuntimeConfigClient } from './OpenClawRuntimeConfigClient';
@@ -307,11 +312,6 @@ export interface GatewayAgentCreateParams {
   avatar?: string;
 }
 
-export interface GatewayChatSendDeliveryUncertain {
-  deliveryUncertain: true;
-  runId: string;
-}
-
 interface GatewayChatSendDeliveryObserved {
   deliveryObserved: true;
   runId: string;
@@ -356,18 +356,6 @@ export async function dispatchGatewayChatMessage(
     idempotencyKey: input.clientMessageId,
     ...(input.attachments?.length ? { attachments: input.attachments } : {}),
   });
-}
-
-export function isGatewayChatSendDeliveryUncertain(
-  value: unknown,
-): value is GatewayChatSendDeliveryUncertain {
-  return Boolean(
-    value
-    && typeof value === 'object'
-    && !Array.isArray(value)
-    && (value as Record<string, unknown>).deliveryUncertain === true
-    && typeof (value as Record<string, unknown>).runId === 'string',
-  );
 }
 
 export interface GatewayAgentCreateResult {
@@ -568,6 +556,11 @@ export const openClawModelAuthStatusClient = new OpenClawModelAuthStatusClient({
 });
 
 export const openClawModelAuthLogoutClient = new OpenClawModelAuthLogoutClient({
+  requestPrivileged: (method, params) => requestPrivileged(method, params),
+});
+
+export const openClawChannelQrLoginClient = new OpenClawChannelQrLoginClient({
+  request: (method, params) => connection.request(method, params),
   requestPrivileged: (method, params) => requestPrivileged(method, params),
 });
 
@@ -1246,6 +1239,18 @@ connection.onEvent = (msg: unknown) => routeTalkGatewayEvent(
 );
 
 // ── Public API (matches original gateway.ts exactly) ──
+export const openClawGatewayDataRequester = {
+  request: (method: string, params: GatewayRequestParams) => connection.request(method, params),
+  recordCapabilityInvalidResponse: (method: string) => connection.recordCapabilityInvalidResponse(method),
+  getAttestedConnectionId: () => connection.getAttestedConnectionId(),
+  requestFenced: (
+    method: string,
+    params: GatewayRequestParams,
+    expectedConnectionId: string,
+  ) => connection.requestFenced(method, params, expectedConnectionId),
+  getHttpBaseUrl: () => connection.getHttpBaseUrl(),
+};
+
 export const gateway = {
   // Setup
   setCallbacks(cb: GatewayCallbacks) { connection.setCallbacks(cb); },
@@ -1402,7 +1407,7 @@ export const gateway = {
       }
       if (acknowledgement !== 'unknown') return result;
       if (chatHandler.markPendingSendUncertain(targetSessionKey, clientMessageId)) {
-        return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
+        return { deliveryUncertain: true, runId: clientMessageId } satisfies OpenClawChatSendDeliveryUncertain;
       }
       return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
     } catch (error) {
@@ -1416,7 +1421,7 @@ export const gateway = {
       }
       if (requestDispatched && !(error instanceof GatewayRpcError)) {
         if (chatHandler.markPendingSendUncertain(targetSessionKey, clientMessageId)) {
-          return { deliveryUncertain: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryUncertain;
+          return { deliveryUncertain: true, runId: clientMessageId } satisfies OpenClawChatSendDeliveryUncertain;
         }
         return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
       }

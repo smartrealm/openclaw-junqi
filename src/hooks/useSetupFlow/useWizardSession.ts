@@ -1,5 +1,4 @@
-// The official OpenClaw wizard session: version-guarded operations over one
-// Gateway-owned session, plus the recovery paths for a lost or seized session.
+// 官方向导会话只投影 Gateway 持有的步骤和终态，不从本地配置推断会话结果。
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import type { SetupStep } from "@/stores/setup-navigation";
@@ -10,7 +9,7 @@ import {
   GatewayPrivilegedSourceChangedError,
 } from "@/services/gateway";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
-import { gatewayLifecycle } from "@/services/gateway/gatewayLifecycle";
+import { gatewayLifecycle } from "@/runtime/gatewayLifecycle";
 import {
   detectGatewayConfig,
   getGatewayToken,
@@ -20,7 +19,6 @@ import {
 import {
   classifyOpenClawWizardFailure,
   createScopedOpenClawWizardSessionStore,
-  isOpenClawWizardCompletionStep,
   OpenClawWizardCancelledError,
   OpenClawWizardClient,
   OpenClawWizardOperationSupersededError,
@@ -34,6 +32,7 @@ import { cacheGatewayTarget } from "./helpers";
 import type { StepStatus } from "./types";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import { getGatewayDeviceCredentialForUrl } from "@/services/gateway/credentialProvider";
+import type { SetupInferenceVerification } from "@/services/setup/setupCompletionGate";
 
 const GATEWAY_HANDOFF_CONNECTION_TIMEOUT_MS = 120_000;
 
@@ -41,7 +40,7 @@ export interface WizardSessionPorts {
   setupStep: SetupStep;
   report: (message: string, nextProgress?: number) => void;
   patchStep: (id: string, status: StepStatus, detail?: string) => void;
-  resolveActiveRuntimeOnboardingRequirement: () => Promise<boolean>;
+  verifyConfiguredInference: () => Promise<SetupInferenceVerification>;
   updateOnboardingRequirement: (required: boolean) => void;
   appendSetupLog: (log: Omit<SetupLog, "ts"> & { ts?: number }) => void;
   replaceSetupStep: (step: SetupStep) => void;
@@ -62,7 +61,7 @@ export function useWizardSession({
   setupStep,
   report,
   patchStep,
-  resolveActiveRuntimeOnboardingRequirement,
+  verifyConfiguredInference,
   updateOnboardingRequirement,
   appendSetupLog,
   replaceSetupStep,
@@ -264,6 +263,25 @@ export function useWizardSession({
             "OpenClaw 配置已完成，但切换运行方式后无法验证所选 Gateway。请修复并重试。",
           ));
         }
+        const verification = await verifyConfiguredInference();
+        if (verification.status === "unavailable") {
+          // 稳定版 Gateway 可能没有实时验证 RPC；记录待核验状态，不阻断官方向导完成。
+          appendSetupLog({
+            source: "setup",
+            step: "gateway",
+            message: t(
+              "setup.wizard.inferenceVerificationUnavailable",
+              "OpenClaw 配置已完成，但当前 Gateway 未提供官方实时模型验证。模型可用性暂未核验。",
+            ),
+            level: "warn",
+          });
+        }
+        if (verification.status === "failed") {
+          throw new Error(t(
+            "setup.wizard.inferenceUnverified",
+            "OpenClaw 配置已完成，但默认模型尚未通过实时验证。请修正模型或凭据后重试。",
+          ));
+        }
       } catch (handoffError) {
         // Rust 侧已完成的交接可能晚于渲染层导航；后续连接可继续观测，但已废弃的操作不能
         // 修改引导界面或启动后续探测。
@@ -300,18 +318,7 @@ export function useWizardSession({
     report(result.step.title || result.step.message || t("setup.wizard.title", "配置 OpenClaw"), 82);
     replaceSetupStep("configure-openclaw");
     return result;
-  }, [appendSetupLog, assertWizardOperationCurrent, refreshGatewayConnectionTarget, report, setGatewayRunning, setPostStorageStep, replaceSetupStep, setSetupError, t, updateOnboardingRequirement]);
-
-  const recoverLostWizardSession = useCallback(async (
-    client: OpenClawWizardClient,
-  ): Promise<OpenClawWizardResult> => {
-    client.forgetSession();
-    const structurallyIncomplete = await resolveActiveRuntimeOnboardingRequirement();
-    if (!structurallyIncomplete) {
-      return { done: true, status: "done" };
-    }
-    return await client.start();
-  }, [resolveActiveRuntimeOnboardingRequirement]);
+  }, [appendSetupLog, assertWizardOperationCurrent, refreshGatewayConnectionTarget, report, setGatewayRunning, setPostStorageStep, replaceSetupStep, setSetupError, t, updateOnboardingRequirement, verifyConfiguredInference]);
 
   const recoverAfterGatewayHandoff = useCallback(async (
     operationId: number,
@@ -325,9 +332,9 @@ export function useWizardSession({
     } catch (error) {
       if (!isOpenClawWizardSessionLost(error)) throw error;
       // 向导会话只存在于 Gateway 进程内；官方终结流程可能在配置持久化后替换该进程。
-      return await recoverLostWizardSession(client);
+      return await client.restartAfterSessionLoss();
     }
-  }, [assertWizardOperationCurrent, recoverLostWizardSession, refreshGatewayConnectionTarget, waitForGatewayConnection]);
+  }, [assertWizardOperationCurrent, refreshGatewayConnectionTarget, waitForGatewayConnection]);
 
   const startOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     const operationId = beginWizardOperation();
@@ -346,7 +353,7 @@ export function useWizardSession({
           result = await client.resume();
         } catch (error) {
           if (!isOpenClawWizardSessionLost(error)) throw error;
-          result = await recoverLostWizardSession(client);
+          result = await client.restartAfterSessionLoss();
         }
       } else {
         showWizardActivity(t("setup.wizard.startingSession", "正在启动 OpenClaw 官方配置向导…"));
@@ -366,7 +373,7 @@ export function useWizardSession({
     } finally {
       if (wizardOperationRef.current === operationId) setWizardSubmitting(false);
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, replaceSetupStep, setSetupError, showWizardActivity, t, waitForGatewayConnection, wizardFailureMessage]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, showWizardActivity, t, waitForGatewayConnection, wizardFailureMessage]);
 
   const resumeOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     const operationId = beginWizardOperation();
@@ -385,7 +392,7 @@ export function useWizardSession({
       let failure = error;
       if (isOpenClawWizardSessionLost(error)) {
         try {
-          const result = await recoverLostWizardSession(wizardClientRef.current!);
+          const result = await wizardClientRef.current!.restartAfterSessionLoss();
           assertWizardOperationCurrent(operationId);
           return await applyWizardResult(result, operationId);
         } catch (recoveryError) {
@@ -403,7 +410,7 @@ export function useWizardSession({
     } finally {
       if (wizardOperationRef.current === operationId) setWizardSubmitting(false);
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, replaceSetupStep, setSetupError, showWizardActivity, t, waitForGatewayConnection, wizardFailureMessage]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, showWizardActivity, t, waitForGatewayConnection, wizardFailureMessage]);
 
   const submitWizardStep = useCallback(async (stepId: string, value?: unknown) => {
     // React 状态更新异步。终态说明在按钮进入提交态前可能收到双击，第二个请求会与官方
@@ -422,20 +429,6 @@ export function useWizardSession({
       return await applyWizardResult(result, operationId);
     } catch (error) {
       if (error instanceof OpenClawWizardOperationSupersededError) return null;
-      const connectionTimedOut = error instanceof OpenClawWizardGatewayConnectionTimeoutError;
-      if (
-        connectionTimedOut
-        && isOpenClawWizardCompletionStep(wizardClientRef.current?.currentStepView)
-      ) {
-        // 官方终态说明可能先于服务交接替换 Gateway 进程出现。确认请求丢失连接时，只能
-        // 根据与提供方无关的终态语义恢复；`applyWizardResult` 仍会在进入就绪前核验所选
-        // Gateway 身份和当前运行时配置。
-        const structurallyIncomplete = await resolveActiveRuntimeOnboardingRequirement();
-        assertWizardOperationCurrent(operationId);
-        if (!structurallyIncomplete) {
-          return await applyWizardResult({ done: true, status: "done" }, operationId);
-        }
-      }
       if (
         error instanceof GatewayPrivilegedSourceChangedError
         || /gateway (?:connection|credentials) (?:changed|closed)|verified gateway connection changed/i.test(
@@ -455,7 +448,7 @@ export function useWizardSession({
       }
       if (isOpenClawWizardSessionLost(error)) {
         try {
-          const result = await recoverLostWizardSession(wizardClientRef.current!);
+          const result = await wizardClientRef.current!.restartAfterSessionLoss();
           assertWizardOperationCurrent(operationId);
           return await applyWizardResult(result, operationId);
         } catch (recoveryError) {
@@ -475,7 +468,7 @@ export function useWizardSession({
         setWizardSubmitting(false);
       }
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverAfterGatewayHandoff, recoverLostWizardSession, resolveActiveRuntimeOnboardingRequirement, resumeOfficialOnboarding, setSetupError, t, waitForGatewayConnection, wizardFailureMessage]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverAfterGatewayHandoff, resumeOfficialOnboarding, setSetupError, t, waitForGatewayConnection, wizardFailureMessage]);
 
   const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     if (wizardRecoveryInFlightRef.current || wizardNavigationInFlightRef.current) return null;
@@ -493,7 +486,7 @@ export function useWizardSession({
         if (!isOpenClawWizardSessionLost(error)) throw error;
         // 官方终态与服务交接会清除进程内向导会话。重试时先从当前运行时的持久化配置
         // 恢复，不能把已回收的 sessionId 当作新的用户错误。
-        result = await recoverLostWizardSession(wizardClientRef.current!);
+        result = await wizardClientRef.current!.restartAfterSessionLoss();
       }
       assertWizardOperationCurrent(operationId);
       return await applyWizardResult(result, operationId);

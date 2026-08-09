@@ -4,7 +4,7 @@ import {
   COLLABORATION_PLUGIN_BUNDLE,
   type CollaborationPluginBundleMetadata,
 } from '@/services/collaboration/bundledPlugin';
-import type { CollaborationCapabilities } from '@/services/collaboration/types';
+import type { CollaborationCapabilities } from '@/types/collaboration';
 import type {
   BootstrapConfigureParams,
   BootstrapAbandonParams,

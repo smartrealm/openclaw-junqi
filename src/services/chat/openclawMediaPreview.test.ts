@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   openClawMediaPath,
   resolveOpenClawMediaPreviewUrl,
-} from './openclawMediaPreview';
+} from '@/runtime/openClawMediaPreview';
 
 test('extracts only explicit OpenClaw transcript media sources', () => {
   assert.equal(openClawMediaPath('aegis-media:/Users/test/.openclaw/media/inbound/screenshot.png'), '/Users/test/.openclaw/media/inbound/screenshot.png');

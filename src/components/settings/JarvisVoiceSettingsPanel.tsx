@@ -13,7 +13,7 @@ import {
   type VoiceWakeRoute,
   type VoiceWakeRouteTarget,
   type VoiceWakeRoutingConfig,
-} from '@/services/gateway/voiceWakeTypes';
+} from '@/types/voiceWake';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';

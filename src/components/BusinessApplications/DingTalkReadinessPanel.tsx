@@ -4,6 +4,7 @@ import { Button } from '@/components/shared/button/Button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { DingTalkRuntimeIdentityProjection } from '@/business-applications/dingtalkTools';
 import { DingTalkRuntimeIdentity } from './DingTalkRuntimeIdentity';
+import { resolveDingTalkReadiness } from './dingTalkReadiness';
 
 const DWS_OFFICIAL_GUIDE = 'https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli#installation';
 const DWS_INSTALL_COMMANDS = [
@@ -11,13 +12,6 @@ const DWS_INSTALL_COMMANDS = [
   { label: 'Windows PowerShell', command: 'irm https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.ps1 | iex' },
   { label: 'Node.js / npm', command: 'npm install -g dingtalk-workspace-cli' },
 ] as const;
-
-type Readiness = {
-  readonly tone: 'ready' | 'pending' | 'blocked';
-  readonly title: string;
-  readonly description: string;
-  readonly action: 'refresh' | 'install-plugin' | 'configure-agent' | 'install-dws' | 'authorize-dws' | 'restart-gateway' | null;
-};
 
 type ReadinessStepState = 'ready' | 'pending' | 'blocked';
 
@@ -30,16 +24,19 @@ function ReadinessStep({
   state: ReadinessStepState;
   description: string;
 }) {
-  const Icon = state === 'ready' ? CircleCheck : state === 'pending' ? CircleDashed : CircleAlert;
+  const Icon = state === 'ready' ? CircleCheck : state === 'blocked' ? CircleAlert : CircleDashed;
+  const stateLabel = state === 'ready' ? '已核验' : state === 'blocked' ? '需处理' : '待核验';
+  const stateClass = state === 'ready'
+    ? 'text-aegis-success'
+    : state === 'blocked' ? 'text-aegis-warning' : 'text-aegis-text-dim';
   return (
-    <div className="grid grid-cols-[18px_96px_minmax(0,1fr)] items-start gap-2 border-b border-aegis-border/70 px-3 py-2.5 last:border-b-0">
-      <Icon
-        size={14}
-        className={state === 'ready' ? 'text-aegis-success' : state === 'pending' ? 'text-aegis-warning' : 'text-aegis-danger'}
-        aria-hidden="true"
-      />
-      <span className="text-[10.5px] font-medium text-aegis-text-secondary">{label}</span>
-      <span className="text-[10px] leading-4 text-aegis-text-dim">{description}</span>
+    <div className="grid grid-cols-[18px_minmax(0,1fr)_auto] gap-x-2 border-b border-aegis-border/70 py-2 last:border-b-0">
+      <Icon size={14} className={`mt-0.5 ${stateClass}`} aria-hidden="true" />
+      <div className="min-w-0">
+        <div className="text-[10.5px] font-medium text-aegis-text-secondary">{label}</div>
+        <div className="mt-0.5 text-[9.5px] leading-4 text-aegis-text-dim">{description}</div>
+      </div>
+      <span className={`text-[9.5px] ${stateClass}`}>{stateLabel}</span>
     </div>
   );
 }
@@ -56,73 +53,6 @@ export type DingTalkDwsOperationPresentation = {
   readonly message: string | null;
 };
 
-function installationProgressValue(phase: DingTalkPluginInstallProgress['phase']): number {
-  if (phase === 'checking') return 25;
-  if (phase === 'installing') return 60;
-  if (phase === 'completed') return 100;
-  return 0;
-}
-
-function dwsRuntimeMissing(code: string | null | undefined): boolean {
-  return code === 'DWS_RUNTIME_NOT_FOUND' || code === 'DWS_RUNTIME_NOT_EXECUTABLE';
-}
-
-function resolveReadiness({
-  sessionExists,
-  runtimeToolAvailable,
-  runtime,
-  runtimeError,
-  pluginNeedsInstall,
-  restartRequired,
-  agentId,
-}: {
-  sessionExists: boolean;
-  runtimeToolAvailable: boolean;
-  runtime: DingTalkRuntimeIdentityProjection | null;
-  runtimeError: string | null;
-  pluginNeedsInstall: boolean;
-  restartRequired: boolean;
-  agentId: string | null;
-}): Readiness {
-  if (!sessionExists) {
-    return { tone: 'blocked', title: '需要当前 Session', description: '请选择一个已连接的 OpenClaw Session 后再检测钉钉业务能力。', action: null };
-  }
-  if (!runtimeToolAvailable) {
-    if (pluginNeedsInstall) {
-      return { tone: 'blocked', title: '钉钉业务插件未就绪', description: '先安装固定校验的钉钉业务插件，再重启 Gateway 使工具进入当前 Session。', action: 'install-plugin' };
-    }
-    if (restartRequired) {
-      return { tone: 'pending', title: '等待 Gateway 加载插件', description: '插件已更新，重启当前 Gateway 后再读取 DWS 状态。', action: 'restart-gateway' };
-    }
-    return {
-      tone: 'blocked',
-      title: '钉钉工具未获当前 Agent 授权',
-      description: agentId ? `当前 Agent ${agentId} 尚未通过 OpenClaw 工具策略和钉钉插件 allowedAgentIds 双重授权。` : '当前 Session 未返回可核验的 Agent ID，无法配置授权。',
-      action: 'configure-agent',
-    };
-  }
-  if (runtimeError) {
-    return { tone: 'pending', title: '正在读取 DWS 状态', description: runtimeError, action: 'refresh' };
-  }
-  if (!runtime) {
-    return { tone: 'pending', title: '正在读取 DWS 状态', description: '等待当前 OpenClaw Session 返回受控 DWS 运行时信息。', action: 'refresh' };
-  }
-  if (!runtime.available) {
-    const error = runtime.runtimeError;
-    if (dwsRuntimeMissing(error?.code)) {
-      return { tone: 'blocked', title: '当前运行时未安装 DWS', description: '可在已验证的本机或 Docker Gateway 中启动 DWS 官方安装流程；远程 Gateway 需在其宿主环境手动安装。', action: 'install-dws' };
-    }
-    return { tone: 'blocked', title: 'DWS 运行时不可用', description: error?.message ?? 'DWS 未返回可验证的运行时状态。', action: 'refresh' };
-  }
-  if (!runtime.currentProfile) {
-    return { tone: 'blocked', title: '未确认 DWS 业务身份', description: '在当前 Gateway 运行时启动 DWS 官方设备授权，完成后 JunQi 会重新读取 Profile。', action: 'authorize-dws' };
-  }
-  if (!runtime.user) {
-    return { tone: 'pending', title: '当前用户资料待验证', description: 'DWS 已返回业务身份，当前用户资料尚未完成读取；不会显示猜测的头像或组织信息。', action: 'refresh' };
-  }
-  return { tone: 'ready', title: 'DWS 业务身份已就绪', description: '当前 Profile、用户资料和授权投影已由 DWS 返回；工具仍受当前 Session 策略约束。', action: 'refresh' };
-}
-
 export function DingTalkReadinessPanel({
   sessionExists,
   runtimeToolAvailable,
@@ -136,6 +66,11 @@ export function DingTalkReadinessPanel({
   dwsOperation,
   dwsOutput,
   busy,
+  operation,
+  sessionLabel,
+  effectiveToolCount,
+  pluginVersion,
+  bundledPluginVersion,
   variant = 'banner',
   hideWhenReady = false,
   onRefresh,
@@ -160,6 +95,11 @@ export function DingTalkReadinessPanel({
   dwsOperation: DingTalkDwsOperationPresentation | null;
   dwsOutput: readonly string[];
   busy: boolean;
+  operation: 'installing' | 'restarting' | null;
+  sessionLabel: string | null;
+  effectiveToolCount: number;
+  pluginVersion: string | null;
+  bundledPluginVersion: string | null;
   variant?: 'banner' | 'workspace';
   hideWhenReady?: boolean;
   onRefresh: () => void;
@@ -175,7 +115,15 @@ export function DingTalkReadinessPanel({
   const [guideOpen, setGuideOpen] = useState(false);
   const [authorizationGuideOpen, setAuthorizationGuideOpen] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
-  const readiness = resolveReadiness({ sessionExists, runtimeToolAvailable, runtime, runtimeError, pluginNeedsInstall, restartRequired, agentId });
+  const readiness = resolveDingTalkReadiness({
+    sessionExists,
+    runtimeToolAvailable,
+    runtime,
+    runtimeError,
+    pluginNeedsInstall,
+    restartRequired,
+    agentId,
+  });
   if (hideWhenReady && readiness.tone === 'ready') return null;
   const Icon = readiness.tone === 'ready' ? CircleCheck : CircleAlert;
   const toneClass = readiness.tone === 'ready'
@@ -193,14 +141,19 @@ export function DingTalkReadinessPanel({
     }
   };
   const dwsOperationActive = dwsOperation?.phase === 'running';
+  const description = readiness.action === 'install-plugin' && !installAvailable
+    ? '当前 Gateway 尚未提供可验证的桌面安装边界。请先确认已连接并验证由 JunQi 管理的本机 Native 或 Docker Runtime，再重新检测。'
+    : readiness.description;
   const action = readiness.action === 'install-plugin'
-    ? <Button size="xs" variant="outline" tone="primary" loading={busy} leadingIcon={<Wrench size={12} />} onClick={onInstallPlugin} title={installAvailable ? '在当前已验证的 Gateway 中安装钉钉业务插件' : '需要先连接并验证当前 Gateway'}>在 JunQi 安装</Button>
+    ? installAvailable
+      ? <Button size="xs" variant="outline" tone="primary" loading={busy} leadingIcon={<Wrench size={12} />} onClick={onInstallPlugin} title="在当前已验证的 Gateway 中安装钉钉业务插件">在 JunQi 安装</Button>
+      : <Button size="xs" variant="outline" tone="neutral" loading={busy} leadingIcon={<RefreshCw size={12} />} onClick={onRefresh}>重新检测</Button>
     : readiness.action === 'configure-agent'
       ? <Button size="xs" variant="outline" tone="warning" leadingIcon={<Settings2 size={12} />} onClick={() => setAuthorizationGuideOpen(true)}>配置授权</Button>
     : readiness.action === 'install-dws'
       ? <Button size="xs" variant="outline" tone="warning" disabled={!installAvailable || dwsOperationActive} loading={dwsOperationActive} leadingIcon={<Terminal size={12} />} onClick={onInstallDws} title={installAvailable ? '在当前已验证的运行时执行 DWS 官方安装命令' : '远程或未验证 Gateway 不允许由桌面修改运行时'}>安装 DWS</Button>
-      : readiness.action === 'authorize-dws'
-        ? <Button size="xs" variant="outline" tone="primary" disabled={!installAvailable || dwsOperationActive} loading={dwsOperationActive} leadingIcon={<Terminal size={12} />} onClick={onAuthorizeDws} title={installAvailable ? '在当前已验证的运行时启动 DWS 官方设备授权' : '远程或未验证 Gateway 不允许由桌面启动授权'}>授权 DWS</Button>
+    : readiness.action === 'authorize-dws'
+      ? <Button size="xs" variant="outline" tone="primary" disabled={!installAvailable || dwsOperationActive} loading={dwsOperationActive} leadingIcon={<Terminal size={12} />} onClick={onAuthorizeDws} title={installAvailable ? '在当前已验证的运行时启动 DWS 官方设备授权' : '远程或未验证 Gateway 不允许由桌面启动授权'}>授权 DWS</Button>
     : readiness.action === 'restart-gateway'
       ? <Button size="xs" variant="outline" tone="warning" loading={busy} onClick={onRestartGateway}>重启 Gateway</Button>
       : readiness.action === 'refresh'
@@ -216,24 +169,33 @@ export function DingTalkReadinessPanel({
   const sessionStep: ReadinessStepState = sessionExists ? 'ready' : 'blocked';
   const pluginStep: ReadinessStepState = runtimeToolAvailable
     ? 'ready'
-    : pluginNeedsInstall ? 'blocked' : 'pending';
+    : restartRequired ? 'pending' : pluginNeedsInstall ? 'blocked' : 'pending';
   const agentStep: ReadinessStepState = runtimeToolAvailable
     ? 'ready'
-    : agentId ? 'pending' : 'blocked';
+    : !sessionExists || pluginNeedsInstall || restartRequired ? 'pending' : 'blocked';
   const dwsStep: ReadinessStepState = runtime?.available && runtime.currentProfile && runtime.user
     ? 'ready'
-    : runtimeError || !runtime ? 'pending' : 'blocked';
+    : runtime?.available ? 'pending' : runtime ? 'blocked' : 'pending';
   const sectionClass = variant === 'workspace'
-    ? `m-3 overflow-hidden rounded-lg border ${toneClass}`
-    : `mx-3 mt-2 shrink-0 rounded-md border px-2.5 py-2 ${toneClass}`;
+    ? 'm-3 overflow-hidden rounded-md border'
+    : 'mx-3 mt-2 shrink-0 overflow-hidden rounded-md border';
   return (
     <>
-      <section className={sectionClass} aria-live="polite">
-        <div className={variant === 'workspace' ? 'flex items-center gap-2 px-4 py-3' : 'flex items-center gap-2'}>
+      <section className={`${sectionClass} ${toneClass}`} aria-live="polite">
+        {operation && !(operation === 'installing' && installationVisible) && (
+          <div
+            role="progressbar"
+            aria-label={operation === 'installing' ? '正在安装钉钉业务插件' : '正在重启 Gateway'}
+            className="relative h-1 overflow-hidden border-b border-aegis-border bg-aegis-bg/75"
+          >
+            <span className="aegis-indeterminate-progress absolute inset-y-0 w-2/5 bg-aegis-primary" />
+          </div>
+        )}
+        <div className="flex shrink-0 items-center gap-2 px-2.5 py-2">
           <Icon size={15} className="shrink-0" aria-hidden="true" />
           <div className="min-w-0 flex-1">
             <p className="text-[10.5px] font-medium">{readiness.title}</p>
-            <p className="mt-0.5 text-[9.5px] leading-4 text-aegis-text-dim">{readiness.description}</p>
+            <p className="mt-0.5 text-[9.5px] leading-4 text-aegis-text-dim">{description}</p>
           </div>
           {action && <div className="shrink-0">{action}</div>}
         </div>
@@ -243,8 +205,10 @@ export function DingTalkReadinessPanel({
               {installationActive ? <CircleDashed size={12} className="animate-spin" aria-hidden="true" /> : installationProgress.phase === 'completed' ? <CircleCheck size={12} aria-hidden="true" /> : <CircleAlert size={12} aria-hidden="true" />}
               <span className={installationTone}>{installationProgress.message}</span>
             </div>
-            <div className="mt-1.5 h-1 overflow-hidden rounded-sm bg-aegis-border/65" role="progressbar" aria-label="钉钉业务插件安装进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={installationProgress.phase === 'installing' ? undefined : installationProgressValue(installationProgress.phase)} aria-valuetext={installationProgress.message ?? undefined}>
-              <div className={`h-full bg-aegis-primary transition-[width] duration-200 ${installationActive ? 'animate-pulse' : ''}`} style={{ width: `${installationProgressValue(installationProgress.phase)}%` }} />
+            <div className="relative mt-1.5 h-1 overflow-hidden rounded-sm bg-aegis-border/65" role="progressbar" aria-label="钉钉业务插件安装进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={installationProgress.phase === 'completed' ? 100 : installationProgress.phase === 'failed' ? 0 : undefined} aria-valuetext={installationProgress.message ?? undefined}>
+              {installationActive
+                ? <span className="aegis-indeterminate-progress absolute inset-y-0 w-2/5 bg-aegis-primary" />
+                : <div className="h-full bg-aegis-primary transition-[width] duration-200" style={{ width: installationProgress.phase === 'completed' ? '100%' : '0%' }} />}
             </div>
           </div>
         )}
@@ -255,19 +219,33 @@ export function DingTalkReadinessPanel({
           </div>
         )}
         {variant === 'workspace' && (
-          <div className="grid border-t border-current/15 bg-aegis-bg/35 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <section className="min-w-0 border-b border-aegis-border lg:border-b-0 lg:border-r" aria-labelledby="dingtalk-access-checks-title">
-              <header className="border-b border-aegis-border px-3 py-2">
-                <h2 id="dingtalk-access-checks-title" className="text-[10.5px] font-semibold text-aegis-text-secondary">接入检查</h2>
-              </header>
-              <ReadinessStep label="当前 Session" state={sessionStep} description={sessionExists ? '已绑定真实 OpenClaw Session。' : '需要先选择真实 OpenClaw Session。'} />
-              <ReadinessStep label="钉钉插件" state={pluginStep} description={runtimeToolAvailable ? '当前 Session 已返回钉钉插件工具。' : pluginNeedsInstall ? '需要安装或更新固定校验的插件包。' : '插件已安装，等待 Gateway 加载或 Agent 授权。'} />
-              <ReadinessStep label="Agent 授权" state={agentStep} description={runtimeToolAvailable ? '当前 Agent 已通过有效工具投影核验。' : agentId ? `当前 Agent ${agentId} 的双重授权待确认。` : 'Gateway 尚未返回可核验的 Agent ID。'} />
-              <ReadinessStep label="DWS 身份" state={dwsStep} description={runtime?.available && runtime.currentProfile && runtime.user ? '当前 Profile、用户资料和授权投影已读取。' : runtime?.available && runtime.currentProfile ? 'Profile 已读取，用户资料仍待核验。' : runtime?.available ? 'DWS 已安装，仍需完成设备授权。' : runtime ? '当前运行时未提供可用 DWS。' : '等待当前 Session 返回 DWS 状态。'} />
+          <div className="grid border-t border-aegis-border bg-aegis-bg/70 xl:grid-cols-[minmax(240px,0.85fr)_minmax(280px,1fr)_minmax(230px,0.8fr)]">
+            <section className="min-w-0 border-b border-aegis-border p-3 xl:border-b-0 xl:border-r" aria-labelledby="dingtalk-readiness-checks-title">
+              <h2 id="dingtalk-readiness-checks-title" className="mb-1 text-[10.5px] font-semibold text-aegis-text-secondary">接入检查</h2>
+              <ReadinessStep label="OpenClaw Session" state={sessionStep} description={sessionExists ? '当前业务视图已绑定真实 Session。' : '需要选择已连接的 OpenClaw Session。'} />
+              <ReadinessStep label="钉钉业务插件" state={pluginStep} description={runtimeToolAvailable ? '当前 Session 已返回插件运行时工具。' : pluginNeedsInstall ? '需要安装或更新固定校验的插件包。' : restartRequired ? '插件已更新，等待 Gateway 重启加载。' : '插件状态已读取，仍待 Gateway 会话核验。'} />
+              <ReadinessStep label="Agent 授权" state={agentStep} description={runtimeToolAvailable ? '当前 Agent 已通过有效工具投影核验。' : agentId ? `当前 Agent ${agentId} 的工具策略和插件授权名单待确认。` : 'Gateway 尚未返回可核验的 Agent ID。'} />
+              <ReadinessStep label="DWS 身份" state={dwsStep} description={runtime?.available && runtime.currentProfile && runtime.user ? '当前 Profile、用户资料和授权投影已读取。' : runtime?.available && runtime.currentProfile ? 'Profile 已读取，用户资料仍待核验。' : runtime?.available ? 'DWS 已安装，仍需完成官方授权。' : runtime ? '当前运行时未提供可用 DWS。' : '等待当前 Session 返回 DWS 状态。'} />
             </section>
-            <section className="min-w-0 p-3" aria-labelledby="dingtalk-current-identity-title">
+            <section className="min-w-0 border-b border-aegis-border p-3 xl:border-b-0 xl:border-r" aria-labelledby="dingtalk-current-identity-title">
               <h2 id="dingtalk-current-identity-title" className="mb-2 text-[10.5px] font-semibold text-aegis-text-secondary">当前业务身份</h2>
               <DingTalkRuntimeIdentity runtime={runtime} mode="full" />
+            </section>
+            <section className="min-w-0 p-3" aria-labelledby="dingtalk-runtime-evidence-title">
+              <h2 id="dingtalk-runtime-evidence-title" className="mb-2 text-[10.5px] font-semibold text-aegis-text-secondary">当前核验证据</h2>
+              <dl className="grid grid-cols-[76px_minmax(0,1fr)] gap-x-2 gap-y-2 border-y border-aegis-border py-3 text-[10px]">
+                <dt className="text-aegis-text-dim">Session</dt>
+                <dd className="truncate font-mono text-aegis-text-secondary" title={sessionLabel ?? undefined}>{sessionLabel ?? '未选择'}</dd>
+                <dt className="text-aegis-text-dim">Agent</dt>
+                <dd className="truncate font-mono text-aegis-text-secondary" title={agentId ?? undefined}>{agentId ?? '未返回'}</dd>
+                <dt className="text-aegis-text-dim">有效工具</dt>
+                <dd className="font-mono tabular-nums text-aegis-text-secondary">{effectiveToolCount}</dd>
+                <dt className="text-aegis-text-dim">插件版本</dt>
+                <dd className="truncate font-mono text-aegis-text-secondary" title={pluginVersion ?? undefined}>{pluginVersion ?? '未读取'}</dd>
+                <dt className="text-aegis-text-dim">内置版本</dt>
+                <dd className="truncate font-mono text-aegis-text-secondary" title={bundledPluginVersion ?? undefined}>{bundledPluginVersion ?? '未读取'}</dd>
+              </dl>
+              <p className="mt-3 text-[9.5px] leading-4 text-aegis-text-dim">这里仅展示当前 Gateway、Session 和 DWS 返回的结构化投影。插件已安装、Gateway 健康或本地按钮完成均不代表钉钉业务操作成功。</p>
             </section>
           </div>
         )}

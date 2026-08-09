@@ -21,7 +21,7 @@ function planAtStep(state: AgentExecutionPlan['state']): AgentExecutionPlan {
 }
 
 test('active execution plan is projected above the composer instead of the assistant column', () => {
-  const view = source('src/components/Chat/ChatView.tsx');
+  const view = source('src/pages/ChatView.tsx');
   const placement = view.indexOf('data-execution-plan-placement="composer-above"');
   const input = view.indexOf('<MessageInput />');
   assert.ok(placement >= 0);
@@ -37,14 +37,14 @@ test('only running plans are withheld from the transcript column', () => {
   assert.equal(executionPlanOutcome(planAtStep('running'), 'error'), 'interrupted');
   assert.equal(executionPlanOutcome(planAtStep('completed'), 'final'), 'completed');
 
-  const view = source('src/components/Chat/ChatView.tsx');
+  const view = source('src/pages/ChatView.tsx');
   assert.match(view, /executionPlanOutcome\(block\.plan/);
   assert.match(view, /if \(outcome === 'running'\) return null/);
   assert.doesNotMatch(view, /block\.plan\.state !== 'completed'/);
 });
 
 test('execution plan, dispatch queue, and send composer share the centered send column', () => {
-  const view = source('src/components/Chat/ChatView.tsx');
+  const view = source('src/pages/ChatView.tsx');
   const input = source('src/components/Chat/MessageInput.tsx');
   const queue = source('src/components/Chat/message-input/MessageQueuePanel.tsx');
   const composer = source('src/components/Chat/message-input/ComposerInputSurface.tsx');

@@ -7,12 +7,12 @@ import { ComposerAttachmentTray } from './message-input/ComposerAttachmentTray';
 import { ComposerInputSurface } from './message-input/ComposerInputSurface';
 import { ComposerVoiceRecorder } from './message-input/ComposerVoiceRecorder';
 import { MessageQueuePanel } from './message-input/MessageQueuePanel';
-import { useComposerAttachments } from './message-input/useComposerAttachments';
-import { useComposerInterruption } from './message-input/useComposerInterruption';
+import { useComposerAttachments } from '@/hooks/chat/useComposerAttachments';
+import { useComposerInterruption } from '@/hooks/chat/useComposerInterruption';
 import { useComposerMenu } from './message-input/useComposerMenu';
-import { useComposerSuggestions } from './message-input/useComposerSuggestions';
+import { useComposerSuggestions } from '@/hooks/chat/useComposerSuggestions';
 import { useJarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
-import { useMessageSend } from './message-input/useMessageSend';
+import { useMessageSend } from '@/hooks/chat/useMessageSend';
 import {
   hasConfirmedEmptyTranscript,
   shouldWarmUpHistoryBeforeFirstSend,
