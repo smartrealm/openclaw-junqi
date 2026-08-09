@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const source = readFileSync(new URL('./NavSidebar.tsx', import.meta.url), 'utf8');
+const scopeControlsSource = readFileSync(new URL('./SessionScopeControls.tsx', import.meta.url), 'utf8');
 
 const themeFiles = [
   'aegis-dark.css',
@@ -90,10 +91,11 @@ test('session state colors use theme semantic tokens without fixed palette color
   assert.doesNotMatch(source, /hover:bg-red-|hover:text-red-|ring-red-/);
 });
 
-test('new conversation action uses the shared sidebar primary action contract', () => {
-  assert.match(source, /import \{ SidebarPrimaryAction \} from '\.\/SidebarPrimaryAction';/);
-  assert.match(source, /<SidebarPrimaryAction[\s\S]*?sidebar\.newChat/);
-  assert.doesNotMatch(source, /bg-aegis-primary text-white[^\n]*sidebar\.newChat/);
+test('会话范围控件复用共享选择器和菜单，并以当前智能体创建会话', () => {
+  assert.match(scopeControlsSource, /from '@\/components\/ui\/select'/);
+  assert.match(scopeControlsSource, /from '@\/components\/ui\/dropdown-menu'/);
+  assert.match(source, /createNativeSession\(\{ agentId: selectedAgentId \}\)/);
+  assert.match(source, /navigate\('\/sessions'\)/);
 });
 
 test('session identity anchors title and metadata while status stays on the agent badge', () => {
@@ -140,7 +142,22 @@ test('session state labels exist in every active product language', () => {
     'chat.sessionCompleted',
     'chat.renameSession',
     'chat.deleteSession',
-    'sidebar.userSessions',
+    'sidebar.sessions.title',
+    'sidebar.sessions.agentScope',
+    'sidebar.sessions.noAgent',
+    'sidebar.sessions.loadingAgents',
+    'sidebar.sessions.agentsUnavailable',
+    'sidebar.sessions.loading',
+    'sidebar.sessions.loadAgentsFailed',
+    'sidebar.sessions.loadSessionsFailed',
+    'sidebar.sessions.organize',
+    'sidebar.sessions.groupBy',
+    'sidebar.sessions.groupByCategory',
+    'sidebar.sessions.groupByNone',
+    'sidebar.sessions.sortBy',
+    'sidebar.sessions.sortCreated',
+    'sidebar.sessions.sortUpdated',
+    'sidebar.sessions.all',
     'sidebar.session.channelAndAgent',
     'sidebar.session.channelIdentity',
     'sidebar.background.title',

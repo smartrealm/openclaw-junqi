@@ -6,7 +6,6 @@ const primaryActionSource = readFileSync(
   new URL('./SidebarPrimaryAction.tsx', import.meta.url),
   'utf8',
 );
-const sidebarSource = readFileSync(new URL('./NavSidebar.tsx', import.meta.url), 'utf8');
 const panelsSource = readFileSync(new URL('./NavSidebarPanels.tsx', import.meta.url), 'utf8');
 
 test('sidebar primary actions share one themed button contract across tabs', () => {
@@ -16,7 +15,6 @@ test('sidebar primary actions share one themed button contract across tabs', () 
   assert.match(primaryActionSource, /size="lg"/);
   assert.match(primaryActionSource, /fullWidth/);
 
-  assert.match(sidebarSource, /<SidebarPrimaryAction[\s\S]*?sidebar\.newChat/);
   assert.match(panelsSource, /<SidebarPrimaryAction[\s\S]*?sidebar\.newAgent/);
   assert.match(panelsSource, /<SidebarPrimaryAction[\s\S]*?sidebar\.openTerminal/);
 

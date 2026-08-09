@@ -31,15 +31,14 @@ test('the new-session picker seeds from session context, not list order', () => 
   assert.match(source, /setSelectedAgentId\(seedAgentId\s*\?\?/);
 });
 
-// Regression: the dashboard shortcut hard-coded `agent=main`, so the same
-// action produced a different agent depending on which surface started it.
-test('every new-session entry resolves the agent the same way', () => {
+// Dashboard 从当前会话解析智能体；侧栏存在显式选择器时必须使用用户选中的智能体。
+test('各新建会话入口使用其界面已经确认的智能体身份', () => {
   const dashboard = readFileSync('src/pages/Dashboard/index.tsx', 'utf8');
   const sidebar = readFileSync('src/components/Layout/NavSidebar.tsx', 'utf8');
   assert.match(dashboard, /resolveNewSessionAgentId\(\s*activeSessionKey/);
   assert.doesNotMatch(dashboard, /\/chat\?agent=main&new=1/);
   assert.match(sidebar, /resolveNewSessionAgentId\(\s*activeKey[\s\S]*defaultAgentId/);
-  assert.match(sidebar, /agentId: newSessionAgentId/);
+  assert.match(sidebar, /createNativeSession\(\{ agentId: selectedAgentId \}\)/);
   assert.doesNotMatch(sidebar, /agentId: 'main'/);
 });
 

@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-保持 JunQi 作为 OpenClaw 桌面客户端的边界：首次启动由官方 Wizard 统一编排，钉钉业务能力由 OpenClaw 插件和 DWS 官方 CLI 提供，模型认证和配置字段只呈现当前 Gateway 已证明的状态。本阶段已将本地 `Blues-Code/dingtalk` 分支合并到当前 `Blues-Code/Jarvis`，统一钉钉业务工作台的信息架构，并保留主线已有的真实 DWS 安装、授权和运行时身份围栏。
+保持 JunQi 作为 OpenClaw 桌面客户端的边界：首次启动由官方 Wizard 统一编排，钉钉业务能力由 OpenClaw 插件和 DWS 官方 CLI 提供，模型认证和配置字段只呈现当前 Gateway 已证明的状态。本阶段已将本地 `Blues-Code/dingtalk` 分支合并到当前 `Blues-Code/Jarvis`，统一钉钉业务工作台的信息架构，并保留主线已有的真实 DWS 安装、授权和运行时身份围栏。当前还在收敛工作台会话侧栏，使智能体范围、主会话入口、分组、排序和新建会话归属与 OpenClaw 官方会话契约一致。
 
 ## 已完成内容
 
@@ -26,6 +26,9 @@
 - 原独立认证面板、专属测试和无引用多语言文案已删除；新的行为测试直接覆盖卡片认证摘要和展开区操作，不再通过源码字符串断言实现写法。
 - 配置中心公共 schema 服务严格解析官方 `config.schema` 响应信封，只将 `schema` 字段交给结构化编辑器；成功缓存绑定当前已认证 Gateway 连接 ID，连接切换后的迟到结果失败关闭。
 - 工具页不再把请求失败和 Runtime 未公开 `tools` 字段混成同一提示。读取失败提供显式重试，字段缺失保持真实只读语义，工具目录、有效工具和受控调用仍独立呈现其官方 RPC 状态。
+- 工作台会话侧栏已改为按 `agents.list` 选择智能体，只展示该智能体的 Gateway 会话；新建会话明确绑定当前选择，Gateway 已确认的主会话固定为首行，智能体和会话拉取的加载与失败状态在操作附近真实呈现。
+- 会话侧栏已删除日期分桶、旧分桶偏好和工作台重复导航，改为 OpenClaw 官方的自定义分组或不分组、创建时间或最近更新；底部复用现有 `/sessions` 完整管理入口。
+- 会话分类只保留 OpenClaw 原生 `category`，已删除无消费者的 `groupId` 影子字段及其投影、身份重置和测试断言。
 
 ## 关键技术决策
 
@@ -34,6 +37,8 @@
 - `talk.catalog.realtime.ready=false` 仅表示 Gateway 实时语音未就绪，客户端不会切换到本地语音实现或伪报可用。
 - OpenClaw 官方 `openclaw.setup.verify` 可用时才作为模型实时验证依据；能力不可用时保持待核验。
 - OpenClaw `config.schema` 的权威响应是包含 `schema`、`uiHints`、`version` 和 `generatedAt` 的信封；JunQi 不接受裸 schema、别名字段、版本 fallback 或方法广告门禁。
+- 会话侧栏复用全局权威 `sessions.list` 缓存做智能体只读投影，不增加第二套轮询、缓存或会话协议；非默认智能体主会话只从 Gateway 已返回的 key 解析。
+- 最新 OpenClaw Control UI 还提供创建者、状态和定时会话过滤；本轮按最小需求不复制这些入口，避免与 JunQi 现有归档区和后台活动区形成双轨。
 
 ## 核心文件
 
@@ -46,6 +51,8 @@
 - `src/components/Chat/ChatTabs.tsx`、`src/components/Layout/NavSidebar.tsx`、`src/pages/Dashboard/index.tsx`、`src/pages/AgentHub/index.tsx`：默认智能体与 Gateway 主会话展示入口。
 - `src/pages/ConfigManager/ProvidersTab.tsx`、`src/pages/ConfigManager/ProvidersTab.modelAuthStatus.test.tsx`：Provider 卡片内的 Gateway 认证健康、实时验证与受控注销展示。
 - `src/services/openclawConfigSchema.ts`、`src/services/openclawConfigSchema.test.ts`、`src/pages/ConfigManager/ToolsTab.tsx`：官方配置 schema 信封解析、连接围栏、缓存和工具页状态呈现。
+- `src/components/Layout/NavSidebar.tsx`、`src/components/Layout/SessionScopeControls.tsx`、`src/components/Layout/sidebarUtils.ts`：智能体作用域会话列表、主会话首行、分组排序和完整会话入口。
+- `src/stores/chatStore.ts`、`src/utils/openClawSessionProjection.ts`：移除会话分类影子字段，只保留 Gateway `category`。
 
 ## 测试与验证
 
@@ -56,6 +63,7 @@
 - Provider 认证状态重设计已通过 15 项认证链路定向回归、完整 `pnpm test`（前端 2845 项、脚本 243 项）、`pnpm lint`、`pnpm build`、`pnpm verify:openclaw-docs`、locale JSON 解析、`git diff --check` 和完整修改文件 Emoji 扫描。最终键盘交互调整后再次通过定向回归、lint 与 build。
 - Runtime 配置 schema 修复已通过 11 项定向回归、`pnpm lint`、完整 `pnpm test` 和 `pnpm build`。完整测试包含前端与服务 2851 项、脚本 243 项，无失败；输出仅有既有 Node 弃用和 Radix 服务端渲染警告。
 - 本次钉钉分支合并已通过 8 项视图、工具分组与共享页签动效定向回归、`pnpm lint`、完整 `pnpm test` 和 `pnpm build`。生产构建重新生成并校验协作插件与钉钉插件资源包；输出仅有既有 Node 弃用和 Radix 服务端渲染警告。
+- 智能体作用域会话侧栏已通过 74 项定向侧栏、新建会话与 ChatStore 回归、完整 `pnpm test`（2855 项）、`pnpm lint`、生产 `pnpm build`、locale JSON 解析和 `git diff --check`。完整测试首次发现旧守护仍要求侧栏从活动会话推断新建目标，已按新的显式智能体选择契约更新后复跑通过；输出仅包含既有 Node 弃用和 Radix 服务端渲染警告。
 
 ## 已知问题
 
@@ -67,11 +75,13 @@
 - 本机 OpenClaw 运行时代码和随包文档对自定义 `session.mainKey` 是否生效存在差异；JunQi 仅处理当前 Gateway 已返回的字段。最新版官方线上文档本轮请求服务不可用，未完成线上版本复核。
 - 尚未在真实 Gateway 验收 Provider 卡片中的 OAuth/token 到期、实时探测、注销和畸形回包；尚未在真实 Tauri 完成该页面亮色、暗色、窄窗口、键盘焦点、加载、失败和空数据状态的视觉验收。
 - 尚未在真实 Native、Docker 和跨平台 Gateway 中验收工具 schema 加载、插件扩展字段、连接切换与重试；工具页亮色、暗色、窄窗口和键盘焦点仍需 Tauri 真机验证。
+- 尚未在真实多智能体 Gateway 和 Tauri 中验收会话侧栏的智能体切换、全局主会话、分类顺序、归档恢复，以及亮色、暗色和窄窗口视觉表现。
 
 ## 尝试过但未采用的方案
 
 - 未直接选择冲突任一侧的 `DingTalkReadinessPanel`。只保留主线会丢失三个稳定工作区，只保留 dingtalk 分支会丢失真实 DWS 安装、授权、取消和输出投影，因此最终使用两条已验证链路的单一组合实现。
 - 合并后恢复旧工作区时，三种语言中的工作区键与分支已落入的同名键重复；重复位置已删除，只保留每种语言唯一键，避免 JSON 解析时静默覆盖。
+- 未复制 OpenClaw 最新侧栏的创建者、状态和定时会话过滤；这些能力超出当前确认范围，并会与 JunQi 现有归档和后台活动呈现重复。
 
 ## 下一步顺序
 
@@ -80,3 +90,4 @@
 3. 使用非传统默认智能体和主会话 key 的真实 Gateway 验收页签固定、关闭删除、打开直聊主会话和官方新建会话。
 4. 在真实 Gateway 和 Tauri 中验收 Provider 卡片认证摘要、实时验证确认、受控注销及主题与窄窗口表现。
 5. 在 Native 和 Docker Runtime 中切换 Gateway，验收工具配置 schema 重新加载、空字段、授权失败和重试状态。
+6. 在真实多智能体 Gateway 中验收侧栏智能体作用域、主会话首行、分类排序、新建会话归属和 `/sessions` 入口，再完成三套桌面平台的主题与窄窗口视觉验收。
