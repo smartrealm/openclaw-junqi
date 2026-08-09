@@ -416,7 +416,6 @@
       align-items: center;
       gap: 10px;
       padding: 5px 10px;
-      border-bottom: 1px solid var(--border);
     }
 
     .page-title {
@@ -492,41 +491,35 @@
       height: 14px;
     }
 
-    .page-tabs {
-      height: 32px;
+    .readiness-banner {
+      min-height: 44px;
+      flex: 0 0 auto;
       display: flex;
-      align-items: stretch;
-      gap: 2px;
-      padding: 0 8px;
+      align-items: center;
+      gap: 9px;
+      margin: 8px 10px 0;
+      padding: 7px 9px;
+      border: 1px solid rgba(224, 179, 106, 0.28);
+      border-radius: 5px;
+      background: rgba(224, 179, 106, 0.06);
     }
 
-    .page-tab {
-      position: relative;
-      min-width: 58px;
-      padding: 0 8px;
-      background: transparent;
+    .readiness-copy {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .readiness-copy strong {
+      display: block;
+      color: var(--warning);
+      font-size: 10.5px;
+    }
+
+    .readiness-copy span {
+      display: block;
+      margin-top: 2px;
       color: var(--text-muted);
-      cursor: pointer;
-      font-weight: 600;
-    }
-
-    .page-tab:hover {
-      background: var(--surface);
-      color: var(--text);
-    }
-
-    .page-tab.active {
-      color: var(--text);
-    }
-
-    .page-tab.active::after {
-      position: absolute;
-      right: 7px;
-      bottom: 0;
-      left: 7px;
-      height: 2px;
-      background: var(--primary);
-      content: "";
+      font-size: 9.5px;
     }
 
     .workbench {
@@ -807,17 +800,26 @@
       font-size: 11px;
     }
 
-    tbody tr {
+    tbody tr[data-name] {
       cursor: pointer;
     }
 
-    tbody tr:hover {
+    tbody tr[data-name]:hover {
       background: var(--surface);
     }
 
-    tbody tr.selected {
+    tbody tr[data-name].selected {
       background: var(--primary-soft);
       box-shadow: inset 2px 0 0 var(--primary);
+    }
+
+    .group-row th {
+      position: static;
+      height: 27px;
+      background: var(--surface-soft);
+      color: var(--text-muted);
+      font-size: 9.5px;
+      letter-spacing: 0.08em;
     }
 
     .capability-cell {
@@ -1169,18 +1171,18 @@
         <div class="sidebar-label">工作区</div>
         <nav class="sidebar-nav" aria-label="钉钉工作台导航">
           <button class="nav-row active" type="button" aria-current="page">
-            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg><span>能力工作台</span>
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg><span>有效工具</span>
           </button>
           <button class="nav-row" type="button">
-            <svg viewBox="0 0 24 24"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h10"></path></svg><span>操作记录</span>
+            <svg viewBox="0 0 24 24"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h10"></path></svg><span>操作审计</span>
           </button>
           <button class="nav-row" type="button">
-            <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg><span>运行时接入</span>
+            <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg><span>接入与授权</span>
           </button>
         </nav>
         <div class="sidebar-status">
           <div><span class="state-dot"></span><span>DWS 待验证</span></div>
-          <div>产品配置：钉钉工作台</div>
+          <div>当前平台：钉钉工作台</div>
         </div>
       </aside>
 
@@ -1188,24 +1190,25 @@
         <header class="page-header">
           <div class="page-title-row">
             <div class="page-title">
-              <strong>能力工作台</strong>
+              <strong>钉钉业务工作台</strong>
               <span class="status-badge"><span class="state-dot"></span>DWS 待验证</span>
             </div>
             <div class="header-actions">
-              <button class="button" type="button" disabled title="运行时探测尚未接入">
-                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><span>检查运行时</span>
+              <button class="button" type="button" title="重新读取当前 Session 的真实工具和 DWS 身份">
+                <svg viewBox="0 0 24 24"><path d="M20 6v5h-5"></path><path d="M4 18v-5h5"></path><path d="M6.1 9a7 7 0 0 1 11.4-2.4L20 11"></path><path d="M4 13l2.5 4.4A7 7 0 0 0 17.9 15"></path></svg><span>重新检测</span>
               </button>
               <button class="icon-button" id="detailToggle" type="button" aria-label="切换详情面板" aria-expanded="true" title="切换详情面板">
                 <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></svg>
               </button>
             </div>
           </div>
-          <div class="page-tabs" role="tablist" aria-label="能力工作台视图">
-            <button class="page-tab active" type="button" role="tab" aria-selected="true">能力</button>
-            <button class="page-tab" type="button" role="tab" aria-selected="false">待确认</button>
-            <button class="page-tab" type="button" role="tab" aria-selected="false">执行记录</button>
-          </div>
         </header>
+
+        <section class="readiness-banner" aria-label="接入阻断状态">
+          <span class="state-dot"></span>
+          <div class="readiness-copy"><strong>当前 Session 尚未返回钉钉工具</strong><span>生产页面只在阻断或待核验时显示此状态；完全就绪后自动收起。</span></div>
+          <button class="button" type="button">接入与授权</button>
+        </section>
 
         <div class="workbench">
           <aside class="filter-panel" aria-label="能力筛选">
@@ -1229,19 +1232,18 @@
               </header>
               <div class="filter-scroll">
                 <section class="filter-section">
-                  <div class="filter-section-title"><span>状态</span><span>6</span></div>
+                  <div class="filter-section-title"><span>状态</span><span>待返回</span></div>
                   <div class="filter-options">
-                    <button class="check-row" type="button"><span class="check-box"></span><span>待运行时验证</span><span class="option-count">6</span></button>
+                    <button class="check-row" type="button"><span class="check-box"></span><span>待运行时验证</span><span class="option-count">—</span></button>
                     <button class="check-row" type="button"><span class="check-box"></span><span>可用</span><span class="option-count">0</span></button>
                     <button class="check-row" type="button"><span class="check-box"></span><span>不可用</span><span class="option-count">0</span></button>
                   </div>
                 </section>
                 <section class="filter-section">
-                  <div class="filter-section-title"><span>操作类型</span><span>3</span></div>
+                  <div class="filter-section-title"><span>操作类型</span><span>按实际工具</span></div>
                   <div class="filter-options">
-                    <button class="check-row" type="button"><span class="check-box"></span><span>只读</span><span class="option-count">3</span></button>
-                    <button class="check-row" type="button"><span class="check-box"></span><span>草稿</span><span class="option-count">1</span></button>
-                    <button class="check-row" type="button"><span class="check-box"></span><span>写入</span><span class="option-count">2</span></button>
+                    <button class="check-row" type="button"><span class="check-box"></span><span>只读</span><span class="option-count">—</span></button>
+                    <button class="check-row" type="button"><span class="check-box"></span><span>写入</span><span class="option-count">—</span></button>
                   </div>
                 </section>
                 <section class="filter-section">
@@ -1261,9 +1263,9 @@
             <div class="table-toolbar">
               <label class="search">
                 <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
-                <input type="search" placeholder="搜索能力名称或作用域" aria-label="搜索能力">
+                <input type="search" placeholder="搜索工具名称或业务域" aria-label="搜索工具">
               </label>
-              <button class="button" type="button"><span>全部能力</span><svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"></path></svg></button>
+              <button class="button" type="button"><span>全部工具</span><svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"></path></svg></button>
               <span class="toolbar-spacer"></span>
               <button class="icon-button" type="button" aria-label="刷新" title="刷新">
                 <svg viewBox="0 0 24 24"><path d="M20 6v5h-5"></path><path d="M4 18v-5h5"></path><path d="M6.1 9a7 7 0 0 1 11.4-2.4L20 11"></path><path d="M4 13l2.5 4.4A7 7 0 0 0 17.9 15"></path></svg>
@@ -1274,39 +1276,35 @@
             </div>
 
             <div class="table-scroll">
-              <table aria-label="钉钉业务能力">
+              <table aria-label="钉钉有效工具结构预览">
                 <colgroup><col><col><col><col><col></colgroup>
                 <thead>
-                  <tr><th>能力</th><th>作用域</th><th>操作类型</th><th>确认级别</th><th>运行状态</th></tr>
+                  <tr><th>工具</th><th>业务域</th><th>效果</th><th>风险</th><th>状态</th></tr>
                 </thead>
                 <tbody>
-                  <tr class="selected" tabindex="0" data-name="审批与待办" data-scope="组织与个人待办" data-operation="读取与高影响写入" data-risk="高影响" data-description="运行时验证完成后，才可根据真实能力快照显示审批查询、待办创建或状态更新入口。">
-                    <td><span class="capability-cell"><span class="capability-icon"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg></span>审批与待办</span></td><td>组织与个人待办</td><td>读取与写入</td><td><span class="risk high">高影响</span></td><td><span class="pending"><span class="state-dot"></span>待验证</span></td>
+                  <tr class="group-row"><th colspan="5">通讯录 · 结构示例</th></tr>
+                  <tr class="selected" tabindex="0" data-name="当前用户" data-scope="通讯录" data-operation="读取" data-risk="低" data-description="该行只展示生产工具表的布局。真实可用性仅由当前 Session 的 tools.effective 返回结果决定。">
+                    <td><span class="capability-cell"><span class="capability-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"></circle><path d="M3 20a6 6 0 0 1 12 0"></path></svg></span>当前用户</span></td><td>通讯录</td><td>读取</td><td><span class="risk">低</span></td><td><span class="pending"><span class="state-dot"></span>待 Session 核验</span></td>
                   </tr>
-                  <tr tabindex="0" data-name="日历与日程" data-scope="个人与共享日历" data-operation="读取、草稿与写入" data-risk="高影响" data-description="只有在身份、日历范围和写入能力均被运行时确认后，才显示创建或修改日程的确认流程。">
-                    <td><span class="capability-cell"><span class="capability-icon"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"></rect><path d="M8 3v4"></path><path d="M16 3v4"></path><path d="M4 10h16"></path></svg></span>日历与日程</span></td><td>个人与共享日历</td><td>读取与写入</td><td><span class="risk high">高影响</span></td><td><span class="pending"><span class="state-dot"></span>待验证</span></td>
+                  <tr tabindex="0" data-name="搜索成员" data-scope="通讯录" data-operation="读取" data-risk="低" data-description="生产页面按真实业务域分组，不会补齐未返回的工具。">
+                    <td><span class="capability-cell"><span class="capability-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"></circle><path d="M3 20a6 6 0 0 1 12 0"></path></svg></span>搜索成员</span></td><td>通讯录</td><td>读取</td><td><span class="risk">低</span></td><td><span class="pending"><span class="state-dot"></span>待 Session 核验</span></td>
                   </tr>
-                  <tr tabindex="0" data-name="通讯录" data-scope="可见组织范围" data-operation="只读" data-risk="普通" data-description="身份和组织可见范围必须由运行时重新读取，本地界面不缓存或扩大通讯录权限。">
-                    <td><span class="capability-cell"><span class="capability-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"></circle><path d="M3 20a6 6 0 0 1 12 0"></path><circle cx="17" cy="9" r="2"></circle><path d="M15 15a5 5 0 0 1 6 5"></path></svg></span>通讯录</span></td><td>可见组织范围</td><td>只读</td><td><span class="risk">普通</span></td><td><span class="pending"><span class="state-dot"></span>待验证</span></td>
+                  <tr class="group-row"><th colspan="5">审批 · 结构示例</th></tr>
+                  <tr tabindex="0" data-name="审批表单" data-scope="审批" data-operation="读取" data-risk="低" data-description="工具名称来自插件已审核的固定清单，但当前预览不声明该工具已进入任何 Session。">
+                    <td><span class="capability-cell"><span class="capability-icon"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg></span>审批表单</span></td><td>审批</td><td>读取</td><td><span class="risk">低</span></td><td><span class="pending"><span class="state-dot"></span>待 Session 核验</span></td>
                   </tr>
-                  <tr tabindex="0" data-name="群聊与机器人" data-scope="已授权群聊" data-operation="读取与写入" data-risk="普通" data-description="群聊范围、机器人身份和消息权限必须来自 DWS 当前 profile，不与 OpenClaw 消息渠道凭据混用。">
-                    <td><span class="capability-cell"><span class="capability-icon"><svg viewBox="0 0 24 24"><path d="M21 14a4 4 0 0 1-4 4H9l-5 3v-3a4 4 0 0 1-2-4V7a4 4 0 0 1 4-4h11a4 4 0 0 1 4 4z"></path></svg></span>群聊与机器人</span></td><td>已授权群聊</td><td>读取与写入</td><td><span class="risk">普通</span></td><td><span class="pending"><span class="state-dot"></span>待验证</span></td>
-                  </tr>
-                  <tr tabindex="0" data-name="考勤查询" data-scope="本人或授权范围" data-operation="只读" data-risk="普通" data-description="查询范围必须由运行时返回；界面不从当前登录用户或本机配置推断可查看的考勤数据。">
-                    <td><span class="capability-cell"><span class="capability-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>考勤查询</span></td><td>本人或授权范围</td><td>只读</td><td><span class="risk">普通</span></td><td><span class="pending"><span class="state-dot"></span>待验证</span></td>
-                  </tr>
-                  <tr tabindex="0" data-name="文档与知识库" data-scope="已授权空间" data-operation="只读与草稿" data-risk="普通" data-description="文档空间、读写范围和草稿能力需要实际能力快照证明；未验证前不显示上传、覆盖或发布入口。">
-                    <td><span class="capability-cell"><span class="capability-icon"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"></path><path d="M14 3v5h5"></path><path d="M9 12h6"></path><path d="M9 16h6"></path></svg></span>文档与知识库</span></td><td>已授权空间</td><td>只读与草稿</td><td><span class="risk">普通</span></td><td><span class="pending"><span class="state-dot"></span>待验证</span></td>
+                  <tr tabindex="0" data-name="发起审批" data-scope="审批" data-operation="写入" data-risk="高" data-description="高风险写操作仍需本地确认、OpenClaw 插件审批和权威重读；未知结果不会自动重放。">
+                    <td><span class="capability-cell"><span class="capability-icon"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg></span>发起审批</span></td><td>审批</td><td>写入</td><td><span class="risk high">高</span></td><td><span class="pending"><span class="state-dot"></span>待 Session 核验</span></td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            <footer class="table-footer"><span>6 项能力</span><span>0 项已验证</span><span class="right"><button class="icon-button" type="button" aria-label="上一页" disabled><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"></path></svg></button><span>1 / 1</span><button class="icon-button" type="button" aria-label="下一页" disabled><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></button></span></footer>
+            <footer class="table-footer"><span>工具行结构预览</span><span>实际数量由当前 Session 返回</span><span class="right">tools.effective</span></footer>
           </main>
 
           <div class="splitter" id="detailResize" role="separator" aria-label="调整详情面板宽度" aria-orientation="vertical"></div>
 
-          <aside class="detail-panel" aria-label="能力详情">
+          <aside class="detail-panel" aria-label="工具详情">
             <div class="panel-rail">
               <div class="rail-header">
                 <button class="icon-button" id="detailOpen" type="button" aria-label="展开详情" title="展开详情">
@@ -1323,21 +1321,20 @@
               </header>
               <div class="detail-scroll">
                 <section class="detail-block">
-                  <div class="detail-kicker">当前能力</div>
+                  <div class="detail-kicker">当前工具</div>
                   <div class="detail-grid">
-                    <span class="detail-key">运行状态</span><span class="detail-value warning">待运行时验证</span>
-                    <span class="detail-key">作用域</span><span class="detail-value" id="detailScope">组织与个人待办</span>
-                    <span class="detail-key">操作类型</span><span class="detail-value" id="detailOperation">读取与高影响写入</span>
-                    <span class="detail-key">确认级别</span><span class="detail-value" id="detailRisk">高影响</span>
-                    <span class="detail-key">当前身份</span><span class="detail-value">尚未选择</span>
-                    <span class="detail-key">能力快照</span><span class="detail-value">不可用</span>
+                    <span class="detail-key">Session</span><span class="detail-value warning">待运行时验证</span>
+                    <span class="detail-key">业务域</span><span class="detail-value" id="detailScope">通讯录</span>
+                    <span class="detail-key">效果</span><span class="detail-value" id="detailOperation">读取</span>
+                    <span class="detail-key">风险</span><span class="detail-value" id="detailRisk">低</span>
+                    <span class="detail-key">DWS 身份</span><span class="detail-value">未读取</span>
                   </div>
                 </section>
                 <section class="detail-block">
                   <div class="detail-kicker">接入说明</div>
                   <div class="detail-value" id="detailDescription">运行时验证完成后，才可根据真实能力快照显示审批查询、待办创建或状态更新入口。</div>
                 </section>
-                <div class="boundary">当前页面只展示信息结构，不代表 DWS 已安装、已登录或已授权。所有业务操作必须依据运行时返回结果，并在高影响写入前要求明确确认。</div>
+                <div class="boundary">工具 ID、DWS canonical path、schema 摘要和 JSON 参数在生产页面收进“高级参数与运行时契约”。当前页面只展示信息结构，不代表 DWS 已安装、已登录或已授权。</div>
                 <section class="detail-block">
                   <div class="detail-kicker">最近记录</div>
                   <div class="empty-log">尚无可核验的业务操作记录</div>
@@ -1349,7 +1346,7 @@
       </section>
     </div>
 
-    <footer class="statusbar"><span>平台：钉钉工作台</span><span>DWS：待验证</span><span>能力：0 / 6 已验证</span><span class="right">设计预览，不代表运行时已接入</span></footer>
+    <footer class="statusbar"><span>平台：钉钉工作台</span><span>DWS：待验证</span><span>工具：等待当前 Session</span><span class="right">结构预览，不代表运行时已接入</span></footer>
   </div>
 
   <script>
@@ -1364,8 +1361,7 @@
     const themeToggle = document.getElementById('themeToggle');
     const filterResize = document.getElementById('filterResize');
     const detailResize = document.getElementById('detailResize');
-    const rows = document.querySelectorAll('tbody tr');
-    const pageTabs = document.querySelectorAll('.page-tab');
+    const rows = document.querySelectorAll('tbody tr[data-name]');
     const checkRows = document.querySelectorAll('.check-row');
 
     const setFilterCollapsed = (collapsed) => {
@@ -1392,17 +1388,6 @@
 
     themeToggle.addEventListener('click', () => {
       root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
-    });
-
-    pageTabs.forEach((tab) => {
-      tab.addEventListener('click', () => {
-        pageTabs.forEach((item) => {
-          item.classList.remove('active');
-          item.setAttribute('aria-selected', 'false');
-        });
-        tab.classList.add('active');
-        tab.setAttribute('aria-selected', 'true');
-      });
     });
 
     checkRows.forEach((row) => {

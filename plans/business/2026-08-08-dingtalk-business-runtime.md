@@ -73,6 +73,10 @@ src/locales/
 - [x] 接入 OpenClaw 工具调用与本地脱敏活动投影；正式审批状态仍以 Gateway 事件为准。
 - [x] 新增不保存参数和原始输出的 `BusinessActivityProjection`，明确非 transcript 权威。
 - [x] 删除旧 Chat bridge、静态 Journal、飞书与 Google descriptor、专属测试和无引用导出。
+- [x] 将“有效工具”“操作审计”“接入与授权”提升为侧栏稳定入口，删除页面内部重复页签。
+- [x] 增加 Session、插件、Agent 授权和 DWS 身份四项接入检查，以及完整 DWS 用户与授权投影。
+- [x] readiness 完全就绪时收起工具与审计状态条，阻断和待核验状态继续内联呈现。
+- [x] 工具表格按真实业务域分组，技术标识和 JSON 参数移入高级披露区。
 - [ ] 若当前 edition 只有钉钉一个真实消费者，不新增一值平台配置；第二个平台真实实现时再引入单选配置。
 
 完成门禁：页面在无插件、无 DWS、无 auth、无 profile、无有效工具和 Gateway 断开时均如实显示；`git diff` 中不存在旧双轨调用。

@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Activity, ArrowUpRight, BarChart3, Blocks, BookOpenText, Bot, Brain, Calendar, Clock, Cpu, Database, FileText, Folder, History, ListChecks, MessageSquare, Plus, Puzzle, Settings, Terminal, Wrench } from 'lucide-react';
+import { Activity, ArrowUpRight, BarChart3, Blocks, BookOpenText, Bot, Brain, Calendar, Clock, Cpu, Database, FileText, Folder, History, ListChecks, MessageSquare, Plus, Puzzle, Settings, Settings2, Terminal, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
@@ -246,23 +246,36 @@ export function BusinessApplicationsPanel() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const view = new URLSearchParams(location.search).get('view');
+  const openWorkbench = (nextView: 'tools' | 'activity' | 'runtime') => {
+    navigate(nextView === 'tools' ? '/business-applications' : `/business-applications?view=${nextView}`);
+  };
   return (
     <>
-      <SidebarPrimaryAction icon={<Blocks size={16} />} onClick={() => navigate('/business-applications')}>
+      <SidebarPrimaryAction icon={<Blocks size={16} />} onClick={() => openWorkbench('tools')}>
         {t('businessApplications.openCatalog', '打开业务应用')}
       </SidebarPrimaryAction>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <SidebarSection label={t('businessApplications.sidebarTitle', '业务平台')}>
           <SidebarRow
-            icon={<Blocks size={14} />}
-            title={t('businessApplications.catalogTitle', '应用目录')}
-            active={location.pathname === '/business-applications'}
-            onClick={() => navigate('/business-applications')}
+            icon={<Wrench size={14} />}
+            title={t('businessApplications.workspaceTools', '有效工具')}
+            active={location.pathname === '/business-applications' && view !== 'activity' && view !== 'runtime'}
+            onClick={() => openWorkbench('tools')}
+          />
+          <SidebarRow
+            icon={<ListChecks size={14} />}
+            title={t('businessApplications.workspaceActivity', '操作审计')}
+            active={location.pathname === '/business-applications' && view === 'activity'}
+            onClick={() => openWorkbench('activity')}
+          />
+          <SidebarRow
+            icon={<Settings2 size={14} />}
+            title={t('businessApplications.workspaceRuntime', '接入与授权')}
+            active={location.pathname === '/business-applications' && view === 'runtime'}
+            onClick={() => openWorkbench('runtime')}
           />
         </SidebarSection>
-        <div className="px-4 py-2 text-[11px] leading-5 text-aegis-text-dim">
-          {t('businessApplications.sidebarHint', '应用、授权和操作记录在同一工作区中管理。')}
-        </div>
       </div>
     </>
   );

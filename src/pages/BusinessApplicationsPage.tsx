@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import clsx from 'clsx';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Building2,
   Filter,
-  ListChecks,
   PanelLeftClose,
   RefreshCw,
   Search,
   SlidersHorizontal,
-  Wrench,
 } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
-import { ActiveTabIndicator } from '@/components/shared/TabMotion';
 import { IconButton } from '@/components/shared/button/Button';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import { PaneResizeHandle } from '@/components/BusinessApplications/PaneResizeHandle';
@@ -36,6 +34,7 @@ import {
   type DingTalkRuntimeIdentityProjection,
 } from '@/business-applications/dingtalkTools';
 import { useBusinessActivityStore } from '@/business-applications/activityStore';
+import { parseBusinessApplicationsView } from '@/business-applications/businessApplicationsView';
 import {
   ensureToolsEffectiveFresh,
   invokeOpenClawTool,
@@ -53,7 +52,6 @@ import {
 } from '@/services/gateway/runtimeIdentity';
 import { restartSelectedGatewayRuntime } from '@/services/gateway/gatewayProcessObservation';
 
-type WorkbenchView = 'tools' | 'activity';
 type DomainFilter = 'all' | DingTalkDomain;
 type EffectFilter = 'all' | 'read' | 'write';
 
@@ -203,6 +201,8 @@ function FilterPane({
 }
 
 export function BusinessApplicationsPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const identity = useRuntimeIdentitySnapshot();
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const sessions = useGatewayDataStore((state) => state.sessions);
@@ -221,7 +221,7 @@ export function BusinessApplicationsPage() {
   const schemaToolAvailable = rawEffectiveTools.some((tool) => tool.id === DINGTALK_TOOL_SCHEMA_TOOL && !tool.deniedBySession);
   const runtimeToolAvailable = rawEffectiveTools.some((tool) => tool.id === DINGTALK_RUNTIME_STATUS_TOOL && !tool.deniedBySession);
 
-  const [view, setView] = useState<WorkbenchView>('tools');
+  const view = parseBusinessApplicationsView(location.search);
   const [leftWidth, setLeftWidth] = useState(228);
   const [rightWidth, setRightWidth] = useState(382);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
@@ -546,13 +546,32 @@ export function BusinessApplicationsPage() {
     : toolsLoading ? '正在读取当前 Session 工具' : pluginStatus?.installed
       ? '插件已安装，等待 Gateway 刷新'
       : localInstallAvailable ? '插件尚未安装' : '当前 Session 未提供钉钉工具';
+  const pageTitle = view === 'activity'
+    ? '钉钉操作审计'
+    : view === 'runtime' ? '钉钉接入与授权' : '钉钉业务工作台';
+  const readinessProps = {
+    sessionExists,
+    runtimeToolAvailable,
+    runtime: runtimeIdentity,
+    runtimeError: runtimeIdentityError,
+    pluginNeedsInstall,
+    restartRequired: Boolean(pluginStatus?.restartRequired),
+    agentId: effective?.agentId ?? activeSession?.agentId ?? null,
+    installAvailable: localInstallAvailable,
+    busy: pluginBusy || toolsLoading,
+    onRefresh: () => { void refreshTools(); void refreshRuntimeIdentity(); void refreshPluginStatus(); },
+    onInstallPlugin: installPlugin,
+    onConfigureAgent: () => navigate('/config?tab=tools'),
+    onConfigurePlugin: () => navigate('/config?tab=advanced'),
+    onRestartGateway: () => void restartGateway(),
+  };
 
   return (
     <PageTransition className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-aegis-bg">
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-aegis-border bg-aegis-surface/55 px-3">
         <span className="flex h-7 w-7 items-center justify-center rounded-md border border-aegis-primary/25 bg-aegis-primary/10 text-aegis-primary"><Building2 size={15} /></span>
         <div className="min-w-0">
-          <h1 className="truncate text-[12.5px] font-semibold text-aegis-text">钉钉业务工作台</h1>
+          <h1 className="truncate text-[12.5px] font-semibold text-aegis-text">{pageTitle}</h1>
           <p className="truncate text-[9.5px] text-aegis-text-dim">{headerStatus}</p>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
@@ -565,42 +584,13 @@ export function BusinessApplicationsPage() {
         </div>
       </header>
 
-      <nav className="flex h-8 shrink-0 items-end border-b border-aegis-border bg-aegis-surface/35 px-2" aria-label="钉钉业务视图">
-        {([
-          ['tools', '有效工具', Wrench],
-          ['activity', '操作记录', ListChecks],
-        ] as const).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            aria-current={view === id ? 'page' : undefined}
-            onClick={() => setView(id)}
-            className={clsx(
-              'relative flex h-8 items-center gap-1.5 px-3 text-[10.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-aegis-primary/60',
-              view === id ? 'text-aegis-primary' : 'text-aegis-text-dim hover:text-aegis-text-secondary',
-            )}
-          >
-            <Icon size={12} />{label}
-            {view === id && <ActiveTabIndicator layoutId="dingtalk-business-view" className="inset-x-2 bottom-0 h-0.5 bg-aegis-primary" />}
-          </button>
-        ))}
-      </nav>
+      {view !== 'runtime' && <DingTalkReadinessPanel {...readinessProps} hideWhenReady />}
 
-      <DingTalkReadinessPanel
-        sessionExists={sessionExists}
-        runtimeToolAvailable={runtimeToolAvailable}
-        runtime={runtimeIdentity}
-        runtimeError={runtimeIdentityError}
-        pluginNeedsInstall={pluginNeedsInstall}
-        restartRequired={Boolean(pluginStatus?.restartRequired)}
-        installAvailable={localInstallAvailable}
-        busy={pluginBusy || toolsLoading}
-        onRefresh={() => { void refreshTools(); void refreshRuntimeIdentity(); void refreshPluginStatus(); }}
-        onInstallPlugin={installPlugin}
-        onRestartGateway={() => void restartGateway()}
-      />
-
-      {view === 'activity' ? (
+      {view === 'runtime' ? (
+        <main className="min-h-0 flex-1 overflow-auto bg-aegis-surface/20">
+          <DingTalkReadinessPanel {...readinessProps} variant="workspace" />
+        </main>
+      ) : view === 'activity' ? (
         <main className="flex min-h-0 flex-1 bg-aegis-surface/20"><BusinessActivityList /></main>
       ) : (
         <div

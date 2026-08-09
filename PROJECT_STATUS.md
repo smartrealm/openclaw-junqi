@@ -1,15 +1,20 @@
 # 项目交接状态
 
-更新时间：2026-08-08
+更新时间：2026-08-09
 
 ## 当前目标
 
-钉钉单平台业务工作台 UI 已迁移到生产页面，当前目标是完成插件运行时与真实业务契约验收。实现采用独立 OpenClaw 钉钉插件包装 DWS，业务页与 Chat 共用
+钉钉单平台业务工作台已完成第二轮信息架构收敛，当前目标是完成插件运行时与真实业务契约验收。实现采用独立 OpenClaw 钉钉插件包装 DWS，业务页与 Chat 共用
 `tools.effective`、`tools.invoke` 和插件审批；Tauri 只负责经过 Runtime Identity 围栏的插件安装与启用，不直接执行 DWS。
 正式 DWS 发布包、真实 Gateway 审批往返和测试租户端到端仍是下一步门禁。
 
 ## 本阶段已完成
 
+- 已将业务应用左侧栏收敛为“有效工具”“操作审计”“接入与授权”三个稳定入口，删除页面内部重复页签和无业务价值的说明占位。
+- 已新增独立接入工作区，分别呈现 Session、插件、Agent 双层授权和 DWS 身份核验，并展示 DWS 返回的头像、用户、组织、Profile、状态、到期时间和授权域。
+- 已在 Agent 授权阻断状态提供 OpenClaw 工具策略与插件 `allowedAgentIds` 配置入口；最终有效状态仍只由当前 Session 的 `tools.effective` 核验。
+- 已在完全就绪时隐藏工具与审计页面的 readiness 状态条；阻断、错误和待核验状态继续内联呈现。
+- 已将工具表格按真实业务域分组，并把工具 ID、DWS canonical path、schema 摘要和 JSON 参数收进高级披露区。
 - 已完成 `packages/junqi-dingtalk` 插件、30 工具 manifest、schema 校验、DWS runner、审批 hook、打包资源和 Tauri 安装命令。
 - 已完成专属 Agent 的双层授权实现和 DWS 当前用户/授权投影；`allowedAgentIds` 空配置失败关闭，工作台自动读取运行状态并展示用户、组织、profile 状态和安全头像地址。
 - 已完成紧凑 DWS readiness 状态条；按实际运行结果引导插件安装、Gateway 重启、Agent 授权、DWS 官方安装交接、身份确认和重新检测，不自动安装 DWS 或伪造授权结果。
@@ -31,7 +36,7 @@
 
 ## 已完成内容
 
-- 已完成钉钉单平台业务工作台设计说明、独立 HTML 交互预览和生产页面迁移；当前页面已进入 `src/`，不展示飞书或 Google。
+- 已完成钉钉单平台业务工作台设计说明、独立 HTML 交互预览和生产页面迁移；当前页面已进入 `src/`，不展示飞书或 Google，也不保留页面内重复导航。
 - 已完成钉钉业务运行时设计、领域术语、ADR、规格、分阶段实施计划以及阶段 1、阶段 2 的插件和前端实现。
 - 已核对 OpenClaw 主线提交 `733512b612e5fcfa96ca0764ac1851990406f187` 的 `tools.effective`、`tools.invoke`、插件工具注册与 `plugin.approval.*` 失败关闭边界。
 - 已核对 DWS 主线提交 `18030f1018f9d23e699063c4511987e660bb1701`，并从官方源码运行 product schema 与 auth/profile help；确认 `profile list/switch/use` 和 `oa approval create-instance` 当前正式存在。
@@ -87,10 +92,10 @@
 
 ## 关键技术决策
 
-- 业务应用页采用产品配置选定单一平台的设计，不在页面内展示或切换多个平台；当前主线和默认设计均为钉钉。
+- 业务应用页当前直接呈现唯一真实实现钉钉，不在页面内展示或切换多个平台；第二个平台具备真实消费者前不增加一值配置。
 - 业务应用页复用现有窗口壳层和 `aegis-*` 语义主题体系，不增加网页式大标题、应用卡片墙或独立于桌面导航的第二套外壳。
 - 能力表格是业务工作台的主画布；筛选和详情是可收起、可调整宽度的辅助面板，不能永久挤占固定窗口宽度。
-- 本轮交付物只定义 UI 结构和交互，不提前写入产品配置或业务源码；真实 DWS 探测与操作入口必须在后续取得契约证据后实现。
+- 当前 UI 只投影现有插件、Session、Agent 和 DWS 结构化结果；真实 DWS 发布包、租户权限与业务终态仍需独立验收。
 - 钉钉业务运行时归属 OpenClaw 插件，不归属 Tauri。业务页和 Chat 必须使用同一组固定插件工具、Session 有效工具清单和插件审批。
 - DWS leaf schema 是插件参数与安全元数据依据；JunQi 只维护产品 allowlist 和稳定工具契约，不暴露任意 DWS 命令入口。
 - 所有业务写操作只提供一次授权或拒绝，成功响应后必须权威重读；`non_idempotent` 或未知结果不得自动重放。
@@ -107,8 +112,8 @@
 - `packages/junqi-dingtalk/src/index.ts`、`dws-runner.ts`、`schema-contract.ts`、`tool-specs.ts`：固定钉钉工具、DWS 受控执行、schema 校验和写操作审批。
 - `scripts/build-dingtalk-plugin-bundle.mjs`、`src-tauri/resources/dingtalk/`：插件归档、摘要 metadata 与桌面资源同步。
 - `src-tauri/src/commands/dingtalk_plugin.rs`、`src/api/tauri-commands.ts`：受 Runtime Identity 围栏保护的插件状态、安装和启用 IPC。
-- `src/pages/BusinessApplicationsPage.tsx`、`src/business-applications/dingtalkTools.ts`、`activityStore.ts`：当前 Session 的钉钉工具投影、直接调用与脱敏活动记录。
-- `src/components/BusinessApplications/`：三栏业务工作台的能力表、详情、活动和无障碍可拖拽分隔条。
+- `src/pages/BusinessApplicationsPage.tsx`、`src/business-applications/businessApplicationsView.ts`、`dingtalkTools.ts`、`activityStore.ts`：稳定视图路由、当前 Session 的钉钉工具投影、直接调用与脱敏活动记录。
+- `src/components/BusinessApplications/`：接入检查、DWS 身份与授权、分组工具表、详情、活动和无障碍可拖拽分隔条。
 - `docs/business/dingtalk-single-platform-ui-design-2026-08-08.md`：钉钉单平台窗口结构、状态语义、响应式和实现边界。
 - `docs/previews/junqi-dingtalk-business-workspace.html`：包含侧栏、检查器、主题和页内选中态交互的独立设计预览。
 - `docs/business/dingtalk-business-runtime-implementation-design-2026-08-08.md`：OpenClaw 插件、DWS、身份、审批、幂等、投影和分期架构。
@@ -149,6 +154,8 @@
 
 ## 测试与验证
 
+- 本轮钉钉 UI 收敛已通过 11 项聚焦测试、完整 `pnpm test`（前端 2825 项及脚本测试）、`pnpm lint`、`pnpm dingtalk:test`（12 项）、`pnpm dingtalk:validate`、`pnpm build`、`pnpm verify:openclaw-docs` 和预览标签栈/脚本/语言资源解析。完整测试仅输出既有第三方 Radix 服务端渲染警告。
+- 当前未执行真实 Tauri 窗口中的亮暗主题、键盘焦点、窄窗口和像素级视觉验收；本轮页面结构已由生产构建验证，真实视觉边界记录于 `docs/business/dingtalk-workspace-ui-validation-2026-08-09.md`。
 - 设计预览已通过 HTML 标签栈、内联脚本语法、拖拽与收起控件标识、隐藏平台文案、相对链接和 Emoji 静态检查。
 - 本轮业务规划已从 DWS 官方源码成功运行 `go run ./cmd schema oa --compact -f json`，并运行 attendance、calendar、contact、todo schema 与 auth/profile help；尚未使用正式 DWS 发布包或真实钉钉租户执行业务操作。
 - 本轮新增文档的本地相对链接、完整修改文件 Emoji 扫描和 `git diff --check` 已通过；源码、Tauri、插件、构建脚本和锁文件均包含本轮实现改动。
