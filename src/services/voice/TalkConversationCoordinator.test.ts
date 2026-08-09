@@ -4,8 +4,9 @@ import type {
   TalkGatewayEvent,
   TalkRelayEvent,
 } from '@/services/gateway/talkEventBridge';
-import type { TalkSession } from '@/services/gateway/talkTypes';
+import type { TalkCatalog, TalkSession } from '@/services/gateway/talkTypes';
 import type { TalkGatewayConnectionClient } from '@/services/gateway/TalkGatewayClient';
+import { TalkGatewayUnavailableError } from '@/services/gateway/TalkGatewayClient';
 import {
   TalkConversationCoordinator,
   shouldCancelTalkOutput,
@@ -60,6 +61,14 @@ function createHarness(
   let relayListener: ((value: TalkRelayEvent) => void) | null = null;
   const calls: string[] = [];
   const connectionOperations: Omit<TalkGatewayConnectionClient, 'connectionId'> = {
+    getCatalog: async (): Promise<TalkCatalog> => ({
+      modes: ['realtime'],
+      transports: ['gateway-relay'],
+      brains: ['agent-consult'],
+      speech: { providers: [] },
+      transcription: { providers: [] },
+      realtime: { ready: true, activeProvider: 'relay-provider', providers: [] },
+    }),
     createRealtimeRelay: async () => session(),
     appendAudio: async (_sessionId, _audioBase64, timestamp, signal) => {
       calls.push(`append:${timestamp}:${signal?.aborted === false ? 'active' : 'missing'}`);
@@ -146,6 +155,20 @@ test('Talk 会话保留 Gateway 确认的音频格式并发送匹配的 PCM', as
   assert.equal(harness.coordinator.appendPcm({ data: 'AA==', sampleRateHz: 24_000, channels: 1 }), true);
   await flush();
   assert.ok(harness.calls.includes('append:1234:active'));
+});
+
+test('Talk 目录未就绪时保留官方失败原因而不是伪装成普通连接错误', async () => {
+  const harness = createHarness({
+    createRealtimeRelay: async () => {
+      throw new TalkGatewayUnavailableError(
+        'Gateway realtime Talk provider is not ready',
+        'realtime_not_ready',
+      );
+    },
+  });
+  const opened = await harness.coordinator.acceptInput('agent:main:main');
+  assert.equal(opened.snapshot.phase, 'error');
+  assert.equal(opened.snapshot.error, 'talk_realtime_not_ready');
 });
 
 test('Talk 输入只保留四个在途请求并丢弃已经过期的新帧', async () => {

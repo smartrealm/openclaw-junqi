@@ -10,10 +10,11 @@ JunQi 只实现 OpenClaw 官方已定义的 Voice Wake 配置与 Talk 客户端�
 2. Voice Wake 路由目标只接受官方的当前上下文、`agentId` 或 `sessionKey`。不得自动创建会话、修改 category 或生成客户端 group。
 3. Jarvis Talk 只能在 `talk.catalog` 明确广告兼容的 `realtime`、`gateway-relay`、`agent-consult`、barge-in 和 PCM 格式后创建。
 4. 音频输入输出格式以 `talk.session.create` 的确认响应为准。整个 Talk 生命周期固定到创建时的 Gateway 连接租约；格式不匹配、目录未就绪、响应畸形或连接切换均失败关闭，旧 session、run 或工具调用不得经新连接继续发送。
-5. `gateway-relay` 只执行 Gateway 发出的官方 `openclaw_agent_consult` 和 `openclaw_agent_control`。consult 必须使用 `talk.client.toolCall` 返回的精确 `runId` 调用 `agent.wait` 或 `chat.abort`，provider 结果只能通过 `talk.session.submitToolResult` 提交。
-6. 中继外层事件必须与规范 `talk.event` 的 session、turn、call 和 mark 身份交叉核对。`clear` 立即清空本地输出并隔离迟到事件；`mark` 仅在原生播放排空后通过 `talk.session.acknowledgeMark` 确认。
-7. 停止使用 `talk.session.cancelTurn` 与 `talk.session.close`，打断使用 `talk.session.cancelOutput`。不得清空 OpenClaw session，也不得由客户端合成聊天 recovery 工具结果或修复 ReAct 历史；官方 Talk provider 中继结果不属于聊天历史修复。
-8. 普通消息由 `chat.send` 使用 Gateway 当前队列模式；只有明确转向使用官方 `sessions.steer`。客户端不得为运行中会话设置猜测性默认队列模式，本地队列只保护破坏性会话变更期间尚未交接的消息。
+5. `talk.catalog.realtime.ready` 为 `false`、目录结构无效或没有满足原生 PCM、`gateway-relay`、`agent-consult`、barge-in 和工具调用能力的提供方时，客户端必须分别呈现真实失败原因，不得进入采集或伪造可用状态。
+6. `gateway-relay` 只执行 Gateway 发出的官方 `openclaw_agent_consult` 和 `openclaw_agent_control`。consult 必须使用 `talk.client.toolCall` 返回的精确 `runId` 调用 `agent.wait` 或 `chat.abort`，provider 结果只能通过 `talk.session.submitToolResult` 提交。
+7. 中继外层事件必须与规范 `talk.event` 的 session、turn、call 和 mark 身份交叉核对。`clear` 立即清空本地输出并隔离迟到事件；`mark` 仅在原生播放排空后通过 `talk.session.acknowledgeMark` 确认。
+8. 停止使用 `talk.session.cancelTurn` 与 `talk.session.close`，打断使用 `talk.session.cancelOutput`。不得清空 OpenClaw session，也不得由客户端合成聊天 recovery 工具结果或修复 ReAct 历史；官方 Talk provider 中继结果不属于聊天历史修复。
+9. 普通消息由 `chat.send` 使用 Gateway 当前队列模式；只有明确转向使用官方 `sessions.steer`。客户端不得为运行中会话设置猜测性默认队列模式，本地队列只保护破坏性会话变更期间尚未交接的消息。
 
 ## 资源与并发约束
 

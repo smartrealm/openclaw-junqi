@@ -10,6 +10,7 @@ import {
 import {
   TALK_AGENT_CONSULT_TOOL_NAME,
   TALK_AGENT_CONTROL_TOOL_NAME,
+  TalkGatewayUnavailableError,
   type TalkGatewayConnectionClient,
   type TalkGatewayClient,
   type TalkOutputCancelReason,
@@ -30,6 +31,9 @@ export type TalkConversationPhase =
 
 export type TalkConversationErrorCode =
   | 'gateway_unavailable'
+  | 'talk_catalog_invalid'
+  | 'talk_realtime_not_ready'
+  | 'talk_relay_unsupported'
   | 'connection_changed'
   | 'audio_format_mismatch'
   | 'audio_append_failed'
@@ -122,6 +126,14 @@ const INITIAL: TalkConversationSnapshot = {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function talkErrorCode(error: unknown): TalkConversationErrorCode {
+  if (!(error instanceof TalkGatewayUnavailableError)) return 'gateway_unavailable';
+  if (error.reason === 'catalog_invalid') return 'talk_catalog_invalid';
+  if (error.reason === 'realtime_not_ready') return 'talk_realtime_not_ready';
+  if (error.reason === 'relay_unsupported') return 'talk_relay_unsupported';
+  return 'gateway_unavailable';
 }
 
 function boundedText(value: string): string {
@@ -326,7 +338,7 @@ export class TalkConversationCoordinator {
           phase: 'error',
           sessionKey,
           connectionId,
-          error: 'gateway_unavailable',
+          error: talkErrorCode(error),
           errorDetail: errorMessage(error),
         });
       }

@@ -33,7 +33,16 @@ export interface TalkToolResultOptions {
 
 export class TalkGatewayUnavailableError extends Error {
   readonly code = 'TALK_GATEWAY_UNAVAILABLE';
-  constructor(message: string) { super(message); this.name = 'TalkGatewayUnavailableError'; }
+  readonly reason: 'gateway_unavailable' | 'catalog_invalid' | 'realtime_not_ready' | 'relay_unsupported';
+
+  constructor(
+    message: string,
+    reason: TalkGatewayUnavailableError['reason'] = 'gateway_unavailable',
+  ) {
+    super(message);
+    this.name = 'TalkGatewayUnavailableError';
+    this.reason = reason;
+  }
 }
 
 export type TalkOutputCancelReason = 'barge-in' | 'playback-overflow';
@@ -52,6 +61,7 @@ export interface TalkGatewayClientDependencies {
 
 export interface TalkGatewayConnectionClient {
   readonly connectionId: string;
+  getCatalog: () => Promise<TalkCatalog>;
   createRealtimeRelay: (sessionKey: string) => Promise<TalkSession>;
   startAgentConsult: (
     sessionKey: string,
@@ -166,17 +176,31 @@ export class TalkGatewayClient {
     ) => this.request(expectedConnectionId, method, params, options);
     const getCatalog = async (): Promise<TalkCatalog> => {
       const catalog = decodeTalkCatalog(await request('talk.catalog', {}));
-      if (!catalog) throw new TalkGatewayUnavailableError('Gateway Talk catalog is absent, unready, or malformed');
+      if (!catalog) throw new TalkGatewayUnavailableError(
+        'Gateway Talk catalog is absent, unready, or malformed',
+        'catalog_invalid',
+      );
       return catalog;
     };
 
     return {
       connectionId: expectedConnectionId,
+      getCatalog,
       createRealtimeRelay: async (sessionKey) => {
         const normalizedSessionKey = requireIdentifier(sessionKey, 'OpenClaw session key');
-        const selection = selectRealtimeRelayConfiguration(await getCatalog());
+        const catalog = await getCatalog();
+        if (catalog.realtime.ready !== true) {
+          throw new TalkGatewayUnavailableError(
+            'Gateway realtime Talk provider is not ready',
+            'realtime_not_ready',
+          );
+        }
+        const selection = selectRealtimeRelayConfiguration(catalog);
         if (!selection) {
-          throw new TalkGatewayUnavailableError('Gateway does not advertise a Talk relay compatible with native PCM audio');
+          throw new TalkGatewayUnavailableError(
+            'Gateway does not advertise a Talk relay compatible with native PCM audio',
+            'relay_unsupported',
+          );
         }
         const session = decodeTalkSession(await request('talk.session.create', {
           sessionKey: normalizedSessionKey,

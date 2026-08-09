@@ -42,6 +42,9 @@ function voiceModeError(code: TalkConversationErrorCode): VoiceModeErrorCode {
   if (code === 'talk_session_replaced') return 'talk_session_replaced';
   if (code === 'talk_session_closed') return 'talk_session_closed';
   if (code === 'gateway_unavailable' || code === 'connection_changed') return 'gateway_unavailable';
+  if (code === 'talk_catalog_invalid') return 'talk_catalog_invalid';
+  if (code === 'talk_realtime_not_ready') return 'talk_realtime_not_ready';
+  if (code === 'talk_relay_unsupported') return 'talk_relay_unsupported';
   return 'talk_unavailable';
 }
 
