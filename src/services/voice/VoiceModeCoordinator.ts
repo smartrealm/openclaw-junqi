@@ -11,6 +11,9 @@ export type VoiceInputPhase =
 
 export type VoiceModeErrorCode =
   | 'gateway_unavailable'
+  | 'talk_catalog_invalid'
+  | 'talk_realtime_not_ready'
+  | 'talk_relay_unsupported'
   | 'target_changed'
   | 'capture_failed'
   | 'talk_unavailable'

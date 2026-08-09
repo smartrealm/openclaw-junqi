@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { voiceWakeGatewayClient } from '@/services/gateway';
+import { gateway, talkGatewayClient, voiceWakeGatewayClient } from '@/services/gateway';
 import { VoiceWakeGatewayUnavailableError } from '@/services/gateway/VoiceWakeGatewayClient';
 import type { VoiceWakeRoutingConfig } from '@/services/gateway/voiceWakeTypes';
 import { subscribeVoiceWakeSettingsProjection } from '@/services/voice/VoiceWakeSettingsProjection';
@@ -19,6 +19,9 @@ export interface JarvisVoiceSettingsState {
   savingRouting: boolean;
   triggerError: JarvisVoiceSettingsError | null;
   routingError: JarvisVoiceSettingsError | null;
+  talkReady: boolean | null;
+  talkProvider: string | null;
+  talkError: JarvisVoiceSettingsError | null;
   refresh: () => Promise<void>;
   saveTriggers: (triggers: readonly string[]) => Promise<boolean>;
   saveRouting: (routing: VoiceWakeRoutingConfig) => Promise<boolean>;
@@ -55,6 +58,9 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
   const [savingRouting, setSavingRouting] = useState(false);
   const [triggerError, setTriggerError] = useState<JarvisVoiceSettingsError | null>(null);
   const [routingError, setRoutingError] = useState<JarvisVoiceSettingsError | null>(null);
+  const [talkReady, setTalkReady] = useState<boolean | null>(null);
+  const [talkProvider, setTalkProvider] = useState<string | null>(null);
+  const [talkError, setTalkError] = useState<JarvisVoiceSettingsError | null>(null);
   const operationGateRef = useRef(new JarvisVoiceSettingsOperationGate());
   const triggerSaveRef = useRef<Promise<boolean> | null>(null);
   const routingSaveRef = useRef<Promise<boolean> | null>(null);
@@ -76,10 +82,18 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
     setLoading(true);
     setTriggerError(null);
     setRoutingError(null);
+    setTalkError(null);
+    setTalkReady(null);
+    setTalkProvider(null);
+    const connectionId = gateway.captureConnectionId();
     const [triggerResult, routingResult] = await Promise.allSettled([
       voiceWakeGatewayClient.getTriggers(),
       voiceWakeGatewayClient.getRouting(),
     ]);
+    const talkClient = connectionId ? talkGatewayClient.bindConnection(connectionId) : null;
+    const talkResult = talkClient
+      ? await Promise.allSettled([talkClient.getCatalog()]).then(([result]) => result)
+      : { status: 'rejected' as const, reason: new Error('Gateway Talk catalog is unavailable') };
     if (operationGateRef.current.canCommit(token)) {
       if (triggerResult.status === 'fulfilled') setGatewayTriggers([...triggerResult.value.triggers]);
       else {
@@ -90,6 +104,14 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
       else {
         debugError('gateway', '[JarvisVoiceSettings] 读取唤醒路由失败：', errorMessage(routingResult.reason));
         setRoutingError(settingsError(routingResult.reason));
+      }
+      if (talkResult.status === 'fulfilled') {
+        setTalkReady(talkResult.value.realtime.ready === true);
+        setTalkProvider(talkResult.value.realtime.activeProvider ?? null);
+      } else {
+        setTalkReady(null);
+        setTalkProvider(null);
+        setTalkError(settingsError(talkResult.reason));
       }
     }
     if (operationGateRef.current.isLatest(token)) setLoading(false);
@@ -167,6 +189,9 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
     savingRouting,
     triggerError,
     routingError,
+    talkReady,
+    talkProvider,
+    talkError,
     refresh,
     saveTriggers,
     saveRouting,

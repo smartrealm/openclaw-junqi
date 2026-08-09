@@ -246,23 +246,30 @@ export function BusinessApplicationsPanel() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const isActivity = new URLSearchParams(location.search).get('view') === 'activity';
+  const openWorkbench = (view: 'tools' | 'activity') => {
+    navigate({ pathname: '/business-applications', search: view === 'activity' ? '?view=activity' : '' });
+  };
   return (
     <>
-      <SidebarPrimaryAction icon={<Blocks size={16} />} onClick={() => navigate('/business-applications')}>
-        {t('businessApplications.openCatalog', '打开业务应用')}
+      <SidebarPrimaryAction icon={<Blocks size={16} />} onClick={() => openWorkbench('tools')}>
+        {t('businessApplications.openWorkbench', '钉钉工作台')}
       </SidebarPrimaryAction>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <SidebarSection label={t('businessApplications.sidebarTitle', '业务平台')}>
+        <SidebarSection label={t('businessApplications.currentApplication', '钉钉业务')}>
           <SidebarRow
-            icon={<Blocks size={14} />}
-            title={t('businessApplications.catalogTitle', '应用目录')}
-            active={location.pathname === '/business-applications'}
-            onClick={() => navigate('/business-applications')}
+            icon={<Wrench size={14} />}
+            title={t('businessApplications.workspaceTools', '有效工具')}
+            active={location.pathname === '/business-applications' && !isActivity}
+            onClick={() => openWorkbench('tools')}
+          />
+          <SidebarRow
+            icon={<ListChecks size={14} />}
+            title={t('businessApplications.workspaceActivity', '操作审计')}
+            active={location.pathname === '/business-applications' && isActivity}
+            onClick={() => openWorkbench('activity')}
           />
         </SidebarSection>
-        <div className="px-4 py-2 text-[11px] leading-5 text-aegis-text-dim">
-          {t('businessApplications.sidebarHint', '应用、授权和操作记录在同一工作区中管理。')}
-        </div>
       </div>
     </>
   );

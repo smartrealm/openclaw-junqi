@@ -9,12 +9,12 @@
 - 已新增 `packages/junqi-dingtalk/` 独立 OpenClaw 插件包，固定注册 28 个钉钉业务工具，另提供运行状态和参数契约两个内部工具；插件清单共 30 个工具。
 - 插件通过 DWS 官方 canonical path 执行，强制参数数组、JSON 输出、超时、取消、输出上限、精确 `corpId:userId` profile 和 leaf schema 摘要校验；子进程只接收路径、DWS 配置目录、临时目录、语言与系统证书白名单环境变量，schema 漂移会失败关闭。
 - 写工具统一经过 OpenClaw `before_tool_call` 插件审批；DWS 的 `user_required` 只在审批通过后追加 `--yes`，未知结果不自动重放。
-- 已生成并校验桌面资源包，Native 与 Docker 安装均要求当前已核验 Runtime Identity、连接 ID、目标指纹和选定运行时匹配；Tauri 只负责官方 OpenClaw 插件安装/启用，不直接执行 DWS。
+- 已生成并校验桌面资源包，Native 与 Docker 安装均要求当前已核验 Runtime Identity、连接 ID、目标指纹和选定运行时匹配；Tauri 仅启动 DWS 官方安装与设备授权命令，业务调用仍只经 OpenClaw 插件工具。
 - 已加入专属 Agent 设计：插件配置 `allowedAgentIds` 为空时失败关闭，非空时由 OpenClaw `before_tool_call` 的 `ctx.agentId` 二次核验；OpenClaw 侧仍须在 `agents.list[].tools.allow/deny` 中显式授予同一 Agent。
 - 业务页已迁移为钉钉单平台三栏工作台：左侧筛选、中部能力表格、右侧可收起和拖拽的参数详情；能力来源为当前 Session 的 `tools.effective`，不再展示飞书、Google、静态目录或 Chat bridge。
 - 运行状态工具现在读取当前 DWS profile、profile 状态、授权域、到期时间和 `contact user get-self` 的当前用户资料；工作台仅投影姓名、组织、部门、userId 和 HTTPS 头像地址，头像媒体 ID 或非 HTTPS 值显示为待验证。
-- 工作台使用一条紧凑 readiness 状态条引导当前阻塞步骤：插件安装或 Gateway 重启、专属 Agent 授权、DWS 缺失、DWS 业务身份未确认、用户资料待验证和完整可用均有不同文案。DWS 缺失仅交接官方安装流程并提供重新检测，不自动修改主机或 Gateway 环境。
-- DWS 缺失时，状态条打开简短官方安装交接：明确安装目标是当前 Gateway 所在主机/容器，展示官方 macOS/Linux、Windows PowerShell、npm 入口及 `dws auth login`/`--device` 登录步骤，提供复制命令、打开官方文档和重新检测；JunQi 不执行远程安装脚本，不接管 DWS token。
+- 工作台使用一条紧凑 readiness 状态条引导当前阻塞步骤：插件安装或 Gateway 重启、专属 Agent 授权、DWS 缺失、DWS 业务身份未确认、用户资料待验证和完整可用均有不同文案。已验证的本机或 Docker 运行时可直接启动官方命令，远程 Gateway 仍只交接官方文档。
+- DWS 缺失时，状态条提供“安装 DWS”入口。Native 执行官方 npm 安装包，Docker 在选定 OpenClaw 容器内执行同一官方包；授权入口执行官方 `dws auth login --device`，实时输出只在当前桌面弹层显示并限制长度、隐藏凭据特征行，完成后重新读取 DWS 状态。JunQi 不读取、持久化或拼接 DWS token，也不执行远程 curl/PowerShell 脚本。
 - 业务活动页以 OpenClaw `audit.activity.list` 的 metadata-only 工具事件作为权威审计层，按钉钉工具筛选当前 Gateway 中跨 Session 的参与 Agent、run、tool call 与终态，并支持分页读取更早记录；本窗口调用投影只保存运行时、Session、Agent、Profile、审批和 DWS 关联元数据，绝不保存参数、业务数据或原始输出。上游未提供委派关系时不推断父子 Agent。
 - 已通过插件单测、前端业务单测、TypeScript、全仓边界检查、Rust `cargo check`、Rust 全量 `cargo test --lib`、`pnpm build`、`pnpm verify:openclaw-docs` 和 `git diff --check`。
 - 尚未完成正式 DWS 发布包、真实钉钉租户、真实 Gateway 审批往返，以及 macOS/Windows/Linux/Docker 的真机视觉和运行验收；这些边界保持待验证，不把本机编译结果描述为业务上线。
@@ -22,7 +22,7 @@
 
 ## 结论
 
-钉钉业务能力由独立 OpenClaw 插件包装 DWS，并作为 OpenClaw 原生插件工具暴露。JunQi 业务页与 Chat 使用同一组工具、同一个 Session 级 `tools.effective` 快照、同一个 `tools.invoke` 调用入口和同一套插件审批。Tauri 不直接执行 DWS，前端不再通过 Chat bridge 拼接提示词模拟业务调用。
+钉钉业务能力由独立 OpenClaw 插件包装 DWS，并作为 OpenClaw 原生插件工具暴露。JunQi 业务页与 Chat 使用同一组工具、同一个 Session 级 `tools.effective` 快照、同一个 `tools.invoke` 调用入口和同一套插件审批。Tauri 只负责在经过 Runtime Identity 围栏的本机或 Docker 运行时启动官方安装、设备授权命令；业务调用不绕过 OpenClaw 插件协议，前端不通过 Chat bridge 拼接提示词模拟业务调用。
 
 本设计取代以下旧目标：
 
@@ -67,7 +67,7 @@ JunQi 当前已经有严格的 `OpenClawToolsEffectiveClient`、`OpenClawToolsIn
 | `businessChatBridge.ts` 将提示词写入 Chat 草稿 | 不是确定性业务调用，也不能证明工具、参数或结果。 | 业务页直接调用同一 OpenClaw 插件工具；Chat 自然使用同一工具。 |
 | `ApplicationJournal` 静态空态 | 没有正式来源，容易演变为伪审计。 | 使用脱敏业务活动投影，明确不是 transcript 或钉钉权威状态。 |
 | 无 DWS runtime、auth、profile 和 schema 边界 | UI 无法区分未安装、未授权、身份未知和能力缺失。 | 插件提供严格 readiness 与能力投影。 |
-| 旧设计由 Tauri 执行 DWS | 绕过 OpenClaw 工具策略并绑定桌面主机。 | DWS 归属 Gateway 插件运行时。 |
+| 旧设计由 Tauri 执行 DWS 业务命令 | 绕过 OpenClaw 工具策略并绑定桌面主机。 | Tauri 仅启动官方安装/授权命令，业务能力归属 Gateway 插件运行时。 |
 
 ## 目标架构
 
@@ -128,7 +128,7 @@ UI 首期只呈现一个钉钉平台。飞书、Google 和旧多平台 descripto
 - 当前业务 Session 必须显式绑定一个 profile；多 profile 时不自动选择。
 - OpenClaw 钉钉消息渠道身份不能替代 DWS profile 身份。若需要把聊天用户映射为业务操作者，必须另有正式身份绑定证据。
 - Gateway 运行时身份或 DWS 配置目录变化后，当前 profile 与能力快照全部失效。
-- DWS 未安装时只显示缺失与官方安装交接信息。插件未就绪时，工作台始终提供“在 JunQi 安装”入口；只有当前 Gateway 身份已验证且允许桌面变更时才执行固定校验的内置插件安装，完成后仍需重启 Gateway 并重新读取当前 Session 工具。安装与升级另立计划，不在首个业务切片中自动修改主机。
+- DWS 未安装时，已验证的 Native/Docker 目标提供官方安装命令和可取消的输出投影；远程目标只显示官方文档交接。授权使用官方设备流程，不在 JunQi 中收集账号、密码或 token；命令完成后必须重新读取 DWS Profile 和当前 Session 工具，不能以进程退出码代替业务可用性。
 
 ## 调用、确认与幂等
 

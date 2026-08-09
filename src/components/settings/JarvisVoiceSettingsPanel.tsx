@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Plus, Radio, RefreshCw, Route, Trash2 } from 'lucide-react';
+import { Check, Info, Plus, Radio, RefreshCw, Route, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import type { JarvisVoiceSettingsState } from '@/hooks/useJarvisVoiceSettings';
 import {
   MAX_VOICE_WAKE_TRIGGERS,
@@ -220,6 +221,42 @@ export function JarvisVoiceSettingsPanel({ settings }: JarvisVoiceSettingsPanelP
           <RefreshCw size={15} className={settings.loading ? 'animate-spin motion-reduce:animate-none' : ''} />
         </button>
       </header>
+
+      <div className="flex items-start gap-2 border-b border-aegis-border px-4 py-3 text-[11px] leading-5 text-aegis-text-dim sm:px-5">
+        <Info size={14} className="mt-0.5 shrink-0 text-aegis-primary" aria-hidden="true" />
+        <p>{t('settings.jarvisBoundaryNotice')}</p>
+      </div>
+
+      <section className="border-b border-aegis-border px-4 py-4 sm:px-5" aria-labelledby="jarvis-talk-heading">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 id="jarvis-talk-heading" className="text-[12px] font-semibold text-aegis-text">
+              {t('settings.jarvisTalkStatus')}
+            </h3>
+            <p className="mt-1 text-[11px] text-aegis-text-muted">{t('settings.jarvisTalkStatusDescription')}</p>
+          </div>
+          <span role="status" className={settings.talkReady === true
+            ? 'shrink-0 rounded-md border border-aegis-success/30 bg-aegis-success/10 px-2.5 py-1 text-[11px] font-semibold text-aegis-success'
+            : settings.talkReady === false || settings.talkError
+              ? 'shrink-0 rounded-md border border-aegis-warning/30 bg-aegis-warning/10 px-2.5 py-1 text-[11px] font-semibold text-aegis-warning'
+              : 'shrink-0 rounded-md border border-aegis-border bg-aegis-surface px-2.5 py-1 text-[11px] font-semibold text-aegis-text-muted'}>
+            {settings.loading && <LoadingIndicator size={11} />}
+            {settings.talkReady === true
+              ? t('settings.jarvisTalkReady', { provider: settings.talkProvider || t('settings.jarvisUnknownProvider') })
+              : settings.talkReady === false || settings.talkError
+                ? t('settings.jarvisTalkUnavailable')
+                : settings.loading
+                  ? t('settings.jarvisTalkChecking')
+                  : t('settings.jarvisTalkUnverified')}
+          </span>
+        </div>
+        {settings.talkError && (
+          <p className="mt-3 flex items-start gap-2 text-[11px] leading-5 text-aegis-warning" role="alert">
+            <Info size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+            {t(`settings.jarvisSettingsError.${settings.talkError}`)}
+          </p>
+        )}
+      </section>
 
       <section className="border-b border-aegis-border px-4 py-5 sm:px-5" aria-labelledby="jarvis-trigger-heading">
         <div className="flex items-center justify-between gap-3">

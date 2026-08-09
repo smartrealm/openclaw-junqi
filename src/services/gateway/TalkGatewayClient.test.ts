@@ -96,7 +96,11 @@ test('Talk 客户端拒绝未就绪目录和与实际响应不一致的格式', 
   const unready = catalog();
   unready.realtime.ready = false;
   const unavailable = harness([unready]).client;
-  await assert.rejects(unavailable.createRealtimeRelay('agent:main:main'), TalkGatewayUnavailableError);
+  await assert.rejects(
+    unavailable.createRealtimeRelay('agent:main:main'),
+    (error: unknown) => error instanceof TalkGatewayUnavailableError
+      && error.reason === 'realtime_not_ready',
+  );
 
   const mismatched = harness([catalog(), sessionResult(16_000)]).client;
   await assert.rejects(mismatched.createRealtimeRelay('agent:main:main'), TalkGatewayUnavailableError);

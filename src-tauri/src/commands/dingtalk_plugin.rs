@@ -293,7 +293,7 @@ async fn inspect_plugin(bundled_version: String) -> Result<DingTalkPluginStatus,
     })
 }
 
-fn validated_target(
+pub(crate) fn validated_target(
     state: &RuntimeIdentityState,
     target_fingerprint: &str,
     expected_connection_id: &str,

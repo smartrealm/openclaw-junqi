@@ -147,6 +147,11 @@ const deviceIdentity = readFileSync(
   new URL('../../src-tauri/src/commands/device_identity.rs', import.meta.url),
   'utf8',
 );
+const dwsOperation = readFileSync(
+  new URL('../../src-tauri/src/commands/dws_operation.rs', import.meta.url),
+  'utf8',
+);
+const tauriLib = readFileSync(new URL('../../src-tauri/src/lib.rs', import.meta.url), 'utf8');
 
 test('Tauri command wrappers match the Rust Gateway result contracts', () => {
   assert.match(gateway, /pub async fn start_gateway\([\s\S]*?Result<GatewayStatus, String>/);
@@ -175,6 +180,19 @@ test('Tauri command wrappers match the Rust Gateway result contracts', () => {
   assert.match(deviceIdentity, /private_key/);
   assert.match(deviceIdentity, /from_mode\(0o600\)/);
   assert.doesNotMatch(adapter, /sign: async \(params: DeviceSignParams\)/);
+});
+
+test('DWS installation and authorization stay on the verified runtime command boundary', () => {
+  assert.match(commands, /startDwsOperation[\s\S]*invoke<DwsOperationStarted>\('start_dws_operation'/);
+  assert.match(commands, /cancelDwsOperation[\s\S]*invoke<void>\('cancel_dws_operation'/);
+  assert.match(dwsOperation, /DWS_PACKAGE: &str = "dingtalk-workspace-cli"/);
+  assert.match(dwsOperation, /DwsOperationKind::Install =>[\s\S]*command\.args\(\["install", "-g", DWS_PACKAGE/);
+  assert.match(dwsOperation, /DwsOperationKind::Authorize[\s\S]*auth.*login.*--device/);
+  assert.match(dwsOperation, /validated_target\(&state, &target_fingerprint, &expected_connection_id\)/);
+  assert.match(dwsOperation, /redact_line/);
+  assert.match(tauriLib, /commands::dws_operation::start_dws_operation/);
+  assert.match(tauriLib, /commands::dws_operation::cancel_dws_operation/);
+  assert.doesNotMatch(dwsOperation, /access_token.*println|refresh_token.*println/);
 });
 
 test('ensure documentation follows the selected-runtime-only Rust policy', () => {

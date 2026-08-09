@@ -597,6 +597,43 @@ export const getDingTalkPluginStatus = (targetFingerprint: string, expectedConne
 export const installBundledDingTalkPlugin = (targetFingerprint: string, expectedConnectionId: string) => (
   invoke<DingTalkPluginStatus>('install_bundled_dingtalk_plugin', { targetFingerprint, expectedConnectionId })
 );
+
+export type DwsOperationKind = 'install' | 'authorize';
+export type DwsOperationStarted = {
+  operationId: string;
+  kind: DwsOperationKind;
+};
+export type DwsOperationOutput = {
+  operationId: string;
+  stream: 'stdout' | 'stderr';
+  line: string;
+};
+export type DwsOperationFinished = {
+  operationId: string;
+  success: boolean;
+  cancelled: boolean;
+  message: string;
+};
+
+export const startDwsOperation = (
+  targetFingerprint: string,
+  expectedConnectionId: string,
+  kind: DwsOperationKind,
+) => invoke<DwsOperationStarted>('start_dws_operation', {
+  targetFingerprint,
+  expectedConnectionId,
+  kind,
+});
+
+export const cancelDwsOperation = (
+  targetFingerprint: string,
+  expectedConnectionId: string,
+  operationId: string,
+) => invoke<void>('cancel_dws_operation', {
+  targetFingerprint,
+  expectedConnectionId,
+  operationId,
+});
 export const setActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (
   invoke<void>("set_active_gateway_runtime", { mode })
 );

@@ -20,6 +20,7 @@ pub mod diagnostic_output;
 pub mod dingtalk_plugin;
 pub(crate) mod directory_transaction;
 pub mod docker;
+pub mod dws_operation;
 pub mod dynamic_island;
 pub mod ensure;
 pub mod file_preview;

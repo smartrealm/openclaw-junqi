@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import clsx from 'clsx';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Building2,
   Filter,
@@ -19,7 +20,12 @@ import { PaneResizeHandle } from '@/components/BusinessApplications/PaneResizeHa
 import { DingTalkToolTable } from '@/components/BusinessApplications/DingTalkToolTable';
 import { DingTalkToolDetail } from '@/components/BusinessApplications/DingTalkToolDetail';
 import { DingTalkRuntimeIdentity } from '@/components/BusinessApplications/DingTalkRuntimeIdentity';
-import { DingTalkReadinessPanel, type DingTalkPluginInstallProgress } from '@/components/BusinessApplications/DingTalkReadinessPanel';
+import {
+  DingTalkReadinessPanel,
+  type DingTalkDwsOperationPresentation,
+  type DingTalkPluginInstallProgress,
+} from '@/components/BusinessApplications/DingTalkReadinessPanel';
+import { DingTalkPluginInstallDialog } from '@/components/BusinessApplications/DingTalkPluginInstallDialog';
 import { BusinessActivityList } from '@/components/BusinessApplications/BusinessActivityList';
 import {
   DINGTALK_RUNTIME_STATUS_TOOL,
@@ -45,8 +51,13 @@ import {
 } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
 import {
+  cancelDwsOperation,
   getDingTalkPluginStatus,
   installBundledDingTalkPlugin,
+  startDwsOperation,
+  type DwsOperationFinished,
+  type DwsOperationKind,
+  type DwsOperationOutput,
   type DingTalkPluginStatus,
 } from '@/api/tauri-commands';
 import {
@@ -54,6 +65,7 @@ import {
   subscribeRuntimeIdentity,
 } from '@/services/gateway/runtimeIdentity';
 import { restartSelectedGatewayRuntime } from '@/services/gateway/gatewayProcessObservation';
+import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 type WorkbenchView = 'tools' | 'activity';
 type DomainFilter = 'all' | DingTalkDomain;
@@ -158,6 +170,8 @@ function FilterPane({
 }
 
 export function BusinessApplicationsPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const identity = useRuntimeIdentitySnapshot();
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const sessions = useGatewayDataStore((state) => state.sessions);
@@ -176,7 +190,10 @@ export function BusinessApplicationsPage() {
   const schemaToolAvailable = rawEffectiveTools.some((tool) => tool.id === DINGTALK_TOOL_SCHEMA_TOOL && !tool.deniedBySession);
   const runtimeToolAvailable = rawEffectiveTools.some((tool) => tool.id === DINGTALK_RUNTIME_STATUS_TOOL && !tool.deniedBySession);
 
-  const [view, setView] = useState<WorkbenchView>('tools');
+  const view: WorkbenchView = new URLSearchParams(location.search).get('view') === 'activity' ? 'activity' : 'tools';
+  const setView = useCallback((next: WorkbenchView) => {
+    navigate({ pathname: location.pathname, search: next === 'activity' ? '?view=activity' : '' }, { replace: true });
+  }, [location.pathname, navigate]);
   const [leftWidth, setLeftWidth] = useState(228);
   const [rightWidth, setRightWidth] = useState(382);
   const [leftCollapsed, setLeftCollapsed] = useState(true);
@@ -197,6 +214,10 @@ export function BusinessApplicationsPage() {
   const [pluginError, setPluginError] = useState<string | null>(null);
   const [pluginBusy, setPluginBusy] = useState(false);
   const [pluginInstallationProgress, setPluginInstallationProgress] = useState<DingTalkPluginInstallProgress>({ phase: 'idle', message: null });
+  const [pluginInstallDialogOpen, setPluginInstallDialogOpen] = useState(false);
+  const [dwsOperation, setDwsOperation] = useState<DingTalkDwsOperationPresentation | null>(null);
+  const [dwsOutput, setDwsOutput] = useState<string[]>([]);
+  const dwsOutputCache = useRef<Record<string, string[]>>({});
   const [runtimeIdentity, setRuntimeIdentity] = useState<DingTalkRuntimeIdentityProjection | null>(null);
   const [runtimeIdentityError, setRuntimeIdentityError] = useState<string | null>(null);
 
@@ -274,6 +295,35 @@ export function BusinessApplicationsPage() {
   useEffect(() => {
     void refreshPluginStatus();
   }, [refreshPluginStatus]);
+
+  useEffect(() => {
+    const outputUnlisten = subscribeTauriEvent<DwsOperationOutput>('dws-operation-output', (event) => {
+      const payload = event.payload;
+      const line = `${payload.stream === 'stderr' ? '[错误] ' : ''}${payload.line}`;
+      const cached = [...(dwsOutputCache.current[payload.operationId] ?? []), line].slice(-400);
+      dwsOutputCache.current[payload.operationId] = cached;
+      setDwsOperation((current) => {
+        if (!current || current.id !== payload.operationId) return current;
+        setDwsOutput(cached);
+        return current;
+      });
+    });
+    const finishedUnlisten = subscribeTauriEvent<DwsOperationFinished>('dws-operation-finished', (event) => {
+      const payload = event.payload;
+      setDwsOperation((current) => {
+        if (!current || current.id !== payload.operationId) return current;
+        const phase = payload.cancelled ? 'cancelled' : payload.success ? 'completed' : 'failed';
+        return { ...current, phase, message: payload.message };
+      });
+      void refreshPluginStatus();
+      void refreshTools();
+      void refreshRuntimeIdentity();
+    });
+    return () => {
+      outputUnlisten();
+      finishedUnlisten();
+    };
+  }, [refreshPluginStatus, refreshRuntimeIdentity, refreshTools]);
 
   useEffect(() => {
     if (selectedTool) return;
@@ -458,36 +508,70 @@ export function BusinessApplicationsPage() {
     );
   }, [performInvocation, selectedTool]);
 
-  const installPlugin = useCallback(() => {
-    showConfirm(
-      '安装钉钉业务插件',
-      'JunQi 将把固定校验过的插件包安装到当前已验证的 OpenClaw 运行时。安装后需要重启 Gateway。',
-      async () => {
-        setPluginInstallationProgress({ phase: 'checking', message: '正在核对当前 Gateway 安装权限' });
-        const current = getCurrentRuntimeIdentity();
-        if (!current?.verified || !current.desktopMutationAllowed) {
-          const message = dingtalkPluginInstallBlocker(current);
-          setPluginError(message);
-          setPluginInstallationProgress({ phase: 'failed', message });
-          return;
-        }
-        setPluginBusy(true);
-        setPluginInstallationProgress({ phase: 'installing', message: '正在校验内置插件并等待 Gateway 安装、启用' });
-        try {
-          const status = await installBundledDingTalkPlugin(current.targetFingerprint, current.connectionId);
-          setPluginStatus(status);
-          setPluginError(null);
-          setPluginInstallationProgress({ phase: 'completed', message: '插件已安装并启用。下一步：重启 Gateway' });
-        } catch (error) {
-          const message = errorMessage(error);
-          setPluginError(message);
-          setPluginInstallationProgress({ phase: 'failed', message });
-        } finally {
-          setPluginBusy(false);
-        }
-      },
-    );
+  const performPluginInstallation = useCallback(async () => {
+    setPluginInstallationProgress({ phase: 'checking', message: '正在核对当前 Gateway 安装权限' });
+    const current = getCurrentRuntimeIdentity();
+    if (!current?.verified || !current.desktopMutationAllowed) {
+      const message = dingtalkPluginInstallBlocker(current);
+      setPluginError(message);
+      setPluginInstallationProgress({ phase: 'failed', message });
+      return;
+    }
+    setPluginBusy(true);
+    setPluginInstallationProgress({ phase: 'installing', message: '正在校验内置插件并等待 Gateway 安装、启用' });
+    try {
+      const status = await installBundledDingTalkPlugin(current.targetFingerprint, current.connectionId);
+      setPluginStatus(status);
+      setPluginError(null);
+      setPluginInstallationProgress({ phase: 'completed', message: '插件已安装并启用。下一步：重启 Gateway' });
+    } catch (error) {
+      const message = errorMessage(error);
+      setPluginError(message);
+      setPluginInstallationProgress({ phase: 'failed', message });
+    } finally {
+      setPluginBusy(false);
+    }
   }, []);
+
+  const installPlugin = useCallback(() => {
+    setPluginInstallationProgress({ phase: 'idle', message: null });
+    setPluginInstallDialogOpen(true);
+  }, []);
+
+  const runDwsOperation = useCallback((kind: DwsOperationKind) => {
+    const current = getCurrentRuntimeIdentity();
+    if (!current?.verified || !current.desktopMutationAllowed) {
+      setPluginError(dingtalkPluginInstallBlocker(current));
+      return;
+    }
+    setPluginError(null);
+    setDwsOutput([]);
+    void startDwsOperation(current.targetFingerprint, current.connectionId, kind)
+      .then((started) => {
+        const output = dwsOutputCache.current[started.operationId] ?? [];
+        setDwsOperation({
+          id: started.operationId,
+          kind: started.kind,
+          phase: 'running',
+          message: started.kind === 'install' ? '正在执行 DWS 官方 npm 安装命令。' : '请根据官方设备授权输出在浏览器完成确认。',
+        });
+        setDwsOutput(output);
+      })
+      .catch((error) => {
+        const message = errorMessage(error);
+        setDwsOperation({ id: 'dws-start-failed', kind, phase: 'failed', message });
+        setDwsOutput([message]);
+      });
+  }, []);
+
+  const cancelCurrentDwsOperation = useCallback(() => {
+    const current = getCurrentRuntimeIdentity();
+    if (!current?.verified || !dwsOperation || dwsOperation.phase !== 'running') return;
+    void cancelDwsOperation(current.targetFingerprint, current.connectionId, dwsOperation.id)
+      .catch((error) => setDwsOperation((operation) => (
+        operation ? { ...operation, phase: 'failed', message: errorMessage(error) } : operation
+      )));
+  }, [dwsOperation]);
 
   const restartGateway = useCallback(async () => {
     setPluginBusy(true);
@@ -563,11 +647,28 @@ export function BusinessApplicationsPage() {
         runtimeError={runtimeIdentityError}
         pluginNeedsInstall={pluginNeedsInstall}
         restartRequired={Boolean(pluginStatus?.restartRequired)}
+        agentId={effective?.agentId ?? activeSession?.agentId ?? null}
         installAvailable={localInstallAvailable}
         installationProgress={pluginInstallationProgress}
-        busy={pluginBusy || toolsLoading}
+        dwsOperation={dwsOperation}
+        dwsOutput={dwsOutput}
+        busy={pluginBusy || toolsLoading || dwsOperation?.phase === 'running'}
         onRefresh={() => { void refreshTools(); void refreshRuntimeIdentity(); void refreshPluginStatus(); }}
         onInstallPlugin={installPlugin}
+        onConfigureAgent={() => navigate('/config?tab=tools')}
+        onConfigurePlugin={() => navigate('/config?tab=advanced')}
+        onRestartGateway={() => void restartGateway()}
+        onInstallDws={() => runDwsOperation('install')}
+        onAuthorizeDws={() => runDwsOperation('authorize')}
+        onCancelDws={cancelCurrentDwsOperation}
+        onDismissDws={() => setDwsOperation(null)}
+      />
+      <DingTalkPluginInstallDialog
+        open={pluginInstallDialogOpen}
+        progress={pluginInstallationProgress}
+        busy={pluginBusy}
+        onOpenChange={setPluginInstallDialogOpen}
+        onConfirm={() => void performPluginInstallation()}
         onRestartGateway={() => void restartGateway()}
       />
 

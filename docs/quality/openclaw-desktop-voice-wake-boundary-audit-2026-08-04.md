@@ -68,3 +68,12 @@ CPAL 与 Rodio 的实现避免依赖 Web Speech、`MediaRecorder` 或 WebView �
 - 未使用真实麦克风或扬声器验证 macOS 权限、设备切换、独占模式、休眠恢复和驱动异常。
 - 未在 Windows、Ubuntu 或 CentOS 真机验证采集、播放、权限、安装器或系统音频服务；当前结论只证明共享代码、协议检查和本机 macOS 编译启动通过。
 - 未执行正式签名、公证、安装包构建、Release 或线上部署。
+
+## 当前 Gateway 探测
+
+2026-08-08 在本机通过 OpenClaw 官方 `openclaw gateway call` 只读探测当前 Gateway：
+
+- `voicewake.get` 返回全局触发词；`voicewake.routing.get` 返回指向已存在 `jarvis` 智能体的官方路由。
+- `talk.catalog` 返回 `realtime.ready: false`，当前实时提供方均未达到可用状态，因此 `talk.session.create` 不应被调用。
+- JunQi 已将 Talk 目录无效、实时提供方未就绪和原生 PCM 中继不兼容拆分为结构化失败原因，并在 Jarvis 遮罩中分别提示。
+- 该探测证明客户端会失败关闭，不证明实时语音闭环可用；要完成真实 Talk 验收，必须先在 OpenClaw 官方 Talk 设置中配置并验证一个 Gateway 广告为 ready 的提供方，再用真实麦克风和扬声器执行端到端测试。

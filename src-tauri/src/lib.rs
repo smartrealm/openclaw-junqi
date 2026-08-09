@@ -67,6 +67,7 @@ pub fn run() {
         )
         .manage(GatewayProcess::new())
         .manage(RuntimeIdentityState::new())
+        .manage(commands::dws_operation::DwsOperationState::default())
         .manage(CollaborationControlState::new())
         .manage(file_preview_registry)
         .invoke_handler(tauri::generate_handler![
@@ -96,6 +97,8 @@ pub fn run() {
             commands::plugin_recovery::disable_openclaw_plugin,
             commands::dingtalk_plugin::get_dingtalk_plugin_status,
             commands::dingtalk_plugin::install_bundled_dingtalk_plugin,
+            commands::dws_operation::start_dws_operation,
+            commands::dws_operation::cancel_dws_operation,
             commands::ensure::ensure_gateway_running,
             commands::storage::get_storage_setup_status,
             commands::storage::configure_storage,
