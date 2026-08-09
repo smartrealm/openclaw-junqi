@@ -12,7 +12,7 @@
 | BUG-SS-02 | `src/components/Layout/sidebarUtils.ts` | 使用已确认主会话 key 构造固定首行 |
 | BUG-SS-03 | `src/components/Layout/sidebarUtils.ts` | 删除日期分桶，按 `category` 单一归属分组 |
 | BUG-SS-04 | `src/components/Layout/sidebarUtils.ts` | 增加创建时间和最近更新排序 |
-| BUG-SS-07 | `src/components/Layout/sidebarUtils.ts` | 维护 Gateway 行的稳定创建顺序，并支持已确认新会话提升 |
+| BUG-SS-07 | `src/components/Layout/sidebarUtils.ts` | 优先按 Gateway `createdAt` 排序，仅为缺失时间的旧会话维护稳定次级顺序，并支持已确认新会话提升 |
 
 ### 阶段二：侧栏交互
 
@@ -34,7 +34,7 @@
 ### 阶段四：验证
 
 - 运行侧栏纯函数和交互契约测试。
-- 增加缺少 `createdAt`、轮询重排和新会话提升的回归测试。
+- 增加真实 `createdAt` 覆盖首次活动顺序、缺失时间、轮询重排和新会话提升的回归测试。
 - 运行 TypeScript、模块边界、完整前端测试和生产构建。
 - 执行 `git diff --check` 和 Emoji 扫描。
 - 回写根目录 `PROJECT_STATUS.md`。

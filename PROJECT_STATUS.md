@@ -41,6 +41,7 @@
   只用于与模型或业务就绪有关的实时测试，不得覆盖官方 Wizard 的跳过、继续或完成终态。
 - OpenClaw `config.schema` 的权威响应是包含 `schema`、`uiHints`、`version` 和 `generatedAt` 的信封；JunQi 不接受裸 schema、别名字段、版本 fallback 或方法广告门禁。
 - 会话侧栏复用全局权威 `sessions.list` 缓存做智能体只读投影，不增加第二套轮询、缓存或会话协议；非默认智能体主会话只从 Gateway 已返回的 key 解析。
+- 会话创建排序优先使用最新版 OpenClaw `SessionRowSchema.createdAt`；只有缺少该字段的旧会话才使用当前窗口首次收到时的稳定次级顺序。新建确认可临时提升缺少时间的会话，取得官方时间后重新按 `createdAt` 排列。
 - 最新 OpenClaw Control UI 还提供创建者、状态和定时会话过滤；本轮按最小需求不复制这些入口，避免与 JunQi 现有归档区和后台活动区形成双轨。
 
 ## 核心文件
@@ -70,7 +71,7 @@
 - 本次钉钉分支合并已通过 8 项视图、工具分组与共享页签动效定向回归、`pnpm lint`、完整 `pnpm test` 和 `pnpm build`。生产构建重新生成并校验协作插件与钉钉插件资源包；输出仅有既有 Node 弃用和 Radix 服务端渲染警告。
 - 智能体作用域会话侧栏已通过 74 项定向侧栏、新建会话与 ChatStore 回归、完整 `pnpm test`（2855 项）、`pnpm lint`、生产 `pnpm build`、locale JSON 解析和 `git diff --check`。完整测试首次发现旧守护仍要求侧栏从活动会话推断新建目标，已按新的显式智能体选择契约更新后复跑通过；输出仅包含既有 Node 弃用和 Radix 服务端渲染警告。
 - 已基于提交 `9305a53d` 使用 `pnpm tauri build --bundles dmg` 成功生成 macOS arm64 本地验收包 `src-tauri/target/release/bundle/dmg/JunQi Desktop_2.3.0_aarch64.dmg`。DMG 校验通过，文件大小为 8808362 字节，SHA-256 为 `0eee3a0eda566542c6306f75cf4d3f2199905f958973448c6b104a38820fcd53`。本次未生成正式 updater 签名，也未执行开发者证书签名和公证，因此该制品只能用于本机验收，不能描述为正式发布包。
-- 会话侧栏后续复审确认首轮智能体作用域改造误把 OpenClaw 智能体菜单缩减为纯选择器，并且创建排序无法在缺少 `createdAt` 的旧会话上保持稳定。本轮已恢复智能体切换、新建智能体和当前智能体设置入口，并按官方侧栏模型维护稳定创建顺序和已确认新会话提升。14 项定向测试、完整 `pnpm test`、`pnpm lint`、生产 `pnpm build`、locale JSON 解析与 `git diff --check` 均通过；尚未完成真实 Tauri 窗口的菜单定位、键盘焦点和窄窗口视觉验收。
+- 会话侧栏复审确认上一轮稳定顺序会覆盖真实 `createdAt`，而 Gateway 默认列表按更新时间返回，导致“创建时间”和“最近更新”看起来一致。本轮已改为优先按官方创建时间倒序，仅为缺失时间的旧会话保留稳定次级顺序，并保留新会话确认提升。11 项定向回归、`pnpm lint`、完整 `pnpm test` 和生产 `pnpm build` 已通过；输出只有既有 Node 弃用与 Radix 服务端渲染警告，尚未完成真实 Tauri 窗口视觉验收。
 - 安装完成契约复审已通过完整 `pnpm test`、`pnpm lint`、生产 `pnpm build`、`pnpm verify:openclaw-docs`、locale JSON 解析、`git diff --check` 和完整修改文件 Emoji 扫描。旧的直接测试命令因未加载仓库 `test-setup.ts` 而缺少 `localStorage`，改用项目正式测试入口后全部通过。
 
 ## 已知问题
@@ -91,6 +92,7 @@
 - 未直接选择冲突任一侧的 `DingTalkReadinessPanel`。只保留主线会丢失三个稳定工作区，只保留 dingtalk 分支会丢失真实 DWS 安装、授权、取消和输出投影，因此最终使用两条已验证链路的单一组合实现。
 - 合并后恢复旧工作区时，三种语言中的工作区键与分支已落入的同名键重复；重复位置已删除，只保留每种语言唯一键，避免 JSON 解析时静默覆盖。
 - 未复制 OpenClaw 最新侧栏的创建者、状态和定时会话过滤；这些能力超出当前确认范围，并会与 JunQi 现有归档和后台活动呈现重复。
+- 未继续采用“首次收到的 Gateway 顺序等同创建顺序”的方案。Gateway 默认列表按更新时间排列，该方案会忽略正式 `createdAt` 并使两种排序趋同。
 - 未保留官方 Wizard 终态后的客户端 `openclaw.setup.verify` 门禁。该方案会覆盖官方向导允许的跳过或失败后继续选择，并把已经完成的配置重新判定为安装失败。
 
 ## 下一步顺序

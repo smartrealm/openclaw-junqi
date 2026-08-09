@@ -30,7 +30,7 @@ export interface SidebarSessionProjectionInput<T extends Session> {
   readonly defaultMainSessionKey: string | null | undefined;
   readonly grouping: SidebarSessionGrouping;
   readonly sortMode: SidebarSessionSortMode;
-  readonly createdOrder?: ReadonlyMap<string, number>;
+  readonly creationFallbackOrder?: ReadonlyMap<string, number>;
   readonly categoryOrder?: readonly string[];
 }
 
@@ -57,7 +57,7 @@ export function sessionCreatedTime(session: Session): number {
   return timestamp(session.createdAt);
 }
 
-export function extendSidebarSessionCreatedOrder(
+export function extendSidebarSessionCreationFallbackOrder(
   current: ReadonlyMap<string, number>,
   sessions: readonly Pick<Session, 'key'>[],
 ): ReadonlyMap<string, number> {
@@ -70,20 +70,19 @@ export function extendSidebarSessionCreatedOrder(
   return next ?? current;
 }
 
-export function promoteSidebarSessionCreatedOrder(
+export function promoteSidebarSessionCreationFallbackOrder(
   current: ReadonlyMap<string, number>,
   sessionKey: string,
 ): ReadonlyMap<string, number> {
   const key = normalized(sessionKey);
-  if (!key || current.get(key) === 0) return current;
-  const previousOrder = current.get(key);
-  const next = new Map(current);
-  for (const [candidateKey, order] of current) {
-    if (candidateKey !== key && (previousOrder === undefined || order < previousOrder)) {
-      next.set(candidateKey, order + 1);
-    }
+  if (!key) return current;
+  if ((current.get(key) ?? 0) < 0) return current;
+  let promotedOrder = -1;
+  for (const order of current.values()) {
+    if (order <= promotedOrder) promotedOrder = order - 1;
   }
-  next.set(key, 0);
+  const next = new Map(current);
+  next.set(key, promotedOrder);
   return next;
 }
 
@@ -123,18 +122,36 @@ export function sortSessionsByActivity<T extends Session>(sessions: readonly T[]
 export function sortSidebarSessions<T extends Session>(
   sessions: readonly T[],
   mode: SidebarSessionSortMode,
-  createdOrder?: ReadonlyMap<string, number>,
+  creationFallbackOrder?: ReadonlyMap<string, number>,
 ): T[] {
   const originalIndex = new Map(sessions.map((session, index) => [session.key, index]));
   return [...sessions].sort((left, right) => {
-    if (mode === 'created' && createdOrder) {
-      const orderDelta = (createdOrder.get(left.key) ?? Number.MAX_SAFE_INTEGER)
-        - (createdOrder.get(right.key) ?? Number.MAX_SAFE_INTEGER);
-      if (orderDelta !== 0) return orderDelta;
+    if (mode === 'created') {
+      const leftFallbackOrder = creationFallbackOrder?.get(left.key);
+      const rightFallbackOrder = creationFallbackOrder?.get(right.key);
+      const leftTime = sessionCreatedTime(left);
+      const rightTime = sessionCreatedTime(right);
+      const leftPromoted = leftTime === 0 && leftFallbackOrder !== undefined && leftFallbackOrder < 0;
+      const rightPromoted = rightTime === 0 && rightFallbackOrder !== undefined && rightFallbackOrder < 0;
+      if (leftPromoted || rightPromoted) {
+        if (leftPromoted !== rightPromoted) return leftPromoted ? -1 : 1;
+        const promotedDelta = leftFallbackOrder! - rightFallbackOrder!;
+        if (promotedDelta !== 0) return promotedDelta;
+      }
+
+      if (leftTime > 0 || rightTime > 0) {
+        if ((leftTime > 0) !== (rightTime > 0)) return leftTime > 0 ? -1 : 1;
+        const timeDelta = rightTime - leftTime;
+        if (timeDelta !== 0) return timeDelta;
+      }
+
+      if (creationFallbackOrder) {
+        const fallbackDelta = (leftFallbackOrder ?? Number.MAX_SAFE_INTEGER)
+          - (rightFallbackOrder ?? Number.MAX_SAFE_INTEGER);
+        if (fallbackDelta !== 0) return fallbackDelta;
+      }
     } else {
-      const leftTime = mode === 'created' ? sessionCreatedTime(left) : sessionActivityTime(left);
-      const rightTime = mode === 'created' ? sessionCreatedTime(right) : sessionActivityTime(right);
-      const timeDelta = rightTime - leftTime;
+      const timeDelta = sessionActivityTime(right) - sessionActivityTime(left);
       if (timeDelta !== 0) return timeDelta;
     }
     const orderDelta = (originalIndex.get(left.key) ?? 0) - (originalIndex.get(right.key) ?? 0);
@@ -173,12 +190,12 @@ export function projectSidebarSessions<T extends Session>(
   const pinnedSessions = sortSidebarSessions(
     ordinarySessions.filter((session) => session.pinned === true),
     input.sortMode,
-    input.createdOrder,
+    input.creationFallbackOrder,
   );
   const unpinnedSessions = sortSidebarSessions(
     ordinarySessions.filter((session) => session.pinned !== true),
     input.sortMode,
-    input.createdOrder,
+    input.creationFallbackOrder,
   );
   if (input.grouping === 'none') {
     return {
