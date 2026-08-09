@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-保持 JunQi 作为 OpenClaw 桌面客户端的边界：首次启动由官方 Wizard 统一编排，钉钉业务能力由 OpenClaw 插件和 DWS 官方 CLI 提供，Jarvis 只呈现当前 Gateway 已证明的手动 Talk 能力。本阶段已将 `main` 的首次启动、配置向导、Cron/日历和版本变更合并到当前分支，并完成自动化验证。
+保持 JunQi 作为 OpenClaw 桌面客户端的边界：首次启动由官方 Wizard 统一编排，钉钉业务能力由 OpenClaw 插件和 DWS 官方 CLI 提供，Jarvis 只呈现当前 Gateway 已证明的手动 Talk 能力。本阶段已将 `main` 的首次启动、配置向导、Cron/日历和版本变更合并到当前分支，并修复旧 Gateway 聊天运输镜像造成的重复通知。
 
 ## 已完成内容
 
@@ -16,6 +16,7 @@
 - Jarvis 设置页明确区分 Gateway Voice Wake 配置和 JunQi 手动 Talk。`talk.catalog` 的目录无效、实时提供方未就绪、原生音频中继不兼容均作为结构化失败呈现。
 - 智能体中心 Office 只将配置席位呈现为虚拟工位。真实协作参与、在线和执行状态只来自 OpenClaw 协作 Run 证据。
 - 会话组织操作使用 OpenClaw 最小 `operator.write` 权限；默认主会话由 `agents.list.mainKey` 确定，新会话创建确认保留空 leaf，避免错误加载历史。
+- 聊天通知以 Gateway 身份为主键；旧 Gateway 缺失外层 `runId` 时，仅在同会话同角色同内容的两分钟运输镜像窗口内由 Rust 持久层收敛。
 
 ## 关键技术决策
 
@@ -36,6 +37,7 @@
 
 - 合并前首次引导重构已通过 `pnpm lint`、完整 `pnpm test`、`pnpm build`、`pnpm verify:openclaw-docs`、语言 JSON 解析、`git diff --check` 和完整 Emoji 扫描。
 - 本次 Jarvis 与 `main` 合并后已通过 `pnpm lint`、完整 `pnpm test`（前端 2851 项、脚本 243 项）、`cargo fmt -- --check`、`cargo check --lib` 和 `cargo test --lib`。测试输出仅包含既有 Node 弃用与 Radix SSR 警告，没有失败。
+- 本次通知修复已通过 `cargo fmt -- --check` 和 `cargo test --lib commands::notification`（17 项）；前端完整测试尚待本次改动后重跑。
 
 ## 已知问题
 

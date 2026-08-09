@@ -218,11 +218,73 @@ fn append_notification(
             return (previous.clone(), false);
         }
     }
+    // 旧 Gateway 可能把同一助手回复送成不同消息身份；只在同会话、同角色、
+    // 同展示内容且相邻两分钟内收敛，避免把独立事件按正文泛化合并。
+    if let Some(previous) = existing
+        .iter()
+        .rev()
+        .find(|candidate| is_recent_chat_transport_duplicate(candidate, &item))
+    {
+        return (previous.clone(), false);
+    }
     if existing.len() >= 50 {
         existing.drain(0..existing.len() - 49);
     }
     existing.push(item.clone());
     (item, true)
+}
+
+const CHAT_TRANSPORT_DUPLICATE_WINDOW_MS: i64 = 120_000;
+
+fn chat_notification_scope(item: &NotificationItem) -> Option<(&str, &str)> {
+    let key = item.dedupe_key.as_deref()?;
+    let remainder = key.strip_prefix("chat:")?;
+    let (role, session_and_identity) = remainder.split_once(':')?;
+    let (session_key, identity) = session_and_identity.rsplit_once(':')?;
+    if !matches!(role, "assistant" | "user")
+        || session_key.trim().is_empty()
+        || identity.trim().is_empty()
+    {
+        return None;
+    }
+    Some((role, session_key))
+}
+
+fn notification_elapsed_millis(
+    previous: &NotificationItem,
+    candidate: &NotificationItem,
+) -> Option<i64> {
+    let previous_at = chrono::DateTime::parse_from_rfc3339(&previous.created_at).ok()?;
+    let candidate_at = chrono::DateTime::parse_from_rfc3339(&candidate.created_at).ok()?;
+    Some(
+        candidate_at
+            .signed_duration_since(previous_at)
+            .num_milliseconds(),
+    )
+}
+
+fn is_recent_chat_transport_duplicate(
+    previous: &NotificationItem,
+    candidate: &NotificationItem,
+) -> bool {
+    let (previous_role, previous_session) = match chat_notification_scope(previous) {
+        Some(scope) => scope,
+        None => return false,
+    };
+    let (candidate_role, candidate_session) = match chat_notification_scope(candidate) {
+        Some(scope) => scope,
+        None => return false,
+    };
+    previous_role == candidate_role
+        && previous_session == candidate_session
+        && previous.level == candidate.level
+        && previous.title == candidate.title
+        && previous.body == candidate.body
+        && previous.body_zh == candidate.body_zh
+        && previous.agent == candidate.agent
+        && previous.url == candidate.url
+        && notification_elapsed_millis(previous, candidate)
+            .is_some_and(|elapsed| (0..=CHAT_TRANSPORT_DUPLICATE_WINDOW_MS).contains(&elapsed))
 }
 
 /// Pure helper: read a store from the given path. Missing/empty file
@@ -527,6 +589,50 @@ mod tests {
         assert!(!inserted);
         assert_eq!(stored.id, "first");
         assert_eq!(items.len(), 1);
+    }
+
+    #[test]
+    fn chat_transport_mirror_with_different_identity_is_persisted_once() {
+        let mut live = item("live");
+        live.created_at = "2026-08-09T08:00:00Z".to_string();
+        live.level = "completed".to_string();
+        live.title = "Reply complete".to_string();
+        live.body = "同一条回复".to_string();
+        live.url = Some("/chat?session=agent%3Amain%3Amain".to_string());
+        live.dedupe_key = Some("chat:assistant:agent:main:main:run-42".to_string());
+
+        let mut durable = live.clone();
+        durable.id = "durable".to_string();
+        durable.created_at = "2026-08-09T08:01:00Z".to_string();
+        durable.dedupe_key = Some("chat:assistant:agent:main:main:native-message-7".to_string());
+
+        let mut items = vec![live];
+        let (stored, inserted) = append_notification(&mut items, durable);
+
+        assert!(!inserted);
+        assert_eq!(stored.id, "live");
+        assert_eq!(items.len(), 1);
+    }
+
+    #[test]
+    fn chat_transport_fallback_does_not_merge_other_session_or_late_reply() {
+        let mut first = item("first");
+        first.created_at = "2026-08-09T08:00:00Z".to_string();
+        first.dedupe_key = Some("chat:assistant:agent:main:main:first".to_string());
+
+        let mut other_session = first.clone();
+        other_session.id = "other-session".to_string();
+        other_session.dedupe_key = Some("chat:assistant:agent:other:main:second".to_string());
+
+        let mut late = first.clone();
+        late.id = "late".to_string();
+        late.created_at = "2026-08-09T08:02:01Z".to_string();
+        late.dedupe_key = Some("chat:assistant:agent:main:main:late".to_string());
+
+        let mut items = vec![first];
+        assert!(append_notification(&mut items, other_session).1);
+        assert!(append_notification(&mut items, late).1);
+        assert_eq!(items.len(), 3);
     }
 
     #[test]
