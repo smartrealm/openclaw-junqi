@@ -100,6 +100,7 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - 已通过 usage 解析、数据仓和分析查询定向测试：33 项通过；本轮 TypeScript 检查通过。
 - 当前 macOS ARM64 主机已实际通过 `pnpm verify:openclaw-docs` 与 `pnpm test:rust`：684 项通过、2 项忽略。
 - Docker 真实 Gateway 回放按当前任务要求停止，未将镜像拉取或容器启动结果计入通过结论。
+- 已通过 Windows 安装、发布矩阵、版本一致性与模块边界契约测试：35 项通过；这些测试不替代 Windows/Linux 真机验收。
 - 已通过 `git diff --check`。
 - 已扫描本轮修改后的完整文本文件及协作插件包内文本成员，未发现 Emoji。
 - 测试输出仍包含 Node 的 `module.register()` 弃用提示，以及服务端渲染 Tooltip 的 `useLayoutEffect` 警告；
