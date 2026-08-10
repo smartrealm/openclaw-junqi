@@ -43,6 +43,7 @@ specs/
 ## Business
 
 - [钉钉业务工作台运行时](business/2026-08-08-dingtalk-business-runtime.md)
+- [钉钉接入状态与授权引导](business/2026-08-10-dingtalk-readiness-guidance.md)
 - [业务应用 UI 与 Chat 双入口](business/2026-08-02-business-applications-ui.md)
 
 ## Quality

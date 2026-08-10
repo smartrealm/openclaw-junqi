@@ -28,6 +28,11 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - 高风险 Tauri wrapper 已改用真实 invoke 载荷测试；直接字面量调用的 Rust 注册关系由独立守护测试覆盖，
   不再以 45 个源码文件和 132 条正则判断契约。
 - 钉钉插件工具 manifest 现由编译后的运行时工具规格逐项校验，不再仅校验数量；源代码测试与包校验均通过。
+- 钉钉接入工作台已删除 Tools 与 Advanced 双入口，改为一次带 `baseHash` 的最小 `config.patch` 同时授权
+  当前显式 Agent 和插件名单；显式拒绝、隐式 Agent、未知结构和未确认回执均失败关闭。
+- 钉钉插件探测现在有独立加载态，不再用未返回状态误报插件缺失或 Agent 未授权。Gateway 重启后必须等待
+  新 connection ID 与 Runtime Identity 一致，再自动刷新 Session、`tools.effective`、插件状态和 DWS 身份。
+- DWS Native 授权已按官方契约改用浏览器扫码流程；Docker 与无界面运行时继续使用设备码流程。
 - 协作插件已删除没有前端、运行时或外部消费者的 `junqi.collab.plan.get` Gateway 注册；其领域查询仍由
   `run.get` 内部聚合复用。
 - 非聊天 Gateway 事件入口已从 `any` 收束为 `unknown`；仅对象载荷可读取会话失效字段，循环引用等
@@ -73,6 +78,9 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - `src/services/gateway/GatewayCapabilityRegistry.ts`：能力调用证据与失败状态记录。
 - `src/services/gateway/GatewayProtocolEvidence.ts`：未知方法与当前请求身份绑定的单一协议证据解析器。
 - `src/services/gateway/OpenClawUsageClient.ts`：OpenClaw cost 与 session usage 的结构、校验和页面类型来源。
+- `src/business-applications/dingtalkAgentAuthorization.ts`：当前 Agent 工具策略与钉钉插件名单的原子授权 patch。
+- `src/business-applications/dingtalkGatewayReconnect.ts`：重启后的新连接和 Runtime Identity 一致性门禁。
+- `docs/business/dingtalk-readiness-guidance-audit-2026-08-10.md`：钉钉接入、扫码授权和自动刷新的依据与边界。
 - `src/services/chat/sendTransaction.ts`：聊天发送、投递不确定性与本地任务检查点收敛边界。
 - `src/stores/openclawTaskLedgerStore.ts`、`src/stores/openclawApprovalsStore.ts`：原生活动数据与操作状态投影。
 - `packages/junqi-collab/src/openclaw-adapter.ts`：协作插件通过官方 Agent stream 发出刷新提示。
@@ -87,8 +95,10 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 
 - 已通过未知方法证据、配置重载、消息身份、授权、协作、技能、数据仓和会话生命周期定向测试 154 项。
 - 已通过完整 `pnpm test`：前端与仓库脚本测试均通过，零失败。
+- 已通过钉钉授权、重连与 readiness 定向测试 12 项，覆盖 `agents.list`、`agents.entries`、全局与 Agent
+  显式拒绝、隐式 Agent、旧连接、身份未同步和插件加载态。
 - 已通过 `pnpm lint`：模块边界扫描 922 个文件零违规，四处桌面版本一致，TypeScript 检查通过。
-- 已通过完整 `pnpm test:rust`：684 项通过、2 项忽略、零失败。
+- 已通过完整 Rust library 测试：686 项通过、1 项忽略、零失败；新增 Native DWS 浏览器授权参数测试。
 - 已通过 `pnpm build`：协作插件、钉钉插件契约与打包完成，TypeScript 和 Vite 生产构建通过并生成 `dist`。
 - 已通过 `pnpm verify:openclaw-docs`。
 - 已通过 `pnpm dingtalk:test`（18 项）、`pnpm dingtalk:validate`、`pnpm collab:test`（364 项）与
@@ -113,6 +123,7 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - 本轮未执行 Docker Gateway 回放；此前两次隔离 structural harness 均通过 bundle 校验和 Docker preflight，但固定摘要的
   OpenClaw `2026.7.1` 镜像在 600 秒拉取上限处超时，插件和 Gateway 尚未启动。两次均确认无受控容器、网络或 volume 遗留。
 - 尚未完成 macOS、Windows、Linux 的凭据库、WebView、窗口和真实 UI 验收。
+- 尚未在真实钉钉租户完成 Native 浏览器扫码、Docker 设备码授权、Profile 返回和重启后自动刷新验收。
 - Node 的 Tauri 内部桥不等于真实 WebView 到 Rust handler 的端到端调用；该路径仍需桌面真机验证。
 
 ## 失败方案与约束

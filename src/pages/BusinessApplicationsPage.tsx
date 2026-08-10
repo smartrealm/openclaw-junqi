@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import clsx from 'clsx';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import {
   Building2,
   Filter,
@@ -39,11 +39,14 @@ import {
   type DingTalkRuntimeIdentityProjection,
 } from '@/business-applications/dingtalkTools';
 import { dingtalkPluginInstallBlocker } from '@/business-applications/dingtalkPluginInstall';
+import { authorizeDingTalkAgent } from '@/business-applications/dingtalkAgentAuthorization';
+import { waitForDingTalkGatewayReconnect } from '@/business-applications/dingtalkGatewayReconnect';
 import { useBusinessActivityStore } from '@/business-applications/activityStore';
 import { parseBusinessApplicationsView } from '@/business-applications/businessApplicationsView';
 import {
   ensureToolsEffectiveFresh,
   invokeOpenClawTool,
+  refreshAll,
   useGatewayDataStore,
 } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -62,6 +65,7 @@ import {
   subscribeRuntimeIdentity,
 } from '@/services/gateway/runtimeIdentity';
 import { restartSelectedGatewayRuntime } from '@/services/gateway/gatewayProcessObservation';
+import { gateway } from '@/services/gateway';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
 type DomainFilter = 'all' | DingTalkDomain;
@@ -97,6 +101,16 @@ function createAttemptId(): string {
     throw new Error('当前环境无法生成业务操作幂等标识');
   }
   return globalThis.crypto.randomUUID();
+}
+
+function readDingTalkGatewayReconnectSnapshot() {
+  const currentIdentity = getCurrentRuntimeIdentity();
+  return {
+    connected: gateway.getStatus().connected,
+    connectionId: gateway.captureConnectionId(),
+    identityConnectionId: currentIdentity?.connectionId ?? null,
+    identityVerified: currentIdentity?.verified === true,
+  };
 }
 
 function useRuntimeIdentitySnapshot() {
@@ -233,7 +247,6 @@ function FilterPane({
 
 export function BusinessApplicationsPage() {
   const location = useLocation();
-  const navigate = useNavigate();
   const identity = useRuntimeIdentitySnapshot();
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const sessions = useGatewayDataStore((state) => state.sessions);
@@ -244,6 +257,7 @@ export function BusinessApplicationsPage() {
   const toolsError = useGatewayDataStore((state) => state.toolsEffectiveError);
   const sessionExists = sessions.some((session) => session.key === activeSessionKey);
   const activeSession = sessions.find((session) => session.key === activeSessionKey) ?? null;
+  const activeAgentId = effective?.agentId ?? activeSession?.agentId ?? null;
   const allTools = useMemo(() => collectDingTalkTools(effective?.groups), [effective]);
   const rawEffectiveTools = useMemo(
     () => effective?.groups.flatMap((group) => group.tools) ?? [],
@@ -270,8 +284,9 @@ export function BusinessApplicationsPage() {
   const [invocationOutput, setInvocationOutput] = useState<unknown>(undefined);
   const [invocationError, setInvocationError] = useState<string | null>(null);
   const [pluginStatus, setPluginStatus] = useState<DingTalkPluginStatus | null>(null);
+  const [pluginStatusLoading, setPluginStatusLoading] = useState(true);
   const [pluginError, setPluginError] = useState<string | null>(null);
-  const [pluginOperation, setPluginOperation] = useState<'installing' | 'restarting' | null>(null);
+  const [pluginOperation, setPluginOperation] = useState<'installing' | 'authorizing' | 'restarting' | null>(null);
   const [pluginInstallationProgress, setPluginInstallationProgress] = useState<DingTalkPluginInstallProgress>({ phase: 'idle', message: null });
   const [pluginInstallDialogOpen, setPluginInstallDialogOpen] = useState(false);
   const [dwsOperation, setDwsOperation] = useState<DingTalkDwsOperationPresentation | null>(null);
@@ -319,12 +334,20 @@ export function BusinessApplicationsPage() {
   }, []);
 
   const refreshTools = useCallback(async () => {
-    if (!sessionExists || !activeSessionKey) return;
+    const currentSessionExists = useGatewayDataStore.getState().sessions
+      .some((session) => session.key === activeSessionKey);
+    if (!currentSessionExists || !activeSessionKey) return;
     await ensureToolsEffectiveFresh(activeSessionKey, 0);
-  }, [activeSessionKey, sessionExists]);
+  }, [activeSessionKey]);
 
-  const refreshRuntimeIdentity = useCallback(async () => {
-    if (!sessionExists || !runtimeToolAvailable) {
+  const refreshRuntimeIdentity = useCallback(async (useFreshToolSnapshot = false) => {
+    const currentStore = useGatewayDataStore.getState();
+    const currentSessionExists = currentStore.sessions.some((session) => session.key === activeSessionKey);
+    const freshTools = currentStore.toolsEffective[activeSessionKey]?.groups.flatMap((group) => group.tools) ?? [];
+    const currentRuntimeToolAvailable = useFreshToolSnapshot
+      ? freshTools.some((tool) => tool.id === DINGTALK_RUNTIME_STATUS_TOOL && !tool.deniedBySession)
+      : runtimeToolAvailable;
+    if (!currentSessionExists || !currentRuntimeToolAvailable) {
       setRuntimeIdentity(null);
       setRuntimeIdentityError(null);
       return;
@@ -342,23 +365,36 @@ export function BusinessApplicationsPage() {
       setRuntimeIdentity(null);
       setRuntimeIdentityError(errorMessage(error));
     }
-  }, [activeSessionKey, runtimeToolAvailable, sessionExists]);
+  }, [activeSessionKey, runtimeToolAvailable]);
 
   const refreshPluginStatus = useCallback(async () => {
-    if (!identity?.verified || !identity.desktopMutationAllowed) {
+    const currentIdentity = getCurrentRuntimeIdentity();
+    if (!currentIdentity?.verified || !currentIdentity.desktopMutationAllowed) {
       setPluginStatus(null);
       setPluginError(null);
+      setPluginStatusLoading(false);
       return;
     }
+    setPluginStatusLoading(true);
     try {
-      const status = await getDingTalkPluginStatus(identity.targetFingerprint, identity.connectionId);
+      const status = await getDingTalkPluginStatus(currentIdentity.targetFingerprint, currentIdentity.connectionId);
       setPluginStatus(status);
       setPluginError(null);
     } catch (error) {
       setPluginStatus(null);
       setPluginError(errorMessage(error));
+    } finally {
+      setPluginStatusLoading(false);
     }
   }, [identity]);
+
+  const refreshDingTalkState = useCallback(async () => {
+    await refreshTools();
+    await Promise.all([
+      refreshPluginStatus(),
+      refreshRuntimeIdentity(true),
+    ]);
+  }, [refreshPluginStatus, refreshRuntimeIdentity, refreshTools]);
 
   useEffect(() => {
     void refreshTools();
@@ -391,15 +427,13 @@ export function BusinessApplicationsPage() {
         const phase = payload.cancelled ? 'cancelled' : payload.success ? 'completed' : 'failed';
         return { ...current, phase, message: payload.message };
       });
-      void refreshPluginStatus();
-      void refreshTools();
-      void refreshRuntimeIdentity();
+      void refreshDingTalkState();
     });
     return () => {
       outputUnlisten();
       finishedUnlisten();
     };
-  }, [refreshPluginStatus, refreshRuntimeIdentity, refreshTools]);
+  }, [refreshDingTalkState]);
 
   useEffect(() => {
     if (selectedTool) return;
@@ -629,7 +663,9 @@ export function BusinessApplicationsPage() {
           id: started.operationId,
           kind: started.kind,
           phase: 'running',
-          message: started.kind === 'install' ? '正在执行 DWS 官方 npm 安装命令。' : '请根据官方设备授权输出在浏览器完成确认。',
+          message: started.kind === 'install'
+            ? '正在执行 DWS 官方 npm 安装命令。'
+            : '本机运行时会自动打开浏览器扫码；Docker 或无界面运行时请按设备码提示完成授权。',
         });
         setDwsOutput(output);
       })
@@ -652,28 +688,62 @@ export function BusinessApplicationsPage() {
   const restartGateway = useCallback(async () => {
     setPluginOperation('restarting');
     try {
+      const previousConnectionId = gateway.captureConnectionId();
       const result = await restartSelectedGatewayRuntime();
       if (!result.success) throw new Error(result.error ?? 'Gateway 重启失败');
-      setPluginStatus((status) => status ? { ...status, restartRequired: false } : status);
+      await waitForDingTalkGatewayReconnect({
+        previousConnectionId,
+        read: readDingTalkGatewayReconnectSnapshot,
+      });
+      await refreshAll();
+      await refreshDingTalkState();
+      setPluginError(null);
+      return true;
+    } catch (error) {
+      setPluginError(errorMessage(error));
+      return false;
+    } finally {
+      setPluginOperation(null);
+    }
+  }, [refreshDingTalkState]);
+
+  const authorizeCurrentAgent = useCallback(async () => {
+    if (!activeAgentId) {
+      setPluginError('当前 Session 没有可核验的 Agent ID。');
+      return;
+    }
+    setPluginOperation('authorizing');
+    setPluginError(null);
+    try {
+      await authorizeDingTalkAgent(gateway, activeAgentId);
+      const previousConnectionId = gateway.captureConnectionId();
+      const result = await restartSelectedGatewayRuntime();
+      if (!result.success) throw new Error(result.error ?? 'Gateway 重启失败');
+      await waitForDingTalkGatewayReconnect({
+        previousConnectionId,
+        read: readDingTalkGatewayReconnectSnapshot,
+      });
+      await refreshAll();
+      await refreshDingTalkState();
       setPluginError(null);
     } catch (error) {
       setPluginError(errorMessage(error));
     } finally {
       setPluginOperation(null);
     }
-  }, []);
+  }, [activeAgentId, refreshDingTalkState]);
 
   const localInstallAvailable = Boolean(identity?.verified && identity.desktopMutationAllowed);
   const pluginVisibleInSession = allTools.length > 0;
-  const pluginNeedsInstall = Boolean(
-    !pluginStatus?.installed
+  const pluginNeedsInstall = Boolean(pluginStatus && (
+    !pluginStatus.installed
       || !pluginStatus.enabled
       || !pluginStatus.loaded
-      || pluginStatus.version !== pluginStatus.bundledVersion,
-  );
+      || pluginStatus.version !== pluginStatus.bundledVersion
+  ));
   const headerStatus = pluginVisibleInSession
     ? `${allTools.length} 个当前有效工具`
-    : toolsLoading ? '正在读取当前 Session 工具' : pluginStatus?.installed
+    : toolsLoading || pluginStatusLoading ? '正在核对当前 Session 与插件状态' : pluginStatus?.installed
       ? '插件已安装，等待 Gateway 刷新'
       : localInstallAvailable ? '插件尚未安装' : '当前 Session 未提供钉钉工具';
   const pageTitle = view === 'activity'
@@ -685,8 +755,9 @@ export function BusinessApplicationsPage() {
     runtime: runtimeIdentity,
     runtimeError: runtimeIdentityError,
     pluginNeedsInstall,
+    pluginStatusPending: localInstallAvailable && pluginStatusLoading,
     restartRequired: Boolean(pluginStatus?.restartRequired),
-    agentId: effective?.agentId ?? activeSession?.agentId ?? null,
+    agentId: activeAgentId,
     installAvailable: localInstallAvailable,
     installationProgress: pluginInstallationProgress,
     dwsOperation,
@@ -697,11 +768,10 @@ export function BusinessApplicationsPage() {
     effectiveToolCount: allTools.length,
     pluginVersion: pluginStatus?.version ?? null,
     bundledPluginVersion: pluginStatus?.bundledVersion ?? null,
-    onRefresh: () => { void refreshTools(); void refreshRuntimeIdentity(); void refreshPluginStatus(); },
+    onRefresh: () => { void refreshDingTalkState(); },
     onInstallPlugin: installPlugin,
-    onConfigureAgent: () => navigate('/config?tab=tools'),
-    onConfigurePlugin: () => navigate('/config?tab=advanced'),
-    onRestartGateway: () => void restartGateway(),
+    onAuthorizeAgent: () => void authorizeCurrentAgent(),
+    onRestartGateway: () => { void restartGateway(); },
     onInstallDws: () => runDwsOperation('install'),
     onAuthorizeDws: () => runDwsOperation('authorize'),
     onCancelDws: cancelCurrentDwsOperation,
@@ -733,7 +803,11 @@ export function BusinessApplicationsPage() {
         busy={pluginOperation === 'installing'}
         onOpenChange={setPluginInstallDialogOpen}
         onConfirm={() => void performPluginInstallation()}
-        onRestartGateway={() => void restartGateway()}
+        onRestartGateway={() => {
+          void restartGateway().then((success) => {
+            if (success) setPluginInstallDialogOpen(false);
+          });
+        }}
       />
 
       {view === 'runtime' ? (

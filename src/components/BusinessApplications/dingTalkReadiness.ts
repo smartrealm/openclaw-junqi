@@ -24,6 +24,7 @@ export function resolveDingTalkReadiness({
   runtime,
   runtimeError,
   pluginNeedsInstall,
+  pluginStatusPending,
   restartRequired,
   agentId,
 }: {
@@ -32,6 +33,7 @@ export function resolveDingTalkReadiness({
   runtime: DingTalkRuntimeIdentityProjection | null;
   runtimeError: string | null;
   pluginNeedsInstall: boolean;
+  pluginStatusPending: boolean;
   restartRequired: boolean;
   agentId: string | null;
 }): DingTalkReadiness {
@@ -41,6 +43,9 @@ export function resolveDingTalkReadiness({
   if (!runtimeToolAvailable) {
     if (restartRequired) {
       return { tone: 'pending', title: '等待 Gateway 加载插件', description: '插件已更新，重启当前 Gateway 后再读取 DWS 状态。', action: 'restart-gateway' };
+    }
+    if (pluginStatusPending) {
+      return { tone: 'pending', title: '正在核对钉钉接入状态', description: '正在同时读取当前 Session 工具和已安装插件状态。', action: null };
     }
     if (pluginNeedsInstall) {
       return { tone: 'blocked', title: '钉钉业务插件未就绪', description: '先安装固定校验的钉钉业务插件，再重启 Gateway 使工具进入当前 Session。', action: 'install-plugin' };
@@ -76,7 +81,7 @@ export function resolveDingTalkReadiness({
     return {
       tone: 'blocked',
       title: '未确认 DWS 业务身份',
-      description: '在当前 Gateway 运行时启动 DWS 官方设备授权，完成后 JunQi 会重新读取 Profile。',
+      description: '启动 DWS 官方授权。本机将打开浏览器扫码，Docker 或无界面运行时显示设备码；完成后 JunQi 会自动重新读取 Profile。',
       action: 'authorize-dws',
     };
   }
