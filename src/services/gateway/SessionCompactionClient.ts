@@ -1,10 +1,8 @@
 import {
   buildSessionsCompactionCheckpointParams,
   parseSessionsCompactionBranchResult,
-  parseSessionsCompactionGetResult,
   parseSessionsCompactionRestoreResult,
   type SessionsCompactionBranchResult,
-  type SessionsCompactionGetResult,
   type SessionsCompactionRestoreResult,
 } from './sessionInspection';
 import { resolveOpenClawSessionTarget } from './OpenClawSessionTarget';
@@ -26,19 +24,11 @@ export interface SessionCompactionClientDependencies {
 }
 
 /**
- * 检查点读取和写入保留在其协议所属的连接通道。
+ * 检查点变更保留在其协议所属的连接通道。
  * Gateway 始终是转录身份与生命周期的唯一事实来源。
  */
 export class SessionCompactionClient {
   constructor(private readonly deps: SessionCompactionClientDependencies) {}
-
-  async get(sessionKey: string, checkpointId: string, agentId?: string): Promise<SessionsCompactionGetResult> {
-    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
-    return this.deps.request(
-      'sessions.compaction.get',
-      { ...buildSessionsCompactionCheckpointParams(target.key, checkpointId, target.agentId) },
-    ).then((result) => parseSessionsCompactionGetResult(result, target.key));
-  }
 
   async branch(
     sessionKey: string,

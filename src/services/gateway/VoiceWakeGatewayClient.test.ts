@@ -48,18 +48,11 @@ test('唤醒词读写始终绑定同一个可信 Gateway 连接', async () => {
   ]);
 });
 
-test('唤醒路由通过官方独立方法读取和保存', async () => {
-  const updated = { ...routing, updatedAtMs: 200 };
-  const { client, calls } = clientWith([{ config: routing }, { config: updated }]);
+test('唤醒路由只通过官方保留的方法读取', async () => {
+  const { client, calls } = clientWith([{ config: routing }]);
   assert.deepEqual(await client.getRouting(), routing);
-  assert.deepEqual(await client.setRouting(routing), updated);
   assert.deepEqual(calls, [
     { method: 'voicewake.routing.get', params: {}, connectionId: 'connection-a' },
-    {
-      method: 'voicewake.routing.set',
-      params: { config: routing },
-      connectionId: 'connection-a',
-    },
   ]);
 });
 

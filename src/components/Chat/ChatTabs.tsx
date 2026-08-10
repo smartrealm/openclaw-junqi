@@ -276,12 +276,11 @@ function AgentStatusTooltip({
     <>
       {visible && (
         <div
-          className="absolute start-0 top-0 mt-2 w-[300px] rounded-2xl border border-[rgb(var(--aegis-overlay)/0.1)] z-[9999] overflow-hidden"
-          style={{ background: 'var(--aegis-bg-frosted)', backdropFilter: 'blur(40px)', boxShadow: 'var(--aegis-shadow-popover)' }}
+          className="absolute start-0 top-0 z-[9999] mt-2 w-[300px] overflow-hidden rounded-xl border border-aegis-border bg-aegis-menu-bg shadow-popover"
         >
           {/* Header */}
           <div className="flex items-center gap-3 p-4 border-b border-[rgb(var(--aegis-overlay)/0.06)]">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-aegis-primary/20 to-aegis-primary/5 border border-aegis-primary/25 flex items-center justify-center text-lg font-bold text-aegis-primary">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-aegis-primary/20 bg-aegis-primary/8 text-lg font-bold text-aegis-primary">
               {agentName.charAt(0)}
             </div>
             <div className="flex-1 min-w-0">

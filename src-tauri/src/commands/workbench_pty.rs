@@ -5,7 +5,7 @@ mod runtime;
 mod tests;
 
 pub use model::{WorkbenchPtyCreateResult, WorkbenchPtyIdentity, WorkbenchPtySnapshot};
-pub(crate) use runtime::{assert_current_owner_locked, lifecycle_gate};
+pub(crate) use runtime::lifecycle_gate;
 
 use model::{validate_id, MAX_INPUT_BYTES};
 use portable_pty::PtySize;
@@ -116,7 +116,6 @@ pub fn stop_workbench_pty(pty_id: String, run_id: String) -> Result<(), String> 
         Ok(handle) => {
             stop_handle(&handle)?;
             remove_if_current(&pty_id, &handle)?;
-            super::workbench_provider::release_claims_for_pty_locked(&pty_id)?;
             Ok(())
         }
         Err(_) if consume_completed_run(&pty_id, &run_id) => Ok(()),
@@ -140,7 +139,6 @@ pub fn close_workbench_pty_tab(pty_id: String, run_id: String) -> Result<(), Str
         Some(handle) if handle.run_id == run_id && !handle.stopping.load(Ordering::Acquire) => {
             stop_handle(&handle)?;
             remove_if_current(&pty_id, &handle)?;
-            super::workbench_provider::release_claims_for_pty_locked(&pty_id)?;
             Ok(())
         }
         Some(_) => Err(format!("stale workbench PTY run: {pty_id}")),
@@ -178,7 +176,6 @@ pub fn close_workbench_pty_tabs(identities: Vec<WorkbenchPtyIdentity>) -> Result
         if let Some(handle) = handle {
             stop_handle(&handle)?;
             remove_if_current(&identity.pty_id, &handle)?;
-            super::workbench_provider::release_claims_for_pty_locked(&identity.pty_id)?;
         } else {
             consume_completed_run(&identity.pty_id, &identity.run_id);
         }
@@ -202,29 +199,21 @@ pub fn stop_all_workbench_ptys() -> Result<u64, String> {
     };
     let count = handles.len() as u64;
     let stop_failures = collect_stop_failures(handles, stop_handle);
-    let claim_failure = super::workbench_provider::clear_claims_locked().err();
-    finish_shutdown(count, stop_failures, claim_failure)
+    finish_shutdown(count, stop_failures)
 }
 
 fn collect_stop_failures<T>(items: Vec<T>, stop: impl Fn(&T) -> Result<(), String>) -> Vec<String> {
     items.iter().filter_map(|item| stop(item).err()).collect()
 }
 
-fn finish_shutdown(
-    count: u64,
-    stop_failures: Vec<String>,
-    claim_failure: Option<String>,
-) -> Result<u64, String> {
-    let mut details = Vec::with_capacity(2);
+fn finish_shutdown(count: u64, stop_failures: Vec<String>) -> Result<u64, String> {
+    let mut details = Vec::with_capacity(1);
     if !stop_failures.is_empty() {
         details.push(format!(
             "{} PTY stop failure(s): {}",
             stop_failures.len(),
             stop_failures.join("; ")
         ));
-    }
-    if let Some(error) = claim_failure {
-        details.push(format!("provider claim cleanup failed: {error}"));
     }
     if details.is_empty() {
         return Ok(count);
@@ -257,7 +246,6 @@ pub fn stop_workbench_ptys(identities: Vec<WorkbenchPtyIdentity>) -> Result<(), 
         if let Some(handle) = handle {
             stop_handle(&handle)?;
             remove_if_current(&pty_id, &handle)?;
-            super::workbench_provider::release_claims_for_pty_locked(&pty_id)?;
         } else {
             consume_completed_run(&identity.pty_id, &identity.run_id);
         }

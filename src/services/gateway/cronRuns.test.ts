@@ -10,6 +10,7 @@ import {
   parseCronRunsPage,
   waitForCronRun,
 } from './cronRuns';
+import { OPENCLAW_CRON_MAX_DATE_TIMESTAMP_MS } from './cronContract';
 
 const job = {
   id: 'job-1',
@@ -117,6 +118,40 @@ test('fails closed when cron.get or cron.runs violates the official response sha
   assert.throws(() => parseCronRunsPage({ ...page, total: 2, hasMore: false }), /page/);
   assert.throws(() => parseCronRunsPage({ ...page, total: 2, hasMore: true, nextOffset: 2 }), /page/);
   assert.throws(() => parseCronRunsPage({ ...page, limit: 201 }), /page/);
+});
+
+test('rejects cron job Date fields outside the official range', () => {
+  const invalidTimestamp = OPENCLAW_CRON_MAX_DATE_TIMESTAMP_MS + 1;
+
+  assert.throws(() => parseCronJobDetails({ ...job, createdAtMs: invalidTimestamp }), /createdAtMs/);
+  assert.throws(
+    () => parseCronJobDetails({ ...job, schedule: { kind: 'every', everyMs: invalidTimestamp } }),
+    /schedule\.everyMs/,
+  );
+  assert.throws(
+    () => parseCronJobDetails({ ...job, state: { nextRunAtMs: invalidTimestamp } }),
+    /state\.nextRunAtMs/,
+  );
+});
+
+test('does not retain scheduler state fields removed from the official schema', () => {
+  const parsed = parseCronJobDetails({
+    ...job,
+    state: {
+      ...job.state,
+      startupCatchupAtMs: 1,
+      pacedNextRunAtMs: 2,
+      forcePreservedNextRunAtMs: 3,
+      queuedAtMs: 4,
+      scheduleErrorCount: 5,
+    },
+  });
+
+  assert.equal('startupCatchupAtMs' in parsed.state, false);
+  assert.equal('pacedNextRunAtMs' in parsed.state, false);
+  assert.equal('forcePreservedNextRunAtMs' in parsed.state, false);
+  assert.equal('queuedAtMs' in parsed.state, false);
+  assert.equal('scheduleErrorCount' in parsed.state, false);
 });
 
 test('builds the official job and global cron.runs envelopes', () => {

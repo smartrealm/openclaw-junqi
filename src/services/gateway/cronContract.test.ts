@@ -6,6 +6,7 @@ import {
   cronAgentUpdatePatch,
   isCronAgentSelectionConfirmed,
   resolveCronDeclarationKey,
+  OPENCLAW_CRON_MAX_DATE_TIMESTAMP_MS,
 } from './cronContract';
 
 test('cron declaration key is generated from one explicit creation intent', () => {
@@ -87,6 +88,33 @@ test('cron schedule input retains the official event-driven schedule variants', 
   });
 
   assert.deepEqual(params.schedule, streamSchedule);
+});
+
+test('cron agent-turn creation rejects schedule timestamps outside the official Date range', () => {
+  const invalidTimestamp = OPENCLAW_CRON_MAX_DATE_TIMESTAMP_MS + 1;
+  const base = { name: 'Invalid schedule', message: 'Do not enqueue.' };
+
+  assert.throws(
+    () => buildCronAgentTurnAddParams({
+      ...base,
+      schedule: { kind: 'every', everyMs: invalidTimestamp },
+    }),
+    /schedule\.everyMs/,
+  );
+  assert.throws(
+    () => buildCronAgentTurnAddParams({
+      ...base,
+      schedule: { kind: 'every', everyMs: 1, anchorMs: invalidTimestamp },
+    }),
+    /schedule\.anchorMs/,
+  );
+  assert.throws(
+    () => buildCronAgentTurnAddParams({
+      ...base,
+      schedule: { kind: 'cron', expr: '* * * * *', staggerMs: invalidTimestamp },
+    }),
+    /schedule\.staggerMs/,
+  );
 });
 
 test('cron Agent updates distinguish pinning from clearing', () => {

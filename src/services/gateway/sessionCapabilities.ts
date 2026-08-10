@@ -1,12 +1,5 @@
 import type { GatewayHelloObservation } from '@/types/gatewayRuntime';
 
-export const OPENCLAW_SESSION_HISTORY_METHODS = {
-  listBranches: 'sessions.branches.list',
-  switchBranch: 'sessions.branches.switch',
-  rewind: 'sessions.rewind',
-  forkAtMessage: 'sessions.fork',
-} as const;
-
 export interface OpenClawSessionHistoryCapabilities {
   readonly branches: boolean;
   readonly branchSwitch: boolean;
@@ -19,20 +12,19 @@ const EMPTY_CAPABILITIES: OpenClawSessionHistoryCapabilities = {
   rewind: false,
   forkAtMessage: false,
 };
+const CONNECTED_CAPABILITIES: OpenClawSessionHistoryCapabilities = {
+  branches: true,
+  branchSwitch: true,
+  rewind: true,
+  forkAtMessage: true,
+};
 
 /**
- * 仅当认证后的 Gateway 明确声明方法时才呈现对应操作。
- * 缺失的 feature 列表代表能力未知，不能据此乐观调用 RPC。
+ * 官方握手方法列表允许为空，不能作为完整能力清单。
+ * 认证连接建立后允许调用官方 RPC，最终状态由该次结构化响应判定。
  */
 export function readOpenClawSessionHistoryCapabilities(
   observation: GatewayHelloObservation | null,
 ): OpenClawSessionHistoryCapabilities {
-  if (!observation || observation.methods.length === 0) return EMPTY_CAPABILITIES;
-  const methods = new Set(observation.methods);
-  return {
-    branches: methods.has(OPENCLAW_SESSION_HISTORY_METHODS.listBranches),
-    branchSwitch: methods.has(OPENCLAW_SESSION_HISTORY_METHODS.switchBranch),
-    rewind: methods.has(OPENCLAW_SESSION_HISTORY_METHODS.rewind),
-    forkAtMessage: methods.has(OPENCLAW_SESSION_HISTORY_METHODS.forkAtMessage),
-  };
+  return observation ? CONNECTED_CAPABILITIES : EMPTY_CAPABILITIES;
 }

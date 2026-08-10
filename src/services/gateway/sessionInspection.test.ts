@@ -6,7 +6,6 @@ import {
   buildSessionsPreviewParams,
   buildSessionsResolveParams,
   parseSessionsCompactionBranchResult,
-  parseSessionsCompactionGetResult,
   parseSessionsCompactionListResult,
   parseSessionsCompactionRestoreResult,
   parseSessionsPreviewResult,
@@ -82,7 +81,7 @@ test('builds checkpoint mutation params with the exact OpenClaw shape', () => {
   assert.throws(() => buildSessionsCompactionCheckpointParams('agent:main:main', '  '), /checkpointId/);
 });
 
-test('parses checkpoint get, branch, and restore responses and fences identities', () => {
+test('parses checkpoint branch and restore responses and fences identities', () => {
   const checkpoint = {
     checkpointId: 'checkpoint-1',
     sessionKey: 'agent:main:main',
@@ -92,9 +91,6 @@ test('parses checkpoint get, branch, and restore responses and fences identities
     preCompaction: { sessionId: 'session-1', entryId: 'entry-before' },
     postCompaction: { sessionId: 'session-1', entryId: 'entry-after' },
   };
-  const get = parseSessionsCompactionGetResult({ ok: true, key: 'agent:main:main', checkpoint }, 'agent:main:main');
-  assert.equal(get.checkpoint.checkpointId, 'checkpoint-1');
-
   const branch = parseSessionsCompactionBranchResult({
     ok: true,
     sourceKey: 'agent:main:main',

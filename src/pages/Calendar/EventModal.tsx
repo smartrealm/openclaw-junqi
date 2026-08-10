@@ -301,7 +301,7 @@ export function EventModal({ onClose, initialDate, editEvent }: EventModalProps)
 
 function Overlay({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-aegis-scrim"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-[420px] max-h-[90vh] overflow-y-auto rounded-2xl bg-aegis-menu-bg border border-aegis-border p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}>

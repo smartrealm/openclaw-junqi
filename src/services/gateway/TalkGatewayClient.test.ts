@@ -106,11 +106,10 @@ test('Talk 客户端拒绝未就绪目录和与实际响应不一致的格式', 
   await assert.rejects(mismatched.createRealtimeRelay('agent:main:main'), TalkGatewayUnavailableError);
 });
 
-test('Talk 客户端分别使用官方输出中断和轮次停止方法', async () => {
-  const { client, calls } = harness([{}, {}, {}, {}]);
+test('Talk 客户端只使用官方保留的输出中断方法', async () => {
+  const { client, calls } = harness([{}, {}, {}]);
   await client.cancelOutput('talk-1', 'turn-1');
   await client.cancelOutput('talk-1', 'turn-2', 'playback-overflow');
-  await client.cancelTurn('talk-1', 'turn-1');
   await client.acknowledgeMark('talk-1', 'mark-1');
   assert.deepEqual(calls.map(({ options: _options, ...call }) => call), [
     {
@@ -121,11 +120,6 @@ test('Talk 客户端分别使用官方输出中断和轮次停止方法', async 
     {
       method: 'talk.session.cancelOutput',
       params: { sessionId: 'talk-1', turnId: 'turn-2', reason: 'playback-overflow' },
-      connectionId: 'connection-a',
-    },
-    {
-      method: 'talk.session.cancelTurn',
-      params: { sessionId: 'talk-1', turnId: 'turn-1', reason: 'user-stop' },
       connectionId: 'connection-a',
     },
     {

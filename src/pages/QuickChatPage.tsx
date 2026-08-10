@@ -46,6 +46,7 @@ import { closeQuickChat, getQuickChatSeed } from '@/api/tauri-commands';
 import { ChatTraceSourceMessagePanel } from '@/components/Chat/ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from '@/components/Chat/useChatSidePanel';
 import { stopQuickChatRequest } from './quickChatStop';
+import { useAttachmentErrorMessage } from '@/hooks/chat/useAttachmentErrorMessage';
 
 interface SeedFile {
   path: string;
@@ -88,6 +89,7 @@ async function inspectSeedFile(input: string): Promise<SeedFile> {
 
 export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: string } = {}) {
   const { t } = useTranslation();
+  const attachmentErrorMessage = useAttachmentErrorMessage();
   const connected = useChatStore((state) => state.connected);
   const connecting = useChatStore((state) => state.connecting);
   const connectionError = useChatStore((state) => state.connectionError);
@@ -201,8 +203,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
       const clientMessageId = createClientMessageId();
       const prepared = await Promise.all(files.filter((file) => !file.isDir).map(async (seed) => {
         const { desktopFileRuntime } = await import('@/runtime/desktopFileRuntime');
-        const file = await desktopFileRuntime.readAttachment(seed.path);
-        if (!file) throw new Error(`Unable to read ${seed.name}`);
+        const file = await desktopFileRuntime.readAttachment(seed.path, gateway.getAttachmentPolicy());
         return createPreparedAttachment({
           fileName: file.name,
           mimeType: file.mimeType,
@@ -212,7 +213,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
           sourcePath: seed.path,
         });
       }));
-      const attachments = toGatewayAttachments(prepared);
+      const attachments = toGatewayAttachments(prepared, gateway.getAttachmentPolicy());
       await chatSendCoordinator.send({
         sessionKey: key,
         sessionId,
@@ -223,13 +224,13 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
       });
       setText('');
       setFiles([]);
-    } catch (err: any) {
-      setSendError(t('pet.quickChat.sendError', { error: err?.message ?? String(err) }));
+    } catch (error) {
+      setSendError(t('pet.quickChat.sendError', { error: attachmentErrorMessage(error) }));
     } finally {
       setSending(false);
       setTimeout(() => messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' }), 30);
     }
-  }, [text, sending, connected, files, sessionId, sessionKey, t]);
+  }, [attachmentErrorMessage, text, sending, connected, files, sessionId, sessionKey, t]);
 
   const handleRetryQueuedMessage = useCallback(async () => {
     if (!failedQueuedMessage) return;

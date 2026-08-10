@@ -1,6 +1,9 @@
 export type CronSessionTarget = 'main' | 'isolated' | 'current' | `session:${string}`;
 export type CronWakeMode = 'next-heartbeat' | 'now';
 
+// OpenClaw 官方 Cron Schema 使用 ECMAScript Date 可表示的闭区间。
+export const OPENCLAW_CRON_MAX_DATE_TIMESTAMP_MS = 8_640_000_000_000_000;
+
 export type CronSchedule =
   | { kind: 'at'; at: string }
   | { kind: 'every'; everyMs: number; anchorMs?: number }
@@ -83,6 +86,26 @@ export function normalizeCronAgentId(agentId: string | null | undefined): string
   return normalized || undefined;
 }
 
+function assertCronDateInteger(value: number, field: string, minimum: number): void {
+  if (!Number.isInteger(value)
+    || value < minimum
+    || value > OPENCLAW_CRON_MAX_DATE_TIMESTAMP_MS) {
+    throw new Error(`cron.add received an invalid ${field}`);
+  }
+}
+
+export function validateCronSchedule(schedule: CronSchedule): CronSchedule {
+  if (schedule.kind === 'every') {
+    assertCronDateInteger(schedule.everyMs, 'schedule.everyMs', 1);
+    if (schedule.anchorMs !== undefined) {
+      assertCronDateInteger(schedule.anchorMs, 'schedule.anchorMs', 0);
+    }
+  } else if (schedule.kind === 'cron' && schedule.staggerMs !== undefined) {
+    assertCronDateInteger(schedule.staggerMs, 'schedule.staggerMs', 0);
+  }
+  return schedule;
+}
+
 export function buildCronAgentTurnAddParams(
   input: BuildCronAgentTurnParams,
 ): CronAgentTurnAddParams {
@@ -95,7 +118,7 @@ export function buildCronAgentTurnAddParams(
     ...(input.description !== undefined ? { description: input.description } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
     ...(input.deleteAfterRun !== undefined ? { deleteAfterRun: input.deleteAfterRun } : {}),
-    schedule: input.schedule,
+    schedule: validateCronSchedule(input.schedule),
     sessionTarget: 'isolated',
     wakeMode: 'now',
     payload: {

@@ -23,9 +23,9 @@
   --aegis-bg-frosted-60:  rgba(245, 236, 215, 0.6);
 
   /* ── Borders — 3-step warm ── */
-  --aegis-border:         rgba(101, 84, 51, 0.12);
-  --aegis-border-hover:   rgba(101, 84, 51, 0.2);
-  --aegis-border-active:  rgba(101, 84, 51, 0.32);
+  --aegis-border:         rgba(101, 84, 51, 0.09);
+  --aegis-border-hover:   rgba(101, 84, 51, 0.16);
+  --aegis-border-active:  rgba(101, 84, 51, 0.26);
 
   /* ── Text — 4 levels warm ── */
   --aegis-text:           63 55 36;     /* text-primary #3f3724 */
@@ -36,19 +36,19 @@
   --aegis-pet-text-on-dark:  255 251 235;
 
   /* ── Primary = junqi eyecare accent (brown) ── */
-  --aegis-primary:         176 123 62;   /* accent #b07b3e */
-  --aegis-primary-hover:   149 97 42;    /* accent-hover #95612a */
-  --aegis-primary-deep:    149 97 42;    /* accent-strong #95612a */
-  --aegis-primary-glow:    rgba(176, 123, 62, 0.32);
-  --aegis-primary-surface: rgba(176, 123, 62, 0.14);
+  --aegis-primary:         160 112 58;
+  --aegis-primary-hover:   140 91 42;
+  --aegis-primary-deep:    140 91 42;
+  --aegis-primary-glow:    rgba(160, 112, 58, 0.20);
+  --aegis-primary-surface: rgba(160, 112, 58, 0.09);
   /* Focus ring tokens (box-shadow — not clipped by overflow:hidden unlike outline) */
   --aegis-focus-ring:        0 0 0 2px rgb(var(--aegis-primary) / 0.38);
   --aegis-focus-ring-danger: 0 0 0 2px rgb(var(--aegis-danger) / 0.34);
 
   /* ── Accent — deeper brown ── */
-  --aegis-accent:        149 97 42;
-  --aegis-accent-hover:  149 97 42;
-  --aegis-accent-glow:   rgba(149, 97, 42, 0.24);
+  --aegis-accent:        140 91 42;
+  --aegis-accent-hover:  140 91 42;
+  --aegis-accent-glow:   rgba(140, 91, 42, 0.16);
 
   /* ── Status ── */
   --aegis-danger:         185 28 28;
@@ -71,8 +71,8 @@
   --aegis-status-ended:         86 138 70;
 
   /* ── Messages ── */
-  --aegis-user-bubble:    rgba(176, 123, 62, 0.12);
-  --aegis-user-border:    rgba(176, 123, 62, 0.24);
+  --aegis-user-bubble:    rgba(160, 112, 58, 0.08);
+  --aegis-user-border:    rgba(160, 112, 58, 0.16);
   --aegis-bot-bubble:     #fdf9ec;
   --aegis-bot-border:     rgba(101, 84, 51, 0.12);
 
@@ -113,16 +113,16 @@
   --aegis-menu-hover:     #ede2c4;
   --aegis-menu-active:    rgba(101, 84, 51, 0.12);
   --aegis-menu-border:    rgba(101, 84, 51, 0.14);
-  --aegis-menu-shadow:    0 8px 32px rgba(101, 84, 51, 0.22);
+  --aegis-menu-shadow:    0 6px 18px rgba(101, 84, 51, 0.14);
   --aegis-menu-text:      63 55 36;
   --aegis-menu-text-muted:122 108 79;
 
   /* ── 共享层级阴影与遮罩令牌 ── */
   --aegis-shadow-color:   65 45 20;
-  --aegis-shadow-card:    0 1px 3px rgb(var(--aegis-shadow-color) / 0.10), 0 1px 2px rgb(var(--aegis-shadow-color) / 0.08);
-  --aegis-shadow-float:   0 8px 32px rgb(var(--aegis-shadow-color) / 0.20);
-  --aegis-shadow-popover: 0 8px 32px rgb(var(--aegis-shadow-color) / 0.24);
-  --aegis-scrim:          rgb(var(--aegis-shadow-color) / 0.45);
+  --aegis-shadow-card:    0 1px 2px rgb(var(--aegis-shadow-color) / 0.06);
+  --aegis-shadow-float:   0 6px 20px rgb(var(--aegis-shadow-color) / 0.14);
+  --aegis-shadow-popover: 0 6px 18px rgb(var(--aegis-shadow-color) / 0.16);
+  --aegis-scrim:          rgb(var(--aegis-shadow-color) / 0.36);
 
   /* ── Button ── */
   --aegis-btn-primary-text: #fdf9ec;

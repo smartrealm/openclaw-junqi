@@ -15,12 +15,11 @@ const CHECKPOINT = {
   postCompaction: { sessionId: 'session-1', entryId: 'entry-after' },
 };
 
-test('keeps checkpoint reads, branches, and restores on their declared lanes', async () => {
+test('keeps checkpoint branches and restores on their declared lanes', async () => {
   const calls: Array<{ lane: 'daily' | 'admin'; method: string; params: Record<string, unknown> }> = [];
   const client = new SessionCompactionClient({
     request: async (method, params) => {
       calls.push({ lane: 'daily', method, params });
-      if (method === 'sessions.compaction.get') return { ok: true, key: SESSION_KEY, checkpoint: CHECKPOINT };
       return {
         ok: true,
         sourceKey: SESSION_KEY,
@@ -43,12 +42,10 @@ test('keeps checkpoint reads, branches, and restores on their declared lanes', a
     runMutation: (_key, operation) => operation(),
   });
 
-  await client.get(SESSION_KEY, CHECKPOINT_ID, 'main');
   await client.branch(SESSION_KEY, CHECKPOINT_ID, 'main');
   await client.restore(SESSION_KEY, CHECKPOINT_ID, 'main');
 
   assert.deepEqual(calls, [
-    { lane: 'daily', method: 'sessions.compaction.get', params: { key: SESSION_KEY, agentId: 'main', checkpointId: CHECKPOINT_ID } },
     { lane: 'daily', method: 'sessions.compaction.branch', params: { key: SESSION_KEY, agentId: 'main', checkpointId: CHECKPOINT_ID } },
     { lane: 'admin', method: 'sessions.compaction.restore', params: { key: SESSION_KEY, agentId: 'main', checkpointId: CHECKPOINT_ID } },
   ]);
@@ -141,7 +138,6 @@ test('在请求或 mutation coordinator 前拒绝缺失检查点会话目标', a
   });
   const missingTarget = '   ';
 
-  await assert.rejects(client.get(missingTarget, CHECKPOINT_ID), OpenClawSessionTargetError);
   await assert.rejects(client.branch(missingTarget, CHECKPOINT_ID), OpenClawSessionTargetError);
   await assert.rejects(client.restore(missingTarget, CHECKPOINT_ID), OpenClawSessionTargetError);
   assert.equal(mutations, 0);

@@ -129,7 +129,7 @@ export function useComposerVoice({
         mimeType,
         base64,
         size: Math.floor(base64.length * 0.75),
-      })]);
+      })], gateway.getAttachmentPolicy());
       await chatSendCoordinator.send({
         sessionKey,
         sessionId: activeSessionId,

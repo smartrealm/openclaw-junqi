@@ -189,7 +189,7 @@ function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDele
   };
 
   return (
-    <div className="fixed inset-0 z-[2147482000] bg-black/45 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[2147482000] flex items-center justify-center bg-aegis-scrim p-4">
       <div className="w-full max-w-[620px] max-h-[88vh] overflow-hidden rounded-lg border border-[rgb(var(--aegis-overlay)/0.12)] bg-aegis-bg shadow-2xl">
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-[rgb(var(--aegis-overlay)/0.08)]">
           <div className="min-w-0">

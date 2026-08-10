@@ -6,12 +6,11 @@ const backend = readFileSync(new URL('../../../src-tauri/src/commands/workbench_
 const client = readFileSync(new URL('./providerCapabilities.ts', import.meta.url), 'utf8');
 const page = readFileSync(new URL('../../pages/AgentWorkspace/index.tsx', import.meta.url), 'utf8');
 
-test('provider probe only discovers reviewed catalog binaries without executing them', () => {
-  const probe = backend.slice(backend.indexOf('pub fn probe_workbench_providers'), backend.indexOf('pub struct ProviderClaimRequest'));
+test('provider probe delegates reviewed catalog lookup without launching a provider', () => {
+  const probe = backend.slice(backend.indexOf('pub fn probe_workbench_providers'));
   assert.match(probe, /workbench_agent_specs\(\)/);
   assert.match(probe, /crate::platform::detect_path\(spec\.bin\)/);
   assert.doesNotMatch(probe, /Command::new|--version|spawn|output\(/);
-  assert.match(backend, /!candidate\.is_absolute\(\) \|\| !candidate\.is_file\(\)/);
 });
 
 test('renderer exposes probe metadata but no provider launch action yet', () => {

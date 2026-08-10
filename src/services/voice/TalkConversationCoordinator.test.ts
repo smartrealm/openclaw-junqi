@@ -77,7 +77,6 @@ function createHarness(
     cancelOutput: async (_sessionId, turnId, reason) => {
       calls.push(`cancel-output:${turnId ?? ''}:${reason ?? 'barge-in'}`);
     },
-    cancelTurn: async (_sessionId, turnId) => { calls.push(`cancel-turn:${turnId ?? ''}`); },
     close: async (sessionId) => { calls.push(`close:${sessionId}`); },
     startAgentConsult: async (_sessionKey, _sessionId, callId) => {
       calls.push(`start-consult:${callId}`);
@@ -241,7 +240,7 @@ test('Stop 停止当前 Talk 轮次并关闭中继但不修改 OpenClaw 会话�
   harness.emit(event('turn.started', 1));
   harness.calls.length = 0;
   await harness.coordinator.stop();
-  assert.deepEqual(harness.calls, ['stop-output', 'cancel-turn:turn-1', 'close:talk-1']);
+  assert.deepEqual(harness.calls, ['stop-output', 'close:talk-1']);
   assert.equal(harness.coordinator.getSnapshot().phase, 'idle');
   assert.equal(harness.coordinator.getSnapshot().sessionKey, null);
 });
@@ -498,7 +497,6 @@ test('当前会话收到畸形中继事件时关闭 Talk 而不继续消费', as
   await flush();
   assert.equal(harness.coordinator.getSnapshot().phase, 'error');
   assert.equal(harness.coordinator.getSnapshot().error, 'talk_session_error');
-  assert.ok(harness.calls.includes('cancel-turn:'));
   assert.ok(harness.calls.includes('close:talk-1'));
 });
 

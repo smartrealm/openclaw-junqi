@@ -30,7 +30,6 @@ test("run cancellation preserves external and residual-risk recovery facts", () 
     { code: "ATTEMPT_ABANDONED_WITH_RESIDUAL_RISK", entityType: "attempt", attemptStatus: "ABANDONED" },
     { code: "FLOW_RECOVERY_CONFLICT", entityType: "command", attemptStatus: null },
     { code: "MAINTENANCE_LEASE_EXPIRED", entityType: "maintenance_lease", attemptStatus: null },
-    { code: "SESSION_MUTATION_EXPIRED", entityType: "session_mutation", attemptStatus: null },
   ]) {
     assert.equal(
       decideRunCancellationInterventionResolution(facts),

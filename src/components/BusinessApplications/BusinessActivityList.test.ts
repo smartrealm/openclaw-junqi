@@ -7,6 +7,8 @@ import { summarizeDingTalkBusinessActivity } from './businessActivitySummary';
 function event(overrides: Partial<OpenClawAuditEvent>): OpenClawAuditEvent {
   return {
     source: 'activity',
+    eventType: 'tool_action',
+    schemaVersion: 1,
     eventId: 'event-1',
     sequence: 1,
     sourceSequence: 1,

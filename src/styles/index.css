@@ -52,6 +52,7 @@
   --color-aegis-menu-hover: var(--aegis-menu-hover);
   --color-aegis-menu-active: var(--aegis-menu-active);
   --color-aegis-menu-border: var(--aegis-menu-border);
+  --color-aegis-scrim: var(--aegis-scrim);
   --color-aegis-btn-primary-text: var(--aegis-btn-primary-text);
   --color-aegis-hover: var(--aegis-hover);
   --color-aegis-input: var(--aegis-input);
@@ -105,7 +106,12 @@
   --font-editor: var(--font-mono);
   --font-arabic: 'IBM Plex Sans Arabic', 'Segoe UI', 'Tahoma', sans-serif;
 
-  /* ── 阴影由当前主题解析 ── */
+  /* 阴影由当前主题解析，通用 Tailwind 阴影也保持同一视觉重量。 */
+  --shadow-sm: var(--aegis-shadow-card);
+  --shadow-md: var(--aegis-shadow-card);
+  --shadow-lg: var(--aegis-shadow-float);
+  --shadow-xl: var(--aegis-shadow-popover);
+  --shadow-2xl: var(--aegis-shadow-popover);
   --shadow-card: var(--aegis-shadow-card);
   --shadow-float: var(--aegis-shadow-float);
   --shadow-popover: var(--aegis-shadow-popover);
@@ -133,13 +139,13 @@
   --color-border: var(--aegis-border);
   --color-input: var(--aegis-input);
   --color-ring: rgb(var(--aegis-primary));
-  /* radius scale */
+  /* 圆角保持克制，普通卡片与浮层不形成厚重的胶囊外观。 */
   --radius-sm: 0.125rem;
-  --radius-md: 0.375rem;
+  --radius-md: 0.3125rem;
   --radius-lg: 0.5rem;
-  --radius-xl: 0.75rem;
-  --radius-2xl: 1rem;
-  --radius-3xl: 1.25rem;
+  --radius-xl: 0.625rem;
+  --radius-2xl: 0.75rem;
+  --radius-3xl: 0.875rem;
 
   /* ── animations — functional only ── */
   --animate-fade-in: fadeIn 0.25s ease-out;
@@ -154,13 +160,13 @@
   --animate-bounce-subtle: bounceSubtle 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
 
   @keyframes fadeIn { 0% { opacity: 0; } 100% { opacity: 1; } }
-  @keyframes slideUp { 0% { opacity: 0; transform: translateY(8px); } 100% { opacity: 1; transform: translateY(0); } }
-  @keyframes slideDown { 0% { opacity: 0; transform: translateY(-8px); } 100% { opacity: 1; transform: translateY(0); } }
-  @keyframes slideInRight { 0% { opacity: 0; transform: translateX(16px); } 100% { opacity: 1; transform: translateX(0); } }
+  @keyframes slideUp { 0% { opacity: 0; transform: translateY(4px); } 100% { opacity: 1; transform: translateY(0); } }
+  @keyframes slideDown { 0% { opacity: 0; transform: translateY(-4px); } 100% { opacity: 1; transform: translateY(0); } }
+  @keyframes slideInRight { 0% { opacity: 0; transform: translateX(8px); } 100% { opacity: 1; transform: translateX(0); } }
   @keyframes pulseSoft { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
   @keyframes typingDot { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-6px); opacity: 1; } }
   @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-  @keyframes bounceSubtle { 0% { transform: scale(0.95); } 50% { transform: scale(1.02); } 100% { transform: scale(1); } }
+  @keyframes bounceSubtle { 0% { transform: scale(0.98); } 50% { transform: scale(1.01); } 100% { transform: scale(1); } }
 }
 
 /* shadcn dark: variant */

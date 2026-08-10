@@ -31,9 +31,14 @@ import {
   type GatewayCapabilityEvidence,
   type GatewayCapabilitySnapshot,
 } from './GatewayCapabilityRegistry';
+import {
+  DAILY_OPERATOR_SCOPES,
+  GatewayConnectionPolicy,
+  type GatewayAttachmentPolicy,
+  type GatewayOperatorScope,
+} from './GatewayConnectionPolicy';
 
-// OpenClaw reserves protocol v3 compatibility for node/probe clients. JunQi
-// connects as an operator/UI client, whose current wire contract is v4.
+// OpenClaw 为 node/probe 客户端保留 v3 兼容，JunQi 作为 operator/UI 客户端使用 v4。
 export const GATEWAY_OPERATOR_PROTOCOL_VERSION = 4;
 const GATEWAY_PROTOCOL_MIN = GATEWAY_OPERATOR_PROTOCOL_VERSION;
 const GATEWAY_PROTOCOL_MAX = GATEWAY_OPERATOR_PROTOCOL_VERSION;
@@ -57,25 +62,15 @@ function isNonNegativeSafeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
-function isPositiveSafeInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
-}
-
 function isNonEmptyStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isNonEmptyString);
-}
-
-interface GatewayHelloPolicy {
-  maxPayload: number;
-  maxBufferedBytes: number;
-  tickIntervalMs: number;
 }
 
 interface ValidatedGatewayHello {
   payload: Record<string, unknown>;
   methods: string[];
   authDeviceToken: string | null;
-  policy: GatewayHelloPolicy;
+  policy: GatewayConnectionPolicy;
 }
 
 function validateGatewayHello(value: unknown): ValidatedGatewayHello | null {
@@ -103,35 +98,15 @@ function validateGatewayHello(value: unknown): ValidatedGatewayHello | null {
     || !isNonNegativeSafeInteger(snapshot.uptimeMs)
   ) return null;
   if (!isRecord(auth) || !isNonEmptyString(auth.role) || !isNonEmptyStringArray(auth.scopes)) return null;
-  if (
-    !isRecord(policy)
-    || !isPositiveSafeInteger(policy.maxPayload)
-    || !isPositiveSafeInteger(policy.maxBufferedBytes)
-    || !isPositiveSafeInteger(policy.tickIntervalMs)
-  ) return null;
+  const connectionPolicy = GatewayConnectionPolicy.parse(policy);
+  if (!connectionPolicy) return null;
   return {
     payload: value,
     methods: features.methods,
     authDeviceToken: isNonEmptyString(auth.deviceToken) ? auth.deviceToken : null,
-    policy: {
-      maxPayload: policy.maxPayload,
-      maxBufferedBytes: policy.maxBufferedBytes,
-      tickIntervalMs: policy.tickIntervalMs,
-    },
+    policy: connectionPolicy,
   };
 }
-export type GatewayOperatorScope =
-  | 'operator.read'
-  | 'operator.write'
-  | 'operator.admin'
-  | 'operator.approvals'
-  | 'operator.pairing';
-
-export const DAILY_OPERATOR_SCOPES: readonly GatewayOperatorScope[] = [
-  'operator.read',
-  'operator.write',
-];
-
 export interface GatewayConnectionOptions {
   scopes?: readonly GatewayOperatorScope[];
   /** 仅服务一次操作的连接，不持有全局轮询或运行时身份。 */
@@ -418,7 +393,7 @@ export class GatewayConnection {
   private attemptTimer: ReturnType<typeof setTimeout> | null = null;
   private handshakeRequestId: string | null = null;
   private runtimeIdentityConnectionId: string | null = null;
-  private helloPolicy: GatewayHelloPolicy | null = null;
+  private helloPolicy: GatewayConnectionPolicy | null = null;
   private helloObservation: GatewayHelloObservation | null = null;
   private readonly helloListeners = new Set<(observation: GatewayHelloObservation | null) => void>();
   private readonly capabilityRegistry = new GatewayCapabilityRegistry();
@@ -484,7 +459,7 @@ export class GatewayConnection {
   // Gateway Activity Watchdog
   // ══════════════════════════════════════════════════════
 
-  private startHeartbeat(policy: GatewayHelloPolicy) {
+  private startHeartbeat(policy: GatewayConnectionPolicy) {
     this.helloPolicy = policy;
     this.gatewayTickIntervalMs = policy.tickIntervalMs;
     this.lastGatewayActivityAt = Date.now();
@@ -537,6 +512,11 @@ export class GatewayConnection {
   /** 当前认证 socket 的 hello 事实；连接失效时同步清除。 */
   getHelloObservation(): GatewayHelloObservation | null {
     return this.helloObservation;
+  }
+
+  /** 返回当前已认证 socket 的附件与帧限制。 */
+  getAttachmentPolicy(): GatewayAttachmentPolicy | null {
+    return this.helloPolicy?.attachmentPolicy() ?? null;
   }
 
   subscribeHello(listener: (observation: GatewayHelloObservation | null) => void): () => void {

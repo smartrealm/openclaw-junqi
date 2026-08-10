@@ -277,7 +277,7 @@ function DialogFrame({ children, onClose, title, subtitle }: {
   subtitle: string;
 }) {
   return (
-    <div className="fixed inset-0 z-[2147482000] grid place-items-center bg-black/55 px-4 py-5 backdrop-blur-sm" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[2147482000] grid place-items-center bg-aegis-scrim px-4 py-5" onMouseDown={onClose}>
       <section
         role="dialog"
         aria-modal="true"

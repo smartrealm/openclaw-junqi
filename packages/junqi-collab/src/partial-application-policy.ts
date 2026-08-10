@@ -1,12 +1,10 @@
 export type PartialApplicationFence =
   | "MAINTENANCE_GATE_ACTIVE"
-  | "OPEN_INTERVENTION_OUTSIDE_CLOSURE"
-  | "SESSION_MUTATION_ACTIVE";
+  | "OPEN_INTERVENTION_OUTSIDE_CLOSURE";
 
 export interface PartialApplicationFacts {
   readonly maintenanceGateActive: boolean;
   readonly hasUnresolvedInterventionOutsideClosure: boolean;
-  readonly hasActiveSessionMutation: boolean;
 }
 
 export type PartialApplicationDecision =
@@ -19,9 +17,8 @@ export type PartialApplicationDecision =
 const PROCEED = Object.freeze({ kind: "PROCEED" } as const);
 
 /**
- * Policy for the irreversible partial-waiver boundary. An accepted decision
- * may wait durably, but it cannot erase an unrelated recovery or maintenance
- * fence in order to enter synthesis.
+ * 不可逆部分接受边界的纯策略。已接受的决定可以持久等待，但不能为了进入汇总阶段
+ * 而清除无关的恢复或维护围栏。
  */
 export function decidePartialApplication(
   facts: PartialApplicationFacts,
@@ -31,7 +28,6 @@ export function decidePartialApplication(
   if (facts.hasUnresolvedInterventionOutsideClosure) {
     fences.push("OPEN_INTERVENTION_OUTSIDE_CLOSURE");
   }
-  if (facts.hasActiveSessionMutation) fences.push("SESSION_MUTATION_ACTIVE");
   return fences.length > 0
     ? Object.freeze({ kind: "DEFER", fences: Object.freeze(fences) })
     : PROCEED;

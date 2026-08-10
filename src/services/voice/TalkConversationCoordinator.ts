@@ -275,14 +275,12 @@ export class TalkConversationCoordinator {
     lease: TalkConversationLease,
   ): Promise<TalkConversationAcceptance> {
     const previous = this.snapshot;
-    const previousTurnId = this.activeTurnId;
     const ownedPrevious = this.ownsSession(previous);
     const previousClient = this.sessionClient;
     this.detachSession();
     this.set({ ...INITIAL, phase: 'connecting', sessionKey });
     await this.stopNativeOutput();
     if (previous.sessionId && ownedPrevious && previousClient) {
-      await previousClient.cancelTurn(previous.sessionId, previousTurnId).catch(() => undefined);
       await previousClient.close(previous.sessionId).catch(() => undefined);
     }
     if (generation !== this.generation) return { snapshot: this.snapshot, lease };
@@ -430,7 +428,6 @@ export class TalkConversationCoordinator {
   async stop(): Promise<void> {
     this.generation += 1;
     const snapshot = this.snapshot;
-    const activeTurnId = this.activeTurnId;
     const ownedSession = this.ownsSession(snapshot);
     const sessionClient = this.sessionClient;
     this.opening = null;
@@ -440,7 +437,6 @@ export class TalkConversationCoordinator {
     this.set(INITIAL);
     await this.stopNativeOutput();
     if (snapshot.sessionId && ownedSession && sessionClient) {
-      await sessionClient.cancelTurn(snapshot.sessionId, activeTurnId).catch(() => undefined);
       await sessionClient.close(snapshot.sessionId).catch(() => undefined);
     }
   }
@@ -756,7 +752,6 @@ export class TalkConversationCoordinator {
   ): Promise<void> {
     this.generation += 1;
     const snapshot = this.snapshot;
-    const turnId = this.activeTurnId;
     const ownedSession = this.ownsSession(snapshot);
     const sessionClient = this.sessionClient;
     this.opening = null;
@@ -775,7 +770,6 @@ export class TalkConversationCoordinator {
     });
     await this.stopNativeOutput();
     if (closeSession && snapshot.sessionId && ownedSession && sessionClient) {
-      await sessionClient.cancelTurn(snapshot.sessionId, turnId).catch(() => undefined);
       await sessionClient.close(snapshot.sessionId).catch(() => undefined);
     }
   }

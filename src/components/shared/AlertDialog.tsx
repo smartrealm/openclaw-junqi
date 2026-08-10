@@ -107,7 +107,7 @@ export function AlertDialog({ open, onClose, title, message, children, variant =
   };
 
   return (
-    <div className="fixed inset-0 z-[2147481000] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={handleBackdrop}>
+    <div className="fixed inset-0 z-[2147481000] flex items-center justify-center bg-aegis-scrim" onClick={handleBackdrop}>
       <div
         ref={dialogRef}
         role={confirmLabel ? 'alertdialog' : 'dialog'}

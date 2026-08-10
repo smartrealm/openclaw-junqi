@@ -39,7 +39,7 @@ export function SessionGroupCreateDialog({ onDismiss, onCreate, onCreated }: Ses
 
   return (
     <div
-      className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-20 flex items-center justify-center bg-aegis-scrim p-4"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !submitting) onDismiss();

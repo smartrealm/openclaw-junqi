@@ -12,10 +12,13 @@ import {
   type GatewayRequestOptions,
   type GatewayRequestParams,
   type GatewayConnectionOptions,
-  type GatewayOperatorScope,
   type ChatMessage,
   type MediaInfo,
 } from './Connection';
+import type {
+  GatewayAttachmentPolicy,
+  GatewayOperatorScope,
+} from './GatewayConnectionPolicy';
 import {
   ChatHandler,
 } from '@/runtime/OpenClawChatEventRuntime';
@@ -151,15 +154,6 @@ import {
   type ArtifactDownloadResult,
   type ArtifactSummary,
 } from './artifacts';
-import {
-  buildMemoryRemHarnessParams,
-  buildMemoryStatusParams,
-  parseMemoryRemHarnessResult,
-  parseMemoryStatusResult,
-  type MemoryRemHarnessParams,
-  type MemoryRemHarnessResult,
-  type MemoryStatusResult,
-} from './memoryDoctor';
 import {
   getCronJob,
   type OpenClawCronJobDetails,
@@ -1286,6 +1280,7 @@ export const gateway = {
   getStatus() { return connection.getStatus(); },
   getLastError() { return connection.getLastError(); },
   getHelloObservation() { return connection.getHelloObservation(); },
+  getAttachmentPolicy(): GatewayAttachmentPolicy | null { return connection.getAttachmentPolicy(); },
   getCapabilitySnapshot(): GatewayCapabilitySnapshot { return connection.getCapabilitySnapshot(); },
   getCapabilityEvidence(method: string): GatewayCapabilityEvidence | null {
     return connection.getCapabilityEvidence(method);
@@ -1451,13 +1446,6 @@ export const gateway = {
     if (!resolved.ok || !target.agentId || resolved.key !== target.key) return resolved;
     return { ...resolved, key: target.localKey };
   },
-  async getSessionCompactionCheckpoint(
-    sessionKey: string,
-    checkpointId: string,
-    agentId?: string,
-  ) {
-    return sessionCompactionOperations.get(sessionKey, checkpointId, agentId);
-  },
   async branchSessionCompactionCheckpoint(
     sessionKey: string,
     checkpointId: string,
@@ -1544,16 +1532,6 @@ export const gateway = {
       (method, params) => connection.request(method, params),
       jobId,
       (method) => connection.recordCapabilityInvalidResponse(method),
-    );
-  },
-  async getMemoryStatus(agentId?: string, deep = false): Promise<MemoryStatusResult> {
-    return parseMemoryStatusResult(
-      await connection.request('doctor.memory.status', buildMemoryStatusParams(agentId, deep)),
-    );
-  },
-  async getMemoryRemHarness(options: MemoryRemHarnessParams = {}): Promise<MemoryRemHarnessResult> {
-    return parseMemoryRemHarnessResult(
-      await connection.request('doctor.memory.remHarness', buildMemoryRemHarnessParams(options)),
     );
   },
   async getAgents() { return connection.request('agents.list', {}); },

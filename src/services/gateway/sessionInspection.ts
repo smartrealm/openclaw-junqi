@@ -72,12 +72,6 @@ export interface SessionsCompactionCheckpointParams {
   checkpointId: string;
 }
 
-export interface SessionsCompactionGetResult {
-  ok: true;
-  key: string;
-  checkpoint: SessionCompactionCheckpoint;
-}
-
 export interface SessionCompactionEntryMetadata {
   sessionId: string;
   updatedAt: number;
@@ -249,7 +243,7 @@ export function buildSessionsCompactionListParams(key: string, agentId?: string)
 function parseTranscriptReference(
   value: unknown,
   field: string,
-  method: 'sessions.compaction.list' | 'sessions.compaction.get' | 'sessions.compaction.branch' | 'sessions.compaction.restore',
+  method: 'sessions.compaction.list' | 'sessions.compaction.branch' | 'sessions.compaction.restore',
 ): SessionTranscriptReference {
   if (!isRecord(value)) throw new Error(`${method} returned an invalid ${field}`);
   const reference: SessionTranscriptReference = {
@@ -267,7 +261,7 @@ function parseTranscriptReference(
 function parseCheckpoint(
   value: unknown,
   index: number,
-  method: 'sessions.compaction.list' | 'sessions.compaction.get' | 'sessions.compaction.branch' | 'sessions.compaction.restore',
+  method: 'sessions.compaction.list' | 'sessions.compaction.branch' | 'sessions.compaction.restore',
 ): SessionCompactionCheckpoint {
   if (!isRecord(value)) throw new Error(`${method} returned an invalid checkpoint at index ${index}`);
   const field = `checkpoints[${index}]`;
@@ -332,24 +326,6 @@ function parseSessionCompactionEntry(
   const updatedAt = optionalNonNegativeInteger(value.updatedAt, 'entry.updatedAt', method);
   if (updatedAt === undefined) throw new Error(`${method} returned an invalid entry.updatedAt`);
   return { sessionId, updatedAt };
-}
-
-export function parseSessionsCompactionGetResult(
-  value: unknown,
-  expectedKey?: string,
-): SessionsCompactionGetResult {
-  if (!isRecord(value) || value.ok !== true || !isRecord(value.checkpoint)) {
-    throw new Error('sessions.compaction.get returned an invalid result');
-  }
-  const key = requiredString(value.key, 'key', 'sessions.compaction.get');
-  if (expectedKey !== undefined && key !== requiredKey(expectedKey, 'sessions.compaction.get')) {
-    throw new Error('sessions.compaction.get returned a different session key');
-  }
-  return {
-    ok: true,
-    key,
-    checkpoint: parseCheckpoint(value.checkpoint, 0, 'sessions.compaction.get'),
-  };
 }
 
 export function parseSessionsCompactionBranchResult(

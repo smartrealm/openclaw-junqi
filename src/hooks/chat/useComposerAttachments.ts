@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useState, type ClipboardEvent, type DragEvent, type RefObject, type SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { showAlert } from '@/components/shared/AlertDialog';
-import { createPreparedAttachment, validatePreparedAttachments } from '@/services/chat/attachments';
+import {
+  assertAttachmentSize,
+  createPreparedAttachment,
+  validatePreparedAttachments,
+} from '@/services/chat/attachments';
 import type { PreparedAttachment } from '@/services/chat/types';
 import { useChatStore } from '@/stores/chatStore';
 import { debugError } from '@/utils/debugLog';
 import { desktopFileRuntime } from '@/runtime/desktopFileRuntime';
+import { gateway } from '@/services/gateway';
+import { useAttachmentErrorMessage } from './useAttachmentErrorMessage';
 
 const EMPTY_PATHS: string[] = [];
 const EMPTY_ATTACHMENTS: PreparedAttachment[] = [];
@@ -15,6 +21,7 @@ export function useComposerAttachments(
   textareaRef: RefObject<HTMLTextAreaElement>,
 ) {
   const { t } = useTranslation();
+  const attachmentErrorMessage = useAttachmentErrorMessage();
   const files = useChatStore(
     (state) => state.preparedAttachments[activeSessionKey] ?? EMPTY_ATTACHMENTS,
   );
@@ -31,7 +38,7 @@ export function useComposerAttachments(
     const state = useChatStore.getState();
     const current = state.preparedAttachments[sessionKey] ?? [];
     const resolved = typeof next === 'function' ? next(current) : next;
-    validatePreparedAttachments(resolved);
+    validatePreparedAttachments(resolved, gateway.getAttachmentPolicy());
     state.setPreparedAttachments(sessionKey, resolved);
   }, []);
 
@@ -43,10 +50,10 @@ export function useComposerAttachments(
     debugError('media', '[Attachments] Unable to prepare attachment:', error);
     showAlert(
       t('input.attachmentErrorTitle'),
-      error instanceof Error ? error.message : String(error),
+      attachmentErrorMessage(error),
       'error',
     );
-  }, [t]);
+  }, [attachmentErrorMessage, t]);
 
   useEffect(() => {
     if (draftPaths.length === 0) return;
@@ -54,8 +61,7 @@ export function useComposerAttachments(
     const paths = [...draftPaths];
     useChatStore.getState().setDraftAttachments(sessionKey, []);
     void Promise.all(paths.map(async (path) => {
-      const file = await desktopFileRuntime.readAttachment(path);
-      if (!file) throw new Error(t('input.attachmentReadFailed', { path }));
+      const file = await desktopFileRuntime.readAttachment(path, gateway.getAttachmentPolicy());
       return createPreparedAttachment({
         fileName: file.name,
         mimeType: file.mimeType,
@@ -78,8 +84,7 @@ export function useComposerAttachments(
       const paths = await desktopFileRuntime.selectFiles();
       if (!paths.length) return;
       const additions = await Promise.all(paths.map(async (filePath) => {
-        const file = await desktopFileRuntime.readAttachment(filePath);
-        if (!file) throw new Error(t('input.attachmentReadFailed', { path: filePath }));
+        const file = await desktopFileRuntime.readAttachment(filePath, gateway.getAttachmentPolicy());
         return createPreparedAttachment({
           fileName: file.name,
           mimeType: file.mimeType,
@@ -121,6 +126,16 @@ export function useComposerAttachments(
     const blob = item.getAsFile();
     if (!blob) return;
     const sessionKey = activeSessionKey;
+    try {
+      assertAttachmentSize({
+        size: blob.size,
+        isImage: true,
+        fileName: blob.name || t('input.clipboardImageName'),
+      }, gateway.getAttachmentPolicy());
+    } catch (error) {
+      reportError(error);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -147,6 +162,16 @@ export function useComposerAttachments(
     const sessionKey = activeSessionKey;
     for (const file of Array.from(event.dataTransfer.files)) {
       const sourcePath = (file as File & { path?: string }).path;
+      try {
+        assertAttachmentSize({
+          size: file.size,
+          isImage: file.type.startsWith('image/'),
+          fileName: file.name,
+        }, gateway.getAttachmentPolicy());
+      } catch (error) {
+        reportError(error);
+        continue;
+      }
       const reader = new FileReader();
       reader.onload = () => {
         try {

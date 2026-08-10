@@ -6,7 +6,6 @@ use super::model::{
 use portable_pty::{native_pty_system, ChildKiller, MasterPty, PtySize};
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
@@ -15,7 +14,6 @@ pub(super) struct WorkbenchPtyHandle {
     pub(super) run_id: String,
     pub(super) worktree_id: String,
     pub(super) pane_id: String,
-    pub(super) cwd: PathBuf,
     pub(super) master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     pub(super) writer: Mutex<Box<dyn Write + Send>>,
     pub(super) killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
@@ -80,27 +78,6 @@ pub(super) fn consume_completed_run(pty_id: &str, run_id: &str) -> bool {
     };
     runs.remove(index);
     true
-}
-
-pub(crate) fn assert_current_owner_locked(
-    pty_id: &str,
-    run_id: &str,
-    worktree_id: &str,
-    pane_id: &str,
-) -> Result<PathBuf, String> {
-    let handle = registry()
-        .lock()
-        .map_err(|_| "workbench PTY registry lock poisoned".to_string())?
-        .get(pty_id)
-        .cloned()
-        .ok_or_else(|| format!("unknown workbench PTY: {pty_id}"))?;
-    if handle.run_id != run_id || handle.stopping.load(Ordering::Acquire) {
-        return Err(format!("stale workbench PTY run: {pty_id}"));
-    }
-    if handle.worktree_id != worktree_id || handle.pane_id != pane_id {
-        return Err(format!("workbench PTY owner mismatch: {pty_id}"));
-    }
-    Ok(handle.cwd.clone())
 }
 
 pub(super) fn current_handle(pty_id: &str, run_id: &str) -> Result<Handle, String> {
@@ -235,7 +212,6 @@ pub(super) fn create_workbench_pty(
         run_id: run_id.clone(),
         worktree_id,
         pane_id,
-        cwd: cwd.clone(),
         master: Mutex::new(Some(pair.master)),
         writer: Mutex::new(writer),
         killer: Mutex::new(child.clone_killer()),
@@ -266,7 +242,6 @@ pub(super) fn create_workbench_pty(
             .and_then(|_operation| {
                 exit_handle.stopping.store(true, Ordering::Release);
                 remove_if_current(&exit_id, &exit_handle).ok()?;
-                super::super::workbench_provider::release_claims_for_pty_locked(&exit_id).ok()?;
                 remember_completed_run(&exit_id, &exit_run);
                 Some(())
             })

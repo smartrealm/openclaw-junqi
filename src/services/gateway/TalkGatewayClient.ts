@@ -94,7 +94,6 @@ export interface TalkGatewayConnectionClient {
     turnId?: string | null,
     reason?: TalkOutputCancelReason,
   ) => Promise<void>;
-  cancelTurn: (sessionId: string, turnId?: string | null) => Promise<void>;
   close: (sessionId: string) => Promise<void>;
 }
 
@@ -282,13 +281,6 @@ export class TalkGatewayClient {
           sessionId: requireIdentifier(sessionId, 'Talk session id'),
           ...(turnId?.trim() ? { turnId: turnId.trim() } : {}),
           reason,
-        });
-      },
-      cancelTurn: async (sessionId, turnId) => {
-        await request('talk.session.cancelTurn', {
-          sessionId: requireIdentifier(sessionId, 'Talk session id'),
-          ...(turnId?.trim() ? { turnId: turnId.trim() } : {}),
-          reason: 'user-stop',
         });
       },
       close: async (sessionId) => {

@@ -8,22 +8,6 @@ import {
   parseOpenClawAuditActivityPage,
 } from './OpenClawAuditClient';
 
-const legacyEvent = {
-  eventId: 'legacy-event-1',
-  sequence: 1,
-  sourceSequence: 1,
-  occurredAt: 1_700_000_000_000,
-  kind: 'agent_run',
-  action: 'agent.run.finished',
-  status: 'succeeded',
-  actor: { type: 'agent', id: 'main' },
-  agentId: 'main',
-  sessionKey: 'agent:main:desktop',
-  sessionId: 'session-1',
-  runId: 'run-1',
-  redaction: 'metadata_only',
-};
-
 const activityEvent = {
   eventType: 'tool_action',
   schemaVersion: 1,
@@ -46,7 +30,7 @@ const activityEvent = {
 };
 
 describe('OpenClawAuditClient', () => {
-  it('prefers the versioned activity ledger before compatibility fallback', async () => {
+  it('queries only the versioned activity ledger', async () => {
     const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
     const client = new OpenClawAuditClient(
       async <T>(method: string, params: Record<string, unknown>) => {
@@ -63,50 +47,18 @@ describe('OpenClawAuditClient', () => {
     assert.equal(page.events[0]?.errorCode, 'tool_cancelled');
   });
 
-  it('uses compatibility audit.list after Gateway rejects the newer method', async () => {
+  it('reports unavailable without querying another audit protocol', async () => {
     const methods: string[] = [];
-    const client = new OpenClawAuditClient(
-      async <T>(method: string) => {
-        methods.push(method);
-        if (method === 'audit.activity.list') {
-          throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
-        }
-        return { events: [legacyEvent], nextCursor: 'next-1' } as T;
-      },
-    );
-
-    const page = await client.list({ runId: 'run-1', kind: 'agent_run' });
-    assert.deepEqual(methods, ['audit.activity.list', 'audit.list']);
-    assert.equal(page.source, 'legacy');
-    assert.equal(page.nextCursor, 'next-1');
-    assert.equal(page.events[0]?.sessionId, 'session-1');
-  });
-
-  it('does not pretend that a legacy Gateway supports activity-only filters', async () => {
-    const client = new OpenClawAuditClient(
-      async (method) => {
-        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
-      },
-    );
-
-    await assert.rejects(
-      client.list({ runId: 'run-1', kind: 'message' }),
-      (error: unknown) => error instanceof OpenClawAuditUnsupportedError,
-    );
-    await assert.rejects(
-      client.list({ runId: 'run-1', direction: 'inbound' }),
-      (error: unknown) => error instanceof OpenClawAuditUnsupportedError,
-    );
-  });
-
-  it('fails closed when Gateway rejects both audit methods', async () => {
     const client = new OpenClawAuditClient(async (method) => {
+      methods.push(method);
       throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     });
+
     await assert.rejects(
       client.list({ runId: 'run-1' }),
       (error: unknown) => error instanceof OpenClawAuditUnsupportedError,
     );
+    assert.deepEqual(methods, ['audit.activity.list']);
   });
 
   it('enforces activity terminal error-code correlations', () => {
@@ -126,5 +78,29 @@ describe('OpenClawAuditClient', () => {
     const page = parseOpenClawAuditActivityPage({ events: [{ ...activityEvent, prompt: 'must-not-be-consumed' }] });
     assert.equal('prompt' in page.events[0]!, false);
     assert.equal(page.events[0]?.redaction, 'metadata_only');
+  });
+
+  it('accepts the official active-run injection completion reason', () => {
+    const page = parseOpenClawAuditActivityPage({
+      events: [{
+        eventType: 'inbound_message',
+        schemaVersion: 1,
+        eventId: 'inbound-event-1',
+        sequence: 4,
+        sourceSequence: 5,
+        occurredAt: 1_700_000_000_200,
+        kind: 'message',
+        action: 'message.inbound.processed',
+        status: 'succeeded',
+        actor: { type: 'system', id: 'gateway' },
+        redaction: 'metadata_only',
+        direction: 'inbound',
+        channel: 'webchat',
+        conversationKind: 'direct',
+        outcome: 'completed',
+        reasonCode: 'active_run_injected',
+      }],
+    });
+    assert.equal(page.events[0]?.reasonCode, 'active_run_injected');
   });
 });

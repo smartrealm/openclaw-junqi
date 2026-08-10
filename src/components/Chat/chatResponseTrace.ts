@@ -61,7 +61,7 @@ export interface ChatResponseTraceAuditEvent {
 export interface ChatResponseTraceAuditPage {
   events: readonly ChatResponseTraceAuditEvent[];
   nextCursor?: string;
-  source: 'activity' | 'legacy';
+  source: 'activity';
 }
 
 export type ChatResponseTraceNode =

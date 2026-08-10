@@ -137,19 +137,11 @@ export function GatewayErrorScreen({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-aegis-bg-solid">
-      {/* Subtle noise/pattern background */}
-      <div className="absolute inset-0 opacity-5">
-        <div className="absolute inset-0" style={{
-          backgroundImage: 'radial-gradient(circle at 20% 20%, rgb(var(--aegis-danger)) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgb(var(--aegis-primary)) 0%, transparent 50%)',
-        }} />
-      </div>
-
-      <div className="relative w-full max-w-2xl mx-4 max-h-[92vh] rounded-2xl bg-aegis-card-solid border border-aegis-border shadow-2xl overflow-hidden">
-        {/* Top accent bar */}
-        <div className="h-1 bg-gradient-to-r from-aegis-danger via-aegis-warning to-aegis-primary" />
+      <div className="relative mx-4 max-h-[92vh] w-full max-w-2xl overflow-hidden rounded-lg border border-aegis-border bg-aegis-card-solid shadow-popover">
+        <div className="h-px bg-aegis-danger/40" />
 
         <div className="max-h-[calc(92vh-4px)] overflow-y-auto p-6">
-          {/* Header */}
+          {/* 标题区只保留错误语义，不增加装饰背景。 */}
           <div className="flex items-start gap-4 mb-5">
             <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-aegis-danger/10 border border-aegis-danger/20 flex items-center justify-center">
               <AlertTriangle className={`w-6 h-6 ${meta.color}`} />

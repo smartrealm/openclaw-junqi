@@ -11,7 +11,7 @@ test('memory page only consumes the shared workspace-memory hook', () => {
   assert.match(page, /searchOpenClawMemory/);
   assert.match(page, /MemoryDiagnosticsPanel/);
   assert.match(page, /refreshOpenClawMemoryDiagnostics/);
-  assert.match(page, /previewOpenClawMemoryRemHarness/);
+  assert.doesNotMatch(page, /doctor\.memory\.remHarness|previewOpenClawMemoryRemHarness/);
   assert.doesNotMatch(page, /window\.aegis/);
   assert.doesNotMatch(page, /\bfetch\(/);
   assert.doesNotMatch(page, /useSettingsStore/);

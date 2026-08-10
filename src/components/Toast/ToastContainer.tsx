@@ -82,7 +82,7 @@ function ToastItem({ toast }: { toast: Toast }) {
   const cfg = TYPE_CONFIG[toast.type] ?? TYPE_CONFIG.info;
   const { Icon, colorKey } = cfg;
 
-  // Navigate to chat page on click (works outside React Router context too)
+  // 通知可能位于路由上下文之外，因此使用稳定的应用内哈希入口。
   const handleClick = () => {
     removeToast(toast.id);
     window.location.hash = '#/chat';
@@ -100,7 +100,7 @@ function ToastItem({ toast }: { toast: Toast }) {
       role="alert"
       aria-live="polite"
       style={{
-        // Solid card — opaque bg so text is readable over vibrancy window
+        // 使用不透明主题表面，确保在系统振动材质窗口上仍有稳定对比度。
         width: 320,
         background: 'var(--aegis-bg-solid)',
         border: `1px solid ${themeAlpha('primary', 0.25)}`,
@@ -110,9 +110,9 @@ function ToastItem({ toast }: { toast: Toast }) {
         transition: 'opacity 160ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1), filter 150ms ease',
       }}
       className="
-        relative flex items-start gap-3 rounded-xl p-4
-        backdrop-blur-xl shadow-2xl cursor-pointer select-none
-        hover:brightness-110 transition-[filter] duration-150
+        relative flex items-start gap-3 rounded-lg p-3
+        cursor-pointer select-none hover:bg-aegis-hover
+        transition-colors duration-150
       "
     >
       {/* Icon */}

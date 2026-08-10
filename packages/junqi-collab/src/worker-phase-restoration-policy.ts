@@ -1,14 +1,12 @@
 export type WorkerPhaseSuspensionFence =
   | "PARTIAL_DECISION_PENDING"
   | "MAINTENANCE_GATE_ACTIVE"
-  | "OPEN_INTERVENTION"
-  | "SESSION_MUTATION_ACTIVE";
+  | "OPEN_INTERVENTION";
 
 export interface WorkerPhaseRestorationFacts {
   readonly hasPendingPartialDecision: boolean;
   readonly maintenanceGateActive: boolean;
   readonly hasUnresolvedIntervention: boolean;
-  readonly hasActiveSessionMutation: boolean;
 }
 
 export type WorkerPhaseRestorationDecision =
@@ -21,10 +19,8 @@ export type WorkerPhaseRestorationDecision =
 const RESTORE = Object.freeze({ kind: "RESTORE" } as const);
 
 /**
- * Policy for releasing a Worker phase after accepting a terminal result while
- * the Run is suspended. The result may settle locally, but it must not erase a
- * durable operator or infrastructure fence that still requires explicit
- * resolution.
+ * Run 暂停期间接受终态结果后，用该纯策略判断是否释放 Worker 阶段。结果可以在本地
+ * 收敛，但不能清除仍需显式处理的持久操作员或基础设施围栏。
  */
 export function decideWorkerPhaseRestoration(
   facts: WorkerPhaseRestorationFacts,
@@ -33,7 +29,6 @@ export function decideWorkerPhaseRestoration(
   if (facts.hasPendingPartialDecision) fences.push("PARTIAL_DECISION_PENDING");
   if (facts.maintenanceGateActive) fences.push("MAINTENANCE_GATE_ACTIVE");
   if (facts.hasUnresolvedIntervention) fences.push("OPEN_INTERVENTION");
-  if (facts.hasActiveSessionMutation) fences.push("SESSION_MUTATION_ACTIVE");
   return fences.length > 0
     ? { kind: "DEFER", fences }
     : RESTORE;

@@ -475,7 +475,7 @@ export function CollaborationActionDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[2147481000] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[2147481000] flex items-center justify-center bg-aegis-scrim p-4"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !busy) onClose();

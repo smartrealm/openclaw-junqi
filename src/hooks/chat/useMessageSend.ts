@@ -9,6 +9,7 @@ import {
 import { chatSendCoordinator } from '@/runtime/chatSendCoordinator';
 import type { PreparedAttachment } from '@/services/chat/types';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
+import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/runtime/VoiceRuntime';
 import { useChatStore, type HistoryLoaderOptions } from '@/stores/chatStore';
 import { ensureGroupFresh, useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -16,6 +17,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { debugError } from '@/utils/debugLog';
 import { isOpenClawActiveLeafChangedError } from '@/services/gateway/activeLeafEntryId';
 import { shouldWarmUpHistoryBeforeFirstSend } from '@/utils/confirmedEmptyTranscript';
+import { useAttachmentErrorMessage } from './useAttachmentErrorMessage';
 
 interface UseMessageSendOptions {
   activeSessionKey: string;
@@ -64,6 +66,7 @@ export function useMessageSend({
   deliveryMode = 'normal',
 }: UseMessageSendOptions) {
   const { t } = useTranslation();
+  const attachmentErrorMessage = useAttachmentErrorMessage();
 
   return useCallback(async () => {
     const sessionKey = activeSessionKey;
@@ -88,9 +91,9 @@ export function useMessageSend({
 
     let attachments;
     try {
-      attachments = toGatewayAttachments(sendFiles);
+      attachments = toGatewayAttachments(sendFiles, gateway.getAttachmentPolicy());
     } catch (error) {
-      showAlert(t('input.attachmentErrorTitle'), error instanceof Error ? error.message : String(error), 'error');
+      showAlert(t('input.attachmentErrorTitle'), attachmentErrorMessage(error), 'error');
       return;
     }
 
@@ -143,6 +146,7 @@ export function useMessageSend({
       setIsSending(false, sessionKey);
     }
   }, [
+    attachmentErrorMessage,
     activeSessionId,
     activeSessionKey,
     connected,

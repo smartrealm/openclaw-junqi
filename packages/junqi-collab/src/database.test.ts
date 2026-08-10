@@ -61,6 +61,12 @@ test("database creates the current schema and reuses its stable instance identit
       "lease_expires_at",
       "created_at",
     ]);
+    const retiredTables = created.db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('session_mutations', 'session_mutation_commands')",
+      )
+      .all();
+    assert.deepEqual(retiredTables, []);
   } finally {
     created.close();
   }

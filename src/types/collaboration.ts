@@ -86,7 +86,6 @@ export const COLLABORATION_ERROR_CODES = [
   'SESSION_IDENTITY_MISMATCH',
   'PARTIAL_CLOSURE_REQUIRED',
   'DELIVERY_UNKNOWN',
-  'SESSION_MUTATION_ACTIVE',
   'DELETE_REQUIRES_TERMINAL',
   'FLOW_RECONCILIATION_REQUIRED',
   'MAINTENANCE_ACTIVE',
@@ -580,8 +579,6 @@ export type CollaborationWriteMethod =
   | 'junqi.collab.delivery.retry'
   | 'junqi.collab.delivery.retarget'
   | 'junqi.collab.delivery.abandon'
-  | 'junqi.collab.session.mutation.prepare'
-  | 'junqi.collab.session.mutation.complete'
   | 'junqi.collab.export.create'
   | 'junqi.collab.maintenance.enter'
   | 'junqi.collab.maintenance.exit';

@@ -2628,7 +2628,7 @@ dependencies = [
 
 [[package]]
 name = "junqi-desktop"
-version = "2.3.0"
+version = "3.0.0"
 dependencies = [
  "argon2",
  "base64 0.22.1",

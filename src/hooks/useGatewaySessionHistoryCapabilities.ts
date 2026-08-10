@@ -6,7 +6,7 @@ const subscribeGatewayHello = (notify: () => void) => gateway.subscribeHello(not
 const readGatewayHello = () => gateway.getHelloObservation();
 const readServerGatewayHello = () => null;
 
-/** 读取当前认证 Gateway 在握手阶段声明的会话历史能力。 */
+/** 认证连接建立后开放官方会话历史调用，具体结果由对应 RPC 判定。 */
 export function useGatewaySessionHistoryCapabilities() {
   const observation = useSyncExternalStore(
     subscribeGatewayHello,

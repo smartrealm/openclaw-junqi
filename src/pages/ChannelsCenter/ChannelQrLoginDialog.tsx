@@ -107,7 +107,7 @@ export function ChannelQrLoginDialog({
           : state.message || t('channelsCenter.qrWaiting', 'Waiting for OpenClaw to prepare the QR code...');
 
   return (
-    <div className="fixed inset-0 z-[2147482500] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[2147482500] flex items-center justify-center bg-aegis-scrim p-4">
       <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-sm rounded-lg border border-aegis-border bg-aegis-card-solid shadow-2xl">
         <div className="flex items-center justify-between border-b border-aegis-border px-4 py-3">
           <div id={titleId} className="flex items-center gap-2 text-sm font-bold text-aegis-text"><QrCode size={16} />{t('channelsCenter.scanQr', 'Scan QR code')}</div>

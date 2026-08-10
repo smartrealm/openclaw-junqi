@@ -22,7 +22,6 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
   const replacePtyIdentity = useWorkbenchStore((state) => state.replacePtyIdentity);
   const beginResourceTransaction = useWorkbenchStore((state) => state.beginResourceTransaction);
   const endResourceTransaction = useWorkbenchStore((state) => state.endResourceTransaction);
-  const reconcileProviderPtyExit = useWorkbenchStore((state) => state.reconcileProviderPtyExit);
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const resolvedTheme = useResolvedTheme();
@@ -98,7 +97,6 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
               .catch(() => undefined);
           },
           () => {
-            reconcileProviderPtyExit(identity.ptyId, identity.runId);
             if (alive) terminal.write('\r\n[process exited]\r\n');
           },
           sequence,
@@ -137,7 +135,7 @@ export function WorkbenchTerminalPane({ tab, cwd }: { tab: WorkbenchTab; cwd: st
       terminalRef.current = null;
       // 隐藏或卸载面板时只断开视图，不主动停止 PTY。
     };
-  }, [acknowledgePtyCreate, cwd, identity, reconcileProviderPtyExit, tab.id, tab.paneId, tab.ptyCreatePending, tab.worktreeId]);
+  }, [acknowledgePtyCreate, cwd, identity, tab.id, tab.paneId, tab.ptyCreatePending, tab.worktreeId]);
 
   // xterm 绘制在画布上，CSS 变量变化不会自动重绘；主题切换后重新读取共享色板，
   // 不重建 PTY，也不丢失滚动历史。

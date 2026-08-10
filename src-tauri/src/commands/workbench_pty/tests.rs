@@ -1,8 +1,8 @@
+use super::collect_stop_failures;
 use super::model::{
     take_utf8_ready, validate_id, SnapshotBuffer, MAX_COMPLETED_RUNS, MAX_SNAPSHOT_BYTES,
 };
 use super::runtime::{consume_completed_run, is_completed_run, remember_completed_run};
-use super::{collect_stop_failures, finish_shutdown};
 
 #[test]
 fn stopping_every_handle_survives_one_that_refuses_to_die() {
@@ -23,16 +23,6 @@ fn stopping_every_handle_survives_one_that_refuses_to_die() {
 fn stopping_reports_nothing_when_every_handle_yields() {
     let failures = collect_stop_failures(vec![1, 2, 3], |_| Ok(()));
     assert!(failures.is_empty());
-}
-
-#[test]
-fn claim_cleanup_failure_is_not_counted_as_a_pty_stop_failure() {
-    let error = finish_shutdown(0, Vec::new(), Some("claim registry poisoned".into()))
-        .expect_err("claim cleanup failure must be reported");
-
-    assert!(error.contains("0 registered"));
-    assert!(error.contains("provider claim cleanup failed"));
-    assert!(!error.contains("PTY stop failure"));
 }
 
 #[test]

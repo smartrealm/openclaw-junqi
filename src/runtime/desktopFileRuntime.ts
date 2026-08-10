@@ -1,8 +1,11 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { readFile, stat } from '@tauri-apps/plugin-fs';
-import { inferMimeType } from '@/services/chat/attachments';
-
-const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+import {
+  AttachmentValidationError,
+  assertAttachmentSize,
+  inferMimeType,
+} from '@/services/chat/attachments';
+import type { GatewayAttachmentPolicy } from '@/services/gateway/GatewayConnectionPolicy';
 
 function toBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -11,6 +14,17 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 export interface DesktopAttachmentFile { name: string; path: string; base64: string; mimeType: string; isImage: boolean; size: number; }
+
+export class DesktopAttachmentReadError extends Error {
+  readonly code = 'READ_FAILED' as const;
+  readonly cause: unknown;
+
+  constructor(readonly path: string, cause?: unknown) {
+    super('Desktop attachment could not be read');
+    this.name = 'DesktopAttachmentReadError';
+    this.cause = cause;
+  }
+}
 
 export const desktopFileRuntime = {
   async selectFiles(): Promise<string[]> {
@@ -21,14 +35,22 @@ export const desktopFileRuntime = {
     const selected = await open({ directory: true, multiple: false });
     return typeof selected === 'string' ? selected : null;
   },
-  async readAttachment(path: string): Promise<DesktopAttachmentFile | null> {
+  async readAttachment(
+    path: string,
+    policy: GatewayAttachmentPolicy | null,
+  ): Promise<DesktopAttachmentFile> {
     try {
       const metadata = await stat(path);
-      if (metadata.size > MAX_ATTACHMENT_BYTES) return null;
-      const bytes = await readFile(path);
       const name = path.split(/[\\/]/).pop() || path;
       const mimeType = inferMimeType(name);
-      return { name, path, base64: toBase64(bytes), mimeType, isImage: mimeType.startsWith('image/'), size: bytes.length };
-    } catch { return null; }
+      const isImage = mimeType.startsWith('image/');
+      assertAttachmentSize({ size: metadata.size, isImage, fileName: name }, policy);
+      const bytes = await readFile(path);
+      assertAttachmentSize({ size: bytes.length, isImage, fileName: name }, policy);
+      return { name, path, base64: toBase64(bytes), mimeType, isImage, size: bytes.length };
+    } catch (error) {
+      if (error instanceof AttachmentValidationError) throw error;
+      throw new DesktopAttachmentReadError(path, error);
+    }
   },
 };

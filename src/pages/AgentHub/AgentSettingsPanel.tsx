@@ -913,7 +913,7 @@ export function AgentSettingsPanel({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="fixed top-[56px] end-0 bottom-0 start-0 bg-black/40 backdrop-blur-sm z-[2147481000]"
+              className="fixed top-[56px] end-0 bottom-0 start-0 z-[2147481000] bg-aegis-scrim"
               onClick={requestClose}
             />
           )}

@@ -27,9 +27,7 @@ test('terminal views use one terminal type source', () => {
   );
 });
 
-test('provider claim contract and live Rust agent metadata stay intact', () => {
-  assert.equal(existsSync(new URL('src/workbench/provider/providerClaimClient.ts', root)), true);
-
+test('live Rust agent metadata stays intact', () => {
   const agents = source('src-tauri/src/commands/agent_task_pty.rs');
   const providers = source('src-tauri/src/commands/workbench_provider.rs');
   assert.doesNotMatch(agents, /#\[allow\(dead_code\)\]\s+pub\(crate\) label/);

@@ -46,10 +46,9 @@ test('every concrete theme provides shared chrome and pet readability tokens', (
     for (const token of requiredTokens) {
       assert.match(theme, new RegExp(`${token.replaceAll('-', '\\-')}\\s*:`), `${themePath} is missing ${token}`);
     }
-    assert.match(
-      theme,
-      /--aegis-scrim:\s*rgb\(var\(--aegis-shadow-color\) \/ 0\.45\);/,
-      `${themePath} must derive its scrim from the theme shadow color`,
-    );
+    const scrim = theme.match(/--aegis-scrim:\s*rgb\(var\(--aegis-shadow-color\) \/ ([0-9.]+)\);/);
+    assert.ok(scrim, `${themePath} must derive its scrim from the theme shadow color`);
+    const opacity = Number(scrim[1]);
+    assert.ok(opacity > 0 && opacity <= 0.5, `${themePath} must keep its scrim readable without becoming opaque`);
   }
 });

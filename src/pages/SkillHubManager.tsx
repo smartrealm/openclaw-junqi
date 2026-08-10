@@ -504,7 +504,7 @@ export function SkillHubManager() {
 
       {/* ── SkillManageDialog ──────────────────────────────────────────── */}
       {installConflict && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 px-4" onClick={() => setInstallConflict(null)}>
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-aegis-scrim px-4" onClick={() => setInstallConflict(null)}>
           <div role="dialog" aria-modal="true" aria-label="Skill install conflict" className="w-full max-w-[460px] overflow-hidden rounded-lg border border-aegis-border bg-aegis-card shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center gap-2 border-b border-aegis-border px-4 py-3">
               <AlertTriangle size={16} className="text-aegis-warning" />

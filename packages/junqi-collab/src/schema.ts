@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 export const SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -309,43 +309,6 @@ CREATE TABLE IF NOT EXISTS command_receipts (
 
 CREATE INDEX IF NOT EXISTS command_receipts_run
 ON command_receipts(run_id, created_at);
-
-CREATE TABLE IF NOT EXISTS session_mutations (
-  id TEXT PRIMARY KEY,
-  runtime_id TEXT NOT NULL,
-  session_key TEXT NOT NULL,
-  session_id TEXT NOT NULL,
-  action TEXT NOT NULL,
-  policy TEXT NOT NULL,
-  status TEXT NOT NULL,
-  lease_expires_at INTEGER NOT NULL,
-  result_json TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS session_mutations_active
-ON session_mutations(runtime_id, session_key, session_id)
-WHERE status = 'PREPARED';
-
--- EXPIRED means the Desktop disappeared before recording the core RPC result.
--- It remains an unresolved fence until an explicit recovery completion.
-CREATE UNIQUE INDEX IF NOT EXISTS session_mutations_unresolved
-ON session_mutations(runtime_id, session_key, session_id)
-WHERE status IN ('PREPARED', 'EXPIRED');
-
-CREATE TABLE IF NOT EXISTS session_mutation_commands (
-  command_id TEXT PRIMARY KEY,
-  mutation_id TEXT NOT NULL REFERENCES session_mutations(id) ON DELETE CASCADE,
-  operation TEXT NOT NULL,
-  payload_hash TEXT NOT NULL,
-  response_json TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS session_mutation_commands_mutation
-ON session_mutation_commands(mutation_id, created_at);
 
 CREATE TABLE IF NOT EXISTS tombstones (
   id TEXT PRIMARY KEY,

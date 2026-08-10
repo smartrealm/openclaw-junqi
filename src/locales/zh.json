@@ -931,14 +931,11 @@
     "jarvisSaveTriggers": "保存唤醒词",
     "jarvisRouting": "唤醒路由",
     "jarvisDefaultRoute": "默认目标",
-    "jarvisRouteTriggerNumber": "第 {{number}} 条路由的唤醒词",
-    "jarvisRouteTargetType": "路由目标类型",
     "jarvisRouteCurrent": "当前会话",
     "jarvisRouteAgent": "指定智能体",
     "jarvisRouteSession": "指定会话",
-    "jarvisRouteInvalid": "每条路由都需要唯一、有效的唤醒词和可用目标。",
-    "jarvisAddRoute": "添加路由",
-    "jarvisSaveRouting": "保存路由",
+    "jarvisRoutingReadOnly": "当前 OpenClaw 协议仅提供路由读取，JunQi 不会伪造写入入口。",
+    "jarvisRoutingNoRoutes": "当前没有单独的唤醒路由。",
     "jarvisRoutingUnavailable": "当前 Gateway 未返回可验证的唤醒路由配置。",
     "jarvisSettingsError": {
       "gateway_unavailable": "请连接当前 Gateway 后重试。",
@@ -1805,8 +1802,7 @@
         "tool": "工具",
         "sequence": "序号",
         "source": {
-          "activity": "版本化活动账本",
-          "legacy": "兼容运行与工具账本"
+          "activity": "版本化活动账本"
         },
         "kind": {
           "agent_run": "智能体运行",
@@ -2008,6 +2004,10 @@
     "emoji": "表情",
     "attachmentReadFailed": "无法读取 {{path}}",
     "attachmentErrorTitle": "附件错误",
+    "attachmentPolicyUnavailable": "请先连接 OpenClaw Gateway，再添加附件。",
+    "attachmentEmpty": "{{name}} 没有可读取的内容。",
+    "attachmentTooLarge": "{{name}} 超出当前 Gateway 的单附件上限 {{limit}}。",
+    "attachmentUnknownName": "该附件",
     "clipboardImageReadFailed": "无法读取剪贴板图片",
     "clipboardImageName": "剪贴板图片.png",
     "attachmentsOnlyMessage": "{{files}}",
@@ -2718,23 +2718,7 @@
     "embeddingRuntime": "嵌入运行时",
     "contextSize": "上下文",
     "yes": "是",
-    "no": "否",
-    "remTitle": "REM harness 预览",
-    "remDescription": "由 OpenClaw 返回的显式有界预览。它是只读的，并与工作区浏览和记忆检索保持独立。",
-    "previewRem": "预览 REM harness",
-    "includeGrounded": "包含 grounded 文件",
-    "includePromoted": "包含已提升候选",
-    "remHint": "执行一次显式预览以查看原生 REM harness 输出。",
-    "remUnsupported": "当前 Gateway 不支持 REM harness 预览",
-    "remFailed": "Gateway REM harness 预览失败",
-    "remNativeError": "OpenClaw 返回了 REM harness 错误",
-    "remSourceEntries": "来源条目",
-    "remCandidates": "候选数",
-    "remTruncated": "预览已截断",
-    "remScore": "平均分 {{score}}",
-    "promoted": "已提升",
-    "notPromoted": "未提升",
-    "remTruths": "候选事实"
+    "no": "否"
   },
   "agentHubExtra": {
     "officeView": "办公室",

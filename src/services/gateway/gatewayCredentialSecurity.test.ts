@@ -347,7 +347,7 @@ describe('Gateway credential security regression gates', () => {
       clientId: 'openclaw-control-ui',
       clientMode: 'ui',
       role: 'operator',
-      scopes: ['operator.read', 'operator.write'],
+      scopes: ['operator.read', 'operator.write', 'operator.talk'],
       token: 'daily-token',
       platform: 'windows',
       deviceFamily: null,
@@ -570,7 +570,7 @@ describe('Gateway credential security regression gates', () => {
     unsubscribe();
   });
 
-  it('requests only read/write scopes in the daily socket handshake', async () => {
+  it('requests the daily read, write, and Talk scopes in the socket handshake', async () => {
     resetSockets();
     const connection = createMemoryGatewayConnection({
       persistDeviceCredential: async (url, token) => {
@@ -593,7 +593,7 @@ describe('Gateway credential security regression gates', () => {
     challenge(socket);
 
     const handshake = await waitForSocketRequest(socket, 'connect');
-    assert.deepEqual(handshake.params.scopes, ['operator.read', 'operator.write']);
+    assert.deepEqual(handshake.params.scopes, ['operator.read', 'operator.write', 'operator.talk']);
     assert.deepEqual(handshake.params.auth, { token: 'daily-token' });
     assert.deepEqual(savedDeviceTokens, []);
 

@@ -1,7 +1,6 @@
 /**
- * Shared opaque card surface. Despite the historical component name,
- * this is intentionally not a glassmorphism card: no backdrop blur,
- * no shimmer edge, and only a restrained hover tint.
+ * 共享不透明卡片表面。虽然组件保留历史名称，但不使用玻璃拟态、背景模糊或发光边缘，
+ * 只通过轻微的背景和边框变化反馈悬停。
  */
 
 import clsx from 'clsx';
@@ -46,18 +45,18 @@ export const GlassCard = React.memo(function GlassCard({
     <div
       onClick={onClick}
       className={clsx(
-        'relative overflow-hidden rounded-xl',
+        'relative overflow-hidden rounded-lg',
         'border border-aegis-border',
         'bg-aegis-card',
         enterMotionEnabled && 'animate-slide-up',
-        hover && 'hover:border-aegis-border-hover hover:bg-aegis-hover hover:-translate-y-px',
+        hover && 'hover:border-aegis-border-hover hover:bg-aegis-hover',
         'transition-[background,border-color,transform] duration-200',
         onClick && 'cursor-pointer',
         className,
       )}
       style={enterMotionEnabled && delay > 0 ? { animationDelay: `${delay}s` } : undefined}
     >
-      <div className={noPad ? undefined : 'p-5'}>
+      <div className={noPad ? undefined : 'p-4'}>
         {children}
       </div>
     </div>

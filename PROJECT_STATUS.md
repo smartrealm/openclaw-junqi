@@ -1,59 +1,74 @@
 # 项目交接状态
 
-更新时间：2026-08-10
+更新时间：2026-08-11
 
 ## 当前目标
 
-保持 JunQi 作为 OpenClaw 桌面客户端，持续以官方 Gateway 协议、官方源码和结构化回执为唯一依据。当前正在收紧文档：删除已完成的逐项 OpenClaw 审计、规格和计划，只保留当前运行、合规、架构和交接所需记录。
+以最新版 OpenClaw 官方 Gateway 协议和源码为依据，完成 Gateway 原生能力与 JunQi 扩展能力的一致性审计。本阶段已将 `Blues-Code/Jarvis` 的文档清理提交通过独立合并提交纳入 `main`，并完成审计中确认的协议收敛和遗弃链路清理。
 
 ## 已完成内容
 
-- 普通 Gateway 的重连、恢复、重启和停止由 `GatewayLifecycleCoordinator` 统一处理；进程操作后必须等待新的认证连接和匹配的 Runtime Identity。
-- 钉钉业务页通过统一生命周期刷新。Native DWS 安装绑定所选 Node、npm 和 prefix，安装及授权均以结构化 JSON 回执核验；Docker 路径保持在所选容器运行时内。
-- 钉钉插件资源由归档 manifest 校验工具条目，不使用固定工具数量；当前资源元数据为 33 项工具。
-- 普通聊天已删除本地任务图、检查点和 Tool 恢复路径，只投影 OpenClaw 的聊天、会话、transcript、工具事件和原生 Task Ledger。
-- 安装完成使用 `openclaw.setup.detect` 的结构化结果；方法明确不支持时启动同一 Gateway 的官方 Wizard，不用本地状态跳过。
-- 模型认证与模型目录按 Gateway 已确认的智能体作用域读取；配置写入使用 `config.patch`、`baseHash` 与明确成功回执。
-- Cron 列表和运行记录遵守官方分页、快照与回执关系，拒绝旧数组、部分结果和本地截断。
-- 文档从 `docs/` 300 份、`specs/` 241 份、`plans/` 237 份 Markdown 收敛为 10 份当前记录。删除项均为无代码消费者的已完成审计、临时规格或执行计划；已核对保留文档不存在失效本地链接。
+- 已发布本地主版本 `v3.0.0`；`main`、`daxia`、`Blues-Code/code`、`Blues-Code/dingtalk` 与 `Blues-Code/Jarvis` 已对齐到同一发布提交。
+- `main` 先从 `442fe97c` 快进到 `dfe9d22e`，纳入 Jarvis 分支的八个提交；随后通过合并提交 `b6f930ab` 纳入 Jarvis 的 `44131f98` 文档与历史记录清理。
+- 保留 Jarvis 的会话目标解析、Cron 声明键、Gateway 生命周期和钉钉业务改动。
+- 删除最新版 OpenClaw 已移除的 `sessions.compaction.get`、`talk.session.cancelTurn`、`voicewake.routing.set` 和 REM 诊断调用路径。
+- 会话历史与协作能力不再把 `hello-ok.features.methods` 当成完整方法清单；身份和权限核验完成后按官方请求契约调用，并以结构化响应判断结果。
+- Cron 输入和投影按官方日期上限校验，删除上游 schema 已移除的调度状态字段，并保留官方全局与任务级运行记录信封。
+- 审计活动解析已拆分为独立编解码边界，移除不存在的 `audit.list` 兼容路径。
+- 相关审计、规格和实施计划已记录到 `docs/quality`、`specs/quality` 与 `plans/quality`。
+- 删除无桌面消费者的三项 `junqi.collab.session.mutation*` 扩展、专属状态机与 schema 14 数据表；协作插件 schema 升至 15，旧 schema 14 数据库按当前结构校验失败关闭，不做自动迁移或删除。
+- 删除无生产入口的 Workbench Provider claim 前端状态、IPC、Rust command 与 PTY 清理双轨；保留只读的 provider 二进制可用性探测和既有 PTY 生命周期。
 
 ## 关键技术决策
 
-- OpenClaw 是运行时、会话、工具、任务、配置和插件状态的唯一权威；JunQi 只维护可追溯的桌面投影。
-- 进程健康、认证连接和 Runtime Identity 是独立事实。任何业务页不能以端口可达、日志文本或本地标记推断成功。
-- Stop 只中断当前 OpenClaw run，不清空会话、不伪造 Tool Result；未知副作用保持待核验，客户端不自动重放。
-- Native、Docker、macOS、Windows 和 Linux 的运行时、凭据与服务行为必须分别验证，不互相推断。
+- OpenClaw 是会话、任务、工具、配置和运行时状态的唯一权威，JunQi 只维护可追溯的桌面投影。
+- `hello-ok.features.methods` 仅作为保守发现信息，不能据此隐藏或拒绝官方方法。
+- Jarvis 引入的 `resolveOpenClawSessionTarget` 继续用于分支和恢复操作，但已从官方协议移除的检查点读取方法不保留。
+- Native 与 Docker 的运行时身份、配置、凭据和恢复路径必须独立绑定，不允许静默切换。
 
-## 修改过的核心文件
+## 核心文件
 
-- `src/services/gateway/GatewayLifecycleCoordinator.ts`、`src/services/gateway/GatewayConnectionSettlement.ts`、`src/runtime/gatewayLifecycle.ts`：统一 Gateway 生命周期与连接核验。
-- `src-tauri/src/commands/dws_operation.rs`、`src-tauri/src/commands/dingtalk_plugin.rs`、`packages/junqi-dingtalk/`：DWS 安装授权和插件资源核验。
-- `src/pages/BusinessApplicationsPage.tsx`、`src/components/BusinessApplications/`：钉钉接入、身份与就绪状态投影。
-- `src/services/chat/sendTransaction.ts`、`src/runtime/OpenClawChatEventRuntime.ts`、`src/task-execution/`：删除普通聊天本地任务语义。
-- `src/services/setup/setupCompletionGate.ts`、`src/hooks/useSetupFlow/`、`src/services/openclawWizard.ts`：官方 Setup 与 Wizard 恢复。
-- `src/services/gateway/OpenClawCronListClient.ts`、`src/services/gateway/cronRuns.ts`、`src/stores/gatewayDataStore.ts`：Cron 分页与快照一致性。
-- `PROJECT_STATUS.md`、`docs/README.md`、`specs/README.md`、`plans/README.md`：当前权威来源、最小记录与交接状态。
+- `src/services/gateway/SessionCompactionClient.ts`
+- `src/services/gateway/sessionCapabilities.ts`
+- `src/services/gateway/cronContract.ts`
+- `src/services/gateway/cronRuns.ts`
+- `src/services/gateway/OpenClawAuditClient.ts`
+- `src/services/gateway/OpenClawAuditActivityCodec.ts`
+- `src/stores/collaborationSetupStore.ts`
+- `packages/junqi-collab/src/schema.ts`
+- `packages/junqi-collab/src/service.ts`
+- `src-tauri/src/commands/workbench_provider.rs`
+- `src-tauri/src/commands/workbench_pty.rs`
+- `docs/quality/gateway-native-extension-consistency-audit-2026-08-10.md`
+- `specs/quality/2026-08-10-gateway-audit-protocol-convergence.md`
+- `plans/quality/2026-08-10-gateway-audit-protocol-convergence.md`
 
-## 测试与验证结果
+## 测试与验证
 
-- 合并后已通过 `pnpm lint`、`pnpm dingtalk:test`、Gateway 生命周期 25 项、钉钉授权与就绪界面 14 项定向回归、`cargo fmt -- --check`、`cargo check --lib`、完整 `pnpm test` 与 `pnpm build`。
-- 完整前端与脚本测试共通过 2766 项；测试过程仅有既存 Node 弃用和 Radix SSR `useLayoutEffect` 警告，无失败。
-- 生产构建已重新生成并核对 DingTalk 插件资源。尚未执行 Tauri 打包或真实安装器验收。
-- 本次仅整理文档，已核对剩余 Markdown 的本地链接；尚未重新执行代码构建或真机验证。
+- Jarvis 合并后 Gateway、Cron、会话能力、语音、审计和协作状态定向回归共 78 项通过。
+- 清理 Jarvis 带回的旧检查点读取测试后，会话检查点与 Cron 定向回归 28 项通过。
+- Jarvis 合并后 `pnpm lint` 通过，模块边界扫描 921 个文件无违规，发布版本一致性与 TypeScript 检查通过。
+- Jarvis 合并后 `git diff --check` 通过；76 个修改或新增文本文件的完整内容未检出 Emoji。
+- 最新 Jarvis 合并提交的父提交关系与祖先关系已核对；合并前未提交工作区在恢复后完成逐文件内容比较，没有遗失或未解决冲突。
+- 合并前已通过 Tauri command 注册契约测试、`pnpm collab:validate` 和 `pnpm dingtalk:validate`。
+- 本轮完整 `pnpm test` 通过：2,759 个前端测试与 236 个脚本测试均无失败。
+- `pnpm lint`、`pnpm collab:validate`、`pnpm build`、`cargo fmt -- --check`、`cargo check --lib` 和 `cargo test --lib` 均通过；Rust 库测试 683 项通过，2 项按既有标记忽略。
+- `git diff --check` 已通过。仍未执行 Tauri 安装包构建或三平台真机验收。
 
-## 已知问题
+## 已知问题与未验证边界
 
-- 本次合并尚未在真实 Tauri 窗口执行 DWS 安装、扫码授权、Gateway 重启后的身份刷新。
-- 旧 Gateway 的官方 Wizard 展示、多智能体私有模型认证、Cron 多页数据以及 macOS、Windows、Linux 真机行为仍待验证。
+- 真实 Gateway 对移除方法、会话恢复、Cron 全局分页和协作插件能力的运行回执仍待验证。
+- macOS、Windows 和 Linux 的凭据库、WebView、窗口生命周期及真实 UI 尚未完成本轮真机验收。
+- 合并前工作区包含用户要求的审计和视觉收敛改动，必须保持其未提交状态，不得与本次分支合并自动提交。
 
-## 尝试过但失败的方案
+## 失败方案
 
-- 把 `openclaw.setup.detect` 不支持当作配置已完成会跳过官方 Wizard，已删除。
-- Cron 列表只读第一页或接受旧数组会漏任务，已删除。
-- 聊天本地任务图会重定义 OpenClaw 语义，已删除。
+- 仅根据 `hello-ok.features.methods` 缺项判定官方能力不可用，已删除。
+- 为上游已移除 RPC 保留兼容调用或本地替代路径，已删除。
+- 接受 Cron 旧字段、越界时间戳或猜测性状态，已删除。
 
-## 下一步开发顺序
+## 下一步顺序
 
-1. 用新的 Tauri 构建在不污染用户环境的前提下验证 Gateway 生命周期、DWS 安装授权与业务页刷新。
-2. 分别在 Windows、Linux 验证服务、凭据和桌面交互；未验证项持续保留真实边界。
-3. 后续较大变更只保留一份当前记录，完成后删除被取代的临时规格和计划。
+1. 在受控真实 Gateway 验证会话恢复、Cron 分页、协作插件加载与请求回执。
+2. 在 macOS、Windows 与 Linux 真机验证凭据库、WebView 和进程生命周期。
+3. 仅在上述原生证据存在时继续扩展 JunQi 桌面投影，不为缺失能力构造本地语义。

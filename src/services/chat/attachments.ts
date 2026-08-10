@@ -1,11 +1,8 @@
 import type { GatewayAttachment, PreparedAttachment } from './types';
+import type { GatewayAttachmentPolicy } from '@/services/gateway/GatewayConnectionPolicy';
 
-export const ATTACHMENT_LIMITS = Object.freeze({
-  maxCount: 10,
-  maxImageBytes: 6 * 1024 * 1024,
-  maxFileBytes: 20 * 1024 * 1024,
-  maxTotalBytes: 50 * 1024 * 1024,
-});
+const BASE64_SOURCE_BYTES = 3;
+const BASE64_ENCODED_BYTES = 4;
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   png: 'image/png',
@@ -33,7 +30,8 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 export class AttachmentValidationError extends Error {
   constructor(
     message: string,
-    readonly code: 'COUNT_LIMIT' | 'FILE_SIZE_LIMIT' | 'TOTAL_SIZE_LIMIT' | 'EMPTY_CONTENT',
+    readonly code: 'FILE_SIZE_LIMIT' | 'EMPTY_CONTENT' | 'POLICY_UNAVAILABLE',
+    readonly details: Readonly<{ fileName?: string; maxBytes?: number }> = {},
   ) {
     super(message);
     this.name = 'AttachmentValidationError';
@@ -51,38 +49,63 @@ export function stripDataUrlPrefix(value: string): string {
   return value.replace(/^data:[^;]+;base64,/, '');
 }
 
-export function validatePreparedAttachments(files: readonly PreparedAttachment[]): void {
-  if (files.length > ATTACHMENT_LIMITS.maxCount) {
+function payloadDecodedCeiling(maxPayload: number): number {
+  return Math.max(1, Math.floor(maxPayload / BASE64_ENCODED_BYTES) * BASE64_SOURCE_BYTES);
+}
+
+/** 解析当前连接允许读取的单附件上限，不猜测数量、MIME 或模型能力。 */
+export function resolveAttachmentByteLimit(
+  policy: GatewayAttachmentPolicy | null,
+  isImage: boolean,
+): number {
+  if (!policy) {
     throw new AttachmentValidationError(
-      `A maximum of ${ATTACHMENT_LIMITS.maxCount} attachments is supported`,
-      'COUNT_LIMIT',
+      'Gateway attachment policy is unavailable',
+      'POLICY_UNAVAILABLE',
     );
   }
+  const advertised = isImage
+    ? policy.maxImageBytes ?? policy.maxBytes
+    : policy.maxBytes;
+  const frameCeiling = payloadDecodedCeiling(policy.maxPayload);
+  return advertised === undefined ? frameCeiling : Math.min(advertised, frameCeiling);
+}
 
-  let totalBytes = 0;
-  for (const file of files) {
-    if (!file.content.trim()) {
-      throw new AttachmentValidationError(`${file.fileName ?? file.mimeType} has no readable content`, 'EMPTY_CONTENT');
-    }
-    const perFileLimit = file.isImage
-      ? ATTACHMENT_LIMITS.maxImageBytes
-      : ATTACHMENT_LIMITS.maxFileBytes;
-    if (file.size > perFileLimit) {
-      throw new AttachmentValidationError(
-        `${file.fileName ?? file.mimeType} exceeds the ${Math.floor(perFileLimit / 1024 / 1024)} MB limit`,
-        'FILE_SIZE_LIMIT',
-      );
-    }
-    totalBytes += file.size;
-  }
-
-  if (totalBytes > ATTACHMENT_LIMITS.maxTotalBytes) {
-    throw new AttachmentValidationError('The selected attachments exceed the 50 MB total limit', 'TOTAL_SIZE_LIMIT');
+export function assertAttachmentSize(
+  file: Readonly<{ size: number; isImage: boolean; fileName?: string }>,
+  policy: GatewayAttachmentPolicy | null,
+): void {
+  const maxBytes = resolveAttachmentByteLimit(policy, file.isImage);
+  if (file.size > maxBytes) {
+    throw new AttachmentValidationError(
+      'Attachment exceeds the current Gateway limit',
+      'FILE_SIZE_LIMIT',
+      { fileName: file.fileName, maxBytes },
+    );
   }
 }
 
-export function toGatewayAttachments(files: readonly PreparedAttachment[]): GatewayAttachment[] {
-  validatePreparedAttachments(files);
+export function validatePreparedAttachments(
+  files: readonly PreparedAttachment[],
+  policy: GatewayAttachmentPolicy | null,
+): void {
+  for (const file of files) {
+    if (!file.content.trim()) {
+      throw new AttachmentValidationError(
+        'Attachment has no readable content',
+        'EMPTY_CONTENT',
+        { fileName: file.fileName ?? file.mimeType },
+      );
+    }
+    assertAttachmentSize(file, policy);
+  }
+}
+
+export function toGatewayAttachments(
+  files: readonly PreparedAttachment[],
+  policy: GatewayAttachmentPolicy | null,
+): GatewayAttachment[] {
+  validatePreparedAttachments(files, policy);
   return files.map((file) => ({
     type: file.isImage ? 'image' : 'file',
     mimeType: file.mimeType,

@@ -1,26 +1,18 @@
+import {
+  OPENCLAW_CRON_MAX_DATE_TIMESTAMP_MS,
+  type CronSchedule,
+  type CronSessionTarget,
+  type CronWakeMode,
+} from './cronContract';
+
 export const CRON_RUN_STATUSES = ['ok', 'error', 'skipped'] as const;
 export type CronRunStatus = (typeof CRON_RUN_STATUSES)[number];
 
 export const CRON_DELIVERY_STATUSES = ['delivered', 'not-delivered', 'unknown', 'not-requested'] as const;
 export type CronDeliveryStatus = (typeof CRON_DELIVERY_STATUSES)[number];
 
-export type CronSessionTarget = 'main' | 'isolated' | 'current' | `session:${string}`;
-export type CronWakeMode = 'next-heartbeat' | 'now';
-
-export type CronScheduleDetails =
-  | { kind: 'at'; at: string }
-  | { kind: 'every'; everyMs: number; anchorMs?: number }
-  | { kind: 'cron'; expr: string; tz?: string; staggerMs?: number }
-  | { kind: 'on-exit'; command: string; cwd?: string }
-  | {
-    kind: 'stream';
-    command: string[];
-    cwd?: string;
-    mode?: 'line' | 'match';
-    match?: string;
-    batchMs?: number;
-    maxBatchBytes?: number;
-  };
+export type { CronSessionTarget, CronWakeMode };
+export type CronScheduleDetails = CronSchedule;
 
 export type CronPayloadKind = 'systemEvent' | 'agentTurn' | 'command' | 'script' | 'heartbeat';
 
@@ -60,10 +52,6 @@ export interface CronFailureAlertDetails {
 export interface CronJobStateDetails {
   nextRunAtMs?: number;
   scheduleActivatedAtMs?: number;
-  startupCatchupAtMs?: number;
-  pacedNextRunAtMs?: number;
-  forcePreservedNextRunAtMs?: number;
-  queuedAtMs?: number;
   runningAtMs?: number;
   lastRunAtMs?: number;
   lastRunStatus?: CronRunStatus;
@@ -82,7 +70,6 @@ export interface CronJobStateDetails {
     consecutiveErrors: number;
   };
   lastFailureAlertAtMs?: number;
-  scheduleErrorCount?: number;
   streamStatus?: 'starting' | 'running' | 'restarting' | 'stopped' | 'disabled' | 'error';
   streamError?: string;
   streamConsecutiveFailures?: number;
@@ -96,7 +83,7 @@ export interface CronJobStateDetails {
   lastFailureNotificationDeliveryError?: string;
 }
 
-/** Safe read projection of the official CronJob response. Payload content is not retained. */
+/** 官方 CronJob 响应的安全读取投影，不保留 payload 内容。 */
 export interface OpenClawCronJobDetails {
   id: string;
   name: string;
@@ -245,6 +232,14 @@ function requiredInteger(value: unknown, field: string, method: string, minimum 
   return value as number;
 }
 
+function requiredDateTimestamp(value: unknown, field: string, method: string, minimum = 0): number {
+  const parsed = requiredInteger(value, field, method, minimum);
+  if (parsed > OPENCLAW_CRON_MAX_DATE_TIMESTAMP_MS) {
+    throw new Error(`${method} returned an invalid ${field}`);
+  }
+  return parsed;
+}
+
 function optionalNumber(value: unknown, field: string, method: string): number | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -287,9 +282,9 @@ function parseSchedule(value: unknown, method: string): CronScheduleDetails {
   if (kind === 'every') {
     return {
       kind,
-      everyMs: requiredInteger(value.everyMs, 'schedule.everyMs', method, 1),
+      everyMs: requiredDateTimestamp(value.everyMs, 'schedule.everyMs', method, 1),
       ...(value.anchorMs !== undefined
-        ? { anchorMs: requiredInteger(value.anchorMs, 'schedule.anchorMs', method) }
+        ? { anchorMs: requiredDateTimestamp(value.anchorMs, 'schedule.anchorMs', method) }
         : {}),
     };
   }
@@ -299,7 +294,7 @@ function parseSchedule(value: unknown, method: string): CronScheduleDetails {
       expr: requiredString(value.expr, 'schedule.expr', method),
       ...(value.tz !== undefined ? { tz: requiredString(value.tz, 'schedule.tz', method) } : {}),
       ...(value.staggerMs !== undefined
-        ? { staggerMs: requiredInteger(value.staggerMs, 'schedule.staggerMs', method) }
+        ? { staggerMs: requiredDateTimestamp(value.staggerMs, 'schedule.staggerMs', method) }
         : {}),
     };
   }
@@ -403,19 +398,15 @@ function parseJobState(value: unknown, method: string): CronJobStateDetails {
       if (!isRecord(value.autoDisabled)) throw new Error(`${method} returned an invalid state.autoDisabled`);
       return {
         reason: oneOf(value.autoDisabled.reason, ['consecutive-failures', 'schedule-errors'] as const, 'state.autoDisabled.reason', method),
-        atMs: requiredInteger(value.autoDisabled.atMs, 'state.autoDisabled.atMs', method),
+        atMs: requiredDateTimestamp(value.autoDisabled.atMs, 'state.autoDisabled.atMs', method),
         consecutiveErrors: requiredInteger(value.autoDisabled.consecutiveErrors, 'state.autoDisabled.consecutiveErrors', method),
       };
     })();
   return {
-    ...(value.nextRunAtMs !== undefined ? { nextRunAtMs: requiredInteger(value.nextRunAtMs, 'state.nextRunAtMs', method) } : {}),
-    ...(value.scheduleActivatedAtMs !== undefined ? { scheduleActivatedAtMs: requiredInteger(value.scheduleActivatedAtMs, 'state.scheduleActivatedAtMs', method) } : {}),
-    ...(value.startupCatchupAtMs !== undefined ? { startupCatchupAtMs: requiredInteger(value.startupCatchupAtMs, 'state.startupCatchupAtMs', method) } : {}),
-    ...(value.pacedNextRunAtMs !== undefined ? { pacedNextRunAtMs: requiredInteger(value.pacedNextRunAtMs, 'state.pacedNextRunAtMs', method) } : {}),
-    ...(value.forcePreservedNextRunAtMs !== undefined ? { forcePreservedNextRunAtMs: requiredInteger(value.forcePreservedNextRunAtMs, 'state.forcePreservedNextRunAtMs', method) } : {}),
-    ...(value.queuedAtMs !== undefined ? { queuedAtMs: requiredInteger(value.queuedAtMs, 'state.queuedAtMs', method) } : {}),
-    ...(value.runningAtMs !== undefined ? { runningAtMs: requiredInteger(value.runningAtMs, 'state.runningAtMs', method) } : {}),
-    ...(value.lastRunAtMs !== undefined ? { lastRunAtMs: requiredInteger(value.lastRunAtMs, 'state.lastRunAtMs', method) } : {}),
+    ...(value.nextRunAtMs !== undefined ? { nextRunAtMs: requiredDateTimestamp(value.nextRunAtMs, 'state.nextRunAtMs', method) } : {}),
+    ...(value.scheduleActivatedAtMs !== undefined ? { scheduleActivatedAtMs: requiredDateTimestamp(value.scheduleActivatedAtMs, 'state.scheduleActivatedAtMs', method) } : {}),
+    ...(value.runningAtMs !== undefined ? { runningAtMs: requiredDateTimestamp(value.runningAtMs, 'state.runningAtMs', method) } : {}),
+    ...(value.lastRunAtMs !== undefined ? { lastRunAtMs: requiredDateTimestamp(value.lastRunAtMs, 'state.lastRunAtMs', method) } : {}),
     ...(value.lastRunStatus !== undefined ? { lastRunStatus: oneOf(value.lastRunStatus, CRON_RUN_STATUSES, 'state.lastRunStatus', method) } : {}),
     ...(value.lastStatus !== undefined ? { lastStatus: oneOf(value.lastStatus, CRON_RUN_STATUSES, 'state.lastStatus', method) } : {}),
     ...(value.lastError !== undefined ? { lastError: optionalString(value.lastError, 'state.lastError', method) } : {}),
@@ -427,16 +418,15 @@ function parseJobState(value: unknown, method: string): CronJobStateDetails {
     ...(value.lastDeliveryError !== undefined ? { lastDeliveryError: optionalString(value.lastDeliveryError, 'state.lastDeliveryError', method) } : {}),
     ...(value.lastDiagnosticSummary !== undefined ? { lastDiagnosticSummary: optionalString(value.lastDiagnosticSummary, 'state.lastDiagnosticSummary', method) } : {}),
     ...(autoDisabled ? { autoDisabled } : {}),
-    ...(value.lastFailureAlertAtMs !== undefined ? { lastFailureAlertAtMs: requiredInteger(value.lastFailureAlertAtMs, 'state.lastFailureAlertAtMs', method) } : {}),
-    ...(value.scheduleErrorCount !== undefined ? { scheduleErrorCount: requiredInteger(value.scheduleErrorCount, 'state.scheduleErrorCount', method) } : {}),
+    ...(value.lastFailureAlertAtMs !== undefined ? { lastFailureAlertAtMs: requiredDateTimestamp(value.lastFailureAlertAtMs, 'state.lastFailureAlertAtMs', method) } : {}),
     ...(value.streamStatus !== undefined ? { streamStatus: oneOf(value.streamStatus, ['starting', 'running', 'restarting', 'stopped', 'disabled', 'error'] as const, 'state.streamStatus', method) } : {}),
     ...(value.streamError !== undefined ? { streamError: optionalString(value.streamError, 'state.streamError', method) } : {}),
     ...(value.streamConsecutiveFailures !== undefined ? { streamConsecutiveFailures: requiredInteger(value.streamConsecutiveFailures, 'state.streamConsecutiveFailures', method) } : {}),
     ...(value.streamRestartExhausted !== undefined ? { streamRestartExhausted: requiredBoolean(value.streamRestartExhausted, 'state.streamRestartExhausted', method) } : {}),
     ...(value.streamDroppedBatches !== undefined ? { streamDroppedBatches: requiredInteger(value.streamDroppedBatches, 'state.streamDroppedBatches', method) } : {}),
     ...(value.streamCoalescedBatches !== undefined ? { streamCoalescedBatches: requiredInteger(value.streamCoalescedBatches, 'state.streamCoalescedBatches', method) } : {}),
-    ...(value.streamLastStartedAtMs !== undefined ? { streamLastStartedAtMs: requiredInteger(value.streamLastStartedAtMs, 'state.streamLastStartedAtMs', method) } : {}),
-    ...(value.streamLastExitAtMs !== undefined ? { streamLastExitAtMs: requiredInteger(value.streamLastExitAtMs, 'state.streamLastExitAtMs', method) } : {}),
+    ...(value.streamLastStartedAtMs !== undefined ? { streamLastStartedAtMs: requiredDateTimestamp(value.streamLastStartedAtMs, 'state.streamLastStartedAtMs', method) } : {}),
+    ...(value.streamLastExitAtMs !== undefined ? { streamLastExitAtMs: requiredDateTimestamp(value.streamLastExitAtMs, 'state.streamLastExitAtMs', method) } : {}),
     ...(value.lastFailureNotificationDelivered !== undefined ? { lastFailureNotificationDelivered: requiredBoolean(value.lastFailureNotificationDelivered, 'state.lastFailureNotificationDelivered', method) } : {}),
     ...(value.lastFailureNotificationDeliveryStatus !== undefined ? { lastFailureNotificationDeliveryStatus: oneOf(value.lastFailureNotificationDeliveryStatus, CRON_DELIVERY_STATUSES, 'state.lastFailureNotificationDeliveryStatus', method) } : {}),
     ...(value.lastFailureNotificationDeliveryError !== undefined ? { lastFailureNotificationDeliveryError: optionalString(value.lastFailureNotificationDeliveryError, 'state.lastFailureNotificationDeliveryError', method) } : {}),
@@ -560,8 +550,8 @@ export function parseCronJobDetails(value: unknown, method = 'cron.get'): OpenCl
     ...(value.sessionKey !== undefined ? { sessionKey: requiredString(value.sessionKey, 'sessionKey', method) } : {}),
     ...(value.description !== undefined ? { description: optionalString(value.description, 'description', method) } : {}),
     ...(value.deleteAfterRun !== undefined ? { deleteAfterRun: requiredBoolean(value.deleteAfterRun, 'deleteAfterRun', method) } : {}),
-    createdAtMs: requiredInteger(value.createdAtMs, 'createdAtMs', method),
-    updatedAtMs: requiredInteger(value.updatedAtMs, 'updatedAtMs', method),
+    createdAtMs: requiredDateTimestamp(value.createdAtMs, 'createdAtMs', method),
+    updatedAtMs: requiredDateTimestamp(value.updatedAtMs, 'updatedAtMs', method),
     ...(value.configRevision !== undefined
       ? { configRevision: requiredString(value.configRevision, 'configRevision', method) }
       : {}),
@@ -573,8 +563,8 @@ export function parseCronJobDetails(value: unknown, method = 'cron.get'): OpenCl
     ...(delivery ? { delivery } : {}),
     ...(failureAlert !== undefined ? { failureAlert } : {}),
     state,
-    ...(value.nextRunAtMs !== undefined ? { nextRunAtMs: requiredInteger(value.nextRunAtMs, 'nextRunAtMs', method) } : {}),
-    ...(value.lastRunAtMs !== undefined ? { lastRunAtMs: requiredInteger(value.lastRunAtMs, 'lastRunAtMs', method) } : {}),
+    ...(value.nextRunAtMs !== undefined ? { nextRunAtMs: requiredDateTimestamp(value.nextRunAtMs, 'nextRunAtMs', method) } : {}),
+    ...(value.lastRunAtMs !== undefined ? { lastRunAtMs: requiredDateTimestamp(value.lastRunAtMs, 'lastRunAtMs', method) } : {}),
     ...(value.lastRunStatus !== undefined ? { lastRunStatus: oneOf(value.lastRunStatus, CRON_RUN_STATUSES, 'lastRunStatus', method) } : {}),
     ...(value.lastRunError !== undefined ? { lastRunError: optionalString(value.lastRunError, 'lastRunError', method) } : {}),
     ...(value.lastDelivered !== undefined ? { lastDelivered: requiredBoolean(value.lastDelivered, 'lastDelivered', method) } : {}),

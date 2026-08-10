@@ -345,6 +345,17 @@ test('setup refresh binds its probe to the exact live Gateway connection', async
   assert.deepEqual(calls, [['target-1', 'connection-1']]);
 });
 
+test('setup refresh probes collaboration RPC when the conservative method list is empty', async () => {
+  const store = createCollaborationSetupStore(dependencies({
+    initialIdentity: identity({ methods: [] }),
+  }));
+
+  await store.getState().refresh();
+
+  assert.equal(store.getState().capabilities?.collaborationInstanceId, 'instance-1');
+  assert.equal(store.getState().error, null);
+});
+
 test('setup store rejects a configuration acknowledgement after the active target changes', async () => {
   const store = createCollaborationSetupStore(dependencies({ changeTargetAfterConfigure: true }));
   await store.getState().refresh();
@@ -573,7 +584,7 @@ test('an orphaned journal can be explicitly archived from a different verified t
 test('health confirmation requires a new connection with the exact bundle and durable feature contract', () => {
   const pending = status(true);
   const currentCapabilities = capabilities(true);
-  const reconnected = identity({ connectionId: 'connection-2' });
+  const reconnected = identity({ connectionId: 'connection-2', methods: [] });
   assert.deepEqual(
     createHealthConfirmation(pending, reconnected, currentCapabilities, bundle),
     {

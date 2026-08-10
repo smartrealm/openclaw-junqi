@@ -313,7 +313,7 @@ export function ConfigManagerPage() {
     <div className="flex flex-col h-full overflow-hidden">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-aegis-border bg-aegis-card/80 backdrop-blur-md flex-shrink-0 gap-4 flex-nowrap">
+      <div className="flex items-center justify-between gap-4 border-b border-aegis-border bg-aegis-bg-solid px-6 py-4 flex-shrink-0 flex-nowrap">
         <div className="flex items-center gap-3 shrink-0">
           <h1 className="text-lg font-bold text-aegis-text whitespace-nowrap">{t('config.title')}</h1>
           {hasChanges && <ChangesPill label={t('config.unsavedChanges')} />}
@@ -360,7 +360,7 @@ export function ConfigManagerPage() {
       </div>
 
       {/* ── Tabs bar ── */}
-      <div className="border-b border-aegis-border flex gap-0 overflow-x-auto flex-shrink-0 bg-aegis-card/60 backdrop-blur-sm" role="tablist" aria-label={t('config.title')}>
+      <div className="flex flex-shrink-0 gap-0 overflow-x-auto border-b border-aegis-border bg-aegis-bg-solid" role="tablist" aria-label={t('config.title')}>
         {tabs.map((tab) => (
           <button
             key={tab.id}

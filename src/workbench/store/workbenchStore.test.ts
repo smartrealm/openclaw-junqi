@@ -28,7 +28,7 @@ beforeEach(() => {
     }, activeWorktreeId: 'local-project', forgottenLegacyWorktreeIds: [], tabs: {},
     groups: { [mainGroup]: { id: mainGroup, tabIds: [], activeTabId: null } },
     layout: { type: 'group', groupId: mainGroup }, activeGroupId: mainGroup,
-    providerClaims: { byPane: {} }, resourceTransaction: null,
+    resourceTransaction: null,
   });
 });
 
@@ -92,13 +92,6 @@ test('forgetting a worktree removes only its owned tabs and record', () => {
   useWorkbenchStore.getState().openTab(mainGroup, { ...tab('local-tab'), worktreeId: 'local-project' });
   const otherTab = { ...tab('other-tab'), worktreeId: 'other' };
   useWorkbenchStore.getState().openTab(mainGroup, otherTab);
-  useWorkbenchStore.setState({ providerClaims: { byPane: {
-    [otherTab.paneId]: {
-      claimId: 'claim', generation: 1, worktreeId: 'other', paneId: otherTab.paneId,
-      ptyId: 'pty', ptyRunId: 'run', providerId: 'claude', providerSessionId: null,
-      transcriptPath: null, status: 'running',
-    },
-  } } });
   const token = transaction('forget-worktree');
   useWorkbenchStore.getState().forgetWorktree('other', token);
   useWorkbenchStore.getState().endResourceTransaction(token);
@@ -107,7 +100,6 @@ test('forgetting a worktree removes only its owned tabs and record', () => {
   assert.equal(state.tabs['other-tab'], undefined);
   assert.ok(state.tabs['local-tab']);
   assert.deepEqual(state.groups[mainGroup]?.tabIds, ['local-tab']);
-  assert.equal(state.providerClaims.byPane[otherTab.paneId], undefined);
 });
 
 test('workbench-owned projects survive session snapshots independently of legacy tasks', () => {
@@ -168,18 +160,6 @@ test('PTY create authorization is one-shot and never durable', () => {
   assert.equal(useWorkbenchStore.getState().tabs.terminal?.ptyCreatePending, true);
 });
 
-test('provider claims are runtime-only fenced state and hydration clears them', () => {
-  const claim = useWorkbenchStore.getState().claimProvider({
-    claimId: 'claim', worktreeId: 'local-project', paneId: 'pane',
-    ptyId: 'pty', ptyRunId: 'run', providerId: 'claude',
-    providerSessionId: null, transcriptPath: null,
-  });
-  assert.equal(claim.ok, true);
-  assert.equal('providerClaims' in useWorkbenchStore.getState().sessionSnapshot(), false);
-  useWorkbenchStore.getState().hydrateSession(useWorkbenchStore.getState().sessionSnapshot());
-  assert.deepEqual(useWorkbenchStore.getState().providerClaims.byPane, {});
-});
-
 test('resource transactions reject stale release and allow only owner commits', () => {
   const first = transaction('close-tab');
   assert.equal(useWorkbenchStore.getState().beginResourceTransaction('close-group'), null);
@@ -200,30 +180,6 @@ test('terminal restart owner can replace identity while ordinary mutations remai
   assert.equal(state.tabs.blocked, undefined);
   assert.equal(state.tabs.terminal?.ptyId, 'pty-next');
   assert.equal(state.tabs.terminal?.ptyCreatePending, true);
-});
-
-test('tab and group commits remove their exact renderer provider claims', () => {
-  useWorkbenchStore.getState().openTab(mainGroup, { ...tab('claimed'), kind: 'terminal', ptyId: 'pty', ptyRunId: 'run' });
-  useWorkbenchStore.setState({ providerClaims: { byPane: {
-    'pane:claimed': {
-      claimId: 'claim', generation: 9, worktreeId: 'local-project', paneId: 'pane:claimed',
-      ptyId: 'pty', ptyRunId: 'run', providerId: 'claude', providerSessionId: null,
-      transcriptPath: null, status: 'running',
-    },
-  } } });
-  const token = transaction('close-tab');
-  useWorkbenchStore.getState().closeTab(mainGroup, 'claimed', token);
-  assert.equal(useWorkbenchStore.getState().providerClaims.byPane['pane:claimed'], undefined);
-});
-
-test('natural PTY exit reconciles only the exact renderer claim identity', () => {
-  useWorkbenchStore.setState({ providerClaims: { byPane: {
-    old: { claimId: 'old', generation: 1, worktreeId: 'local-project', paneId: 'old', ptyId: 'pty', ptyRunId: 'old-run', providerId: 'claude', providerSessionId: null, transcriptPath: null, status: 'running' },
-    current: { claimId: 'current', generation: 2, worktreeId: 'local-project', paneId: 'current', ptyId: 'pty', ptyRunId: 'new-run', providerId: 'claude', providerSessionId: null, transcriptPath: null, status: 'running' },
-  } } });
-  useWorkbenchStore.getState().reconcileProviderPtyExit('pty', 'old-run');
-  assert.equal(useWorkbenchStore.getState().providerClaims.byPane.old, undefined);
-  assert.ok(useWorkbenchStore.getState().providerClaims.byPane.current);
 });
 
 test('session snapshots always emit the current schema version', () => {

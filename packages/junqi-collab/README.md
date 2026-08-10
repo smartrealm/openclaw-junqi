@@ -61,7 +61,7 @@ command. Every mutation is fenced to the exact verified target fingerprint and
 connection id. Before replacement it must build a private offline tgz of the
 installed plugin, journal archive/content-tree hashes and config ownership, and
 fail before mutation when that backup is unavailable. Rollback has no registry
-fallback. Health confirmation requires the embedded plugin version, schema 14,
+fallback. Health confirmation requires the embedded plugin version, schema 15,
 `durableState`, both durable-runtime signals, and all required feature flags;
 otherwise the journal remains `RecoveryRequired`.
 
@@ -146,7 +146,7 @@ The implementation applies explicit patterns at its failure boundaries:
 
 ## Storage shape
 
-The current physical database is schema 14. Its tables are:
+The current physical database is schema 15. Its tables are:
 
 ```text
 metadata
@@ -155,7 +155,6 @@ evidence, interventions, final_artifacts
 deliveries, delivery_attempts
 commands, collaboration_events, decisions, work_item_inputs
 export_jobs, deletion_jobs, command_receipts
-session_mutations, session_mutation_commands
 tombstones
 workflow_templates, workflow_template_versions, workflow_run_templates
 ```
@@ -163,8 +162,7 @@ workflow_templates, workflow_template_versions, workflow_run_templates
 The schema has explicit indexes for active-origin uniqueness, immutable run
 history, run session/status lookup, WorkItem status, active Attempts, open
 Interventions, pending/delayed commands, per-run event sequence,
-unified command receipts, active and unresolved session-mutation
-fences, mutation commands, tombstones ordered by deletion time, and deletion
+unified command receipts, tombstones ordered by deletion time, and deletion
 policy lookups by terminal `ended_at + id`, Run-scoped active Attempt/command,
 failed Flow command, export status, deletion-job status, and workflow-template
 publication/version lookup. Schema initialization is current-version only: a
@@ -197,7 +195,7 @@ an explicit resolution.
 PROVISION and FLOW_SYNC use separate bounded failure policies. PROVISION permits
 three business failures with 1s/5s backoff; FLOW_SYNC permits five with
 1s/5s/30s/120s backoff. Claim/reclaim changes `attempts`, known business failure
-changes `failure_count`, and a maintenance/session deferral changes
+changes `failure_count`, and a maintenance deferral changes
 `available_at` without consuming failure budget. When failures are exhausted,
 the command becomes `FAILED` and the Run exposes `RECONCILE`. An operator retry
 reopens the same command/effect, clears only `failure_count`, and preserves the
@@ -206,13 +204,13 @@ lease generation plus `effect_started_at` evidence.
 Receipts are created only for externally submitted write commands, not for
 controller-generated dispatch/watch/reconcile commands. `command_receipts.source`
 is bound to the concrete RPC or stable operation (`junqi.collab.*`, `RUN:*`,
-`WORK_ITEM:*`, `DELIVERY:*`, or `SESSION_MUTATION:*`), so replay requires the
+`WORK_ITEM:*`, or `DELIVERY:*`), so replay requires the
 same command id, source, and payload hash. Normal Run-scoped commands are
 bounded at 4,096 receipts. After that boundary, 64 additional slots remain
 available only to the terminal recovery operations that stop dispatch, cancel
 a Run or WorkItem, abandon delivery, or delete/retry deletion. The physical
 per-Run ceiling is therefore 4,160 receipts and remains bounded even on the
-recovery path. Maintenance/session operations have a separate 10,000-receipt
+recovery path. Maintenance operations have a separate 10,000-receipt
 unscoped limit. Capacity is checked before the corresponding write effect
 commits.
 
@@ -398,15 +396,14 @@ user identity.
 Run-scoped unified receipts survive the cascade delete only for the
 `retentionDays` replay window. Once the tombstone is older than that window and
 its cleanup is `COMPLETED`, the sweep removes those receipts and keeps the
-tombstone. Unscoped receipts use the same age limit, except receipts tied to an
-unresolved `PREPARED` or `EXPIRED` session mutation remain until resolution.
+tombstone. Unscoped receipts use the same age limit.
 
 The `junqi-collaboration-content/v3` digest is computed incrementally in a read
 transaction. It covers `collaboration_runs`, `plan_revisions`, `work_items`,
 `attempts` (including structured `input_json`), `evidence`, `interventions`,
 `final_artifacts`, `deliveries`, `delivery_attempts`, `collaboration_events`,
 `decisions`, and raw `work_item_inputs`. It excludes `metadata`, `commands`,
-export/deletion jobs, `command_receipts`, both session mutation tables,
+export/deletion jobs, `command_receipts`,
 tombstones, and the workflow-template tables. This is a versioned
 domain-content deletion guard, not a whole-database hash or export digest, and
 is independent of the user-facing export limits.

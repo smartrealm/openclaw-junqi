@@ -16,7 +16,6 @@ export interface JarvisVoiceSettingsState {
   routing: VoiceWakeRoutingConfig | null;
   loading: boolean;
   savingTriggers: boolean;
-  savingRouting: boolean;
   triggerError: JarvisVoiceSettingsError | null;
   routingError: JarvisVoiceSettingsError | null;
   talkReady: boolean | null;
@@ -24,7 +23,6 @@ export interface JarvisVoiceSettingsState {
   talkError: JarvisVoiceSettingsError | null;
   refresh: () => Promise<void>;
   saveTriggers: (triggers: readonly string[]) => Promise<boolean>;
-  saveRouting: (routing: VoiceWakeRoutingConfig) => Promise<boolean>;
 }
 
 function errorMessage(error: unknown): string {
@@ -55,7 +53,6 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
   const [routing, setRouting] = useState<VoiceWakeRoutingConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [savingTriggers, setSavingTriggers] = useState(false);
-  const [savingRouting, setSavingRouting] = useState(false);
   const [triggerError, setTriggerError] = useState<JarvisVoiceSettingsError | null>(null);
   const [routingError, setRoutingError] = useState<JarvisVoiceSettingsError | null>(null);
   const [talkReady, setTalkReady] = useState<boolean | null>(null);
@@ -63,7 +60,6 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
   const [talkError, setTalkError] = useState<JarvisVoiceSettingsError | null>(null);
   const operationGateRef = useRef(new JarvisVoiceSettingsOperationGate());
   const triggerSaveRef = useRef<Promise<boolean> | null>(null);
-  const routingSaveRef = useRef<Promise<boolean> | null>(null);
 
   const replaceTriggers = useCallback((triggers: readonly string[]) => {
     operationGateRef.current.invalidateData();
@@ -143,31 +139,6 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
     return operation;
   }, [replaceTriggers]);
 
-  const saveRouting = useCallback((next: VoiceWakeRoutingConfig): Promise<boolean> => {
-    if (routingSaveRef.current) return routingSaveRef.current;
-    operationGateRef.current.invalidateData();
-    setSavingRouting(true);
-    setRoutingError(null);
-    const operation = (async () => {
-      try {
-        replaceRouting(await voiceWakeGatewayClient.setRouting(next));
-        return true;
-      } catch (cause) {
-        debugError('gateway', '[JarvisVoiceSettings] 保存唤醒路由失败：', errorMessage(cause));
-        setRoutingError(settingsError(cause));
-        return false;
-      }
-    })();
-    routingSaveRef.current = operation;
-    void operation.then(() => {
-      if (routingSaveRef.current === operation) {
-        routingSaveRef.current = null;
-        setSavingRouting(false);
-      }
-    });
-    return operation;
-  }, [replaceRouting]);
-
   useEffect(() => {
     if (enabled) void refresh();
   }, [enabled, refresh]);
@@ -186,7 +157,6 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
     routing,
     loading,
     savingTriggers,
-    savingRouting,
     triggerError,
     routingError,
     talkReady,
@@ -194,6 +164,5 @@ export function useJarvisVoiceSettings(enabled: boolean): JarvisVoiceSettingsSta
     talkError,
     refresh,
     saveTriggers,
-    saveRouting,
   };
 }

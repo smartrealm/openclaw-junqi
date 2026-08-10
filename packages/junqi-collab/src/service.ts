@@ -136,9 +136,6 @@ import type {
   PluginConfig,
   RunStatus,
   RuntimeAdapter,
-  SessionMutationAction,
-  SessionMutationPolicy,
-  SessionMutationStatus,
 } from "./types.js";
 import {
   latestAssistantText,
@@ -185,7 +182,6 @@ const FLOW_SYNC_RETRY_POLICY = {
   backoffMs: [1_000, 5_000, 30_000, 120_000],
 } as const satisfies FailureRetryPolicy;
 const WATCH_SLICE_MS = 30_000;
-const SESSION_MUTATION_LEASE_MS = 2 * 60_000;
 const RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60_000;
 const RETENTION_SWEEP_BATCH_SIZE = 25;
 const RETENTION_SWEEP_SCAN_SIZE = 500;
@@ -228,20 +224,6 @@ interface AttemptRow extends SqlRow {
   input_json: string;
   started_at: number | null;
   created_at: number;
-}
-
-interface SessionMutationRow extends SqlRow {
-  id: string;
-  runtime_id: string;
-  session_key: string;
-  session_id: string;
-  action: SessionMutationAction;
-  policy: SessionMutationPolicy;
-  status: SessionMutationStatus;
-  lease_expires_at: number;
-  result_json: string | null;
-  created_at: number;
-  updated_at: number;
 }
 
 interface StagedExportArtifact {
@@ -541,13 +523,7 @@ export class CollaborationService {
       this.database.db
         .prepare(
           `DELETE FROM command_receipts
-           WHERE run_id IS NULL AND created_at < ?
-             AND NOT EXISTS (
-               SELECT 1 FROM session_mutation_commands smc
-               JOIN session_mutations sm ON sm.id = smc.mutation_id
-               WHERE smc.command_id = command_receipts.command_id
-                 AND sm.status IN ('PREPARED', 'EXPIRED')
-             )`,
+           WHERE run_id IS NULL AND created_at < ?`,
         )
         .run(cutoff);
       this.database.db
@@ -557,12 +533,6 @@ export class CollaborationService {
              AND run_id IN (
                SELECT run_id FROM tombstones WHERE cleanup_status = 'COMPLETED'
              )`,
-        )
-        .run(cutoff);
-      this.database.db
-        .prepare(
-          `DELETE FROM session_mutations
-           WHERE status IN ('COMPLETED', 'FAILED') AND updated_at < ?`,
         )
         .run(cutoff);
     });
@@ -1413,7 +1383,6 @@ export class CollaborationService {
     const { envelope, operation, origin, goal, capabilityInput, sourceRun } = params;
     this.assertConfigured();
     this.assertMaintenanceInactive();
-    this.reconcileExpiredSessionMutations();
     const identity = await this.awaitRuntime(
       "readOrigin",
       `read origin for ${operation}`,
@@ -1430,7 +1399,6 @@ export class CollaborationService {
     const attemptNo = 1;
     const effectKey = `collab:${runId}:plan:pending:attempt:${attemptNo}`;
     let response: Record<string, unknown>;
-    this.reconcileExpiredSessionMutations();
     this.database.transaction(() => {
       this.assertMaintenanceInactive();
       if (sourceRun) {
@@ -1442,7 +1410,6 @@ export class CollaborationService {
         );
         this.assertNoOpenResidualExecutionRisk(currentSource.id, "clone");
       }
-      this.assertSessionMutationInactive(origin);
       const run = this.database.createRun({
         id: runId,
         origin,
@@ -1613,13 +1580,11 @@ export class CollaborationService {
   }
 
   resumeDispatch(paramsInput: Record<string, unknown>): Record<string, unknown> {
-    this.reconcileExpiredSessionMutations();
     this.assertMaintenanceInactive();
     return this.simpleRunCommand(paramsInput, "DISPATCH_RESUMED", (runId, run, commandId, actor) => {
       this.assertMaintenanceInactive();
       assertCondition(run.status === "AWAITING_INTERVENTION", "INVALID_TRANSITION", "Run is not awaiting intervention");
       assertCondition(!this.pendingPartialDecision(runId), "INVALID_TRANSITION", "Resolve the pending partial decision before resuming dispatch");
-      this.assertSessionMutationInactive(run.origin);
       this.assertCapabilitiesUnchanged(runId);
       const stopIntervention = this.resumableDispatchIntervention(runId);
       assertCondition(
@@ -2677,7 +2642,6 @@ export class CollaborationService {
       : parseJsonObject(params.parameters, "parameters");
     this.assertConfigured();
     this.assertMaintenanceInactive();
-    this.reconcileExpiredSessionMutations();
     const identity = await this.awaitRuntime(
       "readOrigin",
       `read origin for ${operation}`,
@@ -2698,10 +2662,8 @@ export class CollaborationService {
     const planId = newId("plan");
     const now = nowMs();
     let response: Record<string, unknown>;
-    this.reconcileExpiredSessionMutations();
     this.database.transaction(() => {
       this.assertMaintenanceInactive();
-      this.assertSessionMutationInactive(origin);
       const currentTemplate = this.workflowTemplates.requirePublished(templateId);
       const currentPlan = materializeWorkflowTemplatePlan(currentTemplate.currentVersion.definition, {
         goal,
@@ -3158,226 +3120,6 @@ export class CollaborationService {
     return { jobId: job.id, format: job.format, digest: job.digest, content };
   }
 
-  sessionMutationImpact(paramsInput: Record<string, unknown>): Record<string, unknown> {
-    const params = parseJsonObject(paramsInput, "params");
-    const runtimeId = this.instanceIdentity.assertRuntimeId(params.runtimeId);
-    const sessionKey = readBoundedRequiredString(params.sessionKey, "sessionKey", PERSISTENCE_LIMITS.originSessionKeyBytes);
-    const sessionId = readBoundedRequiredString(params.sessionId, "sessionId", PERSISTENCE_LIMITS.originSessionIdBytes);
-    const action = this.parseSessionMutationAction(params.action);
-    this.reconcileExpiredSessionMutations();
-    const activeRuns = this.listSessionRunsForCurrentInstance({
-      sessionKey,
-      sessionId,
-      activeOnly: true,
-      limit: 100,
-    }).map((run) => this.sessionMutationRunSummary(run));
-    const mutation = this.findUnresolvedSessionMutation({ runtimeId, sessionKey, sessionId });
-    return {
-      runtimeId,
-      sessionKey,
-      sessionId,
-      action,
-      activeRuns,
-      blocked: activeRuns.length > 0,
-      runtimeMatches: true,
-      activeMutation: mutation ? this.sessionMutationObject(mutation) : null,
-      mutationFenceActive: Boolean(mutation),
-      recoveryRequired: mutation?.status === "EXPIRED",
-      coreRpcAllowed: Boolean(
-        mutation
-        && mutation.status === "PREPARED"
-        && (mutation.policy === "STOP_AND_RETARGET_LATER" || activeRuns.length === 0)
-      ),
-      resetCasSupported: false,
-      strategies: mutation?.status === "EXPIRED"
-        ? ["RECOVER"]
-        : activeRuns.length === 0
-        ? ["PROCEED"]
-        : action === "delete"
-          ? ["CANCEL_AND_WAIT", "STOP_AND_RETARGET_LATER", "ABORT"]
-          : ["CANCEL_AND_WAIT", "ABORT"],
-    };
-  }
-
-  prepareSessionMutation(paramsInput: Record<string, unknown>): Record<string, unknown> {
-    const params = parseJsonObject(paramsInput, "params");
-    const envelope = this.validateWriteEnvelope(params);
-    const runtimeId = this.instanceIdentity.assertRuntimeId(params.runtimeId);
-    const replay = this.replayedSessionMutationResponse(
-      envelope.commandId,
-      envelope.payloadHash,
-      "SESSION_MUTATION:PREPARE",
-    );
-    if (replay) return replay;
-    const sessionKey = readBoundedRequiredString(params.sessionKey, "sessionKey", PERSISTENCE_LIMITS.originSessionKeyBytes);
-    const sessionId = readBoundedRequiredString(params.sessionId, "sessionId", PERSISTENCE_LIMITS.originSessionIdBytes);
-    const action = this.parseSessionMutationAction(params.action);
-    const policy = this.parseSessionMutationPolicy(params.policy);
-    assertCondition(
-      policy !== "STOP_AND_RETARGET_LATER" || action === "delete",
-      "INVALID_REQUEST",
-      "STOP_AND_RETARGET_LATER is only valid for session deletion",
-    );
-    this.reconcileExpiredSessionMutations();
-    const sessionRuns = this.listSessionRunsForCurrentInstance({
-      sessionKey,
-      sessionId,
-      activeOnly: true,
-      limit: 100,
-    });
-    assertCondition(
-      sessionRuns.length === 0 || policy !== "PROCEED",
-      "INVALID_REQUEST",
-      "PROCEED is only valid when no active collaboration is bound to the session",
-    );
-    const mutationId = newId("mutation");
-    const timestamp = nowMs();
-    const expiresAt = timestamp + SESSION_MUTATION_LEASE_MS;
-    let response: Record<string, unknown>;
-    this.database.transaction(() => {
-      const unresolved = this.findUnresolvedSessionMutation({ runtimeId, sessionKey, sessionId });
-      if (unresolved) this.throwSessionMutationActive(unresolved);
-      this.database.db
-        .prepare(
-          `INSERT INTO session_mutations(id, runtime_id, session_key, session_id, action, policy, status,
-           lease_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'PREPARED', ?, ?, ?)`,
-        )
-        .run(mutationId, runtimeId, sessionKey, sessionId, action, policy, expiresAt, timestamp, timestamp);
-      for (const run of sessionRuns) this.applySessionMutationFence(run.id, mutationId, policy);
-      const activeRuns = this.listSessionRunsForCurrentInstance({
-        sessionKey,
-        sessionId,
-        activeOnly: true,
-        limit: 100,
-      })
-        .map((run) => this.activeRunReference(run));
-      response = this.writeResponse({
-        accepted: true,
-        replayed: false,
-        commandId: envelope.commandId,
-        mutationId,
-        status: "PREPARED",
-        expiresAt,
-        activeRuns,
-        coreRpcAllowed: policy === "STOP_AND_RETARGET_LATER" || activeRuns.length === 0,
-      });
-      this.insertSessionMutationCommand({
-        commandId: envelope.commandId,
-        mutationId,
-        operation: "PREPARE",
-        payloadHash: envelope.payloadHash,
-        response,
-      });
-    });
-    for (const run of sessionRuns) this.emitChanged(run.id);
-    return response!;
-  }
-
-  completeSessionMutation(paramsInput: Record<string, unknown>): Record<string, unknown> {
-    const params = parseJsonObject(paramsInput, "params");
-    const envelope = this.validateWriteEnvelope(params);
-    this.instanceIdentity.assertRuntimeId(params.runtimeId);
-    const replay = this.replayedSessionMutationResponse(
-      envelope.commandId,
-      envelope.payloadHash,
-      "SESSION_MUTATION:COMPLETE",
-    );
-    if (replay) {
-      this.scheduleCommandDrain();
-      return replay;
-    }
-    const mutationId = readString(params.mutationId, "mutationId");
-    assertCondition(typeof params.success === "boolean", "INVALID_REQUEST", "success must be a boolean");
-    const success = params.success;
-    this.reconcileExpiredSessionMutations();
-    const row = this.database.db.prepare("SELECT * FROM session_mutations WHERE id = ?").get(mutationId) as SessionMutationRow | undefined;
-    if (!row) throw new CollaborationError("NOT_FOUND", `Session mutation ${mutationId} was not found`);
-    this.instanceIdentity.assertRuntimeId(row.runtime_id, "sessionMutation.runtimeId");
-    assertCondition(
-      row.status === "PREPARED" || row.status === "EXPIRED",
-      "INVALID_TRANSITION",
-      "Session mutation is not awaiting a core RPC result",
-    );
-    const timestamp = nowMs();
-    const status: SessionMutationStatus = success ? "COMPLETED" : "FAILED";
-    let response: Record<string, unknown>;
-    const affectedRunIds: string[] = [];
-    this.database.transaction(() => {
-      const current = this.database.db.prepare("SELECT * FROM session_mutations WHERE id = ?").get(mutationId) as SessionMutationRow;
-      this.instanceIdentity.assertRuntimeId(current.runtime_id, "sessionMutation.runtimeId");
-      assertCondition(
-        current.status === "PREPARED" || current.status === "EXPIRED",
-        "INVALID_TRANSITION",
-        "Session mutation is not awaiting a core RPC result",
-      );
-      const previousResult = sanitizeStoredJsonForOutput(
-        parseJson<Record<string, unknown>>(current.result_json, {}),
-        "session mutation result",
-        PERSISTENCE_LIMITS.commandResponseBytes,
-      ) as Record<string, unknown>;
-      const result = {
-        ...previousResult,
-        coreRpc: {
-          success,
-          error: params.error == null ? null : boundedDiagnostic(params.error),
-          completedAt: timestamp,
-          commandId: envelope.commandId,
-        },
-        recoveredFromExpiry: current.status === "EXPIRED",
-      };
-      assertBoundedJson(result, "session mutation result", PERSISTENCE_LIMITS.commandResponseBytes);
-      const changed = this.database.db
-        .prepare(
-          `UPDATE session_mutations SET status = ?, result_json = ?, updated_at = ?
-           WHERE id = ? AND status IN ('PREPARED', 'EXPIRED')`,
-        )
-        .run(status, stableStringify(result), timestamp, mutationId);
-      assertCondition(Number(changed.changes) === 1, "INVALID_TRANSITION", "Session mutation completion lost its fence");
-      const runs = this.listSessionRunsForCurrentInstance({
-        sessionKey: current.session_key,
-        sessionId: current.session_id,
-        limit: 500,
-      });
-      for (const run of runs) {
-        const latest = this.database.getRunSummary(run.id);
-        const updated = this.database.updateRun(run.id, latest.revision, {});
-        this.database.appendEvent(run.id, "SESSION_MUTATION_COMPLETED", "session_mutation", mutationId, updated.revision, {
-          action: current.action,
-          policy: current.policy,
-          success,
-          status,
-          recoveredFromExpiry: current.status === "EXPIRED",
-        });
-        this.database.db
-          .prepare(
-            `UPDATE interventions SET resolved_at = ?, resolved_by = 'session-mutation-recovery', resolution_json = ?
-             WHERE run_id = ? AND code = 'SESSION_MUTATION_EXPIRED' AND entity_id = ? AND resolved_at IS NULL`,
-          )
-          .run(timestamp, stableStringify({ success, status }), run.id, mutationId);
-        affectedRunIds.push(run.id);
-      }
-      response = this.writeResponse({
-        accepted: true,
-        replayed: false,
-        commandId: envelope.commandId,
-        mutationId,
-        success,
-        status,
-        recoveredFromExpiry: current.status === "EXPIRED",
-      });
-      this.insertSessionMutationCommand({
-        commandId: envelope.commandId,
-        mutationId,
-        operation: "COMPLETE",
-        payloadHash: envelope.payloadHash,
-        response,
-      });
-    });
-    for (const runId of affectedRunIds) this.emitChanged(runId);
-    this.scheduleCommandDrain();
-    return response!;
-  }
-
   maintenanceStatus(referenceTime = nowMs()): Record<string, unknown> {
     const inspection = this.reconcileMaintenanceLease(referenceTime);
     return {
@@ -3488,18 +3230,6 @@ export class CollaborationService {
       currentPlanRevisionId: run.currentPlanRevisionId,
       createdAt: run.createdAt,
       updatedAt: run.updatedAt,
-    };
-  }
-
-  private sessionMutationRunSummary(
-    run: ReturnType<CollaborationDatabase["getRunSummary"]>,
-  ): Record<string, unknown> {
-    const decorated = this.decorateRunAllowedActions(run);
-    const { id, ...summary } = decorated;
-    return {
-      runId: id,
-      ...summary,
-      lastEventSequence: this.database.getLastSequence(id),
     };
   }
 
@@ -3990,11 +3720,6 @@ export class CollaborationService {
       return true;
     }
     if (expectedKind === "WORKER") {
-      const mutation = this.findUnresolvedSessionMutation(run.origin);
-      if (mutation) {
-        this.suspendDispatchCommandForFence(command, initialAttempt, mutation);
-        return false;
-      }
       if (run.status !== "RUNNING" || run.dispatchState !== "OPEN") {
         this.database.transaction(() => {
           assertCondition(
@@ -4038,14 +3763,13 @@ export class CollaborationService {
       const timestamp = nowMs();
       if (!this.database.renewClaimedCommandLease(command, COMMAND_LEASE_MS, timestamp)) return "LEASE_LOST";
       const currentRun = this.database.getRunSummary(command.runId);
-      const mutation = this.findUnresolvedSessionMutation(currentRun.origin);
       const dispatchAllowed = expectedKind === "PLANNER"
         ? currentRun.status === "PLANNING"
         : expectedKind === "SYNTHESIZER"
           ? currentRun.status === "SYNTHESIZING"
           : currentRun.status === "RUNNING" && currentRun.dispatchState === "OPEN";
       const cancellationActive = currentRun.cancelRequestedAt != null || currentRun.status === "CANCELLING";
-      const infrastructureFence = mutation != null || this.maintenanceActive();
+      const infrastructureFence = this.maintenanceActive();
       if (
         !dispatchAllowed
         || cancellationActive
@@ -4055,9 +3779,7 @@ export class CollaborationService {
           assertCondition(
             this.deferClaimedCommandForInfrastructure(
               command,
-              mutation
-                ? `Session mutation fence ${mutation.id} deferred dispatch before OpenClaw invocation`
-                : "Maintenance deferred dispatch before OpenClaw invocation",
+              "Maintenance deferred dispatch before OpenClaw invocation",
             ),
             "REVISION_CONFLICT",
             "Agent command lease changed before infrastructure deferral",
@@ -4068,9 +3790,7 @@ export class CollaborationService {
           this.cancelClaimedDispatchBeforeStart(
             command,
             this.getAttempt(attemptId),
-            mutation
-              ? `Session mutation fence ${mutation.id} closed dispatch before OpenClaw invocation`
-              : "Dispatch gate closed before OpenClaw invocation",
+            "Dispatch gate closed before OpenClaw invocation",
           ),
           "REVISION_CONFLICT",
           "Queued dispatch changed before its runtime gate could be committed",
@@ -4562,7 +4282,6 @@ export class CollaborationService {
            LIMIT 1`,
         )
         .get(run.id)),
-      hasActiveSessionMutation: Boolean(this.findUnresolvedSessionMutation(run.origin)),
     });
   }
 
@@ -4577,8 +4296,6 @@ export class CollaborationService {
     if (this.database.db.prepare("SELECT 1 FROM deliveries WHERE run_id = ? AND status = 'UNKNOWN' LIMIT 1").get(runId)) {
       blockers.push("UNKNOWN_DELIVERY");
     }
-    const run = this.database.getRunSummary(runId);
-    if (this.findUnresolvedSessionMutation(run.origin)) blockers.push("SESSION_MUTATION");
     return blockers;
   }
 
@@ -4609,7 +4326,6 @@ export class CollaborationService {
     return otherIntervention
       || unknownAttempt
       || unknownDelivery
-      || this.findUnresolvedSessionMutation(run.origin)
       || this.pendingPartialDecision(runId)
       ? null
       : stop;
@@ -4778,7 +4494,6 @@ export class CollaborationService {
   }
 
   private async executeProvision(command: CommandRecord): Promise<boolean> {
-    this.reconcileExpiredSessionMutations();
     const preflight = this.database.transaction<"CREATE_OR_RECOVER" | "OBSERVE_ONLY" | "DEFERRED">(() => {
       assertCondition(
         this.database.renewClaimedCommandLease(command, 5 * 60_000),
@@ -4786,19 +4501,16 @@ export class CollaborationService {
         "Provision command lease changed before Managed Flow creation",
       );
       const run = this.database.getRunSummary(command.runId);
-      const mutation = this.findUnresolvedSessionMutation(run.origin);
       const decision = decideProvisionExecution({
         runStatus: run.status,
-        infrastructureFenced: mutation != null || this.maintenanceActive(),
+        infrastructureFenced: this.maintenanceActive(),
       });
       assertCondition(decision.kind !== "INVALID_STATE", "INVALID_TRANSITION", "Run is not provisioning or closing");
       if (decision.kind === "DEFER") {
         assertCondition(
           this.deferClaimedCommandForInfrastructure(
             command,
-            mutation
-              ? `Session mutation fence ${mutation.id} deferred Managed Flow provisioning`
-              : "Maintenance deferred Managed Flow provisioning",
+            "Maintenance deferred Managed Flow provisioning",
           ),
           "REVISION_CONFLICT",
           "Provision command lease changed before infrastructure deferral",
@@ -4847,19 +4559,16 @@ export class CollaborationService {
           "Provision command lease changed before terminal observation settlement",
         );
         const currentRun = this.database.getRunSummary(command.runId);
-        const mutation = this.findUnresolvedSessionMutation(currentRun.origin);
         const decision = decideProvisionExecution({
           runStatus: currentRun.status,
-          infrastructureFenced: mutation != null || this.maintenanceActive(),
+          infrastructureFenced: this.maintenanceActive(),
         });
         assertCondition(decision.kind !== "INVALID_STATE", "INVALID_TRANSITION", "Run left the provisioning close path");
         if (decision.kind === "DEFER") {
           assertCondition(
             this.deferClaimedCommandForInfrastructure(
               command,
-              mutation
-                ? `Session mutation fence ${mutation.id} deferred terminal Flow observation`
-                : "Maintenance deferred terminal Flow observation",
+              "Maintenance deferred terminal Flow observation",
             ),
             "REVISION_CONFLICT",
             "Provision command lease changed before terminal observation deferral",
@@ -4894,19 +4603,16 @@ export class CollaborationService {
           "REVISION_CONFLICT",
           "Managed Flow identity appeared after the controller lookup",
         );
-        const mutation = this.findUnresolvedSessionMutation(currentRun.origin);
         const decision = decideProvisionExecution({
           runStatus: currentRun.status,
-          infrastructureFenced: mutation != null || this.maintenanceActive(),
+          infrastructureFenced: this.maintenanceActive(),
         });
         assertCondition(decision.kind !== "INVALID_STATE", "INVALID_TRANSITION", "Run left provisioning before Flow creation");
         if (decision.kind === "DEFER") {
           assertCondition(
             this.deferClaimedCommandForInfrastructure(
               command,
-              mutation
-                ? `Session mutation fence ${mutation.id} deferred Managed Flow creation`
-                : "Maintenance deferred Managed Flow creation",
+              "Maintenance deferred Managed Flow creation",
             ),
             "REVISION_CONFLICT",
             "Provision command lease changed before Flow creation deferral",
@@ -4998,8 +4704,7 @@ export class CollaborationService {
         "REVISION_CONFLICT",
         "Managed Flow identity changed before provisioning confirmation",
       );
-      const mutation = this.findUnresolvedSessionMutation(currentRun.origin);
-      if (currentRun.status === "PROVISIONING" && (mutation || this.maintenanceActive())) {
+      if (currentRun.status === "PROVISIONING" && this.maintenanceActive()) {
         const updated = this.database.updateRun(currentRun.id, currentRun.revision, {
           openclawFlowId: flowId,
           openclawFlowRevision: flowRevision,
@@ -5007,9 +4712,7 @@ export class CollaborationService {
         assertCondition(
           this.deferClaimedCommandForInfrastructure(
             command,
-            mutation
-              ? `Session mutation fence ${mutation.id} deferred provision confirmation`
-              : "Maintenance deferred provision confirmation",
+            "Maintenance deferred provision confirmation",
           ),
           "REVISION_CONFLICT",
           "Provision command lease changed before deferred confirmation",
@@ -5020,7 +4723,7 @@ export class CollaborationService {
           "command",
           command.id,
           updated.revision,
-          { flowId, mutationId: mutation?.id ?? null },
+          { flowId },
         );
         committed = true;
         return;
@@ -6976,7 +6679,6 @@ export class CollaborationService {
 
   private async reconcileActiveRuns(): Promise<void> {
     this.reconcileMaintenanceLease();
-    this.reconcileExpiredSessionMutations();
     for (const run of this.database.scanActiveRunsById()) {
       if (this.stopped) return;
       await this.lifecycle.runOnce(
@@ -7024,7 +6726,6 @@ export class CollaborationService {
       }
       if (recoveryActionQueued) void this.drainCommands();
       const run = this.database.getRunSummary(runId);
-      const sessionMutation = this.findUnresolvedSessionMutation(run.origin);
       const unresolvedAttempt = this.database.db
         .prepare("SELECT 1 FROM attempts WHERE run_id = ? AND status = 'UNKNOWN' LIMIT 1")
         .get(runId);
@@ -7034,9 +6735,7 @@ export class CollaborationService {
       const unresolvedIntervention = this.database.db
         .prepare("SELECT 1 FROM interventions WHERE run_id = ? AND resolved_at IS NULL LIMIT 1")
         .get(runId);
-      const recoveryBlocked = Boolean(
-        unresolvedAttempt || unresolvedDelivery || unresolvedIntervention || sessionMutation,
-      );
+      const recoveryBlocked = Boolean(unresolvedAttempt || unresolvedDelivery || unresolvedIntervention);
       if (
         !recoveryActionQueued
         && recoveryBlocked
@@ -7047,7 +6746,6 @@ export class CollaborationService {
           unknownAttempt: Boolean(unresolvedAttempt),
           unknownDelivery: Boolean(unresolvedDelivery),
           openIntervention: Boolean(unresolvedIntervention),
-          sessionMutation: Boolean(sessionMutation),
         });
       } else if (
         !recoveryActionQueued
@@ -7398,7 +7096,6 @@ export class CollaborationService {
   private scheduleReadyWork(runId: string): void {
     const run = this.database.getRunSummary(runId);
     if (run.status !== "RUNNING" || run.dispatchState !== "OPEN" || this.maintenanceActive()) return;
-    if (this.findUnresolvedSessionMutation(run.origin)) return;
     const activeCount = this.currentPlanScope.listActiveWorkerAttempts(runId).length;
     const capacity = Math.max(0, this.config.maxConcurrency - activeCount);
     if (capacity === 0) return;
@@ -7407,9 +7104,7 @@ export class CollaborationService {
   }
 
   private enqueueWorkerAttempt(runId: string, item: SqlRow, commandSeed: string): void {
-    const run = this.database.getRunSummary(runId);
     this.currentPlanScope.assertWorkItemCurrent(runId, item);
-    this.assertSessionMutationInactive(run.origin);
     if (this.hasActiveAttempt(String(item.id))) return;
     const agentId = nullableString(item.assigned_agent_id) ?? parseJson<string[]>(item.candidate_agent_ids_json, [])[0];
     assertCondition(agentId && this.allowedAgentIds().has(agentId), "CAPABILITY_CHANGED", "Assigned agent is not available");
@@ -7913,7 +7608,6 @@ export class CollaborationService {
       hasUnresolvedInterventionOutsideClosure: Boolean(
         this.partialApplicationInterventionBlocker(run.id, logicalIds),
       ),
-      hasActiveSessionMutation: Boolean(this.findUnresolvedSessionMutation(run.origin)),
     });
   }
 
@@ -8258,305 +7952,6 @@ export class CollaborationService {
     return response!;
   }
 
-  private parseSessionMutationAction(value: unknown): SessionMutationAction {
-    const action = readString(value, "action");
-    assertCondition(action === "reset" || action === "delete", "INVALID_REQUEST", "action must be reset or delete");
-    return action;
-  }
-
-  private parseSessionMutationPolicy(value: unknown): SessionMutationPolicy {
-    const policy = readString(value, "policy");
-    assertCondition(
-      policy === "PROCEED" || policy === "CANCEL_AND_WAIT" || policy === "STOP_AND_RETARGET_LATER",
-      "INVALID_REQUEST",
-      "Unsupported session mutation policy",
-    );
-    return policy;
-  }
-
-  private findUnresolvedSessionMutation(identity: {
-    runtimeId: string;
-    sessionKey: string;
-    sessionId: string;
-  }): SessionMutationRow | null {
-    const row = this.database.db
-      .prepare(
-        `SELECT * FROM session_mutations
-         WHERE runtime_id = ? AND session_key = ? AND session_id = ?
-           AND status IN ('PREPARED', 'EXPIRED')
-         ORDER BY created_at DESC LIMIT 1`,
-      )
-      .get(identity.runtimeId, identity.sessionKey, identity.sessionId) as SessionMutationRow | undefined;
-    return row ?? null;
-  }
-
-  private sessionMutationObject(row: SessionMutationRow): Record<string, unknown> {
-    return {
-      mutationId: row.id,
-      runtimeId: row.runtime_id,
-      sessionKey: row.session_key,
-      sessionId: row.session_id,
-      action: row.action,
-      policy: row.policy,
-      status: row.status,
-      expiresAt: numberValue(row.lease_expires_at),
-      result: sanitizeStoredJsonForOutput(
-        parseJson<Record<string, unknown> | null>(row.result_json, null),
-        "session mutation result",
-        PERSISTENCE_LIMITS.commandResponseBytes,
-      ),
-      createdAt: numberValue(row.created_at),
-      updatedAt: numberValue(row.updated_at),
-    };
-  }
-
-  private throwSessionMutationActive(row: SessionMutationRow): never {
-    throw new CollaborationError(
-      "SESSION_MUTATION_ACTIVE",
-      row.status === "EXPIRED"
-        ? "An expired session mutation requires explicit recovery"
-        : "A session mutation is already in progress",
-      {
-        ...this.sessionMutationObject(row),
-        recoveryRequired: row.status === "EXPIRED",
-      },
-    );
-  }
-
-  private assertSessionMutationInactive(identity: {
-    runtimeId: string;
-    sessionKey: string;
-    sessionId: string;
-  }): void {
-    const mutation = this.findUnresolvedSessionMutation(identity);
-    if (mutation) this.throwSessionMutationActive(mutation);
-  }
-
-  private applySessionMutationFence(runId: string, mutationId: string, policy: SessionMutationPolicy): void {
-    const suspendedDispatches = this.suspendPendingDispatchesForFence(runId, mutationId);
-    const run = this.database.getRunSummary(runId);
-    const stopForRetarget = policy === "STOP_AND_RETARGET_LATER";
-    const toStatus: RunStatus = stopForRetarget && run.status === "RUNNING" ? "AWAITING_INTERVENTION" : run.status;
-    const updated = this.database.updateRun(run.id, run.revision, {
-      status: toStatus,
-      dispatchState: run.dispatchState === "OPEN" ? "STOPPED" : run.dispatchState,
-      ...(toStatus === "AWAITING_INTERVENTION" ? { resumeStatus: "RUNNING" } : {}),
-    });
-    this.database.appendEvent(run.id, "SESSION_MUTATION_FENCE_ESTABLISHED", "session_mutation", mutationId, updated.revision, {
-      policy,
-      suspendedDispatches,
-    });
-    if (stopForRetarget) {
-      this.insertIntervention(
-        run.id,
-        "SESSION_MUTATION_ACTIVE",
-        "session_mutation",
-        mutationId,
-        "Retarget, export, cancel, or complete the session mutation before resuming dispatch",
-        { mutationId, policy },
-        run.status === "RUNNING" ? "RUNNING" : run.status,
-      );
-    }
-  }
-
-  private suspendPendingDispatchesForFence(runId: string, mutationId: string): number {
-    const closed = this.closeQueuedDispatches(
-      runId,
-      `Session mutation fence ${mutationId} stopped this queued dispatch`,
-      { includeAlreadyCancelledCommands: true },
-    );
-    return closed.safelyCancelled + closed.uncertain;
-  }
-
-  private suspendDispatchCommandForFence(
-    command: CommandRecord,
-    attempt: AttemptRow,
-    mutation: SessionMutationRow,
-  ): void {
-    if (attempt.status === "DISPATCHING") {
-      this.recordDispatchOutcomeUnknown(
-        command,
-        String(attempt.id),
-        `Session mutation fence ${mutation.id} observed an in-flight dispatch`,
-      );
-      return;
-    }
-    this.database.transaction(() => {
-      const timestamp = nowMs();
-      assertCondition(
-        this.database.settleClaimedCommand(command, "CANCELLED", {
-          error: `Session mutation fence ${mutation.id}`,
-        }),
-        "REVISION_CONFLICT",
-        "Dispatch command lease changed before the session mutation fence could stop it",
-      );
-      const attemptChanged = this.database.db
-        .prepare(
-          `UPDATE attempts SET status = 'CANCELLED', last_error = ?, ended_at = ?,
-           revision = revision + 1, updated_at = ?
-           WHERE id = ? AND status = 'CREATED' AND revision = ? AND openclaw_run_id IS NULL`,
-        )
-        .run(
-          `Session mutation fence ${mutation.id}`,
-          timestamp,
-          timestamp,
-          attempt.id,
-          numberValue(attempt.revision),
-        );
-      assertCondition(
-        Number(attemptChanged.changes) === 1,
-        "REVISION_CONFLICT",
-        "Attempt changed before the session mutation fence could stop it",
-      );
-      if (attempt.work_item_id) {
-        this.database.db
-          .prepare(
-            `UPDATE work_items SET status = 'READY', revision = revision + 1, updated_at = ?
-             WHERE id = ? AND status = 'DISPATCHING'`,
-          )
-          .run(timestamp, attempt.work_item_id);
-      }
-      const run = this.database.getRunSummary(command.runId);
-      const updated = this.database.updateRun(run.id, run.revision, {
-        dispatchState: run.dispatchState === "OPEN" ? "STOPPED" : run.dispatchState,
-      });
-      this.database.appendEvent(run.id, "DISPATCH_SUSPENDED_BY_SESSION_MUTATION", "attempt", attempt.id, updated.revision, {
-        mutationId: mutation.id,
-        mutationStatus: mutation.status,
-      });
-    });
-  }
-
-  private reconcileExpiredSessionMutations(): void {
-    const timestamp = nowMs();
-    const expired = this.database.db
-      .prepare("SELECT * FROM session_mutations WHERE status = 'PREPARED' AND lease_expires_at <= ? ORDER BY created_at ASC")
-      .all(timestamp) as SessionMutationRow[];
-    if (expired.length === 0) return;
-    const changedRunIds = new Set<string>();
-    this.database.transaction(() => {
-      for (const mutation of expired) {
-        this.instanceIdentity.assertRuntimeId(mutation.runtime_id, "sessionMutation.runtimeId");
-        const previous = sanitizeStoredJsonForOutput(
-          parseJson<Record<string, unknown>>(mutation.result_json, {}),
-          "session mutation result",
-          PERSISTENCE_LIMITS.commandResponseBytes,
-        ) as Record<string, unknown>;
-        const result = this.database.db
-          .prepare(
-            `UPDATE session_mutations SET status = 'EXPIRED', result_json = ?, updated_at = ?
-             WHERE id = ? AND status = 'PREPARED'`,
-          )
-          .run(stableStringify({
-            ...previous,
-            expiredAt: timestamp,
-            reason: "LEASE_EXPIRED",
-            recoveryRequired: true,
-          }), timestamp, mutation.id);
-        if (Number(result.changes) !== 1) continue;
-        const runs = this.listSessionRunsForCurrentInstance({
-          sessionKey: mutation.session_key,
-          sessionId: mutation.session_id,
-          activeOnly: true,
-          limit: 500,
-        });
-        for (const run of runs) {
-          const latest = this.database.getRunSummary(run.id);
-          const toStatus: RunStatus = latest.status === "RUNNING" ? "AWAITING_INTERVENTION" : latest.status;
-          const updated = this.database.updateRun(run.id, latest.revision, {
-            status: toStatus,
-            dispatchState: latest.dispatchState === "OPEN" ? "STOPPED" : latest.dispatchState,
-            reconcileState: "ATTENTION_REQUIRED",
-            ...(toStatus === "AWAITING_INTERVENTION" ? { resumeStatus: "RUNNING" } : {}),
-          });
-          this.suspendPendingDispatchesForFence(run.id, mutation.id);
-          this.database.appendEvent(run.id, "SESSION_MUTATION_EXPIRED", "session_mutation", mutation.id, updated.revision, {
-            action: mutation.action,
-            policy: mutation.policy,
-            expiredAt: timestamp,
-            recoveryRequired: true,
-          });
-          this.insertIntervention(
-            run.id,
-            "SESSION_MUTATION_EXPIRED",
-            "session_mutation",
-            mutation.id,
-            "Record the core session RPC outcome before resuming collaboration",
-            { mutationId: mutation.id, expiredAt: timestamp },
-            latest.status === "RUNNING" ? "RUNNING" : latest.status,
-          );
-          changedRunIds.add(run.id);
-        }
-      }
-    });
-    for (const runId of changedRunIds) this.emitChanged(runId);
-  }
-
-  private replayedSessionMutationResponse(
-    commandId: string,
-    payloadHash: string,
-    operation: "SESSION_MUTATION:PREPARE" | "SESSION_MUTATION:COMPLETE",
-  ): Record<string, unknown> | null {
-    const receipt = this.database.getCommandReceipt(commandId);
-    if (receipt) {
-      assertCondition(
-        receipt.source === operation,
-        "IDEMPOTENCY_CONFLICT",
-        "commandId was already used by another collaboration operation",
-      );
-      assertCondition(receipt.payloadHash === payloadHash, "IDEMPOTENCY_CONFLICT", "commandId was already used with another payload");
-      return this.writeResponse(receipt.response
-        ? { ...receipt.response, replayed: true }
-        : { accepted: true, replayed: true, commandId });
-    }
-    const row = this.database.db
-      .prepare("SELECT command_id FROM session_mutation_commands WHERE command_id = ?")
-      .get(commandId) as SqlRow | undefined;
-    assertCondition(
-      !row,
-      "IDEMPOTENCY_CONFLICT",
-      "commandId has a session mutation record without its authoritative receipt",
-    );
-    const runCommand = this.database.db.prepare("SELECT id FROM commands WHERE id = ?").get(commandId) as SqlRow | undefined;
-    assertCondition(!runCommand, "IDEMPOTENCY_CONFLICT", "commandId was already used by another collaboration command");
-    return null;
-  }
-
-  private insertSessionMutationCommand(params: {
-    commandId: string;
-    mutationId: string;
-    operation: "PREPARE" | "COMPLETE";
-    payloadHash: string;
-    response: Record<string, unknown>;
-  }): void {
-    assertBoundedJson(params.response, "session mutation command response", PERSISTENCE_LIMITS.commandResponseBytes);
-    const runCommand = this.database.db.prepare("SELECT 1 FROM commands WHERE id = ?").get(params.commandId);
-    assertCondition(!runCommand, "IDEMPOTENCY_CONFLICT", "commandId was already used by another collaboration command");
-    this.database.reserveCommandReceipt({
-      commandId: params.commandId,
-      source: `SESSION_MUTATION:${params.operation}`,
-      runId: null,
-      payloadHash: params.payloadHash,
-      response: params.response,
-    });
-    const timestamp = nowMs();
-    this.database.db
-      .prepare(
-        `INSERT INTO session_mutation_commands(
-          command_id, mutation_id, operation, payload_hash, response_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        params.commandId,
-        params.mutationId,
-        params.operation,
-        params.payloadHash,
-        stableStringify(params.response),
-        timestamp,
-        timestamp,
-      );
-  }
-
   private acceptedResponse(
     runId: string,
     commandId: string,
@@ -8583,29 +7978,6 @@ export class CollaborationService {
     return this.instanceIdentity.stampResponse(response);
   }
 
-  private listSessionRunsForCurrentInstance(params: {
-    sessionKey: string;
-    sessionId: string;
-    activeOnly?: boolean;
-    limit: number;
-  }): ReturnType<CollaborationDatabase["listRuns"]> {
-    const runs = this.database.listRuns({ ...params, includeArchived: true });
-    const mismatchedRun = runs.find(
-      (run) => run.origin.runtimeId !== this.instanceIdentity.collaborationInstanceId,
-    );
-    assertCondition(
-      !mismatchedRun,
-      "SESSION_IDENTITY_MISMATCH",
-      "A collaboration run is bound to a different database instance",
-      {
-        runId: mismatchedRun?.id,
-        expectedCollaborationInstanceId: this.instanceIdentity.collaborationInstanceId,
-        actualRuntimeId: mismatchedRun?.origin.runtimeId,
-      },
-    );
-    return runs;
-  }
-
   private replayedResponse(commandId: string, payloadHash: string, operation: string): Record<string, unknown> | null {
     const receipt = this.database.getCommandReceipt(commandId);
     if (receipt) {
@@ -8619,14 +7991,6 @@ export class CollaborationService {
         ? { ...receipt.response, replayed: true }
         : { accepted: true, replayed: true, commandId });
     }
-    const mutationCommand = this.database.db
-      .prepare("SELECT command_id FROM session_mutation_commands WHERE command_id = ?")
-      .get(commandId) as SqlRow | undefined;
-    assertCondition(
-      !mutationCommand,
-      "IDEMPOTENCY_CONFLICT",
-      "commandId has a session mutation record without its authoritative receipt",
-    );
     const row = this.database.db.prepare("SELECT payload_hash, response_json FROM commands WHERE id = ?").get(commandId) as SqlRow | undefined;
     if (!row) return null;
     throw new CollaborationError("IDEMPOTENCY_CONFLICT", "commandId is reserved by an internal collaboration command");

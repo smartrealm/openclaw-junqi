@@ -6,7 +6,6 @@ const noFences = {
   hasPendingPartialDecision: false,
   maintenanceGateActive: false,
   hasUnresolvedIntervention: false,
-  hasActiveSessionMutation: false,
 } as const;
 
 test("Worker phase restoration proceeds only when every suspension fence is clear", () => {
@@ -26,14 +25,12 @@ test("Worker phase restoration reports all durable fences deterministically", ()
     hasPendingPartialDecision: true,
     maintenanceGateActive: true,
     hasUnresolvedIntervention: true,
-    hasActiveSessionMutation: true,
   }), {
     kind: "DEFER",
     fences: [
       "PARTIAL_DECISION_PENDING",
       "MAINTENANCE_GATE_ACTIVE",
       "OPEN_INTERVENTION",
-      "SESSION_MUTATION_ACTIVE",
     ],
   });
 });

@@ -2133,76 +2133,6 @@ test("terminal PROVISION records a conflicting Flow and exposes reconciliation",
   }
 });
 
-test("a session mutation fence defers PROVISION and the same command resumes when the mutation aborts", async () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-provision-session-fence-"));
-  const database = new CollaborationDatabase(":memory:");
-  const runtime = new FakeRuntime();
-  let processor: CollaborationService | null = null;
-  try {
-    const provisionOrigin: OriginRef = {
-      runtimeId: "runtime-provision-session",
-      agentId: "main",
-      sessionKey: "agent:main:provision-session",
-      sessionId: "session-provision-session",
-      nativeMessageId: "message-provision-session",
-    };
-    const { runId, provisionCommandId, controlService } = await preparePendingProvision(
-      database,
-      runtime,
-      directory,
-      provisionOrigin,
-      "provision-session",
-    );
-    runtime.waitMode = "timeout";
-    const prepared = controlService.prepareSessionMutation(writeParams({
-      commandId: "provision-session-prepare",
-      runtimeId: provisionOrigin.runtimeId,
-      sessionKey: provisionOrigin.sessionKey,
-      sessionId: provisionOrigin.sessionId,
-      action: "reset",
-      policy: "CANCEL_AND_WAIT",
-    }));
-    assert.equal(prepared.coreRpcAllowed, false);
-
-    processor = createTestService(database, runtime, directory);
-    processor.start();
-    await waitUntil(() => {
-      const command = database.getCommand(provisionCommandId);
-      return command.status === "PENDING" && command.attempts >= 1;
-    });
-    const deferredAttempts = database.getCommand(provisionCommandId).attempts;
-    assert.equal(database.getCommand(provisionCommandId).failureCount, 0);
-    assert.equal(runtime.flowCreateCalls, 0);
-    assert.equal(database.getRunRow(runId).openclaw_flow_id, null);
-
-    database.db.prepare("UPDATE commands SET available_at = 0 WHERE id = ?").run(provisionCommandId);
-    const completed = processor.completeSessionMutation(writeParams({
-      commandId: "provision-session-abort",
-      mutationId: prepared.mutationId,
-      success: false,
-      error: "session mutation was aborted before the core RPC",
-    }));
-    assert.equal(completed.status, "FAILED");
-    await waitUntil(() => database.getCommand(provisionCommandId).status === "SUCCEEDED");
-
-    const command = database.getCommand(provisionCommandId);
-    assert.ok(command.attempts > deferredAttempts);
-    assert.equal(command.failureCount, 0);
-    assert.equal(runtime.flowCreateCalls, 1);
-    assert.equal(runtime.flowCreates, 1);
-    assert.equal(database.getRunRow(runId).openclaw_flow_id, "flow-1");
-    assert.equal(database.getRunSummary(runId).status, "RUNNING");
-    assert.equal(
-      Number(database.db.prepare("SELECT COUNT(*) AS value FROM commands WHERE run_id = ? AND kind = 'PROVISION'").get(runId)?.value),
-      1,
-    );
-  } finally {
-    if (processor) await processor.stop();
-    database.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
 test("a stale PROVISION owner cannot commit and the replacement reuses the controller-bound Flow", async () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-provision-lease-loss-"));
   const database = new CollaborationDatabase(":memory:");
@@ -4018,17 +3948,6 @@ test("deletion command replay survives plugin restart after the run cascade", as
     const replayedArchive = service.archiveRun(archiveParams, true);
     assert.equal(replayedArchive.replayed, true);
     assert.equal(replayedArchive.commandId, "durable-archive-command");
-    assert.throws(
-      () => service.prepareSessionMutation(writeParams({
-        commandId: "durable-delete-command",
-        runtimeId: "runtime-delete-replay",
-        sessionKey: "agent:main:delete-replay",
-        sessionId: "session-delete-replay",
-        action: "delete",
-        policy: "PROCEED",
-      })),
-      (error: unknown) => error instanceof CollaborationError && error.code === "IDEMPOTENCY_CONFLICT",
-    );
   } finally {
     await service.stop();
     database.close();
@@ -10109,7 +10028,7 @@ test("forged origin runtimes cannot create parallel runs and exact instance comm
   }
 });
 
-test("commands captured before database replacement fail closed across plan maintenance and session mutation", async () => {
+test("commands captured before database replacement fail closed across plan and maintenance", async () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-instance-replacement-"));
   const previousDatabase = new CollaborationDatabase(":memory:");
   const staleInstanceId = previousDatabase.instanceId;
@@ -10128,19 +10047,6 @@ test("commands captured before database replacement fail closed across plan main
     commandId: "stale-instance-maintenance",
     reason: "replacement-test",
   });
-  const stalePrepare = writeParams({
-    commandId: "stale-instance-session-prepare",
-    sessionKey: "agent:main:stale-instance",
-    sessionId: "session-stale-instance",
-    action: "delete",
-    policy: "PROCEED",
-  });
-  const staleComplete = writeParams({
-    commandId: "stale-instance-session-complete",
-    mutationId: "mutation-from-replaced-database",
-    success: false,
-  });
-
   const replacementDatabase = new CollaborationDatabase(":memory:");
   const replacementService = createTestService(replacementDatabase, new FakeRuntime(), directory);
   const isInstanceMismatch = (error: unknown) => error instanceof CollaborationError
@@ -10151,23 +10057,8 @@ test("commands captured before database replacement fail closed across plan main
     assert.notEqual(replacementDatabase.instanceId, staleInstanceId);
     await assert.rejects(replacementService.createPlan(stalePlan), isInstanceMismatch);
     assert.throws(() => replacementService.enterMaintenance(staleMaintenance), isInstanceMismatch);
-    assert.throws(() => replacementService.prepareSessionMutation(stalePrepare), isInstanceMismatch);
-    assert.throws(() => replacementService.completeSessionMutation(staleComplete), isInstanceMismatch);
-    assert.throws(
-      () => replacementService.sessionMutationImpact({
-        runtimeId: staleInstanceId,
-        sessionKey: "agent:main:stale-instance",
-        sessionId: "session-stale-instance",
-        action: "delete",
-      }),
-      isInstanceMismatch,
-    );
     assert.equal(replacementDatabase.listRuns({ includeArchived: true }).length, 0);
     assert.equal(replacementDatabase.getMetadata("maintenance_lease"), null);
-    assert.equal(
-      Number(replacementDatabase.db.prepare("SELECT COUNT(*) AS value FROM session_mutations").get()?.value),
-      0,
-    );
   } finally {
     previousDatabase.close();
     replacementDatabase.close();

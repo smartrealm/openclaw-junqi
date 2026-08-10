@@ -62,10 +62,6 @@ export type TranscriptStatus =
   | "UNKNOWN"
   | "SESSION_REBOUND";
 
-export type SessionMutationAction = "reset" | "delete";
-export type SessionMutationPolicy = "PROCEED" | "CANCEL_AND_WAIT" | "STOP_AND_RETARGET_LATER";
-export type SessionMutationStatus = "PREPARED" | "EXPIRED" | "COMPLETED" | "FAILED";
-
 export type CommandKind =
   | "PLAN"
   | "PROVISION"

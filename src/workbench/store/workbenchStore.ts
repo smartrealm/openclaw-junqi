@@ -6,14 +6,6 @@ import {
   splitTabGroup as splitLayoutGroup,
 } from '../domain/tabGroupLayout';
 import { WORKBENCH_SESSION_SCHEMA_VERSION, type WorkbenchSessionSnapshot } from '../session/schema';
-import {
-  claimProviderSession,
-  releaseProviderClaim,
-  updateProviderClaimStatus,
-  type ProviderClaimRequest,
-  type ProviderClaimState,
-  type ProviderSessionClaim,
-} from '../domain/providerSession';
 import type {
   TabGroup,
   TabGroupId,
@@ -51,13 +43,9 @@ interface WorkbenchState {
   groups: Record<TabGroupId, TabGroup>;
   layout: TabGroupLayoutNode;
   activeGroupId: TabGroupId;
-  providerClaims: ProviderClaimState;
   resourceTransaction: WorkbenchResourceTransaction | null;
   beginResourceTransaction: (kind: WorkbenchResourceTransactionKind) => string | null;
   endResourceTransaction: (token: string) => boolean;
-  claimProvider: (request: ProviderClaimRequest) => ReturnType<typeof claimProviderSession>;
-  updateProviderStatus: (paneId: string, claimId: string, generation: number, status: ProviderSessionClaim['status']) => void;
-  releaseProvider: (paneId: string, claimId: string, generation: number) => void;
   setWorktrees: (worktrees: WorkbenchWorktree[]) => void;
   addWorktree: (worktree: WorkbenchWorktree) => void;
   forgetWorktree: (id: WorktreeId, transactionToken: string) => void;
@@ -68,7 +56,6 @@ interface WorkbenchState {
   setTabDirty: (tabId: TabId, dirty: boolean) => void;
   acknowledgePtyCreate: (tabId: TabId) => void;
   replacePtyIdentity: (tabId: TabId, ptyId: string, runId: string, transactionToken: string) => void;
-  reconcileProviderPtyExit: (ptyId: string, runId: string) => void;
   splitGroup: (targetGroupId: TabGroupId, newGroupId: TabGroupId, splitId: string, direction: 'horizontal' | 'vertical', moveActiveTab?: boolean) => void;
   removeGroup: (groupId: TabGroupId, transactionToken: string) => void;
   resizeSplit: (splitId: string, ratio: number) => void;
@@ -95,12 +82,6 @@ function transactionOwns(state: WorkbenchState, token: string): boolean {
   return state.resourceTransaction?.token === token;
 }
 
-function withoutPaneClaims(state: ProviderClaimState, paneIds: Iterable<string>): ProviderClaimState {
-  const byPane = { ...state.byPane };
-  for (const paneId of paneIds) delete byPane[paneId];
-  return { byPane };
-}
-
 function activeWorktreeForGroup(
   groupId: TabGroupId,
   groups: Record<TabGroupId, TabGroup>,
@@ -125,7 +106,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   groups: { [MAIN_GROUP_ID]: { id: MAIN_GROUP_ID, tabIds: [], activeTabId: null } },
   layout: { type: 'group', groupId: MAIN_GROUP_ID },
   activeGroupId: MAIN_GROUP_ID,
-  providerClaims: { byPane: {} },
   resourceTransaction: null,
 
   beginResourceTransaction: (kind) => {
@@ -146,21 +126,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     });
     return released;
   },
-
-  claimProvider: (request) => {
-    let result!: ReturnType<typeof claimProviderSession>;
-    set((state) => {
-      result = claimProviderSession(state.providerClaims, request);
-      return result.ok ? { providerClaims: result.state } : {};
-    });
-    return result;
-  },
-  updateProviderStatus: (paneId, claimId, generation, status) => set((state) => ({
-    providerClaims: updateProviderClaimStatus(state.providerClaims, paneId, claimId, generation, status),
-  })),
-  releaseProvider: (paneId, claimId, generation) => set((state) => ({
-    providerClaims: releaseProviderClaim(state.providerClaims, paneId, claimId, generation),
-  })),
 
   setWorktrees: (worktrees) => set((state) => {
     if (state.resourceTransaction) return {};
@@ -199,11 +164,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }));
     const worktrees = { ...state.worktrees };
     delete worktrees[id];
-    const byPane = { ...state.providerClaims.byPane };
-    for (const tabId of forgottenTabs) {
-      const paneId = state.tabs[tabId]?.paneId;
-      if (paneId) delete byPane[paneId];
-    }
     const forgottenLegacyWorktreeIds = id.startsWith('legacy-worktree:')
       ? [...new Set([...state.forgottenLegacyWorktreeIds, id])]
       : state.forgottenLegacyWorktreeIds;
@@ -213,7 +173,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const activeWorktreeId = activeWorktreeForGroup(state.activeGroupId, groups, tabs, fallbackWorktreeId);
     return {
       worktrees, tabs, groups, activeWorktreeId, forgottenLegacyWorktreeIds,
-      providerClaims: { byPane },
     };
   }),
 
@@ -289,7 +248,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     return {
       tabs,
       groups,
-      providerClaims: withoutPaneClaims(state.providerClaims, [state.tabs[tabId]?.paneId].filter(Boolean) as string[]),
       ...(groupId === state.activeGroupId
         ? { activeWorktreeId: activeWorktreeForGroup(groupId, groups, tabs, state.activeWorktreeId) }
         : {}),
@@ -320,15 +278,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     };
   }),
 
-  reconcileProviderPtyExit: (ptyId, runId) => set((state) => ({
-    providerClaims: withoutPaneClaims(
-      state.providerClaims,
-      Object.values(state.providerClaims.byPane)
-        .filter((claim) => claim.ptyId === ptyId && claim.ptyRunId === runId)
-        .map((claim) => claim.paneId),
-    ),
-  })),
-
   splitGroup: (targetGroupId, newGroupId, splitId, direction, moveActiveTab = false) => set((state) => {
     if (state.resourceTransaction) return {};
     const target = state.groups[targetGroupId];
@@ -356,7 +305,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const groups = { ...state.groups };
     const tabs = { ...state.tabs };
     const removedTabIds = groups[groupId]?.tabIds ?? [];
-    const removedPaneIds = removedTabIds.flatMap((tabId) => state.tabs[tabId]?.paneId ? [state.tabs[tabId]!.paneId] : []);
     removedTabIds.forEach((tabId) => delete tabs[tabId]);
     delete groups[groupId];
     const activeGroupId = state.activeGroupId === groupId
@@ -365,7 +313,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     return {
       groups, tabs, layout, activeGroupId,
       activeWorktreeId: activeWorktreeForGroup(activeGroupId, groups, tabs, state.activeWorktreeId),
-      providerClaims: withoutPaneClaims(state.providerClaims, removedPaneIds),
     };
   }),
 
@@ -390,13 +337,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     sidebarMode: snapshot.sidebarMode,
     rightSidebarPanel: snapshot.rightSidebarPanel,
     rightSidebarCollapsed: snapshot.rightSidebarCollapsed,
-    providerClaims: { byPane: {} },
     resourceTransaction: null,
   } : {
     hydrated: true,
     writerReady: true,
     hydrationError: null,
-    providerClaims: { byPane: {} },
     resourceTransaction: null,
   }),
 

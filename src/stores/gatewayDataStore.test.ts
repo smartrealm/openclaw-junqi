@@ -14,7 +14,6 @@ import {
   refreshSessionArtifacts,
   searchOpenClawMemory,
   refreshOpenClawMemoryDiagnostics,
-  previewOpenClawMemoryRemHarness,
   refreshToolsCatalog,
   refreshToolsEffective,
   invokeOpenClawTool,
@@ -865,7 +864,7 @@ test('disconnect clears the Gateway-owned memory snapshot and invalidates its re
   assert.equal(useGatewayDataStore.getState().memorySearchError, null);
 });
 
-test('memory diagnostics keeps REM preview separate', async () => {
+test('memory diagnostics requests only the current official status method', async () => {
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const gateway = {
     request: async (method: string, params: Record<string, unknown>) => {
@@ -877,16 +876,6 @@ test('memory diagnostics keeps REM preview separate', async () => {
         provider: 'local',
         embedding: { ok: false, checked: false, error: 'memory embedding readiness not checked' },
       };
-      if (method === 'doctor.memory.remHarness') return {
-        ok: true,
-        agentId: 'main',
-        workspaceDir: '/workspace/main',
-        remConfig: { enabled: false, lookbackDays: 7, limit: 25, minPatternStrength: 0.5 },
-        deepConfig: { minScore: 0.7, minRecallCount: 2, minUniqueQueries: 2, recencyHalfLifeDays: 14, maxAgeDays: null },
-        rem: { skipped: true, sourceEntryCount: 0, reflections: [], candidateTruths: [], bodyLines: [] },
-        grounded: null,
-        deep: { candidateLimit: 25, truncated: false, candidates: [] },
-      };
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -895,16 +884,13 @@ test('memory diagnostics keeps REM preview separate', async () => {
   startPolling(gateway);
   try {
     assert.equal(await refreshOpenClawMemoryDiagnostics(), true);
-    assert.equal(await previewOpenClawMemoryRemHarness({ grounded: true }), true);
     assert.deepEqual(useGatewayDataStore.getState().memoryDiagnostics?.embedding, {
       ok: false,
       checked: false,
       error: 'memory embedding readiness not checked',
     });
-    assert.equal(useGatewayDataStore.getState().memoryRemHarness?.ok, true);
     assert.deepEqual(calls.filter((call) => call.method.startsWith('doctor.memory')), [
       { method: 'doctor.memory.status', params: {} },
-      { method: 'doctor.memory.remHarness', params: { grounded: true } },
     ]);
   } finally {
     stopPolling();
@@ -918,7 +904,7 @@ test('memory diagnostics maps actual Gateway rejection without fabricating state
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [] };
-      if (method === 'doctor.memory.status' || method === 'doctor.memory.remHarness') {
+      if (method === 'doctor.memory.status') {
         throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
       }
       throw new Error(`unexpected method: ${method}`);
@@ -929,11 +915,8 @@ test('memory diagnostics maps actual Gateway rejection without fabricating state
   startPolling(gateway);
   try {
     assert.equal(await refreshOpenClawMemoryDiagnostics(), false);
-    assert.equal(await previewOpenClawMemoryRemHarness(), false);
     assert.equal(useGatewayDataStore.getState().memoryDiagnosticsError, 'OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED');
-    assert.equal(useGatewayDataStore.getState().memoryRemHarnessError, 'OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED');
     assert.equal(calls.includes('doctor.memory.status'), true);
-    assert.equal(calls.includes('doctor.memory.remHarness'), true);
   } finally {
     stopPolling();
   }

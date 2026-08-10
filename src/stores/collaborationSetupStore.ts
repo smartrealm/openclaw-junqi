@@ -334,7 +334,6 @@ export function createHealthConfirmation(
     || status.targetFingerprint !== identity.targetFingerprint
     || identity.connectionId === journal.target.connectionId
     || identity.runtimeId !== capabilities.collaborationInstanceId
-    || !identity.methods.includes('junqi.collab.capabilities')
     || journal.package.pluginId !== bundle.pluginId
     || journal.package.pluginVersion !== bundle.pluginVersion
     || journal.package.sha256.toLowerCase() !== bundle.sha256
@@ -457,7 +456,7 @@ export function createCollaborationSetupStore(
   let healthConfirmationKey: string | null = null;
 
   const loadCapabilities = async (identity: RuntimeIdentity | null): Promise<CollaborationCapabilities | null> => {
-    if (!identity?.verified || !identity.methods.includes('junqi.collab.capabilities')) return null;
+    if (!identity?.verified) return null;
     const capabilities = await dependencies.reloadCapabilities();
     const liveIdentity = dependencies.getRuntimeIdentity();
     if (
