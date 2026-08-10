@@ -9,6 +9,7 @@ test('插件已更新时优先引导重启 Gateway', () => {
     runtime: null,
     runtimeError: null,
     pluginNeedsInstall: true,
+    pluginStatusPending: false,
     restartRequired: true,
     agentId: 'main',
   });
@@ -24,6 +25,7 @@ test('插件缺失且无需重启时提供 JunQi 安装入口', () => {
     runtime: null,
     runtimeError: null,
     pluginNeedsInstall: true,
+    pluginStatusPending: false,
     restartRequired: false,
     agentId: 'main',
   });
@@ -48,6 +50,7 @@ test('DWS 缺失时保留受控安装动作', () => {
     },
     runtimeError: null,
     pluginNeedsInstall: false,
+    pluginStatusPending: false,
     restartRequired: false,
     agentId: 'main',
   });
@@ -68,9 +71,26 @@ test('DWS 已安装但缺少 Profile 时保留官方授权动作', () => {
     },
     runtimeError: null,
     pluginNeedsInstall: false,
+    pluginStatusPending: false,
     restartRequired: false,
     agentId: 'main',
   });
 
   assert.equal(readiness.action, 'authorize-dws');
+});
+
+test('插件状态未返回前不误报未安装或 Agent 未授权', () => {
+  const readiness = resolveDingTalkReadiness({
+    sessionExists: true,
+    runtimeToolAvailable: false,
+    runtime: null,
+    runtimeError: null,
+    pluginNeedsInstall: false,
+    pluginStatusPending: true,
+    restartRequired: false,
+    agentId: 'main',
+  });
+
+  assert.equal(readiness.action, null);
+  assert.equal(readiness.title, '正在核对钉钉接入状态');
 });

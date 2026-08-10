@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CircleAlert, CircleCheck, CircleDashed, Copy, ExternalLink, RefreshCw, Settings2, Square, Terminal, Wrench } from 'lucide-react';
+import { CircleAlert, CircleCheck, CircleDashed, Copy, ExternalLink, RefreshCw, Square, Terminal, Wrench } from 'lucide-react';
 import { Button } from '@/components/shared/button/Button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { DingTalkRuntimeIdentityProjection } from '@/business-applications/dingtalkTools';
@@ -59,6 +59,7 @@ export function DingTalkReadinessPanel({
   runtime,
   runtimeError,
   pluginNeedsInstall,
+  pluginStatusPending,
   restartRequired,
   agentId,
   installAvailable,
@@ -75,8 +76,7 @@ export function DingTalkReadinessPanel({
   hideWhenReady = false,
   onRefresh,
   onInstallPlugin,
-  onConfigureAgent,
-  onConfigurePlugin,
+  onAuthorizeAgent,
   onRestartGateway,
   onInstallDws,
   onAuthorizeDws,
@@ -88,6 +88,7 @@ export function DingTalkReadinessPanel({
   runtime: DingTalkRuntimeIdentityProjection | null;
   runtimeError: string | null;
   pluginNeedsInstall: boolean;
+  pluginStatusPending: boolean;
   restartRequired: boolean;
   agentId: string | null;
   installAvailable: boolean;
@@ -95,7 +96,7 @@ export function DingTalkReadinessPanel({
   dwsOperation: DingTalkDwsOperationPresentation | null;
   dwsOutput: readonly string[];
   busy: boolean;
-  operation: 'installing' | 'restarting' | null;
+  operation: 'installing' | 'authorizing' | 'restarting' | null;
   sessionLabel: string | null;
   effectiveToolCount: number;
   pluginVersion: string | null;
@@ -104,8 +105,7 @@ export function DingTalkReadinessPanel({
   hideWhenReady?: boolean;
   onRefresh: () => void;
   onInstallPlugin: () => void;
-  onConfigureAgent: () => void;
-  onConfigurePlugin: () => void;
+  onAuthorizeAgent: () => void;
   onRestartGateway: () => void;
   onInstallDws: () => void;
   onAuthorizeDws: () => void;
@@ -121,6 +121,7 @@ export function DingTalkReadinessPanel({
     runtime,
     runtimeError,
     pluginNeedsInstall,
+    pluginStatusPending,
     restartRequired,
     agentId,
   });
@@ -149,11 +150,11 @@ export function DingTalkReadinessPanel({
       ? <Button size="xs" variant="outline" tone="primary" loading={busy} leadingIcon={<Wrench size={12} />} onClick={onInstallPlugin} title="在当前已验证的 Gateway 中安装钉钉业务插件">在 JunQi 安装</Button>
       : <Button size="xs" variant="outline" tone="neutral" loading={busy} leadingIcon={<RefreshCw size={12} />} onClick={onRefresh}>重新检测</Button>
     : readiness.action === 'configure-agent'
-      ? <Button size="xs" variant="outline" tone="warning" leadingIcon={<Settings2 size={12} />} onClick={() => setAuthorizationGuideOpen(true)}>配置授权</Button>
+      ? <Button size="xs" variant="outline" tone="warning" loading={busy && operation === 'authorizing'} disabled={!agentId} onClick={() => setAuthorizationGuideOpen(true)}>一键授权当前 Agent</Button>
     : readiness.action === 'install-dws'
       ? <Button size="xs" variant="outline" tone="warning" disabled={!installAvailable || dwsOperationActive} loading={dwsOperationActive} leadingIcon={<Terminal size={12} />} onClick={onInstallDws} title={installAvailable ? '在当前已验证的运行时执行 DWS 官方安装命令' : '远程或未验证 Gateway 不允许由桌面修改运行时'}>安装 DWS</Button>
     : readiness.action === 'authorize-dws'
-      ? <Button size="xs" variant="outline" tone="primary" disabled={!installAvailable || dwsOperationActive} loading={dwsOperationActive} leadingIcon={<Terminal size={12} />} onClick={onAuthorizeDws} title={installAvailable ? '在当前已验证的运行时启动 DWS 官方设备授权' : '远程或未验证 Gateway 不允许由桌面启动授权'}>授权 DWS</Button>
+      ? <Button size="xs" variant="outline" tone="primary" disabled={!installAvailable || dwsOperationActive} loading={dwsOperationActive} leadingIcon={<Terminal size={12} />} onClick={onAuthorizeDws} title={installAvailable ? '在当前已验证的运行时启动 DWS 官方授权' : '远程或未验证 Gateway 不允许由桌面启动授权'}>扫码授权 DWS</Button>
     : readiness.action === 'restart-gateway'
       ? <Button size="xs" variant="outline" tone="warning" loading={busy} onClick={onRestartGateway}>重启 Gateway</Button>
       : readiness.action === 'refresh'
@@ -185,7 +186,7 @@ export function DingTalkReadinessPanel({
         {operation && !(operation === 'installing' && installationVisible) && (
           <div
             role="progressbar"
-            aria-label={operation === 'installing' ? '正在安装钉钉业务插件' : '正在重启 Gateway'}
+            aria-label={operation === 'installing' ? '正在安装钉钉业务插件' : operation === 'authorizing' ? '正在授权当前 Agent' : '正在重启 Gateway'}
             className="relative h-1 overflow-hidden border-b border-aegis-border bg-aegis-bg/75"
           >
             <span className="aegis-indeterminate-progress absolute inset-y-0 w-2/5 bg-aegis-primary" />
@@ -282,8 +283,8 @@ export function DingTalkReadinessPanel({
       <Dialog open={authorizationGuideOpen} onOpenChange={setAuthorizationGuideOpen}>
         <DialogContent className="w-[min(560px,calc(100vw-24px))] border-aegis-border bg-aegis-bg-solid p-0 text-aegis-text">
           <DialogHeader className="border-b border-aegis-border px-4 py-3 text-left">
-            <DialogTitle className="text-[13px]">配置钉钉 Agent 授权</DialogTitle>
-            <DialogDescription className="text-[10.5px] text-aegis-text-dim">钉钉业务工具需要同时通过 OpenClaw 的 Agent 工具策略和插件授权名单，任一缺失都会保持阻断。</DialogDescription>
+            <DialogTitle className="text-[13px]">授权当前 Agent 使用钉钉</DialogTitle>
+            <DialogDescription className="text-[10.5px] text-aegis-text-dim">JunQi 会把当前 Agent 同时加入 OpenClaw 工具策略和钉钉插件授权名单，然后自动重启 Gateway 并重新检测。</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 px-4 py-4">
             <div className="rounded-md border border-aegis-border bg-aegis-surface/45 p-3 text-[10.5px] leading-5">
@@ -291,25 +292,13 @@ export function DingTalkReadinessPanel({
                 <span className="text-aegis-text-dim">当前 Agent</span>
                 <code className="font-mono text-aegis-text-secondary">{agentId ?? '未返回 Agent ID'}</code>
               </div>
-              <div className="mt-2 flex items-start gap-2 text-aegis-text-dim">
-                <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-aegis-warning" aria-hidden="true" />
-                <span>插件配置路径：<code className="font-mono text-aegis-text-secondary">plugins.entries.junqi-dingtalk.config.allowedAgentIds</code></span>
-              </div>
+              <p className="mt-2 text-aegis-text-dim">不会覆盖当前 Agent 已有的工具权限；若 Gateway 已明确拒绝钉钉插件，JunQi 会停在当前页面并说明需要解除的拒绝规则。</p>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button type="button" className="rounded-md border border-aegis-border bg-aegis-surface/45 p-3 text-left transition-colors hover:border-aegis-primary/45 hover:bg-aegis-hover/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60" onClick={onConfigureAgent}>
-                <span className="flex items-center gap-2 text-[10.5px] font-medium text-aegis-text"><Settings2 size={13} className="text-aegis-primary" />Agent 工具策略</span>
-                <span className="mt-1 block text-[9.5px] leading-4 text-aegis-text-dim">进入 Tools 配置，核对当前 Agent 是否允许钉钉工具。</span>
-              </button>
-              <button type="button" className="rounded-md border border-aegis-border bg-aegis-surface/45 p-3 text-left transition-colors hover:border-aegis-primary/45 hover:bg-aegis-hover/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60" onClick={onConfigurePlugin}>
-                <span className="flex items-center gap-2 text-[10.5px] font-medium text-aegis-text"><Wrench size={13} className="text-aegis-primary" />钉钉插件授权名单</span>
-                <span className="mt-1 block text-[9.5px] leading-4 text-aegis-text-dim">进入 Advanced 原始配置，设置上方路径并保存。</span>
-              </button>
-            </div>
-            <p className="text-[10px] leading-5 text-aegis-text-dim">保存后回到钉钉工作台，点击“重新检测”。只有当前 Session 的 <code className="font-mono text-aegis-text-secondary">tools.effective</code> 返回钉钉工具时，授权才会显示为有效。</p>
+            <p className="text-[10px] leading-5 text-aegis-text-dim">当前 Session：<code className="font-mono text-aegis-text-secondary">{sessionLabel ?? '未选择'}</code>。只有 Gateway 重启并返回新的 <code className="font-mono text-aegis-text-secondary">tools.effective</code> 快照后，授权才会显示为有效。</p>
           </div>
-          <div className="flex justify-end border-t border-aegis-border px-4 py-3">
+          <div className="flex justify-end gap-2 border-t border-aegis-border px-4 py-3">
             <Button size="xs" variant="outline" tone="neutral" onClick={() => setAuthorizationGuideOpen(false)}>关闭</Button>
+            <Button size="xs" variant="solid" tone="primary" disabled={!agentId} loading={busy && operation === 'authorizing'} onClick={() => { setAuthorizationGuideOpen(false); onAuthorizeAgent(); }}>授权并重启</Button>
           </div>
         </DialogContent>
       </Dialog>
