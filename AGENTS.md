@@ -77,6 +77,7 @@ JunQi Desktop 是基于 Tauri 2、Rust、React 18、TypeScript、Vite 6 和 Open
 - Rust `serde(rename_all = ...)` 是前端字段命名的契约。禁止用 `any`、强制断言或静默默认值掩盖 IPC 契约漂移。
 - Native 与 Docker 是用户明确选择并持久化的运行方式。失败时不得静默切换到另一运行时；恢复、探测、凭据和配置路径都必须绑定当前选定 runtime。
 - Gateway 健康不等于身份、配置和授权正确。完成条件必须保留 selected config、runtime identity、credential scope、official-service handoff 和真实模型探测门禁。
+- Gateway 启动、停止、重启、恢复、健康重试与故障收敛必须只经过一个统一生命周期协调入口；页面、Hook、设置项和诊断页不得直连进程或 Gateway command，也不得维护第二套重试、轮询、状态机或成功语义。所有入口复用同一动作状态、错误映射、禁用规则和运行时身份围栏，重启相关 UI 必须使用同一共享展示组件与文案来源。
 - OpenClaw Wizard、渠道设置和二维码流程由官方 Runtime/插件拥有。JunQi 负责忠实呈现结构化步骤、终端输出和状态轮询，不得屏蔽、改写或猜测第三方插件结果。
 - 合并本地或远端分支前，必须以共同祖先逐项审查进入改动的 OpenClaw 契约、调用图和目标平台假设。第三方 CLI、独立应用、固定平台门禁或演示 UI 不得因分支已有实现而自动成为 JunQi 功能；缺少 OpenClaw 官方依据时必须删除或标记为待验证，不能保留为可用入口。
 - Secret、Gateway token、Provider key 和设备凭据只存在于最小必要边界。不得写入日志、Markdown、测试快照、前端持久存储或提交记录；系统凭据库不可用时必须保留明确的 session-only/unsupported 语义。
