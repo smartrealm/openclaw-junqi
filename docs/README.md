@@ -185,6 +185,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [OpenClaw 原生会话组写入对齐](quality/openclaw-session-group-mutations-alignment-2026-08-04.md)
 - [会话工具栏控件加固验证](quality/session-toolbar-controls-hardening-2026-08-07.md)
 - [OpenClaw 会话变更与会话文件移除](quality/openclaw-session-diff-files-removal-2026-08-08.md)
+- [OpenClaw 原生会话删除与重置边界审计](quality/openclaw-native-session-mutation-boundary-audit-2026-08-10.md)
 - [灵动岛显隐生命周期审计](quality/dynamic-island-visibility-lifecycle-audit-2026-08-04.md)
 - [OpenClaw 本地发送队列交付原子性审计](quality/openclaw-local-send-queue-dispatch-atomicity-audit-2026-08-04.md)
 - [P0 IPC 与 Gateway 边界收敛验证](quality/p0-ipc-and-gateway-boundary-validation-2026-08-03.md)

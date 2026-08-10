@@ -3,7 +3,6 @@ import { HashRouter } from 'react-router-dom';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { useAlertStore } from '@/components/shared/alertStore';
 import { useNotificationStore } from '@/stores/notificationStore';
-import { useSessionMutationDialogStore } from '@/stores/sessionMutationDialogStore';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { useCollaborationSetupStore } from '@/stores/collaborationSetupStore';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
@@ -12,7 +11,6 @@ import { CollaborationActivityRuntime } from '@/runtime/CollaborationActivityRun
 const AppRouteTree = lazy(() => import('@/AppRouteTree'));
 const ToastContainer = lazy(() => import('@/components/Toast/ToastContainer').then(m => ({ default: m.ToastContainer })));
 const GlobalAlertDialog = lazy(() => import('@/components/shared/AlertDialog').then(m => ({ default: m.GlobalAlertDialog })));
-const SessionMutationDialog = lazy(() => import('@/runtime/SessionMutationDialog').then(m => ({ default: m.SessionMutationDialog })));
 const CollaborationSetupDialog = lazy(() => import('@/components/Collaboration/CollaborationSetupDialog').then(m => ({ default: m.CollaborationSetupDialog })));
 
 function LazyToastHost() {
@@ -31,16 +29,6 @@ function LazyAlertDialogHost() {
   return (
     <Suspense fallback={null}>
       <GlobalAlertDialog />
-    </Suspense>
-  );
-}
-
-function LazySessionMutationDialogHost() {
-  const open = useSessionMutationDialogStore((state) => Boolean(state.current));
-  if (!open) return null;
-  return (
-    <Suspense fallback={null}>
-      <SessionMutationDialog />
     </Suspense>
   );
 }
@@ -76,7 +64,6 @@ export default function AppRoutes() {
         </Suspense>
       </ErrorBoundary>
       <LazyAlertDialogHost />
-      <LazySessionMutationDialogHost />
       <CollaborationSetupRuntime />
     </HashRouter>
   );

@@ -1719,50 +1719,6 @@ export const gateway = {
       },
     );
   },
-  async deleteSessionFenced(
-    sessionKey: string,
-    deleteTranscript: true,
-    expectedSessionId: string,
-    expectedConnectionId: string,
-  ) {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
-    return sessionCommandCoordinator.runMutation(
-      targetSessionKey,
-      async () => {
-        if (connection.getAttestedConnectionId() !== expectedConnectionId) {
-          throw new Error('The verified Gateway connection changed before session deletion');
-        }
-        const result = await requestPrivileged<Record<string, unknown>>('sessions.delete', {
-          key: targetSessionKey,
-          deleteTranscript,
-          expectedSessionId,
-        });
-        if (connection.getAttestedConnectionId() !== expectedConnectionId) {
-          throw new Error('The verified Gateway connection changed while session deletion was completing');
-        }
-        assertVerifiedSessionMutationResult(result, 'delete', targetSessionKey);
-        await cleanupSessionArtifacts(targetSessionKey);
-        return result;
-      },
-    );
-  },
-  async resetSessionFenced(sessionKey: string, expectedConnectionId: string) {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
-    return sessionCommandCoordinator.runMutation(
-      targetSessionKey,
-      async () => {
-        const result = await connection.requestFenced(
-          'sessions.reset',
-          { key: targetSessionKey },
-          expectedConnectionId,
-        );
-        assertVerifiedSessionMutationResult(result, 'reset', targetSessionKey);
-        await cleanupSessionArtifacts(targetSessionKey);
-        return result;
-      },
-    );
-  },
-
   // 会话设置
   async setSessionModel(model: string | null, sessionKey: string) {
     return sessionSettings.setModel(sessionKey, model);

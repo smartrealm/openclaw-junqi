@@ -5647,29 +5647,6 @@
       "install": "安装固定插件",
       "update": "更新固定插件",
       "repair": "修复固定插件"
-    },
-    "sessionMutation": {
-      "deleteTitle": "删除会话",
-      "resetTitle": "重置会话",
-      "checking": "正在检查协作运行影响...",
-      "affectedRuns": "将影响 {{count}} 个活动协作运行。",
-      "noAffectedRuns": "没有活动协作运行受到影响。",
-      "fenceActive": "此前的会话变更仍处于栅栏中，必须先恢复。",
-      "fenceRetained": "协作栅栏仍然生效，请先重试恢复，再变更此会话。",
-      "ledgerRecoveryRequired": "OpenClaw 会话变更已完成，但协作账本仍需恢复。请保留此对话框并重试恢复。",
-      "outcomeUnknown": "OpenClaw 可能已经完成本次变更，但当前还无法确认结果。请保留此对话框并重试验证。",
-      "runs": "受影响的运行",
-      "strategy": "选择处理方式",
-      "proceed": "继续",
-      "proceedDetail": "这个原生会话没有绑定活动协作运行。",
-      "cancelAndWait": "取消协作并继续",
-      "cancelAndWaitDetail": "取消受影响的运行，确认全部结束后再变更会话。",
-      "stopAndRetarget": "保留运行，稍后恢复",
-      "stopAndRetargetDetail": "停止新分派、删除会话，之后从协作记录处理新目标或导出。",
-      "recover": "恢复中断的变更",
-      "recoverDetail": "继续已有栅栏操作，不重复创建新的会话变更。",
-      "confirmDelete": "删除",
-      "confirmReset": "重置"
     }
   },
   "focus": {

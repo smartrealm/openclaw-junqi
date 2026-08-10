@@ -30,7 +30,6 @@ import type {
   CollaborationRunGetResponse,
   CollaborationRunListResponse,
   CollaborationSessionRef,
-  CollaborationSessionMutationImpactResponse,
   CollaborationTombstone,
   CollaborationTombstoneListResponse,
   CollaborationWorkflowTemplateListResponse,
@@ -449,12 +448,6 @@ export class CollaborationClient {
     params: CollaborationReadParams<'junqi.collab.export.download'>,
   ): Promise<CollaborationExportArtifact> {
     return this.readContract('junqi.collab.export.download', params);
-  }
-
-  async getSessionMutationImpact(
-    params: CollaborationReadParams<'junqi.collab.session.mutationImpact'>,
-  ): Promise<CollaborationSessionMutationImpactResponse> {
-    return this.readContract('junqi.collab.session.mutationImpact', params);
   }
 
   async capabilities(): Promise<CollaborationCapabilities> {

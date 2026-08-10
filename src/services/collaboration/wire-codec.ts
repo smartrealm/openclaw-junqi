@@ -3,10 +3,6 @@ import {
   ATTEMPT_KINDS,
   ATTEMPT_STATUSES,
   CHANNEL_STATUSES,
-  COLLABORATION_SESSION_MUTATION_ACTIONS,
-  COLLABORATION_SESSION_MUTATION_POLICIES,
-  COLLABORATION_SESSION_MUTATION_STATUSES,
-  COLLABORATION_SESSION_MUTATION_STRATEGIES,
   DELIVERY_REQUIREMENTS,
   DELIVERY_STATUSES,
   DISPATCH_STATES,
@@ -35,10 +31,8 @@ import {
   type CollaborationReadResponse,
   type CollaborationRunGetResponse,
   type CollaborationRunListResponse,
-  type CollaborationRunReference,
   type CollaborationRunSnapshot,
   type CollaborationRunSummary,
-  type CollaborationSessionMutationImpactResponse,
   type CollaborationWorkItemSnapshot,
   type CollaborationWorkflowTemplate,
   type CollaborationWorkflowTemplateDefinition,
@@ -1181,207 +1175,6 @@ export function decodeExportArtifact(
   };
 }
 
-function decodeSessionMutationRunReferenceFields(
-  value: unknown,
-  index: number,
-): { source: Record<string, unknown>; reference: CollaborationRunReference } {
-  const path = `response.activeRuns[${index}]`;
-  const source = record(value, path);
-  const completionOutcome = source.completionOutcome;
-  if (completionOutcome !== null && completionOutcome !== 'FULL' && completionOutcome !== 'PARTIAL') {
-    fail(`${path}.completionOutcome`, 'must be FULL, PARTIAL, or null');
-  }
-  const currentPlanRevisionId = source.currentPlanRevisionId === null
-    ? null
-    : nonEmptyString(source.currentPlanRevisionId, `${path}.currentPlanRevisionId`);
-  const createdAt = integer(source.createdAt, `${path}.createdAt`);
-  const updatedAt = integer(source.updatedAt, `${path}.updatedAt`);
-  assertTimestampOrder(createdAt, updatedAt, path);
-  const reference: CollaborationRunReference = {
-    runId: nonEmptyString(source.runId, `${path}.runId`),
-    status: enumeration(source.status, RUN_STATUSES, `${path}.status`),
-    dispatchState: enumeration(source.dispatchState, DISPATCH_STATES, `${path}.dispatchState`),
-    archiveState: enumeration(source.archiveState, ARCHIVE_STATES, `${path}.archiveState`),
-    reconcileState: enumeration(source.reconcileState, RECONCILE_STATES, `${path}.reconcileState`),
-    completionOutcome,
-    revision: integer(source.revision, `${path}.revision`),
-    origin: decodeOrigin(source.origin, `${path}.origin`),
-    currentPlanRevisionId,
-    createdAt,
-    updatedAt,
-  };
-  return { source, reference };
-}
-
-export function decodeSessionMutationRunSummary(
-  value: unknown,
-  index: number,
-): CollaborationRunSummary {
-  const { source, reference } = decodeSessionMutationRunReferenceFields(value, index);
-  const path = `response.activeRuns[${index}]`;
-  return {
-    ...reference,
-    lastEventSequence: source.lastEventSequence === undefined
-      ? 0
-      : integer(source.lastEventSequence, `${path}.lastEventSequence`),
-    goal: nonEmptyString(source.goal, `${path}.goal`),
-    allowedActions: stringArray(source.allowedActions, `${path}.allowedActions`),
-  };
-}
-
-/** Decode the intentionally slim active-run projection returned by write RPCs. */
-export function decodeSessionMutationRunReference(
-  value: unknown,
-  index: number,
-): CollaborationRunReference {
-  return decodeSessionMutationRunReferenceFields(value, index).reference;
-}
-
-function decodeActiveSessionMutation(value: unknown): CollaborationSessionMutationImpactResponse['activeMutation'] {
-  if (value === null) return null;
-  const path = 'response.activeMutation';
-  const source = record(value, path);
-  const createdAt = integer(source.createdAt, `${path}.createdAt`);
-  const updatedAt = integer(source.updatedAt, `${path}.updatedAt`);
-  assertTimestampOrder(createdAt, updatedAt, path);
-  const expiresAt = integer(source.expiresAt, `${path}.expiresAt`);
-  if (expiresAt < createdAt) fail(`${path}.expiresAt`, 'must not precede createdAt');
-  const result = source.result === null
-    ? null
-    : { ...record(source.result, `${path}.result`) };
-  const action = enumeration(
-    source.action,
-    COLLABORATION_SESSION_MUTATION_ACTIONS,
-    `${path}.action`,
-  );
-  const policy = enumeration(
-    source.policy,
-    COLLABORATION_SESSION_MUTATION_POLICIES,
-    `${path}.policy`,
-  );
-  if (policy === 'STOP_AND_RETARGET_LATER' && action !== 'delete') {
-    fail(`${path}.policy`, 'STOP_AND_RETARGET_LATER requires action=delete');
-  }
-  return {
-    mutationId: nonEmptyString(source.mutationId, `${path}.mutationId`),
-    runtimeId: nonEmptyString(source.runtimeId, `${path}.runtimeId`),
-    sessionKey: nonEmptyString(source.sessionKey, `${path}.sessionKey`),
-    sessionId: nonEmptyString(source.sessionId, `${path}.sessionId`),
-    action,
-    policy,
-    status: enumeration(
-      source.status,
-      COLLABORATION_SESSION_MUTATION_STATUSES,
-      `${path}.status`,
-    ),
-    expiresAt,
-    result,
-    createdAt,
-    updatedAt,
-  };
-}
-
-export function decodeSessionMutationImpact(
-  value: unknown,
-  expected: {
-    runtimeId: string;
-    sessionKey: string;
-    sessionId: string;
-    action: CollaborationReadParams<'junqi.collab.session.mutationImpact'>['action'];
-  },
-): CollaborationSessionMutationImpactResponse {
-  const source = record(value, 'response');
-  const runtimeId = nonEmptyString(source.runtimeId, 'response.runtimeId');
-  const sessionKey = nonEmptyString(source.sessionKey, 'response.sessionKey');
-  const sessionId = nonEmptyString(source.sessionId, 'response.sessionId');
-  const action = enumeration(
-    source.action,
-    COLLABORATION_SESSION_MUTATION_ACTIONS,
-    'response.action',
-  );
-  if (runtimeId !== expected.runtimeId) fail('response.runtimeId', 'must match the requested runtime');
-  if (sessionKey !== expected.sessionKey) fail('response.sessionKey', 'must match the requested session');
-  if (sessionId !== expected.sessionId) fail('response.sessionId', 'must match the requested session');
-  if (action !== expected.action) fail('response.action', 'must match the requested mutation action');
-
-  const activeRunsSource = array(source.activeRuns, 'response.activeRuns');
-  if (activeRunsSource.length > 100) fail('response.activeRuns', 'must contain at most 100 entries');
-  const activeRuns = activeRunsSource.map((run, index) => decodeSessionMutationRunSummary(run, index));
-  assertUnique(activeRuns, 'response.activeRuns', (run) => run.runId);
-  for (const [index, run] of activeRuns.entries()) {
-    if (
-      run.origin.runtimeId !== runtimeId
-      || run.origin.sessionKey !== sessionKey
-      || run.origin.sessionId !== sessionId
-    ) {
-      fail(`response.activeRuns[${index}].origin`, 'must match the requested runtime session');
-    }
-  }
-
-  const activeMutation = decodeActiveSessionMutation(source.activeMutation);
-  if (activeMutation && (
-    activeMutation.runtimeId !== runtimeId
-    || activeMutation.sessionKey !== sessionKey
-    || activeMutation.sessionId !== sessionId
-    || activeMutation.action !== action
-  )) {
-    fail('response.activeMutation', 'must match the requested runtime session and action');
-  }
-
-  const strategies = array(source.strategies, 'response.strategies').map((strategy, index) => (
-    enumeration(
-      strategy,
-      COLLABORATION_SESSION_MUTATION_STRATEGIES,
-      `response.strategies[${index}]`,
-    )
-  ));
-  if (strategies.length === 0) fail('response.strategies', 'must not be empty');
-  assertUnique(strategies, 'response.strategies', (strategy) => strategy);
-
-  const runtimeMatches = boolean(source.runtimeMatches, 'response.runtimeMatches');
-  if (!runtimeMatches) fail('response.runtimeMatches', 'must be true for the requested runtime');
-  const blocked = boolean(source.blocked, 'response.blocked');
-  if (blocked !== (activeRuns.length > 0)) {
-    fail('response.blocked', 'must agree with activeRuns');
-  }
-  const mutationFenceActive = boolean(source.mutationFenceActive, 'response.mutationFenceActive');
-  if (mutationFenceActive !== Boolean(activeMutation)) {
-    fail('response.mutationFenceActive', 'must agree with activeMutation');
-  }
-  const recoveryRequired = boolean(source.recoveryRequired, 'response.recoveryRequired');
-  if (recoveryRequired !== (activeMutation?.status === 'EXPIRED')) {
-    fail('response.recoveryRequired', 'must agree with activeMutation.status');
-  }
-  if (
-    (recoveryRequired && (strategies.length !== 1 || strategies[0] !== 'RECOVER'))
-    || (!recoveryRequired && strategies.includes('RECOVER'))
-  ) {
-    fail('response.strategies', 'must agree with recoveryRequired');
-  }
-  const coreRpcAllowed = boolean(source.coreRpcAllowed, 'response.coreRpcAllowed');
-  if (coreRpcAllowed && (
-    activeMutation?.status !== 'PREPARED'
-    || (activeRuns.length > 0 && activeMutation.policy !== 'STOP_AND_RETARGET_LATER')
-  )) {
-    fail('response.coreRpcAllowed', 'requires an authoritative PREPARED mutation fence');
-  }
-  return {
-    runtimeId,
-    sessionKey,
-    sessionId,
-    action,
-    activeRuns,
-    activeMutation,
-    blocked,
-    runtimeMatches: true,
-    mutationFenceActive,
-    recoveryRequired,
-    coreRpcAllowed,
-    resetCasSupported: boolean(source.resetCasSupported, 'response.resetCasSupported'),
-    strategies,
-  };
-}
-
 type CollaborationReadDecoderRegistry = {
   [Method in CollaborationReadMethod]: (
     value: unknown,
@@ -1396,7 +1189,6 @@ const COLLABORATION_READ_DECODERS = {
   'junqi.collab.run.delete.get': decodeDeletionJob,
   'junqi.collab.export.get': decodeExportJob,
   'junqi.collab.export.download': decodeExportArtifact,
-  'junqi.collab.session.mutationImpact': decodeSessionMutationImpact,
 } satisfies CollaborationReadDecoderRegistry;
 
 /** Exhaustive Strategy registry for operational collaboration read contracts. */

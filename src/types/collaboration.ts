@@ -60,19 +60,6 @@ export const RISK_LEVELS = ['LOW', 'MEDIUM', 'HIGH'] as const;
 export const SIDE_EFFECT_CLASSES = ['READ_ONLY', 'LOCAL_WRITE', 'EXTERNAL_WRITE', 'DESTRUCTIVE'] as const;
 export const RESIDUAL_EXECUTION_RISK_INTERVENTION_CODE = 'ATTEMPT_ABANDONED_WITH_RESIDUAL_RISK' as const;
 
-export const COLLABORATION_SESSION_MUTATION_ACTIONS = ['reset', 'delete'] as const;
-export const COLLABORATION_SESSION_MUTATION_POLICIES = [
-  'PROCEED',
-  'CANCEL_AND_WAIT',
-  'STOP_AND_RETARGET_LATER',
-] as const;
-export const COLLABORATION_SESSION_MUTATION_STRATEGIES = [
-  ...COLLABORATION_SESSION_MUTATION_POLICIES,
-  'ABORT',
-  'RECOVER',
-] as const;
-export const COLLABORATION_SESSION_MUTATION_STATUSES = ['PREPARED', 'EXPIRED'] as const;
-
 export type CollaborationDispatchState = (typeof DISPATCH_STATES)[number];
 export type CollaborationArchiveState = (typeof ARCHIVE_STATES)[number];
 export type CollaborationReconcileState = (typeof RECONCILE_STATES)[number];
@@ -81,15 +68,6 @@ export type CollaborationCompletionOutcome = 'FULL' | 'PARTIAL' | null;
 export type CollaborationWorkItemStatus = (typeof WORK_ITEM_STATUSES)[number];
 export type CollaborationAttemptStatus = (typeof ATTEMPT_STATUSES)[number];
 export type CollaborationDeliveryStatus = (typeof DELIVERY_STATUSES)[number];
-export type CollaborationSessionMutationAction =
-  (typeof COLLABORATION_SESSION_MUTATION_ACTIONS)[number];
-export type CollaborationSessionMutationPolicy =
-  (typeof COLLABORATION_SESSION_MUTATION_POLICIES)[number];
-export type CollaborationSessionMutationStrategy =
-  (typeof COLLABORATION_SESSION_MUTATION_STRATEGIES)[number];
-export type CollaborationSessionMutationStatus =
-  (typeof COLLABORATION_SESSION_MUTATION_STATUSES)[number];
-
 export const COLLABORATION_ERROR_CODES = [
   'INVALID_REQUEST',
   'INVALID_RESPONSE',
@@ -262,37 +240,6 @@ export interface CollaborationDeletePreview {
   expiresAt: number;
   confirmationToken: string;
   flowReconciliationBlocker?: CollaborationFlowReconciliationBlocker;
-}
-
-export interface CollaborationActiveSessionMutation {
-  mutationId: string;
-  runtimeId: string;
-  sessionKey: string;
-  sessionId: string;
-  action: CollaborationSessionMutationAction;
-  policy: CollaborationSessionMutationPolicy;
-  status: CollaborationSessionMutationStatus;
-  expiresAt: number;
-  result: Record<string, unknown> | null;
-  createdAt: number;
-  updatedAt: number;
-}
-
-/** Authoritative plugin projection before the Desktop adds its instance fence. */
-export interface CollaborationSessionMutationImpactResponse {
-  runtimeId: string;
-  sessionKey: string;
-  sessionId: string;
-  action: CollaborationSessionMutationAction;
-  activeRuns: CollaborationRunSummary[];
-  activeMutation: CollaborationActiveSessionMutation | null;
-  blocked: boolean;
-  runtimeMatches: true;
-  mutationFenceActive: boolean;
-  recoveryRequired: boolean;
-  coreRpcAllowed: boolean;
-  resetCasSupported: boolean;
-  strategies: CollaborationSessionMutationStrategy[];
 }
 
 export interface CollaborationWorkItemSnapshot {
@@ -540,15 +487,6 @@ export interface CollaborationReadRpcContract {
   'junqi.collab.export.download': {
     params: { jobId: string; expectedDigest: string };
     response: CollaborationExportArtifact;
-  };
-  'junqi.collab.session.mutationImpact': {
-    params: {
-      runtimeId: string;
-      sessionKey: string;
-      sessionId: string;
-      action: CollaborationSessionMutationAction;
-    };
-    response: CollaborationSessionMutationImpactResponse;
   };
 }
 

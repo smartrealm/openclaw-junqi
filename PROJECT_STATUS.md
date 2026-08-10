@@ -78,6 +78,8 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
   多语言转换只发生在活动面板。
 - `usage.cost` 与 `sessions.usage` 已由 `OpenClawUsageClient` 统一校验。分析页、仪表盘和智能体设置复用同一官方
   类型，已删除 `any`、双重断言以及模型、供应商和会话字段的猜测别名。
+- 会话删除和重置直接调用 OpenClaw 原生 Gateway 回执，不再等待协作插件自定义围栏。Desktop 侧围栏对话框、
+  状态仓、协调器、专属 outcome helper、RPC 读取契约、解码器、文案和测试已删除；本地投影仅在原生回执确认后收敛。
 
 ## 关键技术决策
 

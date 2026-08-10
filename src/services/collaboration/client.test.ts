@@ -233,13 +233,6 @@ test('operational read facade dispatches exact methods and applies the shared co
         return {
           jobId: 'export-job-1', format: 'json', digest: 'a'.repeat(64), content: '{"runId":"run-1"}',
         };
-      case 'junqi.collab.session.mutationImpact':
-        return {
-          runtimeId: 'runtime-1', sessionKey: 'agent:main:desktop', sessionId: 'session-1',
-          action: 'delete', activeRuns: [], blocked: false, runtimeMatches: true,
-          activeMutation: null, mutationFenceActive: false, recoveryRequired: false,
-          coreRpcAllowed: false, resetCasSupported: false, strategies: ['PROCEED'],
-        };
       default:
         throw new Error(`Unexpected method ${method}`);
     }
@@ -257,10 +250,6 @@ test('operational read facade dispatches exact methods and applies the shared co
     expectedRunId: 'run-1',
   })).artifactPath, 'exports/export-job-1.json');
   await client.downloadExport({ jobId: 'export-job-1', expectedDigest: 'a'.repeat(64) });
-  await client.getSessionMutationImpact({
-    runtimeId: 'runtime-1', sessionKey: 'agent:main:desktop', sessionId: 'session-1', action: 'delete',
-  });
-
   assert.deepEqual(calls.map(({ method }) => method), [
     'junqi.collab.workflow.template.list',
     'junqi.collab.run.partial.preview',
@@ -268,7 +257,6 @@ test('operational read facade dispatches exact methods and applies the shared co
     'junqi.collab.run.delete.get',
     'junqi.collab.export.get',
     'junqi.collab.export.download',
-    'junqi.collab.session.mutationImpact',
   ]);
 
   const invalid = new CollaborationClient(async () => ({

@@ -8,7 +8,6 @@ import {
   decodeEventsPage,
   decodeRunGetResponse,
   decodeRunListResponse,
-  decodeSessionMutationRunReference,
   decodeWriteResponse,
 } from './wire-codec';
 
@@ -718,84 +717,5 @@ test('deletion job decoder requires SHA-256 evidence and status-consistent diagn
       { jobId: 'delete-job-1', expectedRunId: 'run-1' },
     ),
     'response.lastError',
-  );
-});
-
-test('session mutation decoder validates identity, enums, fences, and authoritative booleans', () => {
-  const expected = {
-    runtimeId: ORIGIN.runtimeId,
-    sessionKey: ORIGIN.sessionKey,
-    sessionId: ORIGIN.sessionId,
-    action: 'delete' as const,
-  };
-  const response = {
-    ...expected,
-    activeRuns: [],
-    blocked: false,
-    runtimeMatches: true,
-    activeMutation: null,
-    mutationFenceActive: false,
-    recoveryRequired: false,
-    coreRpcAllowed: false,
-    resetCasSupported: false,
-    strategies: ['PROCEED'],
-  };
-  assert.deepEqual(
-    decodeCollaborationReadResponse('junqi.collab.session.mutationImpact', response, expected).strategies,
-    ['PROCEED'],
-  );
-
-  expectWireError(
-    () => decodeCollaborationReadResponse(
-      'junqi.collab.session.mutationImpact',
-      { ...response, sessionId: 'session-other' },
-      expected,
-    ),
-    'response.sessionId',
-  );
-  expectWireError(
-    () => decodeCollaborationReadResponse(
-      'junqi.collab.session.mutationImpact',
-      { ...response, coreRpcAllowed: true },
-      expected,
-    ),
-    'response.coreRpcAllowed',
-  );
-  expectWireError(
-    () => decodeCollaborationReadResponse(
-      'junqi.collab.session.mutationImpact',
-      { ...response, strategies: ['MAGIC'] },
-      expected,
-    ),
-    'response.strategies[0]',
-  );
-});
-
-test('session mutation prepare decoder accepts only the documented slim active-run projection', () => {
-  const decoded = decodeSessionMutationRunReference({
-    runId: 'run-1',
-    status: 'RUNNING',
-    dispatchState: 'OPEN',
-    archiveState: 'ACTIVE',
-    reconcileState: 'IDLE',
-    completionOutcome: null,
-    revision: 4,
-    origin: { ...ORIGIN },
-    currentPlanRevisionId: null,
-    createdAt: 10,
-    updatedAt: 20,
-  }, 0);
-  assert.equal(decoded.runId, 'run-1');
-  assert.equal('goal' in decoded, false);
-  assert.equal('allowedActions' in decoded, false);
-  assert.equal('lastEventSequence' in decoded, false);
-
-  expectWireError(
-    () => decodeSessionMutationRunReference({
-      runId: 'run-1', status: 'RUNNING', dispatchState: 'OPEN', archiveState: 'ACTIVE',
-      reconcileState: 'IDLE', completionOutcome: null, revision: 4.5,
-      origin: { ...ORIGIN }, currentPlanRevisionId: null, createdAt: 10, updatedAt: 20,
-    }, 0),
-    'response.activeRuns[0].revision',
   );
 });

@@ -60,15 +60,13 @@ describe('deleteSessionEverywhere', () => {
     assert.deepEqual(useChatStore.getState().openTabs, [MAIN_KEY]);
   });
 
-  test('converges local deletion when the core commit is verified but collaboration recovery remains', async () => {
+test('删除确认后只收敛本地会话投影', async () => {
     seed();
     __setSessionDeleteDepsForTest({
       deleteRemote: async (key) => {
         requests.push(key);
         return {
           success: true,
-          coordinated: true,
-          collaborationRecoveryRequired: true,
         };
       },
       notifyFailure: (detail) => failures.push(detail),

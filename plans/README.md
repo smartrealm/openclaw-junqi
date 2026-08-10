@@ -204,6 +204,7 @@ plans/
 - [OpenClaw 原生会话组写入对齐](quality/2026-08-04-openclaw-session-group-mutations.md)
 - [会话工具栏控件加固](quality/2026-08-07-session-toolbar-controls-hardening.md)
 - [会话变更与会话文件移除](quality/2026-08-08-openclaw-session-diff-files-removal.md)
+- [OpenClaw 原生会话删除与重置边界](quality/2026-08-10-openclaw-native-session-mutation-boundary.md)
 - [OpenClaw Gateway 方法广告发现边界修正](quality/2026-08-04-openclaw-gateway-method-advertisement-gate.md)
 - [OpenClaw 稳定性诊断只读投影](quality/2026-08-04-openclaw-diagnostic-stability.md)
 - [OpenClaw Hook 状态只读投影](quality/2026-08-04-openclaw-hooks-status-readonly-projection.md)

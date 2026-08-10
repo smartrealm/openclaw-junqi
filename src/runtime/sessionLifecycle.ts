@@ -1,46 +1,30 @@
 import { assertVerifiedSessionMutationResult, gateway } from '@/services/gateway';
-import { selectSessionRequestActive, useChatStore } from '@/stores/chatStore';
-import { useCollaborationStore } from '@/stores/collaborationStore';
+import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
-import type { CollaborationCapabilities } from '@/types/collaboration';
-import type {
-  SessionMutationAction,
-  SessionMutationExecutionResult,
-  SessionMutationRequest,
-} from '@/services/collaboration/SessionMutationCoordinator';
-import { requestSessionMutationDialog } from '@/stores/sessionMutationDialogStore';
-import { isCollaborationMethodUnavailable as isExactCollaborationMethodUnavailable } from '@/services/collaboration/client';
 import { sessionMutationGate } from '@/services/chat/sessionMutationGate';
+
+export type SessionLifecycleMutationAction = 'delete' | 'reset';
 
 export interface SessionLifecycleMutationOutcome {
   success: boolean;
   cancelled: boolean;
-  coordinated: boolean;
   sessionId: string | null;
   previousSessionId: string | null;
-  collaborationRecoveryRequired: boolean;
-  result?: SessionMutationExecutionResult;
   coreResult?: unknown;
 }
 
 interface SessionLifecycleDependencies {
-  bootstrapCollaboration(): Promise<CollaborationCapabilities>;
-  requestDialog(request: SessionMutationRequest): Promise<SessionMutationExecutionResult | null>;
   listSessions(): Promise<unknown>;
   deleteSession(sessionKey: string, deleteTranscript: true, expectedSessionId: string): Promise<unknown>;
   resetSession(sessionKey: string): Promise<unknown>;
-  abortChat(sessionKey: string, sessionId?: string): Promise<unknown>;
 }
 
 const defaultDependencies: SessionLifecycleDependencies = {
-  bootstrapCollaboration: () => useCollaborationStore.getState().bootstrap(),
-  requestDialog: requestSessionMutationDialog,
   listSessions: () => gateway.getSessions(),
   deleteSession: (sessionKey, deleteTranscript, expectedSessionId) => (
     gateway.deleteSession(sessionKey, deleteTranscript, expectedSessionId)
   ),
   resetSession: (sessionKey) => gateway.resetSession(sessionKey),
-  abortChat: (sessionKey, sessionId) => gateway.abortChat(sessionKey, sessionId),
 };
 
 let dependencies = defaultDependencies;
@@ -61,11 +45,6 @@ function resetSessionId(result: unknown): string | null {
   const entry = record(record(result)?.entry);
   const sessionId = entry?.sessionId;
   return typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null;
-}
-
-/** 只有明确缺少协作方法时才允许进入原生会话路径。 */
-export function isCollaborationMethodUnavailable(error: unknown): boolean {
-  return isExactCollaborationMethodUnavailable(error, ['junqi.collab.capabilities']);
 }
 
 function knownSessionId(sessionKey: string): string | null {
@@ -100,7 +79,7 @@ async function resolveSessionId(sessionKey: string): Promise<string | null> {
 
 export async function executeSessionLifecycleMutation(
   sessionKey: string,
-  action: SessionMutationAction,
+  action: SessionLifecycleMutationAction,
 ): Promise<SessionLifecycleMutationOutcome> {
   const key = sessionKey.trim();
   if (!key) throw new Error('sessionKey is required');
@@ -110,73 +89,23 @@ export async function executeSessionLifecycleMutation(
 
 async function executeGuardedSessionLifecycleMutation(
   key: string,
-  action: SessionMutationAction,
+  action: SessionLifecycleMutationAction,
 ): Promise<SessionLifecycleMutationOutcome> {
-
-  const sessionId = await resolveSessionId(key);
-  let capabilities: CollaborationCapabilities | null = null;
-  try {
-    capabilities = await dependencies.bootstrapCollaboration();
-    if (!capabilities || typeof capabilities !== 'object') {
-      throw new Error('Collaboration capabilities returned an invalid response');
-    }
-  } catch (error) {
-    if (isCollaborationMethodUnavailable(error)) return executeNativeSessionMutation(key, action, sessionId);
-    throw error;
-  }
-
-  if (capabilities) {
-    if (!sessionId) {
-      throw new Error('The native OpenClaw session identity is unavailable. Refresh sessions and try again.');
-    }
-    const request: SessionMutationRequest = {
-      collaborationInstanceId: capabilities.collaborationInstanceId,
-      runtimeId: capabilities.collaborationInstanceId,
-      sessionKey: key,
-      sessionId,
-      action,
-    };
-    const result = await dependencies.requestDialog(request);
-    const coreResult = result?.coreRpcResult;
-    const nextSessionId = action === 'reset'
-      ? result?.resolvedSessionId ?? resetSessionId(coreResult)
-      : sessionId;
-    return {
-      success: result?.success === true || result?.coreMutationCommitted === true,
-      cancelled: result === null || result.status === 'ABORTED',
-      coordinated: true,
-      sessionId: nextSessionId,
-      previousSessionId: sessionId,
-      collaborationRecoveryRequired: result?.collaborationRecoveryRequired === true,
-      ...(result ? { result } : {}),
-    };
-  }
-
-  throw new Error('Collaboration capabilities are unavailable. Session mutation was not attempted.');
-}
-
-async function executeNativeSessionMutation(
-  sessionKey: string,
-  action: SessionMutationAction,
-  sessionId: string | null,
-): Promise<SessionLifecycleMutationOutcome> {
-  if (selectSessionRequestActive(useChatStore.getState(), sessionKey)) {
-    await dependencies.abortChat(sessionKey, sessionId ?? undefined);
-  }
+  // OpenClaw 的 sessions.delete 和 sessions.reset 各自负责运行中工作及生命周期互斥。
+  // 客户端只提交官方请求并以结构化结果决定本地投影是否收敛。
+  const sessionId = action === 'delete' ? await resolveSessionId(key) : knownSessionId(key);
   if (action === 'delete' && !sessionId) {
     throw new Error('The native OpenClaw session identity is unavailable. Refresh sessions and try again.');
   }
   const coreResult = action === 'delete'
-    ? await dependencies.deleteSession(sessionKey, true, sessionId!)
-    : await dependencies.resetSession(sessionKey);
-  assertVerifiedSessionMutationResult(coreResult, action, sessionKey);
+    ? await dependencies.deleteSession(key, true, sessionId!)
+    : await dependencies.resetSession(key);
+  assertVerifiedSessionMutationResult(coreResult, action, key);
   return {
     success: true,
     cancelled: false,
-    coordinated: false,
     sessionId: action === 'reset' ? resetSessionId(coreResult) : sessionId,
     previousSessionId: sessionId,
-    collaborationRecoveryRequired: false,
     coreResult,
   };
 }

@@ -35,8 +35,6 @@ test('Gateway 会话定向外观在连接或 mutation 协调器前拒绝缺失�
     gateway.compactSession(missingTarget),
     gateway.deleteSession(missingTarget),
     gateway.resetSession(missingTarget),
-    gateway.deleteSessionFenced(missingTarget, true, 'session-1', 'connection-1'),
-    gateway.resetSessionFenced(missingTarget, 'connection-1'),
     gateway.setSessionPinned(true, missingTarget),
     gateway.setSessionUnread(true, missingTarget),
     gateway.setSessionArchived(true, missingTarget),
