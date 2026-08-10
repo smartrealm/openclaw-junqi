@@ -44,7 +44,6 @@ import {
   authorizeDingTalkAgent,
   configureDingTalkDwsPath,
 } from '@/business-applications/dingtalkAgentAuthorization';
-import { restartDingTalkGateway } from '@/business-applications/dingtalkGatewayRestart';
 import { useBusinessActivityStore } from '@/business-applications/activityStore';
 import { parseBusinessApplicationsView } from '@/business-applications/businessApplicationsView';
 import {
@@ -106,16 +105,6 @@ function createAttemptId(): string {
     throw new Error('当前环境无法生成业务操作幂等标识');
   }
   return globalThis.crypto.randomUUID();
-}
-
-function readDingTalkGatewayReconnectSnapshot() {
-  const currentIdentity = getCurrentRuntimeIdentity();
-  return {
-    connected: gateway.getStatus().connected,
-    connectionId: gateway.captureConnectionId(),
-    identityConnectionId: currentIdentity?.connectionId ?? null,
-    identityVerified: currentIdentity?.verified === true,
-  };
 }
 
 function useRuntimeIdentitySnapshot() {
@@ -411,14 +400,11 @@ export function BusinessApplicationsPage() {
   }, [refreshPluginStatus, refreshRuntimeIdentity, refreshTools]);
 
   const restartAndRefreshDingTalkGateway = useCallback(async () => {
-    await restartDingTalkGateway({
-      lifecycle: gatewayLifecycle,
-      captureConnectionId: () => gateway.captureConnectionId(),
-      read: readDingTalkGatewayReconnectSnapshot,
-    });
+    const result = await gatewayLifecycle.restart('business-applications-dingtalk');
+    if (!result.success) throw new Error(result.error ?? t('gateway.progress.connectionFailed'));
     await refreshAll();
     await refreshDingTalkState();
-  }, [refreshDingTalkState]);
+  }, [refreshDingTalkState, t]);
 
   const finalizeDwsOperation = useCallback(async (payload: DwsOperationFinished) => {
     if (payload.cancelled || !payload.success) {

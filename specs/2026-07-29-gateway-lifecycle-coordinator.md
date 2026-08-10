@@ -2,14 +2,18 @@
 
 ## Current
 
-Ordinary Gateway lifecycle requests are initiated through four different frontend contracts:
+Ordinary Gateway process lifecycle requests use the singleton in `src/runtime/gatewayLifecycle.ts`.
+The coordinator owns `reconnect`, `recover`, `restart`, and `stop`. A successful reconnect,
+recovery, or restart result now means all of the following are true:
 
-- `aegis:manual-reconnect` browser commands handled by `App.tsx`;
-- direct `gatewayManager.restart()` calls;
-- direct `window.aegis.config.restart()` calls;
-- direct `restart_local_gateway` IPC calls.
+- the selected runtime process operation succeeded;
+- restart identity probing still matches the selected runtime;
+- a replacement WebSocket completed the official `hello-ok` handshake;
+- the replacement connection ID is current;
+- Runtime Identity is verified and bound to that same connection ID.
 
-The Rust `operation_gate` prevents competing process mutations, but frontend callers do not share one recovery policy, migration-lock wait, progress contract, result shape, or reconnect behavior.
+The former `aegis:manual-reconnect` command bridge, DingTalk-only reconnect polling, direct ordinary
+manager reconnects, direct UI stop IPC, and log-text progress inference have been removed.
 
 Collaboration bootstrap and OpenClaw package update intentionally use dedicated transactional Rust commands and are not ordinary restart requests.
 
@@ -20,12 +24,13 @@ All ordinary frontend restart and recovery requests use one non-React `GatewayLi
 The coordinator owns:
 
 - frontend lifecycle single-flight;
-- the distinction between `reconnect`, `recover`, and explicit `restart`;
+- the distinction between `reconnect`, `recover`, explicit `restart`, and `stop`;
 - startup-migration lock waiting before destructive restart;
 - common progress events and structured results;
-- reconnect through `GatewayConnectionManager` after the selected runtime is ready.
+- reconnect through `GatewayConnectionManager` after the selected runtime is ready;
+- replacement connection and Runtime Identity settlement before success.
 
-Browser events remain output notifications only. A temporary compatibility listener may translate the existing `aegis:manual-reconnect` command into a coordinator call while remaining consumers are migrated.
+Browser events are output notifications only and cannot request a lifecycle mutation.
 
 The following remain dedicated transactional operations:
 
@@ -38,9 +43,12 @@ The following remain dedicated transactional operations:
 - [x] Concurrent ordinary frontend recovery/restart requests share one in-flight operation; a stronger request is queued rather than discarded.
 - [x] `recover` first calls `ensureRunning` and restarts only when selected-runtime health is not established.
 - [x] Explicit `restart` waits for a reported OpenClaw startup migration lock.
+- [x] Reconnect, recover, and restart do not report success before a replacement authenticated and attested connection settles.
+- [x] The settings lifecycle panel routes stop through the same coordinator.
+- [x] DingTalk refreshes business state only after the common lifecycle result succeeds; it has no private reconnect timeout or poller.
 - [x] Progress remains visible through `aegis:gateway-progress`, is terminal on failure/cancellation, and callers do not dispatch lifecycle command events.
 - [x] Collaboration bootstrap and OpenClaw update retain their dedicated commands.
-- [x] Boundary regression tests reject new direct ordinary restart calls from pages/components/hooks.
+- [x] The AST boundary scanner rejects direct ordinary ensure, reconnect, restart, and stop calls outside controlled adapters and official Wizard handoff.
 - [x] TypeScript checks, relevant tests, full test/build checks, and `git diff --check` pass.
 
 ## Unverified boundary

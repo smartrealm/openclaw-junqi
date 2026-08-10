@@ -5,7 +5,7 @@ import {
 } from '@/runtime/openclawRepair';
 import type { GatewayRecoveryStatus } from './recoveryProgress';
 
-export type GatewayLifecycleAction = 'reconnect' | 'recover' | 'restart';
+export type GatewayLifecycleAction = 'reconnect' | 'recover' | 'restart' | 'stop';
 
 export interface GatewayLifecycleRequest {
   action: GatewayLifecycleAction;
@@ -34,6 +34,7 @@ export interface GatewayLifecycleResult extends GatewayRestartResult {
   source: string;
   healthy?: boolean;
   mode?: string;
+  connectionId?: string;
 }
 
 export interface GatewayLifecycleProgress {
@@ -50,20 +51,24 @@ export interface GatewayLifecycleProgress {
 interface GatewayLifecycleManager {
   ensureRunning: () => Promise<GatewayEnsureResult>;
   restart: () => Promise<GatewayRestartResult>;
+  stop: () => Promise<GatewayRestartResult>;
   reconnect: () => void;
+}
+
+interface GatewayLifecycleConnectionSettlement {
+  captureConnectionId: () => string | null;
+  waitForConnection: (previousConnectionId: string | null) => Promise<string>;
 }
 
 type ProgressListener = (progress: GatewayLifecycleProgress) => void;
 
 type CoordinatorDependencies = {
   manager: GatewayLifecycleManager;
+  connection: GatewayLifecycleConnectionSettlement;
   migrationRetry: GatewayMigrationRetryCoordinator;
   /**
-   * Re-attests that the restarted endpoint is the Gateway belonging to the
-   * selected runtime. A healthy port alone cannot tell it apart from another
-   * local Gateway that happens to bind the same port, so a restart that skips
-   * this check can report success while the client talks to a foreign process.
-   * Omitted only in tests that do not exercise the restart post-condition.
+   * 重启后重新证明端点属于当前选择的运行时。仅端口健康无法排除同端口的其他
+   * Gateway；测试不覆盖该后置条件时才允许省略。
    */
   verifySelectedIdentity?: () => Promise<boolean>;
 };
@@ -78,6 +83,7 @@ const ACTION_STRENGTH: Record<GatewayLifecycleAction, number> = {
   reconnect: 0,
   recover: 1,
   restart: 2,
+  stop: 3,
 };
 
 export class GatewayLifecycleCoordinator {
@@ -110,8 +116,19 @@ export class GatewayLifecycleCoordinator {
     return this.request({ action: 'restart', source, diagnostic });
   }
 
+  stop(source: string): Promise<GatewayLifecycleResult> {
+    return this.request({ action: 'stop', source });
+  }
+
   request(request: GatewayLifecycleRequest): Promise<GatewayLifecycleResult> {
     if (this.active) {
+      if (request.action === 'stop' || this.activeAction === 'stop') {
+        if (request.action === this.activeAction) return this.active;
+        if (!this.pendingUpgrade || ACTION_STRENGTH[request.action] > ACTION_STRENGTH[this.pendingUpgrade.action]) {
+          this.pendingUpgrade = request;
+        }
+        return this.schedulePendingUpgrade();
+      }
       if (ACTION_STRENGTH[request.action] <= ACTION_STRENGTH[this.activeAction ?? 'reconnect']) {
         return this.active;
       }
@@ -172,11 +189,29 @@ export class GatewayLifecycleCoordinator {
   }
 
   private async execute(request: GatewayLifecycleRequest): Promise<GatewayLifecycleResult> {
+    const previousConnectionId = this.dependencies.connection.captureConnectionId();
+    if (request.action === 'stop') {
+      this.emit(request, 'Stopping the selected OpenClaw Gateway…', 0.1, 'gateway.progress.stop');
+      const stopped = await this.dependencies.manager.stop();
+      if (!stopped.success) {
+        const message = errorMessage(stopped.error, 'Gateway stop failed');
+        this.emit(request, message, 1, 'gateway.progress.stopFailed', { error: message }, 'failed');
+        return { ...stopped, success: false, error: message, action: request.action, source: request.source };
+      }
+      this.emit(
+        request,
+        'Gateway stopped.',
+        1,
+        'gateway.progress.stopDone',
+        undefined,
+        'completed',
+      );
+      return { ...stopped, success: true, action: request.action, source: request.source };
+    }
     if (request.action === 'reconnect') {
       this.emit(request, 'Reconnecting to OpenClaw Gateway…', 0.1, 'gateway.progress.reconnect');
       this.dependencies.manager.reconnect();
-      this.emit(request, 'Gateway reconnect requested.', 1, 'gateway.progress.reconnect', undefined, 'completed');
-      return { success: true, action: request.action, source: request.source };
+      return this.waitForConnection(request, previousConnectionId);
     }
 
     if (request.action === 'recover') {
@@ -191,36 +226,34 @@ export class GatewayLifecycleCoordinator {
           this.dependencies.migrationRetry.cancel();
           this.emit(
             request,
-            // An unreported mode is unknown, not Native. Naming the wrong
-            // runtime here is exactly the confusion the runtime boundary exists
-            // to prevent, and this string is what the user reads during setup.
+            // 未返回的模式是未知，不是 Native；用户可见进度不得越过运行时边界猜测平台。
             ensured.mode
               ? `Gateway healthy (${ensured.mode}), reconnecting…`
               : 'Gateway healthy, reconnecting…',
-            1,
+            0.55,
             'gateway.progress.gatewayHealthy',
-            undefined,
-            'completed',
           );
-          return {
-            success: true,
-            healthy: true,
-            mode: ensured.mode,
-            action: request.action,
-            source: request.source,
-          };
+          const connected = await this.waitForConnection(request, previousConnectionId);
+          return connected.success
+            ? { ...connected, healthy: true, mode: ensured.mode }
+            : connected;
         }
-        return this.executeRestart(request, ensured.error ?? request.diagnostic);
+        return this.executeRestart(request, previousConnectionId, ensured.error ?? request.diagnostic);
       } catch (error) {
-        return this.executeRestart(request, errorMessage(error, request.diagnostic ?? 'Gateway recovery failed'));
+        return this.executeRestart(
+          request,
+          previousConnectionId,
+          errorMessage(error, request.diagnostic ?? 'Gateway recovery failed'),
+        );
       }
     }
 
-    return this.executeRestart(request, request.diagnostic);
+    return this.executeRestart(request, previousConnectionId, request.diagnostic);
   }
 
   private async executeRestart(
     request: GatewayLifecycleRequest,
+    previousConnectionId: string | null,
     diagnostic?: string,
   ): Promise<GatewayLifecycleResult> {
     let currentDiagnostic = diagnostic;
@@ -260,12 +293,13 @@ export class GatewayLifecycleCoordinator {
         this.emit(
           request,
           'Gateway service restarted, reconnecting…',
-          1,
+          0.7,
           'gateway.progress.restartDone',
-          undefined,
-          'completed',
         );
-        return { ...restarted, action: request.action, source: request.source };
+        const connected = await this.waitForConnection(request, previousConnectionId);
+        return connected.success
+          ? { ...restarted, ...connected }
+          : connected;
       }
 
       const message = errorMessage(restarted.error, 'Gateway restart failed');
@@ -278,11 +312,43 @@ export class GatewayLifecycleCoordinator {
     }
   }
 
+  private async waitForConnection(
+    request: GatewayLifecycleRequest,
+    previousConnectionId: string | null,
+  ): Promise<GatewayLifecycleResult> {
+    this.emit(
+      request,
+      'Waiting for an authenticated Gateway connection…',
+      0.85,
+      'gateway.progress.connectionWaiting',
+    );
+    try {
+      const connectionId = await this.dependencies.connection.waitForConnection(previousConnectionId);
+      this.emit(
+        request,
+        'Gateway connection and runtime identity verified.',
+        1,
+        'gateway.progress.connectionReady',
+        undefined,
+        'completed',
+      );
+      return { success: true, action: request.action, source: request.source, connectionId };
+    } catch (error) {
+      const message = errorMessage(error, 'Gateway connection verification failed');
+      this.emit(
+        request,
+        message,
+        1,
+        'gateway.progress.connectionFailed',
+        { error: message },
+        'failed',
+      );
+      return { success: false, error: message, action: request.action, source: request.source };
+    }
+  }
+
   /**
-   * Returns a failure result when the restarted endpoint is not the selected
-   * Gateway, or null when the check passes or is not configured. A probe that
-   * throws is treated as unverified: an unreachable check must not upgrade to
-   * an implicit pass.
+   * 端点不属于当前选择的 Gateway 时返回失败；探测异常保持未核验，不能升级为通过。
    */
   private async verifyRestartedIdentity(
     request: GatewayLifecycleRequest,
@@ -343,10 +409,12 @@ export class GatewayLifecycleCoordinator {
 
 export function createGatewayLifecycleCoordinator(
   manager: GatewayLifecycleManager,
+  connection: GatewayLifecycleConnectionSettlement,
   verifySelectedIdentity?: () => Promise<boolean>,
 ): GatewayLifecycleCoordinator {
   return new GatewayLifecycleCoordinator({
     manager,
+    connection,
     migrationRetry: createGatewayMigrationRetryCoordinator(),
     ...(verifySelectedIdentity ? { verifySelectedIdentity } : {}),
   });

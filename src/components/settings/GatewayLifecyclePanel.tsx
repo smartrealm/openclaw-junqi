@@ -13,7 +13,6 @@ import {
   Square,
 } from 'lucide-react';
 import {
-  stopGateway,
   disableGatewayAutostart,
   enableGatewayAutostart,
   gatewayAutostartStatus,
@@ -183,8 +182,7 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
     };
   }, [refresh, t]);
 
-  // Stopping is destructive to running sessions, so it takes a deliberate
-  // second click rather than firing on the first.
+  // 停止会中断运行中的会话，因此要求用户在限定时间内再次确认。
   const [stopArmed, setStopArmed] = useState(false);
   const [stopBusy, setStopBusy] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
@@ -205,16 +203,15 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
     setStopBusy(true);
     setStopError(null);
     try {
-      // `stop_gateway` resolves the selected runtime itself; picking a
-      // runtime-specific command here could act on the one the user did not select.
-      await stopGateway();
+      const stopped = await gatewayLifecycle.stop('gateway-lifecycle-panel');
+      if (!stopped.success) throw new Error(stopped.error ?? t('gatewayLifecycle.stopFailed'));
       await refresh();
     } catch (cause) {
       setStopError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setStopBusy(false);
     }
-  }, [refresh, stopArmed, stopBusy]);
+  }, [refresh, stopArmed, stopBusy, t]);
 
   const toggleAutostart = useCallback(async () => {
     if (!autostart || !autostart.supported || autostartBusy) return;
@@ -399,8 +396,7 @@ export function GatewayLifecyclePanel({ variant = 'compact', className }: Gatewa
       )}
 
       {stopError && (
-        // A failed stop must not be silent: the Gateway is still running and
-        // the user needs the reason, not just an unchanged button.
+        // 停止失败时 Gateway 仍可能运行，必须就近展示原因。
         <p className="mt-3 break-words text-[11px] leading-5 text-aegis-danger">
           {t('gatewayLifecycle.stopFailed', '停止 Gateway 失败')}: {stopError}
         </p>

@@ -44,8 +44,9 @@
 
 本机复现表明，Gateway 进程在约 17.9 秒后已成功恢复，但钉钉业务页直接调用底层进程重启，WebSocket 的普通
 重试在服务恢复前耗尽。后续 60 秒循环只观察连接，没有主动发起新连接，因此超时文案错误地掩盖了连接生命周期
-缺口。业务页现统一通过 `GatewayLifecycleCoordinator` 重启；协调器在所选运行时恢复后主动重连，钉钉页面再以
-新的 connection ID 和 Runtime Identity 为刷新门禁。
+缺口。业务页现统一通过 `GatewayLifecycleCoordinator` 重启；协调器在所选运行时恢复后主动重连，并以新的
+connection ID、官方 `hello-ok` 和 Runtime Identity 作为全局完成门禁。钉钉页面不再维护私有 60 秒轮询，
+只在统一生命周期返回成功后刷新 Session 工具、插件与 DWS 状态。
 
 DWS 安装也不再以 npm 进程退出成功作为完成条件。Native 安装使用 JunQi 已选择的 Node.js 及其配套 npm CLI，
 绑定该运行时报告的绝对全局 prefix；安装后由所选 Node.js 直接执行该 prefix 下的准确 npm `bin/dws.js` 入口完成

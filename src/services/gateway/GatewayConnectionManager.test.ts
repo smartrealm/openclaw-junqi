@@ -11,6 +11,7 @@ test('BUG-GSC09 ensure rejection commits a visible error instead of retrying for
     subscribe: () => () => {},
     ensure: async () => { throw new Error('native ensure failed'); },
     restart: async () => ({ success: true }),
+    stop: async () => ({ success: true }),
   });
   const snapshots: GatewayStateSnapshot[] = [];
   try {
@@ -49,6 +50,34 @@ test('BUG-GSC09 superseded setup start rejects and a later start can run', async
     starts[0]({ success: true });
     starts[1]({ success: false, error: 'second start reached native bridge' });
     await assert.rejects(second, /second start reached native bridge/);
+  } finally {
+    manager.destroy();
+  }
+});
+
+test('统一停止入口提交所选运行时停止结果并收敛连接状态', async () => {
+  let stops = 0;
+  const manager = new GatewayConnectionManager(undefined, {
+    observe: async () => ({ running: true, processAlive: true, ready: true, retrying: false, error: null, logs: { stdout: '', stderr: '' } }),
+    subscribe: () => () => {},
+    ensure: async () => ({ healthy: true }),
+    restart: async () => ({ success: true }),
+    stop: async () => {
+      stops += 1;
+      return { success: true };
+    },
+  });
+  const snapshots: GatewayStateSnapshot[] = [];
+  try {
+    manager.init();
+    manager.onStateChange((snapshot) => snapshots.push(snapshot));
+    const result = await manager.stop();
+
+    assert.equal(result.success, true);
+    assert.equal(stops, 1);
+    assert.equal(snapshots.at(-1)?.state, GatewayState.DETECTING);
+    assert.equal(snapshots.at(-1)?.connected, false);
+    assert.equal(snapshots.at(-1)?.error, null);
   } finally {
     manager.destroy();
   }

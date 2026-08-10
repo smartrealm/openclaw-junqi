@@ -30,7 +30,7 @@
 ## 验收
 
 - 插件探测进行中不会短暂出现“插件未就绪”或“Agent 未授权”。
-- 重启按钮保持加载状态，直到新 connection ID 和 Runtime Identity 一致，随后页面自动更新。
+- 重启按钮保持加载状态，直到全局 Gateway 生命周期确认新 connection ID、官方握手和 Runtime Identity 一致，随后页面自动更新；业务页不得复制连接轮询或超时判断。
 - 当前 Agent 授权弹层不再要求用户进入 Advanced 编辑原始配置。
 - Native 授权命令参数不包含 `--device`；Docker 授权命令仍包含 `--device`。
 - 配置测试覆盖 `agents.list`、`agents.entries`、全局与 Agent 显式拒绝和隐式 Agent 边界。

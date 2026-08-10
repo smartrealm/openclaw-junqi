@@ -19,12 +19,22 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 当前渠道界面目标已完成：渠道中心保留单一添加入口和刷新入口，诊断及高级配置进入共享菜单；首次加载与后台
 刷新分离，账号次要操作统一收纳，摘要只投影当前配置和 OpenClaw 运行时返回的真实状态。
 
-当前钉钉就绪修复已完成代码闭环：业务页重启统一进入 Gateway 生命周期协调器并主动重连；Native DWS 安装
-绑定所选 Node/npm/prefix，安装后执行 JSON 核验、写入准确插件路径并重新核验连接。当前运行中的旧桌面进程
-尚未加载本次代码，当前选定 Native 运行时也仍未实际安装 DWS，真实安装与扫码仍待新构建桌面实测。
+当前 Gateway 生命周期统一已完成代码闭环：普通恢复、重连、重启和停止共享全局协调器；进程命令成功后必须
+等待新的官方握手、connection ID 与 Runtime Identity 一致才返回成功。钉钉专属重连轮询、旧浏览器命令桥、
+直接普通 manager/IPC 调用和日志文本进度推断已删除，并由 AST 边界扫描阻止重新引入。
+
+当前钉钉就绪修复已完成代码闭环：业务页只在统一 Gateway 生命周期成功后刷新；Native DWS 安装绑定所选
+Node/npm/prefix，安装后执行 JSON 核验、写入准确插件路径并重新核验连接。当前运行中的旧桌面进程尚未加载
+本次代码，当前选定 Native 运行时也仍未实际安装 DWS，真实安装与扫码仍待新构建桌面实测。
 
 ## 已完成内容
 
+- Gateway 普通生命周期的唯一入口现覆盖 `reconnect`、`recover`、`restart` 和 `stop`；冷启动、命令面板、
+  Chat 断线恢复、设置停止和钉钉工作台均已接入。重启或恢复只有在新的认证连接和已验证 Runtime Identity
+  绑定同一 connection ID 后才成功。
+- 已删除 `aegis:manual-reconnect` 兼容命令、钉钉专属 60 秒轮询、无消费者的日志文本进度推断及其专属测试。
+  边界扫描从 TypeScript AST 识别别名导入和调用，低层 ensure/restart/stop 只允许受控适配器使用，官方 Wizard
+  显式目标与凭据交接保留其事务边界。
 - 钉钉业务页已删除对底层 Gateway 进程重启的直接调用。插件重启和 Agent 授权均通过全局
   `GatewayLifecycleCoordinator`，协调器在进程恢复后主动建立连接，页面再等待新的 connection ID 与
   Runtime Identity 一致后刷新工具、插件和 DWS 状态。
@@ -96,6 +106,8 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 
 ## 关键技术决策
 
+- 进程健康、官方 WebSocket 握手和 Runtime Identity 是三个不同事实；普通 Gateway 生命周期必须在统一协调器
+  内依次核验，业务页面不能复制等待、超时或成功判定。
 - OpenClaw Gateway 协议、会话、运行、工具和插件事件是权威事实；JunQi 只保存可追溯的 UI 投影。
 - 使用纯判别联合作为协议解码边界，使用 `OpenClawChatRunProjection` 作为 run 序号和终态围栏；不为单一
   消费者增加抽象基类、服务定位器或猜测性兼容层。
@@ -104,6 +116,10 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 
 ## 核心文件
 
+- `src/runtime/gatewayLifecycle.ts`、`src/services/gateway/GatewayLifecycleCoordinator.ts` 与
+  `src/services/gateway/GatewayConnectionSettlement.ts`：普通 Gateway 生命周期入口、串行化与新认证连接完成门禁。
+- `scripts/check-boundaries.mjs`：普通 Gateway 生命周期绕行的 AST 边界守护。
+- `docs/gateway/gateway-lifecycle-unification-validation-2026-08-10.md`：根因、完成语义、事务例外和验证边界。
 - `src/processing/openClawChatEvent.ts`：实时 Gateway 事件纯解码和 Chat 增量合并。
 - `src/runtime/OpenClawChatEventRuntime.ts`：解码后的聊天、工具、转录与失效事件投影。
 - `src/services/gateway/collaborationEventBridge.ts`：协作 Agent stream 观察者桥接。
@@ -135,6 +151,9 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 
 ## 测试与验证
 
+- Gateway 连接收敛、协调器和连接管理器定向测试 25 项通过，边界扫描定向测试 9 项通过；本轮完整
+  `pnpm lint`、`pnpm test`、`pnpm build`、`pnpm test:rust`、`pnpm dingtalk:validate`、独立 Vite 构建、
+  `pnpm verify:openclaw-docs` 与 `git diff --check` 通过。Rust 为 686 项通过、2 项忽略、零失败。
 - 已通过未知方法证据、配置重载、消息身份、授权、协作、技能、数据仓和会话生命周期定向测试 154 项。
 - 已通过完整 `pnpm test`：前端与仓库脚本测试均通过，零失败。
 - 已通过 `pnpm lint`：模块边界扫描 922 个文件零违规，四处桌面版本一致，TypeScript 检查通过。
@@ -181,6 +200,8 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 
 ## 已知问题
 
+- 当前运行中的 JunQi 仍是生命周期统一前的构建，尚未真实验证 Native、Docker、系统服务的重启后新连接门禁，
+  也未在 Windows 和 Linux 验证统一停止。
 - 当前正在运行的 JunQi 桌面进程仍是修复前构建，本机所选 Native npm prefix 仍未安装
   `dingtalk-workspace-cli`。代码自动化通过不能替代重新构建后从工作台执行真实安装、Gateway 重启、浏览器扫码
   和 Profile 自动刷新的桌面验证。
@@ -204,7 +225,8 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 
 ## 下一步顺序
 
-1. 重新构建并启动 macOS 桌面，从钉钉工作台执行 Native DWS 安装、准确路径配置、Gateway 新连接、浏览器扫码、
+1. 重新构建并启动 macOS 桌面，验证 Native Gateway 的恢复、重连、重启、停止、新 connection ID 和 Runtime
+   Identity 收敛；再从钉钉工作台执行 DWS 安装、准确路径配置、Gateway 新连接、浏览器扫码、
    Profile 与头像自动刷新全链路；记录脱敏结构化回执，不提交凭据或个人信息。
 2. 在 Docker 运行时验证容器内安装、设备码授权、JSON 核验和重启后状态刷新；容器路径不得进入宿主配置。
 3. 在受控最新版 Gateway 完成实时事件、协作插件与钉钉插件的真实回放，并取得 DWS 审批详情、任务和记录的脱敏结构化样本。

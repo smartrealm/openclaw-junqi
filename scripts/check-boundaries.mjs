@@ -40,6 +40,23 @@ export const MODULE_BOUNDARY_RULES = [
   },
 ];
 
+const LOW_LEVEL_GATEWAY_COMMANDS = new Set([
+  'ensureGatewayRunning',
+  'restartGateway',
+  'stopGateway',
+]);
+const DIRECT_GATEWAY_MANAGER_METHODS = new Set([
+  'ensureRunning',
+  'reconnect',
+  'restart',
+  'stop',
+]);
+
+const GATEWAY_LIFECYCLE_ADAPTER_ALLOWLIST = new Map([
+  ['services/gateway/gatewayProcessObservation.ts', new Set(LOW_LEVEL_GATEWAY_COMMANDS)],
+  ['hooks/useSetupFlow/useWizardSession.ts', new Set(['reconnect'])],
+]);
+
 function slash(value) {
   return value.split(sep).join('/');
 }
@@ -113,6 +130,49 @@ function containsDirectInvoke(content) {
   return /(?:^|[^\w$.])invoke\s*\(/m.test(content);
 }
 
+export function extractGatewayLifecycleBypasses(content) {
+  const source = ts.createSourceFile('gateway-boundary-input.tsx', content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const commandLocals = new Map();
+  const managerLocals = new Set();
+
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const imports = statement.importClause?.namedBindings;
+    if (!imports || !ts.isNamedImports(imports)) continue;
+    if (statement.moduleSpecifier.text === '@/api/tauri-commands') {
+      for (const element of imports.elements) {
+        const imported = element.propertyName?.text ?? element.name.text;
+        if (LOW_LEVEL_GATEWAY_COMMANDS.has(imported)) commandLocals.set(element.name.text, imported);
+      }
+    }
+    if (statement.moduleSpecifier.text === '@/services/gateway/GatewayConnectionManager') {
+      for (const element of imports.elements) {
+        const imported = element.propertyName?.text ?? element.name.text;
+        if (imported === 'gatewayManager') managerLocals.add(element.name.text);
+      }
+    }
+  }
+
+  const bypasses = [];
+  const visit = (node) => {
+    if (ts.isCallExpression(node)) {
+      if (ts.isIdentifier(node.expression) && commandLocals.has(node.expression.text)) {
+        bypasses.push(commandLocals.get(node.expression.text));
+      } else if (
+        ts.isPropertyAccessExpression(node.expression)
+        && ts.isIdentifier(node.expression.expression)
+        && managerLocals.has(node.expression.expression.text)
+        && DIRECT_GATEWAY_MANAGER_METHODS.has(node.expression.name.text)
+      ) {
+        bypasses.push(node.expression.name.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return bypasses;
+}
+
 export function scanModuleBoundaries(files, rules = MODULE_BOUNDARY_RULES) {
   const violations = [];
   for (const file of files) {
@@ -122,6 +182,16 @@ export function scanModuleBoundaries(files, rules = MODULE_BOUNDARY_RULES) {
         import: 'invoke(...)',
         target: 'api/tauri-commands.ts',
         rule: 'pages/* 必须使用类型化 Tauri API 包装，不能直接调用 invoke。',
+      });
+    }
+    const allowedGatewayCalls = GATEWAY_LIFECYCLE_ADAPTER_ALLOWLIST.get(file.path) ?? new Set();
+    for (const bypass of extractGatewayLifecycleBypasses(file.content)) {
+      if (allowedGatewayCalls.has(bypass)) continue;
+      violations.push({
+        file: file.path,
+        import: `${bypass}(...)`,
+        target: 'runtime/gatewayLifecycle.ts',
+        rule: '普通 Gateway 恢复、重连、重启和停止必须进入统一生命周期；只有受控适配器与官方向导交接可调用底层入口。',
       });
     }
     const imports = extractModuleImports(file.content);

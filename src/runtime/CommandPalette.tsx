@@ -14,7 +14,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
-import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { changeLanguage } from '@/i18n';
 import { nextPrimaryLanguage } from '@/i18n/languages';
 import { isFeatureEnabled, type EditionFeatureKey } from '@/config/edition';
@@ -65,7 +65,9 @@ export function CommandPalette() {
   const [query, setQuery] = useState('');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const reconnectWithBestConfig = () => gatewayManager.reconnect();
+  const reconnectWithBestConfig = () => {
+    void gatewayLifecycle.recover('command-palette');
+  };
 
   // Define commands — all names use i18n keys
   const commands: PaletteCommand[] = [
@@ -116,9 +118,9 @@ export function CommandPalette() {
     { id: 'nav-openclaw-commands', feature: 'tools', icon: BookOpenText, name: t('nav.openclawCommands', 'OpenClaw commands'), keywords: ['openclaw', 'commands', 'runtime', '命令', '运行时', 'مرجع'], action: () => navigate('/openclaw-commands') },
     { id: 'agent-status', icon: Cpu, name: t('palette.systemStatus', 'System Status'), keywords: ['status', 'system', 'health'], action: () => navigate('/perf') },
 
-    // Connection
-    { id: 'conn-reconnect', icon: connected ? Wifi : WifiOff, name: connected ? t('palette.reconnect') : t('palette.connectGateway'), keywords: ['connect', 'reconnect', 'اتصال', 'gateway'], action: async () => {
-      await reconnectWithBestConfig();
+    // Gateway 连接
+    { id: 'conn-reconnect', icon: connected ? Wifi : WifiOff, name: connected ? t('palette.reconnect') : t('palette.connectGateway'), keywords: ['connect', 'reconnect', 'اتصال', 'gateway'], action: () => {
+      reconnectWithBestConfig();
     }},
 
     // Settings
