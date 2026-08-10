@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-保持 JunQi 作为 OpenClaw 桌面客户端，持续以官方 Gateway 协议、官方源码和结构化回执为唯一依据。当前合并 DingTalk 分支，统一 Gateway 生命周期、DWS 安装授权与业务页刷新，同时保留已完成的会话、安装、模型配置与 Cron 协议收敛。
+保持 JunQi 作为 OpenClaw 桌面客户端，持续以官方 Gateway 协议、官方源码和结构化回执为唯一依据。当前正在收紧文档：删除已完成的逐项 OpenClaw 审计、规格和计划，只保留当前运行、合规、架构和交接所需记录。
 
 ## 已完成内容
 
@@ -15,6 +15,7 @@
 - 安装完成使用 `openclaw.setup.detect` 的结构化结果；方法明确不支持时启动同一 Gateway 的官方 Wizard，不用本地状态跳过。
 - 模型认证与模型目录按 Gateway 已确认的智能体作用域读取；配置写入使用 `config.patch`、`baseHash` 与明确成功回执。
 - Cron 列表和运行记录遵守官方分页、快照与回执关系，拒绝旧数组、部分结果和本地截断。
+- 文档从 `docs/` 300 份、`specs/` 241 份、`plans/` 237 份 Markdown 收敛为 10 份当前记录。删除项均为无代码消费者的已完成审计、临时规格或执行计划；已核对保留文档不存在失效本地链接。
 
 ## 关键技术决策
 
@@ -31,13 +32,14 @@
 - `src/services/chat/sendTransaction.ts`、`src/runtime/OpenClawChatEventRuntime.ts`、`src/task-execution/`：删除普通聊天本地任务语义。
 - `src/services/setup/setupCompletionGate.ts`、`src/hooks/useSetupFlow/`、`src/services/openclawWizard.ts`：官方 Setup 与 Wizard 恢复。
 - `src/services/gateway/OpenClawCronListClient.ts`、`src/services/gateway/cronRuns.ts`、`src/stores/gatewayDataStore.ts`：Cron 分页与快照一致性。
-- `PROJECT_STATUS.md`、`docs/`、`specs/`、`plans/`：审计依据、实施边界与验证记录。
+- `PROJECT_STATUS.md`、`docs/README.md`、`specs/README.md`、`plans/README.md`：当前权威来源、最小记录与交接状态。
 
 ## 测试与验证结果
 
 - 合并后已通过 `pnpm lint`、`pnpm dingtalk:test`、Gateway 生命周期 25 项、钉钉授权与就绪界面 14 项定向回归、`cargo fmt -- --check`、`cargo check --lib`、完整 `pnpm test` 与 `pnpm build`。
 - 完整前端与脚本测试共通过 2766 项；测试过程仅有既存 Node 弃用和 Radix SSR `useLayoutEffect` 警告，无失败。
 - 生产构建已重新生成并核对 DingTalk 插件资源。尚未执行 Tauri 打包或真实安装器验收。
+- 本次仅整理文档，已核对剩余 Markdown 的本地链接；尚未重新执行代码构建或真机验证。
 
 ## 已知问题
 
@@ -54,3 +56,4 @@
 
 1. 用新的 Tauri 构建在不污染用户环境的前提下验证 Gateway 生命周期、DWS 安装授权与业务页刷新。
 2. 分别在 Windows、Linux 验证服务、凭据和桌面交互；未验证项持续保留真实边界。
+3. 后续较大变更只保留一份当前记录，完成后删除被取代的临时规格和计划。
