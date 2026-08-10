@@ -109,7 +109,7 @@ fn native_command(kind: DwsOperationKind) -> Command {
         }
         DwsOperationKind::Authorize => {
             let mut command = Command::new("dws");
-            command.args(["auth", "login", "--device"]);
+            command.args(["auth", "login"]);
             command
         }
     };
@@ -292,12 +292,23 @@ pub fn cancel_dws_operation(
 
 #[cfg(test)]
 mod tests {
-    use super::redact_line;
+    use super::{native_command, redact_line, DwsOperationKind};
+
     #[test]
     fn dws_output_redacts_credential_material() {
         assert_eq!(
             redact_line("refresh_token=private".to_string()),
             "[已隐藏敏感输出]"
         );
+    }
+
+    #[test]
+    fn native_authorization_uses_browser_callback_flow() {
+        let command = native_command(DwsOperationKind::Authorize);
+        let args = command
+            .get_args()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(args, ["auth", "login"]);
     }
 }

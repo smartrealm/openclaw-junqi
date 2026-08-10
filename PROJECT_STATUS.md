@@ -96,6 +96,8 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - `docs/quality/workbench-sidebar-navigation-visibility-2026-08-10.md`：侧栏入口存在性、布局根因和验证边界。
 - `plans/business/2026-08-10-dingtalk-approval-trace-ui.md`：DWS 审批命令核对、流程投影边界与 UI 实施顺序。
 - `src/business-applications/dingtalkApproval.ts`、`src/pages/businessApplications/useDingTalkApprovalTrace.ts`、`src/components/BusinessApplications/DingTalkApprovalTracePanel.tsx`：DWS 审批实例、任务和记录的脱敏投影、只读汇聚与流程时间线展示。
+- `src/business-applications/dingtalkAgentAuthorization.ts`、`src/business-applications/dingtalkGatewayReconnect.ts`：当前智能体的最小授权补丁，以及 Gateway 重启后连接与运行时身份一致性核验。
+- `docs/business/dingtalk-readiness-guidance-audit-2026-08-10.md`：钉钉接入授权、刷新与目标运行时边界。
 - `src/services/chat/sendTransaction.ts`：聊天发送、投递不确定性与本地任务检查点收敛边界。
 - `src/stores/openclawTaskLedgerStore.ts`、`src/stores/openclawApprovalsStore.ts`：原生活动数据与操作状态投影。
 - `packages/junqi-collab/src/openclaw-adapter.ts`：协作插件通过官方 Agent stream 发出刷新提示。
