@@ -29,6 +29,23 @@ test('OpenClawModelAuthLogoutClient delegates provider-wide logout to the privil
   assert.deepEqual(calls, [{ method: 'models.authLogout', params: { provider: 'openai' } }]);
 });
 
+test('OpenClawModelAuthLogoutClient scopes logout to the selected official agent', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const client = new OpenClawModelAuthLogoutClient({
+    requestPrivileged: async (method, params) => {
+      calls.push({ method, params });
+      return { provider: 'openai', removedProfiles: [], abortedRunIds: [] };
+    },
+  });
+
+  await client.logoutProvider('openai', ' research ');
+
+  assert.deepEqual(calls, [{
+    method: 'models.authLogout',
+    params: { provider: 'openai', agentId: 'research' },
+  }]);
+});
+
 test('OpenClawModelAuthLogoutClient rejects malformed and mismatched official results', async () => {
   assert.throws(
     () => parseOpenClawModelAuthLogout({ provider: 'openai', removedProfiles: [], abortedRunIds: [1] }),

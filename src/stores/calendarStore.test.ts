@@ -127,4 +127,28 @@ describe('calendar reminder Cron reconciliation', () => {
     assert.equal(created.reminderStatus, 'none');
     assert.equal(created.reminderCronJobId, undefined);
   });
+
+  it('uses one stable Gateway declaration key when retrying the same pending reminder', async () => {
+    const declarations: Array<string | undefined> = [];
+    reset([event({ reminderCronJobId: undefined, reminderStatus: 'pending' })]);
+    replaceGatewayMutationMethods({
+      add: async (params) => {
+        declarations.push(params.declarationKey);
+        if (declarations.length === 1) throw new Error('Gateway response was interrupted');
+        return { id: 'cron-1' };
+      },
+      remove: async () => undefined,
+    });
+
+    await useCalendarStore.getState().syncPendingReminders();
+    await useCalendarStore.getState().syncPendingReminders();
+
+    assert.deepEqual(declarations, [
+      'junqi-calendar-reminder:event-1',
+      'junqi-calendar-reminder:event-1',
+    ]);
+    const current = useCalendarStore.getState().events[0];
+    assert.equal(current?.reminderStatus, 'scheduled');
+    assert.equal(current?.reminderCronJobId, 'cron-1');
+  });
 });

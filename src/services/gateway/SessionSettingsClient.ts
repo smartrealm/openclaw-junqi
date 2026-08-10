@@ -1,3 +1,8 @@
+import {
+  OpenClawSessionTargetError,
+  resolveOpenClawSessionTarget,
+} from './OpenClawSessionTarget';
+
 export type SessionPatchResult = {
   ok: true;
   key: string;
@@ -40,18 +45,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function requireSessionSettingsTarget(value: unknown): string {
-  const key = typeof value === 'string' ? value.trim() : '';
-  if (!key) throw new SessionSettingsTargetError();
-  return key;
-}
-
-function confirmedPatchResult(result: unknown, sessionKey: string): SessionPatchResult {
+function confirmedPatchResult(result: unknown, expectedKey: string, localKey: string): SessionPatchResult {
   if (!isRecord(result)) {
     throw new SessionSettingsResponseError('invalid-payload');
   }
 
-  if (result.ok !== true || result.key !== sessionKey) {
+  if (result.ok !== true || result.key !== expectedKey) {
     throw new SessionSettingsResponseError('not-confirmed');
   }
   if (!isRecord(result.entry)) {
@@ -72,7 +71,7 @@ function confirmedPatchResult(result: unknown, sessionKey: string): SessionPatch
 
   return {
     ok: true,
-    key: sessionKey,
+    key: localKey,
     entry: result.entry,
     resolved: {
       ...resolved,
@@ -95,14 +94,21 @@ export class SessionSettingsClient {
     patch: Record<string, unknown>,
     privileged: boolean,
   ): Promise<SessionPatchResult> {
-    const key = requireSessionSettingsTarget(sessionKey);
-    return this.deps.runMutation(key, async () => {
+    let target;
+    try {
+      target = resolveOpenClawSessionTarget(sessionKey);
+    } catch (error) {
+      if (error instanceof OpenClawSessionTargetError) throw new SessionSettingsTargetError();
+      throw error;
+    }
+    return this.deps.runMutation(target.localKey, async () => {
       const request = privileged ? this.deps.requestPrivileged : this.deps.request;
       const result = await request<unknown>('sessions.patch', {
-        key,
+        key: target.key,
+        ...(target.agentId ? { agentId: target.agentId } : {}),
         ...patch,
       });
-      return confirmedPatchResult(result, key);
+      return confirmedPatchResult(result, target.key, target.localKey);
     });
   }
 

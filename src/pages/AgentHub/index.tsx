@@ -45,6 +45,7 @@ import { OpenClawAgentWorkspacePanel } from '@/components/Workspace/OpenClawAgen
 import { parseAgentWorkspaceSkills, type AgentWorkspaceSkill } from './agentWorkspaceSkills';
 import { persistAgentCreationOverrides } from './agentCreationConfig';
 import { readOpenClawConfigSnapshot } from '@/services/gateway/OpenClawConfigSnapshot';
+import { requireOpenClawConfigPatchAcknowledgement } from '@/services/gateway/OpenClawRuntimeConfigClient';
 import { ModelDropdown } from '@/components/shared/ModelDropdown';
 import {
   buildAgentShareMetadata,
@@ -973,10 +974,11 @@ export function AgentHubPage() {
     }
 
     const entry = buildImportedAgentConfigEntry(imported, targetPath);
-    await gateway.callPrivileged('config.patch', {
+    const result = await gateway.callPrivileged('config.patch', {
       raw: JSON.stringify({ agents: { list: [entry] } }),
       ...(snapshot.hash ? { baseHash: snapshot.hash } : {}),
     });
+    requireOpenClawConfigPatchAcknowledgement(result);
     return entry;
   }, []);
 

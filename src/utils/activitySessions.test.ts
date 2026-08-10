@@ -49,6 +49,7 @@ test('numeric timestamps in seconds are normalized to ISO milliseconds', () => {
   const record = normalizeUsageSession({ key: 'agent:main:old', updatedAt: 1_750_000_000 });
   assert.ok(record);
   assert.equal(record.session.updatedAt, new Date(1_750_000_000_000).toISOString());
+  assert.equal(record.session.createdAt, undefined);
 });
 
 test('keeps an absent Gateway label empty instead of promoting the session key to a title', () => {

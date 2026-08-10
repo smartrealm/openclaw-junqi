@@ -17,7 +17,7 @@ import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMot
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { readConfigNavigationIntent, type ConfigTab } from './configNavigation';
 import { isChannelConfigurationMetadataKey } from '@/services/channelConfigMerge';
-import { smartMerge } from './configMerge';
+import { buildOpenClawConfigPatch } from '@/services/gateway/OpenClawConfigPatch';
 import { diffConfigPaths, planConfigReload } from '@/services/gateway/configReloadPlan';
 import { parseActiveOpenclawConfig } from '@/services/openclawConfigRuntime';
 
@@ -122,32 +122,28 @@ export function ConfigManagerPage() {
     setSaving(true);
 
     try {
-      // 1. 从 Gateway 重新读取带 hash 的当前快照，保留外部配置更新并建立 CAS 写入前提。
+      // 1. 从 Gateway 重新读取带 hash 的当前快照，建立官方配置补丁的 CAS 写入前提。
       const snapshot = await openClawRuntimeConfigClient.read();
-      const diskConfig = snapshot.config;
 
-      // 2. 仅将用户变更合并到最新 Gateway 快照；Provider、凭据和网络策略不在客户端重写。
-      const toWrite = smartMerge(diskConfig, originalConfig, configToSave) as GatewayRuntimeConfig;
+      // 2. 仅构造用户从原始快照到当前草稿的差异，避免整段替换未知运行时配置。
+      const patchPlan = buildOpenClawConfigPatch(originalConfig ?? {}, configToSave);
 
-      // 3. 仅通过 Gateway 写入，服务端负责 schema、脱敏字段恢复与 baseHash 冲突校验。
-      await openClawRuntimeConfigClient.replace(toWrite, snapshot);
+      // 3. 仅通过 Gateway 最小补丁写入，服务端负责 schema、脱敏字段恢复与 baseHash 冲突校验。
+      await openClawRuntimeConfigClient.patch(patchPlan.patch, snapshot, patchPlan.replacePaths);
       setConfigExists(true);
 
-      // 4. Sync UI state from the actual saved config so in-memory state matches disk.
-      const savedConfig = structuredClone(toWrite);
-      // Captured before the state setters below: the reload plan needs the
-      // pre-save baseline, and relying on the stale closure value of
-      // `originalConfig` would break the moment this moves to a ref.
+      // 4. CAS 成功后当前草稿即为本次提交的配置投影。
+      const savedConfig = structuredClone(configToSave);
+      // 重载计划必须使用提交前基线，不能依赖后续状态更新后的旧闭包值。
       const reloadBaseline = originalConfig;
       setConfig(savedConfig);
       setOriginalConfig(structuredClone(savedConfig));
 
-      // Keep the last confirmed catalog mounted while the Gateway reloads.
-      // Clearing it here unmounts the composer control and causes a visible flash.
+      // Gateway 重载期间保留最后一次确认的目录，避免输入控件卸载造成闪动。
       const chatStore = (await import('@/stores/chatStore')).useChatStore;
       chatStore.setState({ modelsLoading: true });
 
-      // 仅依据 OpenClaw 路径级 reloadKind 决定是否重启；未知结果失败关闭为重启。
+      // 仅在 OpenClaw 声明需要时重启；路径级重载信息未知时保守选择重启。
       const changedPaths = diffConfigPaths(reloadBaseline ?? {}, savedConfig);
       const reloadPlan = await planConfigReload(
         changedPaths,
@@ -159,7 +155,7 @@ export function ConfigManagerPage() {
       debugLog('app', '[Config] Reload plan:', reloadPlan.kind, reloadPlan.decidingPaths);
 
       if (reloadPlan.kind !== 'restart') {
-        // `hot` is applied by the Gateway itself; `none` needs nothing at all.
+        // `hot` 由 Gateway 自行应用，`none` 不需要额外操作。
         setError('');
         setSaveSuccess(true);
         window.dispatchEvent(new Event('aegis:config-saved'));
@@ -179,14 +175,14 @@ export function ConfigManagerPage() {
           window.dispatchEvent(new Event('aegis:config-saved'));
           debugLog('app', '[Config] Apply method:', restartResult.method, restartResult.changedPaths);
         } else {
-          // Save succeeded but restart failed — show warning with instructions
+          // 保存已确认但重启失败，必须如实显示后续操作提示。
           setSaveSuccess(true);
           window.dispatchEvent(new Event('aegis:config-saved'));
           debugWarn('app', '[Config] Restart failed:', restartResult.error);
           setError(`Config saved, but gateway restart failed: ${restartResult.error || 'Unknown error'}`);
         }
       } catch {
-        // restart IPC not available — still show save success
+        // 重启 IPC 不可用不改变已确认的保存结果。
         setSaveSuccess(true);
         window.dispatchEvent(new Event('aegis:config-saved'));
         debugWarn('app', '[Config] Restart IPC unavailable');

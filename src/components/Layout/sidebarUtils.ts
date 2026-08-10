@@ -1,9 +1,10 @@
 import type { Session } from '@/stores/chatStore';
 import { resolveKnownAgentMainSessionKey } from '@/utils/sessionLifecycle';
-import { agentIdFromSessionKey } from '@/utils/sessionPresentation';
+import { agentIdFromSessionKey, sessionCreationTimestamp } from '@/utils/sessionPresentation';
 
 export type SidebarSessionGrouping = 'category' | 'none';
 export type SidebarSessionSortMode = 'created' | 'updated';
+export type SidebarCreationSortAvailability = 'available' | 'partial' | 'unavailable' | 'unknown';
 
 export function normalizeSidebarSessionGrouping(value: unknown): SidebarSessionGrouping {
   return value === 'none' ? 'none' : 'category';
@@ -30,7 +31,6 @@ export interface SidebarSessionProjectionInput<T extends Session> {
   readonly defaultMainSessionKey: string | null | undefined;
   readonly grouping: SidebarSessionGrouping;
   readonly sortMode: SidebarSessionSortMode;
-  readonly creationFallbackOrder?: ReadonlyMap<string, number>;
   readonly categoryOrder?: readonly string[];
 }
 
@@ -54,36 +54,27 @@ export function sessionActivityTime(session: Session): number {
 }
 
 export function sessionCreatedTime(session: Session): number {
-  return timestamp(session.createdAt);
+  return sessionCreationTimestamp(session) ?? 0;
 }
 
-export function extendSidebarSessionCreationFallbackOrder(
-  current: ReadonlyMap<string, number>,
-  sessions: readonly Pick<Session, 'key'>[],
-): ReadonlyMap<string, number> {
-  let next: Map<string, number> | null = null;
-  for (const session of sessions) {
-    if (current.has(session.key) || next?.has(session.key)) continue;
-    next ??= new Map(current);
-    next.set(session.key, next.size);
-  }
-  return next ?? current;
+export function hasVerifiedSidebarSessionCreationTime(session: Pick<Session, 'createdAt'>): boolean {
+  return sessionCreationTimestamp(session) !== null;
 }
 
-export function promoteSidebarSessionCreationFallbackOrder(
-  current: ReadonlyMap<string, number>,
-  sessionKey: string,
-): ReadonlyMap<string, number> {
-  const key = normalized(sessionKey);
-  if (!key) return current;
-  if ((current.get(key) ?? 0) < 0) return current;
-  let promotedOrder = -1;
-  for (const order of current.values()) {
-    if (order <= promotedOrder) promotedOrder = order - 1;
-  }
-  const next = new Map(current);
-  next.set(key, promotedOrder);
-  return next;
+export function resolveSidebarCreationSortAvailability(
+  sessions: readonly Pick<Session, 'createdAt'>[],
+): SidebarCreationSortAvailability {
+  if (sessions.length === 0) return 'unknown';
+  const verifiedCount = sessions.filter(hasVerifiedSidebarSessionCreationTime).length;
+  if (verifiedCount === 0) return 'unavailable';
+  return verifiedCount === sessions.length ? 'available' : 'partial';
+}
+
+export function sessionTimestampForSidebarMode(
+  session: Session,
+  mode: SidebarSessionSortMode,
+): number {
+  return mode === 'created' ? sessionCreatedTime(session) : sessionActivityTime(session);
 }
 
 export function resolveSidebarSessionAgentId(
@@ -122,33 +113,18 @@ export function sortSessionsByActivity<T extends Session>(sessions: readonly T[]
 export function sortSidebarSessions<T extends Session>(
   sessions: readonly T[],
   mode: SidebarSessionSortMode,
-  creationFallbackOrder?: ReadonlyMap<string, number>,
 ): T[] {
   const originalIndex = new Map(sessions.map((session, index) => [session.key, index]));
   return [...sessions].sort((left, right) => {
     if (mode === 'created') {
-      const leftFallbackOrder = creationFallbackOrder?.get(left.key);
-      const rightFallbackOrder = creationFallbackOrder?.get(right.key);
       const leftTime = sessionCreatedTime(left);
       const rightTime = sessionCreatedTime(right);
-      const leftPromoted = leftTime === 0 && leftFallbackOrder !== undefined && leftFallbackOrder < 0;
-      const rightPromoted = rightTime === 0 && rightFallbackOrder !== undefined && rightFallbackOrder < 0;
-      if (leftPromoted || rightPromoted) {
-        if (leftPromoted !== rightPromoted) return leftPromoted ? -1 : 1;
-        const promotedDelta = leftFallbackOrder! - rightFallbackOrder!;
-        if (promotedDelta !== 0) return promotedDelta;
-      }
-
-      if (leftTime > 0 || rightTime > 0) {
-        if ((leftTime > 0) !== (rightTime > 0)) return leftTime > 0 ? -1 : 1;
+      const leftHasTime = hasVerifiedSidebarSessionCreationTime(left);
+      const rightHasTime = hasVerifiedSidebarSessionCreationTime(right);
+      if (leftHasTime || rightHasTime) {
+        if (leftHasTime !== rightHasTime) return leftHasTime ? -1 : 1;
         const timeDelta = rightTime - leftTime;
         if (timeDelta !== 0) return timeDelta;
-      }
-
-      if (creationFallbackOrder) {
-        const fallbackDelta = (leftFallbackOrder ?? Number.MAX_SAFE_INTEGER)
-          - (rightFallbackOrder ?? Number.MAX_SAFE_INTEGER);
-        if (fallbackDelta !== 0) return fallbackDelta;
       }
     } else {
       const timeDelta = sessionActivityTime(right) - sessionActivityTime(left);
@@ -190,12 +166,10 @@ export function projectSidebarSessions<T extends Session>(
   const pinnedSessions = sortSidebarSessions(
     ordinarySessions.filter((session) => session.pinned === true),
     input.sortMode,
-    input.creationFallbackOrder,
   );
   const unpinnedSessions = sortSidebarSessions(
     ordinarySessions.filter((session) => session.pinned !== true),
     input.sortMode,
-    input.creationFallbackOrder,
   );
   if (input.grouping === 'none') {
     return {

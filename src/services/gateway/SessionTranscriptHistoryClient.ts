@@ -1,6 +1,6 @@
 import { GatewayRpcError } from './Connection';
 import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
-import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
+import { resolveOpenClawSessionTarget } from './OpenClawSessionTarget';
 
 type GatewayRequester = <T>(method: string, params: Record<string, unknown>) => Promise<T>;
 type SessionMutationRunner = <T>(sessionKey: string, operation: () => Promise<T>) => Promise<T>;
@@ -56,11 +56,6 @@ function requiredText(value: string, field: string): string {
   return normalized;
 }
 
-function optionalAgentId(agentId?: string): { agentId?: string } {
-  const normalized = agentId?.trim();
-  return normalized ? { agentId: normalized } : {};
-}
-
 function parseEditor(value: unknown, method: string): Pick<SessionTranscriptForkResult, 'editorText' | 'editorAttachments'> {
   if (!isRecord(value)) throw new SessionTranscriptHistoryResponseError(method);
   const editorText = value.editorText;
@@ -79,15 +74,17 @@ function parseEditor(value: unknown, method: string): Pick<SessionTranscriptFork
 }
 
 export function buildSessionTranscriptEntryParams(sessionKey: string, entryId: string, agentId?: string) {
+  const target = resolveOpenClawSessionTarget(sessionKey, agentId);
   return {
-    sessionKey: requireOpenClawSessionTarget(sessionKey),
+    sessionKey: target.key,
     entryId: requiredText(entryId, 'entry id'),
-    ...optionalAgentId(agentId),
+    ...(target.agentId ? { agentId: target.agentId } : {}),
   };
 }
 
 export function buildSessionTranscriptParams(sessionKey: string, agentId?: string) {
-  return { sessionKey: requireOpenClawSessionTarget(sessionKey), ...optionalAgentId(agentId) };
+  const target = resolveOpenClawSessionTarget(sessionKey, agentId);
+  return { sessionKey: target.key, ...(target.agentId ? { agentId: target.agentId } : {}) };
 }
 
 export function parseSessionTranscriptBranches(value: unknown): SessionTranscriptBranch[] {
@@ -121,8 +118,8 @@ export class SessionTranscriptHistoryClient {
     try {
       return await (privileged ? this.deps.requestPrivileged<T>(method, params) : this.deps.request<T>(method, params));
     } catch (error) {
-      if (error instanceof GatewayRpcError && isOpenClawUnknownMethodError(error, method)) {
-        throw new SessionTranscriptHistoryProtocolUnsupportedError(error);
+      if (isOpenClawUnknownMethodError(error, method)) {
+        throw new SessionTranscriptHistoryProtocolUnsupportedError(error as GatewayRpcError);
       }
       throw error;
     }
@@ -135,19 +132,27 @@ export class SessionTranscriptHistoryClient {
   }
 
   async forkAtMessage(sessionKey: string, entryId: string, agentId?: string): Promise<SessionTranscriptForkResult> {
+    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
     const params = buildSessionTranscriptEntryParams(sessionKey, entryId, agentId);
-    return this.deps.runMutation(params.sessionKey, async () => {
+    return this.deps.runMutation(target.localKey, async () => {
       const result = await this.request('sessions.fork', params);
       if (!isRecord(result) || typeof result.sessionKey !== 'string' || !result.sessionKey.trim()) {
         throw new SessionTranscriptHistoryResponseError('sessions.fork');
       }
-      return { sessionKey: result.sessionKey.trim(), ...parseEditor(result, 'sessions.fork') };
+      const createdSessionKey = result.sessionKey.trim();
+      return {
+        sessionKey: createdSessionKey === target.key && target.agentId
+          ? target.localKey
+          : createdSessionKey,
+        ...parseEditor(result, 'sessions.fork'),
+      };
     });
   }
 
   async rewindToMessage(sessionKey: string, entryId: string, agentId?: string): Promise<SessionTranscriptRewindResult> {
+    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
     const params = buildSessionTranscriptEntryParams(sessionKey, entryId, agentId);
-    return this.deps.runMutation(params.sessionKey, async () => parseEditor(
+    return this.deps.runMutation(target.localKey, async () => parseEditor(
       await this.request(
         'sessions.rewind', params, true,
       ),
@@ -156,8 +161,9 @@ export class SessionTranscriptHistoryClient {
   }
 
   async switchBranch(sessionKey: string, leafEntryId: string, agentId?: string): Promise<void> {
+    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
     const params = buildSessionTranscriptParams(sessionKey, agentId);
-    await this.deps.runMutation(params.sessionKey, async () => {
+    await this.deps.runMutation(target.localKey, async () => {
       const result = await this.request('sessions.branches.switch', {
         ...params,
         leafEntryId: requiredText(leafEntryId, 'branch entry id'),

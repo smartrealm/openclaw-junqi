@@ -64,13 +64,16 @@ export function parseOpenClawModelAuthLogout(value: unknown): OpenClawModelAuthL
 export class OpenClawModelAuthLogoutClient {
   constructor(private readonly dependencies: OpenClawModelAuthLogoutClientDependencies) {}
 
-  async logoutProvider(provider: string): Promise<OpenClawModelAuthLogoutResult> {
+  async logoutProvider(provider: string, agentId?: string): Promise<OpenClawModelAuthLogoutResult> {
     const normalizedProvider = provider.trim();
     if (!normalizedProvider) throw new OpenClawModelAuthLogoutResponseError();
     try {
       const response = await this.dependencies.requestPrivileged(
         OPENCLAW_MODEL_AUTH_LOGOUT_METHOD,
-        { provider: normalizedProvider },
+        {
+          provider: normalizedProvider,
+          ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
+        },
       );
       const result = parseOpenClawModelAuthLogout(response);
       if (result.provider !== normalizedProvider) throw new OpenClawModelAuthLogoutResponseError();

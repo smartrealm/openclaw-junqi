@@ -28,6 +28,8 @@ import {
 } from './SessionTranscriptSubscription';
 import {
   GatewayAgentDisplayNameUpdateError,
+  confirmOpenClawAgentDelete,
+  confirmOpenClawAgentUpdate,
   OpenClawAgentManagement,
 } from './AgentManagement';
 import { debugWarn } from '@/utils/debugLog';
@@ -52,12 +54,18 @@ import { sessionCommandCoordinator } from '@/services/chat/sessionCommandCoordin
 import type { GatewayAttachment } from '@/services/chat/types';
 import type { OpenClawChatSendDeliveryUncertain } from '@/processing/openClawChatEvent';
 import { SessionSettingsClient } from './SessionSettingsClient';
-import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
+import {
+  resolveOpenClawSessionTarget,
+  scopeOpenClawGlobalSessionRow,
+} from './OpenClawSessionTarget';
 import { OpenClawSessionOrganizationClient } from './OpenClawSessionOrganizationClient';
 import { OpenClawSessionGroupsClient } from './OpenClawSessionGroupsClient';
 import { OpenClawSessionLifecycleClient } from './OpenClawSessionLifecycleClient';
-import { listAllOpenClawSessions } from './OpenClawSessionListClient';
-import { parseOpenClawDescribedSession } from './OpenClawSessionProjection';
+import { listAllOpenClawSessionsForAgents } from './OpenClawSessionListClient';
+import {
+  parseOpenClawAgentList,
+  parseOpenClawDescribedSession,
+} from './OpenClawSessionProjection';
 import {
   OpenClawTaskLedgerClient,
   type OpenClawTaskListInput,
@@ -96,6 +104,8 @@ import { OpenClawModelAuthLogoutClient } from './OpenClawModelAuthLogoutClient';
 import { OpenClawChannelQrLoginClient } from './OpenClawChannelQrLoginClient';
 import { OpenClawModelProbeClient } from './OpenClawModelProbeClient';
 import { OpenClawSetupClient } from './OpenClawSetupClient';
+
+export { OpenClawSetupMethodUnavailableError } from './OpenClawSetupClient';
 import { OpenClawRuntimeConfigClient } from './OpenClawRuntimeConfigClient';
 import { OpenClawProviderUsageClient } from './OpenClawProviderUsageClient';
 import { OpenClawAgentIdentityClient } from './OpenClawAgentIdentityClient';
@@ -117,7 +127,6 @@ import {
   type OpenClawCronMutationPatch,
 } from './OpenClawCronManagementClient';
 import type { CronAgentTurnAddParams } from './cronContract';
-import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import { SessionCompactionClient } from './SessionCompactionClient';
 import { buildToolsEffectiveParams, parseToolsEffectiveResult, type ToolsEffectiveResult } from './toolsEffective';
 import { buildToolsCatalogParams, parseToolsCatalogResult, type ToolsCatalogResult } from './toolsCatalog';
@@ -293,18 +302,6 @@ export class GatewaySessionMutationRejectedError extends Error {
   }
 }
 
-/**
- * A remote Stop is permitted only after its local Task checkpoint is durable.
- * The caller owns both operations; this helper only preserves their ordering.
- */
-export async function abortAfterTaskCheckpoint<T>(
-  checkpointStop: () => Promise<void>,
-  abort: () => Promise<T>,
-): Promise<T> {
-  await checkpointStop();
-  return abort();
-}
-
 export interface GatewayAgentCreateParams {
   name: string;
   workspace?: string;
@@ -322,6 +319,7 @@ export interface GatewayChatMessageDispatchInput {
   message: string;
   attachments?: readonly unknown[];
   sessionKey: string;
+  agentId?: string;
   clientMessageId: string;
   sessionId?: string;
   expectedLeafEntryId?: string | null;
@@ -342,6 +340,7 @@ export async function dispatchGatewayChatMessage(
   if (input.delivery === 'steer') {
     return steerClient.steer({
       key: input.sessionKey,
+      ...(input.agentId ? { agentId: input.agentId } : {}),
       message: input.message,
       idempotencyKey: input.clientMessageId,
       ...(input.attachments?.length ? { attachments: input.attachments } : {}),
@@ -349,6 +348,7 @@ export async function dispatchGatewayChatMessage(
   }
   return transport.request('chat.send', {
     sessionKey: input.sessionKey,
+    ...(input.agentId ? { agentId: input.agentId } : {}),
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     ...(input.expectedLeafEntryId !== undefined
       ? { expectedLeafEntryId: input.expectedLeafEntryId }
@@ -378,34 +378,6 @@ export interface GatewayAgentUpdateParams {
 export interface GatewayHistoryOptions {
   offset?: number;
   maxChars?: number;
-}
-
-function historyTaskObservation(response: unknown): {
-  sessionId: string | null;
-  hasActiveRun: boolean;
-  activeRunIds: string[];
-} | null {
-  if (!response || typeof response !== 'object' || Array.isArray(response)) return null;
-  const record = response as Record<string, unknown>;
-  const sessionInfo = record.sessionInfo;
-  if (!sessionInfo || typeof sessionInfo !== 'object' || Array.isArray(sessionInfo)) return null;
-  const info = sessionInfo as Record<string, unknown>;
-  if (typeof info.hasActiveRun !== 'boolean') return null;
-  const activeRunIds = Array.isArray(info.activeRunIds)
-    ? info.activeRunIds.flatMap((value) => typeof value === 'string' && value.trim() ? [value.trim()] : [])
-    : [];
-  const inFlight = record.inFlightRun;
-  if (inFlight && typeof inFlight === 'object' && !Array.isArray(inFlight)) {
-    const runId = (inFlight as Record<string, unknown>).runId;
-    if (typeof runId === 'string' && runId.trim() && !activeRunIds.includes(runId.trim())) {
-      activeRunIds.push(runId.trim());
-    }
-  }
-  return {
-    sessionId: typeof record.sessionId === 'string' && record.sessionId.trim() ? record.sessionId.trim() : null,
-    hasActiveRun: info.hasActiveRun,
-    activeRunIds,
-  };
 }
 
 export interface GatewaySessionDefaults extends Record<string, unknown> {
@@ -1288,11 +1260,6 @@ export const gateway = {
     observation?: ChatSessionRunObservation,
   ) {
     chatHandler.reconcileHistoryRunState(sessionKey, response, observation);
-    const history = historyTaskObservation(response);
-    if (!history) return;
-    void taskExecutionCoordinator.reconcileHistory({ sessionKey, ...history }).catch((error) => {
-      taskExecutionCoordinator.reportPersistenceFailure('history reconciliation', error);
-    });
   },
   async synchronizeSessionTranscript(target: OpenClawTranscriptTarget | null) {
     if (!connection.isConnected()) return;
@@ -1344,10 +1311,9 @@ export const gateway = {
       sessionId?: string;
       expectedLeafEntryId?: string | null;
       delivery?: 'send' | 'steer';
-      supersededRunId?: string;
     } = {},
   ) {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    const target = resolveOpenClawSessionTarget(sessionKey);
     const gwAttachments = attachments?.map((att) => {
       let rawBase64 = att.content || '';
       if (rawBase64.startsWith('data:')) {
@@ -1363,7 +1329,7 @@ export const gateway = {
 
     const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
     const isSteer = identity.delivery === 'steer';
-    chatHandler.beginPendingSend(targetSessionKey, clientMessageId);
+    chatHandler.beginPendingSend(target.localKey, clientMessageId);
     let requestDispatched = false;
     try {
       const dispatch = async () => {
@@ -1372,7 +1338,8 @@ export const gateway = {
         return dispatchGatewayChatMessage(connection, sessionSteer, {
           message,
           attachments: gwAttachments,
-          sessionKey: targetSessionKey,
+          sessionKey: target.key,
+          ...(target.agentId ? { agentId: target.agentId } : {}),
           clientMessageId,
           sessionId: identity.sessionId,
           expectedLeafEntryId: identity.expectedLeafEntryId,
@@ -1382,29 +1349,17 @@ export const gateway = {
       // sessions.steer 自身即为 OpenClaw 的中断并发送控制操作，不能等待长时间 chat.send 请求。
       const dispatched = isSteer
         ? await dispatch()
-        : await sessionCommandCoordinator.runMutation(targetSessionKey, dispatch);
+        : await sessionCommandCoordinator.runMutation(target.localKey, dispatch);
       const result = isSteer
         ? (dispatched as Awaited<ReturnType<OpenClawSessionSteerClient['steer']>>).response
         : dispatched;
       const acknowledgement = chatHandler.reconcileSendAcknowledgement(
-        targetSessionKey,
+        target.localKey,
         clientMessageId,
         result,
       );
-      if (
-        isSteer
-        && identity.supersededRunId
-        && (dispatched as Awaited<ReturnType<OpenClawSessionSteerClient['steer']>>).interruptedActiveRun === true
-      ) {
-        await taskExecutionCoordinator.settleRun({
-          sessionKey: targetSessionKey,
-          sessionId: identity.sessionId,
-          runId: identity.supersededRunId,
-          terminalReason: 'aborted',
-        }).catch((error) => taskExecutionCoordinator.reportPersistenceFailure('settle steered Run checkpoint', error));
-      }
       if (acknowledgement !== 'unknown') return result;
-      if (chatHandler.markPendingSendUncertain(targetSessionKey, clientMessageId)) {
+      if (chatHandler.markPendingSendUncertain(target.localKey, clientMessageId)) {
         return { deliveryUncertain: true, runId: clientMessageId } satisfies OpenClawChatSendDeliveryUncertain;
       }
       return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
@@ -1412,26 +1367,32 @@ export const gateway = {
       // sessions.steer 的原生准入可能已经尝试中断活动 Run 后才失败。
       // 单独的 RPC 错误无法区分该情况与请求被拒绝，故交由带围栏的历史解析器确认。
       if (isSteer && requestDispatched) {
-        void sessionRunReconciler.reconcile(targetSessionKey);
+        void sessionRunReconciler.reconcile(target.localKey);
       }
-      if (chatHandler.isSendObserved(targetSessionKey, clientMessageId)) {
+      if (chatHandler.isSendObserved(target.localKey, clientMessageId)) {
         return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
       }
       if (requestDispatched && !(error instanceof GatewayRpcError)) {
-        if (chatHandler.markPendingSendUncertain(targetSessionKey, clientMessageId)) {
+        if (chatHandler.markPendingSendUncertain(target.localKey, clientMessageId)) {
           return { deliveryUncertain: true, runId: clientMessageId } satisfies OpenClawChatSendDeliveryUncertain;
         }
         return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
       }
-      chatHandler.failPendingSend(targetSessionKey, clientMessageId);
+      chatHandler.failPendingSend(target.localKey, clientMessageId);
       throw error;
     }
   },
 
   // Sessions & Agents
   async getSessions(): Promise<GatewaySessionListResponse> {
-    return listAllOpenClawSessions(
+    const agents = parseOpenClawAgentList(await connection.request('agents.list', {}));
+    const agentIds = [
+      agents.defaultId,
+      ...agents.agents.map((agent) => agent.id).filter((agentId) => agentId !== agents.defaultId),
+    ];
+    return listAllOpenClawSessionsForAgents(
       (method, params) => connection.request(method, params),
+      agentIds,
     );
   },
   async createSession(input: {
@@ -1443,17 +1404,20 @@ export const gateway = {
     return sessionLifecycle.create(input);
   },
   async describeSession(sessionKey: string) {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
-    return parseOpenClawDescribedSession(await connection.request('sessions.describe', {
-      key: targetSessionKey,
+    const target = resolveOpenClawSessionTarget(sessionKey);
+    const described = parseOpenClawDescribedSession(await connection.request('sessions.describe', {
+      key: target.localKey,
       includeDerivedTitles: true,
       includeLastMessage: true,
     }));
+    return target.agentId && described.key === target.key
+      ? scopeOpenClawGlobalSessionRow(described, target.agentId)
+      : described;
   },
   async getEffectiveTools(sessionKey: string, agentId?: string): Promise<ToolsEffectiveResult> {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
     return parseToolsEffectiveResult(
-      await connection.request('tools.effective', buildToolsEffectiveParams(targetSessionKey, agentId)),
+      await connection.request('tools.effective', buildToolsEffectiveParams(target.key, target.agentId)),
     );
   },
   async invokeTool(params: ToolsInvokeParams): Promise<ToolsInvokeResult> {
@@ -1470,20 +1434,22 @@ export const gateway = {
     sessionKey: string,
     options: Pick<SessionsPreviewParams, 'limit' | 'maxChars'> = {},
   ): Promise<SessionPreview> {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    const target = resolveOpenClawSessionTarget(sessionKey);
     const result = parseSessionsPreviewResult(
-      await connection.request('sessions.preview', buildSessionsPreviewParams([targetSessionKey], options)),
+      await connection.request('sessions.preview', buildSessionsPreviewParams([target.localKey], options)),
     );
-    return requireSessionPreview(result, targetSessionKey);
+    return requireSessionPreview(result, target.localKey);
   },
   async resolveSessionKey(sessionKey: string, agentId?: string): Promise<SessionsResolveResult> {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
-    return parseSessionsResolveResult(
+    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
+    const resolved = parseSessionsResolveResult(
       await connection.request(
         'sessions.resolve',
-        buildSessionsResolveParams(targetSessionKey, { agentId, allowMissing: true }),
+        buildSessionsResolveParams(target.key, { agentId: target.agentId, allowMissing: true }),
       ),
     );
+    if (!resolved.ok || !target.agentId || resolved.key !== target.key) return resolved;
+    return { ...resolved, key: target.localKey };
   },
   async getSessionCompactionCheckpoint(
     sessionKey: string,
@@ -1534,13 +1500,13 @@ export const gateway = {
     return openClawAgentFilesClient.get(agentId, name);
   },
   async listSessionArtifacts(sessionKey: string, agentId?: string): Promise<ArtifactSummary[]> {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
     return parseArtifactsListResult(
       await connection.request(
         'artifacts.list',
-        buildArtifactsListParams({ sessionKey: targetSessionKey, agentId }),
+        buildArtifactsListParams({ sessionKey: target.key, agentId: target.agentId }),
       ),
-      targetSessionKey,
+      target.key,
     ).artifacts;
   },
   async getSessionArtifact(
@@ -1548,14 +1514,14 @@ export const gateway = {
     sessionKey: string,
     agentId?: string,
   ): Promise<ArtifactSummary> {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
     return parseArtifactGetResult(
       await connection.request(
         'artifacts.get',
-        buildArtifactsGetParams(artifactId, { sessionKey: targetSessionKey, agentId }),
+        buildArtifactsGetParams(artifactId, { sessionKey: target.key, agentId: target.agentId }),
       ),
       artifactId,
-      targetSessionKey,
+      target.key,
     ).artifact;
   },
   async downloadSessionArtifact(
@@ -1563,14 +1529,14 @@ export const gateway = {
     sessionKey: string,
     agentId?: string,
   ): Promise<ArtifactDownloadResult> {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
     return parseArtifactDownloadResult(
       await connection.request(
         'artifacts.download',
-        buildArtifactsDownloadParams(artifactId, { sessionKey: targetSessionKey, agentId }),
+        buildArtifactsDownloadParams(artifactId, { sessionKey: target.key, agentId: target.agentId }),
       ),
       artifactId,
-      targetSessionKey,
+      target.key,
     );
   },
   async getCronJob(jobId: string): Promise<OpenClawCronJobDetails> {
@@ -1598,7 +1564,7 @@ export const gateway = {
   async retryTaskDelivery(taskIds: readonly string[]) { return taskLedger.retry(taskIds); },
   async dismissTaskDelivery(taskIds: readonly string[]) { return taskLedger.dismiss(taskIds); },
   async enqueueCronRun(jobId: string) { return cronRunClient.enqueue(jobId); },
-  async listCronRuns(jobId: string, runId?: string) { return cronRunClient.list(jobId, runId); },
+  async listCronRuns(params: Parameters<typeof cronRunClient.list>[0]) { return cronRunClient.list(params); },
   async findTerminalCronRun(jobId: string, runId: string) { return cronRunClient.findTerminal(jobId, runId); },
   async getCronStatus() { return cronStatusClient.get(); },
   async addCronAgentTurn(params: CronAgentTurnAddParams): Promise<OpenClawCronManagedJob> {
@@ -1625,9 +1591,14 @@ export const gateway = {
   },
   async createAgent(agent: GatewayAgentCreatePayload) { return agentManagement.create(agent); },
   async updateAgent(agentId: string, patch: GatewayAgentUpdateParams) {
-    return requestPrivileged<{ ok: true; agentId: string }>('agents.update', { agentId, ...patch });
+    return confirmOpenClawAgentUpdate(
+      await requestPrivileged('agents.update', { agentId, ...patch }),
+      agentId,
+    );
   },
-  async deleteAgent(agentId: string) { return requestPrivileged('agents.delete', { agentId }); },
+  async deleteAgent(agentId: string) {
+    return confirmOpenClawAgentDelete(await requestPrivileged('agents.delete', { agentId }), agentId);
+  },
 
   // History & Abort
   async getHistory(
@@ -1636,9 +1607,10 @@ export const gateway = {
     timeoutMs = 15_000,
     options: GatewayHistoryOptions = {},
   ): Promise<GatewayHistoryResponse> {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    const target = resolveOpenClawSessionTarget(sessionKey);
     return connection.request<GatewayHistoryResponse>('chat.history', {
-      sessionKey: targetSessionKey,
+      sessionKey: target.key,
+      ...(target.agentId ? { agentId: target.agentId } : {}),
       limit,
       ...(options.offset !== undefined ? { offset: options.offset } : {}),
       ...(options.maxChars !== undefined ? { maxChars: options.maxChars } : {}),
@@ -1649,41 +1621,29 @@ export const gateway = {
     messageId: string,
     agentId?: string,
   ): Promise<GatewayMessageResponse> {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
     return connection.request<GatewayMessageResponse>('chat.message.get', {
-      sessionKey: targetSessionKey,
+      sessionKey: target.key,
       messageId,
-      ...(agentId ? { agentId } : {}),
+      ...(target.agentId ? { agentId: target.agentId } : {}),
     });
   },
-  async abortChat(sessionKey: string, sessionId?: string) {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
-    // 中止属于控制面请求。若等待长时间运行的 chat.send 请求，会无法停止
-    // 发送确认已丢失或延迟的响应。
-    return abortAfterTaskCheckpoint(
-      async () => {
-        try {
-          await taskExecutionCoordinator.requestStop(targetSessionKey, sessionId);
-        } catch (error) {
-          taskExecutionCoordinator.reportPersistenceFailure('persist Stop checkpoint', error);
-          throw error;
-        }
-      },
-      async () => {
-        const runId = chatHandler.abortRunId(targetSessionKey);
-        const result = await sessionAbort.abort({
-          key: targetSessionKey,
-          ...(runId ? { runId } : {}),
-        });
-        return chatHandler.reconcileSessionAbortAcknowledgement(targetSessionKey, result);
-      },
-    );
+  async abortChat(sessionKey: string, _sessionId?: string) {
+    const target = resolveOpenClawSessionTarget(sessionKey);
+    // 普通会话只投影 OpenClaw 的中止回执，不能为聊天临时状态创建本地任务终态。
+    const runId = chatHandler.abortRunId(target.localKey);
+    const result = await sessionAbort.abort({
+      key: target.key,
+      ...(target.agentId ? { agentId: target.agentId } : {}),
+      ...(runId ? { runId } : {}),
+    });
+    return chatHandler.reconcileSessionAbortAcknowledgement(target.localKey, result);
   },
   async compactSession(sessionKey: string) {
-    const key = requireOpenClawSessionTarget(sessionKey);
+    const target = resolveOpenClawSessionTarget(sessionKey);
     return sessionCommandCoordinator.runMutation(
-      key,
-      () => sessionCompaction.compact({ key }),
+      target.localKey,
+      () => sessionCompaction.compact({ key: target.key, ...(target.agentId ? { agentId: target.agentId } : {}) }),
     );
   },
   async listSessionCompactionCheckpoints(sessionKey: string) {
@@ -1692,29 +1652,33 @@ export const gateway = {
 
   // Session Lifecycle
   async deleteSession(sessionKey: string, deleteTranscript = true, expectedSessionId?: string) {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    const target = resolveOpenClawSessionTarget(sessionKey);
     return sessionCommandCoordinator.runMutation(
-      targetSessionKey,
+      target.localKey,
       async () => {
         const result = await requestPrivileged<Record<string, unknown>>('sessions.delete', {
-          key: targetSessionKey,
+          key: target.key,
+          ...(target.agentId ? { agentId: target.agentId } : {}),
           deleteTranscript,
           ...(expectedSessionId ? { expectedSessionId } : {}),
         });
-        assertVerifiedSessionMutationResult(result, 'delete', targetSessionKey);
-        await cleanupSessionArtifacts(targetSessionKey);
+        assertVerifiedSessionMutationResult(result, 'delete', target.key);
+        await cleanupSessionArtifacts(target.localKey);
         return result;
       },
     );
   },
   async resetSession(sessionKey: string) {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    const target = resolveOpenClawSessionTarget(sessionKey);
     return sessionCommandCoordinator.runMutation(
-      targetSessionKey,
+      target.localKey,
       async () => {
-        const result = await requestPrivileged<Record<string, unknown>>('sessions.reset', { key: targetSessionKey });
-        assertVerifiedSessionMutationResult(result, 'reset', targetSessionKey);
-        await cleanupSessionArtifacts(targetSessionKey);
+        const result = await requestPrivileged<Record<string, unknown>>('sessions.reset', {
+          key: target.key,
+          ...(target.agentId ? { agentId: target.agentId } : {}),
+        });
+        assertVerifiedSessionMutationResult(result, 'reset', target.key);
+        await cleanupSessionArtifacts(target.localKey);
         return result;
       },
     );
@@ -1762,10 +1726,6 @@ export const gateway = {
   async ensureSessionGroup(name: string) {
     return sessionGroups.ensure(name);
   },
-  async updateAgentParams(agentId: string, params: Record<string, unknown>) {
-    return requestPrivileged('agents.update', { agentId, params });
-  },
-
   // Browser control uses the OpenClaw browser.request admin-scoped protocol.
   async getBrowserStatus(profile?: string) { return openClawBrowserClient.status(profile); },
   async getBrowserProfiles() { return openClawBrowserClient.profiles(); },

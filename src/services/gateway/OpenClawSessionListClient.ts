@@ -1,3 +1,5 @@
+import { scopeOpenClawGlobalSessionRow } from './OpenClawSessionTarget';
+
 export type OpenClawSessionListRequester = (
   method: 'sessions.list',
   params: Record<string, unknown>,
@@ -18,6 +20,9 @@ export interface OpenClawSessionListResponses {
 
 const PAGE_LIMIT = 100;
 const PRESENTATION_PARAMS = {
+  includeGlobal: true,
+  includeUnknown: true,
+  configuredAgentsOnly: true,
   includeDerivedTitles: true,
   includeLastMessage: true,
 } as const;
@@ -111,12 +116,60 @@ export async function listAllOpenClawSessions(
   };
 }
 
+function uniqueAgentIds(agentIds: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const candidate of agentIds) {
+    const agentId = typeof candidate === 'string' ? candidate.trim() : '';
+    if (!agentId || seen.has(agentId)) continue;
+    seen.add(agentId);
+    normalized.push(agentId);
+  }
+  if (normalized.length === 0) {
+    throw new Error('sessions.list requires at least one Gateway-confirmed agent');
+  }
+  return normalized;
+}
+
+/**
+ * 按 OpenClaw 官方智能体作用域读取完整会话集合。
+ *
+ * 单个裸 `global` key 无法唯一标识多智能体会话，因此每个范围独立分页后
+ * 立即投影为 Control UI 使用的作用域别名，禁止在本地以裸 key 合并。
+ */
+export async function listAllOpenClawSessionsForAgents(
+  request: OpenClawSessionListRequester,
+  agentIds: readonly string[],
+  filters: Readonly<Record<string, unknown>> = {},
+): Promise<OpenClawSessionListResponse> {
+  const scopedAgentIds = uniqueAgentIds(agentIds);
+  const responses = await Promise.all(scopedAgentIds.map(async (agentId) => {
+    const response = await listAllOpenClawSessions(request, { ...filters, agentId });
+    return {
+      response,
+      sessions: response.sessions.map((session) => scopeOpenClawGlobalSessionRow(session, agentId)),
+    };
+  }));
+  const firstResponse = responses[0]?.response;
+  if (!firstResponse) throw new Error('sessions.list did not return a Gateway response');
+  const sessions = responses.flatMap((response) => response.sessions);
+  return {
+    ...firstResponse,
+    sessions,
+    totalCount: sessions.length,
+    offset: 0,
+    nextOffset: null,
+    hasMore: false,
+  };
+}
+
 export async function listOpenClawSessionLifecycle(
   request: OpenClawSessionListRequester,
+  agentIds: readonly string[],
 ): Promise<OpenClawSessionListResponses> {
   const [active, archived] = await Promise.all([
-    listAllOpenClawSessions(request),
-    listAllOpenClawSessions(request, { archived: true }),
+    listAllOpenClawSessionsForAgents(request, agentIds),
+    listAllOpenClawSessionsForAgents(request, agentIds, { archived: true }),
   ]);
   return { active, archived };
 }

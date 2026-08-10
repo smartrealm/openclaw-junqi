@@ -143,14 +143,15 @@ JunQi `ChatHandler` 仍从 `p.message?.content` 提取增量文本，从未读�
 
 ### GNE-04 高：Wizard 会用本地配置推断官方成功
 
-`useWizardSession` 在官方 Wizard 会话丢失后检查本地配置结构；如果配置看起来完整，直接构造
+审计时 `useWizardSession` 在官方 Wizard 会话丢失后检查本地配置结构；如果配置看起来完整，直接构造
 `{ done: true, status: "done" }`。终态说明后的连接超时也使用同样逻辑构造成功结果。
 
 这违反“JunQi 不得从超时、本地状态或文本推断官方成功”的边界。本地配置完整只能证明配置事实，不能
 证明原 Wizard 会话完成、第三方步骤成功或 Gateway 已确认终态。
 
-目标：会话丢失或交接超时时保留 outcome unknown。客户端可以分别展示“检测到配置”和“Wizard 结果待
-核验”，并尝试通过官方 session/status 或重新开始官方流程恢复，但不能合成 done。
+修复：会话丢失时不再读取本地配置或合成 `done`，直接由 `restartAfterSessionLoss()` 创建新的官方
+Wizard 会话；交接超时保留错误与待重试状态。`wizard.status` 会清理当前进程内会话，因此恢复使用
+无答案的 `wizard.next`；仅当 Gateway 返回终态时才进入完成路径。
 
 `isOpenClawWizardNonBlockingProbeFailure` 还通过 title/message 正则将部分失败解释为非阻断。官方步骤
 没有对应结构化字段；文本只能用于展示，不能改变协议失败语义。最新版官方 `wizard.start` 已支持可选的

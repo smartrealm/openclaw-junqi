@@ -24,7 +24,7 @@ const EMPTY_STATE: OpenClawModelAuthStatusState = {
   failure: null,
 };
 
-export function useOpenClawModelAuthStatus(active: boolean) {
+export function useOpenClawModelAuthStatus(active: boolean, agentId?: string) {
   const [state, setState] = useState<OpenClawModelAuthStatusState>(EMPTY_STATE);
   const requestVersion = useRef(0);
 
@@ -33,7 +33,7 @@ export function useOpenClawModelAuthStatus(active: boolean) {
     const version = ++requestVersion.current;
     setState((current) => ({ ...current, loading: true, failure: null }));
     try {
-      const status = await openClawModelAuthStatusClient.get({ refresh: force });
+      const status = await openClawModelAuthStatusClient.get({ refresh: force, agentId });
       if (requestVersion.current === version) {
         setState({ status, loading: false, failure: null });
       }
@@ -46,7 +46,7 @@ export function useOpenClawModelAuthStatus(active: boolean) {
         });
       }
     }
-  }, [active]);
+  }, [active, agentId]);
 
   useEffect(() => {
     if (!active) {

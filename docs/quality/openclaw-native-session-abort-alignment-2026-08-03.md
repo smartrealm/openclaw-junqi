@@ -28,16 +28,15 @@ lane 队列。JunQi 不重置 transcript、不创建新的会话，也不向 tra
 
 ## 当前行为
 
-1. `gateway.abortChat` 先持久化当前 Task 的 stop intent，再通过独立控制面请求
-   `sessions.abort`，不等待长时间 `chat.send` 请求。
-2. `status: "aborted"` 只有在 `abortedRunId` 与本地活动或待发送 Run 精确匹配时，
-   才结算本地 Run；工具卡仍按既有规则标为 `verification_required`。
+1. `gateway.abortChat` 通过独立控制面请求 `sessions.abort`，不等待长时间
+   `chat.send` 请求。
+2. `status: "aborted"` 只有在 `abortedRunId` 与当前 OpenClaw 运行投影精确匹配时，
+   才结束对应 UI 运行；工具卡仍按既有规则等待官方事件。
 3. `status: "no-active-run"`、`abortedRunId` 缺失或与本地 Run 不匹配时，保持未知
    状态并请求官方 history/session reconciliation，不把空结果解释成成功。
 4. 本地语音输出和页面队列仍由各自 UI/运行时边界停止；Gateway 队列是否清空由
    OpenClaw 的 `clearQueued` 语义决定，普通 Stop 不隐式改变它。
-5. 下次发送继续使用同一个 OpenClaw session 的 transcript；Task checkpoint
-   仍以 `sessionKey`、runtime identity 和 session identity 绑定，Stop 不清空记忆。
+5. 下次发送继续使用同一个 OpenClaw session 的 transcript；Stop 不清空记忆。
 
 ## 验证
 

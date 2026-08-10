@@ -1,3 +1,5 @@
+import { resolveOpenClawSessionTarget } from './OpenClawSessionTarget';
+
 export type OpenClawSessionRunLookup =
   | { state: 'missing' }
   | { state: 'history'; response: Record<string, unknown> }
@@ -21,10 +23,9 @@ export async function resolveOpenClawSessionRun(
   request: OpenClawSessionRunRequest,
   sessionKey: string,
 ): Promise<OpenClawSessionRunLookup> {
-  const normalizedSessionKey = sessionKey.trim();
-  if (!normalizedSessionKey) return { state: 'unknown' };
+  const target = resolveOpenClawSessionTarget(sessionKey);
 
-  const description = record(await request('sessions.describe', { key: normalizedSessionKey }));
+  const description = record(await request('sessions.describe', { key: target.localKey }));
   if (!description || !Object.prototype.hasOwnProperty.call(description, 'session')) {
     return { state: 'unknown' };
   }
@@ -32,7 +33,8 @@ export async function resolveOpenClawSessionRun(
   if (!record(description.session)) return { state: 'unknown' };
 
   const history = record(await request('chat.history', {
-    sessionKey: normalizedSessionKey,
+    sessionKey: target.key,
+    ...(target.agentId ? { agentId: target.agentId } : {}),
     limit: SESSION_RUN_RECONCILIATION_HISTORY_LIMIT,
   }));
   if (!history) return { state: 'unknown' };

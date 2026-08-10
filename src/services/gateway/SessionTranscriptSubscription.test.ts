@@ -32,6 +32,23 @@ test('serializes OpenClaw transcript unsubscribe and subscribe when selection ch
   ]);
 });
 
+test('subscribes to an agent-scoped global session using the official canonical request target', async () => {
+  const calls: Call[] = [];
+  const transport: OpenClawTranscriptTransport = {
+    request: async (method, params) => {
+      calls.push({ method, params });
+      return {};
+    },
+  };
+  const subscription = new OpenClawSessionTranscriptSubscription(transport);
+
+  await subscription.synchronize({ sessionKey: 'agent:legal:global', agentId: 'legal' });
+
+  assert.deepEqual(calls, [
+    { method: 'sessions.messages.subscribe', params: { key: 'global', agentId: 'legal' } },
+  ]);
+});
+
 test('transport reset prevents an old in-flight subscription from attaching to a replacement socket', async () => {
   const calls: Call[] = [];
   let resolveFirst!: () => void;

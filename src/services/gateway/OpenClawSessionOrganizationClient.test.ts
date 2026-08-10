@@ -19,7 +19,13 @@ describe('OpenClawSessionOrganizationClient', () => {
         return {
           ok: true,
           key: SESSION_KEY,
-          entry: method === 'sessions.patch' && params.category === 'Finance' ? { category: 'Finance' } : {},
+          entry: method === 'sessions.patch' && params.category === 'Finance'
+            ? { category: 'Finance' }
+            : {
+                ...(params.pinned !== undefined ? { pinned: params.pinned } : {}),
+                ...(params.unread !== undefined ? { unread: params.unread } : {}),
+                ...(params.archived !== undefined ? { archived: params.archived } : {}),
+              },
         } as never;
       },
     });
@@ -67,6 +73,28 @@ describe('OpenClawSessionOrganizationClient', () => {
     });
 
     await assert.rejects(client.setCategory(SESSION_KEY, 'Finance'), SessionOrganizationResponseError);
+  });
+
+  it('拒绝未确认或不一致的原生布尔组织字段', async () => {
+    const client = new OpenClawSessionOrganizationClient({
+      runMutation: (_key, operation) => operation(),
+      request: async (_method, params) => ({
+        ok: true,
+        key: SESSION_KEY,
+        entry: params.pinned !== undefined
+          ? { pinned: !params.pinned }
+          : params.archived !== undefined
+            ? { archived: !params.archived }
+            : { unread: !params.unread },
+      } as never),
+    });
+
+    await assert.rejects(client.setPinned(SESSION_KEY, true), SessionOrganizationResponseError);
+    await assert.rejects(client.setPinned(SESSION_KEY, false), SessionOrganizationResponseError);
+    await assert.rejects(client.setArchived(SESSION_KEY, true), SessionOrganizationResponseError);
+    await assert.rejects(client.setArchived(SESSION_KEY, false), SessionOrganizationResponseError);
+    await assert.rejects(client.setUnread(SESSION_KEY, true), SessionOrganizationResponseError);
+    await assert.rejects(client.setUnread(SESSION_KEY, false), SessionOrganizationResponseError);
   });
 
   it('identifies only explicit protocol incompatibility for capability reporting', async () => {

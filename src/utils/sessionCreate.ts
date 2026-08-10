@@ -37,17 +37,13 @@ export function projectCreatedNativeSession(
   input: CreateNativeSessionInput,
 ): Session {
   const entry = created.entry;
-  const createdAt = typeof entry.createdAt === 'number'
-    ? entry.createdAt
-    : typeof entry.updatedAt === 'number'
-      ? entry.updatedAt
-      : Date.now();
   return {
     key: created.key,
     sessionId: created.sessionId,
     label: entry.label?.trim() ?? '',
     agentId: created.agentId,
-    createdAt,
+    // 创建时间只能来自 OpenClaw 的创建回执，不能以更新时间或本机时间伪造。
+    ...(typeof entry.createdAt === 'number' ? { createdAt: entry.createdAt } : {}),
     ...(input.fork === true ? {} : { activeLeafEntryId: null }),
     ...(entry.model ? { model: entry.model } : {}),
     ...(entry.parentSessionKey ? { parentSessionKey: entry.parentSessionKey } : {}),

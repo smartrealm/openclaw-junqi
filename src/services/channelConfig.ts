@@ -6,6 +6,7 @@ import {
   mergeChannelConfigPartitions,
 } from './channelConfigMerge';
 import { openClawRuntimeConfigClient } from './gateway';
+import { buildOpenClawConfigPatch } from '@/services/gateway/OpenClawConfigPatch';
 
 export type ChannelBindingSource = 'account' | 'channel';
 
@@ -489,7 +490,8 @@ export const gatewayChannelConfigRepository: ChannelConfigRepository = {
     if (snapshot.exists && snapshot.hash !== expectedRevision) {
       throw new Error(`${CONFIG_REVISION_CONFLICT_PREFIX}: Gateway config hash changed`);
     }
-    await openClawRuntimeConfigClient.replace(config, snapshot);
+    const patchPlan = buildOpenClawConfigPatch(snapshot.config, config);
+    await openClawRuntimeConfigClient.patch(patchPlan.patch, snapshot, patchPlan.replacePaths);
   },
   async restart() {
     const { gatewayLifecycle } = await import('@/runtime/gatewayLifecycle');

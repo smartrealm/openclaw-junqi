@@ -205,7 +205,7 @@ test('BUG-WFR-04 stale wizard operations cannot commit after setup navigation or
   assert.match(back, /invalidateWizardOperations\(\)/);
 });
 
-test('BUG-ONB-49 wizard recovery is bounded, status-aware, and keeps healthy transport', () => {
+test('BUG-ONB-49 wizard recovery avoids the destructive status read and keeps healthy transport', () => {
   const wizardOperations = hookFile('useWizardSession');
   const waitForConnection = wizardOperations.slice(
     wizardOperations.indexOf('const waitForGatewayConnection'),
@@ -216,8 +216,8 @@ test('BUG-ONB-49 wizard recovery is bounded, status-aware, and keeps healthy tra
     wizardClient.indexOf('async back()'),
   );
 
-  assert.match(resume, /callGateway\('wizard\.status'/);
-  assert.ok(resume.indexOf("callGateway('wizard.status'") < resume.indexOf("callGateway('wizard.next'"));
+  assert.doesNotMatch(resume, /callGateway\('wizard\.status'/);
+  assert.match(resume, /callGateway\('wizard\.next'/);
   assert.doesNotMatch(wizardClient, /timeoutMs:\s*null/);
   assert.doesNotMatch(waitForConnection, /gatewayManager\.reconnect\(\)/);
   assert.match(wizardOperations, /setup\.wizard\.connectingGateway/);
@@ -550,11 +550,18 @@ test('BUG-ONB-42 授权步骤不因文本内容自动推进', () => {
 });
 
 test('BUG-ONB-40 official Gateway finalizer refreshes credentials and reconciles its lost wizard session', () => {
+  const wizardHook = hookFile('useWizardSession');
+  const recovery = wizardHook.slice(
+    wizardHook.indexOf('const recoverLostWizardSession'),
+    wizardHook.indexOf('const recoverAfterGatewayHandoff'),
+  );
+
   assert.match(setupFlow, /getGatewayToken\(\)\.catch\(\(\) => target\.token/);
   assert.match(setupFlow, /getGatewayDeviceCredentialForUrl\(gatewayWsUrl\)/);
   assert.match(setupFlow, /gatewayManager\.connect\(gatewayWsUrl, token, deviceToken\)/);
   assert.match(setupFlow, /const recoverAfterGatewayHandoff/);
-  assert.match(setupFlow, /return await client\.restartAfterSessionLoss\(\)/);
+  assert.match(recovery, /return await client\.restartAfterSessionLoss\(\)/);
+  assert.doesNotMatch(recovery, /resolveActiveRuntimeOnboardingRequirement|status: "done"/);
   assert.match(setupFlow, /error instanceof GatewayPrivilegedSourceChangedError/);
 });
 
@@ -567,7 +574,7 @@ test('BUG-ONB-50 retry recovers an upstream-reaped Wizard session instead of sur
 
   assert.match(retry, /wizardClientRef\.current!\.retry\(\)/);
   assert.match(retry, /isOpenClawWizardSessionLost\(error\)/);
-  assert.match(retry, /wizardClientRef\.current!\.restartAfterSessionLoss\(\)/);
+  assert.match(retry, /recoverLostWizardSession\(wizardClientRef\.current!\)/);
 });
 
 test('BUG-ONB-46 Gateway 执行的进度步骤只由官方会话轮询', () => {

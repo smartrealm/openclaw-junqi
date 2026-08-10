@@ -48,6 +48,27 @@ test('only a Gateway-owned request is eligible for a native Stop', () => {
   assert.equal(selectSessionRequestActive(streaming, sessionKey), true);
 });
 
+test('会话模型目录按智能体隔离，并可在连接失效时整体清空', () => {
+  const store = useChatStore.getState();
+  store.clearSessionAvailableModels();
+  store.setSessionModelsLoading('legal', true);
+  store.setSessionAvailableModels('legal', [{ id: 'provider/legal', label: 'Legal' }]);
+  store.setSessionAvailableModels('writer', [{ id: 'provider/writer', label: 'Writer' }]);
+
+  assert.deepEqual(useChatStore.getState().sessionAvailableModelsByAgentId, {
+    legal: [{ id: 'provider/legal', label: 'Legal' }],
+    writer: [{ id: 'provider/writer', label: 'Writer' }],
+  });
+  assert.deepEqual(useChatStore.getState().sessionModelsLoadingByAgentId, {
+    legal: false,
+    writer: false,
+  });
+
+  useChatStore.getState().clearSessionAvailableModels();
+  assert.deepEqual(useChatStore.getState().sessionAvailableModelsByAgentId, {});
+  assert.deepEqual(useChatStore.getState().sessionModelsLoadingByAgentId, {});
+});
+
 test('setSessionModel updates the session row and active currentModel', () => {
   seedSessions(MAIN_KEY);
 
@@ -943,6 +964,26 @@ test('会话组织写入只依赖 Gateway key，不因缺少本地 sessionId 被
     await useChatStore.getState().togglePinSession(sessionKey);
     assert.deepEqual(calls, [{ pinned: true, key: sessionKey }]);
     assert.equal(useChatStore.getState().sessions[0]?.pinned, true);
+  } finally {
+    Object.assign(gateway, { setSessionPinned });
+  }
+});
+
+test('会话组织回执未确认时不覆盖本地置顶投影', async () => {
+  const setSessionPinned = gateway.setSessionPinned;
+  const sessionKey = 'agent:main:unconfirmed-pin';
+  Object.assign(gateway, {
+    setSessionPinned: async () => {
+      throw new Error('SESSION_ORGANIZATION_RESPONSE_INVALID');
+    },
+  });
+  useChatStore.setState({
+    sessions: [{ key: sessionKey, sessionId: 'gateway-unconfirmed-pin', label: 'Unconfirmed pin', pinned: false }],
+  });
+
+  try {
+    await assert.rejects(useChatStore.getState().togglePinSession(sessionKey));
+    assert.equal(useChatStore.getState().sessions[0]?.pinned, false);
   } finally {
     Object.assign(gateway, { setSessionPinned });
   }

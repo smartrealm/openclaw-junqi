@@ -1,6 +1,7 @@
 import { gateway } from './index';
 import type { OpenClawPlanToolMode } from '@/agent-execution-plan/settings';
 import { readOpenClawConfigSnapshot } from './OpenClawConfigSnapshot';
+import { requireOpenClawConfigPatchAcknowledgement } from './OpenClawRuntimeConfigClient';
 
 interface ConfigGateway {
   call(method: string, params: Record<string, unknown>): Promise<unknown>;
@@ -39,12 +40,13 @@ export class OpenClawPlanToolSettingsClient {
     if (mode === 'automatic') delete experimental.planTool;
     else experimental.planTool = mode === 'enabled';
 
-    await this.client.callPrivileged('config.patch', {
+    const result = await this.client.callPrivileged('config.patch', {
       ...(snapshot.hash ? { baseHash: snapshot.hash } : {}),
       raw: JSON.stringify({ tools: { experimental } }),
       replacePaths: ['tools.experimental'],
       note: 'Update structured Chat execution plan availability',
     });
+    requireOpenClawConfigPatchAcknowledgement(result);
   }
 }
 

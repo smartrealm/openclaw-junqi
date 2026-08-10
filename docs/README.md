@@ -98,6 +98,8 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 4. [Gateway 服务归属验证](gateway/openclaw-gateway-service-ownership-validation.md)
 5. [Windows Gateway 重启等待契约加固](quality/windows-gateway-restart-hardening-2026-08-03.md)
 6. [Tauri Adapter IPC 契约加固](quality/tauri-adapter-ipc-contract-hardening-2026-08-03.md)
+
+会话新建与历史边界审计：[OpenClaw 新建会话全流程审计](quality/openclaw-new-session-lifecycle-audit-2026-08-10.md)。
 7. [Gateway 凭据绑定失败关闭](quality/gateway-credential-binding-fail-closed-2026-08-03.md)
 8. [Gateway Client 平台身份对齐](quality/gateway-client-platform-identity-alignment-2026-08-03.md)
 9. [OpenClaw Operator Protocol v4 对齐](quality/openclaw-operator-protocol-v4-alignment-2026-08-03.md)
@@ -155,6 +157,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [仪表盘侧栏导航可见性核对](quality/workbench-sidebar-navigation-visibility-2026-08-10.md)
 - [Gateway 原生能力与扩展一致性审计](quality/gateway-native-extension-consistency-audit-2026-08-09.md)
 - [Gateway 原生能力与扩展一致性验证](quality/gateway-native-extension-consistency-validation-2026-08-09.md)
+- [OpenClaw 智能体与配置写入回执审计](quality/openclaw-agent-mutation-acknowledgement-audit-2026-08-10.md)
 - [OpenClaw Runtime 配置 Schema 信封审计](quality/openclaw-runtime-config-schema-envelope-audit-2026-08-09.md)
 - [Windows Gateway 冷启动与默认主会话固定审计](quality/windows-gateway-cold-start-and-main-session-pinning-2026-08-08.md)
 - [JunQi 隐私锁能力移除记录](quality/privacy-lock-removal-2026-08-07.md)
@@ -170,8 +173,6 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [OpenClaw Agent 工作区只读投影](quality/openclaw-agent-workspace-readonly-projection-2026-08-04.md)
 - [OpenClaw Agent 引导文件只读投影](quality/openclaw-agent-bootstrap-files-readonly-projection-2026-08-04.md)
 - [ReAct 任务中断与恢复审计](quality/react-task-checkpoint-recovery-audit-2026-08-02.md)
-- [OpenClaw Stop 检查点与队列对齐](quality/openclaw-stop-checkpoint-queue-alignment-2026-08-03.md)
-- [OpenClaw Stop 会话身份围栏审计](quality/openclaw-stop-session-identity-fence-2026-08-03.md)
 - [OpenClaw Stop 发送中状态围栏审计](quality/openclaw-stop-dispatch-state-fence-audit-2026-08-04.md)
 - [OpenClaw Stop 跨入口请求状态围栏审计](quality/openclaw-stop-cross-entry-request-fence-audit-2026-08-04.md)
 - [OpenClaw Stop 派发前围栏审计](quality/openclaw-stop-pre-dispatch-fence-audit-2026-08-04.md)
@@ -207,12 +208,10 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [OpenClaw 会话最近中止状态投影](quality/openclaw-session-aborted-last-run-projection-2026-08-04.md)
 - [OpenClaw 会话上下文预算状态投影](quality/openclaw-session-context-budget-status-2026-08-04.md)
 - [OpenClaw 会话目标只读投影](quality/openclaw-session-goal-projection-2026-08-04.md)
-- [OpenClaw 任务账本唯一链路收敛](quality/openclaw-task-ledger-unification-2026-08-04.md)
 - [OpenClaw 模型目录权威性审计](quality/openclaw-model-catalog-authority-alignment-2026-08-04.md)
-- [OpenClaw Task 工具事件 Run 绑定审计](quality/openclaw-task-tool-event-run-binding-2026-08-04.md)
 - [OpenClaw 工具生命周期终态围栏](quality/openclaw-tool-lifecycle-terminal-fence-2026-08-04.md)
-- [Task 执行终态合并围栏](quality/task-execution-terminal-merge-fence-2026-08-04.md)
 - [OpenClaw Gateway 方法广告发现边界修正](quality/openclaw-gateway-method-advertisement-gate-2026-08-04.md)
+- [OpenClaw 聊天任务边界审计](quality/openclaw-chat-task-boundary-audit-2026-08-10.md)
 - [OpenClaw 稳定性诊断只读对齐](quality/openclaw-diagnostic-stability-alignment-2026-08-04.md)
 - [OpenClaw Hook 状态只读投影](quality/openclaw-hooks-status-readonly-projection-2026-08-04.md)
 - [会话旁问入口移除记录](quality/openclaw-session-companion-removal-2026-08-07.md)
@@ -303,7 +302,6 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [OpenClaw 原生压缩检查点只读对齐](quality/openclaw-native-compaction-checkpoint-read-alignment-2026-08-03.md)
 - [OpenClaw Session Observer 与灵动岛对齐](quality/openclaw-session-observer-dynamic-island-alignment-2026-08-03.md)
 - [OpenClaw 原生会话中止对齐](quality/openclaw-native-session-abort-alignment-2026-08-03.md)
-- [OpenClaw 原生会话转向核验对齐](quality/openclaw-native-session-steer-reconciliation-2026-08-03.md)
 - [OpenClaw 原生会话队列对齐](quality/openclaw-native-session-queue-alignment-2026-08-03.md)
 - [OpenClaw 原生会话预览对齐](quality/openclaw-native-session-preview-alignment-2026-08-03.md)
 - [OpenClaw 会话读取目标围栏](quality/openclaw-session-read-target-fence-2026-08-04.md)
@@ -333,6 +331,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 - [OpenClaw Cron 写操作授权与日历一致性审计](quality/openclaw-cron-mutation-authority-audit-2026-08-03.md)
 - [OpenClaw Cron 写操作授权与日历一致性验证](quality/openclaw-cron-mutation-authority-validation-2026-08-03.md)
 - [OpenClaw Cron 与日历提醒一致性验证](quality/openclaw-cron-calendar-integrity-2026-08-08.md)
+- [OpenClaw Cron 运行记录分页审计](quality/openclaw-cron-run-history-pagination-audit-2026-08-10.md)
 - [Tauri 适配器遗留 IPC 审计](quality/tauri-adapter-legacy-ipc-audit-2026-08-03.md)
 - [Tauri 适配器遗留 IPC 验证](quality/tauri-adapter-legacy-ipc-validation-2026-08-03.md)
 - [Chat 响应追溯与 OpenClaw 审计账本](quality/chat-response-trace-audit-ledger-2026-08-03.md)
@@ -384,6 +383,8 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 这些文件是可独立打开的流程或视觉参考，不参与应用运行时构建。
 
 ## 验收边界
+
+- [OpenClaw Cron 列表分页契约审查](quality/openclaw-cron-list-pagination-audit-2026-08-10.md)
 
 自动化测试不能替代以下真实平台验证：
 

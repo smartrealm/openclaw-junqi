@@ -1,5 +1,6 @@
 import type { AgentConfig, GatewayRuntimeConfig, ModelReferenceConfig } from '@/types/openclawConfig';
 import { readOpenClawConfigSnapshot } from '@/services/gateway/OpenClawConfigSnapshot';
+import { requireOpenClawConfigPatchAcknowledgement } from '@/services/gateway/OpenClawRuntimeConfigClient';
 
 type AgentConfigEntry = AgentConfig;
 
@@ -81,8 +82,9 @@ export async function persistAgentCreationOverrides(
   );
   if (!updatedAgent) throw new Error(`Agent "${agentId}" was created but is missing from config`);
 
-  await gateway.callPrivileged('config.patch', {
+  const result = await gateway.callPrivileged('config.patch', {
     raw: JSON.stringify({ agents: { list: [updatedAgent] } }),
     ...(snapshot.hash ? { baseHash: snapshot.hash } : {}),
   });
+  requireOpenClawConfigPatchAcknowledgement(result);
 }

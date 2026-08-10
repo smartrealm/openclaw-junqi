@@ -15,7 +15,7 @@
 - 字符串、时间、计数、状态、分页和取消结果按官方 schema 解码；不得 trim、截断或补造字段。
 - `hello-ok.features.methods` 的遗漏不阻止 task RPC；method-not-found 显示 unavailable，其他错误
   不得被伪装为 empty 或 success。
-- task ledger 与 JunQi 本地 Task checkpoint、协作 workflow graph、Chat transcript 独立展示和存储。
+- task ledger 与 JunQi 的 UI 投影、协作 workflow graph、Chat transcript 独立展示和存储。
 - UI 只在 Gateway 已返回 `queued` 或 `running` 时提供取消；取消后必须等 `found` 与 `cancelled`
   明确为 true 才刷新。
 

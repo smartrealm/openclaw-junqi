@@ -4,7 +4,7 @@
 
 OpenClaw 的 `SessionGoal` 是 Gateway 持久化的会话目标。JunQi 仅在 `sessions.list` 返回完整且可验证的状态时投影它：标签页显示状态图标，当前会话栏显示目标和状态。没有目标、字段不完整或类型不正确时，不保留旧值。
 
-`src/task-execution/` 的图是 JunQi 本地发送、Stop 和工具结果核验检查点；`packages/junqi-collab/` 的 goal 属于协作 Run。两者均不等价于 OpenClaw `SessionGoal`，不向 Gateway 伪造状态或写入目标。现有 `sessions.patch` 只继续使用官方已验证的会话组织与设置字段。
+`packages/junqi-collab/` 的 goal 属于协作 Run，并不等价于 OpenClaw `SessionGoal`，不向 Gateway 伪造状态或写入目标。普通聊天的发送、Stop 和工具状态只来自 OpenClaw 会话事件与回执。现有 `sessions.patch` 只继续使用官方已验证的会话组织与设置字段。
 
 ## 验证结果
 

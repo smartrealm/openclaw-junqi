@@ -67,6 +67,22 @@ describe('createNativeSession', () => {
     assert.equal(createdWithoutLabel.label, '');
   });
 
+  it('创建回执缺少创建时间时不以本机时间或更新时间补值', () => {
+    const session = projectCreatedNativeSession({
+      key: 'agent:architect:without-created-time',
+      agentId: 'architect',
+      sessionId: 'without-created-time-id',
+      entry: {
+        sessionId: 'without-created-time-id',
+        updatedAt: 2,
+      },
+    }, {
+      agentId: 'architect',
+    });
+
+    assert.equal(session.createdAt, undefined);
+  });
+
   it('does not commit a renderer session until Gateway confirms its identity', async () => {
     let resolveRemote!: (value: OpenClawCreatedSession) => void;
     const remote = new Promise<OpenClawCreatedSession>((resolve) => { resolveRemote = resolve; });

@@ -9,8 +9,8 @@
 - [x] 复用 Chat Store 活动请求选择器修复 Quick Chat Stop、窗口销毁和原生 mutation 前置 Stop。
 - [x] 补充发送中状态的行为回归，并验证无活动状态不会发出 Stop。
 - [x] 核对官方 `sessions.abort` 的显式目标契约，移除 Gateway Stop 外观的主会话默认值，并在
-  Task checkpoint 前复用共享目标校验。
-- [x] 补充空 Stop 目标的回归，验证不会创建 checkpoint 或进入 Gateway 请求。
+  Gateway 请求前复用共享目标校验。
+- [x] 补充空 Stop 目标的回归，验证不会进入 Gateway 请求。
 - [x] 执行全量验证、Emoji 与无引用扫描，更新记录并使用中文提交。
 
 ## 文件范围
@@ -29,4 +29,4 @@
 
 ## 非目标
 
-- 不修改 OpenClaw Gateway 协议、Tauri command、Rust 后端、Task checkpoint 格式或持久化内容。
+- 不修改 OpenClaw Gateway 协议、Tauri command 或 Rust 后端。

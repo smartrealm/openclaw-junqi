@@ -43,7 +43,7 @@ function isOptionalString(value: unknown): boolean {
 
 /**
  * 只接受 OpenClaw 持久化会话目标的完整必填字段及类型正确的可选字段。
- * 本地 Task checkpoint 和协作 Run 均不得转换为该 Gateway 状态。
+ * 本地 UI 投影和协作 Run 均不得转换为该 Gateway 状态。
  */
 export function parseGatewaySessionGoal(value: unknown): GatewaySessionGoal | null {
   if (!isRecord(value)

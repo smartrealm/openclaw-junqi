@@ -114,16 +114,42 @@ test('fails closed when cron.get or cron.runs violates the official response sha
   assert.throws(() => parseCronJobDetails({ ...job, configRevision: '' }), /configRevision/);
   assert.throws(() => parseCronRunsPage({ ...page, entries: [{ ...finishedRun, action: 'started' }] }), /action/);
   assert.throws(() => parseCronRunsPage({ ...page, nextOffset: -1 }), /nextOffset/);
+  assert.throws(() => parseCronRunsPage({ ...page, total: 2, hasMore: false }), /page/);
+  assert.throws(() => parseCronRunsPage({ ...page, total: 2, hasMore: true, nextOffset: 2 }), /page/);
+  assert.throws(() => parseCronRunsPage({ ...page, limit: 201 }), /page/);
 });
 
-test('builds job-scoped cron.runs params and clamps the page size', () => {
-  assert.deepEqual(buildCronRunsParams({ jobId: ' job-1 ', runId: ' run-1 ', limit: 999, sortDir: 'asc' }), {
+test('builds the official job and global cron.runs envelopes', () => {
+  assert.deepEqual(buildCronRunsParams({ jobId: ' job-1 ', runId: ' run-1 ', limit: 200, sortDir: 'asc' }), {
     scope: 'job',
     id: 'job-1',
     runId: 'run-1',
     limit: 200,
     sortDir: 'asc',
   });
+  assert.deepEqual(buildCronRunsParams({
+    scope: 'all',
+    agentId: ' main ',
+    runId: ' run-1 ',
+    limit: 30,
+    offset: 10,
+    statuses: ['ok', 'error'],
+    deliveryStatuses: ['delivered', 'unknown'],
+    query: 'report',
+    sortDir: 'desc',
+  }), {
+    scope: 'all',
+    agentId: 'main',
+    runId: 'run-1',
+    limit: 30,
+    offset: 10,
+    statuses: ['ok', 'error'],
+    deliveryStatuses: ['delivered', 'unknown'],
+    query: 'report',
+    sortDir: 'desc',
+  });
+  assert.throws(() => buildCronRunsParams({ jobId: 'job-1', limit: 201 }), /limit/);
+  assert.throws(() => buildCronRunsParams({ scope: 'all', jobId: 'job-1' } as never), /scope all/);
 });
 
 test('uses exact official envelopes for cron.get, cron.runs, and cron.run', async () => {
@@ -179,7 +205,7 @@ test('reports a bounded timeout when the exact run is never recorded', async () 
   let clock = 0;
   await assert.rejects(
     () => waitForCronRun(
-      async () => ({ ...page, entries: [] }),
+      async () => ({ ...page, entries: [], total: 0 }),
       'job-1',
       'missing-run',
       { timeoutMs: 3, pollIntervalMs: 1, now: () => clock++, sleep: async () => {} },

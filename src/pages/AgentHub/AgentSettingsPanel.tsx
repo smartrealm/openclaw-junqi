@@ -22,6 +22,7 @@ import {
 import { gateway } from '@/services/gateway';
 import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { readOpenClawConfigSnapshot } from '@/services/gateway/OpenClawConfigSnapshot';
+import { requireOpenClawConfigPatchAcknowledgement } from '@/services/gateway/OpenClawRuntimeConfigClient';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { themeHex, themeAlpha } from '@/utils/theme-colors';
@@ -652,10 +653,11 @@ export function AgentSettingsPanel({
           // `agents.update` only accepts a string model. Patch the full agent
           // list with a base-hash guard when an existing fallback chain must be
           // retained.
-          await gateway.callPrivileged('config.patch', {
+          const patchResult = await gateway.callPrivileged('config.patch', {
             raw: JSON.stringify({ agents: { list: [nextEntry] } }),
             ...(configBaseHash ? { baseHash: configBaseHash } : {}),
           });
+          requireOpenClawConfigPatchAcknowledgement(patchResult);
           setStoredModelConfig(nextModel);
           setSelectedFallbacks(getModelFallbacks(nextModel));
           setConfigSnapshot({

@@ -14,6 +14,59 @@ function responseRecord(value: unknown): Record<string, unknown> {
   throw new Error('OpenClaw agents.create returned an invalid response');
 }
 
+function requiredText(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`OpenClaw agents.create returned an invalid ${field}`);
+  }
+  return value.trim();
+}
+
+function confirmedCreateResult(value: unknown, expectedAgentId: string): Record<string, unknown> {
+  const result = responseRecord(value);
+  if (result.ok !== true) throw new Error('OpenClaw agents.create did not confirm success');
+  const agentId = requiredText(result.agentId, 'agentId');
+  if (agentId.toLowerCase() !== expectedAgentId.trim().toLowerCase()) {
+    throw new Error('OpenClaw agents.create returned a different agent id');
+  }
+  requiredText(result.name, 'name');
+  requiredText(result.workspace, 'workspace');
+  if (result.model !== undefined && (typeof result.model !== 'string' || !result.model.trim())) {
+    throw new Error('OpenClaw agents.create returned an invalid model');
+  }
+  return result;
+}
+
+function confirmDisplayNameUpdate(value: unknown, expectedAgentId: string): void {
+  const result = responseRecord(value);
+  const agentId = requiredText(result.agentId, 'agentId');
+  if (result.ok !== true || agentId.toLowerCase() !== expectedAgentId.trim().toLowerCase()) {
+    throw new Error('OpenClaw agents.update did not confirm the requested agent');
+  }
+}
+
+/** 解析官方 agents.update 回执，避免调用方在未确认时提前更新界面。 */
+export function confirmOpenClawAgentUpdate(value: unknown, expectedAgentId: string): { ok: true; agentId: string } {
+  const result = responseRecord(value);
+  const agentId = requiredText(result.agentId, 'agentId');
+  if (result.ok !== true || agentId.toLowerCase() !== expectedAgentId.trim().toLowerCase()) {
+    throw new Error('OpenClaw agents.update did not confirm the requested agent');
+  }
+  return { ok: true, agentId };
+}
+
+/** 解析官方 agents.delete 回执，删除后的本地清理必须建立在该回执上。 */
+export function confirmOpenClawAgentDelete(value: unknown, expectedAgentId: string): { ok: true; agentId: string } {
+  const result = responseRecord(value);
+  const agentId = requiredText(result.agentId, 'agentId');
+  if (result.ok !== true || agentId.toLowerCase() !== expectedAgentId.trim().toLowerCase()) {
+    throw new Error('OpenClaw agents.delete did not confirm the requested agent');
+  }
+  if (typeof result.removedBindings !== 'number' || !Number.isSafeInteger(result.removedBindings) || result.removedBindings < 0) {
+    throw new Error('OpenClaw agents.delete returned an invalid removedBindings count');
+  }
+  return { ok: true, agentId };
+}
+
 /**
  * Raised after the official create RPC succeeds but the separate display-name
  * update cannot be persisted. The agent remains usable under its stable id;
@@ -47,7 +100,7 @@ export class OpenClawAgentManagement {
       ...(workspace ? { workspace } : {}),
       ...(agent.model ? { model: agent.model } : {}),
     });
-    const createdRecord = responseRecord(created);
+    const createdRecord = confirmedCreateResult(created, agent.id);
     const requestedName = agent.name?.trim();
     if (!requestedName || requestedName === agent.id) {
       return createdRecord;
@@ -58,7 +111,8 @@ export class OpenClawAgentManagement {
       name: requestedName,
     };
     try {
-      await this.client.request('agents.update', { ...update });
+      const updated = await this.client.request('agents.update', { ...update });
+      confirmDisplayNameUpdate(updated, update.agentId);
     } catch (error) {
       throw new GatewayAgentDisplayNameUpdateError(update, error);
     }

@@ -125,12 +125,30 @@ export interface OpenClawCronJobDetails {
   lastDeliveryError?: string;
 }
 
-export interface CronRunsParams {
-  jobId: string;
-  runId?: string;
-  limit?: number;
-  sortDir?: 'asc' | 'desc';
+interface CronRunsCommonParams {
+  readonly agentId?: string;
+  readonly limit?: number;
+  readonly offset?: number;
+  readonly statuses?: readonly CronRunStatus[];
+  readonly status?: 'all' | CronRunStatus;
+  readonly deliveryStatuses?: readonly CronDeliveryStatus[];
+  readonly deliveryStatus?: CronDeliveryStatus;
+  readonly query?: string;
+  readonly sortDir?: 'asc' | 'desc';
 }
+
+export type CronRunsParams = CronRunsCommonParams & (
+  | {
+    readonly scope?: 'job';
+    readonly jobId: string;
+    readonly runId?: string;
+  }
+  | {
+    readonly scope: 'all';
+    readonly jobId?: never;
+    readonly runId?: string;
+  }
+);
 
 export interface CronRunLogEntry {
   ts: number;
@@ -430,18 +448,98 @@ export function buildCronGetParams(jobId: string): { id: string } {
 }
 
 export function buildCronRunsParams(params: CronRunsParams): Record<string, unknown> {
-  const jobId = requiredString(params.jobId, 'jobId', 'cron.runs');
+  const method = 'cron.runs';
+  const scope = params.scope ?? 'job';
+  if (scope !== 'job' && scope !== 'all') {
+    throw new Error(`${method} requires a valid scope`);
+  }
+  if (scope === 'all' && params.jobId !== undefined) {
+    throw new Error(`${method} scope all cannot include jobId`);
+  }
+
+  const validateOptionalInteger = (value: unknown, field: string, minimum: number, maximum?: number) => {
+    if (value === undefined) return undefined;
+    const parsed = requiredInteger(value, field, method, minimum);
+    if (maximum !== undefined && parsed > maximum) throw new Error(`${method} returned an invalid ${field}`);
+    return parsed;
+  };
+  const validateOptionalEnum = <T extends readonly string[]>(value: unknown, values: T, field: string): T[number] | undefined => {
+    if (value === undefined) return undefined;
+    return oneOf(value, values, field, method);
+  };
+  const validateOptionalList = <T extends readonly string[]>(
+    value: unknown,
+    values: T,
+    field: string,
+    maximum: number,
+  ): T[number][] | undefined => {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value) || value.length === 0 || value.length > maximum) {
+      throw new Error(`${method} requires a valid ${field}`);
+    }
+    return value.map((entry) => oneOf(entry, values, field, method));
+  };
+
+  const agentId = params.agentId === undefined
+    ? undefined
+    : requiredString(params.agentId, 'agentId', method);
+  const limit = validateOptionalInteger(params.limit, 'limit', 1, 200);
+  const offset = validateOptionalInteger(params.offset, 'offset', 0);
+  const statuses = validateOptionalList(params.statuses, CRON_RUN_STATUSES, 'statuses', 3);
+  const status = validateOptionalEnum(params.status, ['all', ...CRON_RUN_STATUSES] as const, 'status');
+  const deliveryStatuses = validateOptionalList(
+    params.deliveryStatuses,
+    CRON_DELIVERY_STATUSES,
+    'deliveryStatuses',
+    4,
+  );
+  const deliveryStatus = validateOptionalEnum(
+    params.deliveryStatus,
+    CRON_DELIVERY_STATUSES,
+    'deliveryStatus',
+  );
+  const query = params.query === undefined ? undefined : String(params.query);
+  if (params.query !== undefined && typeof params.query !== 'string') {
+    throw new Error(`${method} requires a valid query`);
+  }
+  const sortDir = validateOptionalEnum(params.sortDir, ['asc', 'desc'] as const, 'sortDir');
+
+  if (scope === 'all') {
+    const runId = params.runId === undefined
+      ? undefined
+      : requiredString(params.runId, 'runId', method);
+    return {
+      scope,
+      ...(agentId ? { agentId } : {}),
+      ...(runId ? { runId } : {}),
+      ...(limit === undefined ? {} : { limit }),
+      ...(offset === undefined ? {} : { offset }),
+      ...(statuses ? { statuses } : {}),
+      ...(status ? { status } : {}),
+      ...(deliveryStatuses ? { deliveryStatuses } : {}),
+      ...(deliveryStatus ? { deliveryStatus } : {}),
+      ...(query === undefined ? {} : { query }),
+      ...(sortDir ? { sortDir } : {}),
+    };
+  }
+
+  const jobId = requiredString(params.jobId, 'jobId', method);
   const runId = params.runId === undefined
     ? undefined
-    : requiredString(params.runId, 'runId', 'cron.runs');
-  const requestedLimit = params.limit === undefined ? 50 : Math.floor(params.limit);
-  const limit = Math.min(Math.max(requestedLimit, 1), 200);
+    : requiredString(params.runId, 'runId', method);
   return {
-    scope: 'job',
+    scope,
     id: jobId,
+    ...(agentId ? { agentId } : {}),
     ...(runId ? { runId } : {}),
-    limit,
-    ...(params.sortDir ? { sortDir: params.sortDir } : {}),
+    ...(limit === undefined ? {} : { limit }),
+    ...(offset ===undefined ? {} : { offset }),
+    ...(statuses ? { statuses } : {}),
+    ...(status ? { status } : {}),
+    ...(deliveryStatuses ? { deliveryStatuses } : {}),
+    ...(deliveryStatus ? { deliveryStatus } : {}),
+    ...(query === undefined ? {} : { query }),
+    ...(sortDir ? { sortDir } : {}),
   };
 }
 
@@ -530,15 +628,28 @@ export function parseCronRunsPage(value: unknown): CronRunsPage {
   if (!isRecord(value) || !Array.isArray(value.entries) || value.entries.length > 200) {
     throw new Error(`${method} returned an invalid page`);
   }
+  const entries = value.entries.map(parseCronRunLogEntry);
+  const total = requiredInteger(value.total, 'total', method);
+  const offset = requiredInteger(value.offset, 'offset', method);
+  const limit = requiredInteger(value.limit, 'limit', method, 1);
+  const hasMore = requiredBoolean(value.hasMore, 'hasMore', method);
+  if (limit > 200 || entries.length > limit || offset > total || offset + entries.length > total) {
+    throw new Error(`${method} returned an invalid page`);
+  }
   const nextOffset = value.nextOffset === null
     ? null
     : requiredInteger(value.nextOffset, 'nextOffset', method);
+  const expectedNextOffset = offset + entries.length;
+  const expectedHasMore = expectedNextOffset < total;
+  if (hasMore !== expectedHasMore || nextOffset !== (expectedHasMore ? expectedNextOffset : null)) {
+    throw new Error(`${method} returned an invalid page`);
+  }
   return {
-    entries: value.entries.map(parseCronRunLogEntry),
-    total: requiredInteger(value.total, 'total', method),
-    offset: requiredInteger(value.offset, 'offset', method),
-    limit: requiredInteger(value.limit, 'limit', method, 1),
-    hasMore: requiredBoolean(value.hasMore, 'hasMore', method),
+    entries,
+    total,
+    offset,
+    limit,
+    hasMore,
     nextOffset,
   };
 }

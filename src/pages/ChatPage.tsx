@@ -102,6 +102,38 @@ export function ChatPage() {
     return () => window.removeEventListener('aegis:files-dropped', onDropped);
   }, []);
 
+  if (scopedSession.pending) {
+    return (
+      <div className="flex h-full min-w-0 flex-col items-center justify-center gap-3 px-6 text-center">
+        {scopedSession.error ? (
+          <div
+            role="alert"
+            className="w-full max-w-md rounded-lg border border-aegis-danger/25 bg-aegis-danger/[0.08] px-4 py-3 text-[12px] text-aegis-text"
+          >
+            <div className="flex items-center gap-2 text-aegis-danger">
+              <AlertCircle size={14} className="shrink-0" aria-hidden="true" />
+              <span>{t('chat.newSession')}</span>
+            </div>
+            <p className="mt-2 break-words text-left text-aegis-text-muted">{scopedSession.error}</p>
+            <button
+              type="button"
+              onClick={scopedSession.retry}
+              disabled={scopedSession.retrying}
+              aria-busy={scopedSession.retrying}
+              className="mt-3 inline-flex h-7 items-center rounded-md border border-aegis-danger/25 px-2.5 font-medium text-aegis-danger transition-colors hover:bg-aegis-danger/10 disabled:cursor-wait disabled:opacity-60"
+            >
+              {t('common.retry', '重试')}
+            </button>
+          </div>
+        ) : (
+          <div role="status" className="text-[13px] text-aegis-text-dim">
+            {t('chat.creatingSession')}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-w-0 flex-col">
       {scopedSession.error && (

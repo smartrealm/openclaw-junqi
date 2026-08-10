@@ -3,7 +3,7 @@
 ## 范围
 
 本规格约束 JunQi 桌面客户端在 OpenClaw Session 已有活动 Run 时的普通文本、
-Quick Chat、显式本地队列、Jarvis steering 和 Task checkpoint 行为。JunQi 只
+Quick Chat、显式本地队列和 Jarvis steering 行为。JunQi 只
 消费 OpenClaw 已公开的 Gateway 协议，不自行实现另一套 Agent 或队列引擎。
 
 ## 目标行为

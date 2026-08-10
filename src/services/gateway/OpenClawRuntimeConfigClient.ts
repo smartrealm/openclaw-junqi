@@ -1,4 +1,3 @@
-import type { GatewayRuntimeConfig } from '@/types/openclawConfig';
 import {
   readOpenClawConfigSnapshot,
   type OpenClawConfigSnapshot,
@@ -14,9 +13,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Gateway 只确认成功回执；其余结构不得被客户端解释为配置已写入。 */
-function requireConfigSetAcknowledgement(value: unknown): void {
+/** 只有官方 config.patch 返回明确成功回执时，调用方才可继续投影本地状态。 */
+export function requireOpenClawConfigPatchAcknowledgement(value: unknown): void {
   if (!isRecord(value) || value.ok !== true) {
-    throw new Error('OpenClaw config.set response is unavailable');
+    throw new Error('OpenClaw config.patch response is unavailable');
   }
 }
 
@@ -31,13 +31,15 @@ export class OpenClawRuntimeConfigClient {
     return readOpenClawConfigSnapshot(await this.gateway.call('config.get', {}));
   }
 
-  async replace(
-    config: GatewayRuntimeConfig,
+  async patch(
+    config: Record<string, unknown>,
     snapshot: OpenClawConfigSnapshot,
+    replacePaths: string[] = [],
   ): Promise<void> {
-    requireConfigSetAcknowledgement(await this.gateway.callPrivileged('config.set', {
+    requireOpenClawConfigPatchAcknowledgement(await this.gateway.callPrivileged('config.patch', {
       raw: JSON.stringify(config),
       ...(snapshot.hash ? { baseHash: snapshot.hash } : {}),
+      ...(replacePaths.length > 0 ? { replacePaths } : {}),
     }));
   }
 }

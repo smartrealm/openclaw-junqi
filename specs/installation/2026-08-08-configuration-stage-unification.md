@@ -9,7 +9,7 @@
 ## 契约与边界
 
 - `gateway-ready` 仍是 JunQi 首次引导状态机中的运行时事实，只表示选定运行时的 Gateway 已就绪。
-- 配置是否完成由官方 `openclaw.setup.detect.setupComplete` 和官方 `wizard.start` 终态决定；JunQi 不把 Gateway 就绪映射为配置成功，也不追加模型验证门禁。
+- 配置是否完成由官方 `openclaw.setup.detect.setupComplete` 和官方 `wizard.start` 终态决定；检测方法明确不受支持时，由同一 Gateway 的 `wizard.start` 决定既有配置、跳过项或终态。JunQi 不把 Gateway 就绪映射为配置成功，也不追加模型验证门禁。
 - 开始核验必须由用户显式触发，页面进入 `gateway-ready` 时不得自动启动 Wizard、写配置或跳过官方配置步骤。
 - 需要配置时，仅使用既有 OpenClaw 官方 Wizard 链路；页面不创建新的 RPC、配置字段或本地配置状态机。
 - 已有配置满足门禁时，直接进入完成页；首次引导不创建本地渠道决策阶段。

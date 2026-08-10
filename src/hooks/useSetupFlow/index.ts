@@ -20,9 +20,15 @@ import {
 } from "@/api/tauri-commands";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
-import { gateway, openClawSetupClient } from "@/services/gateway";
+import {
+  gateway,
+  openClawSetupClient,
+} from "@/services/gateway";
 import { executeRuntimeSelectionTransaction } from "@/services/setup/runtimeSelectionTransaction";
-import { validateSetupCompletion } from "@/services/setup/setupCompletionGate";
+import {
+  shouldStartOfficialOnboarding,
+  validateSetupCompletion,
+} from "@/services/setup/setupCompletionGate";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import { createOnboardingPresentationMachine } from "@/services/setup/onboardingPresentation";
 import { isCurrentSetupOperationProgress } from "@/hooks/setupProgressEvents";
@@ -172,15 +178,24 @@ export function useSetupFlow(
     throw new Error(t("setup.gatewayReadyTimeout", "Gateway did not become ready in time."));
   }, [isRunActive, t]);
 
-  const resolveActiveRuntimeOnboardingRequirement = useCallback(async (): Promise<boolean> => {
-    try {
-      const detection = await openClawSetupClient.detect();
-      return !detection.setupComplete;
-    } catch {
-      // 无法取得官方结构化检测结果时保持在配置流程，不能从本地配置猜测完成状态。
-      return true;
+  const waitForAuthenticatedGateway = useCallback(async (runId: number, timeoutMs = 20_000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (!isRunActive(runId)) throw new Error("setup cancelled");
+      if (gateway.getStatus().connected) return;
+      await new Promise((resolve) => setTimeout(resolve, 250));
     }
+    throw new Error(t(
+      "setup.wizard.connectionTimeout",
+      "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成经认证的 Gateway 连接。",
+    ));
+  }, [isRunActive, t]);
+
+  const resolveActiveRuntimeOnboardingRequirement = useCallback(async (): Promise<boolean> => {
+    return await shouldStartOfficialOnboarding(() => openClawSetupClient.detect());
   }, []);
+  // 检测阶段依赖此探针；保持引用稳定，避免检测 effect 因渲染而重复启动。
+  const isGatewayConnected = useCallback(() => gateway.getStatus().connected, []);
 
   const {
     continueAfterEnvironmentReview,
@@ -199,7 +214,7 @@ export function useSetupFlow(
     beginRun,
     isRunActive,
     resolveOnboardingRequirement: resolveActiveRuntimeOnboardingRequirement,
-    isGatewayConnected: () => gateway.getStatus().connected,
+    isGatewayConnected,
     updateOnboardingRequirement,
     setGatewayRunning,
     setInstallMode,
@@ -274,6 +289,7 @@ export function useSetupFlow(
       patchStep("gateway", "running", t("setup.gatewayConnecting", "Gateway 已就绪，正在建立连接…"));
       reportPhase("gatewayPort", t("setup.gatewayConnecting", "Gateway 已就绪，正在建立连接…"));
       await waitForGatewayReady(runId, isDockerRuntime ? 30_000 : 10_000, status?.port);
+      await waitForAuthenticatedGateway(runId);
       if (!isRunActive(runId)) return false;
       if (isDockerRuntime) {
         patchStep("container", "done");
@@ -308,7 +324,7 @@ export function useSetupFlow(
       replaceSetupStep("error");
       return false;
     }
-  }, [beginRun, isRunActive, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
+  }, [beginRun, isRunActive, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForAuthenticatedGateway, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
 
   const continueAfterGatewayReady = useCallback(async () => {
     if (gatewayReadyContinuationInFlightRef.current) return;
@@ -336,7 +352,7 @@ export function useSetupFlow(
           navigateSetup("configure-openclaw", "push");
           return;
         }
-        const message = t("setup.gatewayReadyContinueFailed", "无法进入下一步，请检查 Gateway 状态后重试。");
+        const message = t("setup.dashboardEntryGatewayUnavailable");
         setGatewayReadyContinuation({ status: "failed", error: message });
         setSetupError(message);
         appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
@@ -412,9 +428,7 @@ export function useSetupFlow(
         stageMode: setActiveGatewayRuntime,
         prepare: async (targetMode) => {
           setInstallMode(targetMode);
-          const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
           if (!isRunActive(runId)) return;
-          updateOnboardingRequirement(onboardingRequired);
           navigateSetup("checking", "push");
           if (targetMode === "native") {
             commitSteps([...INITIAL_NATIVE_STEPS]);
@@ -436,9 +450,7 @@ export function useSetupFlow(
 
       if (outcome.status === "committed" || outcome.status === "superseded") return;
       setInstallMode(previousMode);
-      const onboardingRequired = await resolveActiveRuntimeOnboardingRequirement();
       if (!isRunActive(runId)) return;
-      updateOnboardingRequirement(onboardingRequired);
 
       if (outcome.compensationErrors?.length) {
         const message = t("setup.runtimeCompensationIncomplete", "运行时切换失败，部分恢复操作未完成；请检查 Gateway 状态后重试");
@@ -475,7 +487,7 @@ export function useSetupFlow(
       report(message);
       replaceSetupStep("error");
     }
-  }, [beginRun, isRunActive, installMode, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, updateOnboardingRequirement, resolveActiveRuntimeOnboardingRequirement, setActiveGatewayRuntime, commitSetupGatewayRuntime, rollbackActiveGatewayRuntime, rollbackRuntimeReconfiguration, gatewayManager, t]);
+  }, [beginRun, isRunActive, installMode, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, setActiveGatewayRuntime, commitSetupGatewayRuntime, rollbackActiveGatewayRuntime, rollbackRuntimeReconfiguration, gatewayManager, t]);
 
   const selectMode = useCallback(async (mode: InstallMode) => {
     if (runtimeSelectionInFlightRef.current || setupBackInFlightRef.current) return;

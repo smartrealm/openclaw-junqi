@@ -183,17 +183,12 @@ test('wizard client restores an unfinished official session after a renderer res
   const calls: Array<{ method: string; params: Record<string, unknown>; options?: { timeoutMs?: number | null } }> = [];
   const resumedClient = new OpenClawWizardClient(async (method, params, options) => {
     calls.push({ method, params, ...(options ? { options } : {}) });
-    if (method === 'wizard.status') return { status: 'running' };
+    if (method === 'wizard.status') throw new Error('wizard.status clears the official session');
     return { done: true, status: 'done' };
   }, store);
   await resumedClient.resume();
 
   assert.deepEqual(calls, [
-    {
-      method: 'wizard.status',
-      params: { sessionId: 'persisted-session' },
-      options: { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
-    },
     {
       method: 'wizard.next',
       params: { sessionId: 'persisted-session' },
@@ -297,7 +292,6 @@ test('wizard client preserves resume context when the official session terminate
         step: { id: 'provider-auth', type: 'action' },
       };
     }
-    if (method === 'wizard.status') return { status: 'running' };
     return { done: false, status: 'error' };
   });
 
@@ -321,7 +315,6 @@ test('wizard client never records or replays an answer rejected by a running ses
       return { sessionId: `session-${starts}`, done: false, status: 'running', step: { id: 'first', type: 'select' } };
     }
     if (method === 'wizard.cancel') return { done: true, status: 'cancelled' };
-    if (method === 'wizard.status') return { status: 'running' };
     if (stepId === 'first') {
       return { done: false, status: 'running', step: { id: 'second', type: 'text' } };
     }
@@ -350,10 +343,7 @@ test('wizard client never records or replays an answer rejected by a running ses
   assert.equal(resumed.step?.id, 'second');
   assert.equal(client.failedStepView, null);
 
-  assert.deepEqual(calls.slice(-2), [
-    'wizard.status:',
-    'wizard.next:',
-  ]);
+  assert.deepEqual(calls.slice(-1), ['wizard.next:']);
 });
 
 test('wizard client rejects cancellation status outside the installed synchronous contract', async () => {
@@ -507,7 +497,7 @@ test('wizard next rejects start-only fields', async () => {
   assert.notEqual(client.activeSessionId, 'not-allowed');
 });
 
-test('wizard status and cancellation tolerate additive result fields', async () => {
+test('wizard recovery and cancellation tolerate additive result fields', async () => {
   const statusClient = new OpenClawWizardClient(async (method) => {
     if (method === 'wizard.start') {
       return {
@@ -517,11 +507,10 @@ test('wizard status and cancellation tolerate additive result fields', async () 
         step: { id: 'provider', type: 'select' },
       };
     }
-    return { status: 'done', extra: true };
+    return { done: true, status: 'done', extra: true };
   });
   await statusClient.start();
-  // The extra field is ignored, and the reported terminal `done` status is still
-  // honoured: the session is released rather than left dangling.
+  // 额外字段不影响官方终态处理，避免遗留会话无法清理。
   await statusClient.resume();
   assert.equal(statusClient.activeSessionId, null);
 
@@ -567,7 +556,6 @@ test('resumes a desynchronized wizard without replaying an answer', async () => 
         step: { id: 'initial', type: 'note' },
       };
     }
-    if (method === 'wizard.status') return { status: 'running' };
     return {
       done: false,
       status: 'running',
@@ -580,11 +568,6 @@ test('resumes a desynchronized wizard without replaying an answer', async () => 
 
   assert.equal(resumed.step?.id, 'current');
   assert.deepEqual(calls[1], {
-    method: 'wizard.status',
-    params: { sessionId: 'session-2' },
-    options: { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
-  });
-  assert.deepEqual(calls[2], {
     method: 'wizard.next',
     params: { sessionId: 'session-2' },
     options: { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },

@@ -1,3 +1,5 @@
+import { resolveOpenClawSessionTarget } from './OpenClawSessionTarget';
+
 export interface OpenClawTranscriptTarget {
   sessionKey: string;
   agentId?: string;
@@ -15,10 +17,10 @@ const TRANSCRIPT_SUBSCRIPTION_TIMEOUT_MS = 10_000;
 
 function normalizeTarget(target: OpenClawTranscriptTarget | null): OpenClawTranscriptTarget | null {
   if (!target) return null;
-  const sessionKey = target.sessionKey.trim();
-  if (!sessionKey) return null;
-  const agentId = target.agentId?.trim();
-  return agentId ? { sessionKey, agentId } : { sessionKey };
+  const resolved = resolveOpenClawSessionTarget(target.sessionKey, target.agentId);
+  return resolved.agentId
+    ? { sessionKey: resolved.key, agentId: resolved.agentId }
+    : { sessionKey: resolved.key };
 }
 
 function sameTarget(

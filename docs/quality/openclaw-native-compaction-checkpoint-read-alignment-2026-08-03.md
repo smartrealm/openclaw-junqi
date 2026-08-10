@@ -10,7 +10,7 @@ JunQi 已能调用官方 `sessions.compact`，但 Session Manager 只显示会�
 
 当前 OpenClaw 提供只读 `sessions.compaction.list` 与 `sessions.compaction.get`。本轮 JunQi 只在
 用户显式展开一个会话时调用 `sessions.compaction.list`；该官方列表已返回每个 checkpoint 的完整
-元数据。JunQi 不调用 `get`，也不把 checkpoint 当作本地 Task checkpoint，不自动创建 branch、
+元数据。JunQi 不调用 `get`，也不把 checkpoint 当作聊天任务状态，不自动创建 branch、
 restore、rewind 或修改 transcript。
 
 ## 权威依据

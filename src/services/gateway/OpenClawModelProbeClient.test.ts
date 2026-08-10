@@ -31,6 +31,23 @@ test('OpenClawModelProbeClient runs the bounded official provider probe only on 
   assert.deepEqual(calls, [{ method: 'models.probe', params: { provider: 'openai' } }]);
 });
 
+test('OpenClawModelProbeClient scopes a live probe to the selected official agent', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const client = new OpenClawModelProbeClient({
+    requestPrivileged: async (method, params) => {
+      calls.push({ method, params });
+      return { provider: 'openai', status: 'ok', results: [] };
+    },
+  });
+
+  await client.probeProvider('openai', ' research ');
+
+  assert.deepEqual(calls, [{
+    method: 'models.probe',
+    params: { provider: 'openai', agentId: 'research' },
+  }]);
+});
+
 test('OpenClawModelProbeClient projects only provider-level non-secret probe facts', () => {
   const parsed = parseOpenClawModelProbe({
     provider: 'anthropic',

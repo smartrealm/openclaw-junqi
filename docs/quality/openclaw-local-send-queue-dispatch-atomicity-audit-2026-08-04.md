@@ -39,7 +39,7 @@ registry 也只管理已 admitted 的 followup/collect turn。
 
 位置：`src/stores/chatStore.ts:1927`
 
-原实现先从 `messageQueue[sessionKey][0]` 读取首项，随后执行 Task checkpoint 与异步
+原实现先从 `messageQueue[sessionKey][0]` 读取首项，随后执行异步
 `gateway.sendMessage`，成功后才从数组中移除该首项。其间 `clearQueue` 可以清空同一个
 数组并把对应本地消息标记为 `cancelled`。drain 持有的对象引用不受该数组变更影响，仍会
 发送给 Gateway；成功回调又会把同一消息改为 `sent`。
@@ -62,10 +62,10 @@ registry 也只管理已 admitted 的 followup/collect turn。
 `sendMessage` 外观也为同一键提供默认值。缺少会话上下文的操作因而仍会启动语音中断、创建
 乐观消息或进入发送流程，无法证明该写操作属于用户当前任务。
 
-修复：新增共享会话目标校验，发送协调器在读取本地状态、写入乐观消息、创建 Task checkpoint
+修复：新增共享会话目标校验，发送协调器在读取本地状态、写入乐观消息
 或调用 Gateway 前拒绝空目标；Gateway 外观也在创建 pending-send 状态前执行相同校验。快捷
 指令不再回落到主会话，而是向用户显示本地化的“选择会话”错误。合法目标会去除首尾空白，
-使本地状态、Task checkpoint、Gateway dispatch 与回执跟踪使用同一会话键。
+使本地状态、Gateway dispatch 与回执跟踪使用同一会话键。
 
 ## 非问题
 
@@ -83,7 +83,7 @@ registry 也只管理已 admitted 的 followup/collect turn。
   恢复本地待发数据。
 - 正常 Gateway 发送继续保留调用方 idempotency key，并由 OpenClaw 决定 active-run queue
   mode 与 queued-turn 生命周期。
-- 空、仅空白或未选择的会话目标不得写入 renderer 状态、创建 Task checkpoint 或触发 Gateway
+- 空、仅空白或未选择的会话目标不得写入 renderer 状态或触发 Gateway
   请求；快捷指令必须报告该错误，不得静默投递到主会话。
 
 ## 验证结果

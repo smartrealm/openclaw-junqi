@@ -84,6 +84,17 @@ export function agentIdFromSessionKey(sessionKey: string): string | null {
   return /^agent:([^:]+):/i.exec(normalized(sessionKey))?.[1] ?? null;
 }
 
+/** 只接受 Gateway 明确返回的会话创建时间，不能以活动或更新时间替代。 */
+export function sessionCreationTimestamp(session: Pick<Session, 'createdAt'>): number | null {
+  const value = session.createdAt;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 /** Classify the four session shapes used by AgentHub without treating every
  * ordinary conversation as the agent's canonical main session. */
 export function classifyAgentSessionKind(sessionKey: string): AgentSessionKind {

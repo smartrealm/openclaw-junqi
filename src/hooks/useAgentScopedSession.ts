@@ -1,8 +1,6 @@
 /**
- * useAgentScopedSession — read `?agent=<id>&new=1` from the route, materialize
- * a real Gateway session for that agent, then mark the confirmed session
- * active. Fires only once per `?new=1` navigation so subsequent renders leave
- * the user alone.
+ * 读取路由中的 `?agent=<id>&new=1`，为目标智能体创建真实 Gateway 会话，
+ * 并在 Gateway 确认后切换为当前会话。每次路由导航只发起一次创建，避免重渲染重复建会话。
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -11,6 +9,7 @@ import { createNativeSession } from '@/utils/sessionCreate';
 import { useNotificationStore } from '@/stores/notificationStore';
 
 export interface AgentScopedSessionState {
+  readonly pending: boolean;
   readonly error: string | null;
   readonly retrying: boolean;
   readonly retry: () => void;
@@ -41,8 +40,7 @@ export function useAgentScopedSession(): AgentScopedSessionState {
         return;
       }
 
-      // Consume the one-shot route intent only after Gateway confirms the new
-      // session. Failed intents remain visible and can be retried explicitly.
+      // 只有 Gateway 确认新会话后才消费一次性路由意图；失败意图保留，供用户显式重试。
       const nextParams = new URLSearchParams(params);
       nextParams.delete('new');
       nextParams.delete('agent');
@@ -58,5 +56,5 @@ export function useAgentScopedSession(): AgentScopedSessionState {
     createForRoute();
   }, [agentId, createForRoute, location.key, wantNew]);
 
-  return { error, retrying, retry: createForRoute };
+  return { pending: Boolean(agentId && wantNew), error, retrying, retry: createForRoute };
 }

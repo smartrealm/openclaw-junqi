@@ -39,12 +39,11 @@ reset/delete 前的 Stop 仍只检查 `typingBySession`。
 位置：`src/services/gateway/index.ts`
 
 `gateway.abortChat` 的 `sessionKey` 参数原先默认使用 `agent:main:main`。任何遗漏目标的
-调用会先为主会话写入 JunQi Task Stop checkpoint，再发送 `sessions.abort`，从而可能中止与
-用户当前操作无关的 Run。
+调用都可能中止与用户当前操作无关的 Run。
 
 修复：发送和 Stop 复用同一 `OpenClawSessionTarget` 校验。`abortChat` 现在要求显式会话键，
-并在 Task checkpoint、Gateway 连接和 `sessions.abort` 前拒绝空或仅空白目标。键会去除首尾
-空白，因此 checkpoint、`chatHandler` 的 Run 查询、原生中止参数和回执核验都绑定同一键。
+并在 Gateway 连接和 `sessions.abort` 前拒绝空或仅空白目标。键会去除首尾空白，因此
+`chatHandler` 的 Run 查询、原生中止参数和回执核验都绑定同一键。
 
 ## 修复方向
 
@@ -56,7 +55,7 @@ reset/delete 前的 Stop 仍只检查 `typingBySession`。
 
 1. 不新增、猜测或发送任何 OpenClaw RPC 字段。
 2. 不使用组件本地 `sending` 状态作为远端 Run 已存在的依据；它包含附件读取等本地准备阶段。
-3. 不改变 `clearQueued`、Gateway queue mode、Task checkpoint 终态或 history reconciliation。
+3. 不改变 `clearQueued`、Gateway queue mode 或 history reconciliation。
 4. 无本地活动请求时，窗口关闭仍释放 lease，Stop 仍可停止本地语音，但不发无目标远端中止。
 5. `gateway.abortChat` 不得用 JunQi 默认会话键替代缺失调用方目标。`sessions.abort` 继续由
    OpenClaw 决定有无活动 Run 及最终中止结果。
@@ -73,8 +72,7 @@ reset/delete 前的 Stop 仍只检查 `typingBySession`。
 - `cargo fmt -- --check`、`cargo check --lib`、`cargo test --lib`：707 项通过，3 项因外部
   唤醒模型夹具未提供而忽略；
 - `git diff --check`、本次改动文件 Emoji 扫描和无引用扫描。
-- 本次 STOP-04 定向回归覆盖空目标在 Task checkpoint 前失败、显式目标仍绑定原生 Stop
-  checkpoint，以及共享会话目标校验；共 15 项通过。
+- 本次定向回归覆盖空目标在 Gateway 请求前失败、显式目标仍绑定原生 Stop 及共享会话目标校验。
 
 完整前端测试会打印项目既有的 React SSR `useLayoutEffect` 警告；本次未修改相关组件，命令
 以零退出码完成。

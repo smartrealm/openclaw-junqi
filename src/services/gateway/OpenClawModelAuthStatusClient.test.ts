@@ -75,8 +75,9 @@ test('OpenClawModelAuthStatusClient sends the official cache-bypass flag only wh
 
   await client.get();
   await client.get({ refresh: true });
+  await client.get({ agentId: ' research ' });
 
-  assert.deepEqual(calls, [{}, { refresh: true }]);
+  assert.deepEqual(calls, [{}, { refresh: true }, { agentId: 'research' }]);
 });
 
 test('OpenClawModelAuthStatusClient rejects malformed native status fields', () => {

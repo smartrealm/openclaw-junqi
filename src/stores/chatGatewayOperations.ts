@@ -17,7 +17,6 @@ export interface ChatGatewayOperations {
       sessionId?: string;
       expectedLeafEntryId?: string | null;
       delivery?: 'send' | 'steer';
-      supersededRunId?: string;
     },
   ): Promise<unknown>;
 }

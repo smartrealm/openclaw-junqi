@@ -2,15 +2,41 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   OpenClawSessionTargetError,
-  requireOpenClawSessionTarget,
+  createOpenClawGlobalSessionAlias,
+  resolveOpenClawSessionTarget,
+  scopeOpenClawGlobalSessionRow,
 } from './OpenClawSessionTarget';
 import { gateway } from './index';
 
 test('会话目标校验去除空白并拒绝缺失值', () => {
-  assert.equal(requireOpenClawSessionTarget('  agent:main:main  '), 'agent:main:main');
-  assert.throws(() => requireOpenClawSessionTarget(''), OpenClawSessionTargetError);
-  assert.throws(() => requireOpenClawSessionTarget('   '), OpenClawSessionTargetError);
-  assert.throws(() => requireOpenClawSessionTarget(undefined), OpenClawSessionTargetError);
+  assert.deepEqual(resolveOpenClawSessionTarget('  agent:main:main  '), {
+    localKey: 'agent:main:main', key: 'agent:main:main',
+  });
+  assert.throws(() => resolveOpenClawSessionTarget(''), OpenClawSessionTargetError);
+  assert.throws(() => resolveOpenClawSessionTarget('   '), OpenClawSessionTargetError);
+  assert.throws(() => resolveOpenClawSessionTarget(undefined), OpenClawSessionTargetError);
+});
+
+test('全局会话必须携带经过确认的智能体范围', () => {
+  assert.equal(createOpenClawGlobalSessionAlias('legal'), 'agent:legal:global');
+  assert.deepEqual(resolveOpenClawSessionTarget('agent:legal:global'), {
+    localKey: 'agent:legal:global', key: 'global', agentId: 'legal',
+  });
+  assert.deepEqual(resolveOpenClawSessionTarget('global', 'legal'), {
+    localKey: 'agent:legal:global', key: 'global', agentId: 'legal',
+  });
+  assert.throws(() => resolveOpenClawSessionTarget('global'), OpenClawSessionTargetError);
+  assert.throws(() => resolveOpenClawSessionTarget('agent:legal:global', 'main'), OpenClawSessionTargetError);
+});
+
+test('仅以请求智能体范围投影 Gateway 返回的裸全局会话', () => {
+  assert.deepEqual(scopeOpenClawGlobalSessionRow({ key: 'global', createdAt: 1 }, 'legal'), {
+    key: 'agent:legal:global', createdAt: 1, agentId: 'legal',
+  });
+  assert.throws(
+    () => scopeOpenClawGlobalSessionRow({ key: 'global', agentId: 'main' }, 'legal'),
+    OpenClawSessionTargetError,
+  );
 });
 
 test('Gateway 发送外观在连接或 pending-send 状态之前拒绝空会话目标', async () => {

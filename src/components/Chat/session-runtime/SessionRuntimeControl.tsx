@@ -22,9 +22,18 @@ import {
 } from '@/processing/sessionRuntimeDomain';
 import { useSessionRuntimeSettings } from '@/hooks/chat/useSessionRuntimeSettings';
 
+const EMPTY_MODELS: ReadonlyArray<{ id: string; label: string; alias?: string }> = [];
+
 export function SessionRuntimeControl() {
   const { t } = useTranslation();
-  const availableModels = useChatStore((state) => state.availableModels);
+  const activeSessionAgentId = useChatStore((state) => (
+    state.sessions.find((session) => session.key === state.activeSessionKey)?.agentId?.trim() ?? ''
+  ));
+  const availableModels = useChatStore((state) => (
+    activeSessionAgentId
+      ? state.sessionAvailableModelsByAgentId[activeSessionAgentId] ?? EMPTY_MODELS
+      : EMPTY_MODELS
+  ));
   const {
     activeSessionKey,
     committed,

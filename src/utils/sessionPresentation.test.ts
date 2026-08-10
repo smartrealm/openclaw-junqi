@@ -13,6 +13,7 @@ import {
   partitionSessionsForPresentation,
   parentSessionKeyForSession,
   projectSessionActivity,
+  sessionCreationTimestamp,
   sessionExecutionState,
 } from './sessionPresentation';
 
@@ -38,6 +39,22 @@ test('canonical main lookup does not select the newest ordinary conversation', (
   assert.equal(findCanonicalAgentMainSession(sessions, 'main')?.key, 'agent:main:main');
   assert.equal(findCanonicalAgentMainSession(sessions, 'writer')?.key, 'agent:writer:main');
   assert.equal(findCanonicalAgentMainSession(sessions, 'missing'), undefined);
+});
+
+test('创建时间只接受 Gateway 明确字段，不以最近更新时间补值', () => {
+  assert.equal(sessionCreationTimestamp(session({
+    key: 'agent:main:with-created-time',
+    createdAt: 1_750_000_000_000,
+    updatedAt: 1_750_000_100_000,
+  })), 1_750_000_000_000);
+  assert.equal(sessionCreationTimestamp(session({
+    key: 'agent:main:without-created-time',
+    updatedAt: 1_750_000_100_000,
+  })), null);
+  assert.equal(sessionCreationTimestamp(session({
+    key: 'agent:main:invalid-created-time',
+    createdAt: -1,
+  })), null);
 });
 
 test('classifies official cron and subagent keys without hiding normal channel sessions', () => {

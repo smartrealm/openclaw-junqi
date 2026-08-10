@@ -78,7 +78,7 @@ OpenClaw Control UI 当前并未为 JunQi 的 SemanticBlock 和 ResponseGroup �
 显示本地等待时间。
 
 本次将事件严格解码，且只接受已在本地 Run 投影中确认活动的完全相同 `sessionKey + runId`。
-它仅驱动输入中气泡下方的 Gateway 阶段和上游报告耗时，不影响 Stop、队列、Task checkpoint、
+它仅驱动输入中气泡下方的 Gateway 阶段和上游报告耗时，不影响 Stop、队列和 OpenClaw Task Ledger、
 消息历史或 OpenClaw 终态判断。Run 结算、会话重置、删除和 identity 轮换都会清除该临时视图。
 
 ### 验证结果

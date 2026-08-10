@@ -12,6 +12,11 @@ export type GatewayModelListRequest = (
   params: { view: 'configured' },
 ) => Promise<unknown>;
 
+export type GatewayChatMetadataRequest = (
+  method: 'chat.metadata',
+  params: { agentId: string },
+) => Promise<unknown>;
+
 function isModelsListResponse(value: unknown): value is { models: unknown[] } {
   return value !== null
     && typeof value === 'object'
@@ -33,6 +38,28 @@ export async function loadConfiguredGatewayModels(
     if (!isModelsListResponse(response)) return [];
     const models = extract(response);
     debugLog('models', '[Models] Loaded configured Gateway catalog:', models.length);
+    return models;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * `models.list` 始终解析默认智能体；会话选择器必须改用官方 `chat.metadata`
+ * 读取目标智能体的认证与模型目录投影。
+ */
+export async function loadAgentScopedGatewayModels(
+  agentId: string,
+  request: GatewayChatMetadataRequest,
+  extract: (response: { models: unknown[] }) => ModelEntry[],
+): Promise<ModelEntry[]> {
+  const targetAgentId = agentId.trim();
+  if (!targetAgentId) return [];
+  try {
+    const response = await request('chat.metadata', { agentId: targetAgentId });
+    if (!isModelsListResponse(response)) return [];
+    const models = extract(response);
+    debugLog('models', '[Models] Loaded agent-scoped Gateway catalog:', targetAgentId, models.length);
     return models;
   } catch {
     return [];

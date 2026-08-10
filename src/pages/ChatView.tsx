@@ -27,7 +27,7 @@ import { restoreOpenClawEditorImages } from '@/services/chat/attachments';
 import { sessionMutationGate } from '@/services/chat/sessionMutationGate';
 import {
   OpenClawSessionTargetError,
-  requireOpenClawSessionTarget,
+  resolveOpenClawSessionTarget,
 } from '@/services/gateway/OpenClawSessionTarget';
 import { resolveHistoryPageMetadata } from '@/services/chat/historyPagination';
 import { sessionTranscriptFence } from '@/services/chat/sessionTranscriptFence';
@@ -85,7 +85,6 @@ import { findTraceSourceMessage, projectChatResponseTrace } from '@/components/C
 import { ChatTraceSourceMessagePanel } from '@/components/Chat/ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from '@/components/Chat/useChatSidePanel';
 import { getToolLabelKey } from '@/components/Chat/toolCallPresentation';
-import { TaskExecutionRecoveryBanner } from '@/components/Chat/TaskExecutionRecoveryBanner';
 import { useGatewaySessionHistoryCapabilities } from '@/hooks/useGatewaySessionHistoryCapabilities';
 import {
   hasConfirmedEmptyTranscript,
@@ -93,6 +92,7 @@ import {
 } from '@/utils/confirmedEmptyTranscript';
 
 const HISTORY_LIMIT = 500;
+const EMPTY_MODEL_CATALOG: Array<{ id: string; label: string; alias?: string }> = [];
 const HISTORY_REQUEST_TIMEOUT_MS = 12_000;
 const HISTORY_BACKGROUND_RETRY_BASE_MS = 30_000;
 const HISTORY_BACKGROUND_RETRY_MAX_MS = 120_000;
@@ -297,8 +297,14 @@ function ChatViewContent() {
   const agents = useGatewayDataStore((s) => s.agents);
   const messageQueue = useChatStore((s) => s.messageQueue);
   const queueCount = (messageQueue[activeSessionKey] || []).length;
-  const availableModels = useChatStore((s) => s.availableModels);
-  const modelsLoading = useChatStore((s) => s.modelsLoading);
+  const availableModels = useChatStore((s) => {
+    const agentId = activeAgentId?.trim();
+    return agentId ? s.sessionAvailableModelsByAgentId[agentId] ?? EMPTY_MODEL_CATALOG : EMPTY_MODEL_CATALOG;
+  });
+  const modelsLoading = useChatStore((s) => {
+    const agentId = activeAgentId?.trim();
+    return agentId ? s.sessionModelsLoadingByAgentId[agentId] === true : false;
+  });
   const hasProviders = availableModels.length > 0;
 
   // Actions (stable references)
@@ -902,7 +908,7 @@ function ChatViewContent() {
     const detail = (e as CustomEvent<{ message: string; autoSend?: boolean }>).detail;
     if (!detail?.message) return;
     try {
-      const key = requireOpenClawSessionTarget(activeSessionKey);
+      const key = resolveOpenClawSessionTarget(activeSessionKey).localKey;
       const clientMessageId = createClientMessageId();
       voiceRuntime.interruptGlobally(key);
       await chatSendCoordinator.send({
@@ -1489,13 +1495,6 @@ function ChatViewContent() {
           </div>
         </div>
       )}
-
-      <TaskExecutionRecoveryBanner
-        sessionKey={activeSessionKey}
-        sessionId={activeSessionId}
-        connected={connected}
-        onReconcile={handleRefresh}
-      />
 
       <CollaborationUnanchoredBanner anchoredRunIds={anchoredRunIds} />
       <CollaborationSessionDock />

@@ -4,180 +4,68 @@
 
 ## 当前目标
 
-全量核对 JunQi 的 Gateway 原生调用、正式插件扩展、Tauri IPC 暴露面与本地派生投影，确保客户端不伪造
-OpenClaw 语义，代码边界、协议解码和测试均可验证。Tauri command 消费者矩阵、历史契约测试语义化、协作
-schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 UI 错误传播和剩余动态调用，真实 Gateway
-回放与目标平台桌面验收仍是最终必需边界。
-
-当前新增审查目标：按 DWS 审批命令契约规划审批实例、审批任务、流程记录和人工审核追溯 UI。现有钉钉工具工作台
-只有通用工具详情和 metadata 审计，尚无真实字段支撑的审批流程图；实现前必须取得 DWS 结构化返回或官方 schema 证据。
-
-当前界面修复目标：确保仪表盘侧栏的智能体、模型服务、通道和定时任务始终位于会话列表上方，固定导航不被
-会话区域挤压，并以单一配置守护入口顺序、路由与激活规则；同时按 OpenClaw 会话契约提供智能体作用域、
-主会话固定、分组和排序投影。
-
-当前渠道界面目标已完成：渠道中心保留单一添加入口和刷新入口，诊断及高级配置进入共享菜单；首次加载与后台
-刷新分离，账号次要操作统一收纳，摘要只投影当前配置和 OpenClaw 运行时返回的真实状态。
+持续将 JunQi 收敛为 OpenClaw 的跨平台桌面客户端：以官方 Gateway 协议、官方源码和结构化回执为唯一行为依据，完成安装、会话发送与生命周期、模型认证、配置写入及 Cron 的全链审查。混合改动必须先按主题完成核验；仅在用户明确要求后暂存和提交。
 
 ## 已完成内容
 
-- `Blues-Code/dingtalk` 已合并到本地 `main@534a25c3`；本次包含钉钉授权、Gateway 重连刷新、审批追溯、会话侧栏与官方 Setup 契约收敛。当前分支相对 `origin/main` 领先 39 个本地提交，尚未推送远端。
-- 渠道中心已按工作台现有视觉语言收敛：页头只保留刷新、添加渠道和更多操作，诊断与高级配置进入共享
-  `DropdownMenu`；已配置渠道、运行中账号和需要处理数量由当前配置及官方运行时状态派生。
-- 渠道中心首次加载使用骨架，已有配置的后台刷新不再清空内容；账号启动、停止、退出和删除进入共享菜单，
-  关联、登录与管理操作保持可见。三个内置语言均补齐渠道加载、摘要及菜单文案。
-- 静态 Gateway RPC 复核确认 101 个生产代码字面量调用、81 个不同方法均能在 2026-08-09 获取的官方源码提交
-  `03cb1443e5185d130b22d792a322cf7000eb4694` 的 core descriptor 中找到；16 个集中常量方法同样已核验。
-  该结论不覆盖动态方法名、
-  插件 RPC 或真实运行回执。
-- `openclaw.setup.verify` 已复核为官方 `operator.admin` 只读验证方法，保持现有实现，不以其他方法替代。
-- 实时 `agent`、`chat`、`session.tool` 事件已收束到纯解码器。畸形事件不会抢占 run 序号，Chat 仅接受
-  官方封闭状态及必填字段，未知但完整的 Agent stream 不投影为聊天状态。
-- 协作刷新提示只走 `event: "agent"` 和 `stream: "junqi-collab.changed"`；不存在的同名顶层 Gateway
-  事件不再被客户端解释为协作能力。
-- 运行时中的原始 `any` 事件入口、分散的 Chat 自定义 stream 分支和顶层媒体字段读取已删除；实时流、
-  会话转录、工具流和非实时失效事件已分为独立处理职责。
-- Tauri command 注册表已从 295 项收束到 272 项；每一项均有生产 WebView 或受控 Rust 注入页面消费者。
-  无消费者的旧 PTY、旧文件目录列举、旧调试日志和专属测试已删除。
-- 高风险 Tauri wrapper 已改用真实 invoke 载荷测试；直接字面量调用的 Rust 注册关系由独立守护测试覆盖，
-  不再以 45 个源码文件和 132 条正则判断契约。
-- 钉钉插件工具 manifest 现由编译后的运行时工具规格逐项校验，不再仅校验数量；源代码测试与包校验均通过。
-- 协作插件已删除没有前端、运行时或外部消费者的 `junqi.collab.plan.get` Gateway 注册；其领域查询仍由
-  `run.get` 内部聚合复用。
-- 非聊天 Gateway 事件入口已从 `any` 收束为 `unknown`；仅对象载荷可读取会话失效字段，循环引用等
-  未知载荷不会破坏日志路径或制造会话投影。
-- 已删除失效的智能体资料源码文本守护；Tauri 调用捕获测试验证加载、保存、删除的实际参数，Rust 纯状态测试验证
-  资料变更不会覆盖其他应用设置或其他资料。Gateway 停止只保留统一的 `stop_gateway` WebView 入口。
-- 协作持久化已由 `CollaborationSchemaInitializer` 统一创建和校验 schema 14；历史迁移、双重删除回执、绝对
-  导出路径重映射和候选删除作业收养均已删除。显式删除墓碑必须绑定权威删除作业。
-- Session mutation impact 与 prepare 均使用显式 `runId` wire 身份和 event watermark；数据库内部 `id` 不再
-  跨 RPC，插件服务和 Desktop coordinator 均有回归测试。
-- 历史消息身份只读取 OpenClaw 当前 `__openclaw.id`，发送运行身份只读取顶层 `idempotencyKey`；旧顶层和
-  元数据别名不再参与去重或运行收敛。
-- 已删除客户端复制的模型可见性算法。配置页只判断可由静态配置证明的结构问题，模型目录、认证、别名和
-  智能体作用域结果由 Gateway `models.list` 提供。
-- 授权、配对、权限和限流分类只接受结构化错误码；WebSocket 关闭原因和普通错误文案不再生成授权事实。
-- 仪表盘侧栏主要入口已收束为单一导航配置；新建对话和四个功能入口固定在会话列表上方，只有会话列表占用
-  剩余空间并滚动。当前源码插件清单和桌面资源 metadata 均为 33 项；实际可用能力仍以当前 Gateway Session 的
-  `tools.effective` 为准。
-- `Blues-Code/Jarvis` 的智能体作用域会话侧栏已合并：只呈现所选智能体会话，固定 Gateway 已确认的主会话，
-  支持官方创建时间与最近更新时间排序，并保留跨智能体完整会话管理入口。冲突解决后，新建会话只保留顶部
-  单一入口，使用当前所选智能体，不在作用域控件中复制第二个创建按钮。
-- 安装完成判定已改用官方 `openclaw.setup.detect.setupComplete`。官方 Wizard 终态后只核验经认证的所选
-  Gateway 和服务交接，不再由客户端追加实时模型验证；`openclaw.setup.verify` 只用于业务就绪诊断。
-- 统一 Setup 客户端的未知方法判断复用 `GatewayProtocolEvidence`，只接受与本次请求方法精确绑定的官方错误，
-  不再通过宽松错误文本或非官方错误码推断能力缺失。已删除旧 Setup 验证客户端及其残留调用和专属测试。
-- Gateway 请求超时已使用稳定错误类型，未知方法证据精确绑定当前请求方法；启动期历史预热不再解析错误文案。
-- 原生 Gateway 客户端、技能运行时、数据仓和协作插件探测现共用 `GatewayProtocolEvidence`。三个非官方未知方法
-  错误码、宽松文本和嵌套异常不再生成能力缺失；协作领域改用本地 `METHOD_UNAVAILABLE` 状态。
-- 配置重载规划只读取当前 Gateway `config.schema.lookup`；查询失败使用稳定本地分类并失败关闭为重启，不再记录
-  原始异常或按本机安装版本预置路径规则。
-- 聊天发送失败不再按类名和英文消息判断 Gateway 状态。发送前的传输生命周期失败会收敛已创建的本地任务检查点；
-  请求可能已经发出时仍保留待核验语义。
-- 原生任务账本和审批 Store 在断连时不再制造英文操作错误；共享连接状态负责离线展示，本地兜底失败使用稳定领域码，
-  多语言转换只发生在活动面板。
-- `usage.cost` 与 `sessions.usage` 已由 `OpenClawUsageClient` 统一校验。分析页、仪表盘和智能体设置复用同一官方
-  类型，已删除 `any`、双重断言以及模型、供应商和会话字段的猜测别名。
-- 会话删除和重置直接调用 OpenClaw 原生 Gateway 回执，不再等待协作插件自定义围栏。Desktop 侧围栏对话框、
-  状态仓、协调器、专属 outcome helper、RPC 读取契约、解码器、文案和测试已删除；本地投影仅在原生回执确认后收敛。
+- 已提交 `8d9db3e1`：普通 `sessions.delete` 与 `sessions.reset` 不再经过 JunQi 协作插件的本地围栏，直接等待 OpenClaw 的结构化回执；相关本地包装、对话框和专属测试已删除。
+- 普通聊天已删除 `src/task-execution/` 本地任务图、检查点、工具恢复和恢复横幅。发送、转向、Stop 与工具流只投影 OpenClaw 的 `chat.send`、会话事件、transcript 和原生 Task Ledger，不再生成本地 Task、Run、Node、Edge 或伪 Tool Result。
+- 新建会话仍以 Gateway `sessions.create` 回执为准。确认前不加载旧会话历史，确认后的空 transcript 保持空 leaf；失败保留原始新建意图。
+- 安装完成不再追加模型实时验证。`openclaw.setup.detect.setupComplete` 明确可用时作为配置判据；该方法明确不受支持时，进入同一 Gateway 的官方 `wizard.start`，不以本地配置、模型字段或完成标记推断已完成。连接和畸形协议错误仍失败关闭。
+- 官方 Wizard 恢复使用无答案的 `wizard.next`，不使用会清理会话的 `wizard.status`。
+- Provider 认证状态、探测和注销均携带 Gateway 已确认的 `agentId`；会话模型目录与默认模型目录分离，缺少会话智能体目录时不回退复用默认智能体能力。
+- 配置写入使用 `config.get` 的 `hash` 作为 `config.patch.baseHash`，成功回执必须显式确认；不再以完整 `config.set` 或本地乐观状态替代 Gateway 确认。
+- Cron 运行记录按官方 `cron.runs` 的 `scope`、筛选和分页信封读取；最近运行记录使用官方全局范围，不按本地任务数量截断。
+- Cron 任务列表已改为按官方 `cron.list` 分页读取，所有页面必须具有同一 `snapshotRevision`，且只有全部页面成功才更新界面。旧数组响应、偏移错误、页元数据错误和快照变化均失败关闭。
+- Cron 创建对一次未确认的提交保留官方 `declarationKey`，Gateway 未确认前不自动重放未知写入。
 
 ## 关键技术决策
 
-- OpenClaw Gateway 协议、会话、运行、工具和插件事件是权威事实；JunQi 只保存可追溯的 UI 投影。
-- 使用纯判别联合作为协议解码边界，使用 `OpenClawChatRunProjection` 作为 run 序号和终态围栏；不为单一
-  消费者增加抽象基类、服务定位器或猜测性兼容层。
-- 协作插件的自定义 stream 属于官方 `agent` 事件载荷，不属于 Gateway 顶层事件目录。
-- Native 与 Docker、真实 Gateway 与本地测试、自动化验证与三平台真机验收必须分别记录，不相互推断。
+- OpenClaw 是 Agent、会话、工具、transcript、任务账本、配置和运行时状态的唯一权威。JunQi 只保存绑定当前运行时、Gateway 和会话身份的界面派生状态。
+- Gateway 可达不等于认证、配置完成、模型可用或服务归属正确；各结论只能由对应官方调用或结构化事件给出。
+- 旧 Gateway 缺少最新版检测方法不等于配置已完成，也不等于安装失败。客户端将控制权交给同一 Gateway 的官方 Wizard，而非使用本地 fallback。
+- Stop 仅请求官方中止当前 run；不会清空会话，不会伪造 Tool Result，也不会将本地快照写入 OpenClaw transcript。
+- 有副作用操作遇到超时或断线时保持待核验，不由桌面端自动重放；官方声明键或其他上游幂等机制仅在协议明确支持时使用。
 
-## 核心文件
+## 修改过的核心文件
 
-- `src/processing/openClawChatEvent.ts`：实时 Gateway 事件纯解码和 Chat 增量合并。
-- `src/runtime/OpenClawChatEventRuntime.ts`：解码后的聊天、工具、转录与失效事件投影。
-- `src/services/gateway/collaborationEventBridge.ts`：协作 Agent stream 观察者桥接。
-- `src/services/gateway/messageIdentity.ts`：OpenClaw 历史消息与发送运行身份读取边界。
-- `src/services/gateway/messageRouter.ts`：Gateway 结构化授权错误分类。
-- `src/services/gateway/GatewayCapabilityRegistry.ts`：能力调用证据与失败状态记录。
-- `src/services/gateway/GatewayProtocolEvidence.ts`：未知方法与当前请求身份绑定的单一协议证据解析器。
-- `src/services/gateway/OpenClawUsageClient.ts`：OpenClaw cost 与 session usage 的结构、校验和页面类型来源。
-- `src/components/Layout/workbenchNavigation.ts`：仪表盘侧栏主要入口、路由和激活规则的单一来源。
-- `src/components/Layout/SessionScopeControls.tsx` 与 `src/components/Layout/sidebarUtils.ts`：智能体作用域、分组、排序和主会话投影。
-- `src/pages/ChannelsCenter/index.tsx`：渠道中心主次操作、真实状态摘要、加载边界和账号操作菜单。
-- `docs/quality/channels-center-ui-consolidation-2026-08-10.md`：渠道中心 UI 收敛依据、行为和未验证边界。
-- `src/services/gateway/OpenClawSetupClient.ts`：官方 Setup 检测与实时验证响应边界。
-- `src/hooks/useSetupFlow/useWizardSession.ts`：官方 Wizard 终态和 Gateway 服务交接，不追加客户端模型门禁。
-- `docs/quality/workbench-sidebar-navigation-visibility-2026-08-10.md`：侧栏入口存在性、布局根因和验证边界。
-- `plans/business/2026-08-10-dingtalk-approval-trace-ui.md`：DWS 审批命令核对、流程投影边界与 UI 实施顺序。
-- `src/business-applications/dingtalkApproval.ts`、`src/pages/businessApplications/useDingTalkApprovalTrace.ts`、`src/components/BusinessApplications/DingTalkApprovalTracePanel.tsx`：DWS 审批实例、任务和记录的脱敏投影、只读汇聚与流程时间线展示。
-- `src/business-applications/dingtalkAgentAuthorization.ts`、`src/business-applications/dingtalkGatewayReconnect.ts`：当前智能体的最小授权补丁，以及 Gateway 重启后连接与运行时身份一致性核验。
-- `docs/business/dingtalk-readiness-guidance-audit-2026-08-10.md`：钉钉接入授权、刷新与目标运行时边界。
-- `src/services/chat/sendTransaction.ts`：聊天发送、投递不确定性与本地任务检查点收敛边界。
-- `src/stores/openclawTaskLedgerStore.ts`、`src/stores/openclawApprovalsStore.ts`：原生活动数据与操作状态投影。
-- `packages/junqi-collab/src/openclaw-adapter.ts`：协作插件通过官方 Agent stream 发出刷新提示。
-- `docs/quality/gateway-native-extension-consistency-followup-audit-2026-08-09.md`：本轮协议审计、依据和边界。
-- `specs/quality/2026-08-09-gateway-event-boundary-remediation.md` 与
-  `plans/quality/2026-08-09-gateway-event-boundary-remediation.md`：当前整改契约与实施顺序。
-- `docs/quality/tauri-command-consumer-matrix-2026-08-09.md`：Tauri command 消费者矩阵与删除依据。
-- `src/api/tauriCommandsContract.test.ts` 与 `scripts/tauri-command-registry-contract.test.mjs`：可执行 IPC
-  参数契约和注册关系守护。
+- `src/services/chat/sendTransaction.ts`、`src/runtime/OpenClawChatEventRuntime.ts`、`src/task-execution/`：删除普通聊天的本地任务执行语义。
+- `src/services/setup/setupCompletionGate.ts`、`src/hooks/useSetupFlow/index.ts`、`src/services/openclawWizard.ts`：安装完成判定和官方 Wizard 恢复。
+- `src/services/gateway/OpenClawCronListClient.ts`、`src/stores/gatewayDataStore.ts`：Cron 列表分页、快照一致性和失败关闭。
+- `src/services/gateway/cronRuns.ts`、`src/services/gateway/OpenClawCronRunClient.ts`、`src/pages/CronMonitor.tsx`：Cron 运行记录官方分页读取。
+- `src/services/gateway/OpenClawModelAuthStatusClient.ts`、`src/services/gateway/OpenClawModelProbeClient.ts`、`src/services/gateway/OpenClawModelAuthLogoutClient.ts`、`src/pages/ConfigManager/ProvidersTab.tsx`：智能体作用域的模型认证操作。
+- `src/services/gateway/OpenClawRuntimeConfigClient.ts`、`src/services/gateway/OpenClawConfigPatch.ts`、`src/services/channelConfig.ts`、`src/pages/ConfigManager/`：官方 `config.patch` 最小写入。
+- `docs/quality/openclaw-chat-task-boundary-audit-2026-08-10.md`、`docs/quality/openclaw-installation-completion-contract-audit-2026-08-09.md`、`docs/quality/openclaw-cron-list-pagination-audit-2026-08-10.md` 及相应 `specs/`、`plans/`：审计依据、行为规格和实施记录。
+- `docs/previews/junqi-first-run-flow.html`：首次启动流程预览已同步当前安装判定；线上预览未部署验证。
 
-## 测试与验证
+## 测试与验证结果
 
-- 已通过未知方法证据、配置重载、消息身份、授权、协作、技能、数据仓和会话生命周期定向测试 154 项。
-- 已通过完整 `pnpm test`：前端与仓库脚本测试均通过，零失败。
-- 已通过 `pnpm lint`：模块边界扫描 922 个文件零违规，四处桌面版本一致，TypeScript 检查通过。
-- 已通过完整 `pnpm test:rust`：684 项通过、2 项忽略、零失败。
-- 已通过 `pnpm build`：协作插件、钉钉插件契约与打包完成，TypeScript 和 Vite 生产构建通过并生成 `dist`。
-- 已通过 `pnpm verify:openclaw-docs`。
-- 已通过 `pnpm dingtalk:test`（18 项）、`pnpm dingtalk:validate`、`pnpm collab:test`（364 项）与
-  `pnpm collab:validate`。
-- 审批追溯新增 7 项投影测试通过；钉钉插件清单由 30 个扩展为 33 个工具，包含审批记录、审批任务和流程预测，
-  `pnpm dingtalk:test`、`pnpm lint` 和 `pnpm build` 均已通过。
-- 仪表盘侧栏导航新增 2 项行为测试通过，覆盖四个入口的完整顺序、目标路由和无子串误判的激活规则。
-- Jarvis 合并后的侧栏、官方 Setup 客户端、安装完成门禁和安装回归定向测试 66 项通过；完整
-  `pnpm test` 前端 2791 项、仓库脚本 235 项均通过且零失败；`pnpm lint` 通过，模块边界扫描
-  928 个文件零违规，四处桌面版本一致，TypeScript 检查通过；独立 `pnpm build` 通过。
-- Jarvis 后续钉钉授权与重连提交的前端定向测试 12 项和 Rust DWS 授权命令测试 1 项通过；再次执行
-  `pnpm lint` 时模块边界扫描 930 个文件零违规，TypeScript 检查通过；合并后 `pnpm build` 再次通过。
-- `Blues-Code/dingtalk` 合并到 `main@534a25c3` 后再次通过 `pnpm dingtalk:test`（18 项）、
-  `pnpm dingtalk:validate`、`pnpm lint`、完整 `pnpm test` 和 `pnpm build`；Rust 侧通过格式检查、
-  `cargo check --lib` 与 DWS 操作定向测试（2 项）。构建重新生成的钉钉插件包仍为 33 个工具；本机
-  Apple Silicon 已生成 `src-tauri/target/release/bundle/dmg/JunQi Desktop_2.3.0_aarch64.dmg`，
-  SHA-256 为 `7ce8303923b98babe2d581e73a089f2236654f4fba3a7dce3c69060fc2388b55`。
-- 渠道中心界面收敛后，`pnpm lint` 通过，模块边界扫描 930 个文件零违规；完整
-  `pnpm test -- --runInBand` 与 `pnpm build` 通过。尚未执行三平台桌面真机视觉验收。
-- 已通过 `pnpm collab:bundle`：schema 14、167 个校验文件，bundle SHA-256 为
-  `0778a9538482e492b9acc8bb079dcec959e8546b07231de898f06138c1b9275f`，generated metadata 与 Tauri resource metadata 一致。
-- 已通过 `src/stores/gatewayDataStore.test.ts`：29 项通过，覆盖未知载荷和安全日志边界。
-- 已通过聊天发送、原生任务账本和审批 Store 定向测试：25 项通过；TypeScript 检查与 `git diff --check` 通过。
-- 已通过 usage 解析、数据仓和分析查询定向测试：33 项通过；本轮 TypeScript 检查通过。
-- 当前 macOS ARM64 主机已实际通过 `pnpm verify:openclaw-docs` 与 `pnpm test:rust`：684 项通过、2 项忽略。
-- Docker 真实 Gateway 回放按当前任务要求停止，未将镜像拉取或容器启动结果计入通过结论。
-- 已通过 Windows 安装、发布矩阵、版本一致性与模块边界契约测试：35 项通过；这些测试不替代 Windows/Linux 真机验收。
-- 已通过 `git diff --check`。
-- 已扫描本轮修改后的完整文本文件及协作插件包内文本成员，未发现 Emoji。
-- 测试输出仍包含 Node 的 `module.register()` 弃用提示，以及服务端渲染 Tooltip 的 `useLayoutEffect` 警告；
-  二者均未造成失败，且不属于本次 Gateway/Tauri 边界改动。
+- `pnpm exec tsc --noEmit`：通过。
+- `pnpm lint`：通过，模块边界检查和版本一致性检查均通过。
+- `pnpm build`：通过，协作插件与钉钉插件契约校验、TypeScript 和 Vite 生产构建均通过。
+- 会话发送、聊天事件投影和会话生命周期定向回归：84 项通过。
+- 安装完成门禁、官方 Wizard 与 Setup 客户端定向回归：55 项通过。
+- Cron 列表、Cron 运行记录、Cron 创建和 Gateway 数据层定向回归：57 项通过。
+- `git diff --check`：通过。
+- `pnpm test`：通过，命令退出成功；输出包含既有 Node 弃用与 Radix SSR 警告，无测试失败。
+- 本阶段尚未在最新工作区执行 Rust 检查或 Tauri 安装包验证。
+- macOS、Windows、Ubuntu、CentOS 的 Gateway、官方 Wizard、系统凭据和安装器真实验收尚未执行，不能描述为已验证。
 
-## 当前未验证
+## 已知问题
 
-- 尚未在官方提交 `03cb1443e5185d130b22d792a322cf7000eb4694` 对应的真实 Gateway 回放实时事件、协作插件和
-  钉钉插件。
-- 本轮未执行 Docker Gateway 回放；此前两次隔离 structural harness 均通过 bundle 校验和 Docker preflight，但固定摘要的
-  OpenClaw `2026.7.1` 镜像在 600 秒拉取上限处超时，插件和 Gateway 尚未启动。两次均确认无受控容器、网络或 volume 遗留。
-- 尚未完成 macOS、Windows、Linux 的凭据库、WebView、窗口和真实 UI 验收。
-- 尚未用当前提交重新生成并安装 macOS 桌面包；Windows 和 Linux 的侧栏窄高度、亮色及暗色视觉仍未真机验收。
-- Node 的 Tauri 内部桥不等于真实 WebView 到 Rust handler 的端到端调用；该路径仍需桌面真机验证。
+- 旧 Gateway 对 `openclaw.setup.detect` 的实际 Wizard 展示、跳过选项和完成终态尚未用真实桌面窗口验证。
+- 真实多智能体 Gateway 的私有模型认证、Cron 多页数据和 Tauri 视觉交互尚未验收。
 
-## 失败方案与约束
+## 尝试过但失败的方案
 
-- 不再在实时 payload 未校验时推进 run 序号，否则畸形事件会丢弃后续有效同序号事件。
-- 不再接受 `junqi-collab.changed` 顶层 Gateway event；上游只提供 Agent stream 承载该插件刷新提示。
-- 不将本机安装的 OpenClaw 版本、测试 fixture、Gateway token、开发机路径或 UI 状态视为跨平台协议事实。
-- 不把镜像下载进度、Docker preflight 或历史版本 structural harness 当作插件兼容成功。
+- 将 `openclaw.setup.detect` 的“方法不支持”当作“无需配置”会错误跳过官方 Wizard，已删除该分支。
+- Cron 列表曾只读取一页并接受旧数组形状，既会漏任务也无法证明分页完整性，已删除。
+- 普通聊天曾维护本地任务图和 Tool 恢复状态，超出 OpenClaw 客户端边界，已删除。
 
-## 下一步顺序
+## 下一步开发顺序
 
-1. 在受控最新版 Gateway 完成实时事件、协作插件与钉钉插件的真实回放，并取得 DWS 审批详情、任务和记录的脱敏结构化样本。
-2. 在脱敏真实 DWS 返回样本基础上核对审批字段、状态枚举和权限错误，扩展流程时间线和人工审核展示；未知字段保持待核验。
-3. 在 macOS、Windows、Linux 完成 WebView 到 Rust handler、凭据库、窗口与关键 UI 的桌面验收；
-   未验证项继续保持明确边界。
+1. 对剩余混合工作区改动按会话、安装、模型配置、Cron 和文档分组复审，确认每个文件的官方依据和真实消费者。
+2. 执行全局无引用搜索，清理已删除本地任务图对应的历史规格、计划、测试、文案和索引残留；保留原生 Task Ledger 与 compaction checkpoint 的官方读取。
+3. 对每个独立批次执行定向测试、`pnpm lint`、完整前端测试、构建及差异检查，并补齐真实失败的回归测试。
+4. 在不污染现有用户环境的前提下，以 Tauri 安装包验证官方 Wizard、空新会话首发、模型智能体切换和 Cron 多页读取；Windows、Linux 结果必须单独记录。
+5. 后续新改动仅在工作区无混杂改动、文档和验证一致且用户明确要求后，按独立主题暂存和提交中文提交信息。

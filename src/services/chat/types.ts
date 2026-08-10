@@ -1,5 +1,3 @@
-import type { TaskExecutionSource } from '@/task-execution/types';
-
 export interface GatewayAttachment {
   type?: 'image' | 'file' | 'base64';
   mimeType: string;
@@ -31,7 +29,6 @@ export interface OutboundChatPayload {
 export interface QueuedChatMessage extends OutboundChatPayload {
   id: string;
   timestamp: string;
-  source?: TaskExecutionSource;
   failed?: boolean;
   error?: string;
 }

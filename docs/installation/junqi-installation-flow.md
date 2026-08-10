@@ -78,7 +78,7 @@ Wizard 的交互请求必须在已核验的 Gateway 连接上执行。离开、�
 完成条件分层处理：
 
 1. 所选 Gateway 必须可连接并且身份、运行方式和配置目标一致；
-2. 已连接 Gateway 必须通过官方 `openclaw.setup.detect` 返回结构化 `setupComplete`；
+2. 已连接 Gateway 返回官方结构化 `setupComplete` 时据此判定；方法明确不受支持时，不从本地配置推断完成，直接进入同一 Gateway 的官方 Wizard；
 3. `setupComplete=false` 时进入官方 Wizard，客户端不从配置字段自行推断完成；
 4. 官方 Wizard 返回终态后，只继续核验 Gateway 服务交接和认证连接，不增加模型验证门禁。
 

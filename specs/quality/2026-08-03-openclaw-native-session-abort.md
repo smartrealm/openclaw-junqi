@@ -5,7 +5,7 @@
 ## 目标
 
 桌面 Stop 使用 OpenClaw 官方 `sessions.abort`，只停止当前 Run，保留同一
-OpenClaw session 的 transcript 和 Task checkpoint。
+OpenClaw session 的 transcript。
 
 ## 约束
 

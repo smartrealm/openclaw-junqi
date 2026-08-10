@@ -106,7 +106,8 @@ function sessionFromRecord(record: DataRecord): Session | null {
     usage.lastActivity,
     usage.updatedAt,
   );
-  const createdAt = epochMs(record.createdAt) ?? epochMs(updatedAt);
+  // 历史用量仅能保留上游明确给出的创建时间，更新时间不能伪装为创建时间。
+  const createdAt = epochMs(record.createdAt);
   const totalTokens = firstNumber(
     record.totalTokens,
     usage.totalTokens,
@@ -125,7 +126,7 @@ function sessionFromRecord(record: DataRecord): Session | null {
     agentId: nonEmptyString(record.agentId, record.agent, key.split(':')[1]),
     model,
     totalTokens,
-    createdAt,
+    ...(createdAt !== undefined ? { createdAt } : {}),
     updatedAt,
     lastActive: updatedAt,
     status: nonEmptyString(record.status) || 'stopped',

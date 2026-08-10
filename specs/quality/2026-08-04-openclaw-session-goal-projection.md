@@ -11,7 +11,7 @@
 1. JunQi 只接受 `schemaVersion: 1`、完整必填字段和类型正确可选字段的 Gateway `goal`。
 2. 标签页和当前会话栏只读展示该会话的目标状态；当前会话栏可显示目标文本。
 3. 完整会话快照缺失或拒绝该字段时清除旧投影。
-4. 本地 Task checkpoint、协作 Run、Stop、队列和工具恢复不得创建、修改、恢复或替代 OpenClaw `goal`。
+4. 本地 UI 投影、协作 Run、Stop、队列和工具事件不得创建、修改、恢复或替代 OpenClaw `goal`。
 
 ## 未验证边界
 

@@ -30,6 +30,21 @@ test('resolves an out-of-page session through official describe and history RPCs
   });
 });
 
+test('通过官方全局会话别名读取时，describe 保留别名而 history 发送规范 key 和 agentId', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  await resolveOpenClawSessionRun(async (method, params) => {
+    calls.push({ method, params });
+    return method === 'sessions.describe'
+      ? { session: { key: 'global' } }
+      : { sessionInfo: { hasActiveRun: false, activeRunIds: [] } };
+  }, 'agent:legal:global');
+
+  assert.deepEqual(calls, [
+    { method: 'sessions.describe', params: { key: 'agent:legal:global' } },
+    { method: 'chat.history', params: { sessionKey: 'global', agentId: 'legal', limit: 50 } },
+  ]);
+});
+
 test('a missing described session settles without requesting history', async () => {
   const calls: string[] = [];
   const result = await resolveOpenClawSessionRun(async (method) => {

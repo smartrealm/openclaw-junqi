@@ -28,6 +28,7 @@ import {
   buildCronAgentTurnAddParams,
   cronAgentUpdatePatch,
   isCronAgentSelectionConfirmed,
+  resolveCronDeclarationKey,
 } from '@/services/gateway/cronContract';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshGroup, ensureGroupFresh } from '@/stores/gatewayDataStore';
@@ -147,6 +148,8 @@ export function CronMonitorPage() {
   const [pendingAgentId, setPendingAgentId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const schedulerStatusRequest = useRef(0);
+  const templateDeclarationKeys = useRef(new Map<string, string>());
+  const manualCreateDeclarationKey = useRef<string | null>(null);
   const requestedJobId = searchParams.get('job')?.trim() || null;
   useEffect(() => {
     if (!connected) return;
@@ -311,68 +314,46 @@ export function CronMonitorPage() {
 
   // 任务来自中心状态，并由状态层定期轮询。
 
-  // ── 运行记录缓存：仅在首次挂载或手动刷新时重新加载 ──
-  const runsCache = useRef<Record<string, RunEntry[]>>({});
+  // ── 运行记录：最近记录由官方全局查询返回，单任务详情单独读取。 ──
   const runsCacheLoaded = useRef(false);
 
-  // ── 分批加载最近运行记录，避免同时请求过多 ──
-  // 使用稳定的任务引用，避免轮询导致回调重建。
+  const withKnownJobNames = useCallback((entries: readonly RunEntry[]): RunEntry[] => (
+    entries.map((entry) => {
+      if (entry.jobName) return entry;
+      const job = jobsRef.current.find((candidate) => candidate.id === entry.jobId);
+      return { ...entry, ...(job?.name ? { jobName: job.name } : {}) };
+    })
+  ), []);
+
+  // ── 读取官方全局最近运行记录，不能以本地任务数量截断历史。 ──
   const loadAllRuns = useCallback(async () => {
-    const currentJobs = jobsRef.current;
-    if (!connected || currentJobs.length === 0) return;
+    if (!connected) return;
     setLoadingRuns(true);
     setRunsError(null);
     try {
-      const all: RunEntry[] = [];
-      const jobList = currentJobs.slice(0, 12);
-      const BATCH_SIZE = 3;
-
-      for (let i = 0; i < jobList.length; i += BATCH_SIZE) {
-        const batch = jobList.slice(i, i + BATCH_SIZE);
-        await Promise.all(batch.map(async (job) => {
-          try {
-            const result = await gateway.listCronRuns(job.id);
-            const entries = result.entries.slice(-5).map((e) => ({
-              ...e, jobId: job.id, jobName: job.name || job.id,
-            }));
-            runsCache.current[job.id] = entries;
-            all.push(...entries);
-          } catch (error) { setRunsError(error instanceof Error ? error.message : String(error)); }
-        }));
-      }
-
-      all.sort((a, b) => new Date(b.ts || 0).getTime() - new Date(a.ts || 0).getTime());
-      setRecentRuns(all.slice(0, 30));
+      const result = await gateway.listCronRuns({ scope: 'all', limit: 30, sortDir: 'desc' });
+      setRecentRuns(withKnownJobNames(result.entries));
       runsCacheLoaded.current = true;
     } catch (error) { setRunsError(error instanceof Error ? error.message : String(error)); }
     finally { setLoadingRuns(false); }
-  }, [connected]);
+  }, [connected, withKnownJobNames]);
 
-  // ── 加载单个任务的运行记录并合并到缓存 ──
-  // 使用稳定的任务引用，避免轮询时重建回调。
+  // ── 手动运行完成后读取对应任务并刷新官方全局最近记录。 ──
   const loadSingleJobRuns = useCallback(async (jobId: string) => {
     if (!connected) return;
     setRunsError(null);
     try {
-      const job = jobsRef.current.find(j => j.id === jobId);
-      const result = await gateway.listCronRuns(jobId);
-      const entries = result.entries.slice(-5).map((e) => ({
-        ...e, jobId, jobName: job?.name || jobId,
-      }));
-      runsCache.current[jobId] = entries;
-
-      // 从缓存重新生成最近运行记录。
-      const all: RunEntry[] = [];
-      Object.values(runsCache.current).forEach(arr => all.push(...arr));
-      all.sort((a, b) => new Date(b.ts || 0).getTime() - new Date(a.ts || 0).getTime());
-      setRecentRuns(all.slice(0, 30));
+      const result = await gateway.listCronRuns({ scope: 'job', jobId, limit: 30, sortDir: 'desc' });
+      const entries = withKnownJobNames(result.entries);
+      if (selectedJobId === jobId) setSelectedJobRuns(entries);
+      await loadAllRuns();
     } catch (error) { setRunsError(error instanceof Error ? error.message : String(error)); }
-  }, [connected]);
+  }, [connected, loadAllRuns, selectedJobId, withKnownJobNames]);
 
   // 仅在首次挂载时加载。
   useEffect(() => {
-    if (jobs.length > 0 && !runsCacheLoaded.current) loadAllRuns();
-  }, [jobs.length, loadAllRuns]);
+    if (!runsCacheLoaded.current) loadAllRuns();
+  }, [connected, loadAllRuns]);
 
   // ── 加载选中任务的运行记录（先使用缓存，再请求最新数据） ──
   // 过期请求保护，避免快速切换任务时出现竞态。
@@ -381,30 +362,25 @@ export function CronMonitorPage() {
 
     const fetchId = ++selectedFetchId.current;
 
-    // 如果有缓存，先立即展示。
-    const cached = runsCache.current[selectedJobId];
-    if (cached?.length) {
-      setSelectedJobRuns([...cached].slice(-14).reverse());
-    }
-
-    // 再在后台请求最新数据。
+    // 任务详情使用 Gateway 的任务作用域读取，避免与全局最近列表混淆。
     (async () => {
       try {
-        const result = await gateway.listCronRuns(selectedJobId);
+        const result = await gateway.listCronRuns({
+          scope: 'job',
+          jobId: selectedJobId,
+          limit: 30,
+          sortDir: 'desc',
+        });
         if (fetchId !== selectedFetchId.current) return; // 请求已过期，丢弃结果。
-        const job = jobsRef.current.find(j => j.id === selectedJobId);
-        const entries = result.entries.slice(-14).reverse().map((e) => ({
-          ...e, jobId: selectedJobId, jobName: job?.name || selectedJobId,
-        }));
-        setSelectedJobRuns(entries);
+        setSelectedJobRuns(withKnownJobNames(result.entries));
         setRunsError(null);
       } catch (error) {
         if (fetchId !== selectedFetchId.current) return; // 请求已过期，丢弃结果。
         setRunsError(error instanceof Error ? error.message : String(error));
-        if (!cached?.length) setSelectedJobRuns([]);
+        setSelectedJobRuns([]);
       }
     })();
-  }, [selectedJobId, connected]);
+  }, [selectedJobId, connected, withKnownJobNames]);
 
   // ── 操作 ──
   const toggleJob = async (jobId: string, enabled: boolean) => {
@@ -478,12 +454,19 @@ export function CronMonitorPage() {
   const addTemplate = async (tpl: ReturnType<typeof getCronTemplates>[0]) => {
     setActionLoading(`tpl-${tpl.id}`);
     try {
+      const declarationKey = resolveCronDeclarationKey(
+        templateDeclarationKeys.current.get(tpl.id),
+        `junqi-cron-template-${tpl.id}`,
+      );
+      templateDeclarationKeys.current.set(tpl.id, declarationKey);
       await gateway.addCronAgentTurn(buildCronAgentTurnAddParams({
         ...tpl.job,
+        declarationKey,
         agentId: createJob.agentId,
       }));
       const refreshed = await refreshGroup('cron');
       if (!refreshed) throw new Error(t('cron.createReadbackFailed'));
+      templateDeclarationKeys.current.delete(tpl.id);
       setTemplateResult(p => ({ ...p, [tpl.id]: 'ok' }));
     } catch { setTemplateResult(p => ({ ...p, [tpl.id]: 'error' })); }
     finally {
@@ -1197,8 +1180,14 @@ export function CronMonitorPage() {
                 setCreating(true);
                 setCreateError(null);
                 try {
+                  const declarationKey = resolveCronDeclarationKey(
+                    manualCreateDeclarationKey.current,
+                    'junqi-cron-manual',
+                  );
+                  manualCreateDeclarationKey.current = declarationKey;
                   await gateway.addCronAgentTurn(buildCronAgentTurnAddParams({
                     name: createJob.name,
+                    declarationKey,
                     agentId: createJob.agentId,
                     schedule: { kind: 'cron', expr: createJob.cronExpr.trim(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
                     message: createJob.message,
@@ -1207,6 +1196,7 @@ export function CronMonitorPage() {
                   const refreshed = await refreshGroup('cron');
                   if (!refreshed) throw new Error(t('cron.createReadbackFailed'));
                   setShowCreateForm(false);
+                  manualCreateDeclarationKey.current = null;
                   setCreateJob({ name: '', cronExpr: '0 9 * * *', message: '', agentId: '' });
                 } catch (error) {
                   setCreateError(error instanceof Error ? error.message : String(error));

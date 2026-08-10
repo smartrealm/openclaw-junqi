@@ -11,7 +11,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { SidebarSessionGrouping, SidebarSessionSortMode } from './sidebarUtils';
+import type {
+  SidebarCreationSortAvailability,
+  SidebarSessionGrouping,
+  SidebarSessionSortMode,
+} from './sidebarUtils';
 
 export interface SessionScopeAgentOption {
   readonly id: string;
@@ -23,6 +27,7 @@ interface SessionScopeControlsProps {
   readonly selectedAgentId: string;
   readonly grouping: SidebarSessionGrouping;
   readonly sortMode: SidebarSessionSortMode;
+  readonly creationSortAvailability: SidebarCreationSortAvailability;
   readonly agentsLoading: boolean;
   readonly agentsFailed: boolean;
   readonly onAgentChange: (agentId: string) => void;
@@ -37,6 +42,7 @@ export function SessionScopeControls({
   selectedAgentId,
   grouping,
   sortMode,
+  creationSortAvailability,
   agentsLoading,
   agentsFailed,
   onAgentChange,
@@ -58,6 +64,8 @@ export function SessionScopeControls({
     'disabled:cursor-not-allowed disabled:opacity-40',
   );
   const selectedAgentLabel = agents.find((agent) => agent.id === selectedAgentId)?.label;
+  const createdTimestampUnavailable = creationSortAvailability === 'unavailable';
+  const createdTimestampPartial = creationSortAvailability === 'partial';
   const agentScopeLabel = selectedAgentLabel
     ?? (agentsLoading
       ? t('sidebar.sessions.loadingAgents', '正在加载智能体')
@@ -159,13 +167,32 @@ export function SessionScopeControls({
               value={sortMode}
               onValueChange={selectSortMode}
             >
-              <DropdownMenuRadioItem value="created" className="h-8 text-[12px] text-aegis-text-secondary focus:bg-aegis-hover/40 focus:text-aegis-text">
+              <DropdownMenuRadioItem
+                value="created"
+                disabled={createdTimestampUnavailable}
+                className="h-8 text-[12px] text-aegis-text-secondary focus:bg-aegis-hover/40 focus:text-aegis-text"
+              >
                 {t('sidebar.sessions.sortCreated', '创建时间')}
               </DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="updated" className="h-8 text-[12px] text-aegis-text-secondary focus:bg-aegis-hover/40 focus:text-aegis-text">
                 {t('sidebar.sessions.sortUpdated', '最近更新')}
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
+            {createdTimestampUnavailable ? (
+              <p className="px-2 pb-0.5 pt-1 text-[10px] leading-4 text-aegis-text-dim">
+                {t(
+                  'sidebar.sessions.createdTimestampUnavailable',
+                  'OpenClaw 未返回可核验的创建时间',
+                )}
+              </p>
+            ) : createdTimestampPartial ? (
+              <p className="px-2 pb-0.5 pt-1 text-[10px] leading-4 text-aegis-text-dim">
+                {t(
+                  'sidebar.sessions.createdTimestampPartial',
+                  '部分历史会话缺少创建时间，会保持 Gateway 返回顺序',
+                )}
+              </p>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

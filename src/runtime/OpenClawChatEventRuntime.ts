@@ -22,7 +22,6 @@ import { parseButtons } from '@/utils/buttonParser';
 import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isIsolatedExecutionSessionKey } from '@/utils/sessionPresentation';
 import i18n from '@/i18n';
-import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import { readGatewayMessageIdentity } from '@/services/gateway/messageIdentity';
 import {
   type GatewayCallbacks,
@@ -1132,23 +1131,6 @@ export class ChatHandler {
       phase !== 'result'
       && toolCardIsTerminal
     ) return;
-    void taskExecutionCoordinator.recordToolEvent({
-      sessionKey,
-      runId,
-      toolCallId,
-      toolName,
-      phase,
-      ...(phase === 'result'
-        ? {
-            resultStatus: toolEvent.status === 'error'
-              ? 'error' as const
-              : toolEvent.status === 'cancelled'
-                ? 'cancelled' as const
-                : 'done' as const,
-          }
-        : {}),
-    }).catch((error) => taskExecutionCoordinator.reportPersistenceFailure('record tool checkpoint', error));
-
     if (phase === 'start') {
       const currentContent = this.currentStreamContentBySession.get(sessionKey) || '';
       if (currentContent.trim()) {

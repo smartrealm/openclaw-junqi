@@ -71,9 +71,15 @@ export function parseOpenClawSessionObserverDigest(value: unknown): OpenClawSess
   if (!source || !sessionKey || agentId === null || runId === null || revision === null || revision < 1
     || updatedAt === null || !headline || !health || (assessment !== undefined && nonEmptyString(assessment, 320) === null)
     || !validPlanProgress) return null;
+  let target;
+  try {
+    target = resolveOpenClawSessionTarget(sessionKey, agentId);
+  } catch {
+    return null;
+  }
   return {
-    sessionKey,
-    ...(agentId ? { agentId } : {}),
+    sessionKey: target.localKey,
+    ...(target.agentId ? { agentId: target.agentId } : {}),
     ...(runId ? { runId } : {}),
     revision,
     updatedAt,
@@ -138,3 +144,4 @@ export function routeOpenClawSessionObserverEvent(message: unknown, fallback: (m
   if (publishOpenClawSessionObserverEvent(message)) return;
   fallback(message);
 }
+import { resolveOpenClawSessionTarget } from './OpenClawSessionTarget';

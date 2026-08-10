@@ -7,7 +7,7 @@ import {
   type SessionsCompactionGetResult,
   type SessionsCompactionRestoreResult,
 } from './sessionInspection';
-import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
+import { resolveOpenClawSessionTarget } from './OpenClawSessionTarget';
 
 export type SessionCompactionRequester = (
   method: string,
@@ -33,11 +33,11 @@ export class SessionCompactionClient {
   constructor(private readonly deps: SessionCompactionClientDependencies) {}
 
   async get(sessionKey: string, checkpointId: string, agentId?: string): Promise<SessionsCompactionGetResult> {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
+    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
     return this.deps.request(
       'sessions.compaction.get',
-      { ...buildSessionsCompactionCheckpointParams(targetSessionKey, checkpointId, agentId) },
-    ).then((result) => parseSessionsCompactionGetResult(result, targetSessionKey));
+      { ...buildSessionsCompactionCheckpointParams(target.key, checkpointId, target.agentId) },
+    ).then((result) => parseSessionsCompactionGetResult(result, target.key));
   }
 
   async branch(
@@ -45,13 +45,13 @@ export class SessionCompactionClient {
     checkpointId: string,
     agentId?: string,
   ): Promise<SessionsCompactionBranchResult> {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
-    return this.deps.runMutation(targetSessionKey, async () => parseSessionsCompactionBranchResult(
+    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
+    return this.deps.runMutation(target.localKey, async () => parseSessionsCompactionBranchResult(
       await this.deps.request(
         'sessions.compaction.branch',
-        { ...buildSessionsCompactionCheckpointParams(targetSessionKey, checkpointId, agentId) },
+        { ...buildSessionsCompactionCheckpointParams(target.key, checkpointId, target.agentId) },
       ),
-      targetSessionKey,
+      target.key,
     ));
   }
 
@@ -60,13 +60,13 @@ export class SessionCompactionClient {
     checkpointId: string,
     agentId?: string,
   ): Promise<SessionsCompactionRestoreResult> {
-    const targetSessionKey = requireOpenClawSessionTarget(sessionKey);
-    return this.deps.runMutation(targetSessionKey, async () => parseSessionsCompactionRestoreResult(
+    const target = resolveOpenClawSessionTarget(sessionKey, agentId);
+    return this.deps.runMutation(target.localKey, async () => parseSessionsCompactionRestoreResult(
       await this.deps.requestPrivileged(
         'sessions.compaction.restore',
-        { ...buildSessionsCompactionCheckpointParams(targetSessionKey, checkpointId, agentId) },
+        { ...buildSessionsCompactionCheckpointParams(target.key, checkpointId, target.agentId) },
       ),
-      targetSessionKey,
+      target.key,
     ));
   }
 }

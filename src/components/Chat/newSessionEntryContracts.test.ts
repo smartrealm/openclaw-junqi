@@ -28,3 +28,14 @@ test('route creation exposes an accessible explicit retry surface', () => {
   assert.match(hook, /operation !== operationRef\.current/);
   assert.match(hook, /setParams\(nextParams, \{ replace: true \}\)/);
 });
+
+test('route creation does not mount the previous session view before Gateway confirms the new session', () => {
+  const page = source('src/pages/ChatPage.tsx');
+  const hook = source('src/hooks/useAgentScopedSession.ts');
+  const pendingGuard = page.indexOf('if (scopedSession.pending)');
+  const chatView = page.indexOf('<ChatView />');
+
+  assert.ok(pendingGuard >= 0 && chatView > pendingGuard);
+  assert.match(page, /t\('chat\.creatingSession'\)/);
+  assert.match(hook, /pending: Boolean\(agentId && wantNew\)/);
+});

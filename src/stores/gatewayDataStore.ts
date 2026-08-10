@@ -135,6 +135,7 @@ export type {
   OpenClawSessionSearchRole,
 } from '@/services/gateway/OpenClawSessionSearchClient';
 import { listOpenClawSessionLifecycle } from '@/services/gateway/OpenClawSessionListClient';
+import { listAllOpenClawCronJobs } from '@/services/gateway/OpenClawCronListClient';
 import { parseCronStatus, type OpenClawCronStatusSummary } from '@/services/gateway/cronStatus';
 import {
   parseCronJobDetails,
@@ -828,12 +829,6 @@ function gatewayErrorMessage(error: unknown): string {
     : String(error);
 }
 
-function gatewayCollection(response: unknown, key: string): unknown[] | null {
-  if (Array.isArray(response)) return response;
-  if (!isGatewayRecord(response) || !Array.isArray(response[key])) return null;
-  return response[key];
-}
-
 function isAgentInfo(value: unknown): value is AgentInfo {
   return isGatewayRecord(value)
     && typeof value.id === 'string'
@@ -861,10 +856,9 @@ export function parseGatewayAgentList(response: unknown): {
 }
 
 export function parseGatewayCronJobList(response: unknown): CronJob[] | null {
-  const entries = gatewayCollection(response, 'jobs');
-  if (!entries) return null;
+  if (!isGatewayRecord(response) || !Array.isArray(response.jobs)) return null;
   try {
-    return entries.map((entry) => parseCronJobDetails(entry, 'cron.list'));
+    return response.jobs.map((entry) => parseCronJobDetails(entry, 'cron.list'));
   } catch {
     return null;
   }
@@ -1117,10 +1111,14 @@ async function fetchSessions(): Promise<boolean> {
   if (!ticket) return false;
   const mutationRevision = sessionListMutationFence.capture();
   const store = useGatewayDataStore.getState();
+  const agentIds = store.agents.map((agent) => agent.id);
+  // 会话列表按 OpenClaw 已确认的智能体范围读取；首个智能体快照到达前不能把时序竞争记为会话错误。
+  if (agentIds.length === 0) return false;
   store.setLoading('sessions', true);
   try {
     const responses = await listOpenClawSessionLifecycle(
       (method, params) => ticket.connection.request(method, params),
+      agentIds,
     );
     if (!isCurrentGatewayRequest(ticket) || !sessionListMutationFence.isCurrent(mutationRevision)) {
       return false;
@@ -1254,7 +1252,7 @@ async function fetchCron(): Promise<boolean> {
   store.setLoading('cron', true);
   try {
     const [jobsResponse, statusResponse] = await Promise.allSettled([
-      ticket.connection.request('cron.list', { includeDisabled: true }),
+      listAllOpenClawCronJobs((method, params) => ticket.connection.request(method, params)),
       ticket.connection.request('cron.status', {}),
     ]);
     if (!isCurrentGatewayRequest(ticket)) return false;
@@ -1358,10 +1356,13 @@ export function startPolling(gateway: GatewayRequester) {
   useGatewayDataStore.getState().setPolling(true);
   debugLog('datastore', '[DataStore] Polling started (sessions=10s, agents=30s, demand groups lazy)');
 
-  // Immediate initial fetch — only globally useful groups. Heavier dashboard /
-  // cron / analytics data is fetched when a page asks for it.
-  tickFast();
-  tickMid();
+  // 初始会话请求依赖 agents.list 的权威范围。先完成智能体快照，避免并发启动时
+  // sessions.list 以空范围失败并在侧栏显示误导性的会话加载错误。
+  void fetchAgents().then((agentsLoaded) => {
+    if (agentsLoaded && gw === gateway && useGatewayDataStore.getState().polling) {
+      void tickFast();
+    }
+  });
 
   // Set up intervals
   fastTimer = setInterval(tickFast, FAST_INTERVAL);

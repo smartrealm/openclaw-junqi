@@ -366,27 +366,6 @@ function assertWizardNextResult(value: unknown): OpenClawWizardResult {
   );
 }
 
-function assertWizardStatusResult(value: unknown): Pick<OpenClawWizardResult, 'status' | 'error'> {
-  if (!value || typeof value !== 'object') {
-    throw new Error('OpenClaw returned an invalid wizard status response.');
-  }
-  const result = value as Record<string, unknown>;
-  warnOnUnknownWizardKeys(result, ['status', 'error'], 'OpenClaw wizard status response');
-  if (result.status !== 'running'
-    && result.status !== 'done'
-    && result.status !== 'cancelled'
-    && result.status !== 'error') {
-    throw new Error('OpenClaw wizard status response has an invalid `status`.');
-  }
-  if (result.error !== undefined && typeof result.error !== 'string') {
-    throw new Error('OpenClaw wizard status response has an invalid `error`.');
-  }
-  return {
-    status: result.status,
-    ...(typeof result.error === 'string' ? { error: result.error } : {}),
-  };
-}
-
 function isTerminalWizardResult(result: OpenClawWizardResult): boolean {
   return result.done
     || result.status === 'done'
@@ -575,9 +554,8 @@ export class OpenClawWizardClient {
   }
 
   /**
-   * Read the server's current step without resubmitting an answer. This is
-   * safe after the client loses a response because the official session may
-   * still be performing an external operation.
+   * 无答案的 `wizard.next` 是官方会话恢复请求。`wizard.status` 读取后会清理会话，
+   * 不能用于恢复，否则紧随其后的请求必然找不到原会话。
    */
   async resume(): Promise<OpenClawWizardResult> {
     this.synchronizeStoredSession();
@@ -585,22 +563,6 @@ export class OpenClawWizardClient {
     if (!this.sessionId) throw new Error('OpenClaw wizard session is not running.');
     const resumedSessionId = this.sessionId;
     const resumedStep = this.currentStep;
-    const status = assertWizardStatusResult(await this.callGateway('wizard.status', {
-      sessionId: resumedSessionId,
-    }, { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS }));
-    this.assertOperationCurrent(operation);
-    if (status.status !== 'running') {
-      const failed = status.status === 'error';
-      this.setSession(null);
-      this.currentStep = failed ? resumedStep : null;
-      this.failedStep = failed ? resumedStep : null;
-      this.failedSessionId = failed ? resumedSessionId : null;
-      return {
-        done: true,
-        status: status.status,
-        ...(status.error ? { error: status.error } : {}),
-      };
-    }
     const result = assertWizardNextResult(await this.callGateway('wizard.next', {
       sessionId: resumedSessionId,
     }, { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS }));

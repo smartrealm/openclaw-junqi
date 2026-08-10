@@ -23,6 +23,7 @@ export interface CronAgentTurnPayload {
 
 export interface CronAgentTurnAddParams {
   name: string;
+  declarationKey?: string;
   agentId?: string;
   description?: string;
   enabled?: boolean;
@@ -38,10 +39,43 @@ export interface BuildCronAgentTurnParams {
   name: string;
   message: string;
   schedule: CronSchedule;
+  declarationKey?: string;
   agentId?: string | null;
   description?: string;
   enabled?: boolean;
   deleteAfterRun?: boolean;
+}
+
+/**
+ * 为一次桌面端创建意图生成官方声明键。调用方必须在结果未知时复用该值，
+ * 由 Gateway 收敛重复提交，而不是以本地重试创建第二个任务。
+ */
+export function createCronDeclarationKey(
+  prefix: string,
+  randomUuid: (() => string) | undefined = undefined,
+): string {
+  const normalizedPrefix = prefix.trim();
+  const generateUuid = randomUuid ?? (() => {
+    const randomUuidFromRuntime = globalThis.crypto?.randomUUID;
+    if (typeof randomUuidFromRuntime !== 'function') {
+      throw new Error('当前桌面运行时无法生成 OpenClaw Cron 声明键。');
+    }
+    return randomUuidFromRuntime.call(globalThis.crypto);
+  });
+  const uuid = generateUuid().trim();
+  if (!normalizedPrefix || !uuid) {
+    throw new Error('无法为 OpenClaw Cron 创建生成声明键。');
+  }
+  return `${normalizedPrefix}:${uuid}`;
+}
+
+/** 同一次未确认创建必须复用原声明键，避免未知写入结果产生副本。 */
+export function resolveCronDeclarationKey(
+  current: string | null | undefined,
+  prefix: string,
+  randomUuid?: () => string,
+): string {
+  return current?.trim() || createCronDeclarationKey(prefix, randomUuid);
 }
 
 export function normalizeCronAgentId(agentId: string | null | undefined): string | undefined {
@@ -53,8 +87,10 @@ export function buildCronAgentTurnAddParams(
   input: BuildCronAgentTurnParams,
 ): CronAgentTurnAddParams {
   const agentId = normalizeCronAgentId(input.agentId);
+  const declarationKey = input.declarationKey?.trim();
   return {
     name: input.name.trim(),
+    ...(declarationKey ? { declarationKey } : {}),
     ...(agentId ? { agentId } : {}),
     ...(input.description !== undefined ? { description: input.description } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),

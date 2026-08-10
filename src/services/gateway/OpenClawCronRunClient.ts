@@ -6,6 +6,7 @@ import {
   parseCronRunsPage,
   type CronRunLogEntry,
   type CronRunStatus,
+  type CronRunsParams,
 } from './cronRuns';
 
 export type OpenClawCronRunStatus = CronRunStatus;
@@ -13,6 +14,11 @@ export type OpenClawCronRunEntry = CronRunLogEntry;
 
 export interface OpenClawCronRunPage {
   readonly entries: readonly OpenClawCronRunEntry[];
+  readonly total: number;
+  readonly offset: number;
+  readonly limit: number;
+  readonly hasMore: boolean;
+  readonly nextOffset: number | null;
 }
 
 export interface OpenClawCronRunAcknowledgement {
@@ -76,7 +82,7 @@ export function parseOpenClawCronRunEntry(value: unknown): OpenClawCronRunEntry 
 
 export function parseOpenClawCronRunPage(value: unknown): OpenClawCronRunPage {
   try {
-    return { entries: parseCronRunsPage(value).entries };
+    return parseCronRunsPage(value);
   } catch {
     throw new OpenClawCronRunResponseError();
   }
@@ -111,19 +117,12 @@ export class OpenClawCronRunClient {
     }
   }
 
-  async list(jobId: string, runId?: string): Promise<OpenClawCronRunPage> {
-    const id = requiredInputString(jobId, 'Invalid OpenClaw cron job id');
-    if (runId !== undefined) requiredInputString(runId, 'Invalid OpenClaw cron run id');
+  async list(params: CronRunsParams): Promise<OpenClawCronRunPage> {
     try {
-      const page = await listCronRuns(
+      return await listCronRuns(
         (method, params) => this.dependencies.request<unknown>(method, params),
-        {
-          jobId: id,
-          ...(runId === undefined ? {} : { runId }),
-          limit: runId === undefined ? 14 : 1,
-        },
+        params,
       );
-      return { entries: page.entries };
     } catch (error) {
       if (isOpenClawUnknownMethodError(error, CRON_RUNS_METHOD)) {
         throw new OpenClawCronRunUnsupportedError(CRON_RUNS_METHOD);
@@ -137,8 +136,10 @@ export class OpenClawCronRunClient {
   }
 
   async findTerminal(jobId: string, runId: string): Promise<OpenClawCronRunEntry | null> {
-    const page = await this.list(jobId, runId);
-    const entry = page.entries.find((candidate) => candidate.jobId === jobId && candidate.runId === runId);
+    const id = requiredInputString(jobId, 'Invalid OpenClaw cron job id');
+    const normalizedRunId = requiredInputString(runId, 'Invalid OpenClaw cron run id');
+    const page = await this.list({ scope: 'job', jobId: id, runId: normalizedRunId, limit: 1, sortDir: 'desc' });
+    const entry = page.entries.find((candidate) => candidate.jobId === id && candidate.runId === normalizedRunId);
     return entry?.status === undefined ? null : entry;
   }
 }

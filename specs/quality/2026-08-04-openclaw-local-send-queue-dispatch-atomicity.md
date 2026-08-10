@@ -17,10 +17,10 @@
    `chat.send` 交付和 OpenClaw acknowledgement 语义。
 4. 交付失败时，只要 Session 仍有效，原队列项必须回到队首并保留失败信息，避免后续项越过
    失败项；Session 已删除时不得复活本地队列项。
-5. 保留既有附件、display attachment、source、idempotency key、Task checkpoint、重试和
+5. 保留既有附件、display attachment、idempotency key、重试和
    `typingBySession` 语义。
 6. 所有 `chat.send` 路径必须接收明确、非空的会话键。不得以 `agent:main:main` 或任何客户端
-   默认值替代缺失的活动会话；校验必须发生在 renderer 状态、Task checkpoint 和 Gateway
+   默认值替代缺失的活动会话；校验必须发生在 renderer 状态和 Gateway
    pending-send 状态之前。
 
 ## 验收条件

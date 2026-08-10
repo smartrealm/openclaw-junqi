@@ -16,7 +16,7 @@ JunQi 只把此能力投影到灵动岛，不创建本地 Agent、Task、Transcr
 
 ## 边界
 
-- 只消费严格验证后的 `session.observer` event；不将 payload 写入 OpenClaw transcript、本地任务图、
+- 只消费严格验证后的 `session.observer` event；不将 payload 写入 OpenClaw transcript、本地任务状态、
   宠物状态或持久化存储。
 - 仅显示 headline、health 和 Gateway event 提供的 session/agent identity；不投影 assessment、plan
   progress、工具参数、音频、模型提示或其他 transcript 内容。

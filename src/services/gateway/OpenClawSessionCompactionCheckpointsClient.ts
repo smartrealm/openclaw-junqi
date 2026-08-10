@@ -3,7 +3,7 @@ import {
   GatewayDisconnectedError,
 } from './Connection';
 import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
-import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
+import { resolveOpenClawSessionTarget } from './OpenClawSessionTarget';
 
 export const OPENCLAW_COMPACTION_CHECKPOINT_LIST_METHOD = 'sessions.compaction.list' as const;
 
@@ -147,9 +147,12 @@ export class OpenClawSessionCompactionCheckpointsClient {
   }
 
   async list(sessionKey: string): Promise<readonly OpenClawCompactionCheckpoint[]> {
-    const requestedKey = requireOpenClawSessionTarget(sessionKey);
-    const source = record(await this.request(OPENCLAW_COMPACTION_CHECKPOINT_LIST_METHOD, { key: requestedKey }));
-    if (!source || source.ok !== true || nonEmptyString(source.key) !== requestedKey || !Array.isArray(source.checkpoints)) {
+    const target = resolveOpenClawSessionTarget(sessionKey);
+    const source = record(await this.request(OPENCLAW_COMPACTION_CHECKPOINT_LIST_METHOD, {
+      key: target.key,
+      ...(target.agentId ? { agentId: target.agentId } : {}),
+    }));
+    if (!source || source.ok !== true || nonEmptyString(source.key) !== target.key || !Array.isArray(source.checkpoints)) {
       throw new OpenClawCompactionCheckpointsResponseError();
     }
     return source.checkpoints.map(parseCheckpoint);

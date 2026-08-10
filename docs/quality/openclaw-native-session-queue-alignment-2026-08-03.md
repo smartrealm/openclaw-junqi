@@ -9,7 +9,7 @@ OpenClaw Gateway。JunQi 不在渲染层默认拦截普通消息，也不把普�
 `sessions.steer`。只有两类情况保留 JunQi 本地可见队列：用户明确选择本地等待，
 以及会话删除、重置、归档等破坏性会话操作正在占用本地 mutation gate。
 
-Task checkpoint 同样遵守一个 Task/Session 一个活动 Run：已有本地活动 Run 时，
+OpenClaw 的运行投影同样遵守一个 Session 一个活动 Run：已有活动 Run 时，
 普通 `chat.send` 只复用该 Run 的关联，不创建第二个 Run；界面观察到 Gateway
 活动但没有可验证的本地 Run 时，不猜测 Run identity。显式 Jarvis 打断仍使用
 OpenClaw 原生 `sessions.steer`，因为它是另一种明确的中断并转向操作。
@@ -45,7 +45,7 @@ OpenClaw 原生 `sessions.steer`，因为它是另一种明确的中断并转向
 
 - `node --import ./test-setup.ts --import tsx --test src/services/chat/sendTransaction.test.ts`
   通过，7 项。
-- `node --import ./test-setup.ts --import tsx --test src/task-execution/stateMachine.test.ts`
+- `node --import ./test-setup.ts --import tsx --test src/services/chat/sendTransaction.test.ts`
   通过，17 项。
 - `node --import ./test-setup.ts --import tsx --test src/components/Chat/MessageInput.composer.test.ts`
   通过，5 项。

@@ -62,7 +62,7 @@ describe('OpenClawCronRunClient', () => {
     );
 
     assert.deepEqual(await client.findTerminal('job-1', 'run-1'), finished);
-    assert.deepEqual(calls, [{ lane: 'read', method: 'cron.runs', params: { scope: 'job', id: 'job-1', runId: 'run-1', limit: 1 } }]);
+    assert.deepEqual(calls, [{ lane: 'read', method: 'cron.runs', params: { scope: 'job', id: 'job-1', runId: 'run-1', limit: 1, sortDir: 'desc' } }]);
   });
 
   it('uses the same lane contract for unsupported responses', async () => {
@@ -79,8 +79,25 @@ describe('OpenClawCronRunClient', () => {
     );
 
     await assert.rejects(client.enqueue('job-1'), OpenClawCronRunUnsupportedError);
-    await assert.rejects(client.list('job-1'), OpenClawCronRunUnsupportedError);
+    await assert.rejects(client.list({ scope: 'job', jobId: 'job-1' }), OpenClawCronRunUnsupportedError);
     assert.deepEqual(lanes, ['admin', 'read']);
+  });
+
+  it('preserves the official page metadata for global history reads', async () => {
+    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const client = createClient(async (method, params) => {
+      calls.push({ method, params });
+      return page as never;
+    });
+
+    assert.deepEqual(
+      await client.list({ scope: 'all', agentId: 'main', limit: 30, offset: 10, status: 'error', sortDir: 'desc' }),
+      page,
+    );
+    assert.deepEqual(calls, [{
+      method: 'cron.runs',
+      params: { scope: 'all', agentId: 'main', limit: 30, offset: 10, status: 'error', sortDir: 'desc' },
+    }]);
   });
 
   it('does not settle a run from a different history identity', async () => {
@@ -102,7 +119,7 @@ describe('OpenClawCronRunClient', () => {
       assert.equal((await client.findTerminal('job-1', 'run-1'))?.status, status);
     }
 
-    const pending = createClient(async () => ({ ...page, entries: [] }) as never);
+    const pending = createClient(async () => ({ ...page, entries: [], total: 0 }) as never);
     assert.equal(await pending.findTerminal('job-1', 'run-1'), null);
   });
 
@@ -114,7 +131,7 @@ describe('OpenClawCronRunClient', () => {
     }) as never);
 
     await assert.rejects(missingRunId.enqueue('job-1'), OpenClawCronRunResponseError);
-    await assert.rejects(malformedEntry.list('job-1'), OpenClawCronRunResponseError);
+    await assert.rejects(malformedEntry.list({ scope: 'job', jobId: 'job-1' }), OpenClawCronRunResponseError);
   });
 
   it('requests methods despite discovery omission and trusts Gateway unsupported responses', async () => {
@@ -125,7 +142,7 @@ describe('OpenClawCronRunClient', () => {
     });
 
     await assert.rejects(client.enqueue('job-1'), OpenClawCronRunUnsupportedError);
-    await assert.rejects(client.list('job-1'), OpenClawCronRunUnsupportedError);
+    await assert.rejects(client.list({ scope: 'job', jobId: 'job-1' }), OpenClawCronRunUnsupportedError);
     assert.equal(calls, 2);
   });
 
@@ -134,6 +151,6 @@ describe('OpenClawCronRunClient', () => {
       throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     });
 
-    await assert.rejects(client.list('job-1'), OpenClawCronRunUnsupportedError);
+    await assert.rejects(client.list({ scope: 'job', jobId: 'job-1' }), OpenClawCronRunUnsupportedError);
   });
 });

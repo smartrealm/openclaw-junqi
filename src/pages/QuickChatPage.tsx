@@ -45,7 +45,6 @@ import { findTraceSourceMessage, projectChatResponseTrace } from '@/components/C
 import { closeQuickChat, getQuickChatSeed } from '@/api/tauri-commands';
 import { ChatTraceSourceMessagePanel } from '@/components/Chat/ChatTraceSourceMessagePanel';
 import { useChatSidePanel } from '@/components/Chat/useChatSidePanel';
-import { TaskExecutionRecoveryBanner } from '@/components/Chat/TaskExecutionRecoveryBanner';
 import { stopQuickChatRequest } from './quickChatStop';
 
 interface SeedFile {
@@ -219,7 +218,6 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         sessionId,
         message: fullMessage,
         clientMessageId,
-        source: 'quick_chat',
         attachments: attachments.length ? attachments : undefined,
         displayAttachments: displayAttachments(prepared),
       });
@@ -250,12 +248,6 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     }
   }, [sessionId, sessionKey, t]);
 
-  const reconcileTask = useCallback(async () => {
-    if (!connected) return;
-    const result = await gateway.getHistory(sessionKey);
-    gateway.reconcileChatHistoryRunState(sessionKey, result);
-  }, [connected, sessionKey]);
-
   const handleStructuredChoice = useCallback(async (value: string) => {
     const message = value.trim();
     if (!message || sending || !connected) return;
@@ -268,7 +260,6 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         sessionId,
         message,
         clientMessageId: createClientMessageId(),
-        source: 'quick_chat',
       });
     } catch (error) {
       setSendError(t('pet.quickChat.sendError', {
@@ -474,14 +465,6 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
           ))}
         </div>
       )}
-
-      <TaskExecutionRecoveryBanner
-        sessionKey={sessionKey}
-        sessionId={sessionId}
-        connected={connected}
-        onReconcile={reconcileTask}
-        compact
-      />
 
       {/* Uses the same normalized response groups as the main chat. */}
       <div ref={messagesRef} className="flex-1 overflow-y-auto px-4 py-3 text-[13px] leading-relaxed">

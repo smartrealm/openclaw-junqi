@@ -15,15 +15,16 @@ import { showConfirm } from '@/components/shared/alertStore';
 import { SidebarPrimaryAction } from './SidebarPrimaryAction';
 import { resolveTab, type SidebarTab } from './tab-utils';
 import {
-  extendSidebarSessionCreationFallbackOrder,
   filterSidebarSessionsByAgent,
+  hasVerifiedSidebarSessionCreationTime,
   normalizeSidebarSessionGrouping,
-  promoteSidebarSessionCreationFallbackOrder,
   projectSidebarSessions,
+  resolveSidebarCreationSortAvailability,
   resolveSidebarSessionAgentId,
-  sessionActivityTime,
+  sessionTimestampForSidebarMode,
   sortSessionsByActivity,
   sortSidebarSessions,
+  type SidebarCreationSortAvailability,
   type SidebarSessionGrouping,
   type SidebarSessionSortMode,
 } from './sidebarUtils';
@@ -95,7 +96,7 @@ function compactMeta(value: string, max = 22): string {
 }
 
 function formatSidebarTime(timestampMs: number): string {
-  if (!timestampMs) return '';
+  if (!Number.isFinite(timestampMs) || timestampMs < 0) return '';
   const date = new Date(timestampMs);
   if (Number.isNaN(date.getTime())) return '';
   const now = new Date();
@@ -111,12 +112,13 @@ function formatSidebarTime(timestampMs: number): string {
 // ═══════════════════════════════════════════════════════════
 // 4 个 Panel — 真正 React 组件，hooks 各组件内独立调用
 // ═══════════════════════════════════════════════════════════
-function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity }: {
+function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity, timeMode }: {
   session: Session;
   sessionKey: string;
   currentTitle: string;
   isActive: boolean;
   activity: SessionActivity;
+  timeMode: SidebarSessionSortMode;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -151,7 +153,18 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
     : hasPendingCompletion
       ? t('chat.sessionCompleted', 'Reply ready')
       : '';
-  const timeLabel = formatSidebarTime(sessionActivityTime(session));
+  const timestamp = sessionTimestampForSidebarMode(session, timeMode);
+  const hasTimestamp = timeMode === 'created'
+    ? hasVerifiedSidebarSessionCreationTime(session)
+    : timestamp > 0;
+  const timeLabel = hasTimestamp ? formatSidebarTime(timestamp) : '';
+  const timeTitle = timeMode === 'created'
+    ? t('sidebar.sessions.createdTimestamp', '创建时间')
+    : t('sidebar.sessions.updatedTimestamp', '最近更新')
+  const timestampUnavailableLabel = t(
+    'sidebar.sessions.createdTimestampUnavailable',
+    'OpenClaw 未返回可核验的创建时间',
+  );
   const [actionsPosition, setActionsPosition] = useState<{ x: number; y: number } | null>(null);
 
   const goSession = () => {
@@ -316,14 +329,24 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
           >
             {channelPresentation ? compactSourceLabel : agentLabel}
           </span>
-          {timeLabel && (
+          {timeLabel ? (
             <time
               className="col-start-3 row-start-2 self-center pl-1 text-[10.5px] leading-4 tabular-nums text-aegis-text-dim/70"
-              dateTime={new Date(sessionActivityTime(session)).toISOString()}
+              dateTime={new Date(timestamp).toISOString()}
+              aria-label={timeTitle}
+              title={timeTitle}
             >
               {timeLabel}
             </time>
-          )}
+          ) : timeMode === 'created' ? (
+            <span
+              className="col-start-3 row-start-2 self-center pl-1 text-[10.5px] leading-4 text-aegis-text-dim/70"
+              aria-label={timestampUnavailableLabel}
+              title={timestampUnavailableLabel}
+            >
+              —
+            </span>
+          ) : null}
         </span>
       </div>
       <span className="pointer-events-none absolute end-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-aegis-border/80 bg-aegis-elevated p-0.5 text-aegis-text-muted opacity-0 shadow-sm transition-[opacity,background-color] group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-focus-within/session:pointer-events-auto group-focus-within/session:opacity-100">
@@ -408,9 +431,6 @@ function WorkbenchPanel() {
   const agentIds = useMemo(() => agents.map((agent) => agent.id), [agents]);
   const activeAgentId = resolveNewSessionAgentId(activeKey, agentIds, defaultAgentId);
   const [selectedAgentId, setSelectedAgentId] = useState(activeAgentId ?? '');
-  const [sessionCreationFallbackOrder, setSessionCreationFallbackOrder] = useState<ReadonlyMap<string, number>>(
-    () => new Map(),
-  );
   const previousActiveSessionKeyRef = useRef(activeKey);
 
   useEffect(() => {
@@ -426,10 +446,6 @@ function WorkbenchPanel() {
   useEffect(() => {
     void refreshSessionGroupCatalog().catch(() => undefined);
   }, [refreshSessionGroupCatalog]);
-
-  useEffect(() => {
-    setSessionCreationFallbackOrder((current) => extendSidebarSessionCreationFallbackOrder(current, sessions));
-  }, [sessions]);
 
   const agentOptions = useMemo(() => agents.map((agent) => ({
     id: agent.id,
@@ -476,14 +492,21 @@ function WorkbenchPanel() {
     defaultMainSessionKey,
     grouping,
     sortMode,
-    creationFallbackOrder: sessionCreationFallbackOrder,
     categoryOrder: sessionGroupCatalog,
-  }), [defaultAgentId, defaultMainSessionKey, grouping, selectedAgentId, sessionCreationFallbackOrder, sessionGroupCatalog, sortMode, visibleSessions]);
+  }), [defaultAgentId, defaultMainSessionKey, grouping, selectedAgentId, sessionGroupCatalog, sortMode, visibleSessions]);
   const archivedSessions = useMemo(() => sortSidebarSessions(
     scopedSessions.filter((session) => session.archived),
     sortMode,
-    sessionCreationFallbackOrder,
-  ), [scopedSessions, sessionCreationFallbackOrder, sortMode]);
+  ), [scopedSessions, sortMode]);
+  const creationSortAvailability = useMemo<SidebarCreationSortAvailability>(() => (
+    resolveSidebarCreationSortAvailability(scopedSessions)
+  ), [scopedSessions]);
+
+  useEffect(() => {
+    if (sortMode === 'created' && creationSortAvailability === 'unavailable') {
+      setSortMode('updated');
+    }
+  }, [creationSortAvailability, sortMode]);
   const activityProjection = useMemo(() => projectSessionActivity({
     sessions: scopedSessions.filter((session) => !session.archived),
     activeSessionKey: activeKey,
@@ -537,7 +560,7 @@ function WorkbenchPanel() {
     return (
       <SessionRowItem key={sx.key} session={sx} sessionKey={sx.key}
         currentTitle={displaySessionTitle(sx)} isActive={sx.key === activeKey}
-        activity={activity} />
+        activity={activity} timeMode={sortMode} />
     );
   };
 
@@ -545,10 +568,6 @@ function WorkbenchPanel() {
     if (!selectedAgentId) return;
     void createNativeSession({ agentId: selectedAgentId }).then((result) => {
       if (result.ok) {
-        setSessionCreationFallbackOrder((current) => promoteSidebarSessionCreationFallbackOrder(
-          extendSidebarSessionCreationFallbackOrder(current, [result.session]),
-          result.session.key,
-        ));
         navigate('/chat');
         return;
       }
@@ -628,6 +647,7 @@ function WorkbenchPanel() {
         selectedAgentId={selectedAgentId}
         grouping={grouping}
         sortMode={sortMode}
+        creationSortAvailability={creationSortAvailability}
         agentsLoading={agentsLoading}
         agentsFailed={Boolean(agentsError)}
         onAgentChange={setSelectedAgentId}

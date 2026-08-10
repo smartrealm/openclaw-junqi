@@ -47,6 +47,8 @@ export interface OpenClawModelAuthStatusClientDependencies {
 export interface OpenClawModelAuthStatusRequest {
   /** Bypass the Gateway's status cache after an explicit user action. */
   readonly refresh?: boolean;
+  /** OpenClaw 已确认的认证配置档所属智能体。 */
+  readonly agentId?: string;
 }
 
 export class OpenClawModelAuthStatusUnavailableError extends Error {
@@ -149,7 +151,8 @@ export function parseOpenClawModelAuthStatus(value: unknown): OpenClawModelAuthS
 export class OpenClawModelAuthStatusClient {
   constructor(private readonly dependencies: OpenClawModelAuthStatusClientDependencies) {}
 
-  async get({ refresh = false }: OpenClawModelAuthStatusRequest = {}): Promise<OpenClawModelAuthStatusSnapshot> {
+  async get(request: OpenClawModelAuthStatusRequest = {}): Promise<OpenClawModelAuthStatusSnapshot> {
+    const { refresh = false, agentId } = request;
     const connectionId = this.dependencies.captureConnectionId();
     if (!connectionId) {
       throw new OpenClawModelAuthStatusUnavailableError('No attested Gateway connection is available for model authentication status');
@@ -157,7 +160,10 @@ export class OpenClawModelAuthStatusClient {
     try {
       const response = await this.dependencies.requestFenced(
         OPENCLAW_MODEL_AUTH_STATUS_METHOD,
-        refresh ? { refresh: true } : {},
+        {
+          ...(refresh ? { refresh: true } : {}),
+          ...(this.agentIdParam(agentId) ?? {}),
+        },
         connectionId,
       );
       if (!this.dependencies.isConnectionCurrent(connectionId)) {
@@ -173,5 +179,10 @@ export class OpenClawModelAuthStatusClient {
       }
       throw error;
     }
+  }
+
+  private agentIdParam(agentId: string | undefined): Record<string, string> | null {
+    const normalizedAgentId = agentId?.trim();
+    return normalizedAgentId ? { agentId: normalizedAgentId } : null;
   }
 }

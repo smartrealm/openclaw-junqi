@@ -4,12 +4,10 @@ import type { ChatMessage } from '@/stores/chatStore';
 import { ChatSendCoordinator } from './sendTransaction';
 import { sessionMutationGate } from './sessionMutationGate';
 import { OpenClawSessionTargetError } from '@/services/gateway/OpenClawSessionTarget';
-import { GatewayTransportLifecycleError } from '@/services/gateway/GatewayTransportError';
 
-test('空会话目标会在写入本地状态、任务检查点和 Gateway 请求前失败', async () => {
+test('空会话目标会在写入本地状态和 Gateway 请求前失败', async () => {
   let stateReads = 0;
   let gatewayCalls = 0;
-  let checkpointCalls = 0;
   const coordinator = new ChatSendCoordinator(
     { sendMessage: async () => { gatewayCalls += 1; } },
     () => {
@@ -22,13 +20,6 @@ test('空会话目标会在写入本地状态、任务检查点和 Gateway 请�
         enqueueMessage() {},
       };
     },
-    {
-      prepareSend: async () => { checkpointCalls += 1; return { runId: 'empty-session', created: true }; },
-      prepareSteer: async () => { checkpointCalls += 1; return { supersededRunId: null, created: true }; },
-      isRunStopRequested: async () => false,
-      settleRun: async () => {},
-      reportPersistenceFailure() {},
-    },
   );
 
   await assert.rejects(
@@ -36,49 +27,7 @@ test('空会话目标会在写入本地状态、任务检查点和 Gateway 请�
     OpenClawSessionTargetError,
   );
   assert.equal(stateReads, 0);
-  assert.equal(checkpointCalls, 0);
   assert.equal(gatewayCalls, 0);
-});
-
-test('STOP-04 a checkpointed Stop prevents normal and steer sends from reaching the Gateway', async () => {
-  const messages = new Map<string, ChatMessage>();
-  const typing: boolean[] = [];
-  let transportCalls = 0;
-  const coordinator = new ChatSendCoordinator(
-    { sendMessage: async () => { transportCalls += 1; } },
-    () => ({
-      addMessage(message) { messages.set(message.id, message); },
-      updateMessage(_sessionKey, id, patch) {
-        const current = messages.get(id);
-        if (current) messages.set(id, { ...current, ...patch });
-      },
-      setIsTyping(value) { typing.push(value); },
-      typingBySession: {},
-      enqueueMessage() {},
-    }),
-    {
-      prepareSend: async ({ runId }) => ({ runId, created: true }),
-      prepareSteer: async () => ({ supersededRunId: null, created: true }),
-      isRunStopRequested: async () => true,
-      settleRun: async () => {},
-      reportPersistenceFailure() {},
-    },
-  );
-
-  const normal = await coordinator.send({
-    sessionKey: 'session-a', message: 'do not dispatch', clientMessageId: 'stop-normal',
-  });
-  const steer = await coordinator.send({
-    sessionKey: 'session-a', message: 'do not steer', clientMessageId: 'stop-steer', delivery: 'steer',
-  });
-
-  assert.deepEqual(normal, { cancelled: true, clientMessageId: 'stop-normal' });
-  assert.deepEqual(steer, { cancelled: true, clientMessageId: 'stop-steer' });
-  assert.equal(transportCalls, 0);
-  assert.equal(messages.get('stop-normal')?.status, 'cancelled');
-  assert.equal(messages.get('stop-steer')?.status, 'cancelled');
-  assert.deepEqual(messages.get('stop-normal')?.retryPayload, { text: 'do not dispatch' });
-  assert.deepEqual(typing, [true, false, true, false]);
 });
 
 test('CHAT-02 rejected send records a retryable failure and releases typing', async () => {
@@ -108,36 +57,6 @@ test('CHAT-02 rejected send records a retryable failure and releases typing', as
   assert.deepEqual(messages.get('client-1')?.retryPayload, { text: 'hello' });
   assert.deepEqual(typing, [true, false]);
   assert.deepEqual(queued, []);
-});
-
-test('发送前连接失效时会收敛已创建的任务检查点', async () => {
-  const settled: Array<{
-    runId: string | null | undefined;
-    terminalReason: string | null | undefined;
-  }> = [];
-  const coordinator = new ChatSendCoordinator(
-    { sendMessage: async () => { throw new GatewayTransportLifecycleError('Gateway is not connected'); } },
-    () => ({
-      addMessage() {},
-      updateMessage() {},
-      setIsTyping() {},
-      typingBySession: {},
-      enqueueMessage() {},
-    }),
-    {
-      prepareSend: async ({ runId }) => ({ runId, created: true }),
-      prepareSteer: async () => ({ supersededRunId: null, created: true }),
-      isRunStopRequested: async () => false,
-      settleRun: async ({ runId, terminalReason }) => { settled.push({ runId, terminalReason }); },
-      reportPersistenceFailure() {},
-    },
-  );
-
-  await assert.rejects(
-    coordinator.send({ sessionKey: 'session-a', message: 'hello', clientMessageId: 'transport-closed' }),
-    GatewayTransportLifecycleError,
-  );
-  assert.deepEqual(settled, [{ runId: 'transport-closed', terminalReason: 'error' }]);
 });
 
 test('an ambiguous transport result stays pending until official reconciliation', async () => {

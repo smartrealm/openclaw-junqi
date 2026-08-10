@@ -46,6 +46,10 @@ type CronReminderCreation =
   | { readonly status: 'scheduled'; readonly jobId: string }
   | { readonly status: 'pending' | 'unsupported' | 'none' };
 
+function calendarReminderDeclarationKey(eventId: string): string {
+  return `junqi-calendar-reminder:${eventId}`;
+}
+
 function initialReminderStatus(event: CalendarEvent): CalendarEvent['reminderStatus'] {
   const schedule = buildCronReminderSchedule(event, getLocalTimezone());
   if (schedule.status !== 'scheduled') return schedule.status;
@@ -63,6 +67,8 @@ async function createCronReminder(event: CalendarEvent): Promise<CronReminderCre
     const content = buildCalendarReminderContent(event, (key, options) => runtimeI18n.t(key, options));
     const result = await gateway.addCronAgentTurn(buildCronAgentTurnAddParams({
       name: content.name,
+      // 同一日历事件的重试必须交给 Gateway 按官方 declarationKey 收敛，避免未知写入结果被重复创建。
+      declarationKey: calendarReminderDeclarationKey(event.id),
       schedule: schedule.schedule,
       message: content.message,
       deleteAfterRun: !event.recurrence,

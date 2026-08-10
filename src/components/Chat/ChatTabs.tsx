@@ -20,6 +20,7 @@ import {
   resolveKnownAgentMainSessionKey,
   resolveNewSessionAgentId,
 } from '@/utils/sessionLifecycle';
+import { sessionCreationTimestamp } from '@/utils/sessionPresentation';
 import { createNativeSession } from '@/utils/sessionCreate';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
@@ -263,8 +264,8 @@ function AgentStatusTooltip({
   const model = session.model || '';
   const modelShort = model ? model.split('/').pop()! : '—';
 
-  const sessionStart = session.createdAt || session.updatedAt;
-  const sessionAge = sessionStart ? formatDuration(Date.now() - new Date(sessionStart).getTime()) : '—';
+  const sessionStart = sessionCreationTimestamp(session);
+  const sessionAge = sessionStart === null ? '—' : formatDuration(Date.now() - sessionStart);
 
   const compactAt = maxTokens > 0 ? Math.round(maxTokens * 0.8) : null;
   const compactPct = compactAt && compactAt > 0 ? Math.round((contextTokens / compactAt) * 100) : 0;

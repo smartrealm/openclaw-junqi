@@ -26,6 +26,19 @@ test('parses only the display-safe portion of the official observer digest', () 
   assert.equal(parseOpenClawSessionObserverDigest({ ...digest, headline: '' }), null);
 });
 
+test('projects an official global session observer event into its agent-scoped local key', () => {
+  assert.deepEqual(parseOpenClawSessionObserverDigest({
+    ...digest,
+    sessionKey: 'global',
+    agentId: 'legal',
+  }), {
+    ...digest,
+    sessionKey: 'agent:legal:global',
+    agentId: 'legal',
+  });
+  assert.equal(parseOpenClawSessionObserverDigest({ ...digest, sessionKey: 'global', agentId: '' }), null);
+});
+
 test('keeps only the newest observer event for one session and agent identity', () => {
   openClawSessionObserverStream.clear();
   publishOpenClawSessionObserverEvent({ type: 'event', event: 'session.observer', payload: digest });

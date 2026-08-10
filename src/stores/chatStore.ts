@@ -21,7 +21,6 @@ import {
   queuedChatMessageBytes,
 } from '@/services/chat/types';
 import { sessionMutationGate } from '@/services/chat/sessionMutationGate';
-import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import {
   collectSessionIdentityTransitions,
   publishSessionIdentityTransitions,
@@ -42,6 +41,7 @@ import type { GatewaySessionAgentStatus } from '@/services/gateway/sessionAgentS
 import type { GatewaySessionContextBudgetStatus } from '@/processing/sessionContextBudgetStatus';
 import type { GatewaySessionGoal } from '@/services/gateway/sessionGoal';
 import { getChatGatewayOperations } from './chatGatewayOperations';
+import type { ModelEntry } from '@/services/gateway/modelLoaders';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
@@ -349,7 +349,7 @@ export interface Session {
   abortedLastRun?: true | null;
   /** Gateway 预提示估算出的上下文预算路线；客户端不得自行推导。 */
   contextBudgetStatus?: GatewaySessionContextBudgetStatus | null;
-  /** Gateway 持久化的会话目标；本地 Task checkpoint 与协作 Run 不得写入或替代它。 */
+  /** Gateway 持久化的会话目标；本地 UI 投影与协作 Run 不得写入或替代它。 */
   goal?: GatewaySessionGoal | null;
   /** Gateway 记录的最近失败或超时运行摘要；缺失时不保留旧值。 */
   lastRunError?: string | null;
@@ -514,11 +514,11 @@ interface ChatState {
   setSessionResponseUsage: (key: string, level: string | null) => void;
   /** sessions.patch 成功后在本地更新会话原生推理可见性覆盖。 */
   setSessionReasoning: (key: string, level: 'on' | 'off' | 'stream' | null) => void;
-  /** Pin/unpin through the native Gateway protocol, with a legacy fallback. */
+  /** 仅在原生 Gateway 确认置顶状态后更新本地投影。 */
   togglePinSession: (key: string) => Promise<void>;
-  /** Archive/restore through the native Gateway protocol, with a legacy fallback. */
+  /** 仅在原生 Gateway 确认归档状态后更新本地投影。 */
   setSessionArchived: (key: string, archived: boolean) => Promise<void>;
-  /** Update the Gateway-owned explicit unread marker and local projection. */
+  /** 仅在原生 Gateway 确认未读状态后更新本地投影。 */
   setSessionUnread: (key: string, unread: boolean) => Promise<void>;
   setSessionCategory: (key: string, category: string | null) => Promise<void>;
   /** 确认 Gateway 会话组目录包含名称，不持久化客户端副本。 */
@@ -567,10 +567,16 @@ interface ChatState {
   // Gateway session defaults (default model, contextTokens from config)
   sessionDefaults: { model: string | null; contextTokens: number | null };
 
-  // Available models (fetched from gateway models.list)
-  availableModels: Array<{ id: string; label: string; alias?: string }>;
-  setAvailableModels: (models: Array<{ id: string; label: string; alias?: string }>) => void;
+  // 默认智能体的通用模型目录，来自官方 models.list。
+  availableModels: ModelEntry[];
+  setAvailableModels: (models: ModelEntry[]) => void;
   modelsLoading: boolean;
+  /** 会话智能体的模型目录，仅来自官方 chat.metadata。 */
+  sessionAvailableModelsByAgentId: Record<string, ModelEntry[]>;
+  sessionModelsLoadingByAgentId: Record<string, boolean>;
+  setSessionAvailableModels: (agentId: string, models: ModelEntry[]) => void;
+  setSessionModelsLoading: (agentId: string, loading: boolean) => void;
+  clearSessionAvailableModels: () => void;
 
   // Drafts (per-session)
   drafts: Record<string, string>;
@@ -2048,6 +2054,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
   availableModels: [],
   setAvailableModels: (models) => set({ availableModels: models, modelsLoading: false }),
   modelsLoading: true,
+  sessionAvailableModelsByAgentId: {},
+  sessionModelsLoadingByAgentId: {},
+  setSessionAvailableModels: (agentId, models) => set((state) => {
+    const key = agentId.trim();
+    if (!key) return state;
+    return {
+      sessionAvailableModelsByAgentId: {
+        ...state.sessionAvailableModelsByAgentId,
+        [key]: models,
+      },
+      sessionModelsLoadingByAgentId: {
+        ...state.sessionModelsLoadingByAgentId,
+        [key]: false,
+      },
+    };
+  }),
+  setSessionModelsLoading: (agentId, loading) => set((state) => {
+    const key = agentId.trim();
+    if (!key) return state;
+    return {
+      sessionModelsLoadingByAgentId: {
+        ...state.sessionModelsLoadingByAgentId,
+        [key]: loading,
+      },
+    };
+  }),
+  clearSessionAvailableModels: () => set({
+    sessionAvailableModelsByAgentId: {},
+    sessionModelsLoadingByAgentId: {},
+  }),
 
   // ── UI State ──
   typingBySession: {},
@@ -2152,34 +2188,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }, sessionKey);
     get().updateMessage(sessionKey, next.id, { status: 'pending', deliveryError: undefined });
     get().setIsTyping(true, sessionKey);
-    let taskRunId = next.id;
-    let taskRunCreated = false;
     try {
-      const observedModel = useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.model
-        ?? (useChatStore.getState().activeSessionKey === sessionKey ? useChatStore.getState().currentModel : null)
-        ?? null;
-      const prepared = await taskExecutionCoordinator.prepareSend({
-        sessionKey,
-        sessionId: next.sessionId,
-        runId: next.id,
-        source: next.source ?? 'chat',
-        model: observedModel,
-      });
-      taskRunId = prepared.runId ?? next.id;
-      taskRunCreated = prepared.created;
-      if (taskRunCreated && await taskExecutionCoordinator.isRunStopRequested({
-        sessionKey,
-        sessionId: next.sessionId,
-        runId: taskRunId,
-      })) {
-        get().updateMessage(sessionKey, next.id, {
-          status: 'cancelled',
-          deliveryError: undefined,
-          retryPayload,
-        });
-        get().setIsTyping(false, sessionKey);
-        return;
-      }
       const result = await getChatGatewayOperations().sendMessage(next.text, next.attachments, sessionKey, {
         clientMessageId: next.id,
         sessionId: next.sessionId,
@@ -2209,12 +2218,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         retryPayload,
       });
       get().setIsTyping(false, sessionKey);
-      await taskExecutionCoordinator.settleRun({
-        sessionKey,
-        sessionId: next.sessionId,
-        runId: taskRunCreated ? taskRunId : null,
-        terminalReason: 'error',
-      }).catch((settleError) => taskExecutionCoordinator.reportPersistenceFailure('settle queued send checkpoint', settleError));
     } finally {
       drainingQueueSessions.delete(sessionKey);
       // A cached terminal chat.send acknowledgement can settle typing before

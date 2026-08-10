@@ -2,7 +2,7 @@
 
 ## 顺序
 
-- [x] 阅读 README、docs/README、CONTEXT、现有 Task checkpoint、Chat 发送和本地
+- [x] 阅读 README、docs/README、CONTEXT、Chat 发送和本地
   队列实现。
 - [x] 核对 OpenClaw 官方 queue-steering、queue、Gateway protocol 和 chat.send
   handler 的当前契约。
@@ -20,15 +20,13 @@
 
 - `src/services/chat/sendTransaction.ts`
 - `src/stores/chatStore.ts`
-- `src/task-execution/stateMachine.ts`
-- `src/task-execution/TaskExecutionCoordinator.ts`
 - 对应回归测试和三层文档
 
 ## 验证命令
 
 ```bash
 node --import ./test-setup.ts --import tsx --test src/services/chat/sendTransaction.test.ts
-node --import ./test-setup.ts --import tsx --test src/task-execution/stateMachine.test.ts
+node --import ./test-setup.ts --import tsx --test src/services/chat/sendTransaction.test.ts
 node --import ./test-setup.ts --import tsx --test src/components/Chat/MessageInput.composer.test.ts
 pnpm exec tsc --noEmit
 git diff --check

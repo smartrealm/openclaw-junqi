@@ -148,14 +148,75 @@ test('Gateway connection start time survives polling restarts only while connect
   assert.equal(resolveGatewayConnectionStartedAt(null, true, 400), 400);
 });
 
+test('首次轮询在确认 OpenClaw 智能体范围后再读取会话', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const gateway = {
+    request: async (method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params });
+      if (method === 'agents.list') {
+        return {
+          defaultId: 'main',
+          mainKey: 'main',
+          scope: 'per-sender',
+          agents: [{ id: 'main' }],
+        };
+      }
+      if (method === 'sessions.list') {
+        return {
+          sessions: [],
+          totalCount: 0,
+          offset: Number(params.offset ?? 0),
+          nextOffset: null,
+          hasMore: false,
+        };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  try {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(calls.map((call) => call.method), [
+      'agents.list',
+      'sessions.list',
+      'sessions.list',
+    ]);
+    assert.deepEqual(calls[1]?.params, {
+      agentId: 'main',
+      includeGlobal: true,
+      includeUnknown: true,
+      configuredAgentsOnly: true,
+      includeDerivedTitles: true,
+      includeLastMessage: true,
+      limit: 100,
+      offset: 0,
+    });
+    assert.equal(useGatewayDataStore.getState().errors.sessions, null);
+  } finally {
+    stopPolling();
+  }
+});
+
 test('cron events refresh the authoritative list without manufacturing local run state', async () => {
   const calls: string[] = [];
   const gateway = {
-    request: async (method: string) => {
+    request: async (method: string, params: Record<string, unknown>) => {
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [{ id: 'main' }] };
-      if (method === 'cron.list') return [{ ...CRON_JOB, state: { nextRunAtMs: 100 } }];
+      if (method === 'cron.list') {
+        return {
+          jobs: [{ ...CRON_JOB, state: { nextRunAtMs: 100 } }],
+          snapshotRevision: 'cron-snapshot-1',
+          total: 1,
+          offset: Number(params.offset ?? 0),
+          limit: Number(params.limit ?? 200),
+          hasMore: false,
+          nextOffset: null,
+        };
+      }
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -182,10 +243,10 @@ test('Gateway polling decoders reject malformed responses instead of inventing e
     agents: [{ id: 'captain' }], defaultAgentId: 'captain', mainSessionKey: 'agent:captain:main', scope: 'per-sender',
   });
   assert.deepEqual(parseGatewayAgentList({ defaultId: 'captain', mainKey: 'main', scope: 'global', agents: [{ id: 'captain' }] }), {
-    agents: [{ id: 'captain' }], defaultAgentId: 'captain', mainSessionKey: 'global', scope: 'global',
+    agents: [{ id: 'captain' }], defaultAgentId: 'captain', mainSessionKey: 'agent:captain:global', scope: 'global',
   });
   assert.equal(parseGatewayAgentList({ agents: [{ name: 'missing-id' }] }), null);
-  assert.deepEqual(parseGatewayCronJobList([{ ...CRON_JOB, agentId: 'ops' }]), [{
+  assert.deepEqual(parseGatewayCronJobList({ jobs: [{ ...CRON_JOB, agentId: 'ops' }] }), [{
     id: 'daily',
     name: 'Daily report',
     enabled: true,
@@ -198,7 +259,8 @@ test('Gateway polling decoders reject malformed responses instead of inventing e
     payloadKind: 'agentTurn',
     state: { nextRunAtMs: 100 },
   }]);
-  assert.equal(parseGatewayCronJobList([{ id: 'daily', agentId: 'ops' }]), null);
+  assert.equal(parseGatewayCronJobList([{ ...CRON_JOB, agentId: 'ops' }]), null);
+  assert.equal(parseGatewayCronJobList({ jobs: [{ id: 'daily', agentId: 'ops' }] }), null);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: 'daily', agentId: '' }] }), null);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: '' }] }), null);
   assert.equal(parseGatewayCronJobList({ jobs: [{ id: 'daily', state: 'running' }] }), null);

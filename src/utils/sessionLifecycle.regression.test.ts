@@ -344,7 +344,7 @@ describe('session lifecycle regression fixes', () => {
     const consumeIndex = source.indexOf('setParams(nextParams, { replace: true })');
     assert.match(source, /handledLocationKeyRef/);
     assert.ok(creationIndex >= 0 && successIndex > creationIndex && consumeIndex > successIndex);
-    assert.match(source, /return \{ error, retrying, retry: createForRoute \}/);
+    assert.match(source, /return \{ pending: Boolean\(agentId && wantNew\), error, retrying, retry: createForRoute \}/);
     assert.doesNotMatch(source, /window\.history\.replaceState|appliedRef/);
   });
 

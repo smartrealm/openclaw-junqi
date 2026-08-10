@@ -66,7 +66,11 @@ test('OpenClawSetupClient preserves unavailable method and connection semantics'
       throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     },
   });
-  await assert.rejects(unsupported.detect(), OpenClawSetupMethodUnavailableError);
+  await assert.rejects(unsupported.detect(), (error: unknown) => (
+    error instanceof OpenClawSetupMethodUnavailableError
+    && error.method === OPENCLAW_SETUP_DETECT_METHOD
+    && error.availability === 'unsupported'
+  ));
 
   const unrelatedFailure = new OpenClawSetupClient({
     requestPrivileged: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
@@ -79,5 +83,9 @@ test('OpenClawSetupClient preserves unavailable method and connection semantics'
   const disconnected = new OpenClawSetupClient({
     requestPrivileged: async () => { throw new GatewayDisconnectedError(); },
   });
-  await assert.rejects(disconnected.verify(), OpenClawSetupMethodUnavailableError);
+  await assert.rejects(disconnected.verify(), (error: unknown) => (
+    error instanceof OpenClawSetupMethodUnavailableError
+    && error.method === OPENCLAW_SETUP_VERIFY_METHOD
+    && error.availability === 'connection-unavailable'
+  ));
 });

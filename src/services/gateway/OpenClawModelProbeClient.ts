@@ -94,13 +94,16 @@ export function parseOpenClawModelProbe(value: unknown): OpenClawModelProbeResul
 export class OpenClawModelProbeClient {
   constructor(private readonly dependencies: OpenClawModelProbeClientDependencies) {}
 
-  async probeProvider(provider: string): Promise<OpenClawModelProbeResult> {
+  async probeProvider(provider: string, agentId?: string): Promise<OpenClawModelProbeResult> {
     const normalizedProvider = provider.trim();
     if (!normalizedProvider) throw new OpenClawModelProbeResponseError();
     try {
       const response = await this.dependencies.requestPrivileged(
         OPENCLAW_MODEL_PROBE_METHOD,
-        { provider: normalizedProvider },
+        {
+          provider: normalizedProvider,
+          ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
+        },
       );
       const result = parseOpenClawModelProbe(response);
       if (result.provider !== normalizedProvider) throw new OpenClawModelProbeResponseError();

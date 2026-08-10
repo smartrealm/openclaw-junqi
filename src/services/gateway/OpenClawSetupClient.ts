@@ -28,7 +28,11 @@ export type OpenClawSetupVerificationFailureStatus = typeof FAILURE_STATUSES[num
 export class OpenClawSetupMethodUnavailableError extends Error {
   readonly code = 'OPENCLAW_SETUP_METHOD_UNAVAILABLE';
 
-  constructor(method: string, reason: string) {
+  constructor(
+    readonly method: string,
+    readonly availability: 'unsupported' | 'connection-unavailable',
+    reason: string,
+  ) {
     super(`OpenClaw setup method ${method} is unavailable: ${reason}`);
     this.name = 'OpenClawSetupMethodUnavailableError';
   }
@@ -122,10 +126,18 @@ export class OpenClawSetupClient {
       return parse(await this.dependencies.requestPrivileged(method, {}));
     } catch (error) {
       if (isOpenClawUnknownMethodError(error, method)) {
-        throw new OpenClawSetupMethodUnavailableError(method, 'Gateway method is not supported');
+        throw new OpenClawSetupMethodUnavailableError(
+          method,
+          'unsupported',
+          'Gateway method is not supported',
+        );
       }
       if (error instanceof GatewayDisconnectedError) {
-        throw new OpenClawSetupMethodUnavailableError(method, 'authenticated Gateway connection is unavailable');
+        throw new OpenClawSetupMethodUnavailableError(
+          method,
+          'connection-unavailable',
+          'authenticated Gateway connection is unavailable',
+        );
       }
       throw error;
     }

@@ -103,6 +103,7 @@ import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { useOpenClawModelAuthStatus } from '@/hooks/useOpenClawModelAuthStatus';
 import { OpenClawProviderUsagePanel } from '@/components/settings/OpenClawProviderUsagePanel';
 import { useOpenClawProviderUsage } from '@/hooks/useOpenClawProviderUsage';
+import { useGatewayDataStore, type AgentInfo } from '@/stores/gatewayDataStore';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -193,6 +194,14 @@ function normalizeProviderIdForCatalog(providerId: string): string {
 
 function normalizeProviderIdForWrite(providerId: string | undefined): string {
   return String(providerId ?? '').trim().toLowerCase();
+}
+
+function gatewayAgentLabel(agent: AgentInfo): string {
+  return typeof agent.name === 'string' && agent.name.trim() ? agent.name.trim() : agent.id;
+}
+
+function providerRuntimeOperationKey(agentId: string, provider: string): string {
+  return `${agentId}:${provider}`;
 }
 
 function normalizeProfileKeyForProvider(providerId: string, profileKey: string | undefined): string {
@@ -3144,7 +3153,15 @@ export function ProvidersTab({
   addRequestId = 0,
 }: ProvidersTabProps) {
   const { t } = useTranslation();
-  const modelAuthStatus = useOpenClawModelAuthStatus(true);
+  const agents = useGatewayDataStore((state) => state.agents);
+  const defaultAgentId = useGatewayDataStore((state) => state.defaultAgentId);
+  const [selectedAuthAgentId, setSelectedAuthAgentId] = useState('');
+  const effectiveAuthAgentId = useMemo(() => {
+    if (agents.some((agent) => agent.id === selectedAuthAgentId)) return selectedAuthAgentId;
+    if (defaultAgentId && agents.some((agent) => agent.id === defaultAgentId)) return defaultAgentId;
+    return agents[0]?.id ?? '';
+  }, [agents, defaultAgentId, selectedAuthAgentId]);
+  const modelAuthStatus = useOpenClawModelAuthStatus(Boolean(effectiveAuthAgentId), effectiveAuthAgentId);
   const providerUsage = useOpenClawProviderUsage(true);
   const [logoutProvider, setLogoutProvider] = useState<string | null>(null);
   const [probeProvider, setProbeProvider] = useState<string | null>(null);
@@ -3152,6 +3169,11 @@ export function ProvidersTab({
   const [showModal, setShowModal]                   = useState(false);
   const [modalInitialTemplate, setModalInitialTemplate] = useState<ProviderTemplate | undefined>();
   const [apiProtocolOptions, setApiProtocolOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (selectedAuthAgentId === effectiveAuthAgentId) return;
+    setSelectedAuthAgentId(effectiveAuthAgentId);
+  }, [effectiveAuthAgentId, selectedAuthAgentId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3318,17 +3340,18 @@ export function ProvidersTab({
 
   useEffect(() => {
     setProbeResults({});
-  }, [modelAuthStatus.status?.timestampMs, modelAuthStatus.failure]);
+  }, [effectiveAuthAgentId, modelAuthStatus.status?.timestampMs, modelAuthStatus.failure]);
 
   const requestProviderProbe = useCallback((provider: string, displayName: string) => {
     showConfirm(
       t('config.gatewayAuthStatus.probeTitle', { provider: displayName }),
       t('config.gatewayAuthStatus.probeMessage', { provider: displayName }),
       async () => {
-        setProbeProvider(provider);
+        const operationKey = providerRuntimeOperationKey(effectiveAuthAgentId, provider);
+        setProbeProvider(operationKey);
         try {
-          const result = await openClawModelProbeClient.probeProvider(provider);
-          setProbeResults((current) => ({ ...current, [provider]: result }));
+          const result = await openClawModelProbeClient.probeProvider(provider, effectiveAuthAgentId);
+          setProbeResults((current) => ({ ...current, [operationKey]: result }));
         } catch {
           window.setTimeout(() => showAlert(
             t('config.gatewayAuthStatus.probeFailedTitle'),
@@ -3340,16 +3363,17 @@ export function ProvidersTab({
         }
       },
     );
-  }, [t]);
+  }, [effectiveAuthAgentId, t]);
 
   const requestProviderAuthLogout = useCallback((provider: string, displayName: string) => {
     showConfirm(
       t('config.gatewayAuthStatus.logoutTitle', { provider: displayName }),
       t('config.gatewayAuthStatus.logoutMessage', { provider: displayName }),
       async () => {
-        setLogoutProvider(provider);
+        const operationKey = providerRuntimeOperationKey(effectiveAuthAgentId, provider);
+        setLogoutProvider(operationKey);
         try {
-          const result = await openClawModelAuthLogoutClient.logoutProvider(provider);
+          const result = await openClawModelAuthLogoutClient.logoutProvider(provider, effectiveAuthAgentId);
           await modelAuthStatus.refresh({ force: true });
           window.setTimeout(() => showAlert(
             t('config.gatewayAuthStatus.logoutSuccessTitle'),
@@ -3370,7 +3394,7 @@ export function ProvidersTab({
         }
       },
     );
-  }, [modelAuthStatus, t]);
+  }, [effectiveAuthAgentId, modelAuthStatus, t]);
 
   // ── Add provider (auth profile + models) ──
 
@@ -3628,6 +3652,25 @@ export function ProvidersTab({
             </button>
           )}
         </div>
+        {agents.length > 0 && (
+          <label className="flex items-center gap-2 border-b border-aegis-border px-5 py-2.5 text-[11px] text-aegis-text-muted">
+            <span className="shrink-0">{t('config.gatewayAuthStatus.agent')}</span>
+            <select
+              value={effectiveAuthAgentId}
+              onChange={(event) => setSelectedAuthAgentId(event.target.value)}
+              disabled={Boolean(logoutProvider) || Boolean(probeProvider)}
+              aria-label={t('config.gatewayAuthStatus.agent')}
+              className="min-w-0 flex-1 rounded-md border border-aegis-border bg-aegis-overlay px-2 py-1 text-[11px] text-aegis-text outline-none transition-colors focus:border-aegis-primary disabled:cursor-wait disabled:opacity-50 sm:max-w-xs"
+            >
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>{gatewayAgentLabel(agent)}</option>
+              ))}
+            </select>
+            <span className="hidden min-w-0 truncate text-aegis-text-dim md:inline">
+              {t('config.gatewayAuthStatus.agentHint')}
+            </span>
+          </label>
+        )}
         {modelAuthStatus.failure === 'invalid' && (
           <p className="border-b border-aegis-border px-5 py-2 text-[11px] text-aegis-warning" role="status">
             {t('config.gatewayAuthStatus.invalid')}
@@ -3657,6 +3700,9 @@ export function ProvidersTab({
           ) : (
             <>
               {unifiedProviders.map((up) => {
+                const operationKey = effectiveAuthAgentId
+                  ? providerRuntimeOperationKey(effectiveAuthAgentId, up.provider)
+                  : '';
                 const authProvider = modelAuthStatus.status?.providers.find((candidate) => (
                   providerNamespaceMatches(candidate.provider, up.provider)
                 ));
@@ -3665,10 +3711,10 @@ export function ProvidersTab({
                   status: authProvider.status,
                   expiryLabel: authProvider.expiry?.label,
                   logoutSupported: authProvider.profiles.some((profile) => profile.logoutSupported),
-                  loggingOut: logoutProvider === authProvider.provider,
-                  probing: probeProvider === authProvider.provider,
+                  loggingOut: logoutProvider === operationKey,
+                  probing: probeProvider === operationKey,
                   busy: Boolean(logoutProvider) || Boolean(probeProvider),
-                  probeResult: probeResults[authProvider.provider],
+                  probeResult: probeResults[operationKey],
                   onProbe: () => requestProviderProbe(authProvider.provider, authProvider.displayName),
                   onLogout: () => requestProviderAuthLogout(authProvider.provider, authProvider.displayName),
                 } : undefined;

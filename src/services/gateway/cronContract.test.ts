@@ -2,9 +2,28 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildCronAgentTurnAddParams,
+  createCronDeclarationKey,
   cronAgentUpdatePatch,
   isCronAgentSelectionConfirmed,
+  resolveCronDeclarationKey,
 } from './cronContract';
+
+test('cron declaration key is generated from one explicit creation intent', () => {
+  assert.equal(
+    createCronDeclarationKey('junqi-cron-manual', () => 'request-1'),
+    'junqi-cron-manual:request-1',
+  );
+  assert.throws(() => createCronDeclarationKey(' ', () => 'request-1'), /声明键/);
+  assert.throws(() => createCronDeclarationKey('junqi-cron-manual', () => ' '), /声明键/);
+});
+
+test('cron declaration retry retains the same unconfirmed request identity', () => {
+  const first = resolveCronDeclarationKey(null, 'junqi-cron-manual', () => 'request-1');
+  assert.equal(
+    resolveCronDeclarationKey(first, 'junqi-cron-manual', () => 'request-2'),
+    first,
+  );
+});
 
 test('cron agent-turn creation matches the OpenClaw top-level RPC contract', () => {
   const params = buildCronAgentTurnAddParams({
@@ -40,6 +59,17 @@ test('cron agent-turn creation omits an unpinned default agent', () => {
   assert.equal('agentId' in params, false);
   assert.equal(params.sessionTarget, 'isolated');
   assert.equal(params.wakeMode, 'now');
+});
+
+test('cron agent-turn creation retains an official declaration key for Gateway-side convergence', () => {
+  const params = buildCronAgentTurnAddParams({
+    name: 'Calendar reminder',
+    declarationKey: ' junqi-calendar-reminder:event-1 ',
+    message: 'Review the calendar event.',
+    schedule: { kind: 'at', at: '2030-01-02T08:45:00.000Z' },
+  });
+
+  assert.equal(params.declarationKey, 'junqi-calendar-reminder:event-1');
 });
 
 test('cron schedule input retains the official event-driven schedule variants', () => {

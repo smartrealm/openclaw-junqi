@@ -85,3 +85,16 @@ test('allows the official hashless first-write configuration flow', async () => 
     tools: { experimental: { planTool: true } },
   });
 });
+
+test('does not report a plan tool write when the official acknowledgement is negative', async () => {
+  const client = new OpenClawPlanToolSettingsClient({
+    async call() {
+      return { exists: true, valid: true, config: {}, hash: 'config-hash' };
+    },
+    async callPrivileged() {
+      return { ok: false };
+    },
+  });
+
+  await assert.rejects(() => client.write('enabled'), /config\.patch response is unavailable/);
+});

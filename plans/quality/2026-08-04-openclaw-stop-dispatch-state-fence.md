@@ -4,7 +4,7 @@
 
 ## 执行顺序
 
-- [x] 核对官方 `sessions.abort` 语义，以及 JunQi checkpoint、Run 确认、聊天状态和所有
+- [x] 核对官方 `sessions.abort` 语义、Run 确认、聊天状态和所有
   Composer Stop 入口。
 - [x] 证实语音 Stop 与 Escape 触发条件遗漏 `sendingBySession`。
 - [x] 在 Chat Store 增加无副作用的活动请求判定，并替换重复状态组合。
@@ -23,4 +23,4 @@
 
 ## 非目标
 
-- 不修改 Gateway 协议、Tauri command、Rust 后端、Task checkpoint 格式或持久化内容。
+- 不修改 Gateway 协议、Tauri command 或 Rust 后端。

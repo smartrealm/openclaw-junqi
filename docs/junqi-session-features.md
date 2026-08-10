@@ -201,7 +201,6 @@ OpenClaw 官方能力清单。文中的组件、数量、超时、状态、入�
 - **ChatMessagePreviewPanel**：消息预览面板
 - **ChatResponseTracePanel**：响应追踪面板
 - **ChatTraceSourceMessagePanel**：追踪源消息面板
-- **TaskExecutionRecoveryBanner**：任务执行恢复横幅
 - **SessionCompanionPanel**：会话伴侣面板
 
 ### 协作功能

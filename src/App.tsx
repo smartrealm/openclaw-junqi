@@ -79,7 +79,6 @@ import { debugLog, debugWarn } from '@/utils/debugLog';
 import { isGatewayOptionalPath, routePathFromLocation } from '@/utils/gatewayOptionalRoutes';
 import { hasTauriEventBridge } from '@/utils/tauriEvents';
 import { voiceRuntime } from '@/runtime/VoiceRuntime';
-import { taskExecutionCoordinator } from '@/task-execution/TaskExecutionCoordinator';
 import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter';
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
 import { approveSelectedGatewayDevice } from '@/api/tauri-commands';
@@ -148,6 +147,9 @@ export default function App() {
     markSessionCompleted,
     setSessions,
     setAvailableModels,
+    setSessionAvailableModels,
+    setSessionModelsLoading,
+    clearSessionAvailableModels,
     setDefaultMainSessionKey,
   } = useChatStore();
   const officialMainSessionKey = useGatewayDataStore((state) => state.mainSessionKey);
@@ -156,6 +158,7 @@ export default function App() {
   const [pairingIssue, setPairingIssue] = useState<GatewayAuthorizationIssue | null>(null);
   const pairingTriggeredRef = useRef(false);
   const deferredModelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scopedModelCatalogRequestRef = useRef(0);
 
   useEffect(() => {
     const unsubscribeIssue = subscribePrivilegedAuthorizationIssues((issue) => {
@@ -398,6 +401,43 @@ export default function App() {
     setAvailableModels(models);
   }, [setAvailableModels]);
 
+  const loadAgentScopedModels = useCallback(async (agentId: string) => {
+    const targetAgentId = agentId.trim();
+    if (!targetAgentId) return;
+    const requestId = ++scopedModelCatalogRequestRef.current;
+    setSessionModelsLoading(targetAgentId, true);
+    try {
+      const [
+        { loadAgentScopedGatewayModels },
+        { extractAvailableModelsFromGatewayResult },
+      ] = await Promise.all([
+        import('@/services/gateway/modelLoaders'),
+        import('@/services/gateway/modelCatalog'),
+      ]);
+      const models = await loadAgentScopedGatewayModels(
+        targetAgentId,
+        (method, params) => gateway.call(method, params),
+        extractAvailableModelsFromGatewayResult,
+      );
+      if (requestId === scopedModelCatalogRequestRef.current) {
+        setSessionAvailableModels(targetAgentId, models);
+      }
+    } catch {
+      if (requestId === scopedModelCatalogRequestRef.current) {
+        setSessionAvailableModels(targetAgentId, []);
+      }
+    }
+  }, [setSessionAvailableModels, setSessionModelsLoading]);
+
+  useEffect(() => {
+    if (connected && activeSessionAgentId) {
+      void loadAgentScopedModels(activeSessionAgentId);
+      return;
+    }
+    scopedModelCatalogRequestRef.current += 1;
+    clearSessionAvailableModels();
+  }, [activeSessionAgentId, clearSessionAvailableModels, connected, loadAgentScopedModels]);
+
   const startInitialWorkspaceLoad = useCallback(() => {
     const boot = useBootSequenceStore.getState();
     setWorkspaceStartupFailed(false);
@@ -423,7 +463,11 @@ export default function App() {
       // 不得让它的独立失败阻塞工作区进入。
       markInitialWorkspaceDataReady(true);
       boot.markStageRunning('conversation', 'Warming recent conversation');
-      const sessionKey = useChatStore.getState().activeSessionKey || 'agent:main:main';
+      const sessionKey = useChatStore.getState().activeSessionKey;
+      if (!sessionKey) {
+        boot.markStageCompleted('conversation', 'No Gateway-confirmed conversation is selected');
+        return;
+      }
       void gateway.getHistory(sessionKey, 20, 8_000).then((result) => {
         const stage = useBootSequenceStore.getState().stages.conversation;
         if (stage.status !== 'pending' && stage.status !== 'running') return;
@@ -733,15 +777,6 @@ export default function App() {
         );
       },
       onStreamEnd: (sessionKey, messageId, content, media, meta) => {
-        void taskExecutionCoordinator.settleRun({
-          sessionKey,
-          runId: meta?.runId,
-          terminalReason: meta?.state === 'aborted'
-            ? 'aborted'
-            : meta?.state === 'error'
-              ? 'error'
-              : 'final',
-        }).catch((error) => taskExecutionCoordinator.reportPersistenceFailure('settle Run checkpoint', error));
         if (sessionKey === useChatStore.getState().activeSessionKey) {
           voiceRuntime.finishStream(sessionKey, content, meta?.state ?? 'final', messageId, media?.mediaUrl);
         }
@@ -978,7 +1013,13 @@ export default function App() {
     // Configuration and session selection are separate domains. The config
     // manager already owns the restart; this listener only reloads its model view.
     const handleConfigSaved = () => {
-      setTimeout(() => loadAvailableModels(), 1500);
+      setTimeout(() => {
+        void loadAvailableModels();
+        const agentId = useChatStore.getState().sessions
+          .find((session) => session.key === useChatStore.getState().activeSessionKey)
+          ?.agentId;
+        if (agentId) void loadAgentScopedModels(agentId);
+      }, 1500);
     };
     window.addEventListener('aegis:config-saved', handleConfigSaved);
 
@@ -1057,7 +1098,7 @@ export default function App() {
       gateway.forgetSessionViewerPresence();
       gatewayManager.destroy();
     };
-  }, [setupComplete, cachedSetupValidationPending, restartGatewayFromBoot, emitGatewayProgress, addBootRecoveryLog, cancelGatewayMigrationRetry, setWorkspaceStartupMode, surfaceVerifiedGatewayHandoffFailure, startInitialWorkspaceLoad]);
+  }, [addBootRecoveryLog, cachedSetupValidationPending, cancelGatewayMigrationRetry, emitGatewayProgress, loadAgentScopedModels, loadAvailableModels, restartGatewayFromBoot, setWorkspaceStartupMode, setupComplete, startInitialWorkspaceLoad, surfaceVerifiedGatewayHandoffFailure]);
 
 
   // ── Pairing Handlers ──
