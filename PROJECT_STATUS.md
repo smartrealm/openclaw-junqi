@@ -18,7 +18,7 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 
 ## 已完成内容
 
-- `Blues-Code/dingtalk` 已快进到本地 `main` 的 `4fd6328a`；本次包含钉钉授权、Gateway 重连刷新、审批追溯、会话侧栏与官方 Setup 契约收敛。当前分支相对 `origin/main` 领先 38 个本地提交，尚未推送远端。
+- `Blues-Code/dingtalk` 已合并到本地 `main@534a25c3`；本次包含钉钉授权、Gateway 重连刷新、审批追溯、会话侧栏与官方 Setup 契约收敛。当前分支相对 `origin/main` 领先 39 个本地提交，尚未推送远端。
 - 静态 Gateway RPC 复核确认 101 个生产代码字面量调用、81 个不同方法均能在 2026-08-09 获取的官方源码提交
   `03cb1443e5185d130b22d792a322cf7000eb4694` 的 core descriptor 中找到；16 个集中常量方法同样已核验。
   该结论不覆盖动态方法名、
@@ -127,9 +127,11 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
   928 个文件零违规，四处桌面版本一致，TypeScript 检查通过；独立 `pnpm build` 通过。
 - Jarvis 后续钉钉授权与重连提交的前端定向测试 12 项和 Rust DWS 授权命令测试 1 项通过；再次执行
   `pnpm lint` 时模块边界扫描 930 个文件零违规，TypeScript 检查通过；合并后 `pnpm build` 再次通过。
-- `Blues-Code/dingtalk` 快进到 `main@4fd6328a` 后再次通过 `pnpm dingtalk:test`（18 项）、
+- `Blues-Code/dingtalk` 合并到 `main@534a25c3` 后再次通过 `pnpm dingtalk:test`（18 项）、
   `pnpm dingtalk:validate`、`pnpm lint`、完整 `pnpm test` 和 `pnpm build`；Rust 侧通过格式检查、
-  `cargo check --lib` 与 DWS 操作定向测试（2 项）。构建重新生成的钉钉插件包仍为 33 个工具。
+  `cargo check --lib` 与 DWS 操作定向测试（2 项）。构建重新生成的钉钉插件包仍为 33 个工具；本机
+  Apple Silicon 已生成 `src-tauri/target/release/bundle/dmg/JunQi Desktop_2.3.0_aarch64.dmg`，
+  SHA-256 为 `7ce8303923b98babe2d581e73a089f2236654f4fba3a7dce3c69060fc2388b55`。
 - 已通过 `pnpm collab:bundle`：schema 14、167 个校验文件，bundle SHA-256 为
   `0778a9538482e492b9acc8bb079dcec959e8546b07231de898f06138c1b9275f`，generated metadata 与 Tauri resource metadata 一致。
 - 已通过 `src/stores/gatewayDataStore.test.ts`：29 项通过，覆盖未知载荷和安全日志边界。
