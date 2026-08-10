@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Activity, AlertCircle, Bot, Check, ChevronDown, Copy, Download, Link2, ListFilter, LogOut, MessageSquare, Pencil, Play, Plus, Power, QrCode, RefreshCw, Save, Settings2, ShieldCheck, Square, TerminalSquare, Trash2, Wifi, WifiOff, X } from 'lucide-react';
+import { Activity, AlertCircle, Bot, Check, ChevronDown, Copy, Download, Link2, ListFilter, LogOut, MessageSquare, MoreHorizontal, Pencil, Play, Plus, Power, QrCode, RefreshCw, Save, Settings2, ShieldCheck, Square, TerminalSquare, Trash2, Wifi, WifiOff, X } from 'lucide-react';
 import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
@@ -50,9 +50,19 @@ import {
 } from '@/services/openclawChannelRuntime';
 import { ChannelQrLoginDialog } from './ChannelQrLoginDialog';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ChannelRuntimeIcon } from '@/components/shared/ChannelRuntimeIcon';
 import { runChannelRuntimeAction } from '@/services/channelRuntimeActions';
 import { openClawRuntimeConfigClient } from '@/services/gateway';
+import {
+  getChannelAttentionCount,
+  shouldShowChannelCenterSkeleton,
+} from './channelCenterPresentation';
 import {
   loadGatewayProcessLogs,
   observeSelectedGatewayProcess,
@@ -487,9 +497,7 @@ export function ChannelsCenterPage() {
   }, [focusedAgentId, filteredGroups]);
 
   const filteredAccountCount = filteredGroups.reduce((sum, group) => sum + group.accounts.length, 0);
-  // The catalog is also the channel discovery surface. Keep configured channels
-  // visible here so users can find them and add/link another account instead of
-  // making a channel disappear as soon as its first account is configured.
+  // 渠道目录同时承担发现入口；已配置渠道仍需保留，以便继续添加或关联账号。
   const availableEntries = catalog.entries;
   const gatewayHealthy = Boolean(gatewayStatus?.running && gatewayStatus?.ready);
   const gatewayStateLabel = gatewayLoading
@@ -498,6 +506,12 @@ export function ChannelsCenterPage() {
       ? t('channelsCenter.gatewayHealthy', 'Gateway running')
       : t('channelsCenter.gatewayOffline', 'Gateway offline');
   const latestGatewayLog = gatewayLogs[gatewayLogs.length - 1];
+  const initialLoading = shouldShowChannelCenterSkeleton({
+    runtimeLoaded,
+    loadingConfig: loading,
+    hasConfig: config !== null,
+  });
+  const attentionCount = getChannelAttentionCount(accountCount, readinessSummary.ready);
 
   const saveConfig = async (
     base: GatewayRuntimeConfig,
@@ -805,32 +819,54 @@ export function ChannelsCenterPage() {
           </h1>
           <p className="text-[12px] text-aegis-text-dim mt-0.5">
             {t('channelsCenter.subtitle', 'Connect agents to channels provided by the selected OpenClaw Runtime.')}
-            {runtimeLoading ? (
-              <span className="ml-2 inline-flex items-center gap-1.5 text-[10px] text-aegis-text-muted">
-                <LoadingIndicator size={10} />
-                {t('channelsCenter.loadingRuntime', 'Loading OpenClaw channel catalog...')}
-              </span>
-            ) : (
-              <span className="ml-2 font-mono text-[10px] text-aegis-text-muted">{catalog.version || catalog.source}</span>
-            )}
           </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-aegis-text-muted">
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-aegis-border bg-aegis-surface px-2 py-1">
+              <span className={clsx('h-1.5 w-1.5 rounded-full', gatewayHealthy ? 'bg-aegis-success' : 'bg-aegis-warning')} />
+              {gatewayStateLabel}
+            </span>
+            {runtimeLoading && <span className="inline-flex items-center gap-1.5"><LoadingIndicator size={10} />{t('channelsCenter.loadingRuntime', 'Loading the OpenClaw channel catalog')}</span>}
+            {!runtimeLoading && catalog.version && <span className="font-mono">{catalog.version}</span>}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={() => { void load(); void loadOfficialState(false); }} disabled={loading || saving || runtimeLoading} title={t('common.refresh', 'Refresh')} className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.05)] disabled:opacity-50">
             <RefreshCw size={15} className={loading || runtimeLoading ? 'animate-spin' : undefined} />
           </button>
-          <button onClick={() => setDiagnosticsOpen((open) => !open)} className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:text-aegis-text text-[11px] font-semibold">
-            <TerminalSquare size={14} />
-            {t('channelsCenter.diagnostics', 'Diagnostics')}
-          </button>
-          <button onClick={() => navigate('/config?tab=channels')} className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:text-aegis-text font-semibold text-[11px]">
-            <Settings2 size={15} />
-            {t('channelsCenter.advancedConfig', 'Advanced config')}
-          </button>
           <button data-tour="channels-add" onClick={() => document.getElementById('available-channels')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="inline-flex items-center gap-2 px-3 h-8 rounded-md bg-aegis-primary text-white font-semibold text-[11px] hover:opacity-90">
             <Plus size={14} />
             {t('channelsCenter.addChannels', 'Add channel')}
           </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" aria-label={t('channelsCenter.moreActions', 'More channel actions')} className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.05)] hover:text-aegis-text">
+                <MoreHorizontal size={15} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48 text-[11px]">
+              <DropdownMenuItem onSelect={() => setDiagnosticsOpen(true)} className="justify-start">
+                <TerminalSquare size={14} />{t('channelsCenter.diagnostics', 'Diagnostics')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => navigate('/config?tab=channels')} className="justify-start">
+                <Settings2 size={14} />{t('channelsCenter.advancedConfig', 'Advanced config')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2.5">
+          <div className="text-[10px] text-aegis-text-muted">{t('channelsCenter.summary.configured', 'Configured channels')}</div>
+          <div className="mt-1 text-[17px] font-semibold tabular-nums text-aegis-text">{groups.length}</div>
+        </div>
+        <div className="rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2.5">
+          <div className="text-[10px] text-aegis-text-muted">{t('channelsCenter.summary.ready', 'Running accounts')}</div>
+          <div className="mt-1 text-[17px] font-semibold tabular-nums text-aegis-success">{readinessSummary.ready}</div>
+        </div>
+        <div className={clsx('rounded-lg border px-3 py-2.5', attentionCount > 0 ? 'border-aegis-warning/25 bg-aegis-warning/5' : 'border-aegis-border bg-aegis-surface')}>
+          <div className="text-[10px] text-aegis-text-muted">{t('channelsCenter.summary.attention', 'Needs attention')}</div>
+          <div className={clsx('mt-1 text-[17px] font-semibold tabular-nums', attentionCount > 0 ? 'text-aegis-warning' : 'text-aegis-text')}>{attentionCount}</div>
         </div>
       </div>
 
@@ -848,11 +884,11 @@ export function ChannelsCenterPage() {
         </div>
       )}
 
-      {loading || !runtimeLoaded ? (
-        <div className="space-y-4 py-4" aria-busy="true" aria-label={t('channelsCenter.loadingRuntime', 'Loading OpenClaw channel catalog...')}>
+      {initialLoading ? (
+        <div className="space-y-4 py-4" aria-busy="true" aria-label={t('channelsCenter.loadingRuntime', 'Loading the OpenClaw channel catalog')}>
           <div className="flex items-center justify-center gap-2 py-4 text-sm text-aegis-text-muted">
             <LoadingIndicator size={18} />
-            {t('channelsCenter.loadingRuntime', 'Loading OpenClaw channel catalog...')}
+            {t('channelsCenter.loadingRuntime', 'Loading the OpenClaw channel catalog')}
           </div>
           {[0, 1, 2].map((item) => (
             <div key={item} className="h-16 animate-pulse rounded-md border border-aegis-border bg-aegis-surface" />
@@ -908,13 +944,6 @@ export function ChannelsCenterPage() {
                   {t('channelsCenter.restartGateway', 'Restart Gateway')}
                 </button>
                 <button
-                  onClick={() => void handleCopyDiagnostics()}
-                  className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-[11px] font-semibold text-aegis-text-muted hover:text-aegis-text"
-                >
-                  <Copy size={13} />
-                  {t('channelsCenter.copyDiagnostics', 'Copy diagnostics')}
-                </button>
-                <button
                   onClick={() => setDiagnosticsOpen((open) => !open)}
                   className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-[11px] font-semibold text-aegis-text-muted hover:text-aegis-text"
                 >
@@ -930,12 +959,10 @@ export function ChannelsCenterPage() {
                   <span className="text-[10px] uppercase tracking-widest font-extrabold text-aegis-text-muted">
                     {t('channelsCenter.gatewayLogs', 'Gateway logs')}
                   </span>
-                  <button
-                    onClick={() => void handleClearGatewayLogs()}
-                    className="text-[10px] font-bold text-aegis-text-dim hover:text-aegis-text"
-                  >
-                    {t('settings.gatewayLog.clear')}
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => void handleCopyDiagnostics()} className="inline-flex items-center gap-1 text-[10px] font-bold text-aegis-text-dim hover:text-aegis-text"><Copy size={11} />{t('channelsCenter.copyDiagnostics', 'Copy diagnostics')}</button>
+                    <button onClick={() => void handleClearGatewayLogs()} className="text-[10px] font-bold text-aegis-text-dim hover:text-aegis-text">{t('settings.gatewayLog.clear')}</button>
+                  </div>
                 </div>
                 {gatewayLogs.length === 0 ? (
                   <div className="px-3 py-5 text-center text-[11px] text-aegis-text-dim">
@@ -1193,34 +1220,31 @@ export function ChannelsCenterPage() {
                                         {linkMode === 'embedded_qr' ? t('channelsCenter.showQr', 'Show QR') : t('channelsCenter.linkAccount', 'Link account')}
                                       </button>
                                     )}
-                                    <button onClick={() => void handleAccountRuntimeAction('channels.start', group, account)} disabled={Boolean(accountActionBusy)} title={t('channelsCenter.startAccount', 'Start account')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-aegis-success/20 text-aegis-success disabled:opacity-50">
-                                      {accountActionBusy === `channels.start:${runtimeBusyPrefix}` ? <LoadingIndicator size={12} /> : <Play size={12} />}
-                                    </button>
-                                    <button onClick={() => void handleAccountRuntimeAction('channels.stop', group, account)} disabled={Boolean(accountActionBusy)} title={t('channelsCenter.stopAccount', 'Stop account')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-aegis-border text-aegis-text-muted disabled:opacity-50">
-                                      {accountActionBusy === `channels.stop:${runtimeBusyPrefix}` ? <LoadingIndicator size={12} /> : <Square size={12} />}
-                                    </button>
-                                    {(runtime?.linked || linkMode !== 'none') && (
-                                      <button onClick={() => void handleAccountRuntimeAction('channels.logout', group, account)} disabled={Boolean(accountActionBusy)} title={t('channelsCenter.logoutAccount', 'Log out account')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-aegis-warning/20 text-aegis-warning disabled:opacity-50">
-                                        {accountActionBusy === `channels.logout:${runtimeBusyPrefix}` ? <LoadingIndicator size={12} /> : <LogOut size={12} />}
-                                      </button>
-                                    )}
                                     <button
                                       onClick={() => setEditingAccount({ mode: 'edit', group, account })}
                                       disabled={saving}
-                                      className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-aegis-primary/20 bg-aegis-primary/10 text-aegis-primary text-[11px] font-bold disabled:opacity-50"
+                                      className="inline-flex items-center gap-1.5 rounded-lg border border-aegis-border px-2.5 py-2 text-[11px] font-bold text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-50"
                                     >
                                       <Pencil size={12} />
-                                      {t('common.edit', 'Edit')}
+                                      {t('channelsCenter.manageAccount', 'Manage account')}
                                     </button>
-                                    {account.source === 'account' && (
-                                      <button
-                                        onClick={() => handleDeleteAccount(group, account)}
-                                        disabled={saving}
-                                        className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-aegis-danger/20 bg-aegis-danger/10 text-aegis-danger text-[11px] font-bold disabled:opacity-50"
-                                      >
-                                        <Trash2 size={12} />
-                                      </button>
-                                    )}
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <button type="button" aria-label={t('channelsCenter.moreAccountActions', 'More account actions')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-aegis-border text-aegis-text-muted hover:bg-aegis-hover hover:text-aegis-text">
+                                          <MoreHorizontal size={13} />
+                                        </button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end" className="min-w-40 text-[11px]">
+                                        <DropdownMenuItem onSelect={() => void handleAccountRuntimeAction('channels.start', group, account)} disabled={Boolean(accountActionBusy)} className="justify-start">
+                                          {accountActionBusy === `channels.start:${runtimeBusyPrefix}` ? <LoadingIndicator size={12} /> : <Play size={12} />}{t('channelsCenter.startAccount', 'Start account')}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onSelect={() => void handleAccountRuntimeAction('channels.stop', group, account)} disabled={Boolean(accountActionBusy)} className="justify-start">
+                                          {accountActionBusy === `channels.stop:${runtimeBusyPrefix}` ? <LoadingIndicator size={12} /> : <Square size={12} />}{t('channelsCenter.stopAccount', 'Stop account')}
+                                        </DropdownMenuItem>
+                                        {(runtime?.linked || linkMode !== 'none') && <DropdownMenuItem onSelect={() => void handleAccountRuntimeAction('channels.logout', group, account)} disabled={Boolean(accountActionBusy)} className="justify-start text-aegis-warning focus:text-aegis-warning">{accountActionBusy === `channels.logout:${runtimeBusyPrefix}` ? <LoadingIndicator size={12} /> : <LogOut size={12} />}{t('channelsCenter.logoutAccount', 'Log out account')}</DropdownMenuItem>}
+                                        {account.source === 'account' && <DropdownMenuItem onSelect={() => handleDeleteAccount(group, account)} disabled={saving} className="justify-start text-aegis-danger focus:text-aegis-danger"><Trash2 size={12} />{t('common.remove', 'Remove')}</DropdownMenuItem>}
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
                                   </div>
                                 </div>
                               );

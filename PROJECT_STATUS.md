@@ -16,9 +16,16 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 会话区域挤压，并以单一配置守护入口顺序、路由与激活规则；同时按 OpenClaw 会话契约提供智能体作用域、
 主会话固定、分组和排序投影。
 
+当前渠道界面目标已完成：渠道中心保留单一添加入口和刷新入口，诊断及高级配置进入共享菜单；首次加载与后台
+刷新分离，账号次要操作统一收纳，摘要只投影当前配置和 OpenClaw 运行时返回的真实状态。
+
 ## 已完成内容
 
-- `Blues-Code/dingtalk` 已通过合并提交 `4b7bb79f` 进入 `main`，其提交 `3dbd5c56` 已是 `main` 的祖先。
+- `Blues-Code/dingtalk` 已合并到本地 `main@534a25c3`；本次包含钉钉授权、Gateway 重连刷新、审批追溯、会话侧栏与官方 Setup 契约收敛。当前分支相对 `origin/main` 领先 39 个本地提交，尚未推送远端。
+- 渠道中心已按工作台现有视觉语言收敛：页头只保留刷新、添加渠道和更多操作，诊断与高级配置进入共享
+  `DropdownMenu`；已配置渠道、运行中账号和需要处理数量由当前配置及官方运行时状态派生。
+- 渠道中心首次加载使用骨架，已有配置的后台刷新不再清空内容；账号启动、停止、退出和删除进入共享菜单，
+  关联、登录与管理操作保持可见。三个内置语言均补齐渠道加载、摘要及菜单文案。
 - 静态 Gateway RPC 复核确认 101 个生产代码字面量调用、81 个不同方法均能在 2026-08-09 获取的官方源码提交
   `03cb1443e5185d130b22d792a322cf7000eb4694` 的 core descriptor 中找到；16 个集中常量方法同样已核验。
   该结论不覆盖动态方法名、
@@ -51,7 +58,8 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
   智能体作用域结果由 Gateway `models.list` 提供。
 - 授权、配对、权限和限流分类只接受结构化错误码；WebSocket 关闭原因和普通错误文案不再生成授权事实。
 - 仪表盘侧栏主要入口已收束为单一导航配置；新建对话和四个功能入口固定在会话列表上方，只有会话列表占用
-  剩余空间并滚动。当前安装应用的钉钉工具清单为 30 项，落后于源码资源的 33 项，不能代表当前提交界面。
+  剩余空间并滚动。当前源码插件清单和桌面资源 metadata 均为 33 项；实际可用能力仍以当前 Gateway Session 的
+  `tools.effective` 为准。
 - `Blues-Code/Jarvis` 的智能体作用域会话侧栏已合并：只呈现所选智能体会话，固定 Gateway 已确认的主会话，
   支持官方创建时间与最近更新时间排序，并保留跨智能体完整会话管理入口。冲突解决后，新建会话只保留顶部
   单一入口，使用当前所选智能体，不在作用域控件中复制第二个创建按钮。
@@ -91,6 +99,8 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - `src/services/gateway/OpenClawUsageClient.ts`：OpenClaw cost 与 session usage 的结构、校验和页面类型来源。
 - `src/components/Layout/workbenchNavigation.ts`：仪表盘侧栏主要入口、路由和激活规则的单一来源。
 - `src/components/Layout/SessionScopeControls.tsx` 与 `src/components/Layout/sidebarUtils.ts`：智能体作用域、分组、排序和主会话投影。
+- `src/pages/ChannelsCenter/index.tsx`：渠道中心主次操作、真实状态摘要、加载边界和账号操作菜单。
+- `docs/quality/channels-center-ui-consolidation-2026-08-10.md`：渠道中心 UI 收敛依据、行为和未验证边界。
 - `src/services/gateway/OpenClawSetupClient.ts`：官方 Setup 检测与实时验证响应边界。
 - `src/hooks/useSetupFlow/useWizardSession.ts`：官方 Wizard 终态和 Gateway 服务交接，不追加客户端模型门禁。
 - `docs/quality/workbench-sidebar-navigation-visibility-2026-08-10.md`：侧栏入口存在性、布局根因和验证边界。
@@ -126,6 +136,13 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
   928 个文件零违规，四处桌面版本一致，TypeScript 检查通过；独立 `pnpm build` 通过。
 - Jarvis 后续钉钉授权与重连提交的前端定向测试 12 项和 Rust DWS 授权命令测试 1 项通过；再次执行
   `pnpm lint` 时模块边界扫描 930 个文件零违规，TypeScript 检查通过；合并后 `pnpm build` 再次通过。
+- `Blues-Code/dingtalk` 合并到 `main@534a25c3` 后再次通过 `pnpm dingtalk:test`（18 项）、
+  `pnpm dingtalk:validate`、`pnpm lint`、完整 `pnpm test` 和 `pnpm build`；Rust 侧通过格式检查、
+  `cargo check --lib` 与 DWS 操作定向测试（2 项）。构建重新生成的钉钉插件包仍为 33 个工具；本机
+  Apple Silicon 已生成 `src-tauri/target/release/bundle/dmg/JunQi Desktop_2.3.0_aarch64.dmg`，
+  SHA-256 为 `7ce8303923b98babe2d581e73a089f2236654f4fba3a7dce3c69060fc2388b55`。
+- 渠道中心界面收敛后，`pnpm lint` 通过，模块边界扫描 930 个文件零违规；完整
+  `pnpm test -- --runInBand` 与 `pnpm build` 通过。尚未执行三平台桌面真机视觉验收。
 - 已通过 `pnpm collab:bundle`：schema 14、167 个校验文件，bundle SHA-256 为
   `0778a9538482e492b9acc8bb079dcec959e8546b07231de898f06138c1b9275f`，generated metadata 与 Tauri resource metadata 一致。
 - 已通过 `src/stores/gatewayDataStore.test.ts`：29 项通过，覆盖未知载荷和安全日志边界。
