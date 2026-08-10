@@ -12,6 +12,10 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 当前新增审查目标：按 DWS 审批命令契约规划审批实例、审批任务、流程记录和人工审核追溯 UI。现有钉钉工具工作台
 只有通用工具详情和 metadata 审计，尚无真实字段支撑的审批流程图；实现前必须取得 DWS 结构化返回或官方 schema 证据。
 
+当前界面修复目标：确保仪表盘侧栏的智能体、模型服务、通道和定时任务始终位于会话列表上方，固定导航不被
+会话区域挤压，并以单一配置守护入口顺序、路由与激活规则；同时按 OpenClaw 会话契约提供智能体作用域、
+主会话固定、分组和排序投影。
+
 ## 已完成内容
 
 - `Blues-Code/dingtalk` 已通过合并提交 `4b7bb79f` 进入 `main`，其提交 `3dbd5c56` 已是 `main` 的祖先。
@@ -46,6 +50,15 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - 已删除客户端复制的模型可见性算法。配置页只判断可由静态配置证明的结构问题，模型目录、认证、别名和
   智能体作用域结果由 Gateway `models.list` 提供。
 - 授权、配对、权限和限流分类只接受结构化错误码；WebSocket 关闭原因和普通错误文案不再生成授权事实。
+- 仪表盘侧栏主要入口已收束为单一导航配置；新建对话和四个功能入口固定在会话列表上方，只有会话列表占用
+  剩余空间并滚动。当前安装应用的钉钉工具清单为 30 项，落后于源码资源的 33 项，不能代表当前提交界面。
+- `Blues-Code/Jarvis` 的智能体作用域会话侧栏已合并：只呈现所选智能体会话，固定 Gateway 已确认的主会话，
+  支持官方创建时间与最近更新时间排序，并保留跨智能体完整会话管理入口。冲突解决后，新建会话只保留顶部
+  单一入口，使用当前所选智能体，不在作用域控件中复制第二个创建按钮。
+- 安装完成判定已改用官方 `openclaw.setup.detect.setupComplete`。官方 Wizard 终态后只核验经认证的所选
+  Gateway 和服务交接，不再由客户端追加实时模型验证；`openclaw.setup.verify` 只用于业务就绪诊断。
+- 统一 Setup 客户端的未知方法判断复用 `GatewayProtocolEvidence`，只接受与本次请求方法精确绑定的官方错误，
+  不再通过宽松错误文本或非官方错误码推断能力缺失。已删除旧 Setup 验证客户端及其残留调用和专属测试。
 - Gateway 请求超时已使用稳定错误类型，未知方法证据精确绑定当前请求方法；启动期历史预热不再解析错误文案。
 - 原生 Gateway 客户端、技能运行时、数据仓和协作插件探测现共用 `GatewayProtocolEvidence`。三个非官方未知方法
   错误码、宽松文本和嵌套异常不再生成能力缺失；协作领域改用本地 `METHOD_UNAVAILABLE` 状态。
@@ -76,6 +89,11 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - `src/services/gateway/GatewayCapabilityRegistry.ts`：能力调用证据与失败状态记录。
 - `src/services/gateway/GatewayProtocolEvidence.ts`：未知方法与当前请求身份绑定的单一协议证据解析器。
 - `src/services/gateway/OpenClawUsageClient.ts`：OpenClaw cost 与 session usage 的结构、校验和页面类型来源。
+- `src/components/Layout/workbenchNavigation.ts`：仪表盘侧栏主要入口、路由和激活规则的单一来源。
+- `src/components/Layout/SessionScopeControls.tsx` 与 `src/components/Layout/sidebarUtils.ts`：智能体作用域、分组、排序和主会话投影。
+- `src/services/gateway/OpenClawSetupClient.ts`：官方 Setup 检测与实时验证响应边界。
+- `src/hooks/useSetupFlow/useWizardSession.ts`：官方 Wizard 终态和 Gateway 服务交接，不追加客户端模型门禁。
+- `docs/quality/workbench-sidebar-navigation-visibility-2026-08-10.md`：侧栏入口存在性、布局根因和验证边界。
 - `plans/business/2026-08-10-dingtalk-approval-trace-ui.md`：DWS 审批命令核对、流程投影边界与 UI 实施顺序。
 - `src/business-applications/dingtalkApproval.ts`、`src/pages/businessApplications/useDingTalkApprovalTrace.ts`、`src/components/BusinessApplications/DingTalkApprovalTracePanel.tsx`：DWS 审批实例、任务和记录的脱敏投影、只读汇聚与流程时间线展示。
 - `src/business-applications/dingtalkAgentAuthorization.ts`、`src/business-applications/dingtalkGatewayReconnect.ts`：当前智能体的最小授权补丁，以及 Gateway 重启后连接与运行时身份一致性核验。
@@ -102,6 +120,12 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
   `pnpm collab:validate`。
 - 审批追溯新增 7 项投影测试通过；钉钉插件清单由 30 个扩展为 33 个工具，包含审批记录、审批任务和流程预测，
   `pnpm dingtalk:test`、`pnpm lint` 和 `pnpm build` 均已通过。
+- 仪表盘侧栏导航新增 2 项行为测试通过，覆盖四个入口的完整顺序、目标路由和无子串误判的激活规则。
+- Jarvis 合并后的侧栏、官方 Setup 客户端、安装完成门禁和安装回归定向测试 66 项通过；完整
+  `pnpm test` 前端 2791 项、仓库脚本 235 项均通过且零失败；`pnpm lint` 通过，模块边界扫描
+  928 个文件零违规，四处桌面版本一致，TypeScript 检查通过；独立 `pnpm build` 通过。
+- Jarvis 后续钉钉授权与重连提交的前端定向测试 12 项和 Rust DWS 授权命令测试 1 项通过；再次执行
+  `pnpm lint` 时模块边界扫描 930 个文件零违规，TypeScript 检查通过；合并后 `pnpm build` 再次通过。
 - 已通过 `pnpm collab:bundle`：schema 14、167 个校验文件，bundle SHA-256 为
   `0778a9538482e492b9acc8bb079dcec959e8546b07231de898f06138c1b9275f`，generated metadata 与 Tauri resource metadata 一致。
 - 已通过 `src/stores/gatewayDataStore.test.ts`：29 项通过，覆盖未知载荷和安全日志边界。
@@ -122,6 +146,7 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - 本轮未执行 Docker Gateway 回放；此前两次隔离 structural harness 均通过 bundle 校验和 Docker preflight，但固定摘要的
   OpenClaw `2026.7.1` 镜像在 600 秒拉取上限处超时，插件和 Gateway 尚未启动。两次均确认无受控容器、网络或 volume 遗留。
 - 尚未完成 macOS、Windows、Linux 的凭据库、WebView、窗口和真实 UI 验收。
+- 尚未用当前提交重新生成并安装 macOS 桌面包；Windows 和 Linux 的侧栏窄高度、亮色及暗色视觉仍未真机验收。
 - Node 的 Tauri 内部桥不等于真实 WebView 到 Rust handler 的端到端调用；该路径仍需桌面真机验证。
 
 ## 失败方案与约束

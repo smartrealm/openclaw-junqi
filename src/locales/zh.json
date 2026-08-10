@@ -4791,6 +4791,7 @@
   "sidebar.nav.models": "模型服务",
   "sidebar.nav.channels": "通道",
   "sidebar.nav.cron": "定时任务",
+  "sidebar.primaryNavigation": "主要功能",
   "sidebar.background.title": "后台活动",
   "sidebar.background.running": "后台任务运行中",
   "sidebar.background.dreaming": "梦境",

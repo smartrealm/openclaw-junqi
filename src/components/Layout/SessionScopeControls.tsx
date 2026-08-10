@@ -1,4 +1,4 @@
-import { ChevronDown, ListFilter, Plus, Settings2, UserPlus } from 'lucide-react';
+import { ChevronDown, ListFilter, Settings2, UserPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import {
@@ -25,11 +25,9 @@ interface SessionScopeControlsProps {
   readonly sortMode: SidebarSessionSortMode;
   readonly agentsLoading: boolean;
   readonly agentsFailed: boolean;
-  readonly createDisabled: boolean;
   readonly onAgentChange: (agentId: string) => void;
   readonly onGroupingChange: (grouping: SidebarSessionGrouping) => void;
   readonly onSortModeChange: (mode: SidebarSessionSortMode) => void;
-  readonly onCreateSession: () => void;
   readonly onCreateAgent: () => void;
   readonly onOpenAgentSettings: () => void;
 }
@@ -41,11 +39,9 @@ export function SessionScopeControls({
   sortMode,
   agentsLoading,
   agentsFailed,
-  createDisabled,
   onAgentChange,
   onGroupingChange,
   onSortModeChange,
-  onCreateSession,
   onCreateAgent,
   onOpenAgentSettings,
 }: SessionScopeControlsProps) {
@@ -126,16 +122,6 @@ export function SessionScopeControls({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <button
-          type="button"
-          onClick={onCreateSession}
-          disabled={createDisabled}
-          className={iconButtonClass}
-          title={t('sidebar.newChat', '新建对话')}
-          aria-label={t('sidebar.newChat', '新建对话')}
-        >
-          <Plus size={15} aria-hidden="true" />
-        </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button

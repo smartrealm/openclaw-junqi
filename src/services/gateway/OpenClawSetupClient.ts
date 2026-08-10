@@ -1,4 +1,5 @@
-import { GatewayDisconnectedError, GatewayRpcError } from './Connection';
+import { GatewayDisconnectedError } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_SETUP_DETECT_METHOD = 'openclaw.setup.detect' as const;
 export const OPENCLAW_SETUP_VERIFY_METHOD = 'openclaw.setup.verify' as const;
@@ -62,14 +63,6 @@ function failureStatus(value: unknown): OpenClawSetupVerificationFailureStatus |
     : null;
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  if (!(error instanceof GatewayRpcError)) return false;
-  if (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND') {
-    return true;
-  }
-  return error.code === 'INVALID_REQUEST' && /^unknown method:/i.test(error.message.trim());
-}
-
 export function parseOpenClawSetupDetection(value: unknown): OpenClawSetupDetection {
   const source = record(value);
   if (!source || typeof source.setupComplete !== 'boolean') {
@@ -128,7 +121,7 @@ export class OpenClawSetupClient {
     try {
       return parse(await this.dependencies.requestPrivileged(method, {}));
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, method)) {
         throw new OpenClawSetupMethodUnavailableError(method, 'Gateway method is not supported');
       }
       if (error instanceof GatewayDisconnectedError) {

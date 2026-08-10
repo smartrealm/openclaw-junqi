@@ -10,19 +10,7 @@ import {
   OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS,
   OpenClawWizardOperationSupersededError,
   createScopedOpenClawWizardSessionStore,
-  requiresOpenClawOnboarding,
 } from './openclawWizard';
-
-test('requires onboarding for a missing or model-less config', () => {
-  assert.equal(requiresOpenClawOnboarding(false, {}), true);
-  assert.equal(requiresOpenClawOnboarding(true, { gateway: { mode: 'local' } }), true);
-});
-
-test('requires a primary model instead of trusting wizard run metadata', () => {
-  assert.equal(requiresOpenClawOnboarding(true, { wizard: { lastRunAt: '2026-07-13T00:00:00Z' } }), true);
-  assert.equal(requiresOpenClawOnboarding(true, { agents: { defaults: { model: { primary: 'openai/gpt-5' } } } }), false);
-  assert.equal(requiresOpenClawOnboarding(true, { agents: { defaults: { model: 'openai/gpt-5' } } }), false);
-});
 
 test('wizard client preserves dynamic option values and session lifecycle', async () => {
   const calls: Array<{ method: string; params: Record<string, unknown>; options?: { timeoutMs?: number | null } }> = [];
