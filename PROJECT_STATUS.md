@@ -98,6 +98,9 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - 已通过 `src/stores/gatewayDataStore.test.ts`：29 项通过，覆盖未知载荷和安全日志边界。
 - 已通过聊天发送、原生任务账本和审批 Store 定向测试：25 项通过；TypeScript 检查与 `git diff --check` 通过。
 - 已通过 usage 解析、数据仓和分析查询定向测试：33 项通过；本轮 TypeScript 检查通过。
+- 当前 macOS ARM64 主机已实际通过 `pnpm verify:openclaw-docs` 与 `pnpm test:rust`：684 项通过、2 项忽略。
+- Docker 真实 Gateway 回放按当前任务要求停止，未将镜像拉取或容器启动结果计入通过结论。
+- 已通过 Windows 安装、发布矩阵、版本一致性与模块边界契约测试：35 项通过；这些测试不替代 Windows/Linux 真机验收。
 - 已通过 `git diff --check`。
 - 已扫描本轮修改后的完整文本文件及协作插件包内文本成员，未发现 Emoji。
 - 测试输出仍包含 Node 的 `module.register()` 弃用提示，以及服务端渲染 Tooltip 的 `useLayoutEffect` 警告；
@@ -107,8 +110,8 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 
 - 尚未在官方提交 `03cb1443e5185d130b22d792a322cf7000eb4694` 对应的真实 Gateway 回放实时事件、协作插件和
   钉钉插件。
-- 两次隔离协作 structural harness 均通过 bundle 校验和 Docker preflight，但固定摘要的 OpenClaw `2026.7.1`
-  镜像在 600 秒拉取上限处超时；插件和 Gateway 尚未启动。两次均确认无受控容器、网络或 volume 遗留。
+- 本轮未执行 Docker Gateway 回放；此前两次隔离 structural harness 均通过 bundle 校验和 Docker preflight，但固定摘要的
+  OpenClaw `2026.7.1` 镜像在 600 秒拉取上限处超时，插件和 Gateway 尚未启动。两次均确认无受控容器、网络或 volume 遗留。
 - 尚未完成 macOS、Windows、Linux 的凭据库、WebView、窗口和真实 UI 验收。
 - Node 的 Tauri 内部桥不等于真实 WebView 到 Rust handler 的端到端调用；该路径仍需桌面真机验证。
 
