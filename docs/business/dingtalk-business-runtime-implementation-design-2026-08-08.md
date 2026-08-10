@@ -6,7 +6,7 @@
 
 ## 当前实现与验证状态
 
-- 已新增 `packages/junqi-dingtalk/` 独立 OpenClaw 插件包，固定注册 28 个钉钉业务工具，另提供运行状态和参数契约两个内部工具；插件清单共 30 个工具。
+- 已新增 `packages/junqi-dingtalk/` 独立 OpenClaw 插件包，固定注册 31 个钉钉业务工具，另提供运行状态和参数契约两个内部工具；插件清单共 33 个工具。审批工具包含实例详情、记录、任务和流程预测，均由 DWS schema 重新核验。
 - 插件通过 DWS 官方 canonical path 执行，强制参数数组、JSON 输出、超时、取消、输出上限、精确 `corpId:userId` profile 和 leaf schema 摘要校验；子进程只接收路径、DWS 配置目录、临时目录、语言与系统证书白名单环境变量，schema 漂移会失败关闭。
 - 写工具统一经过 OpenClaw `before_tool_call` 插件审批；DWS 的 `user_required` 只在审批通过后追加 `--yes`，未知结果不自动重放。
 - 已生成并校验桌面资源包，Native 与 Docker 安装均要求当前已核验 Runtime Identity、连接 ID、目标指纹和选定运行时匹配；Tauri 仅启动 DWS 官方安装与设备授权命令，业务调用仍只经 OpenClaw 插件工具。
@@ -16,6 +16,7 @@
 - 工作台使用一条紧凑 readiness 状态条引导当前阻塞步骤：插件安装或 Gateway 重启、专属 Agent 授权、DWS 缺失、DWS 业务身份未确认、用户资料待验证和完整可用均有不同文案。已验证的本机或 Docker 运行时可直接启动官方命令，远程 Gateway 仍只交接官方文档。
 - DWS 缺失时，状态条提供“安装 DWS”入口。Native 执行官方 npm 安装包，Docker 在选定 OpenClaw 容器内执行同一官方包；授权入口执行官方 `dws auth login --device`，实时输出只在当前桌面弹层显示并限制长度、隐藏凭据特征行，完成后重新读取 DWS 状态。JunQi 不读取、持久化或拼接 DWS token，也不执行远程 curl/PowerShell 脚本。
 - 业务活动页以 OpenClaw `audit.activity.list` 的 metadata-only 工具事件作为权威审计层，按钉钉工具筛选当前 Gateway 中跨 Session 的参与 Agent、run、tool call 与终态，并支持分页读取更早记录；本窗口调用投影只保存运行时、Session、Agent、Profile、审批和 DWS 关联元数据，绝不保存参数、业务数据或原始输出。上游未提供委派关系时不推断父子 Agent。
+- 审批工具结果现在进入独立的审批追溯投影，业务页在真实结果包含实例、任务或记录时展示审批概要和记录时间线；用户可基于 DWS 返回的实例标识主动刷新审批记录与待办任务，部分读取失败时保留成功结果并显示真实错误。缺少结构化字段时不生成推测节点，OpenClaw 插件审批与钉钉人工审批记录分开呈现。
 - 已通过插件单测、前端业务单测、TypeScript、全仓边界检查、Rust `cargo check`、Rust 全量 `cargo test --lib`、`pnpm build`、`pnpm verify:openclaw-docs` 和 `git diff --check`。
 - 尚未完成正式 DWS 发布包、真实钉钉租户、真实 Gateway 审批往返，以及 macOS/Windows/Linux/Docker 的真机视觉和运行验收；这些边界保持待验证，不把本机编译结果描述为业务上线。
 - 2026-08-08 本机只读探测显示 OpenClaw 为 `2026.7.1-2`，当前 PATH 不存在 `dws`，`plugins list --json` 也未包含 `junqi-dingtalk`；因此未执行安装、认证、profile 或业务工具调用。

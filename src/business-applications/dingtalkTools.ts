@@ -4,6 +4,8 @@ export const DINGTALK_PLUGIN_ID = 'junqi-dingtalk';
 export const DINGTALK_TOOL_PREFIX = 'junqi_dingtalk_';
 export const DINGTALK_RUNTIME_STATUS_TOOL = 'junqi_dingtalk_runtime_status';
 export const DINGTALK_TOOL_SCHEMA_TOOL = 'junqi_dingtalk_tool_schema';
+export const DINGTALK_APPROVAL_RECORDS_TOOL = 'junqi_dingtalk_approval_records';
+export const DINGTALK_APPROVAL_TASKS_TOOL = 'junqi_dingtalk_approval_tasks';
 
 export type DingTalkDomain = 'contact' | 'approval' | 'attendance' | 'calendar' | 'todo' | 'runtime' | 'unknown';
 export type DingTalkEffect = 'read' | 'write' | 'unknown';

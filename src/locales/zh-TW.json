@@ -5445,7 +5445,23 @@
     "sidebarRecentActivity": "最近操作",
     "sidebarNoActivity": "本視窗尚無業務操作",
     "sidebarActivityState": "{{state}} · {{agent}}",
-    "sidebarNoActivityHint": "開啟操作審計查看官方記錄"
+    "sidebarNoActivityHint": "開啟操作審計查看官方記錄",
+    "approvalTrace": {
+      "title": "審批追溯",
+      "emptyTitle": "暫無可展示的審批追溯",
+      "emptyDescription": "DWS 目前結果沒有返回審批實例、任務或操作記錄，不產生推測節點。",
+      "observedAt": "觀察於 {{time}}",
+      "instance": "實例",
+      "process": "流程",
+      "status": "狀態",
+      "notReturned": "DWS 未返回",
+      "statusNotReturned": "DWS 未返回狀態",
+      "recordFallback": "DWS 返回的審批記錄",
+      "taskFallback": "待處理審批任務",
+      "refresh": "重新整理追溯",
+      "refreshUnavailable": "需要 DWS 返回審批實例識別碼，且目前 Session 提供審批記錄或審批任務工具。",
+      "partialTools": "目前 Session 只提供部分審批追溯工具，重新整理結果可能不完整。"
+    }
   },
   "businessGuide": {
     "title": "開始使用",
