@@ -1,124 +1,18 @@
-# JunQi Desktop 安装与首次启动流程
+# JunQi Desktop 安装与首次启动
 
-日期：2026-08-08
+JunQi 是 OpenClaw Gateway 的 Tauri 桌面客户端。安装流程只负责桌面运行时选择、环境检测、Gateway 生命周期交接和官方 OpenClaw Wizard 的呈现；模型、凭据、工作区、渠道、会话和工具的语义均由 OpenClaw 决定。
 
-状态：当前实现总览。具体问题的审计、规格、计划和验证记录仍以本页列出的专题文档为准。
+## 当前流程
 
-## 适用范围
+1. 用户确认存储位置并选择 Native 或 Docker 运行时。该选择会持久化，失败时不会静默切换到另一运行时。
+2. JunQi 按所选运行时检测或准备 Node、npm、OpenClaw、Docker 与必要系统能力。路径和凭据始终绑定该运行时，不能使用开发机默认值。
+3. JunQi 启动或复用 Gateway，并在认证连接与 Runtime Identity 均完成核验后继续。端口可达或进程启动不等于交接成功。
+4. JunQi 调用官方 `openclaw.setup.detect`。官方判断需要配置时，在同一会话呈现官方 Wizard；官方不支持该方法时才进入同一 Gateway 的官方 Wizard，不以本地标记跳过。
+5. Wizard 的模型、凭据、工作区、渠道及可跳过步骤均按其结构化步骤呈现。JunQi 不补充、改写或伪造任何 OpenClaw 结果。
+6. 完成后进入 Dashboard。后续连接异常由统一 Gateway 生命周期协调器处理，不能把旧连接、文本日志或本地缓存当作成功。
 
-JunQi 是 OpenClaw Gateway 的 Tauri 桌面客户端。安装流程只负责桌面运行时选择、环境探测、Gateway 生命周期交接和官方
-OpenClaw Wizard 的呈现；模型、凭据、工作区、渠道、会话和工具的语义由 OpenClaw 官方运行时决定。
+## 当前验证与边界
 
-当前支持的运行方式是用户明确选择并持久化的 Native 或 Docker。失败时不会静默切换运行方式，也不会用浏览器版 JunQi
-替代桌面流程。
+自动化覆盖 Native 与 Docker 选择、配置交接和连接状态的协议边界。macOS、Windows 与 Linux 的安装器、系统服务、凭据库和真实官方插件行为仍须分别在目标设备验收；未验收时不得描述为跨平台已通过。
 
-## 端到端步骤
-
-### 1. 欢迎与环境检测
-
-首次启动进入欢迎页后，欢迎页作为五个配置阶段之前的介绍页，不占用顶部阶段编号；点击“下一步”后进入第一阶段环境检测。
-JunQi 随后检测 Node.js、npm、OpenClaw 命令和 Docker 可用性。检测结果只作为当前设备的运行时事实，不会把当前开发机的路径、用户
-或已有 Gateway 当作其他设备的默认值。
-
-环境检测页支持重新检测、返回和继续。操作状态由同一组 `idle`、`navigating`、`redetecting` 状态同时驱动按钮禁用和
-实际单飞保护。返回后再次继续必须重新可用，不能被上一次异步操作遗留的锁阻断。
-
-### 2. OpenClaw 数据位置
-
-用户选择并确认 OpenClaw 数据目录。路径由用户选择或已验证的运行时身份提供，不能在前端写死。Native 与 Docker 的
-配置、凭据和工作区路径保持属于当前选择的运行方式。
-
-环境检测页和数据位置页之间允许前进、返回、再次前进。步骤切换立即卸载旧页面；步骤条和底部操作栏保持稳定，只有标题
-和内容场景执行短距离、近不透明的方向入场动效，场景内容继续保持原有居中约束。首次欢迎页直接呈现，运行状态页使用更短的
-纵向入场，避免欢迎页到环境检测页出现空白闪动。场景滚动容器只允许纵向滚动，横向位移不会生成底部滚动条。旧页不会继续
-持有异步引用或拦截新页面操作。顶部五阶段条采用等宽自适应布局，窄窗口通过文案换行保持完整呈现，不生成独立横向滚动条。
-
-### 3. 选择并准备运行时
-
-用户在 Native 与 Docker 之间做明确选择。随后 JunQi 根据所选运行时执行对应的准备流程：
-
-- Native：检测或安装 Node.js、npm、OpenClaw 命令和所需系统能力；
-- Docker：检测 Docker 客户端、守护进程和 OpenClaw 镜像可用性。
-
-Git、Node.js 或 OpenClaw 缺失时进入对应的修复或安装步骤。任何安装、修复或取消都绑定当前运行事务和运行方式，
-失败时保留诊断日志，不自动改用另一种运行时。
-
-### 4. 启动 Gateway 并建立经认证连接
-
-JunQi 按当前运行时读取 Gateway 配置，探测端口，复用或启动 Gateway，并建立经身份和权限核验的连接。Gateway 进程
-可达不等于配置有效、设备身份正确、授权完成或模型可用。
-
-Gateway 服务交接使用有界等待。服务已启动但连接身份发生变化、未完成认证或所选服务未被验证为运行中时，流程保留真实
-失败原因，不以“端口可达”伪报成功。
-
-Gateway 就绪仍是第三阶段“运行时”的真实完成检查点，但用户界面立即激活第四阶段“配置 OpenClaw”。同一配置页面先展示
-Gateway 已就绪及“核验配置”操作；用户显式开始核验后，JunQi 请求官方 `openclaw.setup.detect`，加载、失败或官方 Wizard 步骤在原位置替换，不再出现第二个页面或
-场景跳转。运行时完成与配置完成仍是不同事实：顶部运行时步骤显示完成，配置步骤保持当前，Gateway 就绪不能单独表示模型、
-凭据或配置已成功。官方 `setupComplete` 为真时直接进入完成页，不会生成 JunQi 自己的渠道决策步骤。
-
-### 5. 执行官方 OpenClaw Wizard
-
-用户在配置页面确认核验且官方门禁判定需要引导后，JunQi 在同一页面呈现 OpenClaw 官方 Wizard。模型、凭据、工作区、
-渠道以及官方允许跳过的步骤均由 Wizard 返回的结构化步骤决定。JunQi 的首次请求只发送默认 `wizard.start` 参数，不附加
-`flow` 或 `skipChannels`；Gateway 在同一会话中决定渠道选择、授权、跳过说明及后续步骤。JunQi 不重写步骤、不猜测插件结果，
-也不把本地默认值写入 OpenClaw 配置。
-
-官方 Wizard 自身包含可选的模型实时验证，并允许用户按官方步骤跳过或在失败后继续。JunQi 不在官方终态后再次强制验证，
-也不以客户端规则推翻用户已经在官方流程中作出的选择。
-
-每个已知官方 `step.type` 使用独立渲染器：`note`、`text`、`select`、`multiselect`、`confirm`、`progress` 与 `action`。
-策略注册表只按协议类型分派，不按模型、渠道或步骤 id 猜测流程。Gateway 返回渠道跳过说明时，`note` 渲染器在当前配置会话中原样呈现；
-它不会变成新的 JunQi 页面，也不会被客户端静默吞掉。
-
-Wizard 的交互请求必须在已核验的 Gateway 连接上执行。离开、取消、连接替换或失败后，旧 Wizard 操作不得继续提交；
-失败时显示官方步骤标识和诊断，用户可以按官方流程重试。
-
-### 6. 判定配置完成
-
-完成条件分层处理：
-
-1. 所选 Gateway 必须可连接并且身份、运行方式和配置目标一致；
-2. 已连接 Gateway 返回官方结构化 `setupComplete` 时据此判定；方法明确不受支持时，不从本地配置推断完成，直接进入同一 Gateway 的官方 Wizard；
-3. `setupComplete=false` 时进入官方 Wizard，客户端不从配置字段自行推断完成；
-4. 官方 Wizard 返回终态后，只继续核验 Gateway 服务交接和认证连接，不增加模型验证门禁。
-
-`openclaw.setup.verify` 仍用于模型配置或业务入口中的明确实时测试，但不参与首次安装完成判定。
-
-### 7. 进入 Ready 与 Dashboard
-
-Ready 页是配置完成后的交接页，不是永久健康保证。用户进入 Dashboard 前，JunQi 会在同一操作中再次核验当前 Gateway
-和官方 `setupComplete`；核验失败会回到真实的 Gateway 或 Wizard 状态。
-
-进入 Dashboard 后，短暂的“正在连接 Gateway”表示桌面工作台正在建立长期会话、模型目录和事件订阅连接，不代表正在重复
-安装或重复运行 Wizard。Gateway handoff 已经核验时，工作台只保留必要的连接状态，不重放冷启动流程。
-
-## 返回、取消与恢复
-
-- 返回只回到上一个用户可见决策步骤，不回到会自动重放的安装运行步骤。
-- 取消停止当前安装事务或 Wizard 操作，并保留诊断日志；不会删除用户选择的数据位置、OpenClaw 配置或会话记忆。
-- Gateway 重启、连接身份变化和 Wizard 过期操作都使用运行事务围栏，旧请求不能覆盖新运行结果。
-- 无法确认远端终态时保留“待核验”，不自动重放有副作用的配置或写操作。
-
-## 平台边界
-
-| 平台与运行方式 | 当前结论 | 验证边界 |
-| --- | --- | --- |
-| macOS Native | 已构建并安装验收 arm64 本机包 | 亮暗主题、窄窗口、快速连续点击仍需专项走查 |
-| macOS Docker | 保留 Docker 运行链路 | 当前未完成完整桌面安装验收 |
-| Windows Native/Docker | 有对应探测、服务和安装实现 | 需要 Windows 真机验证 UAC、服务归属、路径和凭据库 |
-| Ubuntu/CentOS Native/Docker | 目标平台受运行时契约约束 | 未完成发行版真机验证，不扩展为已验证承诺 |
-
-## 相关证据
-
-- [首次启动往返导航审计](setup-round-trip-navigation-audit-2026-08-08.md)：回退、锁和页面生命周期根因；
-- [首次启动往返导航修复验证](setup-round-trip-navigation-validation-2026-08-08.md)：自动化、本机安装包和未验证边界；
-- [新手引导编排重构记录](onboarding-orchestration-redesign-2026-08-05.md)：状态归属和官方 Wizard 边界；
-- [安装完成契约审计](../quality/openclaw-installation-completion-contract-audit-2026-08-09.md)：官方 `setupComplete` 与 Wizard 终态边界；
-- [Wizard 与 Gateway 生命周期全量审查](wizard-and-gateway-lifecycle-full-audit-2026-08-02.md)：生命周期入口和协议审计；
-- [首次启动流程预览](../previews/junqi-first-run-flow.html)：当前桌面流程的静态视觉预览；
-- [`specs/installation/`](../../specs/installation/) 与 [`plans/installation/`](../../plans/installation/)：对应验收条件和实施顺序。
-
-## 当前未验证项
-
-本页不把自动化通过描述为跨平台真机通过。Windows、Ubuntu、CentOS、Docker 冷启动、系统权限提示、亮暗主题、窄窗口、
-减少动态效果、快速连续点击、正式签名和公证仍需分别验证并记录。
+流程静态预览见 [`../previews/junqi-first-run-flow.html`](../previews/junqi-first-run-flow.html)。

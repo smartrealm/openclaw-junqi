@@ -94,9 +94,9 @@ plans/                按领域组织的实施计划
 - [规格与验收索引](specs/README.md)
 - [实施计划索引](plans/README.md)
 - [协作领域术语](CONTEXT.md)
+- [安装与首次启动流程](docs/installation/junqi-installation-flow.md)
 - [中国大陆网络与安装源策略](docs/installation/mainland-china-network-policy.md)
-- [Windows 安装阶段全量复审](docs/installation/windows-installation-full-audit-2026-07-24.md)
-- [Windows 卸载流程复审](docs/installation/windows-uninstall-flow-audit-2026-07-26.md)
+- [Windows 内部测试签名流程](docs/installation/windows-internal-test-signing.md)
 - [第三方声明](THIRD_PARTY_NOTICES.md)
 
 `docs/` 保存问题事实、设计和验证结论；`specs/` 定义目标与验收条件；`plans/` 描述实施顺序。历史审计文档不应被当作当前功能承诺，最终状态以代码、测试和对应 validation 文档为准。
