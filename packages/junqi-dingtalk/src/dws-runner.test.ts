@@ -90,3 +90,23 @@ test("retries executable resolution after an earlier lookup failure", async () =
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("runs a configured npm JavaScript entry through the current Node runtime", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "junqi-dws-script-"));
+  const entry = path.join(directory, "dws.js");
+  await writeFile(entry, "process.stdout.write(JSON.stringify({success:true,body:{args:process.argv.slice(2)}}));");
+  const runner = new DwsRunner({
+    dwsPath: entry,
+    timeoutMs: 30_000,
+    maxOutputBytes: 2_097_152,
+  });
+  try {
+    const result = await runner.run(["version"]);
+    assert.deepEqual(result.data, {
+      success: true,
+      body: { args: ["version", "--format", "json"] },
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

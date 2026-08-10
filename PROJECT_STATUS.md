@@ -19,8 +19,23 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 当前渠道界面目标已完成：渠道中心保留单一添加入口和刷新入口，诊断及高级配置进入共享菜单；首次加载与后台
 刷新分离，账号次要操作统一收纳，摘要只投影当前配置和 OpenClaw 运行时返回的真实状态。
 
+当前钉钉就绪修复已完成代码闭环：业务页重启统一进入 Gateway 生命周期协调器并主动重连；Native DWS 安装
+绑定所选 Node/npm/prefix，安装后执行 JSON 核验、写入准确插件路径并重新核验连接。当前运行中的旧桌面进程
+尚未加载本次代码，当前选定 Native 运行时也仍未实际安装 DWS，真实安装与扫码仍待新构建桌面实测。
+
 ## 已完成内容
 
+- 钉钉业务页已删除对底层 Gateway 进程重启的直接调用。插件重启和 Agent 授权均通过全局
+  `GatewayLifecycleCoordinator`，协调器在进程恢复后主动建立连接，页面再等待新的 connection ID 与
+  Runtime Identity 一致后刷新工具、插件和 DWS 状态。
+- DWS Native 安装已绑定当前 OpenClaw 所选 Node.js、配套 npm CLI 和绝对全局 prefix；Docker 安装绑定所选
+  OpenClaw 容器。安装后执行 `dws version --format json`，授权后执行 `dws auth status --format json`；
+  命令缺失、非 JSON、结构化失败或 npm 包入口缺失均不再显示完成。
+- Native DWS 核验通过后，准确 npm `bin/dws.js` 绝对入口使用当前 `config.get` 快照和原样 `hash` 最小写入
+  钉钉插件 `dwsPath`，由当前 Gateway Node.js 直接执行，不依赖 Windows shell 或 `.cmd` 参数拼接；随后再通过
+  统一生命周期重启。接入检查、DWS 安装授权、身份卡和重连状态已补齐简体中文、繁体中文和英文资源。
+- 钉钉内置包安装器已删除过时的 30 工具硬编码。metadata 只保留有界数量，安装前从归档
+  `openclaw.plugin.json` 派生并核对工具数量、非空 ID 和唯一性；当前 33 工具包不再被旧计数拒绝。
 - `Blues-Code/dingtalk` 已快进到本地 `main@442fe97c`；本次包含钉钉授权、Gateway 重连刷新、审批追溯、会话侧栏、官方 Setup 契约收敛和渠道中心 UI 收敛。当前分支相对 `origin/main` 领先 42 个本地提交，尚未推送远端。
 - 渠道中心已按工作台现有视觉语言收敛：页头只保留刷新、添加渠道和更多操作，诊断与高级配置进入共享
   `DropdownMenu`；已配置渠道、运行中账号和需要处理数量由当前配置及官方运行时状态派生。
@@ -150,6 +165,12 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - 已通过 `src/stores/gatewayDataStore.test.ts`：29 项通过，覆盖未知载荷和安全日志边界。
 - 已通过聊天发送、原生任务账本和审批 Store 定向测试：25 项通过；TypeScript 检查与 `git diff --check` 通过。
 - 已通过 usage 解析、数据仓和分析查询定向测试：33 项通过；本轮 TypeScript 检查通过。
+- 已通过钉钉统一重启、重连门禁、Agent 与插件路径配置、接入判定及三语言资源定向测试 22 项；
+  `pnpm exec tsc --noEmit` 通过。Rust DWS 安装路径和 JSON 核验定向测试 3 项通过，`cargo fmt --check`
+  与 `cargo check --lib` 通过。
+- 本次完整 `pnpm lint` 通过，模块边界扫描 932 个文件且四处桌面版本一致；完整 `pnpm test` 和
+  `pnpm build` 通过。完整 `pnpm test:rust` 为 686 项通过、2 项忽略、零失败；`pnpm dingtalk:test`
+  19 项与 `pnpm dingtalk:validate` 通过。
 - 当前 macOS ARM64 主机已实际通过 `pnpm verify:openclaw-docs` 与 `pnpm test:rust`：684 项通过、2 项忽略。
 - Docker 真实 Gateway 回放按当前任务要求停止，未将镜像拉取或容器启动结果计入通过结论。
 - 已通过 Windows 安装、发布矩阵、版本一致性与模块边界契约测试：35 项通过；这些测试不替代 Windows/Linux 真机验收。
@@ -157,6 +178,12 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - 已扫描本轮修改后的完整文本文件及协作插件包内文本成员，未发现 Emoji。
 - 测试输出仍包含 Node 的 `module.register()` 弃用提示，以及服务端渲染 Tooltip 的 `useLayoutEffect` 警告；
   二者均未造成失败，且不属于本次 Gateway/Tauri 边界改动。
+
+## 已知问题
+
+- 当前正在运行的 JunQi 桌面进程仍是修复前构建，本机所选 Native npm prefix 仍未安装
+  `dingtalk-workspace-cli`。代码自动化通过不能替代重新构建后从工作台执行真实安装、Gateway 重启、浏览器扫码
+  和 Profile 自动刷新的桌面验证。
 
 ## 当前未验证
 
@@ -177,7 +204,10 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 
 ## 下一步顺序
 
-1. 在受控最新版 Gateway 完成实时事件、协作插件与钉钉插件的真实回放，并取得 DWS 审批详情、任务和记录的脱敏结构化样本。
-2. 在脱敏真实 DWS 返回样本基础上核对审批字段、状态枚举和权限错误，扩展流程时间线和人工审核展示；未知字段保持待核验。
-3. 在 macOS、Windows、Linux 完成 WebView 到 Rust handler、凭据库、窗口与关键 UI 的桌面验收；
+1. 重新构建并启动 macOS 桌面，从钉钉工作台执行 Native DWS 安装、准确路径配置、Gateway 新连接、浏览器扫码、
+   Profile 与头像自动刷新全链路；记录脱敏结构化回执，不提交凭据或个人信息。
+2. 在 Docker 运行时验证容器内安装、设备码授权、JSON 核验和重启后状态刷新；容器路径不得进入宿主配置。
+3. 在受控最新版 Gateway 完成实时事件、协作插件与钉钉插件的真实回放，并取得 DWS 审批详情、任务和记录的脱敏结构化样本。
+4. 在脱敏真实 DWS 返回样本基础上核对审批字段、状态枚举和权限错误，扩展流程时间线和人工审核展示；未知字段保持待核验。
+5. 在 macOS、Windows、Linux 完成 WebView 到 Rust handler、凭据库、窗口与关键 UI 的桌面验收；
    未验证项继续保持明确边界。

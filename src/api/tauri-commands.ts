@@ -608,9 +608,11 @@ export type DwsOperationOutput = {
 };
 export type DwsOperationFinished = {
   operationId: string;
+  kind: DwsOperationKind;
   success: boolean;
   cancelled: boolean;
   message: string;
+  dwsPath: string | null;
 };
 
 export const startDwsOperation = (

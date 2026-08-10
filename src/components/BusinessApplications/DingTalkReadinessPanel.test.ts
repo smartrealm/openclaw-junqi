@@ -15,7 +15,7 @@ test('插件已更新时优先引导重启 Gateway', () => {
   });
 
   assert.equal(readiness.action, 'restart-gateway');
-  assert.equal(readiness.title, '等待 Gateway 加载插件');
+  assert.equal(readiness.titleKey, 'restartRequiredTitle');
 });
 
 test('插件缺失且无需重启时提供 JunQi 安装入口', () => {
@@ -31,7 +31,7 @@ test('插件缺失且无需重启时提供 JunQi 安装入口', () => {
   });
 
   assert.equal(readiness.action, 'install-plugin');
-  assert.equal(readiness.title, '钉钉业务插件未就绪');
+  assert.equal(readiness.titleKey, 'pluginMissingTitle');
 });
 
 test('DWS 缺失时保留受控安装动作', () => {
@@ -92,5 +92,5 @@ test('插件状态未返回前不误报未安装或 Agent 未授权', () => {
   });
 
   assert.equal(readiness.action, null);
-  assert.equal(readiness.title, '正在核对钉钉接入状态');
+  assert.equal(readiness.titleKey, 'checkingTitle');
 });

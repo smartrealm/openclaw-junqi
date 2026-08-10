@@ -66,6 +66,15 @@ async function resolveCandidate(candidate: string): Promise<string | null> {
   }
 }
 
+async function resolveConfiguredCandidate(candidate: string): Promise<string | null> {
+  try {
+    await access(candidate, path.extname(candidate).toLowerCase() === ".js" ? fsConstants.R_OK : fsConstants.X_OK);
+    return await realpath(candidate);
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveDwsExecutable(
   configuredPath: string | undefined,
   pathValue = process.env.PATH ?? "",
@@ -78,7 +87,7 @@ export async function resolveDwsExecutable(
         "Configured dwsPath must be an absolute path",
       );
     }
-    const resolved = await resolveCandidate(configuredPath);
+    const resolved = await resolveConfiguredCandidate(configuredPath);
     if (!resolved) {
       throw new DingTalkRuntimeError(
         "DWS_RUNTIME_NOT_EXECUTABLE",
@@ -188,7 +197,8 @@ export class DwsRunner {
     const executable = await this.resolveExecutable();
     const args = buildDwsCommandArguments(command, options);
     return await new Promise<DwsCommandResult>((resolve, reject) => {
-      const child = spawn(executable, args, {
+      const nodeScript = path.extname(executable).toLowerCase() === ".js";
+      const child = spawn(nodeScript ? process.execPath : executable, nodeScript ? [executable, ...args] : args, {
         env: buildDwsEnvironment(process.env),
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],

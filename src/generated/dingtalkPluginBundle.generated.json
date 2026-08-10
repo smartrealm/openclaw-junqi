@@ -4,7 +4,7 @@
   "packageName": "@junqi/openclaw-dingtalk-business",
   "pluginVersion": "0.1.0",
   "toolCount": 33,
-  "sha256": "d8bcf877f617da60df3d024ec359842a4a47fef4037419ddb608728026369acf",
+  "sha256": "89b8ac7060de1235d339562f98b69221f5d6eaced8ccedc93b88f698a6f24c57",
   "archiveFile": "junqi-dingtalk.tgz",
   "resourcePath": "dingtalk/junqi-dingtalk.tgz"
 }

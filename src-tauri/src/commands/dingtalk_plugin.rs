@@ -62,7 +62,8 @@ fn parse_metadata(raw: &[u8]) -> Result<BundleMetadata, String> {
         || metadata.plugin_id != PLUGIN_ID
         || metadata.package_name != PACKAGE_NAME
         || metadata.plugin_version.trim().is_empty()
-        || metadata.tool_count != 30
+        || metadata.tool_count == 0
+        || metadata.tool_count > MAX_ENTRIES
         || !valid_hash
         || metadata.archive_file != ARCHIVE_FILE
         || metadata.resource_path != ARCHIVE_RESOURCE
@@ -153,10 +154,25 @@ fn verify_archive_contract(path: &Path, metadata: &BundleMetadata) -> Result<(),
     let package = package.ok_or_else(|| "The archive is missing package.json".to_string())?;
     let manifest =
         manifest.ok_or_else(|| "The archive is missing openclaw.plugin.json".to_string())?;
+    let manifest_tools = manifest
+        .pointer("/contracts/tools")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "The DingTalk plugin manifest omitted the tool contract".to_string())?;
+    let tool_ids = manifest_tools
+        .iter()
+        .map(|value| value.as_str().filter(|id| !id.trim().is_empty()))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| "The DingTalk plugin manifest contains an invalid tool ID".to_string())?;
+    let unique_tool_ids = tool_ids
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
     if package.get("name").and_then(Value::as_str) != Some(PACKAGE_NAME)
         || package.get("version").and_then(Value::as_str) != Some(metadata.plugin_version.as_str())
         || manifest.get("id").and_then(Value::as_str) != Some(PLUGIN_ID)
         || manifest.get("version").and_then(Value::as_str) != Some(metadata.plugin_version.as_str())
+        || tool_ids.len() != metadata.tool_count
+        || unique_tool_ids.len() != tool_ids.len()
     {
         return Err("The DingTalk archive identity does not match its metadata".to_string());
     }
@@ -396,13 +412,22 @@ mod tests {
         let metadata = parse_metadata(EMBEDDED_METADATA.as_bytes()).unwrap();
         assert_eq!(metadata.plugin_id, PLUGIN_ID);
         assert_eq!(metadata.package_name, PACKAGE_NAME);
-        assert_eq!(metadata.tool_count, 30);
+        let archive = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("dingtalk")
+            .join(ARCHIVE_FILE);
+        verify_archive_contract(&archive, &metadata).unwrap();
     }
 
     #[test]
     fn metadata_rejects_a_different_tool_count() {
         let mut value: Value = serde_json::from_str(EMBEDDED_METADATA).unwrap();
         value["toolCount"] = Value::from(29);
-        assert!(parse_metadata(serde_json::to_vec(&value).unwrap().as_slice()).is_err());
+        let metadata = parse_metadata(serde_json::to_vec(&value).unwrap().as_slice()).unwrap();
+        let archive = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("dingtalk")
+            .join(ARCHIVE_FILE);
+        assert!(verify_archive_contract(&archive, &metadata).is_err());
     }
 }

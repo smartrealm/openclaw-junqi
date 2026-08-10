@@ -152,3 +152,33 @@ export async function authorizeDingTalkAgent(
     throw new Error('OpenClaw 没有确认授权配置已写入。');
   }
 }
+
+export async function configureDingTalkDwsPath(
+  gateway: ConfigGateway,
+  dwsPath: string,
+): Promise<void> {
+  const normalizedPath = dwsPath.trim();
+  if (!normalizedPath) throw new Error('当前运行时没有返回可核验的 DWS 路径。');
+  const snapshot = readOpenClawConfigSnapshot(await gateway.call('config.get', {}));
+  const config = snapshot.config as unknown as Record<string, unknown>;
+  const plugins = record(config.plugins) ?? {};
+  const entries = record(plugins.entries) ?? {};
+  const plugin = record(entries[DINGTALK_PLUGIN_ID]) ?? {};
+  const pluginConfig = record(plugin.config) ?? {};
+  if (pluginConfig.dwsPath === normalizedPath) return;
+
+  const response = await gateway.callPrivileged('config.patch', {
+    raw: JSON.stringify({
+      plugins: {
+        entries: {
+          [DINGTALK_PLUGIN_ID]: { config: { dwsPath: normalizedPath } },
+        },
+      },
+    }),
+    ...(snapshot.hash ? { baseHash: snapshot.hash } : {}),
+  });
+  const acknowledgement = record(response);
+  if (!acknowledgement || acknowledgement.ok !== true) {
+    throw new Error('OpenClaw 没有确认 DWS 运行时路径已写入。');
+  }
+}
