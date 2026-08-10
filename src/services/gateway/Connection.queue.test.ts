@@ -56,7 +56,11 @@ describe('GatewayConnection request identity', () => {
     connection.ws = originalSocket;
     connection.connecting = true;
     connection.challengeNonce = null;
-    connection.token = 'old-target-token';
+    connection.target = {
+      url: 'ws://old-target',
+      token: 'old-target-token',
+      deviceToken: '',
+    };
 
     const pending = connection.sendHandshake();
     await Promise.resolve();

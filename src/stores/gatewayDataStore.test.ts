@@ -45,6 +45,16 @@ const METRICS = {
   missingCostEntries: 0,
 };
 
+const USAGE_AGGREGATES = {
+  messages: { total: 0, user: 0, assistant: 0, toolCalls: 0, toolResults: 0, errors: 0 },
+  tools: { totalCalls: 0, uniqueTools: 0, tools: [] },
+  byModel: [],
+  byProvider: [],
+  byAgent: [],
+  byChannel: [],
+  daily: [],
+};
+
 const CRON_JOB = {
   id: 'daily',
   name: 'Daily report',
@@ -69,29 +79,33 @@ test('会话产物缺失时复用稳定空快照', () => {
   assert.deepEqual(first, []);
 });
 
-test('sub-agent activity follows explicit OpenClaw run fields before timestamp compatibility fallback', () => {
-  assert.equal(isRunningSubagentSession({ key: 'agent:writer:subagent:a', hasActiveRun: true }, NOW), true);
-  assert.equal(isRunningSubagentSession({ key: 'agent:writer:subagent:b', hasActiveRun: false }, NOW), false);
+test('sub-agent activity only follows explicit OpenClaw run fields', () => {
+  assert.equal(isRunningSubagentSession({ key: 'agent:writer:subagent:a', hasActiveRun: true }), true);
+  assert.equal(isRunningSubagentSession({ key: 'agent:writer:subagent:b', hasActiveRun: false }), false);
   assert.equal(isRunningSubagentSession({
     key: 'agent:writer:subagent:authoritative-active',
     hasActiveRun: true,
     status: 'done',
-  }, NOW), true);
+  }), true);
   assert.equal(isRunningSubagentSession({
     key: 'agent:writer:subagent:authoritative-settled',
     hasActiveRun: false,
     status: 'running',
-  }, NOW), false);
-  assert.equal(isRunningSubagentSession({ key: 'agent:writer:subagent:c', status: 'done' }, NOW), false);
-  assert.equal(isRunningSubagentSession({ key: 'agent:writer:subagent:d', running: false }, NOW), false);
+  }), false);
+  assert.equal(isRunningSubagentSession({
+    key: 'agent:writer:subagent:child-active',
+    hasActiveSubagentRun: true,
+  }), true);
+  assert.equal(isRunningSubagentSession({
+    key: 'agent:writer:subagent:child-settled',
+    hasActiveSubagentRun: false,
+  }), false);
+  assert.equal(isRunningSubagentSession({ key: 'agent:writer:subagent:c', status: 'running' }), false);
+  assert.equal(isRunningSubagentSession({ key: 'agent:writer:subagent:d', running: true }), false);
   assert.equal(isRunningSubagentSession({
     key: 'agent:writer:subagent:e',
     updatedAt: new Date(NOW - 30_000).toISOString(),
-  }, NOW), true);
-  assert.equal(isRunningSubagentSession({
-    key: 'agent:writer:subagent:f',
-    updatedAt: new Date(NOW - 61_000).toISOString(),
-  }, NOW), false);
+  }), false);
 });
 
 test('every Gateway data group rejects stale requests and stale connections', () => {
@@ -204,7 +218,7 @@ test('Gateway polling decoders reject malformed responses instead of inventing e
     nextWakeAtMs: null,
   });
 
-  const cost = { days: 30, daily: [{ date: '2026-07-31', ...METRICS }], totals: METRICS };
+  const cost = { updatedAt: NOW, days: 30, daily: [{ date: '2026-07-31', ...METRICS }], totals: METRICS };
   assert.deepEqual(parseGatewayCostSummary(cost), cost);
   assert.equal(parseGatewayCostSummary({ days: 30, daily: [], totals: {} }), null);
   const usage = {
@@ -213,10 +227,10 @@ test('Gateway polling decoders reject malformed responses instead of inventing e
     endDate: '2026-07-31',
     sessions: [],
     totals: METRICS,
-    aggregates: { byAgent: [] },
+    aggregates: USAGE_AGGREGATES,
   };
   assert.deepEqual(parseGatewaySessionsUsage(usage), usage);
-  assert.equal(parseGatewaySessionsUsage({ sessions: [], aggregates: { byAgent: [] } }), null);
+  assert.equal(parseGatewaySessionsUsage({ sessions: [], aggregates: USAGE_AGGREGATES }), null);
   assert.equal(parseGatewaySessionsUsage({ sessions: {} }), null);
 });
 
@@ -231,6 +245,20 @@ test('非官方顶层事件不会修改 OpenClaw 会话投影', () => {
   const sessions = useGatewayDataStore.getState().sessions;
   assert.equal(sessions.some((session) => session.key === 'agent:main:invented-session'), false);
   assert.equal(sessions.find((session) => session.key === sessionKey)?.running, false);
+});
+
+test('未知 Gateway 事件载荷不会突破事件边界或破坏日志路径', () => {
+  const sessionKey = 'agent:main:unknown-event-payload';
+  const circularPayload: Record<string, unknown> = {};
+  circularPayload.self = circularPayload;
+  useGatewayDataStore.getState().setSessions([{ key: sessionKey, running: false }]);
+
+  assert.doesNotThrow(() => handleGatewayEvent('sessions.changed', null));
+  assert.doesNotThrow(() => handleGatewayEvent('unknown.event', circularPayload));
+  const sessions = useGatewayDataStore.getState().sessions;
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0]?.key, sessionKey);
+  assert.equal(sessions[0]?.running, false);
 });
 
 test('sessions.usage requests keep the official date range beside the all-agent scope', () => {
@@ -261,7 +289,7 @@ test('sessions.usage accepts official family rows without a concrete session id'
     endDate: '2026-07-31',
     sessions: [{ key: 'agent:main:family', scope: 'family', usage: null }],
     totals: METRICS,
-    aggregates: { byAgent: [] },
+    aggregates: USAGE_AGGREGATES,
   };
   assert.deepEqual(parseGatewaySessionsUsage(usage), usage);
 });
@@ -289,7 +317,9 @@ test('effective tool snapshots follow Session lifecycle and actual Gateway suppo
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [{ id: 'main' }] };
-      if (method === 'tools.effective') throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
+      if (method === 'tools.effective') {
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+      }
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -376,7 +406,9 @@ test('tools.invoke maps an actual unsupported Gateway method after its effective
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [{ key: 'agent:main:main' }], hasMore: false };
       if (method === 'agents.list') return { agents: [{ id: 'main' }] };
-      if (method === 'tools.invoke') throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
+      if (method === 'tools.invoke') {
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+      }
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -465,7 +497,9 @@ test('tool catalogs follow Agent lifecycle and actual Gateway support', async ()
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [{ id: 'main' }] };
-      if (method === 'tools.catalog') throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
+      if (method === 'tools.catalog') {
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+      }
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -533,7 +567,7 @@ test('session artifacts follow Session lifecycle and actual Gateway support', as
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [{ id: 'main' }] };
       if (method === 'artifacts.list' || method === 'artifacts.download') {
-        throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
       }
       throw new Error(`unexpected method: ${method}`);
     },
@@ -657,7 +691,9 @@ test('memory.search maps actual Gateway rejection and never fabricates a result'
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [{ id: 'main' }] };
-      if (method === 'memory.search') throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
+      if (method === 'memory.search') {
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+      }
       throw new Error(`unexpected method: ${method}`);
     },
   };
@@ -821,7 +857,7 @@ test('memory diagnostics maps actual Gateway rejection without fabricating state
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [] };
       if (method === 'doctor.memory.status' || method === 'doctor.memory.remHarness') {
-        throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
       }
       throw new Error(`unexpected method: ${method}`);
     },
@@ -873,7 +909,9 @@ test('sessions.search maps actual Gateway rejection and never fabricates hits', 
       calls.push(method);
       if (method === 'sessions.list') return { sessions: [], hasMore: false };
       if (method === 'agents.list') return { agents: [] };
-      if (method === 'sessions.search') throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
+      if (method === 'sessions.search') {
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+      }
       throw new Error(`unexpected method: ${method}`);
     },
   };

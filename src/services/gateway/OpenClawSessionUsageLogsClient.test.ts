@@ -54,9 +54,9 @@ test('OpenClawSessionUsageLogsClient requests despite discovery omission and map
   const unavailable = new OpenClawSessionUsageLogsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    requestFenced: async () => {
+    requestFenced: async (method) => {
       sent = true;
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     },
   });
   const disconnected = new OpenClawSessionUsageLogsClient({

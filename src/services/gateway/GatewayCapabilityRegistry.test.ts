@@ -4,7 +4,10 @@ import {
   GatewayCapabilityRegistry,
   classifyGatewayCapabilityFailure,
 } from './GatewayCapabilityRegistry';
-import { GatewayTransportLifecycleError } from './GatewayTransportError';
+import {
+  GatewayRequestTimeoutError,
+  GatewayTransportLifecycleError,
+} from './GatewayTransportError';
 
 const hello = {
   endpoint: 'ws://127.0.0.1:18789',
@@ -52,12 +55,22 @@ test('RPC success upgrades advertised evidence to available', () => {
 });
 
 test('failure evidence distinguishes unsupported, authorization, unavailable, and pending verification', () => {
-  assert.deepEqual(classifyGatewayCapabilityFailure(rpcError('missing', 'METHOD_NOT_FOUND')), {
-    state: 'unsupported',
+  assert.deepEqual(classifyGatewayCapabilityFailure(rpcError('missing', 'METHOD_NOT_FOUND'), 'cron.runs'), {
+    state: 'error',
     code: 'METHOD_NOT_FOUND',
   });
-  assert.deepEqual(classifyGatewayCapabilityFailure(rpcError('unknown method: cron.runs', 'INVALID_REQUEST')), {
+  assert.deepEqual(classifyGatewayCapabilityFailure(
+    rpcError('unknown method: cron.runs', 'INVALID_REQUEST'),
+    'cron.runs',
+  ), {
     state: 'unsupported',
+    code: 'INVALID_REQUEST',
+  });
+  assert.deepEqual(classifyGatewayCapabilityFailure(
+    rpcError('unknown method: another.method', 'INVALID_REQUEST'),
+    'cron.runs',
+  ), {
+    state: 'error',
     code: 'INVALID_REQUEST',
   });
   assert.deepEqual(classifyGatewayCapabilityFailure(rpcError(
@@ -73,8 +86,9 @@ test('failure evidence distinguishes unsupported, authorization, unavailable, an
     state: 'unavailable',
     code: 'GATEWAY_TRANSPORT_LIFECYCLE',
   });
-  assert.deepEqual(classifyGatewayCapabilityFailure('Request timeout (1000ms)'), {
+  assert.deepEqual(classifyGatewayCapabilityFailure(new GatewayRequestTimeoutError(1_000)), {
     state: 'pending_verification',
+    code: 'GATEWAY_REQUEST_TIMEOUT',
   });
   assert.deepEqual(classifyGatewayCapabilityFailure({ code: 'GATEWAY_REQUEST_ABORTED' }), {
     state: 'pending_verification',
@@ -85,12 +99,15 @@ test('failure evidence distinguishes unsupported, authorization, unavailable, an
 test('snapshot is sanitized and resets with the authenticated socket', () => {
   const registry = new GatewayCapabilityRegistry(() => 300);
   registry.observeHello(hello);
-  registry.recordFailure('sessions.list', rpcError('unauthorized', 'UNAUTHORIZED', {
+  registry.recordFailure('sessions.list', rpcError('forbidden', 'FORBIDDEN', {
+    code: 'MISSING_SCOPE',
+    missingScope: 'operator.admin',
     message: 'do not retain this detail',
   }));
 
   const snapshot = registry.snapshot();
   assert.equal(snapshot.methodEvidence['sessions.list']?.state, 'unauthorized');
+  assert.equal(snapshot.methodEvidence['sessions.list']?.missingScope, 'operator.admin');
   assert.equal('details' in snapshot.methodEvidence['sessions.list']!, false);
   assert.notEqual(snapshot.methods, registry.snapshot().methods);
 

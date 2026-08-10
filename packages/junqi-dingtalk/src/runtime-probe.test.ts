@@ -57,3 +57,16 @@ test("reports an unavailable DWS executable without claiming a successful probe"
   assert.equal(runtime.available, false);
   assert.equal((runtime.runtimeError as { code?: string }).code, "DWS_RUNTIME_FAILURE");
 });
+
+test("does not expose the resolved DWS executable path to tool callers", async () => {
+  const runtime = await probeDwsRuntime({
+    resolveExecutable: async () => "/private/runtime/dws",
+    run: async (command: readonly string[]) => ({
+      data: command[0] === "profile"
+        ? { profiles: [] }
+        : {},
+    }),
+  } as never);
+  assert.equal(runtime.available, true);
+  assert.equal("executable" in runtime, false);
+});

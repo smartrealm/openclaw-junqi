@@ -1,4 +1,4 @@
-import { GatewayRpcError } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export interface OpenClawCronStatus {
   readonly enabled: boolean;
@@ -42,11 +42,6 @@ function nonNegativeInteger(value: unknown): number {
   return value;
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 export function parseOpenClawCronStatus(value: unknown): OpenClawCronStatus {
   const source = record(value);
   if (!source || typeof source.enabled !== 'boolean' || source.storage !== 'sqlite') {
@@ -73,7 +68,9 @@ export class OpenClawCronStatusClient {
     try {
       return parseOpenClawCronStatus(await this.request<unknown>(CRON_STATUS_METHOD, {}));
     } catch (error) {
-      if (unsupportedMethod(error)) throw new OpenClawCronStatusUnsupportedError();
+      if (isOpenClawUnknownMethodError(error, CRON_STATUS_METHOD)) {
+        throw new OpenClawCronStatusUnsupportedError();
+      }
       throw error;
     }
   }

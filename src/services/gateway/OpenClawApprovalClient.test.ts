@@ -94,7 +94,7 @@ test('treats an authoritative method-not-found response as unavailable', async (
   const client = new OpenClawApprovalClient(
     async <T>(method: string): Promise<T> => {
       if (method === 'exec.approval.list') {
-        throw new GatewayRpcError('method not found', 'METHOD_NOT_FOUND');
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
       }
       return [pluginApproval] as T;
     },
@@ -110,7 +110,7 @@ test('resolves only a Gateway-advertised decision and confirms native success', 
     async <T>(method: string, params: Record<string, unknown>): Promise<T> => {
       calls.push({ method, params });
       if (method === OPENCLAW_APPROVAL_RESOLVE_METHOD) {
-        throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
       }
       return { ok: true } as T;
     },
@@ -178,7 +178,7 @@ test('falls back to the legacy resolver when unified method discovery is stale',
     async <T>(method: string): Promise<T> => {
       calls.push(method);
       if (method === OPENCLAW_APPROVAL_RESOLVE_METHOD) {
-        throw new GatewayRpcError('method not found', 'METHOD_NOT_FOUND');
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
       }
       return { ok: true } as T;
     },

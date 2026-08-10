@@ -6,8 +6,10 @@
 import { extractText, stripDirectives } from '@/processing/TextCleaner';
 import { extractThinkingContent } from '@/processing/normalizeGatewayMessage';
 import {
-  parseOpenClawChatRunStartup,
+  parseOpenClawLiveGatewayEvent,
   resolveOpenClawChatDeltaText,
+  type OpenClawLiveAgentEventPayload,
+  type OpenClawLiveChatEventPayload,
 } from '@/processing/openClawChatEvent';
 import {
   normalizeGatewayToolLifecycleEvent,
@@ -81,21 +83,49 @@ function sanitizeWorkshopCommands(content: string): WorkshopCommandResult {
   return { cleanContent: cleanContent.trim(), blockedCount };
 }
 
+function gatewayRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
 function sessionKeyFromSnapshot(raw: unknown): string {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return '';
-  const record = raw as Record<string, unknown>;
+  const record = gatewayRecord(raw);
+  if (!record) return '';
   const value = typeof record.key === 'string' ? record.key : record.sessionKey;
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function isOpenClawSessionToolPayload(raw: unknown): raw is Record<string, unknown> {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
-  const payload = raw as Record<string, unknown>;
-  const toolEvent = normalizeGatewayToolLifecycleEvent(payload, 'tool');
-  return payload.stream === 'tool'
-    && Boolean(toolEvent?.sessionKey)
-    && Boolean(toolEvent?.runId)
-    && toolEvent?.sourceSequence !== undefined;
+function messageRecord(value: unknown): Record<string, unknown> | null {
+  return gatewayRecord(value);
+}
+
+function messageContent(value: unknown): unknown {
+  return messageRecord(value)?.content;
+}
+
+function messageMedia(value: unknown): MediaInfo | undefined {
+  const source = messageRecord(value);
+  const mediaUrl = typeof source?.mediaUrl === 'string' && source.mediaUrl.trim()
+    ? source.mediaUrl
+    : undefined;
+  const mediaType = typeof source?.mediaType === 'string' && source.mediaType.trim()
+    ? source.mediaType
+    : undefined;
+  return mediaUrl ? { mediaUrl, ...(mediaType ? { mediaType } : {}) } : undefined;
+}
+
+function messageModel(value: unknown): string | null {
+  const model = messageRecord(value)?.model;
+  return typeof model === 'string' && model.trim() ? model : null;
+}
+
+function numericRecord(value: unknown): Record<string, number> | undefined {
+  const source = gatewayRecord(value);
+  if (!source || Object.values(source).some((entry) => typeof entry !== 'number' || !Number.isFinite(entry))) {
+    return undefined;
+  }
+  return source as Record<string, number>;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -713,12 +743,15 @@ export class ChatHandler {
     return cleaned;
   }
 
-  private getPayloadMessageId(payload: any): string {
+  private getPayloadMessageId(payload: unknown): string {
+    const source = gatewayRecord(payload);
+    const message = messageRecord(source?.message);
+    const data = messageRecord(source?.data);
     const candidateIds = [
-      payload?.messageId,
-      payload?.message?.id,
-      payload?.message?.messageId,
-      payload?.data?.messageId,
+      source?.messageId,
+      message?.id,
+      message?.messageId,
+      data?.messageId,
     ];
     return candidateIds.find((value): value is string => typeof value === 'string' && value.trim().length > 0) || '';
   }
@@ -729,7 +762,7 @@ export class ChatHandler {
     return `live:${sessionKey}:${runId || 'runless'}:${nextSeq}`;
   }
 
-  private ensureActiveMessageId(sessionKey: string, runId: string, payload?: any): string {
+  private ensureActiveMessageId(sessionKey: string, runId: string, payload?: unknown): string {
     const activeRunId = this.currentRunIdBySession.get(sessionKey);
     const activeMessageId = this.currentMessageIdBySession.get(sessionKey);
     const payloadMessageId = this.getPayloadMessageId(payload);
@@ -998,7 +1031,7 @@ export class ChatHandler {
     }
   }
 
-  private handleAssistantStream(payload: any) {
+  private handleAssistantStream(payload: OpenClawLiveAgentEventPayload) {
     const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
     if (!sessionKey) return;
 
@@ -1011,17 +1044,16 @@ export class ChatHandler {
     this.bindRunToSession(sessionKey, runId);
     useChatStore.getState().setChatRunStartup(sessionKey, null);
 
-    const data = payload.data ?? {};
+    const data = payload.data;
     const fullText = typeof data.text === 'string' ? data.text : '';
     const delta = typeof data.delta === 'string' ? data.delta : '';
     const previousSourceText = this.sourceSnapshot(sessionKey, 'agent');
     const nextText = fullText || `${previousSourceText}${delta}`;
     if (!nextText) return;
 
-    // Agent and chat are two projections of the same OpenClaw run. Text
-    // differences between them are corrections or transport timing, not a
-    // message boundary. Tool lifecycle events are the only explicit segment
-    // boundary and already close the current segment above.
+    // agent 与 chat 是同一 OpenClaw run 的两个投影。文本差异只表示
+    // 纠正或传输时序，不能视为消息边界；工具生命周期事件才是明确的
+    // 分段边界，并会在上方关闭当前分段。
     const messageId = this.ensureActiveMessageId(sessionKey, runId, payload);
     const selectedText = this.updateStreamSnapshot(
       sessionKey,
@@ -1035,13 +1067,15 @@ export class ChatHandler {
     const segmentText = this.getSegmentText(sessionKey, selectedText);
     this.bufferStreamChunk(sessionKey, messageId, this.getDisplayStreamText(segmentText), undefined, runId);
 
-    const liveThinking = extractThinkingContent(data.content ?? data.message?.content);
+    const liveThinking = extractThinkingContent(
+      data.content ?? messageRecord(data.message)?.content,
+    );
     if (liveThinking) {
       useChatStore.getState().setThinkingStream(runId, liveThinking, sessionKey);
     }
   }
 
-  private handleLifecycleStream(payload: any) {
+  private handleLifecycleStream(payload: OpenClawLiveAgentEventPayload) {
     const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
     if (!sessionKey) return;
     const runId = typeof payload.runId === 'string' ? payload.runId.trim() : '';
@@ -1050,7 +1084,7 @@ export class ChatHandler {
       return;
     }
 
-    const phase = typeof payload.data?.phase === 'string' ? payload.data.phase : '';
+    const phase = typeof payload.data.phase === 'string' ? payload.data.phase : '';
     if (phase === 'start') {
       if (!this.beginRun(sessionKey, runId)) return;
       this.bindRunToSession(sessionKey, runId);
@@ -1058,22 +1092,17 @@ export class ChatHandler {
     }
 
     if (phase !== 'end' && phase !== 'error') return;
-    // OpenClaw keeps ordinary lifecycle errors alive while it evaluates
-    // provider fallback/retry. Lifecycle events are not chat terminal events;
-    // ask the official session snapshot to resolve ownership instead of
-    // inventing a client-side completion timeout.
-    if (phase === 'error' && payload.data?.fallbackExhaustedFailure !== true) return;
+    // OpenClaw 在评估供应商回退或重试时会保留普通生命周期错误。生命周期
+    // 事件不是 chat 终态，必须由官方会话快照确认归属，不能在客户端虚构
+    // 完成超时。
+    if (phase === 'error' && payload.data.fallbackExhaustedFailure !== true) return;
 
     this.forceFlushStream(sessionKey);
     this.conn.callbacks?.onSessionRunReconciliationNeeded?.(sessionKey);
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // Tool Stream Handler — real-time tool execution display
-  //
-  // `event:"chat"` or `event:"agent"` with `stream:"tool"` / `stream:"item"` (kind tool).
-  // Always updates the session tool row — independent of Settings "tool intent" UI toggle.
-  // ═══════════════════════════════════════════════════════════
+  // 工具流处理：实时展示工具执行。chat 或 agent 事件中的 tool、item 流都
+  // 统一投影到会话工具行，不依赖设置页的工具意图显示开关。
   handleToolStream(payload: unknown, source: GatewayToolEventSource = 'tool') {
     const toolEvent = normalizeGatewayToolLifecycleEvent(payload, source);
     if (!toolEvent) return;
@@ -1097,9 +1126,8 @@ export class ChatHandler {
       || existingToolCard?.toolStatus === 'error'
       || existingToolCard?.toolStatus === 'cancelled'
       || existingToolCard?.toolStatus === 'verification_required';
-    // A delayed non-terminal event must not make a completed or locally
-    // verification-required tool appear active again. A later result remains
-    // admissible because it may be the authoritative closure for that state.
+    // 延迟到达的非终态事件不能把已完成或待核验的工具重新显示为执行中；
+    // 后续 result 仍可接收，因为它可能是该状态的权威闭合。
     if (
       phase !== 'result'
       && toolCardIsTerminal
@@ -1126,7 +1154,7 @@ export class ChatHandler {
       if (currentContent.trim()) {
         this.closeCurrentStreamSegment(sessionKey);
       }
-      // Tool is starting — add a 'running' card (idempotent)
+      // 工具开始时幂等写入执行中的卡片。
       const msgs = listFor();
       if (!msgs.some((m) => m.id === msgId)) {
         store.addMessage(
@@ -1153,7 +1181,7 @@ export class ChatHandler {
     }
 
     if (phase === 'update') {
-      // Partial result streaming — update existing card
+      // 部分结果流只更新既有卡片。
       const output = projectToolOutput(toolEvent.output);
       const msgs = listFor();
       const idx  = msgs.findIndex((m) => m.id === msgId);
@@ -1181,7 +1209,7 @@ export class ChatHandler {
     }
 
     if (phase === 'result') {
-      // Tool complete — finalize with output + duration
+      // 工具完成后以输出和时长闭合卡片。
       const output = projectToolOutput(toolEvent.output);
       const msgs = listFor();
       const idx  = msgs.findIndex((m) => m.id === msgId);
@@ -1214,7 +1242,7 @@ export class ChatHandler {
         };
         store.setMessages(updated, sessionKey);
       } else {
-        // No 'start' event received — add result card directly
+        // 未收到 start 事件时，直接补充结果卡片。
         store.addMessage(
           {
             id: msgId,
@@ -1247,22 +1275,10 @@ export class ChatHandler {
     debugLog('gateway', '[GW] Tool stream - unknown phase:', phase, toolCallId);
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // Thinking Stream Handler — real-time reasoning display
-  //
-  // OpenClaw emits reasoning as a structured `agent` stream. The `chat`
-  // branch remains for protocol-compatible older gateways.
-  // { type:"event", event:"agent", payload: {
-  //   stream: "thinking",
-  //   runId, sessionKey?,
-  //   data: {
-  //     text: string,   // full accumulated thinking text
-  //     delta: string,  // new portion only
-  //   }
-  // }}
-  // ═══════════════════════════════════════════════════════════
-  handleThinkingStream(payload: any) {
-    const data = payload.data ?? {};
+  // 思考流处理：OpenClaw 通过结构化 agent 流发送推理内容；为兼容协议，
+  // chat 分支仍可进入同一投影路径。data.text 是累计内容，data.delta 是新增部分。
+  handleThinkingStream(payload: OpenClawLiveAgentEventPayload) {
+    const data = payload.data;
     const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
     const runId = typeof payload.runId === 'string' ? payload.runId.trim() : '';
     if (!sessionKey || !runId) {
@@ -1285,43 +1301,258 @@ export class ChatHandler {
     store.setThinkingStream(runId, text, sessionKey);
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // Event Handler — OpenClaw Protocol
-  //
-  // Gateway sends: { type:"event", event:"chat", payload: {
-  //   state: "delta" | "final" | "error" | "aborted",
-  //   message: { role, content },  // content: string | [{type:"text",text:"..."}]
-  //   sessionKey, runId
-  // }}
-  //
-  // "delta" = streaming update (accumulated content, NOT a chunk)
-  // "final" = complete, fetch full history
-  // ═══════════════════════════════════════════════════════════
-  handleEvent(msg: any) {
-    const event = msg.event || '';
-    const p = msg.payload || {};
-    if (event === 'chat.send_timing') {
-      this.handleChatSendTiming(p);
-      return;
-    }
-    if (event === 'session.tool' && !isOpenClawSessionToolPayload(p)) {
-      debugWarn('gateway', '[GW] Ignoring malformed OpenClaw session.tool event');
+  /**
+   * Gateway 原始事件只能在这里跨越传输边界。运行相关事件先通过官方协议解码，
+   * 避免畸形载荷抢占同一 run 的序号并丢弃后续有效事件。
+   */
+  handleEvent(msg: unknown) {
+    const envelope = gatewayRecord(msg);
+    const event = typeof envelope?.event === 'string' ? envelope.event : '';
+    if (!envelope || envelope.type !== 'event' || !event) {
+      debugWarn('gateway', '[GW] Ignoring malformed OpenClaw event envelope');
       return;
     }
 
+    if (event === 'agent' || event === 'chat' || event === 'session.tool') {
+      const decoded = parseOpenClawLiveGatewayEvent(msg);
+      if (!decoded) {
+        debugWarn('gateway', '[GW] Ignoring malformed OpenClaw live run event');
+        return;
+      }
+      if (decoded.kind === 'agent') this.handleLiveAgentEvent(decoded.payload);
+      else if (decoded.kind === 'chat') this.handleLiveChatEvent(decoded.payload);
+      else this.handleLiveSessionToolEvent(decoded.payload);
+      return;
+    }
+
+    this.handleNonLiveGatewayEvent(event, envelope.payload);
+  }
+
+  /** 仅在完整运行事件通过协议解码后写入同一 run 的序号围栏。 */
+  private acceptLiveRunEvent(
+    source: 'agent' | 'chat',
+    payload: Pick<OpenClawLiveAgentEventPayload, 'runId' | 'seq' | 'sessionKey'>,
+    terminal: boolean,
+  ): boolean {
+    const acceptance = this.runProjection.acceptEvent(source, payload.runId, payload.seq, { terminal });
+    if (!acceptance.accepted) return false;
+    const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
+    if (acceptance.requiresHistoryRefresh && sessionKey) {
+      this.conn.callbacks?.onStreamReconciliationNeeded?.(sessionKey, payload.runId);
+    }
+    return true;
+  }
+
+  /** 投影官方 Agent 流；未被聊天界面消费的流仍交给全局 Gateway 数据层。 */
+  private handleLiveAgentEvent(payload: OpenClawLiveAgentEventPayload): void {
+    if (!this.acceptLiveRunEvent('agent', payload, false)) return;
+    const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
+    if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
+
+    if (payload.stream === 'compaction' && payload.data.phase === 'end' && payload.data.willRetry !== true) {
+      if (sessionKey) this.injectCompactionDivider(sessionKey);
+      handleGatewayEvent('agent', payload);
+      return;
+    }
+    if (payload.stream === 'assistant') {
+      this.handleAssistantStream(payload);
+      return;
+    }
+    if (payload.stream === 'lifecycle') {
+      this.handleLifecycleStream(payload);
+      return;
+    }
+    if (payload.stream === 'tool') {
+      this.handleToolStream(payload);
+      return;
+    }
+    if (payload.stream === 'thinking') {
+      this.handleThinkingStream(payload);
+      return;
+    }
+    if (payload.stream === 'item' && payload.data.kind === 'tool') {
+      this.handleToolStream(payload, 'item');
+      return;
+    }
+    handleGatewayEvent('agent', payload);
+  }
+
+  /** `session.tool` 与 Agent 工具流共用官方 run 序号，不能重复渲染。 */
+  private handleLiveSessionToolEvent(payload: OpenClawLiveAgentEventPayload): void {
+    if (!this.acceptLiveRunEvent('agent', payload, false)) return;
+    const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
+    if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
+    this.handleToolStream(payload);
+  }
+
+  /** 投影官方 ChatEventSchema 的五种状态，不再解释已移除的自定义流字段。 */
+  private handleLiveChatEvent(payload: OpenClawLiveChatEventPayload): void {
+    const terminal = payload.state === 'final' || payload.state === 'error' || payload.state === 'aborted';
+    if (!this.acceptLiveRunEvent('chat', payload, terminal)) return;
+
+    const sessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
+    if (!sessionKey || isIsolatedExecutionSessionKey(sessionKey)) return;
+    this.bindRunToSession(sessionKey, payload.runId);
+
+    if (payload.state === 'status') {
+      if (!this.beginRun(sessionKey, payload.runId)) return;
+      useChatStore.getState().setChatRunStartup(sessionKey, {
+        runId: payload.runId,
+        phase: payload.phase,
+      });
+      return;
+    }
+
+    const snapshotText = payload.message === undefined || payload.message === null
+      ? null
+      : extractText(messageContent(payload.message));
+    const messageText = payload.state === 'delta'
+      ? resolveOpenClawChatDeltaText(this.sourceSnapshot(sessionKey, 'chat') || null, {
+          deltaText: payload.deltaText,
+          replace: payload.replace,
+          snapshotText,
+        }) ?? ''
+      : snapshotText ?? '';
+    const media = messageMedia(payload.message);
+
+    debugLog(
+      'gateway',
+      '[GW] Chat event — state:',
+      payload.state,
+      'runId:',
+      payload.runId.substring(0, 12),
+      'text length:',
+      messageText.length,
+      'text preview:',
+      messageText.substring(0, 80),
+    );
+
+    if (payload.state === 'delta') {
+      if (!this.beginRun(sessionKey, payload.runId)) return;
+      useChatStore.getState().setChatRunStartup(sessionKey, null);
+      const messageId = this.ensureActiveMessageId(sessionKey, payload.runId, payload);
+      if (!messageText && !media) return;
+      const selectedText = this.updateStreamSnapshot(sessionKey, 'chat', messageText, true);
+      this.currentStreamContentBySession.set(sessionKey, selectedText);
+      this.currentRunIdBySession.set(sessionKey, payload.runId);
+      const segmentText = this.getSegmentText(sessionKey, selectedText);
+      this.bufferStreamChunk(
+        sessionKey,
+        messageId,
+        this.getDisplayStreamText(segmentText),
+        media,
+        payload.runId,
+      );
+      const liveThinkingFromBlocks = extractThinkingContent(messageContent(payload.message));
+      if (liveThinkingFromBlocks) {
+        useChatStore.getState().setThinkingStream(payload.runId, liveThinkingFromBlocks, sessionKey);
+      }
+      return;
+    }
+
+    if (payload.state === 'final') {
+      const lease = this.claimTerminal(sessionKey, payload.runId);
+      if (!lease) return;
+      const messageId = this.ensureActiveMessageId(sessionKey, payload.runId, payload);
+      const activeRunId = this.currentRunIdBySession.get(sessionKey) || '';
+      const streamContent = !activeRunId || activeRunId === payload.runId
+        ? (this.currentStreamContentBySession.get(sessionKey) || '')
+        : '';
+      const finalText = payload.message === undefined || payload.message === null
+        ? streamContent
+        : messageText;
+      const message = messageRecord(payload.message);
+      const usage = numericRecord(payload.usage) ?? numericRecord(message?.usage);
+      this.finalizeAssistantResponse(
+        sessionKey,
+        messageId,
+        finalText,
+        lease,
+        media,
+        usage,
+        messageModel(payload.message),
+      );
+      return;
+    }
+
+    if (payload.state === 'error') {
+      const lease = this.claimTerminal(sessionKey, payload.runId);
+      if (!lease) return;
+      const messageId = this.ensureActiveMessageId(sessionKey, payload.runId, payload);
+      this.finalizeErroredResponse(
+        sessionKey,
+        messageId,
+        payload.errorMessage || i18n.t('errors.occurred'),
+        lease,
+      );
+      return;
+    }
+
+    const lease = this.claimTerminal(sessionKey, payload.runId);
+    if (!lease) return;
+    const messageId = this.ensureActiveMessageId(sessionKey, payload.runId, payload);
+    const activeRunId = this.currentRunIdBySession.get(sessionKey) || '';
+    const currentText = this.currentStreamContentBySession.get(sessionKey) || '';
+    const finalContent = messageText || (!activeRunId || activeRunId === payload.runId ? currentText : '');
+    this.finalizeAbortedResponse(sessionKey, messageId, finalContent, lease);
+  }
+
+  /** 会话转录是独立事件，先按该事件的显式字段核验再触发历史刷新。 */
+  private handleSessionMessageEvent(payload: Record<string, unknown>): void {
+    const transcriptSessionKey = this.resolveSessionKey(payload.sessionKey, payload.runId);
+    if (!transcriptSessionKey || isIsolatedExecutionSessionKey(transcriptSessionKey)) return;
+    if (!this.runProjection.acceptTranscriptUpdate(transcriptSessionKey, payload.messageSeq)) return;
+
+    let settledBySnapshot = false;
+    const activeRun = this.runProjection.active(transcriptSessionKey);
+    const hasAnonymousActiveRun = !activeRun && this.runProjection.hasActiveSession(transcriptSessionKey);
+    const transcriptMessage = messageRecord(payload.message);
+    const transcriptRole = typeof transcriptMessage?.role === 'string' ? transcriptMessage.role : '';
+    const transcriptEventRunId = typeof payload.runId === 'string' ? payload.runId.trim() : '';
+    const transcriptIdentity = readGatewayMessageIdentity(payload.message);
+    const transcriptRunId = transcriptEventRunId || transcriptIdentity.clientMessageId || '';
+    this.conn.callbacks?.onTranscriptMessage?.({ sessionKey: transcriptSessionKey, role: transcriptRole });
+
+    const transcriptSettlesActiveRun = Boolean(
+      activeRun && transcriptRole === 'assistant' && transcriptRunId === activeRun.runId,
+    );
+    const shouldReconcileSnapshot = payload.hasActiveRun === true
+      || (payload.hasActiveRun === false && (hasAnonymousActiveRun || transcriptSettlesActiveRun));
+    if (shouldReconcileSnapshot) {
+      const snapshots = [{ ...payload, key: transcriptSessionKey }];
+      const resolutions = this.runProjection.reconcileSessionSnapshots(snapshots, [transcriptSessionKey]);
+      this.completePendingSendsFromSnapshots(snapshots, resolutions);
+      settledBySnapshot = resolutions.some((resolution) => resolution.state === 'settled');
+      if (settledBySnapshot) this.clearTranscriptRefresh(transcriptSessionKey);
+      this.applySessionRunReconciliations(resolutions);
+    } else if (
+      payload.hasActiveRun === false
+      && (activeRun || useChatStore.getState().typingBySession[transcriptSessionKey])
+    ) {
+      this.conn.callbacks?.onSessionRunReconciliationNeeded?.(transcriptSessionKey);
+    }
+    if (!settledBySnapshot) this.scheduleTranscriptRefresh(transcriptSessionKey);
+  }
+
+  /** 非实时事件保持各自的官方解码器或失效刷新逻辑，不进入运行序号围栏。 */
+  private handleNonLiveGatewayEvent(event: string, payload: unknown): void {
+    if (event === 'chat.send_timing') {
+      this.handleChatSendTiming(payload);
+      return;
+    }
     if (event === 'session.operation') {
-      const operation = parseOpenClawSessionOperationEvent(p);
+      const operation = parseOpenClawSessionOperationEvent(payload);
       if (!operation) {
         debugWarn('gateway', '[GW] Ignoring malformed OpenClaw session.operation event');
         return;
       }
-      const operationSessionKey = this.resolveSessionKey(operation.sessionKey);
-      if (!operationSessionKey || isIsolatedExecutionSessionKey(operationSessionKey)) return;
-      if (!this.rememberSessionOperationEvent(operationSessionKey, operation)) return;
+      const sessionKey = this.resolveSessionKey(operation.sessionKey);
+      if (!sessionKey || isIsolatedExecutionSessionKey(sessionKey)) return;
+      if (!this.rememberSessionOperationEvent(sessionKey, operation)) return;
       const store = useChatStore.getState();
-      const current = store.compactionStatusBySession[operationSessionKey];
+      const current = store.compactionStatusBySession[sessionKey];
       if (operation.phase === 'start') {
-        store.setCompactionStatus(operationSessionKey, {
+        store.setCompactionStatus(sessionKey, {
           operationId: operation.operationId,
           phase: 'active',
           startedAt: operation.ts,
@@ -1329,303 +1560,19 @@ export class ChatHandler {
         return;
       }
       if (current && current.operationId !== operation.operationId) return;
-      if (operation.completed === true) {
-        this.injectCompactionDivider(operationSessionKey, operation.operationId);
-      }
-      store.setCompactionStatus(operationSessionKey, null);
+      if (operation.completed === true) this.injectCompactionDivider(sessionKey, operation.operationId);
+      store.setCompactionStatus(sessionKey, null);
       return;
     }
-
-    const sessionKey = this.resolveSessionKey(p.sessionKey, p.runId);
-
-    if (event === 'agent' || event === 'chat' || event === 'session.tool') {
-      const terminal = event === 'chat'
-        && (p.state === 'final' || p.state === 'error' || p.state === 'aborted');
-      // OpenClaw mirrors the standard agent tool payload onto `session.tool`
-      // for clients that subscribed after a run had already started. It uses
-      // the same run-level sequence, so both transports share one ordering
-      // fence and cannot render the same tool lifecycle twice.
-      const runEventSource = event === 'session.tool' ? 'agent' : event;
-      const acceptance = this.runProjection.acceptEvent(runEventSource, p.runId, p.seq, { terminal });
-      if (!acceptance.accepted) return;
-      if (acceptance.requiresHistoryRefresh && sessionKey && typeof p.runId === 'string') {
-        this.conn.callbacks?.onStreamReconciliationNeeded?.(sessionKey, p.runId);
-      }
-    }
-
-    if (event === 'session.tool') {
-      // The official contract carries the agent tool payload itself
-      // (`runId`, `seq`, `stream`, `ts`, `data`) plus a session snapshot. Do
-      // not unwrap or translate fields that the Gateway did not send.
-      if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
-      this.handleToolStream(p);
-      return;
-    }
-
     if (event === 'session.message') {
-      const transcriptSessionKey = this.resolveSessionKey(p.sessionKey, p.runId);
-      if (!transcriptSessionKey || isIsolatedExecutionSessionKey(transcriptSessionKey)) return;
-      if (this.runProjection.acceptTranscriptUpdate(transcriptSessionKey, p.messageSeq)) {
-        let settledBySnapshot = false;
-        const activeRun = this.runProjection.active(transcriptSessionKey);
-        const hasAnonymousActiveRun = !activeRun
-          && this.runProjection.hasActiveSession(transcriptSessionKey);
-        const transcriptRole = typeof p.message?.role === 'string' ? p.message.role : '';
-        const transcriptEventRunId = typeof p.runId === 'string' ? p.runId.trim() : '';
-        const transcriptIdentity = readGatewayMessageIdentity(p.message);
-        // Older transcript events do not have an outer run id. Their persisted
-        // client identity is the documented fallback for run reconciliation.
-        const transcriptRunId = transcriptEventRunId || transcriptIdentity.clientMessageId || '';
-        this.conn.callbacks?.onTranscriptMessage?.({
-          sessionKey: transcriptSessionKey,
-          role: transcriptRole,
-        });
-        const transcriptSettlesActiveRun = Boolean(
-          activeRun
-          && transcriptRole === 'assistant'
-          && transcriptRunId === activeRun.runId,
-        );
-        const shouldReconcileSnapshot = p.hasActiveRun === true
-          || (p.hasActiveRun === false && (hasAnonymousActiveRun || transcriptSettlesActiveRun));
-        if (shouldReconcileSnapshot) {
-          const snapshot = [{ ...p, key: transcriptSessionKey }];
-          const resolutions = this.runProjection.reconcileSessionSnapshots(
-            snapshot,
-            [transcriptSessionKey],
-          );
-          this.completePendingSendsFromSnapshots(snapshot, resolutions);
-          settledBySnapshot = resolutions.some((resolution) => resolution.state === 'settled');
-          if (settledBySnapshot) {
-            this.clearTranscriptRefresh(transcriptSessionKey);
-          }
-          this.applySessionRunReconciliations(resolutions);
-        } else if (
-          p.hasActiveRun === false
-          && (activeRun || useChatStore.getState().typingBySession[transcriptSessionKey])
-        ) {
-          // The snapshot is authoritative, but an older durable assistant
-          // message can arrive after a newer local run starts. Without an
-          // exact idempotency-key match, resolve current run ownership through
-          // sessions.list/chat.history instead of settling the newer run.
-          this.conn.callbacks?.onSessionRunReconciliationNeeded?.(transcriptSessionKey);
-        }
-        // A settled reconciliation already asks the application for durable
-        // history. Active runs defer transcript merging until their terminal
-        // event so native history cannot race the live assistant message.
-        if (!settledBySnapshot) this.scheduleTranscriptRefresh(transcriptSessionKey);
-      }
-      return;
-    }
-
-    // ── Direct compaction detection from agent events ──
-    // Instead of relying on polling tokenUsage.compactions (unreliable timing),
-    // intercept the agent compaction event and inject CompactDivider immediately.
-    if (event === 'agent' && p.stream === 'compaction' && p.data?.phase === 'end' && !p.data?.willRetry) {
-      if (sessionKey) this.injectCompactionDivider(sessionKey);
-    }
-
-    if (event === 'agent' && p.stream === 'assistant') {
-      if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
-      this.handleAssistantStream(p);
-      return;
-    }
-
-    if (event === 'agent' && p.stream === 'lifecycle') {
-      if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
-      this.handleLifecycleStream(p);
-      return;
-    }
-
-    if (event === 'agent' && p.stream === 'tool') {
-      if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
-      this.handleToolStream(p);
-      return;
-    }
-
-    if (event === 'agent' && p.stream === 'thinking') {
-      if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
-      this.handleThinkingStream(p);
-      return;
-    }
-
-    // Agent "item" stream — newer event format for tool lifecycle.
-    if (event === 'agent' && p.stream === 'item' && p.data?.kind === 'tool') {
-      if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) return;
-      this.handleToolStream(p, 'item');
-      return;
-    }
-
-    // Non-chat events → forward to central data store
-    if (event !== 'chat') {
-      handleGatewayEvent(event, p);
-      return;
-    }
-
-    // Filter out events from isolated cron/sub-agent sessions
-    // Only show messages from main session or sessions the user explicitly opened
-    // Block only truly isolated sessions (cron jobs and sub-agent runs).
-    // Main sessions may use any suffix: agent:main:main, agent:main:webchat, etc.
-    if (sessionKey && isIsolatedExecutionSessionKey(sessionKey)) {
-      debugLog('gateway', '[GW] Ignoring event from isolated session:', sessionKey);
-      return;
-    }
-
-    // ── Tool stream events (real-time tool execution) ──
-    // payload.stream === "tool" → tool call lifecycle events (start/update/result)
-    if (p.stream === 'tool') {
-      this.handleToolStream(p);
-      return;
-    }
-
-    // ── Thinking stream events (real-time reasoning display) ──
-    // payload.stream === "thinking" → accumulated reasoning text
-    if (p.stream === 'thinking') {
-      this.handleThinkingStream(p);
-      return;
-    }
-
-    // Compaction stream from chat events — already handled above via agent events
-    if (p.stream === 'compaction') return;
-
-    const state = p.state || '';
-    const runId = p.runId || '';
-    if (state === 'status') {
-      if (!sessionKey) return;
-      const startup = parseOpenClawChatRunStartup(p);
-      if (!startup) {
-        debugWarn('gateway', '[GW] Ignoring malformed OpenClaw chat status event');
+      const record = gatewayRecord(payload);
+      if (!record) {
+        debugWarn('gateway', '[GW] Ignoring malformed OpenClaw session.message event');
         return;
       }
-      if (!this.beginRun(sessionKey, startup.runId)) return;
-      this.bindRunToSession(sessionKey, startup.runId);
-      useChatStore.getState().setChatRunStartup(sessionKey, startup);
+      this.handleSessionMessageEvent(record);
       return;
     }
-
-    const snapshotText = p.message === undefined || p.message === null
-      ? null
-      : extractText(p.message?.content);
-    let messageText = state === 'delta' && sessionKey
-      ? resolveOpenClawChatDeltaText(this.sourceSnapshot(sessionKey, 'chat') || null, {
-          deltaText: p.deltaText,
-          replace: p.replace,
-          snapshotText,
-        }) ?? ''
-      : snapshotText ?? '';
-
-    // Extract mediaUrl from payload fields
-    let mediaUrl = p.mediaUrl || p.message?.mediaUrl || (p.mediaUrls?.length ? p.mediaUrls[0] : undefined);
-    let mediaType = p.mediaType || p.message?.mediaType || undefined;
-
-    // Also extract MEDIA: paths/URLs from message content (OpenClaw TTS format)
-    // Formats:
-    //   MEDIA:http://localhost:5050/audio/xxx.mp3   (HTTP URL — preferred)
-    //   MEDIA:/host-d/clawdbot-shared/voice/xxx.mp3 (shared folder path)
-    //   MEDIA:/tmp/tts-xxx/voice-123.mp3            (sandbox path — needs conversion)
-    const mediaMatch = messageText.match(/MEDIA:(https?:\/\/[^\s]+|\/[^\s]+|[A-Z]:\\[^\s]+)/);
-    if (mediaMatch) {
-      let mediaPath = mediaMatch[1];
-      mediaType = mediaType || 'audio';
-      // Remove the MEDIA: line from displayed text
-      messageText = messageText.replace(/\n?MEDIA:[^\s]+\n?/g, '').trim();
-
-      if (!mediaUrl) {
-        if (/^https?:\/\//.test(mediaPath)) {
-          // HTTP URL — use directly (Edge TTS server or any HTTP source)
-          mediaUrl = mediaPath;
-          debugLog('media', '[GW] Media URL (HTTP):', mediaUrl);
-        } else {
-          // File path — resolve via Electron IPC
-          mediaUrl = `aegis-media:${mediaPath}`;
-          debugLog('media', '[GW] Media path:', mediaPath);
-        }
-      }
-    }
-
-    const media: MediaInfo | undefined = mediaUrl ? { mediaUrl, mediaType } : undefined;
-
-    debugLog('gateway', '[GW] Chat event — state:', state, 'runId:', runId?.substring(0, 12), 'text length:', messageText.length, 'text preview:', messageText.substring(0, 80));
-
-    if (!sessionKey) return;
-    const protocolRunId = typeof runId === 'string' ? runId.trim() : '';
-    if (!protocolRunId) {
-      debugWarn('gateway', '[GW] Ignoring chat event without an OpenClaw runId');
-      return;
-    }
-    const effectiveRunId = protocolRunId;
-    this.bindRunToSession(sessionKey, effectiveRunId);
-
-    switch (state) {
-      case 'delta': {
-        if (!this.beginRun(sessionKey, effectiveRunId)) return;
-        useChatStore.getState().setChatRunStartup(sessionKey, null);
-        const mId = this.ensureActiveMessageId(sessionKey, effectiveRunId, p);
-        if (!messageText && !media) break;
-        const selectedText = this.updateStreamSnapshot(
-          sessionKey,
-          'chat',
-          messageText,
-          true,
-        );
-        this.currentStreamContentBySession.set(sessionKey, selectedText);
-        this.currentRunIdBySession.set(sessionKey, effectiveRunId);
-        const segmentText = this.getSegmentText(sessionKey, selectedText);
-        this.bufferStreamChunk(sessionKey, mId, this.getDisplayStreamText(segmentText), media, effectiveRunId);
-
-        const liveThinkingFromBlocks = extractThinkingContent(p.message?.content);
-        if (liveThinkingFromBlocks) {
-          useChatStore.getState().setThinkingStream(effectiveRunId, liveThinkingFromBlocks, sessionKey);
-        }
-        break;
-      }
-
-      case 'final': {
-        const lease = this.claimTerminal(sessionKey, effectiveRunId);
-        if (!lease) return;
-        const mId = this.ensureActiveMessageId(sessionKey, effectiveRunId, p);
-        // OpenClaw flushes buffered deltas before chat.final and sends the
-        // canonical buffered text in the terminal message. Only fall back to
-        // the local projection when the terminal carries no message.
-        const activeRunId = this.currentRunIdBySession.get(sessionKey) || '';
-        const streamContent = !activeRunId || activeRunId === effectiveRunId
-          ? (this.currentStreamContentBySession.get(sessionKey) || '')
-          : '';
-        const hasCanonicalMessage = p.message !== undefined && p.message !== null;
-        const finalText = hasCanonicalMessage ? messageText : streamContent;
-        const usage = p.usage && typeof p.usage === 'object'
-          ? p.usage
-          : p.message?.usage && typeof p.message.usage === 'object'
-            ? p.message.usage
-            : undefined;
-        const model = p.model ?? p.message?.model ?? null;
-        this.finalizeAssistantResponse(sessionKey, mId, finalText, lease, media, usage, model);
-        break;
-      }
-
-      case 'error': {
-        const lease = this.claimTerminal(sessionKey, effectiveRunId);
-        if (!lease) return;
-        const mId = this.ensureActiveMessageId(sessionKey, effectiveRunId, p);
-        const errorText = p.errorMessage || i18n.t('errors.occurred');
-        this.finalizeErroredResponse(sessionKey, mId, errorText, lease);
-        break;
-      }
-
-      case 'aborted': {
-        const lease = this.claimTerminal(sessionKey, effectiveRunId);
-        if (!lease) return;
-        const mId = this.ensureActiveMessageId(sessionKey, effectiveRunId, p);
-        // Use messageText from abort event, fall back to accumulated stream content
-        const activeRunId = this.currentRunIdBySession.get(sessionKey) || '';
-        const currentText = this.currentStreamContentBySession.get(sessionKey) || '';
-        const sameRun = !activeRunId || activeRunId === effectiveRunId;
-        const finalContent = messageText || (sameRun ? currentText : '');
-        this.finalizeAbortedResponse(sessionKey, mId, finalContent, lease);
-        break;
-      }
-
-      default:
-        debugLog('gateway', '[GW] Unknown chat state:', state);
-    }
+    handleGatewayEvent(event, payload);
   }
 }

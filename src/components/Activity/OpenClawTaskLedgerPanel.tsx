@@ -15,12 +15,24 @@ import {
 import clsx from 'clsx';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import {
+  OPENCLAW_TASK_CANCEL_NOT_CONFIRMED,
+  OPENCLAW_TASK_DISMISS_NOT_CONFIRMED,
+  OPENCLAW_TASK_REQUEST_FAILED,
+  OPENCLAW_TASK_RETRY_NOT_CONFIRMED,
   useOpenClawTaskLedgerStore,
   type OpenClawTaskLedgerStatus,
   type OpenClawTaskSummary,
 } from '@/stores/openclawTaskLedgerStore';
 
 const TASK_REFRESH_INTERVAL_MS = 15_000;
+
+function taskLedgerErrorLabel(error: string, t: (key: string, fallback: string) => string): string {
+  if (error === OPENCLAW_TASK_REQUEST_FAILED) return t('activity.tasks.requestFailed', 'Unable to read native tasks.');
+  if (error === OPENCLAW_TASK_CANCEL_NOT_CONFIRMED) return t('activity.tasks.cancelNotConfirmed', 'OpenClaw did not confirm task cancellation.');
+  if (error === OPENCLAW_TASK_RETRY_NOT_CONFIRMED) return t('activity.tasks.retryNotConfirmed', 'OpenClaw did not confirm completion delivery recovery.');
+  if (error === OPENCLAW_TASK_DISMISS_NOT_CONFIRMED) return t('activity.tasks.dismissNotConfirmed', 'OpenClaw did not confirm completion delivery dismissal.');
+  return error;
+}
 
 function statusLabel(status: OpenClawTaskLedgerStatus, t: (key: string, fallback: string) => string): string {
   if (status === 'queued') return t('activity.tasks.statusQueued', 'Queued');
@@ -290,14 +302,14 @@ export function OpenClawTaskLedgerPanel({ connected }: { connected: boolean }) {
       ) : loading && !page ? (
         <p className="px-4 py-4 text-[11px] text-aegis-text-dim">{t('activity.tasks.loading', 'Loading native tasks')}</p>
       ) : error && !page ? (
-        <p className="px-4 py-4 text-[11px] text-aegis-danger" role="alert">{error}</p>
+        <p className="px-4 py-4 text-[11px] text-aegis-danger" role="alert">{taskLedgerErrorLabel(error, (key, fallback) => t(key, fallback))}</p>
       ) : unavailable ? (
         <p className="px-4 py-4 text-[11px] text-aegis-text-dim">{t('activity.tasks.unsupported', 'This Gateway does not expose native task ledger methods.')}</p>
       ) : page?.tasks.length === 0 ? (
         <p className="px-4 py-4 text-[11px] text-aegis-text-dim">{t('activity.tasks.empty', 'No native tasks are recorded by this Gateway.')}</p>
       ) : (
         <>
-          {error && <p className="border-b border-aegis-danger/20 bg-aegis-danger/5 px-4 py-2 text-[10.5px] text-aegis-danger" role="alert">{error}</p>}
+          {error && <p className="border-b border-aegis-danger/20 bg-aegis-danger/5 px-4 py-2 text-[10.5px] text-aegis-danger" role="alert">{taskLedgerErrorLabel(error, (key, fallback) => t(key, fallback))}</p>}
           {page?.tasks.map((task) => <TaskRow key={task.id} connected={connected} task={task} />)}
           {canLoadMore && (
             <div className="border-t border-aegis-border px-4 py-3">

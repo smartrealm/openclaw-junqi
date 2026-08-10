@@ -31,19 +31,21 @@ test('routes the OpenClaw agent stream shape to typed collaboration listeners on
   assert.equal(fallbackCalls, 0);
 });
 
-test('accepts the documented direct event shape without coupling it to ChatHandler', () => {
+test('不接受不存在的协作顶层 Gateway 事件', () => {
   const seen: unknown[] = [];
+  let fallbackCalls = 0;
   const unsubscribe = subscribeCollaborationChangedHints((hint) => seen.push(hint));
   try {
-    assert.equal(publishCollaborationChangedEvent({
+    routeGatewayEvent({
       type: 'event',
       event: 'junqi-collab.changed',
       payload: HINT,
-    }), true);
+    }, () => { fallbackCalls += 1; });
   } finally {
     unsubscribe();
   }
-  assert.deepEqual(seen, [HINT]);
+  assert.deepEqual(seen, []);
+  assert.equal(fallbackCalls, 1);
 });
 
 test('malformed reserved hints fail closed and do not fall through or throw', () => {

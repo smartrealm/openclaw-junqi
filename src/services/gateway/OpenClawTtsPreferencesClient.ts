@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export type OpenClawTtsPreferenceMutation = 'enabled' | 'provider' | 'persona';
 
@@ -43,11 +43,6 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
 }
 
 function connectionUnavailable(error: unknown): boolean {
@@ -101,7 +96,7 @@ export class OpenClawTtsPreferencesClient {
       }
       return { response, connectionId };
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, method)) {
         throw new OpenClawTtsPreferencesUnavailableError(`The connected OpenClaw Gateway does not support ${method}`);
       }
       if (connectionUnavailable(error)) {

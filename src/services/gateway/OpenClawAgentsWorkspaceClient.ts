@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_AGENTS_WORKSPACE_LIST_METHOD = 'agents.workspace.list' as const;
 export const OPENCLAW_AGENTS_WORKSPACE_GET_METHOD = 'agents.workspace.get' as const;
@@ -218,11 +218,6 @@ function optionalOffset(value: number | undefined): number | undefined {
   return value;
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 function connectionUnavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
@@ -297,7 +292,7 @@ export class OpenClawAgentsWorkspaceClient {
       }
       return parse(response);
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, method)) {
         throw this.unavailable(`The connected OpenClaw Gateway does not support ${method}`);
       }
       if (connectionUnavailable(error)) {

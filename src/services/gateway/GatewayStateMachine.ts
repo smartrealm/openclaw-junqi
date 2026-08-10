@@ -86,8 +86,7 @@ export class GatewayStateMachine {
     // recovery own that intent explicitly. This prevents a slow Gateway boot from
     // being interpreted as repeated permission to spawn another Gateway.
     if (event.type === 'STATUS_RECEIVED') {
-      const processAlive = event.processAlive ?? event.running ?? false;
-      const endpointReady = event.endpointReady ?? processAlive;
+      const { processAlive, endpointReady } = event;
       if (event.retrying) {
         return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.DETECTING, []);
       }

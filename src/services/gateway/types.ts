@@ -28,10 +28,8 @@ export type GatewayEvent =
   | { type: 'RECOVERY_REQUESTED' }
   | {
       type: 'STATUS_RECEIVED';
-      /** Backward-compatible status projection for older adapters. */
-      running?: boolean;
-      processAlive?: boolean;
-      endpointReady?: boolean;
+      processAlive: boolean;
+      endpointReady: boolean;
       error: string | null;
       retrying: boolean;
       logs?: { stdout: string; stderr: string };

@@ -1,4 +1,4 @@
-import { GatewayRpcError } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 import {
   enqueueCronRun,
   listCronRuns,
@@ -60,11 +60,6 @@ function requiredInputString(value: string, message: string): string {
   return value.trim();
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 function invalidCronResponse(error: unknown, method: string): boolean {
   if (!(error instanceof Error)) return false;
   return error.message.startsWith(`${method} returned an invalid`)
@@ -105,7 +100,9 @@ export class OpenClawCronRunClient {
         ...(result.reason ? { reason: result.reason } : {}),
       };
     } catch (error) {
-      if (unsupportedMethod(error)) throw new OpenClawCronRunUnsupportedError(CRON_RUN_METHOD);
+      if (isOpenClawUnknownMethodError(error, CRON_RUN_METHOD)) {
+        throw new OpenClawCronRunUnsupportedError(CRON_RUN_METHOD);
+      }
       if (invalidCronResponse(error, CRON_RUN_METHOD)) {
         this.dependencies.diagnostics?.recordCapabilityInvalidResponse?.(CRON_RUN_METHOD);
         throw new OpenClawCronRunResponseError();
@@ -128,7 +125,9 @@ export class OpenClawCronRunClient {
       );
       return { entries: page.entries };
     } catch (error) {
-      if (unsupportedMethod(error)) throw new OpenClawCronRunUnsupportedError(CRON_RUNS_METHOD);
+      if (isOpenClawUnknownMethodError(error, CRON_RUNS_METHOD)) {
+        throw new OpenClawCronRunUnsupportedError(CRON_RUNS_METHOD);
+      }
       if (invalidCronResponse(error, CRON_RUNS_METHOD)) {
         this.dependencies.diagnostics?.recordCapabilityInvalidResponse?.(CRON_RUNS_METHOD);
         throw new OpenClawCronRunResponseError();

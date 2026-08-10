@@ -44,7 +44,9 @@ test('OpenClawSetupVerificationClient retains only official success or failure s
 
 test('OpenClawSetupVerificationClient distinguishes unavailable Gateway methods and connections', async () => {
   const unsupported = new OpenClawSetupVerificationClient({
-    requestPrivileged: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
+    requestPrivileged: async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    },
   });
   await assert.rejects(unsupported.verify(), OpenClawSetupVerificationUnavailableError);
 
@@ -54,6 +56,13 @@ test('OpenClawSetupVerificationClient distinguishes unavailable Gateway methods 
     },
   });
   await assert.rejects(installedRuntimeShape.verify(), OpenClawSetupVerificationUnavailableError);
+
+  const wrongMethod = new OpenClawSetupVerificationClient({
+    requestPrivileged: async () => {
+      throw new GatewayRpcError('unknown method: models.probe', 'INVALID_REQUEST');
+    },
+  });
+  await assert.rejects(wrongMethod.verify(), GatewayRpcError);
 
   const disconnected = new OpenClawSetupVerificationClient({
     requestPrivileged: async () => { throw new GatewayDisconnectedError(); },

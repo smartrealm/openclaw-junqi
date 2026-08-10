@@ -40,8 +40,8 @@ test('does not treat an omitted method advertisement as a capability gate', asyn
 });
 
 test('maps only explicit unsupported responses and rejects malformed catalogs', async () => {
-  const unsupported = new OpenClawSessionGroupsClient(async () => {
-    throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+  const unsupported = new OpenClawSessionGroupsClient(async (method) => {
+    throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
   });
   const malformed = new OpenClawSessionGroupsClient(async () => ({
     groups: [{ name: 'Missing position' }],

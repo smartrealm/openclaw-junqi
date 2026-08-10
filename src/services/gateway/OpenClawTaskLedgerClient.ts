@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export type OpenClawTaskLedgerStatus =
   | 'queued'
@@ -189,11 +189,6 @@ function optionalTerminalOutcome(value: unknown): OpenClawTaskTerminalOutcome | 
   return value as OpenClawTaskTerminalOutcome;
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 function connectionUnavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
@@ -349,7 +344,9 @@ export class OpenClawTaskLedgerClient {
     try {
       return { ...parseOpenClawTaskListPage(await this.request(TASKS_LIST_METHOD, listParams(input))), availability: 'available' };
     } catch (error) {
-      if (unsupportedMethod(error)) return { tasks: [], availability: 'unavailable' };
+      if (isOpenClawUnknownMethodError(error, TASKS_LIST_METHOD)) {
+        return { tasks: [], availability: 'unavailable' };
+      }
       throw error;
     }
   }
@@ -361,7 +358,9 @@ export class OpenClawTaskLedgerClient {
       if (!result) throw new OpenClawTaskLedgerResponseError();
       return parseOpenClawTaskSummary(result.task, true);
     } catch (error) {
-      if (unsupportedMethod(error)) throw new OpenClawTaskLedgerUnsupportedError(TASKS_GET_METHOD);
+      if (isOpenClawUnknownMethodError(error, TASKS_GET_METHOD)) {
+        throw new OpenClawTaskLedgerUnsupportedError(TASKS_GET_METHOD);
+      }
       throw error;
     }
   }
@@ -385,7 +384,9 @@ export class OpenClawTaskLedgerClient {
         ...(result.task === undefined ? {} : { task: parseOpenClawTaskSummary(result.task) }),
       };
     } catch (error) {
-      if (unsupportedMethod(error)) throw new OpenClawTaskLedgerUnsupportedError(TASKS_CANCEL_METHOD);
+      if (isOpenClawUnknownMethodError(error, TASKS_CANCEL_METHOD)) {
+        throw new OpenClawTaskLedgerUnsupportedError(TASKS_CANCEL_METHOD);
+      }
       throw error;
     }
   }
@@ -402,7 +403,9 @@ export class OpenClawTaskLedgerClient {
     try {
       return parseRecoveryResult(await this.request(method, recoveryParams(taskIds)));
     } catch (error) {
-      if (unsupportedMethod(error)) throw new OpenClawTaskLedgerUnsupportedError(method);
+      if (isOpenClawUnknownMethodError(error, method)) {
+        throw new OpenClawTaskLedgerUnsupportedError(method);
+      }
       throw error;
     }
   }

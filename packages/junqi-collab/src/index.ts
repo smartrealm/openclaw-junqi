@@ -24,13 +24,13 @@ const CONFIG_DEFAULTS = {
 
 function integerConfig(
   value: unknown,
-  fallback: number,
+  defaultValue: number,
   minimum: number,
   maximum: number,
 ): number {
   return typeof value === "number" && Number.isInteger(value) && value >= minimum && value <= maximum
     ? value
-    : fallback;
+    : defaultValue;
 }
 
 function normalizePluginConfig(input: Record<string, unknown> | undefined): PluginConfig {

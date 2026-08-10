@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_DIAGNOSTIC_STABILITY_METHOD = 'diagnostics.stability' as const;
 
@@ -89,11 +89,6 @@ function summaryByType(value: unknown): Readonly<Record<string, number>> {
   }));
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 function connectionUnavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
@@ -157,7 +152,7 @@ export class OpenClawDiagnosticStabilityClient {
       }
       return parseOpenClawDiagnosticStability(response);
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_DIAGNOSTIC_STABILITY_METHOD)) {
         throw new OpenClawDiagnosticStabilityUnavailableError(
           'The connected OpenClaw Gateway does not support diagnostics.stability',
         );

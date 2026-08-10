@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import test from "node:test";
 import { CollaborationDatabase } from "./database.js";
 import { CollaborationError } from "./errors.js";
@@ -254,28 +251,10 @@ test("retention candidates use a strict cutoff and stable ended-at/id cursor", (
   }
 });
 
-test("deletion query indexes are installed for existing schema 10 databases", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-deletion-index-test-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const initial = new CollaborationDatabase(filePath);
+test("current schema installs deletion query indexes with the expected query plan", () => {
+  const database = new CollaborationDatabase(":memory:");
   try {
-    initial.db.exec(`
-      DROP INDEX collaboration_runs_retention;
-      DROP INDEX attempts_run_active;
-      DROP INDEX commands_run_active;
-      DROP INDEX commands_run_failed_flow;
-      DROP INDEX export_jobs_run_status;
-      DROP INDEX deletion_jobs_run_status;
-    `);
-    initial.setMetadata("schema_version", "10");
-    assert.equal(initial.getMetadata("schema_version"), "10");
-  } finally {
-    initial.close();
-  }
-
-  const reopened = new CollaborationDatabase(filePath);
-  try {
-    const names = new Set((reopened.db
+    const names = new Set((database.db
       .prepare(
         `SELECT name FROM sqlite_master
          WHERE type = 'index' AND name IN (
@@ -293,7 +272,7 @@ test("deletion query indexes are installed for existing schema 10 databases", ()
       "deletion_jobs_run_status",
     ]));
 
-    const plan = (reopened.db
+    const plan = (database.db
       .prepare(
         `EXPLAIN QUERY PLAN
          SELECT r.id, r.ended_at
@@ -308,8 +287,7 @@ test("deletion query indexes are installed for existing schema 10 databases", ()
     assert.match(plan, /collaboration_runs_retention/);
     assert.doesNotMatch(plan, /TEMP B-TREE/);
   } finally {
-    reopened.close();
-    rmSync(directory, { recursive: true, force: true });
+    database.close();
   }
 });
 

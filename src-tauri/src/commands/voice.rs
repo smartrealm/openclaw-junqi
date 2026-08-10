@@ -213,16 +213,6 @@ pub fn voice_stop_recording(recording_id: String) -> Result<serde_json::Value, S
     }))
 }
 
-#[tauri::command]
-pub fn voice_is_recording() -> Result<serde_json::Value, String> {
-    let guard = RECORDER.lock().map_err(|e| format!("Lock: {}", e))?;
-    let recording = guard
-        .as_ref()
-        .map(|active| !active.worker.is_finished())
-        .unwrap_or(false);
-    Ok(serde_json::json!({ "recording": recording }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

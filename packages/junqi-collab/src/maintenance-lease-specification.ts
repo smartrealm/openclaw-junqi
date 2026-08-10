@@ -66,8 +66,7 @@ const SUPPORTED_KEYS = new Set([
 ]);
 
 /**
- * Pure policy for interpreting the durable maintenance lease. Invalid state is
- * represented as a fail-closed inspection instead of escaping as a parse error.
+ * 持久化维护租约的纯领域规格。无效状态投影为失败关闭检查结果，不把解析异常泄漏到调用方。
  */
 export class MaintenanceLeaseSpecification {
   inspect(raw: string | null, referenceTime: number): MaintenanceLeaseInspection {
@@ -144,14 +143,8 @@ export class MaintenanceLeaseSpecification {
       if (!SUPPORTED_KEYS.has(key)) throw new TypeError(`maintenance lease contains unsupported field ${key}`);
     }
 
-    const hasVersion = Object.hasOwn(record, "version");
-    const hasStatus = Object.hasOwn(record, "status");
-    if (hasVersion !== hasStatus) {
-      throw new TypeError("maintenance lease version and status must be persisted together");
-    }
-    if (hasVersion && record.version !== 1) throw new TypeError("maintenance lease version is unsupported");
-
-    const status = hasStatus ? record.status : "ACTIVE";
+    if (record.version !== 1) throw new TypeError("maintenance lease version is unsupported");
+    const status = record.status;
     if (status !== "ACTIVE" && status !== "EXPIRED") {
       throw new TypeError("maintenance lease status is invalid");
     }

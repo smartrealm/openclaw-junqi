@@ -1,5 +1,9 @@
 import { classifyGatewayAuthorizationError } from './messageRouter';
-import { isGatewayTransportLifecycleError } from './GatewayTransportError';
+import {
+  GatewayRequestTimeoutError,
+  isGatewayTransportLifecycleError,
+} from './GatewayTransportError';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 import type { GatewayHelloObservation } from '@/types/gatewayRuntime';
 
 export type GatewayCapabilityState =
@@ -37,12 +41,6 @@ export interface GatewayCapabilitySnapshot {
   observedAtMs: number | null;
 }
 
-const UNSUPPORTED_CODES = new Set([
-  'METHOD_NOT_FOUND',
-  'UNKNOWN_METHOD',
-  'UNKNOWN_COMMAND',
-]);
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -71,29 +69,20 @@ function connectionUnavailable(value: unknown): boolean {
     || code === 'GATEWAY_CONNECTION_FENCE_MISMATCH';
 }
 
-function unknownMethodRequest(value: unknown): boolean {
-  const record = asRecord(value);
-  const code = errorCode(value);
-  const message = normalizedString(record?.message) ?? (typeof value === 'string' ? value.trim() : undefined);
-  return code === 'INVALID_REQUEST' && Boolean(message && /^(?:unknown method|no handler for)\b/i.test(message));
-}
-
 function requestAwaitingVerification(value: unknown): boolean {
   const code = errorCode(value);
-  if (code === 'GATEWAY_REQUEST_ABORTED') return true;
-  if (typeof value === 'string') return /request\s+timeout/i.test(value);
-  const message = normalizedString(asRecord(value)?.message);
-  return Boolean(message && /request\s+timeout/i.test(message));
+  return value instanceof GatewayRequestTimeoutError || code === 'GATEWAY_REQUEST_ABORTED';
 }
 
-export function classifyGatewayCapabilityFailure(value: unknown): {
+export function classifyGatewayCapabilityFailure(value: unknown, method?: string): {
   state: Exclude<GatewayCapabilityState, 'advertised' | 'available'>;
   code?: string;
   missingScope?: string;
 } {
   const code = errorCode(value);
-  if (code && UNSUPPORTED_CODES.has(code)) return { state: 'unsupported', code };
-  if (unknownMethodRequest(value)) return { state: 'unsupported', ...(code ? { code } : {}) };
+  if (method && isOpenClawUnknownMethodError(value, method)) {
+    return { state: 'unsupported', ...(code ? { code } : {}) };
+  }
 
   const authorization = classifyGatewayAuthorizationError(value);
   if (authorization) {
@@ -186,7 +175,7 @@ export class GatewayCapabilityRegistry {
   }
 
   recordFailure(method: string, error: unknown): void {
-    const classified = classifyGatewayCapabilityFailure(error);
+    const classified = classifyGatewayCapabilityFailure(error, method);
     this.record(method, {
       ...classified,
       source: 'rpc',

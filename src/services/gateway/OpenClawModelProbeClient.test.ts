@@ -69,7 +69,9 @@ test('OpenClawModelProbeClient rejects malformed, mismatched, and unsupported re
   await assert.rejects(mismatched.probeProvider('openai'), OpenClawModelProbeResponseError);
 
   const unsupported = new OpenClawModelProbeClient({
-    requestPrivileged: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
+    requestPrivileged: async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    },
   });
   await assert.rejects(unsupported.probeProvider('openai'), OpenClawModelProbeUnavailableError);
 });

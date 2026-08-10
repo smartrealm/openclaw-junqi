@@ -41,7 +41,6 @@ const INVALID_CREDENTIAL_CODES = new Set([
   'AUTH_DEVICE_TOKEN_MISMATCH',
   'INVALID_TOKEN',
   'TOKEN_EXPIRED',
-  'UNAUTHORIZED',
 ]);
 const SCOPE_CODES = new Set(['AUTH_SCOPE_MISMATCH', 'MISSING_SCOPE']);
 const RATE_LIMIT_CODES = new Set(['AUTH_RATE_LIMITED']);
@@ -65,38 +64,32 @@ function normalizedCode(value: unknown): string {
 }
 
 /**
- * Normalize the current OpenClaw Gateway authorization contract. Pairing is
- * carried in `error.details.code`; the outer code is often only UNAUTHORIZED.
- * Keeping the categories separate prevents a stale token from being presented
- * to the user as a device-approval request.
+ * 归一化 OpenClaw 当前结构化授权错误。配对事实位于 `error.details.code`；
+ * 外层通用错误码不能替代缺失的具体原因。
  */
 export function classifyGatewayAuthorizationError(
   value: unknown,
 ): GatewayAuthorizationIssue | null {
   const error = asRecord(value);
+  if (!error) return null;
   const details = asRecord(error?.details);
-  const message = nonEmptyString(error?.message)
-    ?? (typeof value === 'string' ? value.trim() : '')
-    ?? '';
+  const message = nonEmptyString(error.message) ?? '';
   const outerCode = normalizedCode(error?.code);
   const detailCode = normalizedCode(details?.code);
   const code = detailCode || outerCode;
 
   let kind: GatewayAuthorizationIssueKind | null = null;
-  if (PAIRING_CODES.has(code) || /\bpairing\s+required\b/i.test(message)) {
+  if (PAIRING_CODES.has(code)) {
     kind = 'pairing_required';
-  } else if (MISSING_CREDENTIAL_CODES.has(code) || /\b(token|password)\s+(required|missing)\b/i.test(message)) {
+  } else if (MISSING_CREDENTIAL_CODES.has(code)) {
     kind = 'credentials_missing';
-  } else if (RATE_LIMIT_CODES.has(code) || /too many failed authentication attempts/i.test(message)) {
+  } else if (RATE_LIMIT_CODES.has(code)) {
     kind = 'rate_limited';
-  } else if (SCOPE_CODES.has(code) || /\bmissing\s+scope\b/i.test(message)) {
+  } else if (SCOPE_CODES.has(code)) {
     kind = 'scope_denied';
-  } else if (DEVICE_IDENTITY_CODES.has(code) || /\bdevice identity required\b/i.test(message)) {
+  } else if (DEVICE_IDENTITY_CODES.has(code)) {
     kind = 'device_identity_required';
-  } else if (
-    INVALID_CREDENTIAL_CODES.has(code)
-    || /\b(invalid token|unauthorized|authentication failed|token mismatch)\b/i.test(message)
-  ) {
+  } else if (INVALID_CREDENTIAL_CODES.has(code)) {
     kind = 'credentials_invalid';
   }
 
@@ -117,11 +110,6 @@ export function classifyGatewayAuthorizationError(
       ? { requiredScopes: details.requiredScopes.filter((scope): scope is string => typeof scope === 'string' && Boolean(scope.trim())) }
       : {}),
   };
-}
-
-/** Backward-compatible predicate for callers that only need a boolean. */
-export function isAuthError(error: unknown): boolean {
-  return classifyGatewayAuthorizationError(error) !== null;
 }
 
 export interface GatewayMessage {

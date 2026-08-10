@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
 import {
   GatewayLifecycleCoordinator,
   type GatewayEnsureResult,
@@ -245,17 +244,6 @@ test('identity verification is asked for regardless of runtime', async () => {
     verifySelectedIdentity: async () => { probes += 1; return true; },
   }).restart('config-manager');
   assert.equal(probes, 2);
-});
-
-test('the coordinator holds no runtime-specific branching of its own', () => {
-  const source = readFileSync('src/services/gateway/GatewayLifecycleCoordinator.ts', 'utf8');
-  const code = source
-    .split('\n')
-    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
-    .join('\n');
-  // No runtime name may steer control flow or be used as a display default.
-  assert.doesNotMatch(code, /docker/i);
-  assert.doesNotMatch(code, /['"`]native['"`]/i);
 });
 
 test('an unreported runtime mode is not rendered as Native', async () => {

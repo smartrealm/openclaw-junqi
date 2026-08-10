@@ -40,17 +40,6 @@ static MATERIALIZE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BuiltinSkill {
-    id: &'static str,
-    display_name: &'static str,
-    description: &'static str,
-    version: u32,
-    root_path: String,
-    skill_path: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ChatSkillInstallation {
     skill_name: &'static str,
     workspace_path: String,
@@ -59,8 +48,6 @@ pub struct ChatSkillInstallation {
 
 struct BuiltinSkillSpec {
     id: &'static str,
-    display_name: &'static str,
-    description: &'static str,
     version: u32,
 }
 
@@ -68,34 +55,9 @@ impl BuiltinSkillSpec {
     fn hatch_pet() -> Self {
         Self {
             id: HATCH_PET_ID,
-            display_name: "Hatch Pet",
-            description: "Create and validate JunQi-compatible animated pets",
             version: HATCH_PET_VERSION,
         }
     }
-}
-
-#[tauri::command]
-pub fn prepare_builtin_skill(app: AppHandle, skill_id: String) -> Result<BuiltinSkill, String> {
-    let spec = match skill_id.as_str() {
-        HATCH_PET_ID => BuiltinSkillSpec::hatch_pet(),
-        _ => return Err(format!("Unknown JunQi built-in skill: {skill_id}")),
-    };
-
-    let lock = MATERIALIZE_LOCK.get_or_init(|| Mutex::new(()));
-    let _guard = lock
-        .lock()
-        .map_err(|_| "Built-in skill installer lock is poisoned".to_string())?;
-
-    let root = materialize(&app, &spec)?;
-    Ok(BuiltinSkill {
-        id: spec.id,
-        display_name: spec.display_name,
-        description: spec.description,
-        version: spec.version,
-        skill_path: root.join("SKILL.md").to_string_lossy().into_owned(),
-        root_path: root.to_string_lossy().into_owned(),
-    })
 }
 
 /// Install a JunQi-owned skill into the active OpenClaw workspace so the

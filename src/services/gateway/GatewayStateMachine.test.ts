@@ -4,7 +4,13 @@ import { GatewayStateMachine } from './GatewayStateMachine';
 import { GatewayState } from './types';
 
 function connect(machine: GatewayStateMachine): void {
-  machine.transition({ type: 'STATUS_RECEIVED', running: true, error: null, retrying: false });
+  machine.transition({
+    type: 'STATUS_RECEIVED',
+    processAlive: true,
+    endpointReady: true,
+    error: null,
+    retrying: false,
+  });
   machine.transition({ type: 'WS_OPEN' });
   assert.equal(machine.current, GatewayState.CONNECTED);
 }
@@ -14,7 +20,8 @@ test('BUG-GSC02 status observation does not start an offline process', () => {
   connect(machine);
   const result = machine.transition({
     type: 'STATUS_RECEIVED',
-    running: false,
+    processAlive: false,
+    endpointReady: false,
     error: null,
     retrying: false,
   });
@@ -27,7 +34,8 @@ test('BUG-GSC02 connected enters ERROR when the process reports an error', () =>
   connect(machine);
   const result = machine.transition({
     type: 'STATUS_RECEIVED',
-    running: false,
+    processAlive: false,
+    endpointReady: false,
     error: 'gateway failed',
     retrying: false,
   });
@@ -40,7 +48,8 @@ test('BUG-GSC03 retrying has priority over a stale connected snapshot', () => {
   connect(machine);
   const result = machine.transition({
     type: 'STATUS_RECEIVED',
-    running: false,
+    processAlive: false,
+    endpointReady: false,
     error: null,
     retrying: true,
   });
@@ -53,7 +62,8 @@ test('healthy process polling does not downgrade CONNECTED', () => {
   connect(machine);
   const result = machine.transition({
     type: 'STATUS_RECEIVED',
-    running: true,
+    processAlive: true,
+    endpointReady: true,
     error: null,
     retrying: false,
   });

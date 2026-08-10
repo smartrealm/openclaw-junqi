@@ -282,6 +282,7 @@ export {
   GatewayRequestAbortedError,
   GatewayRpcError,
 } from './Connection';
+export { GatewayRequestTimeoutError } from './GatewayTransportError';
 
 export class GatewaySessionMutationRejectedError extends Error {
   readonly code = 'SESSION_MUTATION_REJECTED';
@@ -906,9 +907,6 @@ export function createPrivilegedRequester(
             return;
           }
           finish({ kind: 'failure', error: new GatewayPrivilegedAuthorizationError(issue) });
-        },
-        onScopeError(error) {
-          finish({ kind: 'failure', error: errorValue(error) });
         },
       });
       transient.connect(target.url, target.token, target.deviceToken);

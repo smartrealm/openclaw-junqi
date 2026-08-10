@@ -739,12 +739,12 @@ test('delete completion polls the durable job until it reaches COMPLETED', async
         reads += 1;
         return {
           id: 'delete-job-1',
-          run_id: 'run-1',
+          runId: 'run-1',
           status: reads === 1 ? 'PENDING' : 'COMPLETED',
-          confirmation_digest: DELETE_DIGEST,
-          last_error: null,
-          created_at: 1,
-          updated_at: 2,
+          confirmationDigest: DELETE_DIGEST,
+          lastError: null,
+          createdAt: 1,
+          updatedAt: 2,
         };
       },
       sleep: async () => undefined,
@@ -781,12 +781,12 @@ test('delete completion is bounded and preserves the job identity in timeout err
       {
         callRpc: async () => ({
           id: 'delete-job-timeout',
-          run_id: 'run-1',
+          runId: 'run-1',
           status: 'PENDING',
-          confirmation_digest: DELETE_DIGEST,
-          last_error: null,
-          created_at: 1,
-          updated_at: 2,
+          confirmationDigest: DELETE_DIGEST,
+          lastError: null,
+          createdAt: 1,
+          updatedAt: 2,
         }),
         sleep: async () => undefined,
         now: () => {
@@ -826,12 +826,12 @@ test('delete completion rejects receipt and job identities from another run', as
       {
         callRpc: async () => ({
           id: 'delete-job-1',
-          run_id: 'run-other',
+          runId: 'run-other',
           status: 'COMPLETED',
-          confirmation_digest: DELETE_DIGEST,
-          last_error: null,
-          created_at: 1,
-          updated_at: 2,
+          confirmationDigest: DELETE_DIGEST,
+          lastError: null,
+          createdAt: 1,
+          updatedAt: 2,
         }),
       },
     ),
@@ -864,12 +864,12 @@ test('delete completion prevents an injected transport from rewriting decoder id
           }, TypeError);
           return {
             id: 'delete-job-other',
-            run_id: 'run-other',
+            runId: 'run-other',
             status: 'COMPLETED',
-            confirmation_digest: DELETE_DIGEST,
-            last_error: null,
-            created_at: 1,
-            updated_at: 2,
+            confirmationDigest: DELETE_DIGEST,
+            lastError: null,
+            createdAt: 1,
+            updatedAt: 2,
           };
         },
       },
@@ -928,14 +928,14 @@ test('export action waits for durable completion and downloads the exact server 
           const completed = statusReads > 1;
           return {
             id: 'export-1',
-            run_id: 'run:1',
+            runId: 'run:1',
             status: completed ? 'COMPLETED' : 'PENDING',
             format: 'json',
-            artifact_path: completed ? 'exports/export-1.json' : null,
+            artifactPath: completed ? 'exports/export-1.json' : null,
             digest: completed ? digest : null,
-            last_error: null,
-            created_at: 1,
-            updated_at: 2,
+            lastError: null,
+            createdAt: 1,
+            updatedAt: 2,
           };
         }
         assert.deepEqual(params, { jobId: 'export-1', expectedDigest: digest });
@@ -979,14 +979,14 @@ test('export action surfaces a failed durable job without downloading', async ()
       {
         callRpc: async () => ({
           id: 'export-1',
-          run_id: 'run-1',
+          runId: 'run-1',
           status: 'FAILED',
           format: 'json',
-          artifact_path: null,
+          artifactPath: null,
           digest: null,
-          last_error: 'disk full',
-          created_at: 1,
-          updated_at: 2,
+          lastError: 'disk full',
+          createdAt: 1,
+          updatedAt: 2,
         }),
         download: () => assert.fail('failed export must not download'),
       },
@@ -1013,14 +1013,14 @@ test('export action rejects cross-run jobs and content that does not match the c
     completeCollaborationExport(receipt, 'run-1', {
       callRpc: async () => ({
         id: 'export-1',
-        run_id: 'run-other',
+        runId: 'run-other',
         status: 'COMPLETED',
         format: 'json',
-        artifact_path: 'exports/export-1.json',
+        artifactPath: 'exports/export-1.json',
         digest: expectedDigest,
-        last_error: null,
-        created_at: 1,
-        updated_at: 2,
+        lastError: null,
+        createdAt: 1,
+        updatedAt: 2,
       }),
       download: () => assert.fail('cross-run export must not download'),
     }),
@@ -1034,14 +1034,14 @@ test('export action rejects cross-run jobs and content that does not match the c
       callRpc: async (method) => method === 'junqi.collab.export.get'
         ? {
             id: 'export-1',
-            run_id: 'run-1',
+            runId: 'run-1',
             status: 'COMPLETED',
             format: 'json',
-            artifact_path: 'exports/export-1.json',
+            artifactPath: 'exports/export-1.json',
             digest: expectedDigest,
-            last_error: null,
-            created_at: 1,
-            updated_at: 2,
+            lastError: null,
+            createdAt: 1,
+            updatedAt: 2,
           }
         : {
             jobId: 'export-1',

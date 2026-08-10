@@ -52,7 +52,7 @@ function identity(overrides: Partial<RuntimeIdentity> = {}): RuntimeIdentity {
     issues: [],
     authMode: 'token',
     methods: ['junqi.collab.capabilities'],
-    events: ['junqi-collab.changed'],
+    events: ['agent'],
     negotiatedRole: 'operator',
     negotiatedScopes: ['operator.read', 'operator.write'],
     supervisorLifecycle: 'running',

@@ -48,7 +48,9 @@ test('agent.wait preserves timeout as non-terminal and fails closed on unavailab
   const unavailable = new OpenClawAgentWaitClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    requestFenced: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
+    requestFenced: async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    },
   });
   const disconnected = new OpenClawAgentWaitClient({
     captureConnectionId: () => 'gateway-a',

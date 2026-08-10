@@ -1,31 +1,17 @@
 /**
- * Decides what a config save actually requires.
- *
- * Every save used to restart the Gateway, which drops all in-flight sessions
- * and tool runs. OpenClaw already answers this per path: `config.schema.lookup`
- * returns `reloadKind` as `restart`, `hot` or `none`, mirroring the gateway's
- * own reload planner (`docs/gateway/protocol.md`). Sampling the installed
- * 2026.7.1-2 gateway shows most edits do not need a restart at all:
- *
- *   gateway.port / gateway.auth / gateway.bind      restart
- *   channels.telegram.botToken                      restart
- *   agents.defaults.model / models.providers        hot
- *   agents.defaults.workspace / session.dmScope     none
- *   tools.experimental.planTool                     none
- *   skills.install.nodeManager                      none
- *
- * `reloadKind` is not present in the static `config schema` output, so it can
- * only be obtained from the RPC - it cannot be precomputed or bundled.
+ * 根据 OpenClaw `config.schema.lookup` 返回的路径级 `reloadKind` 决定保存后的动作。
+ * 该字段属于运行时 Schema 结果，客户端不得按版本或路径预置重载规则。
  */
 
 export type ConfigReloadKind = 'none' | 'hot' | 'restart';
+export type ConfigReloadFallbackReason = 'reload-kind-missing' | 'lookup-failed';
 
 export interface ConfigReloadPlan {
   kind: ConfigReloadKind;
-  /** Paths that forced the strongest requirement, for user-facing explanation. */
+  /** 触发最强重载要求的配置路径。 */
   decidingPaths: string[];
-  /** Set when the plan degraded to `restart` because the semantics were unknown. */
-  fallbackReason?: string;
+  /** 无法取得权威重载语义时使用的稳定失败分类，不携带原始异常。 */
+  fallbackReason?: ConfigReloadFallbackReason;
 }
 
 const RELOAD_STRENGTH: Record<ConfigReloadKind, number> = { none: 0, hot: 1, restart: 2 };
@@ -38,11 +24,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-/**
- * Dotted paths whose values differ. Arrays are compared whole: OpenClaw's
- * reload planner is keyed on config paths, not on array element identity, so
- * reporting `channels.list.0` would ask about a path the planner does not know.
- */
+/** 返回值发生变化的点路径；数组按整体比较，避免生成 Gateway 不认识的元素索引路径。 */
 export function diffConfigPaths(before: unknown, after: unknown, prefix = ''): string[] {
   if (Object.is(before, after)) return [];
   const beforeIsObject = isPlainObject(before);
@@ -51,9 +33,7 @@ export function diffConfigPaths(before: unknown, after: unknown, prefix = ''): s
     if (JSON.stringify(before ?? null) === JSON.stringify(after ?? null)) return [];
     return prefix ? [prefix] : [];
   }
-  // A whole subtree added or removed still has to report its leaves: the reload
-  // planner answers for concrete paths, and asking about the parent alone can
-  // miss a leaf that demands a restart.
+  // 整棵子树新增或删除时仍展开到叶子，避免父路径掩盖需要重启的具体配置项。
   const left = beforeIsObject ? before : {};
   const right = afterIsObject ? after : {};
   const paths: string[] = [];
@@ -66,13 +46,7 @@ export function diffConfigPaths(before: unknown, after: unknown, prefix = ''): s
 
 export type ReloadKindLookup = (path: string) => Promise<unknown>;
 
-/**
- * Aggregates the strongest requirement across the changed paths.
- *
- * Fails closed: an unavailable lookup, a rejected path, or a `reloadKind` the
- * client does not recognise all degrade to `restart`. Not knowing the reload
- * semantics must never be read as permission to skip the restart.
- */
+/** 聚合所有变更路径的最强要求；查询失败或未知结果一律失败关闭为重启。 */
 export async function planConfigReload(
   changedPaths: readonly string[],
   lookup: ReloadKindLookup,
@@ -81,7 +55,7 @@ export async function planConfigReload(
 
   let kind: ConfigReloadKind = 'none';
   let decidingPaths: string[] = [];
-  let fallbackReason: string | undefined;
+  let fallbackReason: ConfigReloadFallbackReason | undefined;
 
   for (const path of changedPaths) {
     let resolved: ConfigReloadKind = 'restart';
@@ -91,13 +65,11 @@ export async function planConfigReload(
       if (isReloadKind(raw)) {
         resolved = raw;
       } else {
-        fallbackReason ??= `no reloadKind for ${path}`;
+        fallbackReason ??= 'reload-kind-missing';
       }
-    } catch (error) {
+    } catch {
       resolved = 'restart';
-      fallbackReason ??= `lookup failed for ${path}: ${
-        error instanceof Error ? error.message : String(error)
-      }`;
+      fallbackReason ??= 'lookup-failed';
     }
 
     if (RELOAD_STRENGTH[resolved] > RELOAD_STRENGTH[kind]) {

@@ -439,9 +439,9 @@ test('reads an installed skill card through the read-only Gateway method', async
 test('maps an actual unsupported skill card method without using method advertisement', async () => {
   let calls = 0;
   const runtime = createOpenClawSkillsRuntime({
-    async call() {
+    async call(method) {
       calls += 1;
-      throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     },
     async callPrivileged() {
       return { ok: true };
@@ -485,9 +485,9 @@ test('reads curator status through the read-only Gateway method', async () => {
 test('maps an actual unsupported curator status method without using method advertisement', async () => {
   let calls = 0;
   const runtime = createOpenClawSkillsRuntime({
-    async call() {
+    async call(method) {
       calls += 1;
-      throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     },
     async callPrivileged() {
       return { ok: true };
@@ -565,7 +565,10 @@ test('reads a proposal inspection only through the selected agent scope', async 
 test('maps an actual unsupported proposal inspection method without using method advertisement', async () => {
   let calls = 0;
   const runtime = createOpenClawSkillsRuntime({
-    async call() { calls += 1; throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND'); },
+    async call(method) {
+      calls += 1;
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    },
     async callPrivileged() { return { ok: true }; },
   });
 
@@ -609,7 +612,10 @@ test('reads a proposal lifecycle page only through the selected agent scope and 
 test('maps an actual unsupported proposal event method without using method advertisement', async () => {
   let calls = 0;
   const runtime = createOpenClawSkillsRuntime({
-    async call() { calls += 1; throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND'); },
+    async call(method) {
+      calls += 1;
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    },
     async callPrivileged() { return { ok: true }; },
   });
 
@@ -620,9 +626,9 @@ test('maps an actual unsupported proposal event method without using method adve
 test('maps an actual unsupported proposal manifest method without using method advertisement', async () => {
   let calls = 0;
   const runtime = createOpenClawSkillsRuntime({
-    async call() {
+    async call(method) {
       calls += 1;
-      throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     },
     async callPrivileged() {
       return { ok: true };

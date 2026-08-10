@@ -76,15 +76,17 @@ test('OpenClawTtsStatusClient requests despite discovery omission and maps a mis
   const unavailable = new OpenClawTtsStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    requestFenced: async () => {
+    requestFenced: async (method) => {
       omittedMethodSent = true;
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     },
   });
   const missing = new OpenClawTtsStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    requestFenced: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
+    requestFenced: async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    },
   });
 
   await assert.rejects(unavailable.get(), OpenClawTtsStatusUnavailableError);

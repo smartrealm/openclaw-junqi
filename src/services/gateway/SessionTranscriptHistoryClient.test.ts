@@ -72,7 +72,9 @@ test('does not turn authentication failures into protocol fallback', async () =>
   await assert.rejects(client.listBranches(SESSION_KEY), GatewayRpcError);
 
   const unsupported = new SessionTranscriptHistoryClient({
-    request: async () => { throw new GatewayRpcError('unknown method', 'METHOD_NOT_FOUND'); },
+    request: async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    },
     requestPrivileged: async () => ({} as never),
     runMutation: (_sessionKey, operation) => operation(),
   });

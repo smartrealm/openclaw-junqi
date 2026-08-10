@@ -106,9 +106,8 @@ export function projectDwsCurrentUser(value: unknown): DwsUserProjection | null 
 }
 
 export async function probeDwsRuntime(runner: DwsRunner): Promise<RecordValue> {
-  let executable: string;
   try {
-    executable = await runner.resolveExecutable();
+    await runner.resolveExecutable();
   } catch (error) {
     return {
       available: false,
@@ -137,7 +136,6 @@ export async function probeDwsRuntime(runner: DwsRunner): Promise<RecordValue> {
     : null;
   return {
     available: true,
-    executable,
     version,
     authStatus,
     profiles,

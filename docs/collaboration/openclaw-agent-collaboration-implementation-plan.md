@@ -2,11 +2,11 @@
 
 日期：2026-07-19
 
-基线：Plugin `0.3.0`，SQLite schema `12`，OpenClaw `2026.7.1`。
+现行基线：Plugin `0.4.0`，SQLite schema `14`。OpenClaw 版本是运行环境证据，不作为能力开关。
 
 ## 1. 当前结论
 
-OpenClaw Agent 协作的代码层领域状态和自动化回归已完成：Plugin **364/364**、Desktop **766/766**、发布/真实 Gateway 辅助脚本 **192/192** 通过，插件 package contract、Desktop production build、lint 和 425 文件模块边界检查通过。当前 bundle SHA-256 为 `62fa1fcacf338b7f4e735f2726b999f4640a5db5de3f2f0fbfe492e11dc6c6fe`，metadata 与 Tauri resource 一致并报告 plugin `0.3.0` / schema `12`、155 个白名单文件。已有 structural P0-01 与 behavioral P0-02/03/05/06/07/08 evidence 绑定上一版 `bea9b0ac...` archive，不能覆盖当前 bundle；当前包的真实 Gateway、Rust、浏览器视觉 QA 和 24 小时 fault/soak 仍需重跑。behavioral evidence 继续要求 `PAYLOAD_FREE_LOG_PROJECTION_V2`，仅保留固定事件码和脱敏标记，不持久化 prompt/plan 原文。
+OpenClaw Agent 协作的代码层领域状态和自动化回归已完成：Plugin **364/364**、Desktop **2778/2778**、仓库脚本 **235/235**、Rust **684/684** 通过，另有 2 项会改变本机状态的 Rust 测试按声明忽略；插件 package contract、Desktop production build、lint 和 922 文件模块边界检查通过。当前 bundle SHA-256 为 `0778a9538482e492b9acc8bb079dcec959e8546b07231de898f06138c1b9275f`，metadata 与 Tauri resource 一致并报告 plugin `0.4.0` / schema `14`、167 个白名单文件。历史 structural 与 behavioral evidence 不能覆盖当前 bundle；当前包的真实 Gateway、浏览器视觉 QA 和 24 小时 fault/soak 仍需重跑。behavioral evidence 继续要求 `PAYLOAD_FREE_LOG_PROJECTION_V2`，仅保留固定事件码和脱敏标记，不持久化 prompt/plan 原文。
 
 ## 2. 实施状态
 
@@ -46,9 +46,9 @@ OpenClaw Agent 协作的代码层领域状态和自动化回归已完成：Plugi
 | [x] | C | RunDeletionPolicy | 只读 Query Repository 投影 decision facts 与最多两个 blocker witnesses；纯 application policy 分别约束 preview、显式执行、retention、retry；Service 在 IMMEDIATE 删除事务内重读并 fail closed |
 | [x] | C | UI projection/history adapter | exact connection/runtime binding、instance write fence、projection epoch ABA fencing 与 disconnect invalidation；history 优先读 `__openclaw.id`，文本与 rich blocks 分离归一化 |
 | [x] | C | RPC/security boundary | 40 个 RPC、scope、错误映射、exact target bootstrap 与离线 rollback 自动化覆盖 |
-| [x] | D | Automated regression | 2026-07-20 Plugin 364/364、Desktop 766/766、辅助脚本 192/192；package contract、Desktop TypeScript 与 production build 通过 |
-| [x] | E | Current bundle parity | SHA-256 `62fa1fcacf338b7f4e735f2726b999f4640a5db5de3f2f0fbfe492e11dc6c6fe`；metadata/Tauri resource 与 archive 一致；155 文件白名单通过 |
-| [ ] | F | Real Gateway (适用范围) | 当前 `62fa1fca...` bundle 尚未重跑；上一版 `bea9b0ac...` evidence 仅作历史记录 |
+| [x] | D | Automated regression | 2026-08-10 Plugin 364/364、Desktop 2778/2778、仓库脚本 235/235、Rust 684/684；package contract、lint 与 production build 通过 |
+| [x] | E | Current bundle parity | SHA-256 `0778a9538482e492b9acc8bb079dcec959e8546b07231de898f06138c1b9275f`；metadata/Tauri resource 与 archive 一致；167 文件白名单通过 |
+| [ ] | F | Real Gateway (适用范围) | 当前 `0778a953...` bundle 两次在固定摘要镜像拉取阶段超时，尚未进入插件安装；历史 evidence 仅作历史记录 |
 | [ ] | G | Product release | 真实浏览器视觉 QA 与 24 小时 fault injection/soak |
 
 发布证据链补充状态（2026-07-18）：三条 trusted producer workflow、source-topology contract test、扁平 installer staging、source/bundle/digest asset manifest、持久化并 attested 的 release decision 已加入仓库。Producer 当前会在可信默认分支 promotion、真实 Gateway 全 P0、installer-bound browser 或 24 小时 fault harness 任一缺失时写入 blocker 并以非零退出；这是一道故意的 fail-closed 门禁，不是生产证据通过。`release.yml` 已移除 `v*` trigger，来源策略明确要求 trusted promotion；未来 gate 才能要求三次独立 producer run、同一 source SHA/ref 和完整 validator contract。
@@ -112,9 +112,9 @@ OpenClaw Agent 协作的代码层领域状态和自动化回归已完成：Plugi
 ## 4. 最终 bundle 阶段
 
 - [x] `npm run validate:plugin` 在最终源码上通过。
-- [x] 当前源码 archive SHA-256、生成 metadata 与 Tauri resource 一致：`62fa1fcacf338b7f4e735f2726b999f4640a5db5de3f2f0fbfe492e11dc6c6fe`。
-- [x] `src/generated` 与 `src-tauri/resources` metadata 字节一致，均报告 version `0.3.0`、schema `12` 和相同 archive。
-- [x] tgz 只有声明的 `dist`、manifest 和 README 内容，无源码、测试、`node_modules` 或嵌套归档；155 个文件通过 pack validator，独立 consumer 的 strict types 与 runtime exports 通过。
+- [x] 当前源码 archive SHA-256、生成 metadata 与 Tauri resource 一致：`0778a9538482e492b9acc8bb079dcec959e8546b07231de898f06138c1b9275f`。
+- [x] `src/generated` 与 `src-tauri/resources` metadata 字节一致，均报告 version `0.4.0`、schema `14` 和相同 archive。
+- [x] tgz 只有声明的 `dist`、manifest 和 README 内容，无源码、测试、`node_modules` 或嵌套归档；167 个文件通过 pack validator，独立 consumer 的 strict types 与 runtime exports 通过。
 - [x] Desktop embedded bundle hash、bootstrap health contract 与 package manifest 一致。
 
 OpenClaw `2026.7.1` 的上游 Zod 声明在 TypeScript `5.9.3` 且 `skipLibCheck=false` 时存在 TS2636；最终 JunQi packed consumer 仍应使用与插件一致的 `skipLibCheck=true` 配置验收，并把结果写入本节。该上游限制不得误记为 JunQi 声明通过完全库检查。
@@ -123,14 +123,14 @@ OpenClaw `2026.7.1` 的上游 Zod 声明在 TypeScript `5.9.3` 且 `skipLibCheck
 
 必须使用一次性容器、独立 OS 账户或完整隔离的 `HOME`、XDG 和 `TMPDIR`；禁止 `--dev` 和默认用户 profile。
 
-- [ ] `P0-01` 当前 `62fa1fca...` tgz 作为普通外部插件安装、启用并通过 structural health；上一版 `bea9b0ac...` evidence 不得复用。
-- [x] `P0-02` 重复真实 `chat.history` 读取可以稳定绑定 session、OpenClaw 原生 message identity 和 chat idempotency key。
-- [x] `P0-03` exact transcript append 在 acknowledgement loss 恢复后仍只保留一条消息。
+- [ ] `P0-01` 当前 `0778a953...` tgz 作为普通外部插件安装、启用并通过 structural health；历史 evidence 不得复用。
+- [ ] `P0-02` 当前包重复真实 `chat.history` 读取可以稳定绑定 session、OpenClaw 原生 message identity 和 chat idempotency key。
+- [ ] `P0-03` 当前包 exact transcript append 在 acknowledgement loss 恢复后仍只保留一条消息。
 - [ ] `P0-04` session reset 竞态与 transcript rebound/mismatch 尚未在真实 core RPC 上验收。
-- [x] `P0-05` 一个 `subagent.run()` 对应一个 persistent Task，不经由 `managedFlows.runTask()`。
-- [x] `P0-06` Gateway 重启后按 owner session 与确定性 child session identity 找回唯一 Task/run，零匹配或多匹配 fail closed。
-- [x] `P0-07` 取消 Run 后持有的真实 Worker Task 被确认终止，Attempt 收敛。
-- [x] `P0-08` Gateway 重启从原 Task 恢复，不产生第二次 Agent 分派。
+- [ ] `P0-05` 当前包的一次 `subagent.run()` 对应一个 persistent Task，不经由 `managedFlows.runTask()`。
+- [ ] `P0-06` 当前包在 Gateway 重启后按 owner session 与确定性 child session identity 找回唯一 Task/run，零匹配或多匹配均失败关闭。
+- [ ] `P0-07` 当前包取消 Run 后持有的真实 Worker Task被确认终止，Attempt 收敛。
+- [ ] `P0-08` 当前包在 Gateway 重启后从原 Task 恢复，不产生第二次 Agent 分派。
 - [ ] `P0-09` JunQi Desktop 退出期间的外部 durable Gateway 连续性与 UI 恢复尚未验收。
 - [ ] `P0-10` Managed Child 识别和 durable collaboration 启动禁止尚未验收。
 - [ ] `P0-11` portable 插件完整核心流程与 trusted-only Gateway request 负向探测尚未共同验收。
@@ -144,7 +144,7 @@ Capability response 的 `behaviorVerified=false` 必须保持；单次 load、HT
 
 ## 6. 发布阶段
 
-- [x] 当前候选完成 Rust fmt/check/test/clippy 全量重跑；Plugin 364/364、Desktop 1157/1157、辅助脚本 207/207、Rust 534/534、package contract、Desktop production build、lint、严格 Clippy（`-D warnings`）与 `git diff --check` 均通过。
+- [x] 当前候选完成 Rust fmt/test、Plugin 364/364、Desktop 2778/2778、仓库脚本 235/235、Rust 684/684、package contract、Desktop production build 与 lint；2 项会改变本机状态的 Rust 测试按声明忽略。严格 Clippy 尚未在本轮执行，不据此声称通过。
 - [ ] Chat 协作工作台桌面和移动 viewport 完成真实浏览器截图与交互 QA。
 - [ ] 完成至少 24 小时 restart、network fault、disk fault、Task/Flow retention 和安全 soak。
 - [x] 以远端 `main@1956f23` / `1.2.27` 完成三方整合，合并提交为 `5aa8901`。

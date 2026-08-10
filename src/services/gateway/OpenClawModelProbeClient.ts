@@ -1,4 +1,4 @@
-import { GatewayRpcError } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_MODEL_PROBE_METHOD = 'models.probe' as const;
 
@@ -68,11 +68,6 @@ function latency(value: unknown): number | undefined {
   return value;
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 export function parseOpenClawModelProbe(value: unknown): OpenClawModelProbeResult {
   const source = record(value);
   const provider = nonEmptyText(source?.provider);
@@ -111,7 +106,7 @@ export class OpenClawModelProbeClient {
       if (result.provider !== normalizedProvider) throw new OpenClawModelProbeResponseError();
       return result;
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_MODEL_PROBE_METHOD)) {
         throw new OpenClawModelProbeUnavailableError(
           'The connected OpenClaw Gateway does not support models.probe',
         );

@@ -77,7 +77,9 @@ test('OpenClawHooksStatusClient maps unsupported, disconnected, and stale reads 
   const unavailable = new OpenClawHooksStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    requestFenced: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
+    requestFenced: async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    },
   });
   const disconnected = new OpenClawHooksStatusClient({
     captureConnectionId: () => 'gateway-a',

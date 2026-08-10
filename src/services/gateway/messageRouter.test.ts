@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   classifyGatewayAuthorizationError,
-  isAuthError,
   MessageRouter,
 } from './messageRouter';
 
@@ -66,8 +65,19 @@ test('structured OpenClaw missing-scope details are preserved for actionable dia
 });
 
 test('generic policy errors do not enter the authorization flow', () => {
-  assert.equal(isAuthError({ code: 'INVALID_REQUEST', message: 'policy rejected request' }), false);
+  assert.equal(
+    classifyGatewayAuthorizationError({ code: 'INVALID_REQUEST', message: 'policy rejected request' }),
+    null,
+  );
   assert.equal(classifyGatewayAuthorizationError('Gateway connection closed'), null);
+  assert.equal(classifyGatewayAuthorizationError({
+    code: 'UNAUTHORIZED',
+    message: 'pairing required',
+  }), null);
+  assert.equal(classifyGatewayAuthorizationError({
+    code: 'UNKNOWN',
+    message: 'missing scope: operator.admin',
+  }), null);
 });
 
 test('message router ignores malformed WebSocket payloads before dispatch', () => {

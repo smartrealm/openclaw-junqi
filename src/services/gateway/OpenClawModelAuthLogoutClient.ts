@@ -1,4 +1,4 @@
-import { GatewayRpcError } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_MODEL_AUTH_LOGOUT_METHOD = 'models.authLogout' as const;
 
@@ -46,11 +46,6 @@ function stringArray(value: unknown): readonly string[] | null {
   return strings.length === value.length ? strings.map((item) => item.trim()) : null;
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 export function parseOpenClawModelAuthLogout(value: unknown): OpenClawModelAuthLogoutResult {
   const source = record(value);
   const provider = nonEmptyText(source?.provider);
@@ -81,7 +76,7 @@ export class OpenClawModelAuthLogoutClient {
       if (result.provider !== normalizedProvider) throw new OpenClawModelAuthLogoutResponseError();
       return result;
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_MODEL_AUTH_LOGOUT_METHOD)) {
         throw new OpenClawModelAuthLogoutUnavailableError(
           'The connected OpenClaw Gateway does not support models.authLogout',
         );

@@ -49,7 +49,7 @@ test('replace mode checks primary and ordered fallbacks against provider declara
   }]);
 });
 
-test('installed provider wildcard reports a primary outside the visible provider', () => {
+test('static routing health does not infer runtime visibility from policy entries', () => {
   const health = inspectModelRouting({
     agents: {
       defaults: {
@@ -61,10 +61,5 @@ test('installed provider wildcard reports a primary outside the visible provider
     },
   });
 
-  assert.deepEqual(health.configuredVisibilityRules, ['anthropic/*']);
-  assert.deepEqual(health.issues, [{
-    kind: 'primary-not-visible',
-    severity: 'error',
-    refs: ['openai/gpt-5'],
-  }]);
+  assert.deepEqual(health.issues, []);
 });

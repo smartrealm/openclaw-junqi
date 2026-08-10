@@ -105,7 +105,6 @@ pub fn run() {
             commands::storage::rollback_runtime_reconfiguration,
             commands::storage::update_npm_cache_directory,
             commands::terminal_integration::apply_terminal_integration,
-            commands::terminal_integration::get_terminal_integration_status,
             commands::gateway_supervisor::get_gateway_runtime_snapshot,
             commands::runtime_identity::resolve_gateway_runtime_identity,
             commands::runtime_identity::get_gateway_runtime_identity,
@@ -145,7 +144,6 @@ pub fn run() {
             commands::terminal_open_in::list_terminal_open_in_apps,
             commands::terminal_open_in::open_terminal_workspace_in_app,
             // Screenshot
-            commands::screenshot::screenshot_check_permission,
             commands::screenshot::screenshot_interactive,
             commands::screenshot::screenshot_fullscreen,
             commands::screenshot::screenshot_list_windows,
@@ -153,7 +151,6 @@ pub fn run() {
             // Voice
             commands::voice::voice_start_recording,
             commands::voice::voice_stop_recording,
-            commands::voice::voice_is_recording,
             commands::voice_talk_playback::voice_talk_play_pcm,
             commands::voice_talk_playback::voice_talk_finish_playback,
             commands::voice_talk_playback::voice_talk_stop_playback,
@@ -177,12 +174,10 @@ pub fn run() {
             commands::managed_files::managed_file_open,
             commands::managed_files::managed_file_reveal,
             commands::managed_files::managed_file_exists,
-            commands::managed_files::list_directory,
             commands::managed_files::read_file_text,
             commands::office_preview::read_office_preview,
             commands::file_preview::create_file_preview_url,
             commands::openclaw_media_preview::create_openclaw_media_preview_url,
-            commands::console::write_models_log,
             // Config
             commands::config::read_config,
             commands::config::parse_openclaw_config_text,
@@ -201,7 +196,6 @@ pub fn run() {
             commands::docker::check_docker,
             commands::docker::pull_openclaw_image,
             commands::docker::start_docker_gateway,
-            commands::docker::stop_docker_gateway,
             // Desktop Pet (companion)
             commands::pet::emit_pet_state,
             commands::pet_backdrop::get_pet_backdrop_reading,
@@ -209,19 +203,14 @@ pub fn run() {
             commands::pet::close_pet_window,
             commands::pet::toggle_pet_window,
             // QuickChat — single-session window spawned from a dropped file
-            commands::quickchat::open_quickchat_with_files,
             commands::quickchat::close_quickchat,
-            commands::quickchat::get_quickchat_visible,
             commands::quickchat::get_quickchat_seed,
             // Dynamic Island — top-center agent status and quick actions
             commands::dynamic_island::open_dynamic_island,
             commands::dynamic_island::close_dynamic_island,
             commands::dynamic_island::request_dynamic_island_hide,
-            commands::dynamic_island::toggle_dynamic_island,
-            commands::dynamic_island::get_dynamic_island_visible,
             commands::dynamic_island::set_dynamic_island_expanded,
             commands::dynamic_island::set_dynamic_island_click_through,
-            commands::dynamic_island::reposition_dynamic_island,
             commands::dynamic_island::dynamic_island_focus_main,
             commands::pet::set_pet_click_through,
             commands::pet::set_pet_position,
@@ -239,14 +228,9 @@ pub fn run() {
             commands::pet::clear_pet_package,
             commands::pet::list_pet_packages,
             commands::pet::activate_latest_pet_package,
-            commands::builtin_skills::prepare_builtin_skill,
             commands::builtin_skills::install_builtin_skill_for_chat,
             commands::pet::pet_show_context_menu,
             // Integrated terminal (portable-pty)
-            commands::terminal::terminal_create,
-            commands::terminal::terminal_write,
-            commands::terminal::terminal_resize,
-            commands::terminal::terminal_kill,
             // JunQi-style shell terminal (multi-session, bounded channel, batched emit)
             commands::pty_neu::open_shell,
             commands::pty_neu::kill_shell,
@@ -274,7 +258,6 @@ pub fn run() {
             commands::git_neu::git_log,
             commands::git_neu::git_list_branches,
             commands::git_neu::git_checkout_branch,
-            commands::git_neu::git_create_branch,
             commands::git_neu::git_commit_detail,
             commands::git_neu::git_show_diff,
             commands::git_neu::git_show_file_diff,
@@ -326,10 +309,6 @@ pub fn run() {
             // Project config (ported from junqi config.rs)
             commands::project_config::init_project_config,
             commands::project_config::read_project_config,
-            commands::project_config::write_project_config,
-            commands::project_config::get_agent_config_file_path,
-            commands::project_config::read_agent_config_file,
-            commands::project_config::write_agent_config_file,
             // App settings (ported from junqi app_settings.rs, simplified)
             commands::app_settings::load_app_settings,
             commands::app_settings::load_agent_profiles,
@@ -339,8 +318,6 @@ pub fn run() {
             commands::app_settings::save_terminal_scrollback,
             commands::app_settings::save_terminal_shift_enter_newline,
             commands::app_settings::reset_terminal_settings,
-            commands::app_settings::save_app_settings,
-            commands::app_settings::detect_agent_paths,
             // Hooks (minimal port of junqi hooks.rs)
             commands::hooks::get_hook_readiness,
             // Skill hub (minimal port of junqi skills.rs)

@@ -251,6 +251,25 @@ function insertQueuedWorker(database: CollaborationDatabase, runId: string): voi
     .run(runId);
 }
 
+test("session mutation impact exposes the canonical wire run identity", async () => {
+  const harness = createHarness();
+  try {
+    const runId = createActiveRun(harness.database);
+    const response = harness.service.sessionMutationImpact({
+      runtimeId: origin().runtimeId,
+      sessionKey: origin().sessionKey,
+      sessionId: origin().sessionId,
+      action: "delete",
+    });
+    const activeRun = (response.activeRuns as Array<Record<string, unknown>>)[0];
+    assert.equal(activeRun?.runId, runId);
+    assert.equal(Object.hasOwn(activeRun ?? {}, "id"), false);
+    assert.equal(activeRun?.lastEventSequence, harness.database.getLastSequence(runId));
+  } finally {
+    harness.close();
+  }
+});
+
 test("session mutation prepare is durable, replayable, and blocks plan creation", async () => {
   const harness = createHarness();
   try {

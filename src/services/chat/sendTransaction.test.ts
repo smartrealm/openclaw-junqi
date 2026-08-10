@@ -4,6 +4,7 @@ import type { ChatMessage } from '@/stores/chatStore';
 import { ChatSendCoordinator } from './sendTransaction';
 import { sessionMutationGate } from './sessionMutationGate';
 import { OpenClawSessionTargetError } from '@/services/gateway/OpenClawSessionTarget';
+import { GatewayTransportLifecycleError } from '@/services/gateway/GatewayTransportError';
 
 test('空会话目标会在写入本地状态、任务检查点和 Gateway 请求前失败', async () => {
   let stateReads = 0;
@@ -107,6 +108,36 @@ test('CHAT-02 rejected send records a retryable failure and releases typing', as
   assert.deepEqual(messages.get('client-1')?.retryPayload, { text: 'hello' });
   assert.deepEqual(typing, [true, false]);
   assert.deepEqual(queued, []);
+});
+
+test('发送前连接失效时会收敛已创建的任务检查点', async () => {
+  const settled: Array<{
+    runId: string | null | undefined;
+    terminalReason: string | null | undefined;
+  }> = [];
+  const coordinator = new ChatSendCoordinator(
+    { sendMessage: async () => { throw new GatewayTransportLifecycleError('Gateway is not connected'); } },
+    () => ({
+      addMessage() {},
+      updateMessage() {},
+      setIsTyping() {},
+      typingBySession: {},
+      enqueueMessage() {},
+    }),
+    {
+      prepareSend: async ({ runId }) => ({ runId, created: true }),
+      prepareSteer: async () => ({ supersededRunId: null, created: true }),
+      isRunStopRequested: async () => false,
+      settleRun: async ({ runId, terminalReason }) => { settled.push({ runId, terminalReason }); },
+      reportPersistenceFailure() {},
+    },
+  );
+
+  await assert.rejects(
+    coordinator.send({ sessionKey: 'session-a', message: 'hello', clientMessageId: 'transport-closed' }),
+    GatewayTransportLifecycleError,
+  );
+  assert.deepEqual(settled, [{ runId: 'transport-closed', terminalReason: 'error' }]);
 });
 
 test('an ambiguous transport result stays pending until official reconciliation', async () => {

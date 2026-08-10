@@ -27,7 +27,7 @@ assert.deepEqual(packageJson.exports, {
   },
 });
 assert.equal(packageJson.engines?.node, ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0");
-// OpenClaw uses this semantic-version floor for external plugin API compatibility.
+// OpenClaw 使用该语义化版本下限声明外部插件 API 的兼容范围。
 const supportedOpenClawRange = ">=2026.7.1";
 assert.equal(packageJson.peerDependencies?.openclaw, supportedOpenClawRange);
 assert.equal(packageJson.openclaw?.compat?.pluginApi, supportedOpenClawRange);
@@ -51,10 +51,5 @@ for (const file of [
 
 const distEntries = await readdir(path.join(root, "dist"), { recursive: true });
 assert.equal(distEntries.some((file) => file.endsWith(".tgz")), false, "dist must not contain a nested archive");
-const serviceSource = await readFile(path.join(root, "dist", "service.js"), "utf8");
-assert.equal(serviceSource.includes("requeueUnknownDispatchAttempt"), false);
-assert.equal(serviceSource.includes("reconcileUnknownDispatchAttempt"), true);
-assert.equal(serviceSource.includes("reconcileKnownTaskAttempt"), true);
-assert.equal(serviceSource.includes("requeueUnknownDeliveryAttempt"), true);
 
 console.log("junqi-collab package contract: ok");

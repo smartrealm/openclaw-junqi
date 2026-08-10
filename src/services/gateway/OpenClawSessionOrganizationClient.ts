@@ -1,4 +1,5 @@
 import { GatewayRpcError } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
 
 type SessionMutationRunner = <T>(sessionKey: string, operation: () => Promise<T>) => Promise<T>;
@@ -43,14 +44,6 @@ function confirmedPatchResult(result: unknown, sessionKey: string): Record<strin
   return result.entry;
 }
 
-function isUnsupportedProtocolError(error: unknown): error is GatewayRpcError {
-  if (!(error instanceof GatewayRpcError)) return false;
-  const code = error.code?.trim().toUpperCase();
-  if (code === 'METHOD_NOT_FOUND' || code === 'UNKNOWN_METHOD' || code === 'UNKNOWN_COMMAND') return true;
-  if (code !== 'INVALID_PARAMS' && code !== 'INVALID_REQUEST' && code !== 'VALIDATION_ERROR') return false;
-  return /\b(pinned|unread|archived|category)\b/i.test(error.message);
-}
-
 /** 原生 OpenClaw 会话组织 API，与 UI 和状态仓隔离。 */
 export class OpenClawSessionOrganizationClient {
   constructor(private readonly deps: OpenClawSessionOrganizationClientDeps) {}
@@ -59,7 +52,7 @@ export class OpenClawSessionOrganizationClient {
     try {
       return await this.deps.request<T>(method, params);
     } catch (error) {
-      if (isUnsupportedProtocolError(error)) {
+      if (error instanceof GatewayRpcError && isOpenClawUnknownMethodError(error, method)) {
         throw new SessionOrganizationProtocolUnsupportedError(error);
       }
       throw error;

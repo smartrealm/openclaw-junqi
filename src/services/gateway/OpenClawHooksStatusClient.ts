@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_HOOKS_STATUS_METHOD = 'hooks.status' as const;
 
@@ -120,11 +120,6 @@ function parseEntry(value: unknown): OpenClawHookStatusEntry {
   };
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 function connectionUnavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
@@ -151,7 +146,7 @@ export class OpenClawHooksStatusClient {
       }
       return parseOpenClawHooksStatus(response);
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_HOOKS_STATUS_METHOD)) {
         throw this.unavailable('The connected OpenClaw Gateway does not support hooks.status');
       }
       if (connectionUnavailable(error)) {

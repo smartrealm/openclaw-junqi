@@ -10,7 +10,6 @@
 //
 use std::fs;
 use std::path::Path;
-use std::time::SystemTime;
 
 const DEFAULT_COMMIT_MESSAGE_TIMEOUT_SECS: u64 = 15;
 
@@ -87,37 +86,6 @@ impl Default for ProjectConfig {
     }
 }
 
-/// Atomically writes `content` to `path` via a unique temp file + rename.
-/// Temp file name includes pid + nanos timestamp so concurrent writes don't
-/// collide.
-fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
-    let uid = format!(
-        "{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
-    );
-    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
-    let tmp = path.with_file_name(format!(".{file_name}.{uid}.tmp"));
-    fs::write(&tmp, content).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, path).map_err(|e| e.to_string())
-}
-
-fn home_dir() -> Result<std::path::PathBuf, String> {
-    dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())
-}
-
-fn agent_config_path(agent: &str) -> Result<std::path::PathBuf, String> {
-    let home = home_dir()?;
-    match agent {
-        "claude" => Ok(home.join(".claude").join("settings.json")),
-        "codex" => Ok(home.join(".codex").join("config.toml")),
-        _ => Err(format!("Unknown agent: {}", agent)),
-    }
-}
-
 /// Creates `.junqi/config.toml` in the project directory if it doesn't already
 /// exist. Also ensures `.junqi/attachments/` exists. Returns the parsed config.
 #[tauri::command]
@@ -149,44 +117,6 @@ pub fn read_project_config(project_path: String) -> Result<ProjectConfig, String
     let raw = fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
     let config: ProjectConfig = toml::from_str(&raw).unwrap_or_default();
     Ok(config)
-}
-
-/// Writes updated config to `.junqi/config.toml`, creating the directory if needed.
-#[tauri::command]
-pub fn write_project_config(project_path: String, config: ProjectConfig) -> Result<(), String> {
-    let junqi_dir = Path::new(&project_path).join(".junqi");
-    fs::create_dir_all(&junqi_dir).map_err(|e| e.to_string())?;
-    let config_path = junqi_dir.join("config.toml");
-    let raw = toml::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    atomic_write(&config_path, &raw)
-}
-
-#[tauri::command]
-pub fn get_agent_config_file_path(agent: String) -> Result<String, String> {
-    Ok(agent_config_path(&agent)?.to_string_lossy().into_owned())
-}
-
-/// Reads the local settings file for the given agent ("claude" or "codex").
-/// Returns None if the file doesn't exist.
-#[tauri::command]
-pub fn read_agent_config_file(agent: String) -> Result<Option<String>, String> {
-    let path = agent_config_path(&agent)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    fs::read_to_string(&path)
-        .map(Some)
-        .map_err(|e| e.to_string())
-}
-
-/// Writes raw content back to the agent's local settings file.
-#[tauri::command]
-pub fn write_agent_config_file(agent: String, content: String) -> Result<(), String> {
-    let path = agent_config_path(&agent)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    atomic_write(&path, &content)
 }
 
 #[cfg(test)]
@@ -255,41 +185,5 @@ mod tests {
         assert_eq!(cfg.agent.default_permission_mode, "ask");
         assert_eq!(cfg.agent.prompt_prefix, "");
         assert_eq!(cfg.git.commit_message_timeout_secs, 15);
-    }
-
-    #[test]
-    fn atomic_write_creates_file_with_expected_content() {
-        let dir = std::env::temp_dir().join(format!(
-            "junqi-project-config-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("config.toml");
-        let payload = "key = \"value\"\n";
-        atomic_write(&path, payload).expect("atomic_write");
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), payload);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn atomic_write_overwrites_existing_file() {
-        let dir = std::env::temp_dir().join(format!(
-            "junqi-project-config-overwrite-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("config.toml");
-        atomic_write(&path, "old").unwrap();
-        atomic_write(&path, "new").unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

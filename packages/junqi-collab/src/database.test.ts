@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { CollaborationDatabase } from "./database.js";
 import { CollaborationError } from "./errors.js";
 import { PERSISTENCE_LIMITS } from "./persistence-policy.js";
-import { SCHEMA_VERSION } from "./schema.js";
+import { SCHEMA_SQL, SCHEMA_VERSION } from "./schema.js";
 import type { OriginRef } from "./types.js";
 
 const origin: OriginRef = {
@@ -40,6 +41,154 @@ test("database creates durable metadata and rejects a duplicate active origin", 
     );
   } finally {
     database.close();
+  }
+});
+
+test("database creates the current schema and reuses its stable instance identity", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-current-schema-"));
+  const filePath = path.join(directory, "collaboration.sqlite");
+  const created = new CollaborationDatabase(filePath);
+  const instanceId = created.instanceId;
+  try {
+    assert.equal(created.getMetadata("schema_version"), String(SCHEMA_VERSION));
+    assert.equal(Number(created.db.prepare("PRAGMA foreign_keys").get()?.foreign_keys), 1);
+    const index = created.db
+      .prepare("PRAGMA index_info('commands_available')")
+      .all() as Array<{ name: string }>;
+    assert.deepEqual(index.map((column) => column.name), [
+      "status",
+      "available_at",
+      "lease_expires_at",
+      "created_at",
+    ]);
+  } finally {
+    created.close();
+  }
+
+  const reopened = new CollaborationDatabase(filePath);
+  try {
+    assert.equal(reopened.instanceId, instanceId);
+    assert.equal(reopened.getMetadata("schema_version"), String(SCHEMA_VERSION));
+  } finally {
+    reopened.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+for (const unsupportedVersion of [SCHEMA_VERSION - 1, SCHEMA_VERSION + 1]) {
+  test(`database rejects unsupported schema ${unsupportedVersion} without rewriting it`, () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-unsupported-schema-"));
+    const filePath = path.join(directory, "collaboration.sqlite");
+    const database = new CollaborationDatabase(filePath);
+    database.setMetadata("schema_version", String(unsupportedVersion));
+    database.close();
+
+    assert.throws(
+      () => new CollaborationDatabase(filePath),
+      new RegExp(`schema ${unsupportedVersion} is unsupported; expected ${SCHEMA_VERSION}`),
+    );
+
+    const raw = new DatabaseSync(filePath);
+    try {
+      const row = raw.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get();
+      assert.equal(row?.value, String(unsupportedVersion));
+    } finally {
+      raw.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+}
+
+test("database rejects an existing store without collaboration metadata", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-missing-metadata-"));
+  const filePath = path.join(directory, "collaboration.sqlite");
+  const raw = new DatabaseSync(filePath);
+  raw.exec("CREATE TABLE unrelated_data(id TEXT PRIMARY KEY)");
+  raw.close();
+
+  assert.throws(
+    () => new CollaborationDatabase(filePath),
+    /collaboration database metadata is missing/,
+  );
+
+  const inspected = new DatabaseSync(filePath);
+  try {
+    const row = inspected
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'unrelated_data'")
+      .get();
+    assert.equal(row?.name, "unrelated_data");
+  } finally {
+    inspected.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("database rejects current-version storage whose structure drifted", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-drift-"));
+  const filePath = path.join(directory, "collaboration.sqlite");
+  const database = new CollaborationDatabase(filePath);
+  database.db.exec("DROP INDEX commands_available");
+  database.close();
+
+  assert.throws(
+    () => new CollaborationDatabase(filePath),
+    /collaboration database structure does not match the current schema/,
+  );
+
+  const inspected = new DatabaseSync(filePath);
+  try {
+    const row = inspected.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get();
+    assert.equal(row?.value, String(SCHEMA_VERSION));
+  } finally {
+    inspected.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("database rejects current-version storage with an unexpected trigger", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-trigger-drift-"));
+  const filePath = path.join(directory, "collaboration.sqlite");
+  try {
+    const database = new CollaborationDatabase(filePath);
+    database.db.exec(
+      `CREATE TRIGGER unexpected_run_trigger
+       AFTER INSERT ON collaboration_runs
+       BEGIN
+         UPDATE metadata SET updated_at = updated_at WHERE key = 'schema_version';
+       END`,
+    );
+    database.close();
+
+    assert.throws(
+      () => new CollaborationDatabase(filePath),
+      /collaboration database structure does not match the current schema/,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("database rejects current-version storage whose table constraint drifted", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-constraint-drift-"));
+  const filePath = path.join(directory, "collaboration.sqlite");
+  try {
+    const raw = new DatabaseSync(filePath);
+    const constraint = ",\n  CHECK(deletion_job_id IS NOT NULL OR actor = 'retention-policy')";
+    const driftedSchema = SCHEMA_SQL.replace(constraint, "");
+    assert.notEqual(driftedSchema, SCHEMA_SQL);
+    raw.exec(driftedSchema);
+    raw.prepare("INSERT INTO metadata(key, value, updated_at) VALUES ('schema_version', ?, 1)")
+      .run(String(SCHEMA_VERSION));
+    raw.prepare("INSERT INTO metadata(key, value, updated_at) VALUES ('collaboration_instance_id', 'instance_drift', 1)")
+      .run();
+    raw.close();
+
+    assert.throws(
+      () => new CollaborationDatabase(filePath),
+      /collaboration database structure does not match the current schema/,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 
@@ -248,546 +397,6 @@ test("active-run uniqueness is scoped to the native session, not the origin mess
     );
   } finally {
     database.close();
-  }
-});
-
-test("schema v2 upgrades the active-run index to session identity", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-v2-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const original = new CollaborationDatabase(filePath);
-  try {
-    original.db.exec(`
-      DROP INDEX collaboration_runs_active_origin;
-      CREATE UNIQUE INDEX collaboration_runs_active_origin
-      ON collaboration_runs(origin_runtime_id, origin_agent_id, origin_session_id, origin_native_message_id)
-      WHERE status NOT IN ('COMPLETED', 'CANCELLED', 'FAILED');
-    `);
-    original.setMetadata("schema_version", "2");
-  } finally {
-    original.close();
-  }
-
-  const migrated = new CollaborationDatabase(filePath);
-  try {
-    assert.equal(migrated.getMetadata("schema_version"), String(SCHEMA_VERSION));
-    const columns = migrated.db
-      .prepare("PRAGMA index_info('collaboration_runs_active_origin')")
-      .all() as unknown as Array<{ name: string }>;
-    assert.deepEqual(columns.map((column) => column.name), [
-      "origin_runtime_id",
-      "origin_agent_id",
-      "origin_session_key",
-      "origin_session_id",
-    ]);
-  } finally {
-    migrated.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("schema v4 adds durable tombstone cleanup state without losing deletion evidence", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-v4-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const legacy = new CollaborationDatabase(filePath);
-  try {
-    legacy.db
-      .prepare(
-        `INSERT INTO tombstones(
-          id, run_id, actor, content_digest, deleted_at,
-          cleanup_status, cleanup_error, cleanup_updated_at
-        ) VALUES ('tombstone-v4', 'deleted-run', 'operator', 'digest-v4', 123, 'COMPLETED', NULL, 123)`,
-      )
-      .run();
-    legacy.db.exec(`
-      ALTER TABLE tombstones DROP COLUMN cleanup_updated_at;
-      ALTER TABLE tombstones DROP COLUMN cleanup_error;
-      ALTER TABLE tombstones DROP COLUMN cleanup_status;
-    `);
-    legacy.setMetadata("schema_version", "4");
-  } finally {
-    legacy.close();
-  }
-
-  const migrated = new CollaborationDatabase(filePath);
-  try {
-    assert.equal(migrated.getMetadata("schema_version"), String(SCHEMA_VERSION));
-    const row = migrated.db
-      .prepare("SELECT * FROM tombstones WHERE run_id = 'deleted-run'")
-      .get() as Record<string, unknown>;
-    assert.equal(row.actor, "operator");
-    assert.equal(row.content_digest, "digest-v4");
-    assert.equal(row.cleanup_status, "COMPLETED");
-    assert.equal(row.cleanup_error, null);
-    assert.equal(row.cleanup_updated_at, 0);
-  } finally {
-    migrated.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("schema v5 backfills run-independent command receipts", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-v5-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const legacy = new CollaborationDatabase(filePath);
-  try {
-    legacy.createRun({ id: "receipt-run", origin, goal: "receipt migration", capabilitySnapshot: {} });
-    legacy.insertCommand({
-      id: "receipt-command",
-      runId: "receipt-run",
-      kind: "EXPORT",
-      payloadHash: "receipt-payload-hash",
-      payload: { noop: true },
-      effectKey: "receipt-effect",
-      response: { accepted: true, commandId: "receipt-command" },
-    });
-    legacy.db.prepare("DELETE FROM command_receipts").run();
-    legacy.setMetadata("schema_version", "5");
-  } finally {
-    legacy.close();
-  }
-
-  const migrated = new CollaborationDatabase(filePath);
-  try {
-    assert.equal(migrated.getMetadata("schema_version"), String(SCHEMA_VERSION));
-    assert.deepEqual(migrated.getCommandReceipt("receipt-command"), {
-      source: "LEGACY_COMMAND",
-      payloadHash: "receipt-payload-hash",
-      response: { accepted: true, commandId: "receipt-command" },
-    });
-  } finally {
-    migrated.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("schema v6 quarantines a reused cross-namespace command id without blocking startup", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-v6-conflict-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const legacy = new CollaborationDatabase(filePath);
-  try {
-    legacy.createRun({ id: "conflict-run", origin, goal: "receipt conflict", capabilitySnapshot: {} });
-    legacy.insertCommand({
-      id: "conflicting-command",
-      runId: "conflict-run",
-      kind: "EXPORT",
-      payloadHash: "run-payload",
-      payload: { noop: true },
-      effectKey: "conflict-effect",
-      response: { accepted: true },
-    });
-    const timestamp = Date.now();
-    legacy.db
-      .prepare(
-        `INSERT INTO session_mutations(
-          id, runtime_id, session_key, session_id, action, policy, status,
-          lease_expires_at, result_json, created_at, updated_at
-        ) VALUES ('conflict-mutation', 'runtime', 'session-key', 'session-id', 'delete',
-          'PROCEED', 'COMPLETED', ?, '{}', ?, ?)`,
-      )
-      .run(timestamp, timestamp, timestamp);
-    legacy.db
-      .prepare(
-        `INSERT INTO session_mutation_commands(
-          command_id, mutation_id, operation, payload_hash, response_json, created_at, updated_at
-        ) VALUES ('conflicting-command', 'conflict-mutation', 'COMPLETE', 'mutation-payload', '{}', ?, ?)`,
-      )
-      .run(timestamp, timestamp);
-    legacy.db.prepare("DELETE FROM command_receipts").run();
-    legacy.setMetadata("schema_version", "5");
-  } finally {
-    legacy.close();
-  }
-
-  const migrated = new CollaborationDatabase(filePath);
-  try {
-    assert.equal(migrated.getMetadata("schema_version"), String(SCHEMA_VERSION));
-    assert.match(String(migrated.getCommandReceiptConflict("conflicting-command")), /legacy command id was reused/);
-    assert.throws(
-      () => migrated.reserveCommandReceipt({
-        commandId: "conflicting-command",
-        source: "junqi.collab.run.archive",
-        runId: "conflict-run",
-        payloadHash: "run-payload",
-        response: { accepted: true },
-      }),
-      (error: unknown) => error instanceof CollaborationError && error.code === "IDEMPOTENCY_CONFLICT",
-    );
-    assert.doesNotThrow(() => migrated.reserveCommandReceipt({
-      commandId: "unrelated-command",
-      source: "junqi.collab.run.archive",
-      runId: "conflict-run",
-      payloadHash: "unrelated-payload",
-      response: { accepted: true },
-    }));
-  } finally {
-    migrated.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("schema v7 adds delayed outbox scheduling without losing existing commands", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-v7-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const legacy = new CollaborationDatabase(filePath);
-  try {
-    legacy.createRun({ id: "v7-run", origin, goal: "migrate outbox", capabilitySnapshot: {} });
-    legacy.insertCommand({
-      id: "v7-command",
-      runId: "v7-run",
-      kind: "EXPORT",
-      payloadHash: "v7-payload",
-      payload: { noop: true },
-      effectKey: "v7-effect",
-    });
-    legacy.db.exec("DROP INDEX IF EXISTS commands_available; ALTER TABLE commands DROP COLUMN available_at;");
-    legacy.setMetadata("schema_version", "6");
-  } finally {
-    legacy.close();
-  }
-
-  const migrated = new CollaborationDatabase(filePath);
-  try {
-    assert.equal(migrated.getMetadata("schema_version"), String(SCHEMA_VERSION));
-    assert.equal(migrated.getCommand("v7-command").availableAt, 0);
-    const index = migrated.db.prepare("PRAGMA index_info('commands_available')").all() as Array<{ name: string }>;
-    assert.deepEqual(index.map((column) => column.name), [
-      "status",
-      "available_at",
-      "lease_expires_at",
-      "created_at",
-    ]);
-  } finally {
-    migrated.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("schema v8 and v9 add failure accounting and effect intent without changing lease generations or scheduling indexes", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-v8-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const legacy = new CollaborationDatabase(filePath);
-  try {
-    legacy.createRun({ id: "v8-run", origin, goal: "migrate failure accounting", capabilitySnapshot: {} });
-    legacy.insertCommand({
-      id: "v8-command",
-      runId: "v8-run",
-      kind: "FLOW_SYNC",
-      payloadHash: "v8-payload",
-      payload: { terminal: "finished" },
-      effectKey: "v8-effect",
-    });
-    legacy.db
-      .prepare(
-        `UPDATE commands SET status = 'FAILED', attempts = 4, available_at = 1234,
-         last_error = 'legacy failure' WHERE id = 'v8-command'`,
-      )
-      .run();
-    legacy.db.exec("ALTER TABLE commands DROP COLUMN failure_count;");
-    legacy.db.exec("ALTER TABLE commands DROP COLUMN effect_started_at;");
-    legacy.setMetadata("schema_version", "7");
-  } finally {
-    legacy.close();
-  }
-
-  const migrated = new CollaborationDatabase(filePath);
-  try {
-    assert.equal(migrated.getMetadata("schema_version"), String(SCHEMA_VERSION));
-    const command = migrated.getCommand("v8-command");
-    assert.equal(command.status, "FAILED");
-    assert.equal(command.attempts, 4);
-    assert.equal(command.failureCount, 0);
-    assert.equal(command.effectStartedAt, null);
-    assert.equal(command.availableAt, 1234);
-    assert.deepEqual(command.payload, { terminal: "finished" });
-
-    const failureColumn = (
-      migrated.db.prepare("PRAGMA table_info('commands')").all() as Array<{
-        name: string;
-        type: string;
-        notnull: number;
-        dflt_value: string | null;
-      }>
-    ).find((column) => column.name === "failure_count");
-    assert.deepEqual(failureColumn && {
-      name: failureColumn.name,
-      type: failureColumn.type,
-      notnull: Number(failureColumn.notnull),
-      defaultValue: failureColumn.dflt_value,
-    }, {
-      name: "failure_count",
-      type: "INTEGER",
-      notnull: 1,
-      defaultValue: "0",
-    });
-
-    const effectIntentColumn = (
-      migrated.db.prepare("PRAGMA table_info('commands')").all() as Array<{
-        name: string;
-        type: string;
-        notnull: number;
-        dflt_value: string | null;
-      }>
-    ).find((column) => column.name === "effect_started_at");
-    assert.deepEqual(effectIntentColumn && {
-      name: effectIntentColumn.name,
-      type: effectIntentColumn.type,
-      notnull: Number(effectIntentColumn.notnull),
-      defaultValue: effectIntentColumn.dflt_value,
-    }, {
-      name: "effect_started_at",
-      type: "INTEGER",
-      notnull: 0,
-      defaultValue: null,
-    });
-
-    const schedulingIndex = migrated.db
-      .prepare("PRAGMA index_info('commands_available')")
-      .all() as Array<{ name: string }>;
-    assert.deepEqual(schedulingIndex.map((column) => column.name), [
-      "status",
-      "available_at",
-      "lease_expires_at",
-      "created_at",
-    ]);
-  } finally {
-    migrated.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("schema v9 adds effect intent to an intermediate schema v8 database", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-v9-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const intermediate = new CollaborationDatabase(filePath);
-  try {
-    intermediate.createRun({ id: "v9-run", origin, goal: "migrate effect intent", capabilitySnapshot: {} });
-    intermediate.insertCommand({
-      id: "v9-command",
-      runId: "v9-run",
-      kind: "PROVISION",
-      payloadHash: "v9-payload",
-      payload: { provision: true },
-      effectKey: "v9-effect",
-    });
-    intermediate.db.prepare("UPDATE commands SET failure_count = 2, attempts = 5 WHERE id = ?").run("v9-command");
-    intermediate.db.exec("ALTER TABLE commands DROP COLUMN effect_started_at;");
-    intermediate.setMetadata("schema_version", "8");
-  } finally {
-    intermediate.close();
-  }
-
-  const migrated = new CollaborationDatabase(filePath);
-  try {
-    assert.equal(migrated.getMetadata("schema_version"), String(SCHEMA_VERSION));
-    const command = migrated.getCommand("v9-command");
-    assert.equal(command.attempts, 5);
-    assert.equal(command.failureCount, 2);
-    assert.equal(command.effectStartedAt, null);
-  } finally {
-    migrated.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("schema v10 adds durable Flow abandonment evidence to existing tombstones", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-v10-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const intermediate = new CollaborationDatabase(filePath);
-  try {
-    intermediate.db.prepare(
-      `INSERT INTO tombstones(
-        id, run_id, actor, content_digest, deleted_at,
-        cleanup_status, cleanup_error, cleanup_updated_at
-      ) VALUES ('v10-tombstone', 'v10-run', 'operator', 'digest', 100, 'COMPLETED', NULL, 100)`,
-    ).run();
-    for (const column of [
-      "flow_reconciliation_abandon_reason",
-      "flow_reconciliation_abandoned_at",
-      "flow_reconciliation_diagnostic",
-      "openclaw_flow_revision",
-      "openclaw_flow_id",
-      "flow_reconciliation_command_id",
-    ]) {
-      intermediate.db.exec(`ALTER TABLE tombstones DROP COLUMN ${column};`);
-    }
-    intermediate.setMetadata("schema_version", "9");
-  } finally {
-    intermediate.close();
-  }
-
-  const migrated = new CollaborationDatabase(filePath);
-  try {
-    assert.equal(migrated.getMetadata("schema_version"), String(SCHEMA_VERSION));
-    const row = migrated.db.prepare("SELECT * FROM tombstones WHERE id = ?").get("v10-tombstone") as Record<string, unknown>;
-    assert.equal(row.run_id, "v10-run");
-    assert.equal(row.flow_reconciliation_command_id, null);
-    assert.equal(row.openclaw_flow_id, null);
-    assert.equal(row.openclaw_flow_revision, null);
-    assert.equal(row.flow_reconciliation_abandon_reason, null);
-  } finally {
-    migrated.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("schema v11 adds the authoritative deletion job reference to existing tombstones", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-v11-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const intermediate = new CollaborationDatabase(filePath);
-  try {
-    intermediate.db.exec("ALTER TABLE tombstones DROP COLUMN deletion_job_id;");
-    intermediate.setMetadata("schema_version", "10");
-  } finally {
-    intermediate.close();
-  }
-
-  const migrated = new CollaborationDatabase(filePath);
-  try {
-    assert.equal(migrated.getMetadata("schema_version"), String(SCHEMA_VERSION));
-    const columns = new Set(
-      (migrated.db.prepare("PRAGMA table_info('tombstones')").all() as Array<{ name: string }>)
-        .map((row) => row.name),
-    );
-    assert.equal(columns.has("deletion_job_id"), true);
-  } finally {
-    migrated.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("schema v12 freezes legacy Attempt execution runtimes without guessing ACP", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-v12-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const intermediate = new CollaborationDatabase(filePath);
-  try {
-    intermediate.createRun({
-      id: "v12-run",
-      origin,
-      goal: "backfill attempt runtimes",
-      capabilitySnapshot: {
-        configuredFacts: {
-          agents: [
-            { id: "worker-acp", runtimeType: "acp" },
-            { id: "worker-native", runtimeType: "native" },
-          ],
-        },
-      },
-    });
-    const insert = intermediate.db.prepare(`
-      INSERT INTO attempts(
-        id, run_id, kind, attempt_no, idempotency_key, worker_agent_id,
-        execution_runtime, worker_owner_session_key, child_session_key,
-        status, input_json, revision, created_at, updated_at
-      ) VALUES (?, 'v12-run', 'WORKER', ?, ?, ?, 'native', ?, ?, 'CREATED', '{}', 1, 1, 1)
-    `);
-    insert.run("v12-acp-from-snapshot", 1, "v12-effect-1", "worker-acp", "agent:worker-acp:main", "agent:worker-acp:subagent:one");
-    insert.run("v12-acp-from-key", 2, "v12-effect-2", "worker-native", "agent:worker-native:main", "agent:worker-native:acp:two");
-    insert.run("v12-native", 3, "v12-effect-3", "worker-native", "agent:worker-native:main", "agent:worker-native:subagent:three");
-    intermediate.db.exec("ALTER TABLE attempts DROP COLUMN execution_runtime;");
-    intermediate.setMetadata("schema_version", "11");
-  } finally {
-    intermediate.close();
-  }
-
-  const migrated = new CollaborationDatabase(filePath);
-  try {
-    assert.equal(migrated.getMetadata("schema_version"), String(SCHEMA_VERSION));
-    const rows = migrated.db
-      .prepare("SELECT id, execution_runtime FROM attempts WHERE run_id = ? ORDER BY attempt_no")
-      .all("v12-run") as Array<{ id: string; execution_runtime: string }>;
-    assert.deepEqual(rows.map((row) => ({ ...row })), [
-      { id: "v12-acp-from-snapshot", execution_runtime: "acp" },
-      { id: "v12-acp-from-key", execution_runtime: "acp" },
-      { id: "v12-native", execution_runtime: "native" },
-    ]);
-    assert.throws(
-      () => migrated.db.prepare("UPDATE attempts SET execution_runtime = 'remote' WHERE id = ?").run("v12-native"),
-      /CHECK constraint failed/,
-    );
-  } finally {
-    migrated.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("schema v13 adds versioned workflow template tables without mutating existing runs", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-v13-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const intermediate = new CollaborationDatabase(filePath);
-  try {
-    intermediate.createRun({ id: "v13-run", origin, goal: "preserve existing run", capabilitySnapshot: {} });
-    intermediate.db.exec(`
-      DROP TABLE workflow_run_templates;
-      DROP TABLE workflow_template_versions;
-      DROP TABLE workflow_templates;
-    `);
-    intermediate.setMetadata("schema_version", "12");
-  } finally {
-    intermediate.close();
-  }
-
-  const migrated = new CollaborationDatabase(filePath);
-  try {
-    assert.equal(migrated.getMetadata("schema_version"), String(SCHEMA_VERSION));
-    assert.equal(migrated.getRunSummary("v13-run").goal, "preserve existing run");
-    for (const table of ["workflow_templates", "workflow_template_versions", "workflow_run_templates"]) {
-      const row = migrated.db
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
-        .get(table) as { name?: string } | undefined;
-      assert.equal(row?.name, table);
-    }
-  } finally {
-    migrated.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("database rejects a schema newer than this plugin without rewriting its version", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-newer-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const database = new CollaborationDatabase(filePath);
-  database.setMetadata("schema_version", String(SCHEMA_VERSION + 1));
-  database.close();
-  try {
-    assert.throws(
-      () => new CollaborationDatabase(filePath),
-      new RegExp(`schema ${SCHEMA_VERSION + 1} is newer than supported ${SCHEMA_VERSION}`),
-    );
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("schema v3 migration fails closed when legacy data has concurrent session runs", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-schema-conflict-"));
-  const filePath = path.join(directory, "collaboration.sqlite");
-  const legacy = new CollaborationDatabase(filePath);
-  try {
-    legacy.db.exec(`
-      DROP INDEX collaboration_runs_active_origin;
-      CREATE UNIQUE INDEX collaboration_runs_active_origin
-      ON collaboration_runs(origin_runtime_id, origin_agent_id, origin_session_id, origin_native_message_id)
-      WHERE status NOT IN ('COMPLETED', 'CANCELLED', 'FAILED');
-    `);
-    legacy.setMetadata("schema_version", "2");
-    legacy.createRun({ id: "run-1", origin, goal: "first", capabilitySnapshot: {} });
-    legacy.createRun({
-      id: "run-2",
-      origin: { ...origin, nativeMessageId: "message-2" },
-      goal: "second",
-      capabilitySnapshot: {},
-    });
-  } finally {
-    legacy.close();
-  }
-
-  try {
-    assert.throws(
-      () => new CollaborationDatabase(filePath),
-      /schema 3 migration is blocked by 2 active runs in session session-1/,
-    );
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
   }
 });
 

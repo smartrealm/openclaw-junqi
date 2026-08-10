@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
 
 export const OPENCLAW_COMPACTION_CHECKPOINT_LIST_METHOD = 'sessions.compaction.list' as const;
@@ -121,10 +121,6 @@ function parseCheckpoint(value: unknown): OpenClawCompactionCheckpoint {
   };
 }
 
-function unsupported(error: unknown): boolean {
-  return error instanceof GatewayRpcError && ['METHOD_NOT_FOUND', 'UNKNOWN_METHOD', 'UNKNOWN_COMMAND'].includes(error.code ?? '');
-}
-
 function unavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
@@ -143,7 +139,7 @@ export class OpenClawSessionCompactionCheckpointsClient {
       }
       return response;
     } catch (error) {
-      if (unsupported(error) || unavailable(error)) {
+      if (isOpenClawUnknownMethodError(error, method) || unavailable(error)) {
         throw new OpenClawCompactionCheckpointsUnavailableError('Compaction checkpoints are unavailable from the current OpenClaw Gateway');
       }
       throw error;

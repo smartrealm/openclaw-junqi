@@ -239,49 +239,6 @@ function optionalNullableString(value: unknown, path: string): string | null | u
   return value === undefined ? undefined : value === null ? null : nonEmptyString(value, path);
 }
 
-function aliasedField(
-  source: Record<string, unknown>,
-  camelCase: string,
-  snakeCase: string,
-  path: string,
-): unknown {
-  const hasCamelCase = Object.prototype.hasOwnProperty.call(source, camelCase)
-    && source[camelCase] !== undefined;
-  const hasSnakeCase = Object.prototype.hasOwnProperty.call(source, snakeCase)
-    && source[snakeCase] !== undefined;
-  if (hasCamelCase && hasSnakeCase && !Object.is(source[camelCase], source[snakeCase])) {
-    fail(`${path}.${camelCase}`, `must not conflict with ${snakeCase}`);
-  }
-  return hasCamelCase ? source[camelCase] : hasSnakeCase ? source[snakeCase] : undefined;
-}
-
-function aliasedString(
-  source: Record<string, unknown>,
-  camelCase: string,
-  snakeCase: string,
-  path: string,
-): string {
-  return nonEmptyString(aliasedField(source, camelCase, snakeCase, path), `${path}.${camelCase}`);
-}
-
-function aliasedInteger(
-  source: Record<string, unknown>,
-  camelCase: string,
-  snakeCase: string,
-  path: string,
-): number {
-  return integer(aliasedField(source, camelCase, snakeCase, path), `${path}.${camelCase}`);
-}
-
-function aliasedNullableString(
-  source: Record<string, unknown>,
-  camelCase: string,
-  snakeCase: string,
-  path: string,
-): string | null {
-  return nullableString(aliasedField(source, camelCase, snakeCase, path), `${path}.${camelCase}`);
-}
-
 function assertDisjointStringArrays(
   collections: ReadonlyArray<readonly string[]>,
   path: string,
@@ -467,7 +424,7 @@ export function decodeCapabilities(value: unknown): CollaborationCapabilities {
       ),
     },
     maintenance: {
-      active: boolean(maintenanceSource.active, 'response.maintenance.active'),
+      active: boolean(maintenanceSource.gateActive, 'response.maintenance.gateActive'),
       lease,
       activeRuns,
       activeRunCount,
@@ -596,15 +553,18 @@ function decodeAttempt(
     attemptNo: integer(source.attemptNo, `${path}.attemptNo`),
     status: enumeration(source.status, ATTEMPT_STATUSES, `${path}.status`),
     workerAgentId: nonEmptyString(source.workerAgentId, `${path}.workerAgentId`),
-    executionRuntime: source.executionRuntime === undefined
-      ? 'native'
-      : enumeration(source.executionRuntime, ['native', 'acp'] as const, `${path}.executionRuntime`),
+    executionRuntime: enumeration(
+      source.executionRuntime,
+      ['native', 'acp'] as const,
+      `${path}.executionRuntime`,
+    ),
     executionTaskId: nullableString(source.executionTaskId, `${path}.executionTaskId`),
     agentRunId: nullableString(source.agentRunId, `${path}.agentRunId`),
     workerSessionKey: nonEmptyString(source.workerSessionKey, `${path}.workerSessionKey`),
-    canAbandonWithResidualRisk: source.canAbandonWithResidualRisk === undefined
-      ? false
-      : boolean(source.canAbandonWithResidualRisk, `${path}.canAbandonWithResidualRisk`),
+    canAbandonWithResidualRisk: boolean(
+      source.canAbandonWithResidualRisk,
+      `${path}.canAbandonWithResidualRisk`,
+    ),
     revision: integer(source.revision, `${path}.revision`),
     startedAt,
     endedAt,
@@ -1103,12 +1063,12 @@ export function decodeDeletionJob(
   const source = record(value, 'response');
   const id = nonEmptyString(source.id, 'response.id');
   if (id !== expected.jobId) fail('response.id', 'must match the requested deletion job');
-  const runId = aliasedString(source, 'runId', 'run_id', 'response');
+  const runId = nonEmptyString(source.runId, 'response.runId');
   if (runId !== expected.expectedRunId) {
     fail('response.runId', 'must match the run bound to the deletion receipt');
   }
-  const createdAt = aliasedInteger(source, 'createdAt', 'created_at', 'response');
-  const updatedAt = aliasedInteger(source, 'updatedAt', 'updated_at', 'response');
+  const createdAt = integer(source.createdAt, 'response.createdAt');
+  const updatedAt = integer(source.updatedAt, 'response.updatedAt');
   assertTimestampOrder(createdAt, updatedAt, 'response');
   const status = enumeration(
     source.status,
@@ -1116,10 +1076,10 @@ export function decodeDeletionJob(
     'response.status',
   );
   const confirmationDigest = sha256Hex(
-    aliasedField(source, 'confirmationDigest', 'confirmation_digest', 'response'),
+    source.confirmationDigest,
     'response.confirmationDigest',
   );
-  const lastError = aliasedNullableString(source, 'lastError', 'last_error', 'response');
+  const lastError = nullableString(source.lastError, 'response.lastError');
   if ((status === 'PENDING' || status === 'COMPLETED') && lastError !== null) {
     fail('response.lastError', `${status} requires a null diagnostic`);
   }
@@ -1144,7 +1104,7 @@ export function decodeExportJob(
   const source = record(value, 'response');
   const id = nonEmptyString(source.id, 'response.id');
   if (id !== expected.jobId) fail('response.id', 'must match the requested export job');
-  const runId = aliasedString(source, 'runId', 'run_id', 'response');
+  const runId = nonEmptyString(source.runId, 'response.runId');
   if (runId !== expected.expectedRunId) {
     fail('response.runId', 'must match the run bound to the export receipt');
   }
@@ -1153,11 +1113,11 @@ export function decodeExportJob(
     ['PENDING', 'FAILED', 'COMPLETED'] as const,
     'response.status',
   );
-  const artifactPath = aliasedNullableString(source, 'artifactPath', 'artifact_path', 'response');
+  const artifactPath = nullableString(source.artifactPath, 'response.artifactPath');
   const digest = source.digest === null
     ? null
     : sha256Hex(source.digest, 'response.digest');
-  const lastError = aliasedNullableString(source, 'lastError', 'last_error', 'response');
+  const lastError = nullableString(source.lastError, 'response.lastError');
   if ((artifactPath === null) !== (digest === null)) {
     fail('response.status', 'artifactPath and digest must be present or absent together');
   }
@@ -1173,8 +1133,8 @@ export function decodeExportJob(
     }
     if (lastError !== null) fail('response.lastError', 'COMPLETED requires a null diagnostic');
   }
-  const createdAt = aliasedInteger(source, 'createdAt', 'created_at', 'response');
-  const updatedAt = aliasedInteger(source, 'updatedAt', 'updated_at', 'response');
+  const createdAt = integer(source.createdAt, 'response.createdAt');
+  const updatedAt = integer(source.updatedAt, 'response.updatedAt');
   assertTimestampOrder(createdAt, updatedAt, 'response');
   return {
     id,
@@ -1238,7 +1198,7 @@ function decodeSessionMutationRunReferenceFields(
   const updatedAt = integer(source.updatedAt, `${path}.updatedAt`);
   assertTimestampOrder(createdAt, updatedAt, path);
   const reference: CollaborationRunReference = {
-    runId: aliasedString(source, 'runId', 'id', path),
+    runId: nonEmptyString(source.runId, `${path}.runId`),
     status: enumeration(source.status, RUN_STATUSES, `${path}.status`),
     dispatchState: enumeration(source.dispatchState, DISPATCH_STATES, `${path}.dispatchState`),
     archiveState: enumeration(source.archiveState, ARCHIVE_STATES, `${path}.archiveState`),

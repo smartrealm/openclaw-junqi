@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_SESSION_USAGE_LOGS_METHOD = 'sessions.usage.logs' as const;
 
@@ -87,11 +87,6 @@ function entry(value: unknown): OpenClawSessionUsageLogEntry {
   };
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 function connectionUnavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
@@ -127,7 +122,7 @@ export class OpenClawSessionUsageLogsClient {
       }
       return parseOpenClawSessionUsageLogs(response);
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_SESSION_USAGE_LOGS_METHOD)) {
         throw new OpenClawSessionUsageLogsUnavailableError(
           'The connected OpenClaw Gateway does not support sessions.usage.logs',
         );

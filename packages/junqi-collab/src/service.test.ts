@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -980,7 +981,7 @@ test("a failed maintenance health refresh invalidates cached startup health befo
       /integrity probe unavailable/,
     );
     assert.equal(service.capabilities().databaseIntegrity, "unknown");
-    assert.equal(service.maintenanceStatus().active, false);
+    assert.equal(service.maintenanceStatus().gateActive, false);
   } finally {
     await service.stop();
     database.close();
@@ -1122,8 +1123,8 @@ test("maintenance commands are replayable and persist only bounded active-run re
       })),
       (error: unknown) => error instanceof CollaborationError && error.code === "REVISION_CONFLICT",
     );
-    assert.equal(service.maintenanceStatus().active, true);
-    assert.equal(service.exitMaintenance(exitParams).active, false);
+    assert.equal(service.maintenanceStatus().gateActive, true);
+    assert.equal(service.exitMaintenance(exitParams).gateActive, false);
     assert.equal(service.exitMaintenance(exitParams).replayed, true);
   } finally {
     database.close();
@@ -1180,7 +1181,6 @@ test("an expired maintenance lease recovers once after restart and requires an e
     const secondStatus = restartedService.maintenanceStatus();
     const capabilityStatus = restartedService.capabilities().maintenance as Record<string, unknown>;
     for (const status of [firstStatus, secondStatus, capabilityStatus]) {
-      assert.equal(status.active, true);
       assert.equal(status.gateActive, true);
       assert.equal(status.status, "EXPIRED");
       assert.equal(status.recoveryRequired, true);
@@ -1231,7 +1231,6 @@ test("an expired maintenance lease recovers once after restart and requires an e
       maintenanceLeaseId: leaseId,
       healthVerified: true,
     }));
-    assert.equal(released.active, false);
     assert.equal(released.gateActive, false);
     assert.equal(released.status, "INACTIVE");
     const runAfterExit = restartedDatabase.getRunSummary(runId);
@@ -1442,7 +1441,7 @@ test("a Worker result during maintenance remains resumable and does not strand d
       maintenanceLeaseId: leaseId,
       healthVerified: true,
     }));
-    assert.equal(released.active, false);
+    assert.equal(released.gateActive, false);
     const resumable = database.getRunSummary(runId);
     service.resumeDispatch(writeParams({
       commandId: "maintenance-worker-resume",
@@ -1678,7 +1677,7 @@ test("a failed export sidecar cannot mutate a maintenance-deferred delivery or d
     await waitUntil(() => service!.exportGet({ jobId: exportJobId }).status === "FAILED");
 
     const failedExport = service.exportGet({ jobId: exportJobId });
-    assert.match(String(failedExport.last_error), /event timeline exceeds.*export limit/);
+    assert.match(String(failedExport.lastError), /event timeline exceeds.*export limit/);
     assert.equal(database.getCommand(exportCommandId).status, "FAILED");
     assert.equal(database.getRunSummary(runId).status, "DELIVERY_PENDING");
     assert.equal(Number((database.db
@@ -1723,7 +1722,6 @@ test("malformed maintenance state fails closed without crashing status, capabili
   try {
     database.setMetadata("maintenance_lease", malformed);
     const status = service.maintenanceStatus();
-    assert.equal(status.active, true);
     assert.equal(status.gateActive, true);
     assert.equal(status.status, "MALFORMED");
     assert.equal(status.recoveryRequired, true);
@@ -1773,7 +1771,6 @@ test("capabilities expose expired maintenance recovery even when there are no ac
       status: "ACTIVE",
     }));
     const maintenance = service.capabilities().maintenance as Record<string, unknown>;
-    assert.equal(maintenance.active, true);
     assert.equal(maintenance.gateActive, true);
     assert.equal(maintenance.status, "EXPIRED");
     assert.equal(maintenance.recoveryRequired, true);
@@ -2415,7 +2412,7 @@ test("retention removes only expired terminal runs without unresolved work", () 
         `INSERT INTO export_jobs(id, run_id, status, format, artifact_path, digest, created_at, updated_at)
          VALUES ('retention-export', ?, 'COMPLETED', 'json', ?, 'digest', ?, ?)`,
       )
-      .run(expired, artifactPath, referenceTime - 8 * day, referenceTime - 8 * day);
+      .run(expired, path.basename(artifactPath), referenceTime - 8 * day, referenceTime - 8 * day);
     const expectedRetentionDigest = String(service.deletePreview({ runId: expired }).digest);
     const stagedDirectory = path.join(directory, "exports", ".delete-staging", expired);
     const stagedArtifactPath = path.join(stagedDirectory, path.basename(artifactPath));
@@ -2433,9 +2430,9 @@ test("retention removes only expired terminal runs without unresolved work", () 
         `INSERT INTO export_jobs(id, run_id, status, format, artifact_path, digest, created_at, updated_at)
          VALUES ('retention-conflict-export', ?, 'COMPLETED', 'json', ?, 'digest', ?, ?)`,
       )
-      .run(tombstoneConflict, conflictArtifactPath, referenceTime - 8 * day, referenceTime - 8 * day);
+      .run(tombstoneConflict, path.basename(conflictArtifactPath), referenceTime - 8 * day, referenceTime - 8 * day);
     database.db
-      .prepare("INSERT INTO tombstones(id, run_id, actor, content_digest, deleted_at) VALUES ('stale-tombstone', ?, 'test', 'stale', ?)")
+      .prepare("INSERT INTO tombstones(id, run_id, actor, content_digest, deleted_at) VALUES ('stale-tombstone', ?, 'retention-policy', 'stale', ?)")
       .run(tombstoneConflict, referenceTime - 10 * day);
 
     const unsafeArtifactPath = path.join(directory, "outside-managed-exports.json");
@@ -2623,7 +2620,7 @@ test("retention expires operational receipts but keeps the minimal deletion tomb
         `INSERT INTO tombstones(
           id, run_id, actor, content_digest, deleted_at,
           cleanup_status, cleanup_error, cleanup_updated_at
-        ) VALUES ('receipt-tombstone', 'deleted-receipt-run', 'operator', 'digest', ?, 'COMPLETED', NULL, ?)`,
+        ) VALUES ('receipt-tombstone', 'deleted-receipt-run', 'retention-policy', 'digest', ?, 'COMPLETED', NULL, ?)`,
       )
       .run(expiredAt, expiredAt);
     database.reserveCommandReceipt({
@@ -2641,13 +2638,16 @@ test("retention expires operational receipts but keeps the minimal deletion tomb
       response: { accepted: true },
     });
     database.db.prepare("UPDATE command_receipts SET created_at = ?, updated_at = ?").run(expiredAt, expiredAt);
+    database.reserveCommandReceipt({
+      commandId: "old-delete-command",
+      source: "junqi.collab.run.delete",
+      runId: "deleted-receipt-run",
+      payloadHash: "delete-hash",
+      response: { accepted: true },
+    });
     database.db
-      .prepare(
-        `INSERT INTO deletion_command_receipts(
-          command_id, run_id, deletion_job_id, payload_hash, response_json, created_at, updated_at
-        ) VALUES ('old-delete-command', 'deleted-receipt-run', 'old-delete-job', 'delete-hash', '{}', ?, ?)`,
-      )
-      .run(expiredAt, expiredAt);
+      .prepare("UPDATE command_receipts SET created_at = ?, updated_at = ? WHERE command_id = ?")
+      .run(expiredAt, expiredAt, "old-delete-command");
     database.db
       .prepare(
         `INSERT INTO deletion_jobs(
@@ -2658,7 +2658,6 @@ test("retention expires operational receipts but keeps the minimal deletion tomb
 
     service.runRetentionSweep(referenceTime);
     assert.equal(Number(database.db.prepare("SELECT COUNT(*) AS value FROM command_receipts").get()?.value), 0);
-    assert.equal(Number(database.db.prepare("SELECT COUNT(*) AS value FROM deletion_command_receipts").get()?.value), 0);
     assert.equal(Number(database.db.prepare("SELECT COUNT(*) AS value FROM deletion_jobs").get()?.value), 0);
     assert.equal(Number(database.db.prepare("SELECT COUNT(*) AS value FROM tombstones").get()?.value), 1);
   } finally {
@@ -2731,7 +2730,7 @@ test("deletion digest streams timelines that fail the bounded user-facing export
     const exportJobId = String(exportResponse.exportJobId);
     await waitUntil(() => service.exportGet({ jobId: exportJobId }).status === "FAILED");
     const failedJob = service.exportGet({ jobId: exportJobId });
-    assert.match(String(failedJob.last_error), /event timeline exceeds.*export limit/);
+    assert.match(String(failedJob.lastError), /event timeline exceeds.*export limit/);
     assert.equal(
       readdirSync(path.join(directory, "exports")).some((name) => name.includes(exportJobId)),
       false,
@@ -3073,13 +3072,10 @@ test("DELETE execution rechecks Flow blocker cardinality after command acceptanc
     service.start();
     await waitUntil(() => service.deleteJobGet({ jobId }).status === "FAILED");
     assert.equal(database.getCommand(deleteCommandId).status, "FAILED");
-    assert.match(String(service.deleteJobGet({ jobId }).last_error), /Multiple failed Managed Flow reconciliations/);
+    assert.match(String(service.deleteJobGet({ jobId }).lastError), /Multiple failed Managed Flow reconciliations/);
     assert.equal(database.getRunSummary(runId).id, runId);
     assert.equal(Number(database.db.prepare("SELECT COUNT(*) AS value FROM tombstones WHERE run_id = ?").get(runId)?.value), 0);
-    assert.equal(
-      Number(database.db.prepare("SELECT COUNT(*) AS value FROM deletion_command_receipts WHERE command_id = ?").get(deleteCommandId)?.value),
-      1,
-    );
+    assert.equal(database.getCommandReceipt(deleteCommandId)?.source, "junqi.collab.run.delete");
   } finally {
     await service.stop();
     database.close();
@@ -3191,10 +3187,7 @@ test("delete retry rejects ambiguous Flow evidence without mutating the failed j
       Number(database.db.prepare("SELECT COUNT(*) AS value FROM commands WHERE id = ?").get("delete-retry-flow-ambiguity-retry")?.value),
       0,
     );
-    assert.equal(
-      Number(database.db.prepare("SELECT COUNT(*) AS value FROM deletion_command_receipts WHERE command_id = ?").get("delete-retry-flow-ambiguity-retry")?.value),
-      0,
-    );
+    assert.equal(database.getCommandReceipt("delete-retry-flow-ambiguity-retry"), null);
   } finally {
     await service.stop();
     database.close();
@@ -3409,7 +3402,7 @@ test("export byte overflow fails the job and removes its temporary artifact", as
     }));
     const jobId = String(response.exportJobId);
     await waitUntil(() => service.exportGet({ jobId }).status === "FAILED", 10_000);
-    assert.match(String(service.exportGet({ jobId }).last_error), /export exceeds/);
+    assert.match(String(service.exportGet({ jobId }).lastError), /export exceeds/);
     assert.equal(readdirSync(path.join(directory, "exports")).some((name) => name.includes(jobId)), false);
   } finally {
     await service.stop();
@@ -3485,8 +3478,8 @@ test("export reclaims only stale temporary files for the leased job", async () =
   }
 });
 
-test("legacy absolute export paths remap only to an existing managed artifact", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-export-migration-test-"));
+test("absolute export paths fail closed without moving the referenced file", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-export-path-contract-test-"));
   const database = new CollaborationDatabase(":memory:");
   const service = new CollaborationService(
     database,
@@ -3502,35 +3495,33 @@ test("legacy absolute export paths remap only to an existing managed artifact", 
     directory,
     { info() {}, warn() {}, error() {} },
   );
-  const runId = "legacy-export-path";
-  const content = "legacy export payload";
-  const fileName = "legacy-export.json";
+  const runId = "absolute-export-path";
+  const content = "absolute export payload";
+  const fileName = "absolute-export.json";
   try {
     database.createRun({
       id: runId,
       origin: {
-        runtimeId: "runtime-legacy-export",
+        runtimeId: "runtime-absolute-export",
         agentId: "main",
-        sessionKey: "agent:main:legacy-export",
-        sessionId: "session-legacy-export",
-        nativeMessageId: "message-legacy-export",
+        sessionKey: "agent:main:absolute-export",
+        sessionId: "session-absolute-export",
+        nativeMessageId: "message-absolute-export",
       },
-      goal: "Read an export after state relocation",
+      goal: "Reject a non-canonical export artifact reference",
       capabilitySnapshot: {},
     });
     writeFileSync(path.join(directory, "exports", fileName), content, { mode: 0o600 });
     database.db
       .prepare(
         `INSERT INTO export_jobs(id, run_id, status, format, artifact_path, digest, created_at, updated_at)
-         VALUES ('legacy-export-job', ?, 'COMPLETED', 'json', ?, ?, ?, ?)`,
+         VALUES ('absolute-export-job', ?, 'COMPLETED', 'json', ?, ?, ?, ?)`,
       )
-      .run(runId, path.join(directory, "old-state", "exports", fileName), sha256(content), Date.now(), Date.now());
-    assert.equal(service.exportDownload({ jobId: "legacy-export-job" }).content, content);
-
-    rmSync(path.join(directory, "exports", fileName));
-    const failed = service.exportGet({ jobId: "legacy-export-job" });
+      .run(runId, path.join(directory, "exports", fileName), sha256(content), Date.now(), Date.now());
+    const failed = service.exportGet({ jobId: "absolute-export-job" });
     assert.equal(failed.status, "FAILED");
-    assert.match(String(failed.last_error), /not copied|not found|ENOENT/i);
+    assert.match(String(failed.lastError), /artifact id is invalid/i);
+    assert.equal(readFileSync(path.join(directory, "exports", fileName), "utf8"), content);
   } finally {
     database.close();
     rmSync(directory, { recursive: true, force: true });
@@ -3598,11 +3589,11 @@ test("interrupted deletion cleanup is recovered durably after database restart",
       database.db
         .prepare(
           `INSERT INTO tombstones(
-            id, run_id, actor, content_digest, deleted_at,
+            id, run_id, actor, content_digest, deletion_job_id, deleted_at,
             cleanup_status, cleanup_error, cleanup_updated_at
-          ) VALUES ('delete-recovery-tombstone', ?, 'operator', ?, ?, 'PENDING', NULL, ?)`,
+          ) VALUES ('delete-recovery-tombstone', ?, 'operator', ?, ?, ?, 'PENDING', NULL, ?)`,
         )
-        .run(runId, digest, Date.now(), Date.now());
+        .run(runId, digest, jobId, Date.now(), Date.now());
       database.db.prepare("DELETE FROM collaboration_runs WHERE id = ?").run(runId);
     });
     database.close();
@@ -3635,7 +3626,7 @@ test("interrupted deletion cleanup is recovered durably after database restart",
   }
 });
 
-test("failed retry purge leaves no durable PENDING job and startup recovers legacy PENDING state", () => {
+test("failed retry purge leaves no durable PENDING job and startup recovers an interrupted claim", () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-delete-retry-purge-failure-"));
   const databasePath = path.join(directory, "state", "collaboration.sqlite");
   const dataDirectory = path.join(directory, "plugin-data");
@@ -3676,11 +3667,11 @@ test("failed retry purge leaves no durable PENDING job and startup recovers lega
     database.db
       .prepare(
         `INSERT INTO tombstones(
-          id, run_id, actor, content_digest, deleted_at,
+          id, run_id, actor, content_digest, deletion_job_id, deleted_at,
           cleanup_status, cleanup_error, cleanup_updated_at
-        ) VALUES ('delete-retry-purge-failure-tombstone', ?, 'operator', ?, ?, 'PENDING', NULL, ?)`,
+        ) VALUES ('delete-retry-purge-failure-tombstone', ?, 'operator', ?, ?, ?, 'PENDING', NULL, ?)`,
       )
-      .run(runId, digest, timestamp, timestamp);
+      .run(runId, digest, jobId, timestamp, timestamp);
     database.db.prepare("DELETE FROM collaboration_runs WHERE id = ?").run(runId);
 
     const serviceInternals = service as unknown as {
@@ -3714,8 +3705,7 @@ test("failed retry purge leaves no durable PENDING job and startup recovers lega
     );
     assert.equal(existsSync(stagedPath), true);
 
-    // Model a legacy process crash that left the transient claim committed.
-    // Startup recovery must fence it by run and finish the physical purge.
+    // 模拟进程崩溃后临时领取状态已经提交；启动恢复必须按 Run 栅栏继续物理清理。
     database.db.prepare("UPDATE deletion_jobs SET status = 'PENDING' WHERE id = ? AND run_id = ?").run(jobId, runId);
     database.close();
     database = new CollaborationDatabase(databasePath);
@@ -3733,13 +3723,13 @@ test("failed retry purge leaves no durable PENDING job and startup recovers lega
   }
 });
 
-test("deletion recovery updates only the tombstone's authoritative job when legacy jobs coexist", () => {
+test("deletion recovery updates only the tombstone's authoritative job when historical jobs coexist", () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-delete-recovery-job-fence-"));
   const databasePath = path.join(directory, "state", "collaboration.sqlite");
   const dataDirectory = path.join(directory, "plugin-data");
   const runId = "delete-recovery-job-fence-run";
   const authoritativeJobId = "delete-recovery-job-fence-authoritative";
-  const legacyJobId = "delete-recovery-job-fence-legacy";
+  const historicalJobId = "delete-recovery-job-fence-historical";
   let database = new CollaborationDatabase(databasePath);
   let service = createTestService(database, new FakeRuntime(), dataDirectory);
   const timestamp = Date.now();
@@ -3763,9 +3753,9 @@ test("deletion recovery updates only the tombstone's authoritative job when lega
     database.db
       .prepare(
         `INSERT INTO deletion_jobs(id, run_id, status, confirmation_digest, last_error, created_at, updated_at)
-         VALUES (?, ?, 'FAILED', 'legacy-digest', 'retain this historical failure', ?, ?)`,
+         VALUES (?, ?, 'FAILED', 'historical-digest', 'retain this historical failure', ?, ?)`,
       )
-      .run(legacyJobId, runId, timestamp, timestamp);
+      .run(historicalJobId, runId, timestamp, timestamp);
     database.db
       .prepare(
         `INSERT INTO deletion_jobs(id, run_id, status, confirmation_digest, created_at, updated_at)
@@ -3791,9 +3781,9 @@ test("deletion recovery updates only the tombstone's authoritative job when lega
     service.runRetentionSweep(Date.now());
 
     assert.equal(service.deleteJobGet({ jobId: authoritativeJobId }).status, "COMPLETED");
-    assert.equal(service.deleteJobGet({ jobId: legacyJobId }).status, "FAILED");
+    assert.equal(service.deleteJobGet({ jobId: historicalJobId }).status, "FAILED");
     assert.equal(
-      database.db.prepare("SELECT last_error FROM deletion_jobs WHERE id = ?").get(legacyJobId)?.last_error,
+      database.db.prepare("SELECT last_error FROM deletion_jobs WHERE id = ?").get(historicalJobId)?.last_error,
       "retain this historical failure",
     );
     const tombstone = service.listTombstones({ limit: 10 }).tombstones as Array<Record<string, unknown>>;
@@ -3859,77 +3849,20 @@ test("deletion recovery fences a tombstone whose authoritative job is missing", 
   }
 });
 
-test("deletion recovery refuses to guess when a legacy tombstone has multiple jobs", () => {
-  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-delete-recovery-ambiguous-job-"));
-  const databasePath = path.join(directory, "state", "collaboration.sqlite");
-  const dataDirectory = path.join(directory, "plugin-data");
-  const runId = "delete-recovery-ambiguous-job-run";
-  const firstJobId = "delete-recovery-ambiguous-job-first";
-  const secondJobId = "delete-recovery-ambiguous-job-second";
-  let database = new CollaborationDatabase(databasePath);
-  const service = createTestService(database, new FakeRuntime(), dataDirectory);
-  const timestamp = Date.now();
-  const stagedPath = path.join(dataDirectory, "exports", ".delete-staging", runId, "ambiguous.json");
+test("schema rejects explicit deletion tombstones without an authoritative job", () => {
+  const database = new CollaborationDatabase(":memory:");
   try {
-    database.createRun({
-      id: runId,
-      origin: {
-        runtimeId: "runtime-delete-recovery-ambiguous-job",
-        agentId: "main",
-        sessionKey: "agent:main:delete-recovery-ambiguous-job",
-        sessionId: "session-delete-recovery-ambiguous-job",
-        nativeMessageId: "message-delete-recovery-ambiguous-job",
-      },
-      goal: "Retain evidence when legacy deletion ownership is ambiguous",
-      capabilitySnapshot: {},
-    });
-    database.db
-      .prepare("UPDATE collaboration_runs SET status = 'COMPLETED', dispatch_state = 'CLOSED', ended_at = ? WHERE id = ?")
-      .run(timestamp, runId);
-    database.db
-      .prepare(
-        `INSERT INTO deletion_jobs(id, run_id, status, confirmation_digest, last_error, created_at, updated_at)
-         VALUES (?, ?, 'FAILED', 'legacy-first', 'preserve first failure', ?, ?)`,
-      )
-      .run(firstJobId, runId, timestamp, timestamp);
-    database.db
-      .prepare(
-        `INSERT INTO deletion_jobs(id, run_id, status, confirmation_digest, last_error, created_at, updated_at)
-         VALUES (?, ?, 'COMPLETED', 'legacy-second', NULL, ?, ?)`,
-      )
-      .run(secondJobId, runId, timestamp + 1, timestamp + 1);
-    mkdirSync(path.dirname(stagedPath), { recursive: true });
-    writeFileSync(stagedPath, "retain ambiguous evidence", { mode: 0o600 });
-    database.db
-      .prepare(
+    assert.throws(
+      () => database.db.prepare(
         `INSERT INTO tombstones(
           id, run_id, actor, content_digest, deleted_at,
           cleanup_status, cleanup_error, cleanup_updated_at
-        ) VALUES ('delete-recovery-ambiguous-job-tombstone', ?, 'operator', ?, ?, 'PENDING', NULL, ?)`,
-      )
-      .run(runId, "d".repeat(64), timestamp, timestamp);
-    database.db.prepare("DELETE FROM collaboration_runs WHERE id = ?").run(runId);
-
-    service.runRetentionSweep(Date.now());
-
-    assert.equal(existsSync(stagedPath), true);
-    const tombstone = database.db
-      .prepare("SELECT cleanup_status, cleanup_error, deletion_job_id FROM tombstones WHERE run_id = ?")
-      .get(runId) as { cleanup_status: string; cleanup_error: string | null; deletion_job_id: string | null };
-    assert.equal(tombstone.cleanup_status, "PARTIAL");
-    assert.equal(tombstone.deletion_job_id, null);
-    assert.match(String(tombstone.cleanup_error), /no authoritative owner/i);
-    const jobs = (database.db
-      .prepare("SELECT id, status, last_error FROM deletion_jobs WHERE run_id = ? ORDER BY id")
-      .all(runId) as Array<{ id: string; status: string; last_error: string | null }>)
-      .map((job) => ({ id: job.id, status: job.status, last_error: job.last_error }));
-    assert.deepEqual(jobs, [
-      { id: firstJobId, status: "FAILED", last_error: "preserve first failure" },
-      { id: secondJobId, status: "COMPLETED", last_error: null },
-    ]);
+        ) VALUES ('invalid-explicit-tombstone', 'deleted-run', 'operator', 'digest', 1, 'PENDING', NULL, 1)`,
+      ).run(),
+      /CHECK constraint failed/,
+    );
   } finally {
     database.close();
-    rmSync(directory, { recursive: true, force: true });
   }
 });
 
@@ -4275,7 +4208,7 @@ test("service closes planner, dependency, synthesis, and exact-delivery loop", a
     assert.ok(Array.isArray(exportDocument.deliveryAttempts) && exportDocument.deliveryAttempts.length >= 1);
     assert.equal((exportDocument.capabilitySnapshot as Record<string, unknown>).capturedAt !== undefined, true);
     assert.ok((exportDocument.commands as Array<Record<string, unknown>>).every((command) => !("payload" in command)));
-    assert.equal(path.isAbsolute(String(service.exportGet({ jobId: exportJobId }).artifact_path)), false);
+    assert.equal(path.isAbsolute(String(service.exportGet({ jobId: exportJobId }).artifactPath)), false);
 
     const deletionPreview = service.deletePreview({ runId });
     const deletionParams = writeParams({
@@ -9114,7 +9047,7 @@ test("tombstone reads expose only the authoritative deletion job recovery handle
     database.db.prepare(
       `INSERT INTO tombstones(
         id, run_id, actor, content_digest, deleted_at, cleanup_status, cleanup_error, cleanup_updated_at
-       ) VALUES (?, ?, 'operator', ?, ?, 'COMPLETED', NULL, ?)`,
+       ) VALUES (?, ?, 'retention-policy', ?, ?, 'COMPLETED', NULL, ?)`,
     ).run("tombstone-without-job", "deleted-run-without-job", "other-digest", timestamp - 1, timestamp - 1);
     const insertJob = database.db.prepare(
       `INSERT INTO deletion_jobs(

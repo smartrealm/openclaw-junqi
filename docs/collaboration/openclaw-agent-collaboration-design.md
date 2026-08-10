@@ -24,7 +24,7 @@ V1 只在以下条件全部满足时允许启动协作：
 
 1. 当前连接的 Gateway 实例身份已经确认。
 2. Gateway 具有不依赖 JunQi Desktop 进程的持续运行能力。
-3. Collaboration Plugin 已安装、启用、健康，版本和 schema 兼容。
+3. Collaboration Plugin 已安装、启用、健康，版本和现行 schema 精确匹配。
 4. 发起消息已经取得原生 `sessionId`、transcript `messageId` 和稳定客户端幂等标识。
 5. 协调 Agent 和候选 Worker 已配置且处于插件显式授权范围内。
 6. 原 transcript 身份写入 API、Subagent 执行 API、Task 查询/取消 API 已通过阶段 0 实测。
@@ -126,10 +126,10 @@ OpenClaw Gateway
 | Worker phase fence | `WorkerPhaseRestorationPolicy` 将显式 stop、partial、maintenance 和 session mutation 的未解决事实作为持久恢复栅栏；Worker 终态只能结算 Attempt/WorkItem，不能擦除 `DISPATCH_RESUME` 入口 | `worker-phase-restoration-policy.ts`、`service.ts`、对应测试 |
 | Partial decision/application fence | `PartialDecisionSpecification` 约束非空规范化选择、严格 durable codec、精确 plan revision 和 pending 期间 WorkItem/plan mutation；`PartialApplicationPolicy` 在事务前后阻断 maintenance、session mutation 和 closure 外 Intervention；应用前重算 DAG closure，closure 聚合当前 plan 的 UNKNOWN/active Attempt | `partial-decision-specification.ts`、`partial-application-policy.ts`、`service.ts`、对应测试 |
 | Intervention resolution fence | retry 与 run cancellation 通过纯策略区分可由当前操作替代的本地事实和必须保留的外部 blocker；只解析当前 WorkItem 的终态 predecessor，或取消明确 supersede 的本地 Intervention | `intervention-resolution-policy.ts`、`service.ts`、对应测试 |
-| Attempt action projection | 服务端按 `ResidualExecutionRiskSpecification` 投影 `canAbandonWithResidualRisk`；取消命令进入终态时由 Command Result Committer 原子推进 Run revision/event 水位；旧 wire 缺失默认 false，UI 不自行猜测后端必拒动作 | `service.ts`、`wire-codec.ts`、`runActions.ts`、对应测试 |
+| Attempt action projection | 服务端按 `ResidualExecutionRiskSpecification` 投影 `canAbandonWithResidualRisk`；取消命令进入终态时由 Command Result Committer 原子推进 Run revision/event 水位；`executionRuntime` 与残余风险字段均为当前 wire 必填项，缺失时失败关闭，UI 不自行猜测后端动作 | `service.ts`、`wire-codec.ts`、`runActions.ts`、对应测试 |
 | Export sidecar | 导出失败只改变 `export_jobs`，不改变 orchestration Run 或命令恢复语义；Delivery 仍按原 effect key 收敛 | `service.ts` 的 export command handler、对应 service regression |
 
-2026-07-20 当前源码验证：`packages/junqi-collab` canonical `npm test` **364/364**、Desktop TypeScript/React **766/766**、发布/真实 Gateway 辅助脚本 **192/192** 通过；插件 package contract、Desktop production build、lint 和 425 文件模块边界检查通过。Rust 门禁尚未在当前 archive 上重跑。这些数字是本次审计快照，不是未来版本的固定承诺。可长期维护的验证入口是：
+2026-08-10 当前源码验证：`packages/junqi-collab` canonical `npm test` **364/364**、Desktop TypeScript/React **2778/2778**、仓库脚本 **235/235**、钉钉插件 **18/18**、Rust **684/684** 通过，另有 2 项会改变本机状态的 Rust 测试按声明忽略；两个插件 package contract、Desktop production build、lint 和 922 文件模块边界检查通过。这些数字是本次审计快照，不是未来版本的固定承诺。可长期维护的验证入口是：
 
 ```bash
 npm run collab:test
@@ -142,7 +142,7 @@ npm run build
 git diff --check
 ```
 
-当前源码 bundle archive SHA-256 为 `62fa1fcacf338b7f4e735f2726b999f4640a5db5de3f2f0fbfe492e11dc6c6fe`；生成 metadata 与 Tauri resource metadata 一致，报告 plugin `0.3.0` / schema `12`，155 个白名单文件通过 package validator。现有 structural P0-01 和 payload-free behavioral P0-02/03/05/06/07/08 evidence 绑定上一版 `bea9b0ac...` archive，只能作为历史记录，不能证明当前包。当前 archive 的真实 Gateway、P0-04/09/10/11/12/13/14、浏览器视觉 QA 和 24 小时故障注入/soak 均仍未完成；不得用结构 smoke、局部真实行为、mock、单元测试、DOM/SSR 测试或当前用户 profile 代替这些门槛。
+当前源码 bundle archive SHA-256 为 `0778a9538482e492b9acc8bb079dcec959e8546b07231de898f06138c1b9275f`；生成 metadata 与 Tauri resource metadata 一致，报告 plugin `0.4.0` / schema `14`，167 个白名单文件通过 package validator。现有 structural P0-01 和 payload-free behavioral P0-02/03/05/06/07/08 evidence 绑定历史 archive，只能作为历史记录，不能证明当前包。2026-08-10 两次隔离验证均因固定摘要镜像拉取达到 600 秒上限而在插件安装前失败，未形成 Gateway 兼容证据。当前 archive 的真实 Gateway、浏览器视觉 QA 和 24 小时故障注入/soak 均仍未完成；不得用镜像下载进度、结构 smoke、局部真实行为、mock、单元测试、DOM/SSR 测试或当前用户 profile 代替这些门槛。
 
 发布安全补充：2026-07-20 已将远端 `main` 的 `1956f23`（`1.2.27`）三方合入当前功能分支，合并提交为 `5aa8901`，主线基线落后问题已关闭；这不等于生产发布验收通过。`release.yml` 已移除 `v*` 自动触发；`release-source-policy.mjs` 和三个 evidence producer 在可信默认分支 promotion controller 出现前返回 `TRUSTED_PROMOTION_REQUIRED`。候选构建固定 pnpm `9.15.9`、Rust `1.96.0`，显式关闭 updater artifacts 且不生成一方 attestation；正式 producer publish 根和 release validator 下载副本执行共享文本 scanner，quality/structural/binary 内容仍是明确 residual。soak/Linux self-hosted 的 runner preflight 目前只读取受保护 repo boolean，不能证明实际 job 使用 JIT、online 或一次性 runner。workflow 已校验 evidence JSON 声明的 producer attempt 不大于当前 run attempt，但 attestation JSON 仍未解析并以签名 predicate 绑定所选 run id/attempt；未来 controller 身份与目标 tag/source 身份的双绑定也未完成。主线的 updater manifest 生成器已经保留，但当前发布资产合同尚未纳入最终签名资产和 `latest.json`，仍须完成仓库 `main` protection、tag ruleset、required-reviewer environments、唯一 promotion writer 和签名 secret scope 配置；最后一次 tag/release 检查后的远端并发写窗口仍由这些外部治理门禁覆盖。
 
@@ -258,7 +258,7 @@ childSessionKey
 
 ### 2.2 collaboration.sqlite
 
-插件在 `OpenClawPluginServiceContext.stateDir` 下创建独立数据库并使用 WAL、显式 migration 和完整性检查。当前物理版本为 `SCHEMA_VERSION = 12`，表和职责如下；本表描述实际 schema，不是概念模型。
+插件在 `OpenClawPluginServiceContext.stateDir` 下创建独立数据库并使用 WAL、现行 Schema 初始化器和完整性检查。当前物理版本为 `SCHEMA_VERSION = 14`。新空库只从 canonical Schema 创建；已有数据库的版本或结构与现行 Schema 不一致时，在写入前失败且不修改原库，不保留历史迁移、兼容包装或推断性回填。表和职责如下；本表描述实际 Schema，不是概念模型。
 
 | 表 | 核心字段 | 用途 |
 | --- | --- | --- |
@@ -278,16 +278,17 @@ childSessionKey
 | `work_item_inputs` | work item, command id, content | 内部补充输入；其 id 只绑定一次到下一 Attempt 的 `input_json` |
 | `export_jobs` | run id, status, managed artifact path, digest, error | 异步 JSON 导出 |
 | `deletion_jobs` | confirmation digest, status, error | 可恢复删除 |
-| `deletion_command_receipts` | command/run/job id, payload hash, response | 删除级幂等回执，Run 级联删除后在 `retentionDays` 内保留 |
-| `command_receipts` | command id, concrete RPC/operation source, optional run id, payload hash, response | 外部写命令的统一有限期重放回执 |
-| `command_receipt_conflicts` | command id, diagnostic, created_at | v6 迁移引入；只隔离发生旧 namespace/hash 冲突的 command id |
+| `command_receipts` | command id, concrete RPC/operation source, optional run id, payload hash, response | 外部写命令唯一的有限期重放回执权威 |
 | `session_mutations` | runtime/session identity, action, policy, lease, result | reset/delete 持久栅栏 |
 | `session_mutation_commands` | command/mutation id, operation, payload hash, response | session mutation 幂等回执 |
 | `tombstones` | run id, actor, content digest, authoritative deletion job id, deleted_at, cleanup status/error/time, Flow reconciliation command/Flow/revision/diagnostic/abandon time/reason | 删除审计、精确删除任务恢复、显式 Flow 对账弃置证据和物理清理恢复 |
+| `workflow_templates` | template id, published version, timestamps | 工作流模板聚合与发布指针 |
+| `workflow_template_versions` | template/version id, immutable definition, digest | 不可变模板版本 |
+| `workflow_run_templates` | run/template/version id, created_at | Run 与实际采用模板版本的追溯关联 |
 
 Capability snapshot 存在 `collaboration_runs.capability_snapshot_json`，批准事实存在 `plan_revisions` / `decisions`；当前没有 `capability_snapshots`、`approvals`、`workboard_mirrors` 或附件表。
 
-schema 12 的显式索引为：
+schema 14 的显式索引为：
 
 ```sql
 UNIQUE collaboration_runs_active_origin
@@ -314,7 +315,6 @@ commands_run_failed_flow(run_id, kind, created_at DESC, id DESC)
 collaboration_events_run_sequence(run_id, sequence)
 export_jobs_run_status(run_id, status)
 deletion_jobs_run_status(run_id, status)
-deletion_command_receipts_run(run_id, created_at)
 command_receipts_run(run_id, created_at)
 UNIQUE session_mutations_active(runtime_id, session_key, session_id)
   WHERE status = 'PREPARED'
@@ -322,6 +322,9 @@ UNIQUE session_mutations_unresolved(runtime_id, session_key, session_id)
   WHERE status IN ('PREPARED', 'EXPIRED')
 session_mutation_commands_mutation(mutation_id, created_at)
 tombstones_deleted_at(deleted_at DESC, id DESC)
+workflow_templates_published(published_version_id, updated_at DESC)
+workflow_template_versions_template(template_id, version_no DESC)
+workflow_run_templates_template(template_id, template_version_id, created_at DESC)
 ```
 
 应用层“先查询再创建”不能替代该约束。
@@ -347,8 +350,8 @@ PENDING -> LEASED -> SUCCEEDED | FAILED | UNKNOWN | CANCELLED
 9. `EXPORT`、`DELETE` 和其他终态远端命令在恢复时有实体/文件对账；无法确认的副作用进入 Intervention 或保留失败诊断。Attempt timeout 必须在同一事务把 Attempt 置为 `CANCELLING` 并确保带 `terminalReason=TIMEOUT` 的 `CANCEL_ATTEMPT` outbox；只有远端 Task 取消得到确认才能写 `TIMED_OUT`，否则保持 `UNKNOWN` 和 Intervention。
 10. 外部写命令的重放身份是 `commandId + source + payloadHash`。`source` 绑定具体 RPC 或稳定 operation，例如 `junqi.collab.plan.create`、`RUN:DISPATCH_STOPPED`、`WORK_ITEM:INPUT_APPENDED`、`DELIVERY:DELIVERY_RETRY_CREATED`、`SESSION_MUTATION:PREPARE`；相同 command id 改用其他 source 或 payload 时返回 `IDEMPOTENCY_CONFLICT`。
 11. 只有携带外部 `commandId` 的写 RPC/operation 建立 receipt；controller 自动生成的 dispatch、watch、reconcile 等内部命令不占 receipt 容量。每个 Run 的普通操作最多 4,096 条；达到该边界后，仅 `DISPATCH_STOPPED`、Run/WorkItem cancel、delivery abandon 和 delete/delete retry 等终止恢复操作可以使用额外 64 条保留区，因此每个 Run 的物理总上限仍为 4,160。`run_id IS NULL` 的 maintenance/session receipt 全局最多 10,000 条。任一对应上限耗尽时，在写入副作用前返回 `CAPACITY_EXCEEDED`。
-12. Run 级联删除后，统一 receipt 和删除专用 receipt 继续支持重放，但只保留至该删除时间超过 `retentionDays` 且 tombstone cleanup 已完成；随后 sweep 删除 receipt，永久审计只剩 tombstone。无 Run 的 receipt 也按 `retentionDays` 清理，但仍处于 `PREPARED/EXPIRED` 的 session mutation 不清理。
-13. v6 迁移遇到旧 command id 跨命名空间或 payload hash 冲突时，将该 id 写入 `command_receipt_conflicts` 并只拒绝该 id 的后续重放；数据库继续完成迁移和启动，不把单条历史冲突升级为全库不可用。
+12. Run 级联删除后，统一 receipt 继续支持重放，但只保留至该删除时间超过 `retentionDays` 且 tombstone cleanup 已完成；随后 sweep 删除 receipt，永久审计只剩 tombstone。无 Run 的 receipt 也按 `retentionDays` 清理，但仍处于 `PREPARED/EXPIRED` 的 session mutation 不清理。
+13. `command_receipts` 是唯一回执权威。若存在 session mutation 或内部 command 行却缺少对应的权威回执，服务按持久化损坏返回 `IDEMPOTENCY_CONFLICT`，不得从历史行猜测 source、payload hash 或重建响应。
 
 ### 2.3.1 生产级一致性模式
 
@@ -393,7 +396,7 @@ PENDING -> LEASED -> SUCCEEDED | FAILED | UNKNOWN | CANCELLED
 - 删除 Query Repository 在单个 read Unit of Work 中严格解码 decision-complete facts，并最多读取两个稳定排序 blocker witnesses，只表达 0、1、至少 2，不宣称完整 blocker 数量。损坏的持久化状态、时间或 Flow revision 返回 `INVALID_RESPONSE`。
 - `command_receipts` 不是永久审计表：Run 删除后最多再保留 `retentionDays`，到期且物理 cleanup 完成后删除；tombstone 继续保留 run id、actor、digest、删除时间和 cleanup 状态。
 - 删除预览和 tombstone 使用 `junqi-collaboration-content/v3` SHA-256 domain-content digest。覆盖 `collaboration_runs`、`plan_revisions`、`work_items`、`attempts`（含冻结的 `execution_runtime` 与结构化 `input_json`）、`evidence`、`interventions`、`final_artifacts`、`deliveries`、`delivery_attempts`、`collaboration_events`、`decisions` 和 `work_item_inputs`。
-- v2 digest 明确不覆盖 `metadata`、`commands`、`export_jobs`、`deletion_jobs`、`deletion_command_receipts`、`command_receipts`、`command_receipt_conflicts`、两类 session mutation 表和 `tombstones`。它是版本化的领域内容删除护栏/指纹，不是数据库全量 hash，也不是用户 JSON 导出的 digest。
+- v3 digest 明确不覆盖 `metadata`、`commands`、`export_jobs`、`deletion_jobs`、`command_receipts`、两类 session mutation 表、`tombstones` 和三类 workflow template 表。它是版本化的领域内容删除护栏/指纹，不是数据库全量 hash，也不是用户 JSON 导出的 digest。
 
 ### 2.5 JSON 导出合同
 
@@ -911,7 +914,6 @@ V1 的 Rust updater 使用一个 monotonic absolute deadline 覆盖 detect-befor
 | 方法 | Scope | 用途 |
 | --- | --- | --- |
 | `junqi.collab.capabilities` | `operator.read` | runtime/plugin/schema/capability 健康信息 |
-| `junqi.collab.plan.get` | `operator.read` | 获取精确计划版本 |
 | `junqi.collab.run.get` | `operator.read` | 获取完整运行快照和 allowed actions |
 | `junqi.collab.run.list` | `operator.read` | 跨会话读取尚未删除的活动/历史运行 |
 | `junqi.collab.run.listBySession` | `operator.read` | 按 `sessionKey + sessionId` 读取 |
@@ -1023,11 +1025,14 @@ MAINTENANCE_ACTIVE
 事件推送只作为刷新提示：
 
 ```text
-junqi-collab.changed {
+event: "agent" {
+  stream: "junqi-collab.changed",
+  data: {
   collaborationInstanceId,
   runId,
   runRevision,
   lastSequence
+  }
 }
 ```
 
@@ -1128,7 +1133,7 @@ JunQi 发起 reset/delete 时使用 `sessionMutationCoordinator`：
 
 ## 9. Workboard 未来边界
 
-Workboard 不属于 V1：Portable Core 固定返回 `supported: false`，schema 12 没有 mirror 表，插件没有 `workboard.*` 调用、镜像 outbox 或补同步实现。UI 只能显示“不支持”，不能把缺失能力包装成降级镜像。
+Workboard 不属于 V1：Portable Core 固定返回 `supported: false`，schema 14 没有 mirror 表，插件没有 `workboard.*` 调用、镜像 outbox 或补同步实现。UI 只能显示“不支持”，不能把缺失能力包装成降级镜像。
 
 未来若 OpenClaw 公开并报告受支持的 official capability，需要单独设计、实现和验收以下合同后才能启用：只镜像不 dispatch、独立 mirror revision、幂等补同步、故障不改变核心 Run/Attempt，以及 Desktop 永不直接双写。本节不构成当前能力或发布时间承诺。
 
@@ -1140,16 +1145,16 @@ Workboard 不属于 V1：Portable Core 固定返回 `supported: false`，schema 
 
 以下全部是发布门槛，不是普通单元测试项。为避免把 mock/合约测试冒充真实 OpenClaw 验收，本节 checkbox 只在隔离的真实 Gateway 上通过后勾选：
 
-2026-07-17 的早期本地 `gateway run --dev` 探针即使设置临时 `OPENCLAW_STATE_DIR/OPENCLAW_CONFIG_PATH`，仍访问了用户默认 `~/.openclaw`，因此该方法继续被判定为非隔离。上一版 `bea9b0ac...` 包已在官方 OpenClaw `2026.7.1` 固定镜像和完整隔离环境中完成 structural P0-01 与 payload-free behavioral P0-02/03/05/06/07/08；当前 `62fa1fca...` 包尚未重跑，所有真实 Gateway 门禁均不能勾选。
+2026-07-17 的早期本地 `gateway run --dev` 探针即使设置临时 `OPENCLAW_STATE_DIR/OPENCLAW_CONFIG_PATH`，仍访问了用户默认 `~/.openclaw`，因此该方法继续被判定为非隔离。历史包曾在固定镜像和完整隔离环境中完成 structural P0-01 与 payload-free behavioral P0-02/03/05/06/07/08；当前 `0778a953...` 包尚未重跑，所有真实 Gateway 门禁均不能勾选。
 
-- [x] `P0-01` 普通外部插件可注册 `junqi.collab.*` RPC、service 和 SQLite，不依赖 trusted-only runtime；当前 structural evidence 已通过。
-- [x] `P0-02` `chat.history` 的 `sessionId/messageId/idempotencyKey` 可稳定建立 OriginRef；当前 behavioral evidence 已通过。
-- [x] `P0-03` exact transcript append 使用 `agentId/sessionKey/sessionId/idempotencyKey`，重复执行只出现一条消息；当前 behavioral evidence 已通过。
+- [ ] `P0-01` 当前包作为普通外部插件注册 `junqi.collab.*` RPC、service 和 SQLite，不依赖 trusted-only runtime。
+- [ ] `P0-02` 当前包通过 `chat.history` 的 `sessionId/messageId/idempotencyKey` 稳定建立 OriginRef。
+- [ ] `P0-03` 当前包使用 `agentId/sessionKey/sessionId/idempotencyKey` 完成 exact transcript append，重复执行只出现一条消息。
 - [ ] `P0-04` session reset 竞态不会写入新的 session；返回可判定的 rebound/mismatch。官方 Gateway reset 路径无需假设未公开 CAS，但仍须真实 Gateway 验证其会话重绑定语义。
-- [x] `P0-05` 一个 `subagent.run()`只出现一个真实执行 Task；不调用 `managedFlows.runTask()`；当前 behavioral evidence 已通过。
-- [x] `P0-06` 插件重启后可按 owner session + 确定性 child session key 找回唯一 Task 及 run id；零匹配或多匹配均 fail closed，且不依赖公共 SDK 未暴露的 child session id；当前 behavioral evidence 已通过。
-- [x] `P0-07` 取消 Run 后所有真实执行 Task 均确认终止，无遗留 Worker；当前 behavioral evidence 已通过。
-- [x] `P0-08` Gateway 重启时不会因重复 command 或事件产生第二次分派；当前 behavioral evidence 已通过。
+- [ ] `P0-05` 当前包的一次 `subagent.run()` 只出现一个真实执行 Task，且不调用 `managedFlows.runTask()`。
+- [ ] `P0-06` 当前包重启后按 owner session 与确定性 child session key 找回唯一 Task 及 run id；零匹配或多匹配均失败关闭。
+- [ ] `P0-07` 当前包取消 Run 后所有真实执行 Task 均确认终止，无遗留 Worker。
+- [ ] `P0-08` 当前包在 Gateway 重启时不会因重复 command 或事件产生第二次分派。
 - [ ] `P0-09` JunQi 关闭期间，System Service/Docker/External Gateway 仍可执行并写入原 transcript。
 - [ ] `P0-10` Managed Child 被准确识别并阻止启动 durable collaboration。
 - [ ] `P0-11` 普通外部插件核心流程完整运行，同时证明 trusted-only Gateway request 被禁用。
@@ -1171,7 +1176,7 @@ Workboard 不属于 V1：Portable Core 固定返回 `supported: false`，schema 
 
 ### 阶段 2：Collaboration Plugin
 
-- [x] schema migration、partial unique index、完整性检查。
+- [x] 现行 Schema 初始化、精确结构校验、partial unique index 和完整性检查；不支持的已有 Schema 在写入前失败且保持原库不变。
 - [x] domain/Attempt recovery State Machine、interventions、entity revision。
 - [x] Durable Outbox、`attempts` lease generation / `failure_count` 失败预算分离、`available_at` FailureRetryPolicy、`effect_started_at` 外部效果意图、lease/CAS、Command Result Committer、nested SAVEPOINT、PromiseLike transaction guard 和 uncertain recovery。
 - [x] Lifecycle Supervisor 统一拥有后台任务、定时器、AbortSignal 和 shutdown drain。
@@ -1202,7 +1207,7 @@ Workboard 不属于 V1：Portable Core 固定返回 `supported: false`，schema 
 - [x] 计划确认、活动卡、图谱、带不完整状态的审计时间线、Evidence 和 Intervention。
 - [x] stop dispatch、WorkItem input/cancel、partial、unknown、delivery、clone/archive/delete 全动作和 entity CAS。
 - [x] session reset/delete 保护与全局协作记录抽屉。
-- [x] 无 Agent、插件缺失、runtime 不持久、实例切换和版本不兼容引导。
+- [ ] 当前包在真实 Gateway 上完成无 Agent、插件缺失、runtime 不持久、实例切换和版本不兼容引导验收。
 
 ### 阶段 4：Workboard
 
@@ -1214,9 +1219,9 @@ V1 Portable Core 明确返回 `supported: false`；本阶段是后续 trusted in
 
 ### 阶段 5：质量与发布
 
-- [x] 插件 `0.3.0` / schema 12 canonical 自动化回归已通过：2026-07-20 plugin 364/364、Desktop 1157/1157、辅助脚本 207/207、Rust 534/534；package contract、Desktop TypeScript 与 production build 通过。
-- [x] 当前 bundle metadata/Tauri resource parity 通过：155 个文件，SHA-256 `62fa1fcacf338b7f4e735f2726b999f4640a5db5de3f2f0fbfe492e11dc6c6fe`。
-- [ ] 用当前 `62fa1fca...` bundle 重跑真实 Gateway structural 与适用 behavioral evidence；上一版 `bea9b0ac...` evidence 仅作历史记录。P0-04/09/10/11/12/13/14、视觉和 soak 仍开放。
+- [x] 插件当前版本 / schema 14 canonical 全量自动化回归通过：364 项插件测试、包契约、Desktop 全量测试、Rust 测试与生产构建均通过。
+- [x] 当前 bundle metadata/Tauri resource parity 通过：167 个文件，SHA-256 `0778a9538482e492b9acc8bb079dcec959e8546b07231de898f06138c1b9275f`。
+- [ ] 用当前 `0778a953...` bundle 重跑真实 Gateway structural 与适用 behavioral evidence；历史 evidence 仅作历史记录，视觉和 soak 仍开放。
 - [ ] OpenClaw/插件/JunQi 三方兼容矩阵。
 - [ ] 执行第 0.6 节的可维护验证命令，并把结果保存到当次 CI/发布记录。
 - [ ] 在可用浏览器环境完成 Chat 协作工作台的桌面/移动视觉与交互 QA。
@@ -1301,7 +1306,7 @@ V1 Portable Core 明确返回 `supported: false`；本阶段是后续 trusted in
 8. 插件安装失败、升级失败和 schema 不兼容都有不依赖插件运行态的恢复路径。
 9. 每个外部写请求和 replay 都绑定同一 `collaborationInstanceId`；实例重建后旧命令不能跨实例执行。
 10. Agent 授权必须在外部效果前按当前配置重新判定，计划时允许不构成执行时授权。
-11. 上一版 `bea9b0ac...` bundle 曾在固定 digest 的 OpenClaw `2026.7.1` 隔离环境中通过适用的 P0-01/02/03/05/06/07/08；当前 `62fa1fca...` bundle 必须重新完成这些门禁，并继续完成 P0-04/09/10/11/12/13/14、Flow/session/Desktop、浏览器视觉和 24 小时 fault/soak；所有旧 hash evidence 只能作为历史记录。
+11. 历史 bundle 曾在固定 digest 的隔离 OpenClaw 环境中通过适用的 P0-01/02/03/05/06/07/08；当前 `0778a953...` bundle 必须重新完成全部适用门禁，并继续完成 Flow/session/Desktop、浏览器视觉和 24 小时 fault/soak；所有旧 hash evidence 只能作为历史记录。
 12. 远端 `main@1956f23` / `1.2.27` 三方整合已经完成；生产发布仍必须闭环 updater 签名资产合同、可信 default-branch promotion、`main`/tag ruleset、required-reviewer environments 和签名 secret scope，candidate-only 构建不得被解释为 production release。
 13. 正式 evidence 必须通过发布 producer 与 validator 的文本 scanner，并由 attestation 验证 source/ref、producer run/attempt 及 controller/目标 source 的双身份；runner 的 boolean 声明和未解决的远端最后写入窗口不能作为这些事实的替代。
 14. GitHub Release 的 Node transaction adapters 必须作为可恢复事务执行：authenticated draft discovery 固化 immutable release id，远端集合由 Specification 校验；仅补偿 exact empty `starter`，上传从 stable file descriptor 经 release-id endpoint 完成，模糊写结果先 reconcile 后 retry；读、删、上传和 release create/publish 共享 Retry Policy，普通瞬态错误短指数退避，明确的 403/429 限流遵循 `Retry-After` 或 `x-ratelimit-reset`，无提示时至少等待一分钟；60 秒 provider-wait cap 或共享 RetryBudget 不足时直接 fail closed，不得提前重试。workflow 的 release create 与 release-id publish 已统一通过 `scripts/mutate-github-release.mjs`，POST/PATCH 响应不确定时先按 release-id、再按 tag+marker 做有界对账；剩余 `gh` 调用仅限 attestation 或只读 tag/ref 检查。manifest、draft/published 资产集合和 tag target 在提交前后保持同一 source identity。

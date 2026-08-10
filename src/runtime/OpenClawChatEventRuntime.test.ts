@@ -81,6 +81,42 @@ async function loadDeps() {
   return { ChatHandler, useChatStore };
 }
 
+type GatewayEventTestHandler = {
+  handleEvent(value: unknown): void;
+};
+
+type GatewayEventFixture = {
+  event: string;
+  payload?: unknown;
+};
+
+let nextOfficialSequence = 0;
+
+function fixtureRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+/** 为既有行为测试补足真实 Gateway 信封与实时事件的稳定排序字段。 */
+function dispatchGatewayEvent(handler: GatewayEventTestHandler, fixture: GatewayEventFixture): void {
+  const payload = fixtureRecord(fixture.payload);
+  if (payload && (fixture.event === 'agent' || fixture.event === 'chat' || fixture.event === 'session.tool')) {
+    if (typeof payload.seq !== 'number' || !Number.isSafeInteger(payload.seq) || payload.seq < 0) {
+      payload.seq = ++nextOfficialSequence;
+    }
+    if ((fixture.event === 'agent' || fixture.event === 'session.tool')
+      && (typeof payload.ts !== 'number' || !Number.isSafeInteger(payload.ts) || payload.ts < 0)) {
+      payload.ts = 1_700_000_000_000 + nextOfficialSequence;
+    }
+    if (fixture.event === 'chat' && payload.state === 'delta' && typeof payload.deltaText !== 'string') {
+      const message = fixtureRecord(payload.message);
+      payload.deltaText = typeof message?.content === 'string' ? message.content : '';
+    }
+  }
+  handler.handleEvent({ type: 'event', event: fixture.event, payload: fixture.payload });
+}
+
 test('chat.final replaces a longer streamed draft with OpenClaw canonical text', async () => {
   installWindowMock();
   const { ChatHandler } = await loadDeps();
@@ -100,7 +136,7 @@ test('chat.final replaces a longer streamed draft with OpenClaw canonical text',
   const sessionKey = 'agent:main:session-a';
   const runId = 'run-chat-final';
 
-  handler.handleEvent({
+  dispatchGatewayEvent(handler, {
     event: 'chat',
     payload: {
       sessionKey,
@@ -110,7 +146,7 @@ test('chat.final replaces a longer streamed draft with OpenClaw canonical text',
     },
   });
 
-  handler.handleEvent({
+  dispatchGatewayEvent(handler, {
     event: 'chat',
     payload: {
       sessionKey,
@@ -144,14 +180,14 @@ test('chat.delta projects official deltaText when no message snapshot is present
   const sessionKey = 'agent:main:official-delta-text';
   const runId = 'run-official-delta-text';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey,
     runId,
     seq: 1,
     state: 'delta',
     deltaText: '你',
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey,
     runId,
     seq: 2,
@@ -177,7 +213,7 @@ test('chat.status projects the official startup phase until visible activity beg
   const sessionKey = 'agent:main:official-startup-status';
   const runId = 'run-official-startup-status';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey,
     runId,
     seq: 1,
@@ -190,7 +226,7 @@ test('chat.status projects the official startup phase until visible activity beg
     phase: 'preparing_context',
   });
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey,
     runId,
     seq: 2,
@@ -198,6 +234,123 @@ test('chat.status projects the official startup phase until visible activity beg
     deltaText: '开始响应',
   } });
   assert.equal(useChatStore.getState().chatRunStartupBySession[sessionKey], undefined);
+});
+
+test('畸形 Agent 事件不能占用后续有效事件的官方序号', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const chunks: string[] = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: (_sessionKey: string, _messageId: string, content: string) => chunks.push(content),
+      onStreamEnd: () => {},
+    },
+  } as any);
+  const sessionKey = 'agent:main:malformed-agent-sequence';
+  const runId = 'run-malformed-agent-sequence';
+
+  dispatchGatewayEvent(handler, {
+    event: 'agent',
+    payload: {
+      sessionKey,
+      runId,
+      seq: 7,
+      stream: 'assistant',
+      ts: 1_700_000_000_000,
+      data: null,
+    },
+  });
+  dispatchGatewayEvent(handler, {
+    event: 'agent',
+    payload: {
+      sessionKey,
+      runId,
+      seq: 7,
+      stream: 'assistant',
+      ts: 1_700_000_000_001,
+      data: { text: '有效内容' },
+    },
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 70));
+  assert.equal(chunks.at(-1), '有效内容');
+});
+
+test('畸形 Chat 增量事件不能占用后续有效事件的官方序号', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  resetChatStore();
+
+  const chunks: string[] = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: (_sessionKey: string, _messageId: string, content: string) => chunks.push(content),
+      onStreamEnd: () => {},
+    },
+  } as any);
+  const sessionKey = 'agent:main:malformed-chat-sequence';
+  const runId = 'run-malformed-chat-sequence';
+
+  handler.handleEvent({
+    type: 'event',
+    event: 'chat',
+    payload: { sessionKey, runId, seq: 9, state: 'delta' },
+  });
+  handler.handleEvent({
+    type: 'event',
+    event: 'chat',
+    payload: { sessionKey, runId, seq: 9, state: 'delta', deltaText: '有效增量' },
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 70));
+  assert.equal(chunks.at(-1), '有效增量');
+});
+
+test('未知但完整的 Agent 流不产生界面状态且保留后续序号', async () => {
+  installWindowMock();
+  const { ChatHandler, useChatStore } = await loadDeps();
+  resetChatStore();
+
+  const chunks: string[] = [];
+  const handler = new ChatHandler({
+    callbacks: {
+      onStreamChunk: (_sessionKey: string, _messageId: string, content: string) => chunks.push(content),
+      onStreamEnd: () => {},
+    },
+  } as any);
+  const sessionKey = 'agent:main:unknown-stream';
+  const runId = 'run-unknown-stream';
+
+  handler.handleEvent({
+    type: 'event',
+    event: 'agent',
+    payload: {
+      sessionKey,
+      runId,
+      seq: 1,
+      stream: 'plugin-owned-stream',
+      ts: 1_700_000_000_000,
+      data: { revision: 1 },
+    },
+  });
+  handler.handleEvent({
+    type: 'event',
+    event: 'agent',
+    payload: {
+      sessionKey,
+      runId,
+      seq: 2,
+      stream: 'assistant',
+      ts: 1_700_000_000_001,
+      data: { text: '后续文本' },
+    },
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 70));
+  assert.equal(chunks.at(-1), '后续文本');
+  assert.equal(useChatStore.getState().getCachedMessages(sessionKey)?.length ?? 0, 0);
 });
 
 test('session.operation projects only official compact lifecycle state', async () => {
@@ -213,7 +366,7 @@ test('session.operation projects only official compact lifecycle state', async (
   } as any);
   const sessionKey = 'agent:main:operation-forwarded';
 
-  handler.handleEvent({ event: 'session.operation', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.operation', payload: {
     operationId: 'operation-forwarded',
     operation: 'compact',
     phase: 'start',
@@ -222,7 +375,7 @@ test('session.operation projects only official compact lifecycle state', async (
   } });
   assert.equal(useChatStore.getState().compactionStatusBySession[sessionKey]?.phase, 'active');
 
-  handler.handleEvent({ event: 'session.operation', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.operation', payload: {
     operationId: 'operation-forwarded',
     operation: 'compact',
     phase: 'end',
@@ -230,7 +383,7 @@ test('session.operation projects only official compact lifecycle state', async (
     ts: 10,
     completed: true,
   } });
-  handler.handleEvent({ event: 'session.operation', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.operation', payload: {
     operationId: 'operation-invalid',
     operation: 'reset',
     phase: 'end',
@@ -238,7 +391,7 @@ test('session.operation projects only official compact lifecycle state', async (
     ts: 11,
   } });
 
-  handler.handleEvent({ event: 'session.operation', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.operation', payload: {
     operationId: 'operation-forwarded',
     operation: 'compact',
     phase: 'end',
@@ -246,7 +399,7 @@ test('session.operation projects only official compact lifecycle state', async (
     ts: 10,
     completed: true,
   } });
-  handler.handleEvent({
+  dispatchGatewayEvent(handler, {
     event: 'agent',
     payload: { sessionKey, runId: 'run-compaction', seq: 1, stream: 'compaction', data: { phase: 'end' } },
   });
@@ -275,10 +428,10 @@ test('a final event sharing the last delta sequence still settles the run', asyn
   const sessionKey = 'agent:main:same-sequence-terminal';
   const runId = 'run-same-sequence-terminal';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, seq: 9, state: 'delta', message: { content: 'Complete answer.' },
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, seq: 9, state: 'final', message: { content: 'Complete answer.' },
   } });
 
@@ -303,10 +456,10 @@ test('chat.final without a terminal message falls back to the live projection', 
   const sessionKey = 'agent:main:terminal-without-message';
   const runId = 'run-terminal-without-message';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: 'Live answer.' },
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'final',
   } });
 
@@ -331,10 +484,10 @@ test('an explicitly empty chat.final remains canonical instead of restoring the 
     } as any);
     const sessionKey = `agent:main:empty-final-${Array.isArray(content) ? 'blocks' : 'text'}`;
     const runId = `run-${sessionKey}`;
-    handler.handleEvent({ event: 'chat', payload: {
+    dispatchGatewayEvent(handler, { event: 'chat', payload: {
       sessionKey, runId, state: 'delta', message: { content: 'Obsolete draft.' },
     } });
-    handler.handleEvent({ event: 'chat', payload: {
+    dispatchGatewayEvent(handler, { event: 'chat', payload: {
       sessionKey, runId, state: 'final', message: { content },
     } });
     assert.equal(streamEnds.length, 1);
@@ -358,13 +511,13 @@ test('agent replace=true supersedes a non-prefix draft in the same response', as
   } as any);
   const sessionKey = 'agent:main:agent-replace';
   const runId = 'run-agent-replace';
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'assistant', data: { text: 'Old prefix that must disappear.' },
   } });
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'assistant', data: { text: 'Corrected answer.', replace: true },
   } });
-  handler.handleEvent({ event: 'chat', payload: { sessionKey, runId, state: 'final' } });
+  dispatchGatewayEvent(handler, { event: 'chat', payload: { sessionKey, runId, state: 'final' } });
 
   assert.equal(streamEnds.length, 1);
   assert.equal(streamEnds[0].content, 'Corrected answer.');
@@ -387,7 +540,7 @@ test('sessions.abort settles only the exact run explicitly confirmed by OpenClaw
   } as any);
   const sessionKey = 'agent:main:abort-ack';
   const runId = 'run-abort-ack';
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: 'Partial answer.' },
   } });
 
@@ -403,7 +556,7 @@ test('sessions.abort settles only the exact run explicitly confirmed by OpenClaw
   assert.equal(streamEnds.length, 1);
   assert.equal(streamEnds[0].meta?.state, 'aborted');
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: 'Late text.' },
   } });
   assert.equal(streamEnds.length, 1);
@@ -625,20 +778,22 @@ test('forcing one terminal flush also releases another session including media-o
   } as any);
   const firstSession = 'agent:main:flush-first';
   const secondSession = 'agent:main:flush-second';
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey: firstSession,
     runId: 'run-flush-first',
     state: 'delta',
     message: { content: 'First buffered stream.' },
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey: secondSession,
     runId: 'run-flush-second',
     state: 'delta',
-    mediaUrl: 'https://media.invalid/voice.mp3',
-    mediaType: 'audio',
+    message: {
+      mediaUrl: 'https://media.invalid/voice.mp3',
+      mediaType: 'audio',
+    },
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey: firstSession,
     runId: 'run-flush-first',
     state: 'final',
@@ -670,7 +825,7 @@ test('agent lifecycle end requests authoritative reconciliation instead of inven
   const sessionKey = 'agent:main:session-b';
   const runId = 'run-agent-lifecycle';
 
-  handler.handleEvent({
+  dispatchGatewayEvent(handler, {
     event: 'agent',
     payload: {
       sessionKey,
@@ -680,7 +835,7 @@ test('agent lifecycle end requests authoritative reconciliation instead of inven
     },
   });
 
-  handler.handleEvent({
+  dispatchGatewayEvent(handler, {
     event: 'agent',
     payload: {
       sessionKey,
@@ -713,10 +868,10 @@ test('agent lifecycle end leaves a textless run to the authoritative snapshot', 
   const sessionKey = 'agent:main:lifecycle-verification';
   const runId = 'run-lifecycle-verification';
 
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'lifecycle', data: { phase: 'start' },
   } });
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'lifecycle', data: { phase: 'end' },
   } });
 
@@ -741,10 +896,10 @@ test('an ordinary lifecycle error remains active during OpenClaw fallback grace'
   const sessionKey = 'agent:main:lifecycle-error';
   const runId = 'run-lifecycle-error';
 
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'lifecycle', data: { phase: 'start' },
   } });
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'lifecycle', data: { phase: 'error', error: 'Provider failed.' },
   } });
   await new Promise((resolve) => setTimeout(resolve, 430));
@@ -771,10 +926,10 @@ test('an exhausted lifecycle error requests authoritative reconciliation', async
   const sessionKey = 'agent:main:lifecycle-error-exhausted';
   const runId = 'run-lifecycle-error-exhausted';
 
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'lifecycle', data: { phase: 'start' },
   } });
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey,
     runId,
     stream: 'lifecycle',
@@ -803,10 +958,10 @@ test('an aborted lifecycle end waits for chat.aborted or the authoritative snaps
   const sessionKey = 'agent:main:lifecycle-aborted';
   const runId = 'run-lifecycle-aborted';
 
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'assistant', data: { text: 'Partial response.' },
   } });
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'lifecycle', data: { phase: 'end', aborted: true },
   } });
   assert.equal(streamEnds.length, 0);
@@ -840,16 +995,16 @@ test('tool boundaries discard an empty streamed assistant segment', async () => 
   const sessionKey = 'agent:main:tool-boundary';
   const runId = 'run-tool-boundary';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: 'Tool preparation is complete.' },
   } });
   handler.handleToolStream({ sessionKey, runId, data: {
     toolCallId: 'tool-first', name: 'search', phase: 'start', args: {},
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: '   ' },
   } });
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'lifecycle', data: { phase: 'end' },
   } });
 
@@ -878,16 +1033,16 @@ test('tool boundaries preserve an independent final text snapshot', async () => 
   const sessionKey = 'agent:main:tool-final-snapshot';
   const runId = 'run-tool-final-snapshot';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: 'Prefix before the tool. ' },
   } });
   handler.handleToolStream({ sessionKey, runId, data: {
     toolCallId: 'tool-final-snapshot', name: 'search', phase: 'start', args: {},
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: 'Post-tool draft.' },
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'final', message: { content: 'Post-tool final text that is longer than the earlier prefix.' },
   } });
 
@@ -954,9 +1109,9 @@ test('session.tool renders the official late-subscriber tool lifecycle exactly o
     },
   };
 
-  handler.handleEvent({ event: 'session.tool', payload: startPayload });
-  handler.handleEvent({ event: 'session.tool', payload: startPayload });
-  handler.handleEvent({ event: 'session.tool', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.tool', payload: startPayload });
+  dispatchGatewayEvent(handler, { event: 'session.tool', payload: startPayload });
+  dispatchGatewayEvent(handler, { event: 'session.tool', payload: {
     sessionKey,
     runId,
     seq: 18,
@@ -1026,7 +1181,7 @@ test('agent item keeps tool identity, input, failed output, and source timing th
   const startedAt = 1_784_000_000_000;
   const endedAt = startedAt + 650;
 
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey,
     runId,
     seq: 1,
@@ -1041,7 +1196,7 @@ test('agent item keeps tool identity, input, failed output, and source timing th
       startedAt,
     },
   } });
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey,
     runId,
     seq: 2,
@@ -1091,14 +1246,14 @@ test('session.tool uses the agent sequence fence and requests history on a live 
   const sessionKey = 'agent:main:late-subscriber-gap';
   const runId = 'run-session-tool-gap';
 
-  handler.handleEvent({ event: 'session.tool', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.tool', payload: {
     sessionKey,
     runId,
     seq: 3,
     stream: 'tool',
     data: { phase: 'start', name: 'read', toolCallId: 'tool-gap', args: {} },
   } });
-  handler.handleEvent({ event: 'session.tool', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.tool', payload: {
     sessionKey,
     runId,
     seq: 5,
@@ -1119,14 +1274,14 @@ test('a malformed session.tool event cannot poison the official agent sequence',
   } as any);
   const sessionKey = 'agent:main:session-tool-validation';
   const runId = 'run-session-tool-validation';
-  handler.handleEvent({ event: 'session.tool', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.tool', payload: {
     sessionKey,
     runId,
     seq: 100,
     stream: 'assistant',
     data: { phase: 'start', toolCallId: 'invalid-tool' },
   } });
-  handler.handleEvent({ event: 'session.tool', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.tool', payload: {
     sessionKey,
     runId,
     seq: 1,
@@ -1155,10 +1310,10 @@ test('dual text streams retain the more complete compatible snapshot', async () 
   const sessionKey = 'agent:main:dual-stream';
   const runId = 'run-dual-stream';
 
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'assistant', data: { text: 'Short draft' },
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: 'Short draft with the complete continuation.' },
   } });
   await new Promise((resolve) => setTimeout(resolve, 60));
@@ -1181,10 +1336,10 @@ test('a later compatible agent snapshot can extend an earlier chat snapshot', as
   const sessionKey = 'agent:main:dual-stream-agent-ahead';
   const runId = 'run-dual-stream-agent-ahead';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: 'Short draft' },
   } });
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'assistant', data: { text: 'Short draft with the complete continuation.' },
   } });
   await new Promise((resolve) => setTimeout(resolve, 70));
@@ -1207,10 +1362,10 @@ test('a delayed shorter agent snapshot cannot split the canonical chat message',
   const sessionKey = 'agent:main:dual-stream-reverse';
   const runId = 'run-dual-stream-reverse';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: 'The completed answer.' },
   } });
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'assistant', data: { text: 'The completed answer' },
   } });
   await new Promise((resolve) => setTimeout(resolve, 70));
@@ -1234,10 +1389,10 @@ test('chat replace updates the current message instead of creating a second resp
   const sessionKey = 'agent:main:chat-replace';
   const runId = 'run-chat-replace';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: 'Draft text that will be replaced.' },
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', replace: true, message: { content: 'Corrected answer.' },
   } });
   await new Promise((resolve) => setTimeout(resolve, 70));
@@ -1274,14 +1429,14 @@ test('a visible Reasoning-prefixed chat.final remains an official terminal event
   const runId = 'run-reasoning-final';
   const finalText = 'Reasoning: this is visible answer text.';
 
-  handler.handleEvent({ event: 'agent', payload: {
+  dispatchGatewayEvent(handler, { event: 'agent', payload: {
     sessionKey, runId, stream: 'assistant', data: { text: finalText },
   } });
   await new Promise((resolve) => setTimeout(resolve, 70));
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'final', message: { content: finalText },
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'final', message: { content: 'Delayed duplicate terminal.' },
   } });
 
@@ -1311,16 +1466,16 @@ test('an old chat terminal cannot overwrite a newer OpenClaw run', async () => {
   } as any);
   const sessionKey = 'agent:main:run-fence';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId: 'run-old', state: 'delta', message: { content: 'old reply' },
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId: 'run-new', state: 'delta', message: { content: 'new reply' },
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId: 'run-old', state: 'final', message: { content: 'old final' },
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId: 'run-new', state: 'final', message: { content: 'new final' },
   } });
 
@@ -1345,11 +1500,11 @@ test('a confirmed local reset rejects delayed chat terminals', async () => {
   } as any);
   const sessionKey = 'agent:main:reset-fence';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId: 'run-reset', state: 'delta', message: { content: 'before reset' },
   } });
   handler.invalidateSession(sessionKey);
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId: 'run-reset', state: 'final', message: { content: 'late terminal' },
   } });
 
@@ -1374,10 +1529,10 @@ test('a stale sessions snapshot after final does not reassert an active run', as
   const sessionKey = 'agent:main:stale-after-final';
   const runId = 'run-stale-after-final';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: 'Final response.' },
   } });
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'final', message: { content: 'Final response.' },
   } });
   handler.observeActiveSessionRuns([
@@ -1501,8 +1656,8 @@ test('durable session.message events refresh once per OpenClaw message sequence'
   } as any);
   const sessionKey = 'agent:main:transcript';
 
-  handler.handleEvent({ event: 'session.message', payload: { sessionKey, messageSeq: 8 } });
-  handler.handleEvent({ event: 'session.message', payload: { sessionKey, messageSeq: 8 } });
+  dispatchGatewayEvent(handler, { event: 'session.message', payload: { sessionKey, messageSeq: 8 } });
+  dispatchGatewayEvent(handler, { event: 'session.message', payload: { sessionKey, messageSeq: 8 } });
   await new Promise((resolve) => setTimeout(resolve, 90));
 
   assert.deepEqual(refreshed, [sessionKey]);
@@ -1522,7 +1677,7 @@ test('durable session.message only exposes the session and role for unread proje
     },
   } as any);
 
-  handler.handleEvent({ event: 'session.message', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.message', payload: {
     sessionKey: 'agent:main:transcript-unread',
     messageSeq: 1,
     message: {
@@ -1559,10 +1714,10 @@ test('an assistant session.message settled snapshot closes the matching live run
   const sessionKey = 'agent:main:transcript-terminal';
   const runId = 'run-transcript-terminal';
 
-  handler.handleEvent({ event: 'chat', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat', payload: {
     sessionKey, runId, state: 'delta', message: { content: 'Canonical answer.' },
   } });
-  handler.handleEvent({ event: 'session.message', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.message', payload: {
     sessionKey,
     messageSeq: 9,
     hasActiveRun: false,
@@ -1605,7 +1760,7 @@ test('an authoritative session.message transfers ownership to the exact active r
     'run-local',
     { runId: 'run-local', status: 'started' },
   );
-  handler.handleEvent({ event: 'session.message', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.message', payload: {
     sessionKey,
     messageSeq: 10,
     hasActiveRun: true,
@@ -1639,7 +1794,7 @@ test('an anonymous active projection settles from an explicit session.message fa
   } as any);
   const sessionKey = 'agent:main:anonymous-session-message';
   handler.reconcileSessionRuns([{ key: sessionKey, hasActiveRun: true, activeRunIds: [] }]);
-  handler.handleEvent({ event: 'session.message', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.message', payload: {
     sessionKey,
     messageSeq: 11,
     hasActiveRun: false,
@@ -1673,7 +1828,7 @@ test('an unmatched assistant transcript asks for exact reconciliation instead of
     currentRunId,
     { runId: currentRunId, status: 'started' },
   );
-  handler.handleEvent({ event: 'session.message', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.message', payload: {
     sessionKey,
     messageSeq: 12,
     hasActiveRun: false,
@@ -1704,7 +1859,7 @@ test('a persisted user message cannot prematurely settle an unacknowledged turn'
   } as any);
   const sessionKey = 'agent:main:transcript-user';
 
-  handler.handleEvent({ event: 'session.message', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.message', payload: {
     sessionKey,
     messageSeq: 1,
     hasActiveRun: false,
@@ -1734,7 +1889,7 @@ test('a delayed assistant transcript cannot settle a newer unacknowledged turn',
   } as any);
   const sessionKey = 'agent:main:delayed-assistant';
 
-  handler.handleEvent({ event: 'session.message', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.message', payload: {
     sessionKey,
     messageSeq: 20,
     hasActiveRun: false,
@@ -1765,7 +1920,7 @@ test('an assistant transcript settles an acknowledged local send without stream 
   const runId = 'run-acknowledged-transcript';
 
   handler.reconcileSendAcknowledgement(sessionKey, runId, { runId, status: 'started' });
-  handler.handleEvent({ event: 'session.message', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.message', payload: {
     sessionKey,
     messageSeq: 30,
     hasActiveRun: false,
@@ -1809,7 +1964,7 @@ test('chat.send_timing decorates only the exact active OpenClaw run', async () =
   const runId = 'run-timing';
   handler.reconcileSendAcknowledgement(sessionKey, runId, { runId, status: 'started' });
 
-  handler.handleEvent({ event: 'chat.send_timing', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat.send_timing', payload: {
     sessionKey,
     runId,
     phase: 'agent-run-started',
@@ -1827,7 +1982,7 @@ test('chat.send_timing decorates only the exact active OpenClaw run', async () =
     dispatchStartedToPhaseMs: 8,
   });
 
-  handler.handleEvent({ event: 'chat.send_timing', payload: {
+  dispatchGatewayEvent(handler, { event: 'chat.send_timing', payload: {
     sessionKey,
     runId: 'run-stale',
     phase: 'model-selected',
@@ -1894,7 +2049,7 @@ test('a persisted user message cannot settle an acknowledged send before its ass
     currentRunId,
     { runId: currentRunId, status: 'started' },
   );
-  handler.handleEvent({ event: 'session.message', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.message', payload: {
     sessionKey,
     messageSeq: 40,
     hasActiveRun: false,
@@ -1903,7 +2058,7 @@ test('a persisted user message cannot settle an acknowledged send before its ass
   } });
   assert.deepEqual(reconciliations, []);
 
-  handler.handleEvent({ event: 'session.message', payload: {
+  dispatchGatewayEvent(handler, { event: 'session.message', payload: {
     sessionKey,
     messageSeq: 41,
     hasActiveRun: false,
@@ -1929,7 +2084,7 @@ test('chat.final treats workshop-shaped model text as untrusted display content'
     },
   } as any);
 
-  handler.handleEvent({
+  dispatchGatewayEvent(handler, {
     event: 'chat',
     payload: {
       sessionKey: 'agent:main:session-workshop',

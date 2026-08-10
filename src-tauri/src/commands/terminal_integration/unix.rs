@@ -31,12 +31,6 @@ impl TerminalIntegrationBackend for UnixBackend {
         Ok(EnvironmentBinding::default())
     }
 
-    fn detect_environment() -> EnvironmentBinding {
-        EnvironmentBinding {
-            profile_path: selected_profile().ok(),
-        }
-    }
-
     fn is_environment_configured(binding: &EnvironmentBinding) -> bool {
         binding
             .profile_path

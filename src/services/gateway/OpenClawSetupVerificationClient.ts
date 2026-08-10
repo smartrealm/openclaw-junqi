@@ -1,4 +1,5 @@
-import { GatewayDisconnectedError, GatewayRpcError } from './Connection';
+import { GatewayDisconnectedError } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_SETUP_VERIFY_METHOD = 'openclaw.setup.verify' as const;
 
@@ -56,14 +57,6 @@ function failureStatus(value: unknown): OpenClawSetupVerificationFailureStatus |
     : null;
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  if (!(error instanceof GatewayRpcError)) return false;
-  if (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND') {
-    return true;
-  }
-  return error.code === 'INVALID_REQUEST' && /^unknown method:/i.test(error.message.trim());
-}
-
 export function parseOpenClawSetupVerification(value: unknown): OpenClawSetupVerification {
   const source = record(value);
   if (!source || typeof source.ok !== 'boolean') throw new OpenClawSetupVerificationResponseError();
@@ -92,7 +85,7 @@ export class OpenClawSetupVerificationClient {
         {},
       ));
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_SETUP_VERIFY_METHOD)) {
         throw new OpenClawSetupVerificationUnavailableError(
           'The connected OpenClaw Gateway does not support openclaw.setup.verify',
         );

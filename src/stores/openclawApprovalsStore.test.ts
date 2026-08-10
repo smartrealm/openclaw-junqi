@@ -61,6 +61,15 @@ test('invalidates an in-flight list response when the Gateway disconnects', asyn
   }
 });
 
+test('disconnected approval actions defer to the shared offline state', async () => {
+  useOpenClawApprovalsStore.setState({ error: 'stale failure' });
+  const approval = snapshot('approval-1').approvals[0];
+
+  await useOpenClawApprovalsStore.getState().resolve(false, approval, 'deny');
+
+  assert.equal(useOpenClawApprovalsStore.getState().error, null);
+});
+
 test('revalidates the unified snapshot after an approval event and rejects an older list response', async () => {
   const originalList = gateway.listPendingApprovals;
   const originalStatus = gateway.getStatus;

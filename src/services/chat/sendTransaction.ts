@@ -1,4 +1,6 @@
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
+import { GatewayDisconnectedError, GatewayRpcError } from '@/services/gateway/Connection';
+import { isGatewayTransportLifecycleError } from '@/services/gateway/GatewayTransportError';
 import { isOpenClawChatSendDeliveryUncertain } from '@/processing/openClawChatEvent';
 import type { GatewayAttachment, QueuedChatMessage } from './types';
 import { sessionMutationGate } from './sessionMutationGate';
@@ -288,11 +290,11 @@ export class ChatSendCoordinator {
         retryPayload,
       });
       state.setIsTyping(false, sessionKey);
-      if (error instanceof Error && (
-        error.name === 'GatewayDisconnectedError'
-        || error.name === 'GatewayRpcError'
-        || error.message === 'Gateway is not connected'
-      ) && taskRunCreated) {
+      if (taskRunCreated && (
+        error instanceof GatewayDisconnectedError
+        || error instanceof GatewayRpcError
+        || isGatewayTransportLifecycleError(error)
+      )) {
         await this.taskExecutionPort.settleRun({
           sessionKey,
           sessionId: request.sessionId,

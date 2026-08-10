@@ -404,10 +404,6 @@ function modelRoutingIssueMessage(t: TFunction, issue: ModelRoutingIssue): strin
       return t('config.routingIssueReplaceFallback', 'One or more fallback models are not declared by an explicit provider.');
     case 'fallback-repeats-primary':
       return t('config.routingIssueRepeatedFallback', 'A fallback repeats the primary model and will not provide failover.');
-    case 'primary-not-visible':
-      return t('config.routingIssuePrimaryNotVisible', 'The default primary is outside the configured model visibility rules.');
-    case 'fallback-not-visible':
-      return t('config.routingIssueFallbackNotVisible', 'One or more fallback models are outside the configured model visibility rules.');
     default:
       return '';
   }

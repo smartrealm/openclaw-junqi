@@ -159,30 +159,26 @@ function parseJsonOutput(stdout: Buffer, recoveryEventId: string | undefined): D
   }
 }
 
-function extractDwsErrorMessage(stdout: Buffer): string | null {
-  try {
-    const parsed = JSON.parse(stdout.toString("utf8")) as unknown;
-    if (!parsed || typeof parsed !== "object") return null;
-    const error = (parsed as Record<string, unknown>).error;
-    if (!error || typeof error !== "object") return null;
-    const message = (error as Record<string, unknown>).message;
-    return typeof message === "string" && message.trim() ? message.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
 export class DwsRunner {
   readonly config: DwsRunnerConfig;
-  private executablePromise: Promise<string> | null = null;
+  private executable: string | null = null;
+  private executableLookup: Promise<string> | null = null;
 
   constructor(config: DwsRunnerConfig) {
     this.config = config;
   }
 
-  resolveExecutable(): Promise<string> {
-    this.executablePromise ??= resolveDwsExecutable(this.config.dwsPath);
-    return this.executablePromise;
+  async resolveExecutable(): Promise<string> {
+    if (this.executable) return this.executable;
+    this.executableLookup ??= resolveDwsExecutable(this.config.dwsPath);
+    const lookup = this.executableLookup;
+    try {
+      const executable = await lookup;
+      this.executable = executable;
+      return executable;
+    } finally {
+      if (this.executableLookup === lookup) this.executableLookup = null;
+    }
   }
 
   async run(
@@ -238,13 +234,12 @@ export class DwsRunner {
         options.signal?.removeEventListener("abort", abort);
       };
 
-      child.once("error", (error) => {
+      child.once("error", () => {
         if (settled) return;
         settled = true;
         cleanup();
-        reject(new DingTalkRuntimeError("DWS_SPAWN_FAILED", "Failed to start DWS", {
-          cause: error instanceof Error ? error.message : String(error),
-        }));
+        if (this.executable === executable) this.executable = null;
+        reject(new DingTalkRuntimeError("DWS_SPAWN_FAILED", "Failed to start DWS"));
       });
 
       child.once("close", (code, signal) => {
@@ -269,7 +264,7 @@ export class DwsRunner {
         if (code !== 0) {
           reject(new DingTalkRuntimeError(
             "DWS_COMMAND_FAILED",
-            extractDwsErrorMessage(stdout) ?? "DWS command failed",
+            "DWS command failed",
             {
               exitCode: code,
               ...(signal ? { signal } : {}),

@@ -19,20 +19,6 @@ pub struct RevealResult {
 }
 
 #[derive(Debug, Serialize)]
-pub struct DirEntry {
-    pub name: String,
-    pub is_dir: bool,
-    pub size: u64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ListDirResult {
-    pub success: bool,
-    pub entries: Vec<DirEntry>,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
 pub struct ReadFileResult {
     pub success: bool,
     pub content: Option<String>,
@@ -60,56 +46,6 @@ pub async fn managed_file_exists(path: String) -> Result<ExistsResult, String> {
         success: true,
         exists,
     })
-}
-
-/// List directory entries.
-#[tauri::command]
-pub async fn list_directory(path: String) -> Result<ListDirResult, String> {
-    let dir = Path::new(&path);
-    if !dir.is_dir() {
-        return Ok(ListDirResult {
-            success: false,
-            entries: vec![],
-            error: Some(format!("Not a directory: {}", path)),
-        });
-    }
-    match std::fs::read_dir(dir) {
-        Ok(read_dir) => {
-            let mut entries: Vec<DirEntry> = Vec::new();
-            for entry in read_dir.flatten() {
-                let meta = entry.metadata().ok();
-                let (is_dir, size) = match meta {
-                    Some(m) => (m.is_dir(), m.len()),
-                    None => (false, 0),
-                };
-                entries.push(DirEntry {
-                    name: entry.file_name().to_string_lossy().to_string(),
-                    is_dir,
-                    size,
-                });
-            }
-            entries.sort_by(|a, b| {
-                if a.is_dir != b.is_dir {
-                    return if a.is_dir {
-                        std::cmp::Ordering::Less
-                    } else {
-                        std::cmp::Ordering::Greater
-                    };
-                }
-                a.name.to_lowercase().cmp(&b.name.to_lowercase())
-            });
-            Ok(ListDirResult {
-                success: true,
-                entries,
-                error: None,
-            })
-        }
-        Err(e) => Ok(ListDirResult {
-            success: false,
-            entries: vec![],
-            error: Some(format!("Failed to read directory: {}", e)),
-        }),
-    }
 }
 
 /// Read file content as UTF-8 text (truncated at 512KB).

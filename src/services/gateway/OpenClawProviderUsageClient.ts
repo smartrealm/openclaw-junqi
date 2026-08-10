@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_PROVIDER_USAGE_METHOD = 'usage.status' as const;
 
@@ -86,11 +86,6 @@ function provider(value: unknown): OpenClawProviderUsageProvider {
   return { provider: providerId, displayName, windows: source.windows.map(window) };
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 function connectionUnavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
@@ -119,7 +114,7 @@ export class OpenClawProviderUsageClient {
       }
       return parseOpenClawProviderUsage(response);
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_PROVIDER_USAGE_METHOD)) {
         throw new OpenClawProviderUsageUnavailableError('The connected OpenClaw Gateway does not support usage.status');
       }
       if (connectionUnavailable(error)) {

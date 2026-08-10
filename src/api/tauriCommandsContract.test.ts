@@ -1,344 +1,328 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import {
+  approveSelectedGatewayDevice,
+  cancelDwsOperation,
+  clearPersistentNotifications,
+  createOpenClawMediaPreviewUrl,
+  finishTalkPlayback,
+  getGatewayRuntimeSnapshot,
+  getOpenclawChannelCapabilities,
+  getOpenclawChannelCatalog,
+  getOpenclawChannelLogs,
+  getOpenclawChannelStatus,
+  getPersistentNotifications,
+  markPersistentNotificationRead,
+  markPersistentNotificationsRead,
+  openGatewayControlUi,
+  playTalkPcm,
+  probeSelectedGateway,
+  pushPersistentNotification,
+  restartGateway,
+  signGatewayDeviceChallenge,
+  startDwsOperation,
+  startGateway,
+  startVoiceCapture,
+  stopGateway,
+  stopTalkPlayback,
+  stopVoiceCapture,
+  type GatewayDeviceChallengeParams,
+} from './tauri-commands';
+import {
+  deleteAgentProfile,
+  loadAgentProfiles,
+  saveAgentProfile,
+} from '@/services/agentProfiles';
 
-const commands = readFileSync(new URL('./tauri-commands.ts', import.meta.url), 'utf8');
-const adapter = readFileSync(new URL('./tauri-adapter.ts', import.meta.url), 'utf8');
-const performancePage = readFileSync(new URL('../pages/Performance.tsx', import.meta.url), 'utf8');
-const logPanel = readFileSync(
-  new URL('../components/settings/GatewayLogPanel.tsx', import.meta.url),
-  'utf8',
-);
-const wizard = readFileSync(
-  new URL('../hooks/useSetupFlow/useWizardSession.ts', import.meta.url),
-  'utf8',
-);
-const setupFlow = readFileSync(new URL('../hooks/useSetupFlow/index.ts', import.meta.url), 'utf8');
-const environmentReview = readFileSync(
-  new URL('../hooks/useSetupFlow/useSetupEnvironmentReview.ts', import.meta.url),
-  'utf8',
-);
-const pluginRecovery = readFileSync(
-  new URL('../services/gateway/pluginRecovery.ts', import.meta.url),
-  'utf8',
-);
-const openclawRepair = readFileSync(
-  new URL('../runtime/openclawRepair.ts', import.meta.url),
-  'utf8',
-);
-const channelRuntime = readFileSync(
-  new URL('../services/openclawChannelRuntime.ts', import.meta.url),
-  'utf8',
-);
-const configSchema = readFileSync(
-  new URL('../services/openclawConfigSchema.ts', import.meta.url),
-  'utf8',
-);
-const channelsCenter = readFileSync(
-  new URL('../pages/ChannelsCenter/index.tsx', import.meta.url),
-  'utf8',
-);
-const configManager = readFileSync(
-  new URL('../pages/ConfigManager/index.tsx', import.meta.url),
-  'utf8',
-);
-const providersTab = readFileSync(
-  new URL('../pages/ConfigManager/ProvidersTab.tsx', import.meta.url),
-  'utf8',
-);
-const eventModal = readFileSync(
-  new URL('../pages/Calendar/EventModal.tsx', import.meta.url),
-  'utf8',
-);
-const gatewayProcessObservation = readFileSync(
-  new URL('../services/gateway/gatewayProcessObservation.ts', import.meta.url),
-  'utf8',
-);
-const gatewayConnectionManager = readFileSync(
-  new URL('../services/gateway/GatewayConnectionManager.ts', import.meta.url),
-  'utf8',
-);
-const gatewayActionExecutor = readFileSync(
-  new URL('../services/gateway/GatewayActionExecutor.ts', import.meta.url),
-  'utf8',
-);
-const gatewayConnectionTargetResolver = readFileSync(
-  new URL('../services/gateway/GatewayConnectionTargetResolver.ts', import.meta.url),
-  'utf8',
-);
-const gatewayRescue = readFileSync(new URL('../runtime/gatewayRescue.ts', import.meta.url), 'utf8');
-const openclawMediaPreview = readFileSync(
-  new URL('../runtime/openClawMediaPreview.ts', import.meta.url),
-  'utf8',
-);
-const gatewayLifecyclePanel = readFileSync(
-  new URL('../components/settings/GatewayLifecyclePanel.tsx', import.meta.url),
-  'utf8',
-);
-const gatewayConnection = readFileSync(
-  new URL('../services/gateway/Connection.ts', import.meta.url),
-  'utf8',
-);
-const gatewayCredentialBinding = readFileSync(
-  new URL('../services/gateway/GatewayCredentialBinding.ts', import.meta.url),
-  'utf8',
-);
-const gatewayControlUi = readFileSync(
-  new URL('../services/gateway/GatewayControlUi.ts', import.meta.url),
-  'utf8',
-);
-const collaborationChatProvider = readFileSync(
-  new URL('../runtime/CollaborationChatRuntime.tsx', import.meta.url),
-  'utf8',
-);
-const settingsPage = readFileSync(new URL('../pages/SettingsPage.tsx', import.meta.url), 'utf8');
-const gatewayErrorScreen = readFileSync(
-  new URL('../pages/GatewayErrorScreen.tsx', import.meta.url),
-  'utf8',
-);
-const gatewayProcessRecoveryHook = readFileSync(
-  new URL('../hooks/useGatewayProcessRecovery.ts', import.meta.url),
-  'utf8',
-);
-const persistentNotificationRepository = readFileSync(
-  new URL('../services/persistentNotifications.ts', import.meta.url),
-  'utf8',
-);
-const notificationService = readFileSync(
-  new URL('../runtime/notifications.ts', import.meta.url),
-  'utf8',
-);
-const persistentNotificationHook = readFileSync(
-  new URL('../hooks/usePersistentNotifications.ts', import.meta.url),
-  'utf8',
-);
-const notificationCommand = readFileSync(
-  new URL('../../src-tauri/src/commands/notification.rs', import.meta.url),
-  'utf8',
-);
-const terminalShellPanel = readFileSync(
-  new URL('../components/Terminal/ShellTerminalPanel.tsx', import.meta.url),
-  'utf8',
-);
-const skillHubManager = readFileSync(
-  new URL('../pages/SkillHubManager.tsx', import.meta.url),
-  'utf8',
-);
-const skillHubRuntime = readFileSync(
-  new URL('../services/skillHubRuntime.ts', import.meta.url),
-  'utf8',
-);
-const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
-const commandPalette = readFileSync(new URL('../runtime/CommandPalette.tsx', import.meta.url), 'utf8');
-const chatView = readFileSync(new URL('../pages/ChatView.tsx', import.meta.url), 'utf8');
-const gateway = readFileSync(
-  new URL('../../src-tauri/src/commands/gateway.rs', import.meta.url),
-  'utf8',
-);
-const ensure = readFileSync(
-  new URL('../../src-tauri/src/commands/ensure.rs', import.meta.url),
-  'utf8',
-);
-const gatewayProcess = readFileSync(
-  new URL('../../src-tauri/src/state/gateway_process.rs', import.meta.url),
-  'utf8',
-);
-const deviceIdentity = readFileSync(
-  new URL('../../src-tauri/src/commands/device_identity.rs', import.meta.url),
-  'utf8',
-);
-const dwsOperation = readFileSync(
-  new URL('../../src-tauri/src/commands/dws_operation.rs', import.meta.url),
-  'utf8',
-);
-const tauriLib = readFileSync(new URL('../../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+type TauriInvocation = {
+  command: string;
+  args: unknown;
+};
 
-test('Tauri command wrappers match the Rust Gateway result contracts', () => {
-  assert.match(gateway, /pub async fn start_gateway\([\s\S]*?Result<GatewayStatus, String>/);
-  assert.match(commands, /invoke<GatewayStatus>\("start_gateway"/);
-  assert.doesNotMatch(commands, /invoke<any>\("start_gateway"/);
-  assert.match(gateway, /pub async fn restart_gateway\([\s\S]*?Result<GatewayStatus, String>/);
-  assert.match(commands, /export const restartGateway = \(port\?: number\)/);
+type TauriInternals = {
+  invoke?: (command: string, args?: unknown) => Promise<unknown>;
+};
 
-  const rustLogLevel = gatewayProcess.slice(
-    gatewayProcess.indexOf('pub enum LogLevel'),
-    gatewayProcess.indexOf('pub enum LogSource'),
+const tauriWindow = globalThis.window as Window & { __TAURI_INTERNALS__?: TauriInternals };
+
+const gatewayStatus = {
+  running: true,
+  port: 18789,
+  pid: null,
+  token: null,
+};
+
+async function captureTauriInvocations<T>(
+  resultFor: (command: string, args: unknown) => unknown,
+  run: (calls: TauriInvocation[]) => Promise<T>,
+): Promise<T> {
+  const previous = tauriWindow.__TAURI_INTERNALS__;
+  const calls: TauriInvocation[] = [];
+  tauriWindow.__TAURI_INTERNALS__ = {
+    ...previous,
+    invoke: async (command, args) => {
+      calls.push({ command, args });
+      return resultFor(command, args);
+    },
+  };
+  try {
+    return await run(calls);
+  } finally {
+    tauriWindow.__TAURI_INTERNALS__ = previous;
+  }
+}
+
+test('Gateway 生命周期包装器保留选定运行时的命令与参数语义', async () => {
+  await captureTauriInvocations(
+    (command) => {
+      if (command === 'get_gateway_runtime_snapshot') {
+        return { lifecycle: 'running', mode: 'managed_child', restarting: false, port: 18789, managed_pid: null };
+      }
+      if (command === 'probe_selected_gateway') return true;
+      if (command === 'stop_gateway') return undefined;
+      return gatewayStatus;
+    },
+    async (calls) => {
+      assert.deepEqual(await startGateway(), gatewayStatus);
+      assert.deepEqual(await startGateway(19000), gatewayStatus);
+      assert.deepEqual(await restartGateway(), gatewayStatus);
+      assert.deepEqual(await restartGateway(19000), gatewayStatus);
+      assert.equal(await probeSelectedGateway(), true);
+      assert.equal(await probeSelectedGateway(19000), true);
+      await stopGateway();
+      assert.deepEqual(await getGatewayRuntimeSnapshot(), {
+        lifecycle: 'running',
+        mode: 'managed_child',
+        restarting: false,
+        port: 18789,
+        managed_pid: null,
+      });
+      assert.deepEqual(calls, [
+        { command: 'start_gateway', args: {} },
+        { command: 'start_gateway', args: { port: 19000 } },
+        { command: 'restart_gateway', args: {} },
+        { command: 'restart_gateway', args: { port: 19000 } },
+        { command: 'probe_selected_gateway', args: {} },
+        { command: 'probe_selected_gateway', args: { port: 19000 } },
+        { command: 'stop_gateway', args: {} },
+        { command: 'get_gateway_runtime_snapshot', args: {} },
+      ]);
+    },
   );
-  assert.match(rustLogLevel, /Info/);
-  assert.match(rustLogLevel, /Warn/);
-  assert.match(rustLogLevel, /Error/);
-  assert.doesNotMatch(rustLogLevel, /\n\s+(?:Trace|Debug),/);
-  assert.match(commands, /export type LogLevel = 'info' \| 'warn' \| 'error'/);
-  assert.doesNotMatch(adapter, /\bany\b/);
-  assert.doesNotMatch(performancePage, /window\.aegis as any/);
-  assert.match(performancePage, /window\.aegis\?\.systemMetrics\?\.onMetrics/);
-  assert.match(adapter, /parseTauriPlatformInfo\(await invoke<unknown>\("get_platform_info"\)\)/);
-  assert.match(commands, /export const getNativePlatformInfo = async \(\): Promise<NativePlatformInfo>/);
-  assert.match(commands, /parseTauriPlatformInfo\(await invoke<unknown>\('get_platform_info'\)\)/);
-  assert.match(commands, /invoke<GatewayDeviceChallengeSignature>\('sign_gateway_device_challenge', \{ params \}\)/);
-  assert.match(deviceIdentity, /app_config_dir\(\)/);
-  assert.match(deviceIdentity, /private_key/);
-  assert.match(deviceIdentity, /from_mode\(0o600\)/);
-  assert.doesNotMatch(adapter, /sign: async \(params: DeviceSignParams\)/);
 });
 
-test('DWS installation and authorization stay on the verified runtime command boundary', () => {
-  assert.match(commands, /startDwsOperation[\s\S]*invoke<DwsOperationStarted>\('start_dws_operation'/);
-  assert.match(commands, /cancelDwsOperation[\s\S]*invoke<void>\('cancel_dws_operation'/);
-  assert.match(dwsOperation, /DWS_PACKAGE: &str = "dingtalk-workspace-cli"/);
-  assert.match(dwsOperation, /DwsOperationKind::Install =>[\s\S]*command\.args\(\["install", "-g", DWS_PACKAGE/);
-  assert.match(dwsOperation, /DwsOperationKind::Authorize[\s\S]*auth.*login.*--device/);
-  assert.match(dwsOperation, /validated_target\(&state, &target_fingerprint, &expected_connection_id\)/);
-  assert.match(dwsOperation, /redact_line/);
-  assert.match(tauriLib, /commands::dws_operation::start_dws_operation/);
-  assert.match(tauriLib, /commands::dws_operation::cancel_dws_operation/);
-  assert.doesNotMatch(dwsOperation, /access_token.*println|refresh_token.*println/);
+test('智能体资料包装器保留独立持久化命令和字段边界', async () => {
+  const profile = { domain: 'research', scope: 'internal tools' };
+  await captureTauriInvocations(
+    (command) => {
+      if (command === 'load_agent_profiles') return { research: profile };
+      if (command === 'save_agent_profile') return profile;
+      return undefined;
+    },
+    async (calls) => {
+      assert.deepEqual(await loadAgentProfiles(), { research: profile });
+      assert.deepEqual(await saveAgentProfile({
+        agentId: ' research ',
+        domain: ' research ',
+        scope: ' internal tools ',
+      }), profile);
+      await deleteAgentProfile(' research ');
+      assert.deepEqual(calls, [
+        { command: 'load_agent_profiles', args: {} },
+        {
+          command: 'save_agent_profile',
+          args: { agent_id: 'research', domain: 'research', scope: 'internal tools' },
+        },
+        { command: 'delete_agent_profile', args: { agent_id: 'research' } },
+      ]);
+    },
+  );
 });
 
-test('ensure documentation follows the selected-runtime-only Rust policy', () => {
-  assert.match(ensure, /切换运行时必须经过显式设置流程/);
-  assert.match(commands, /only the persisted runtime selected by the user/);
-  assert.doesNotMatch(commands, /Tries native|Debounced to one call per 60s/);
+test('设备签名和钉钉操作保持网关身份与操作标识的嵌套边界', async () => {
+  const signatureParams: GatewayDeviceChallengeParams = {
+    nonce: 'nonce-1',
+    signedAt: 1_700_000_000_000,
+    clientId: 'junqi-desktop',
+    clientMode: 'desktop',
+    role: 'operator',
+    scopes: ['operator.admin'],
+    token: 'session-token',
+    platform: 'darwin',
+    deviceFamily: 'desktop',
+  };
+  await captureTauriInvocations(
+    (command) => {
+      if (command === 'sign_gateway_device_challenge') {
+        return {
+          deviceId: 'device-1',
+          publicKey: 'public-key-1',
+          signature: 'signature-1',
+          signedAt: signatureParams.signedAt,
+          nonce: signatureParams.nonce,
+        };
+      }
+      if (command === 'start_dws_operation') {
+        return { operationId: 'operation-1', kind: 'authorize' };
+      }
+      return undefined;
+    },
+    async (calls) => {
+      assert.equal((await signGatewayDeviceChallenge(signatureParams)).signature, 'signature-1');
+      await approveSelectedGatewayDevice('request-1');
+      assert.deepEqual(
+        await startDwsOperation('runtime-1', 'connection-1', 'authorize'),
+        { operationId: 'operation-1', kind: 'authorize' },
+      );
+      await cancelDwsOperation('runtime-1', 'connection-1', 'operation-1');
+      assert.deepEqual(calls, [
+        { command: 'sign_gateway_device_challenge', args: { params: signatureParams } },
+        { command: 'approve_selected_gateway_device', args: { requestId: 'request-1' } },
+        {
+          command: 'start_dws_operation',
+          args: {
+            targetFingerprint: 'runtime-1',
+            expectedConnectionId: 'connection-1',
+            kind: 'authorize',
+          },
+        },
+        {
+          command: 'cancel_dws_operation',
+          args: {
+            targetFingerprint: 'runtime-1',
+            expectedConnectionId: 'connection-1',
+            operationId: 'operation-1',
+          },
+        },
+      ]);
+    },
+  );
 });
 
-test('shared Gateway commands have one renderer invocation boundary', () => {
-  for (const source of [
-    adapter,
-    logPanel,
-    wizard,
-    setupFlow,
-    environmentReview,
-    pluginRecovery,
-    openclawRepair,
-    gatewayRescue,
-    openclawMediaPreview,
-    gatewayLifecyclePanel,
-  ]) {
-    assert.doesNotMatch(
-      source,
-      /invoke(?:<[^>]+>)?\(["'](?:check_openclaw|start_gateway|restart_gateway|ensure_gateway_running|get_gateway_logs|clear_gateway_logs|handoff_gateway_to_official_service|probe_selected_gateway|gateway_status|repair_openclaw|diagnose_gateway_recovery|list_broken_gateway_plugins|heal_openclaw_plugin|disable_openclaw_plugin|list_gateway_rescue_targets|gateway_rescue_chat|create_openclaw_media_preview_url|get_gateway_runtime_snapshot|probe_gateway_port|open_control_ui|get_legacy_gateway_credential|delete_legacy_gateway_credential)["']/,
-    );
-  }
-  assert.match(adapter, /await checkOpenclaw\(\)/);
-  assert.doesNotMatch(adapter, /(?:startGateway|ensureGatewayRunning|restartGateway)\(/);
-  assert.match(logPanel, /await getGatewayLogs\(200\)/);
-  assert.match(wizard, /await handoffGatewayToOfficialService\(\)/);
-  assert.match(wizard, /await probeSelectedGateway\(\)/);
-  assert.match(setupFlow, /await probeSelectedGateway\(port\)/);
-  assert.match(environmentReview, /await probeSelectedGateway\(\)/);
-  assert.match(commands, /export const probeSelectedGateway = \(port\?: number\)/);
-  assert.match(commands, /export const getGatewayProcessStatus = \(\) => invoke<GatewayProcessStatus>\('gateway_status'\)/);
-  assert.match(commands, /export const getGatewayToken = \(\) => invoke<string>\('get_gateway_token'\)/);
-  assert.match(commands, /export const repairOpenclaw = \(\) => invoke<boolean>\('repair_openclaw'\)/);
-  assert.match(commands, /invoke<void>\("approve_selected_gateway_device", \{ requestId \}\)/);
-  assert.match(appSource, /await approveSelectedGatewayDevice\(requestId\)/);
-  assert.match(commands, /export const diagnoseGatewayRecovery = \(error: string\)/);
-  assert.match(commands, /export const listGatewayRescueTargets/);
-  assert.match(commands, /export const gatewayRescueChat/);
-  assert.match(commands, /export const createOpenClawMediaPreviewUrl/);
-  assert.match(commands, /export const getGatewayRuntimeSnapshot/);
-  assert.doesNotMatch(commands, /getLegacyGatewayCredential|deleteLegacyGatewayCredential|migrateGatewayCredential/);
-  assert.match(pluginRecovery, /listBrokenGatewayPluginsCommand\(error\)/);
-  assert.match(pluginRecovery, /healOpenclawPluginCommand\(id, reason\)/);
-  assert.match(openclawRepair, /createOpenClawRepairCoordinator\(repairOpenclaw\)/);
-  assert.match(gatewayRescue, /listGatewayRescueTargets\(\)/);
-  assert.match(gatewayRescue, /gatewayRescueChat/);
-  assert.match(openclawMediaPreview, /createOpenClawMediaPreviewUrl/);
-  assert.match(gatewayLifecyclePanel, /getGatewayRuntimeSnapshot\(\)/);
-  assert.match(gatewayConnection, /storeGatewayConnectionDeviceCredential/);
-  assert.doesNotMatch(gatewayConnection, /window\.aegis\.pairing/);
-  assert.doesNotMatch(adapter, /getStoredGatewayCredentialToken/);
-  assert.doesNotMatch(adapter, /storeGatewayConnectionDeviceCredential/);
-  assert.match(gatewayCredentialBinding, /resolveGatewayConnectionCredentialRuntimeKey/);
-  assert.match(gatewayCredentialBinding, /bindGatewayCredentialToInstance/);
-  assert.match(gatewayControlUi, /probeReady: probeSelectedGateway/);
-  assert.match(gatewayControlUi, /open: openGatewayControlUi/);
-  assert.doesNotMatch(gatewayControlUi, /probeGatewayPort/);
-  assert.doesNotMatch(appSource, /window\.aegis\?\.consoleUi/);
-  assert.doesNotMatch(settingsPage, /window\.aegis\?\.consoleUi/);
-  assert.doesNotMatch(adapter, /pairing:/);
-  assert.doesNotMatch(adapter, /consoleUi:/);
-  assert.doesNotMatch(adapter, /agentAuth:/);
-  assert.doesNotMatch(configManager, /window\.aegis\?\.agentAuth/);
-  assert.doesNotMatch(providersTab, /window\.aegis\?\.agentAuth/);
-  assert.doesNotMatch(collaborationChatProvider, /window\.aegis\.pairing/);
-  assert.doesNotMatch(adapter, /function gatewayDeviceCredentialRuntimeKey/);
-  assert.doesNotMatch(adapter, /function migrateNativeLegacyGatewayCredential/);
+test('官方渠道包装器不重写不透明响应，并明确传递默认查询参数', async () => {
+  const catalog = { channels: [{ id: 'dingtalk' }] };
+  await captureTauriInvocations(
+    (command) => command === 'get_openclaw_channel_catalog' ? catalog : { ok: true },
+    async (calls) => {
+      assert.equal(await getOpenclawChannelCatalog(), catalog);
+      await getOpenclawChannelCapabilities('dingtalk');
+      await getOpenclawChannelStatus();
+      await getOpenclawChannelStatus('dingtalk', true);
+      await getOpenclawChannelLogs();
+      await getOpenclawChannelLogs('dingtalk', 20);
+      assert.deepEqual(calls, [
+        { command: 'get_openclaw_channel_catalog', args: {} },
+        { command: 'get_openclaw_channel_capabilities', args: { channel: 'dingtalk' } },
+        { command: 'get_openclaw_channel_status', args: { channel: null, probe: false } },
+        { command: 'get_openclaw_channel_status', args: { channel: 'dingtalk', probe: true } },
+        { command: 'get_openclaw_channel_logs', args: { channel: null, lines: 200 } },
+        { command: 'get_openclaw_channel_logs', args: { channel: 'dingtalk', lines: 20 } },
+      ]);
+    },
+  );
 });
 
-test('OpenClaw channel commands have one typed renderer boundary', () => {
-  const commandNames = /(?:get_openclaw_channel_catalog|install_openclaw_channel_plugin|get_openclaw_channel_capabilities|get_openclaw_channel_status|get_openclaw_channel_logs)/;
-  for (const source of [
-    adapter,
-    setupFlow,
-    channelRuntime,
-    configSchema,
-    channelsCenter,
-    configManager,
-    providersTab,
-    eventModal,
-    gatewayProcessObservation,
-  ]) {
-    assert.doesNotMatch(source, new RegExp(`invoke(?:<[^>]+>)?\\(["']${commandNames.source}["']`));
-    assert.doesNotMatch(source, /window\.aegis\.(?:providerRuntime|channelRuntime)/);
-  }
-  assert.doesNotMatch(commands, /getOpenclawProviderCatalog|probeOpenclawProvider|getOpenclawConfigSchema|getOpenclawAuthProfiles|probeActiveOpenclawModel/);
-  assert.match(commands, /export const getOpenclawChannelCatalog/);
-  assert.match(commands, /export const getOpenclawChannelStatus/);
-  assert.match(channelRuntime, /loadOfficialChannelStatus/);
+test('持久通知包装器保留空值和批量标记语义', async () => {
+  const listed = { notifications: [], unreadCount: 0 };
+  const ids = ['notice-1', 'notice-2'] as const;
+  await captureTauriInvocations(
+    (command) => {
+      if (command === 'get_notifications') return listed;
+      if (command === 'push_notification') {
+        return { item: { id: 'notice-1' }, inserted: true };
+      }
+      return undefined;
+    },
+    async (calls) => {
+      assert.equal(await getPersistentNotifications(), listed);
+      assert.equal((await pushPersistentNotification({
+        level: 'info',
+        title: '标题',
+        body: '正文',
+      })).inserted, true);
+      await markPersistentNotificationRead('notice-1');
+      await markPersistentNotificationsRead(ids);
+      await markPersistentNotificationsRead();
+      await clearPersistentNotifications(ids);
+      await clearPersistentNotifications();
+      assert.deepEqual(calls, [
+        { command: 'get_notifications', args: {} },
+        {
+          command: 'push_notification',
+          args: {
+            level: 'info',
+            title: '标题',
+            body: '正文',
+            url: null,
+            agent: null,
+            dedupeKey: null,
+          },
+        },
+        { command: 'mark_notification_read', args: { id: 'notice-1' } },
+        { command: 'mark_all_notifications_read', args: { ids: ['notice-1', 'notice-2'] } },
+        { command: 'mark_all_notifications_read', args: {} },
+        { command: 'clear_notifications', args: { ids: ['notice-1', 'notice-2'] } },
+        { command: 'clear_notifications', args: {} },
+      ]);
+    },
+  );
 });
 
-test('read-only selected Gateway observation uses typed process and authenticated probe commands', () => {
-  assert.match(gatewayProcessObservation, /getGatewayProcessStatus\(\)/);
-  assert.match(gatewayProcessObservation, /probeSelectedGateway\(status\.port\)/);
-  assert.match(gatewayProcessObservation, /loadGatewayProcessLogs/);
-  assert.doesNotMatch(gatewayProcessObservation, /window\.aegis/);
-  assert.doesNotMatch(gatewayErrorScreen, /window\.aegis\.gateway/);
-  assert.doesNotMatch(channelsCenter, /window\.aegis\.gateway/);
-  assert.match(gatewayConnectionManager, /subscribeGatewayProcessRuntime/);
-  assert.match(gatewayConnectionManager, /ensureSelectedGatewayRuntime/);
-  assert.match(gatewayConnectionManager, /restartSelectedGatewayRuntime/);
-  assert.doesNotMatch(gatewayConnectionManager, /window\.aegis\.(?:gateway|config)/);
-  assert.doesNotMatch(gatewayActionExecutor, /window\.aegis\.(?:gateway|config)/);
-  assert.match(gatewayActionExecutor, /resolveGatewayConnectionTarget/);
-  assert.doesNotMatch(gatewayConnectionTargetResolver, /window\.aegis/);
-  assert.match(gatewayErrorScreen, /useGatewayProcessRecovery\(onRecovered\)/);
-  assert.doesNotMatch(gatewayErrorScreen, /window\.aegis\.gateway/);
-  assert.match(gatewayProcessRecoveryHook, /subscribeGatewayProcessRuntime/);
-  assert.doesNotMatch(appSource, /window\.aegis\?\.gateway/);
-  assert.doesNotMatch(commandPalette, /window\.aegis\?\.config/);
-  assert.doesNotMatch(chatView, /window\.aegis\?\.config/);
-  assert.match(settingsPage, /resolveGatewayConnectionTarget/);
-  assert.doesNotMatch(settingsPage, /window\.aegis\?\.config/);
-});
-
-test('persistent notification operations share one typed repository boundary', () => {
-  assert.match(commands, /export const getPersistentNotifications/);
-  assert.match(commands, /export const pushPersistentNotification/);
-  assert.match(commands, /PersistentNotificationPushResult/);
-  assert.match(notificationCommand, /pub struct NotificationPushResult/);
-  assert.match(notificationService, /then\(\(inserted\) =>/);
-  assert.match(notificationService, /return result\.inserted;/);
-  assert.match(commands, /export const markPersistentNotificationRead/);
-  assert.match(commands, /export const markPersistentNotificationsRead/);
-  assert.match(commands, /export const clearPersistentNotifications/);
-  assert.match(persistentNotificationRepository, /persistentNotificationRepository/);
-  assert.match(notificationService, /persistentNotificationRepository\.push/);
-  assert.match(persistentNotificationHook, /persistentNotificationRepository\.list/);
-  assert.match(terminalShellPanel, /usePersistentNotificationPublisher/);
-  assert.match(terminalShellPanel, /markPersistentNotificationRead\(created\.id\)/);
-  assert.doesNotMatch(notificationService, /invoke\('push_notification'/);
-  assert.doesNotMatch(persistentNotificationHook, /invoke(?:<[^>]+>)?\(/);
-  assert.doesNotMatch(terminalShellPanel, /invoke(?:<[^>]+>)?\(['\"](?:push_notification|mark_notification_read)['\"]/);
-});
-
-test('local Skill Hub pages use the typed command and runtime boundaries', () => {
-  assert.match(commands, /export const listSkillHubSkills/);
-  assert.match(commands, /export const installSkillHubSkill/);
-  assert.match(commands, /export const uninstallSkillHubSkill/);
-  assert.match(commands, /export const deleteSkillHubSkill/);
-  assert.match(skillHubRuntime, /loadSkillHubState/);
-  assert.doesNotMatch(skillHubRuntime, /window\.aegis/);
-  assert.doesNotMatch(skillHubManager, /\binvoke\(/);
-  assert.match(skillHubManager, /loadSkillHubState/);
+test('原生语音与媒体预览包装器验证响应并保留运行时参数', async () => {
+  await captureTauriInvocations(
+    (command) => {
+      if (command === 'voice_capture_start') {
+        return { ownerId: 'owner-1', listening: true, reused: false };
+      }
+      if (command === 'voice_capture_stop') {
+        return { ownerId: 'owner-1', listening: false, stopped: true, reused: false };
+      }
+      if (command === 'voice_talk_play_pcm') return { queued: false };
+      if (command === 'create_openclaw_media_preview_url') {
+        return { success: true, url: 'asset://preview', error: null };
+      }
+      return undefined;
+    },
+    async (calls) => {
+      await assert.rejects(startVoiceCapture('', { sampleRateHz: 24_000, channels: 1 }), /owner/);
+      assert.deepEqual(
+        await startVoiceCapture('owner-1', { sampleRateHz: 24_000, channels: 1 }),
+        { ownerId: 'owner-1', listening: true, stopped: null, reused: false },
+      );
+      assert.deepEqual(
+        await stopVoiceCapture('owner-1'),
+        { ownerId: 'owner-1', listening: false, stopped: true, reused: false },
+      );
+      assert.equal(
+        await playTalkPcm('AA==', { sampleRateHz: 24_000, channels: 1 }),
+        'overflow',
+      );
+      await finishTalkPlayback();
+      await stopTalkPlayback();
+      assert.deepEqual(await createOpenClawMediaPreviewUrl('/runtime/attachment.png'), {
+        success: true,
+        url: 'asset://preview',
+        error: null,
+      });
+      await openGatewayControlUi();
+      assert.deepEqual(calls, [
+        {
+          command: 'voice_capture_start',
+          args: { ownerId: 'owner-1', sampleRateHz: 24_000, channels: 1 },
+        },
+        { command: 'voice_capture_stop', args: { ownerId: 'owner-1' } },
+        {
+          command: 'voice_talk_play_pcm',
+          args: { audioBase64: 'AA==', sampleRateHz: 24_000, channels: 1 },
+        },
+        { command: 'voice_talk_finish_playback', args: {} },
+        { command: 'voice_talk_stop_playback', args: {} },
+        {
+          command: 'create_openclaw_media_preview_url',
+          args: { path: '/runtime/attachment.png' },
+        },
+        { command: 'open_control_ui', args: {} },
+      ]);
+    },
+  );
 });

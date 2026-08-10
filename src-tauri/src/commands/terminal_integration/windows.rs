@@ -16,10 +16,6 @@ impl TerminalIntegrationBackend for WindowsBackend {
         Ok(EnvironmentBinding::default())
     }
 
-    fn detect_environment() -> EnvironmentBinding {
-        EnvironmentBinding::default()
-    }
-
     fn is_environment_configured(_binding: &EnvironmentBinding) -> bool {
         use winreg::enums::HKEY_CURRENT_USER;
         use winreg::RegKey;

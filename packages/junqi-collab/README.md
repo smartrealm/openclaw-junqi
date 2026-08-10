@@ -61,7 +61,7 @@ command. Every mutation is fenced to the exact verified target fingerprint and
 connection id. Before replacement it must build a private offline tgz of the
 installed plugin, journal archive/content-tree hashes and config ownership, and
 fail before mutation when that backup is unavailable. Rollback has no registry
-fallback. Health confirmation requires the embedded plugin version, schema 13,
+fallback. Health confirmation requires the embedded plugin version, schema 14,
 `durableState`, both durable-runtime signals, and all required feature flags;
 otherwise the journal remains `RecoveryRequired`.
 
@@ -146,7 +146,7 @@ The implementation applies explicit patterns at its failure boundaries:
 
 ## Storage shape
 
-The current physical database is schema 12. Its tables are:
+The current physical database is schema 14. Its tables are:
 
 ```text
 metadata
@@ -154,35 +154,35 @@ collaboration_runs, plan_revisions, work_items, attempts
 evidence, interventions, final_artifacts
 deliveries, delivery_attempts
 commands, collaboration_events, decisions, work_item_inputs
-export_jobs, deletion_jobs, deletion_command_receipts, command_receipts
-command_receipt_conflicts
+export_jobs, deletion_jobs, command_receipts
 session_mutations, session_mutation_commands
 tombstones
+workflow_templates, workflow_template_versions, workflow_run_templates
 ```
 
 The schema has explicit indexes for active-origin uniqueness, immutable run
 history, run session/status lookup, WorkItem status, active Attempts, open
 Interventions, pending/delayed commands, per-run event sequence,
-deletion/unified command receipts, active and unresolved session-mutation
+unified command receipts, active and unresolved session-mutation
 fences, mutation commands, tombstones ordered by deletion time, and deletion
 policy lookups by terminal `ended_at + id`, Run-scoped active Attempt/command,
-failed Flow command, export status, and deletion-job status. The v7
-migration added `commands_available(status, available_at, lease_expires_at, created_at)`;
-v8 added `commands.failure_count`; v9 added `commands.effect_started_at`; v10 added the Flow reconciliation
-abandonment evidence fields to tombstones; v11 added the nullable authoritative
-`deletion_job_id` used to fence recovery to one exact deletion job; v12 added
-`attempts.execution_runtime`, backfilled from the captured capability snapshot or
-an existing ACP child-session identity. `tombstones`
+failed Flow command, export status, deletion-job status, and workflow-template
+publication/version lookup. Schema initialization is current-version only: a
+new empty store is created from the canonical schema, while any existing store
+whose version or structural shape differs fails closed without mutation. No
+historical migration, compatibility wrapper, or inferred backfill path is
+retained. `tombstones`
 includes `cleanup_status`, `cleanup_error`, `cleanup_updated_at`, and nullable
 `deletion_job_id`,
 `flow_reconciliation_command_id`, `openclaw_flow_id`,
 `openclaw_flow_revision`, `flow_reconciliation_diagnostic`,
 `flow_reconciliation_abandoned_at`, and
-`flow_reconciliation_abandon_reason`; `command_receipts` preserves bounded idempotent replay
-after a Run is cascade-deleted, while `command_receipt_conflicts` quarantines
-legacy command-id namespace/hash collisions found during the v6 migration. There
-are no physical `approvals`, `capability_snapshots`, `workboard_mirrors`, or
-attachment tables.
+`flow_reconciliation_abandon_reason`. Explicit deletion tombstones must name the
+authoritative deletion job; only retention-policy tombstones may omit it.
+`command_receipts` is the sole receipt authority and preserves bounded
+idempotent replay after a Run is cascade-deleted. There are no physical
+`approvals`, `capability_snapshots`, `workboard_mirrors`, compatibility receipt,
+conflict-quarantine, or attachment tables.
 
 The command outbox uses these actual states:
 
@@ -228,9 +228,10 @@ minimal active-Run reference only. They include identity/status/revision fields
 needed for recovery, but not the Run goal, plan content, capability snapshot,
 Evidence, or transcript.
 
-Legacy command ids reused across namespaces or with conflicting payload hashes
-are recorded in `command_receipt_conflicts`. Only those ids are quarantined
-with `IDEMPOTENCY_CONFLICT`; schema migration and database startup continue.
+Every externally submitted command id is bound to one exact receipt source and
+payload hash. A mutation or internal command row without its authoritative
+receipt is treated as persisted corruption and fails closed with
+`IDEMPOTENCY_CONFLICT`; startup never reconstructs or guesses missing receipts.
 
 ## Runtime closure and race ownership
 
@@ -304,7 +305,7 @@ with `IDEMPOTENCY_CONFLICT`; schema migration and database startup continue.
   the external object identity and full audit trail.
 - A Run terminal transition and its FLOW_SYNC command commit in the same
   SQLite transaction. Startup repair scans terminal Runs and atomically inserts
-  only a missing matching command, closing legacy/interruption windows without
+  only a missing matching command, closing interruption windows without
   duplicating an existing effect.
 
 ## History and maintenance
@@ -394,9 +395,9 @@ retention records `retention-policy`. The public plugin SDK does not provide a
 verified human principal, so `operator` must not be presented as a specific
 user identity.
 
-Run-scoped unified and deletion receipts survive the cascade delete only for
-the `retentionDays` replay window. Once the tombstone is older than that window
-and its cleanup is `COMPLETED`, the sweep removes those receipts and keeps the
+Run-scoped unified receipts survive the cascade delete only for the
+`retentionDays` replay window. Once the tombstone is older than that window and
+its cleanup is `COMPLETED`, the sweep removes those receipts and keeps the
 tombstone. Unscoped receipts use the same age limit, except receipts tied to an
 unresolved `PREPARED` or `EXPIRED` session mutation remain until resolution.
 
@@ -405,10 +406,10 @@ transaction. It covers `collaboration_runs`, `plan_revisions`, `work_items`,
 `attempts` (including structured `input_json`), `evidence`, `interventions`,
 `final_artifacts`, `deliveries`, `delivery_attempts`, `collaboration_events`,
 `decisions`, and raw `work_item_inputs`. It excludes `metadata`, `commands`,
-export/deletion jobs, deletion/unified/conflict command receipt tables, both
-session mutation tables, and tombstones. This is a versioned domain-content deletion
-guard, not a whole-database hash or export digest, and is independent of the
-user-facing export limits.
+export/deletion jobs, `command_receipts`, both session mutation tables,
+tombstones, and the workflow-template tables. This is a versioned
+domain-content deletion guard, not a whole-database hash or export digest, and
+is independent of the user-facing export limits.
 
 Logical deletion and tombstone creation commit before managed JSON cleanup.
 Tombstone cleanup is `PENDING`, `PARTIAL`, or `COMPLETED`; `PARTIAL` means the

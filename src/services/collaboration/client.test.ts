@@ -25,7 +25,7 @@ test('normalizes OpenClaw INVALID_REQUEST unknown-method responses to a typed ab
   await assert.rejects(
     client.capabilities(),
     (error: unknown) => error instanceof CollaborationClientError
-      && error.code === 'METHOD_NOT_FOUND'
+      && error.code === 'METHOD_UNAVAILABLE'
       && error.method === 'junqi.collab.capabilities',
   );
   assert.equal(isCollaborationMethodUnavailable({
@@ -87,7 +87,7 @@ function validCapabilities(overrides: Record<string, unknown> = {}): Record<stri
     allowedAgentIds: ['coordinator', 'worker'],
     repairs: [],
     maintenance: {
-      active: false,
+      gateActive: false,
       lease: null,
       activeRuns: [],
       activeRunCount: 0,
@@ -96,6 +96,27 @@ function validCapabilities(overrides: Record<string, unknown> = {}): Record<stri
     ...overrides,
   };
 }
+
+test('capability decoding accepts only the canonical maintenance gate field', async () => {
+  const accepted = new CollaborationClient(async () => validCapabilities());
+  assert.equal((await accepted.capabilities()).maintenance?.active, false);
+
+  const rejected = new CollaborationClient(async () => validCapabilities({
+    maintenance: {
+      active: false,
+      lease: null,
+      activeRuns: [],
+      activeRunCount: 0,
+      activeRunsTruncated: false,
+    },
+  }));
+  await assert.rejects(
+    rejected.capabilities(),
+    (error: unknown) => error instanceof CollaborationClientError
+      && error.code === 'INVALID_RESPONSE'
+      && error.details?.path === 'response.maintenance.gateActive',
+  );
+});
 
 test('read methods use the exact collaboration RPC namespace and session identity', async () => {
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -199,14 +220,14 @@ test('operational read facade dispatches exact methods and applies the shared co
         };
       case 'junqi.collab.run.delete.get':
         return {
-          id: 'delete-job-1', run_id: 'run-1', status: 'COMPLETED',
-          confirmation_digest: DELETE_DIGEST, last_error: null, created_at: 1, updated_at: 2,
+          id: 'delete-job-1', runId: 'run-1', status: 'COMPLETED',
+          confirmationDigest: DELETE_DIGEST, lastError: null, createdAt: 1, updatedAt: 2,
         };
       case 'junqi.collab.export.get':
         return {
-          id: 'export-job-1', run_id: 'run-1', status: 'COMPLETED', format: 'json',
-          artifact_path: 'exports/export-job-1.json', digest: 'a'.repeat(64), last_error: null,
-          created_at: 1, updated_at: 2,
+          id: 'export-job-1', runId: 'run-1', status: 'COMPLETED', format: 'json',
+          artifactPath: 'exports/export-job-1.json', digest: 'a'.repeat(64), lastError: null,
+          createdAt: 1, updatedAt: 2,
         };
       case 'junqi.collab.export.download':
         return {
@@ -251,8 +272,8 @@ test('operational read facade dispatches exact methods and applies the shared co
   ]);
 
   const invalid = new CollaborationClient(async () => ({
-    id: 'delete-job-other', run_id: 'run-1', status: 'COMPLETED',
-    confirmation_digest: DELETE_DIGEST, last_error: null, created_at: 1, updated_at: 2,
+    id: 'delete-job-other', runId: 'run-1', status: 'COMPLETED',
+    confirmationDigest: DELETE_DIGEST, lastError: null, createdAt: 1, updatedAt: 2,
   }));
   await assert.rejects(
     invalid.getRunDeletionJob({ jobId: 'delete-job-1', expectedRunId: 'run-1' }),
@@ -281,12 +302,12 @@ test('operational read facade isolates immutable decoder expectations from trans
 
     return {
       id: 'delete-job-other',
-      run_id: 'run-other',
+      runId: 'run-other',
       status: 'COMPLETED',
-      confirmation_digest: DELETE_DIGEST,
-      last_error: null,
-      created_at: 1,
-      updated_at: 2,
+      confirmationDigest: DELETE_DIGEST,
+      lastError: null,
+      createdAt: 1,
+      updatedAt: 2,
     };
   });
 
@@ -561,12 +582,12 @@ test('tombstone list uses the audit RPC and validates cleanup metadata', async (
   });
 });
 
-test('legacy tombstones normalize missing Flow reconciliation audit fields to null', async () => {
+test('tombstones reject missing Flow reconciliation audit fields', async () => {
   const client = new CollaborationClient(async () => ({
     collaborationInstanceId: 'instance-audit',
     tombstones: [{
-      id: 'legacy-tombstone',
-      runId: 'legacy-run',
+      id: 'incomplete-tombstone',
+      runId: 'run-with-incomplete-audit',
       actor: 'retention-policy',
       contentDigest: 'digest',
       deletedAt: 10,
@@ -578,25 +599,10 @@ test('legacy tombstones normalize missing Flow reconciliation audit fields to nu
     }],
   }));
 
-  const response = await client.listTombstones();
-  assert.deepEqual(response.tombstones[0], {
-    id: 'legacy-tombstone',
-    runId: 'legacy-run',
-    actor: 'retention-policy',
-    contentDigest: 'digest',
-    deletedAt: 10,
-    cleanupStatus: 'COMPLETED',
-    cleanupError: null,
-    cleanupUpdatedAt: 10,
-    deletionJobId: null,
-    deletionJobStatus: null,
-    flowReconciliationCommandId: null,
-    openclawFlowId: null,
-    openclawFlowRevision: null,
-    flowReconciliationDiagnostic: null,
-    flowReconciliationAbandonedAt: null,
-    flowReconciliationAbandonReason: null,
-  });
+  await assert.rejects(
+    client.listTombstones(),
+    (error: unknown) => error instanceof CollaborationClientError && error.code === 'INVALID_RESPONSE',
+  );
 });
 
 test('tombstones accept explicitly null Flow reconciliation audit fields', async () => {
@@ -605,7 +611,7 @@ test('tombstones accept explicitly null Flow reconciliation audit fields', async
     tombstones: [{
       id: 'tombstone-with-null-audit',
       runId: 'run-without-abandonment',
-      actor: 'operator',
+      actor: 'retention-policy',
       contentDigest: 'digest',
       deletedAt: 10,
       cleanupStatus: 'COMPLETED',
@@ -625,6 +631,35 @@ test('tombstones accept explicitly null Flow reconciliation audit fields', async
   const response = await client.listTombstones();
   assert.equal(response.tombstones[0]?.flowReconciliationCommandId, null);
   assert.equal(response.tombstones[0]?.flowReconciliationAbandonReason, null);
+});
+
+test('operator tombstones require an authoritative deletion job', async () => {
+  const client = new CollaborationClient(async () => ({
+    collaborationInstanceId: 'instance-audit',
+    tombstones: [{
+      id: 'operator-tombstone-without-job',
+      runId: 'run-without-job',
+      actor: 'operator',
+      contentDigest: 'digest',
+      deletedAt: 10,
+      cleanupStatus: 'COMPLETED',
+      cleanupError: null,
+      cleanupUpdatedAt: 10,
+      deletionJobId: null,
+      deletionJobStatus: null,
+      flowReconciliationCommandId: null,
+      openclawFlowId: null,
+      openclawFlowRevision: null,
+      flowReconciliationDiagnostic: null,
+      flowReconciliationAbandonedAt: null,
+      flowReconciliationAbandonReason: null,
+    }],
+  }));
+
+  await assert.rejects(
+    client.listTombstones(),
+    (error: unknown) => error instanceof CollaborationClientError && error.code === 'INVALID_RESPONSE',
+  );
 });
 
 test('malformed Flow reconciliation tombstone audit fields fail closed', async () => {

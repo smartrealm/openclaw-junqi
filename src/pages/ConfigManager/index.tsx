@@ -147,9 +147,7 @@ export function ConfigManagerPage() {
       const chatStore = (await import('@/stores/chatStore')).useChatStore;
       chatStore.setState({ modelsLoading: true });
 
-      // Only restart when OpenClaw says this change needs it. reloadKind is
-      // per-path and only available from config.schema.lookup; an unknown or
-      // unavailable answer degrades to restart rather than skipping it.
+      // 仅依据 OpenClaw 路径级 reloadKind 决定是否重启；未知结果失败关闭为重启。
       const changedPaths = diffConfigPaths(reloadBaseline ?? {}, savedConfig);
       const reloadPlan = await planConfigReload(
         changedPaths,
