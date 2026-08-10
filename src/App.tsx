@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '@/stores/app-store';
+import { shouldDeferColdGatewayRecovery, useAppStore } from '@/stores/app-store';
 import { useTheme } from '@/theme/useTheme';
 import { useAgentWorkspacePersistence } from '@/hooks/useAgentWorkspacePersistence';
 import { useAgentWorkspaceTaskEvents } from '@/hooks/useAgentWorkspaceTaskEvents';
@@ -43,7 +43,6 @@ import {
 import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawChatRunProjection';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
-import { openSelectedGatewayControlUi } from '@/services/gateway/GatewayControlUi';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
 import {
   resolveGatewayConnectionTarget,
@@ -51,12 +50,7 @@ import {
 } from '@/services/gateway/GatewayConnectionTargetResolver';
 import {
   loadGatewayProcessLogs,
-  observeSelectedGatewayProcess,
 } from '@/services/gateway/gatewayProcessObservation';
-import {
-  gatewayProgress,
-  type GatewayRecoveryProgress,
-} from '@/services/gateway/recoveryProgress';
 import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
 import {
   OPENCLAW_UPDATE_MAINTENANCE_FINISHED,
@@ -211,8 +205,6 @@ export default function App() {
   const gatewayBootErrorRef = useRef<string | null>(null);
   const bootRecoveryStartedRef = useRef(false);
   const verifiedGatewayHandoffRef = useRef(false);
-  const manualGatewayRecoveryInFlightRef = useRef(false);
-  const gatewayRecoveryProgressActiveRef = useRef(false);
   const previousVoiceSessionRef = useRef(activeSessionKey);
 
   useEffect(() => {
@@ -222,8 +214,6 @@ export default function App() {
     }
     previousVoiceSessionRef.current = activeSessionKey;
   }, [activeSessionKey]);
-  const openControlUiAfterRecoveryRef = useRef(false);
-
   useEffect(() => {
     if (officialMainSessionKey) setDefaultMainSessionKey(officialMainSessionKey);
   }, [officialMainSessionKey, setDefaultMainSessionKey]);
@@ -556,8 +546,7 @@ export default function App() {
     setWorkspaceStartupMode('cold');
   }, [connected, setWorkspaceStartupMode, workspaceStartupMode]);
 
-  // Cold-start recovery is lifecycle state, not a rendering gate. The
-  // workbench remains available while the Gateway connects in the background.
+  // 冷启动恢复属于生命周期状态而非渲染门禁，后台连接期间工作台仍保持可用。
   useEffect(() => {
     if (!connected || coldStartRecoveryCompletedRef.current) return;
     coldStartRecoveryCompletedRef.current = true;
@@ -568,19 +557,6 @@ export default function App() {
     debugLog('gateway', `[recovery] ${line}`);
   }, []);
 
-  /**
-   * Emit a step="gateway" setup-progress event for StatusBar (and any
-   * other listener) to consume. Same shape Rust emits via setup-progress,
-   * just synthesized in-process so non-install flows (manual reconnect,
-   * boot recovery) still show granular progress text inline.
-   */
-  const emitGatewayProgress = useCallback((detail: GatewayRecoveryProgress) => {
-    gatewayRecoveryProgressActiveRef.current = detail.status === 'running';
-    window.dispatchEvent(new CustomEvent('aegis:gateway-progress', {
-      detail,
-    }));
-  }, []);
-
   const cancelGatewayMigrationRetry = useCallback(() => {
     return gatewayLifecycle.cancelMigrationWait();
   }, []);
@@ -588,9 +564,7 @@ export default function App() {
   const restartGatewayFromBoot = useCallback(async (diagnostic?: string, source = 'app-recovery') => {
     if (!hasTauriEventBridge()) {
       const message = 'Gateway restart is unavailable in this runtime.';
-      emitGatewayProgress(gatewayProgress.restartUnavailable());
       setGatewayBootError(message);
-      openControlUiAfterRecoveryRef.current = false;
       return false;
     }
     addBootRecoveryLog('Restarting Gateway service…');
@@ -605,25 +579,17 @@ export default function App() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       addBootRecoveryLog(`Gateway restart failed: ${message}`);
-      emitGatewayProgress(gatewayProgress.restartFailed(message));
       setGatewayBootError(message);
-      openControlUiAfterRecoveryRef.current = false;
       const logs = await loadGatewayProcessLogs(80);
       setGatewayBootLogs(formatGatewayLogs(logs));
       return false;
     }
-  }, [addBootRecoveryLog, emitGatewayProgress]);
+  }, [addBootRecoveryLog]);
 
-  // During boot, separate two different failures:
-  // 1. Gateway process is running, but the WebSocket handshake is late.
-  // 2. Gateway process is not running, so WebSocket retries cannot succeed.
-  // The second case starts recovery immediately instead of waiting through
-  // handshake retry timers.
+  // 冷启动只提交一次统一恢复意图；进程核验、必要重启与认证连接均由协调器收敛。
   useEffect(() => {
-    // Setup owns this connection until the authenticated handoff either
-    // succeeds or times out. Starting a cold recovery here would restart a
-    // healthy Gateway and replay stale lifecycle diagnostics in the workspace.
-    if (workspaceStartupMode === 'verified-gateway-handoff') return;
+    // Setup 在认证交接成功或超时前拥有该连接，此时不得启动竞争的冷恢复。
+    if (shouldDeferColdGatewayRecovery(workspaceStartupMode)) return;
     if (setupComplete !== true) return;
     if (cachedSetupValidationPending) return;
     if (openclawUpdateActive) return;
@@ -637,58 +603,28 @@ export default function App() {
     bootRecoveryStartedRef.current = true;
 
     let cancelled = false;
-    const startGatewayRecovery = async (reason: string) => {
-      addBootRecoveryLog(`Starting Gateway recovery immediately (${reason})…`);
-      emitGatewayProgress(gatewayProgress.starting());
-      try {
-        const result = await gatewayManager.ensureRunning();
-        if (cancelled || useChatStore.getState().connected) return;
-        if (result?.superseded) return;
-        if (result?.healthy) {
-          cancelGatewayMigrationRetry();
-          addBootRecoveryLog(`Gateway runtime ready (${result.mode ?? 'native'}); establishing authenticated WebSocket`);
-          emitGatewayProgress(gatewayProgress.runtimeReady(result.mode));
-          return;
-        }
-        addBootRecoveryLog(`ensure_gateway_running returned unhealthy: ${result?.error ?? 'unknown error'}`);
-        emitGatewayProgress(gatewayProgress.ensureUnhealthy());
-        await restartGatewayFromBoot(result?.error ?? reason);
-      } catch (err) {
-        if (cancelled || useChatStore.getState().connected) return;
-        addBootRecoveryLog(`ensure_gateway_running exception: ${String(err)}`);
-        emitGatewayProgress(gatewayProgress.ensureFailed());
-        await restartGatewayFromBoot(String(err));
-      }
-    };
-
     void (async () => {
       if (useChatStore.getState().connected) return;
-      addBootRecoveryLog('Checking local Gateway status before recovery…');
-      try {
-        const status = await observeSelectedGatewayProcess();
-        if (cancelled || useChatStore.getState().connected) return;
-        if (status.ready) {
-          cancelGatewayMigrationRetry();
-          addBootRecoveryLog('Gateway process is running; reconnecting WebSocket quietly…');
-          emitGatewayProgress(gatewayProgress.processDetected());
-          try { gatewayManager.reconnect(); } catch {}
-          return;
-        }
-        addBootRecoveryLog(`Gateway status is not ready: ${status.error ?? 'not running'}`);
-        await startGatewayRecovery(status.error ?? 'not running');
+      addBootRecoveryLog('Starting unified Gateway recovery…');
+      const result = await gatewayLifecycle.recover('app-cold-start', gatewayBootErrorRef.current ?? undefined);
+      if (cancelled || result.superseded) return;
+      if (result.success) {
+        cancelGatewayMigrationRetry();
+        addBootRecoveryLog(`Gateway recovery completed on connection ${result.connectionId ?? 'unknown'}`);
         return;
-      } catch (err) {
-        if (cancelled || useChatStore.getState().connected) return;
-        addBootRecoveryLog(`Gateway status check failed: ${String(err)}`);
       }
-      await startGatewayRecovery('status check failed');
+      const message = result.error ?? 'Gateway recovery failed';
+      addBootRecoveryLog(`Gateway recovery failed: ${message}`);
+      setGatewayBootError(message);
+      const logs = await loadGatewayProcessLogs(80);
+      if (!cancelled) setGatewayBootLogs(formatGatewayLogs(logs));
     })();
 
     return () => {
       cancelled = true;
       cancelGatewayMigrationRetry();
     };
-  }, [connected, coldStartRecoveryActive, cachedSetupValidationPending, openclawUpdateActive, setupComplete, workspaceStartupMode, addBootRecoveryLog, emitGatewayProgress, restartGatewayFromBoot, cancelGatewayMigrationRetry]);
+  }, [connected, coldStartRecoveryActive, cachedSetupValidationPending, openclawUpdateActive, setupComplete, workspaceStartupMode, addBootRecoveryLog, cancelGatewayMigrationRetry]);
 
   // ── uiScale is applied via the TopBar inverse-zoom + native
   // webview zoom (set by settingsStore.setUiScale). No CSS transform
@@ -860,9 +796,6 @@ export default function App() {
         }
       },
       onRetryState: (retry) => {
-        if (retry.phase === 'exhausted' && gatewayRecoveryProgressActiveRef.current) {
-          emitGatewayProgress(gatewayProgress.connectionFailed());
-        }
         if (retry.phase === 'exhausted') {
           surfaceVerifiedGatewayHandoffFailure();
           if (shouldReleaseWorkspaceAfterGatewayRetryExhaustion(
@@ -940,12 +873,7 @@ export default function App() {
       },
     });
 
-    // ── Check gateway boot status (main-process gateway *process* health) ──
-    // Must run before initConnection so we know whether to attempt a WS connection
-    // or immediately show the recovery UI.
-    // ── Gateway connection lifecycle managed by GatewayConnectionManager ──
-    // State machine handles: detect → start → connect → connected → error.
-    // App.tsx only subscribes to state changes and syncs UI state accordingly.
+    // GatewayConnectionManager 投影连接状态机，App 只订阅状态并同步界面。
     const managerUnsub = gatewayManager.onStateChange((snap) => {
       setConnectionStatus({ connected: snap.connected, connecting: snap.connecting, error: snap.error ?? undefined });
       setGatewayBootError(snap.error);
@@ -953,9 +881,7 @@ export default function App() {
       setGatewayBootLogs(snap.logs);
       setGatewayRetrying(snap.retrying);
 
-      // `selectedGatewayReady` is backed by probe_selected_gateway, which
-      // authenticates the selected state/config pair. Once it is true an old
-      // startup-migration timer must never issue a competing restart.
+      // selectedGatewayReady 来自所选 state/config 的认证探测；就绪后旧迁移计时器不得竞争重启。
       if (snap.selectedGatewayReady) {
         cancelGatewayMigrationRetry();
       }
@@ -985,33 +911,15 @@ export default function App() {
       }
 
       if (snap.connected) {
-        if (gatewayRecoveryProgressActiveRef.current) {
-          emitGatewayProgress(gatewayProgress.recoveryComplete());
-        }
         setGatewayBootError(null);
         setGatewayBootLogs(undefined);
-        if (openControlUiAfterRecoveryRef.current) {
-          openControlUiAfterRecoveryRef.current = false;
-          void openSelectedGatewayControlUi().then((result) => {
-            if (!result.success) {
-              void addToastLazy(
-                'error',
-                t('settings.controlUi', 'Control UI'),
-                t('offline.controlUiUnavailable', '暂时无法打开 Control UI，请完成 Gateway 恢复后重试。'),
-              );
-            }
-          });
-        }
       }
     });
     gatewayManager.init();
-    // Setup owns the socket before App mounts its callbacks. Replay the current
-    // state after the manager is ready so a verified handoff is not mistaken for
-    // an unconnected cold start.
+    // Setup 先于 App 回调拥有 socket；管理器就绪后回放状态，避免把已核验交接误判为冷启动断连。
     gateway.refreshConnectionStatus();
 
-    // Configuration and session selection are separate domains. The config
-    // manager already owns the restart; this listener only reloads its model view.
+    // 配置与会话选择是独立领域；配置页负责重启，此监听器只刷新模型视图。
     const handleConfigSaved = () => {
       setTimeout(() => {
         void loadAvailableModels();
@@ -1043,47 +951,7 @@ export default function App() {
     };
     window.addEventListener('aegis:sessions-changed', handleSessionsChanged);
 
-    // Compatibility bridge for extensions or older surfaces that still emit
-    // the former command event. First-party callers use gatewayLifecycle.
-    const handleManualReconnect = (event: Event) => {
-      const detail = (event as CustomEvent<{
-        action?: string;
-        source?: string;
-        openControlUi?: boolean;
-      }>).detail;
-      if (detail?.openControlUi) openControlUiAfterRecoveryRef.current = true;
-      if (manualGatewayRecoveryInFlightRef.current) return;
-      const action = detail?.action === 'restart'
-        ? 'restart'
-        : 'reconnect';
-      const source = detail?.source || 'manual';
-      manualGatewayRecoveryInFlightRef.current = true;
-      void (async () => {
-        bootRecoveryStartedRef.current = false;
-        addBootRecoveryLog(`Gateway recovery requested (${source}, ${action})`);
-        try {
-          const result = action === 'restart'
-            ? await gatewayLifecycle.restart(source, gatewayBootErrorRef.current ?? undefined)
-            : await gatewayLifecycle.recover(source, gatewayBootErrorRef.current ?? undefined);
-          if (result.superseded) return;
-          if (!result.success) throw new Error(result.error || 'Gateway recovery failed');
-          cancelGatewayMigrationRetry();
-          addBootRecoveryLog(result.mode
-            ? `Gateway runtime ready (${result.mode}) — establishing authenticated connection`
-            : 'Gateway restart command completed');
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          addBootRecoveryLog(`Gateway recovery failed: ${message}`);
-          emitGatewayProgress(gatewayProgress.restartFailed(message));
-          setGatewayBootError(message);
-        }
-      })().finally(() => {
-        manualGatewayRecoveryInFlightRef.current = false;
-      });
-    };
-    window.addEventListener('aegis:manual-reconnect', handleManualReconnect);
-
-    // Cleanup — prevent orphan WebSocket connections on remount
+    // 卸载时清理订阅与连接，避免重新挂载后残留孤立 WebSocket。
     return () => {
       managerUnsub();
       if (deferredModelSyncTimerRef.current) {
@@ -1093,12 +961,11 @@ export default function App() {
       window.removeEventListener('aegis:config-saved', handleConfigSaved);
       window.removeEventListener('aegis:session-reset', handleSessionReset);
       window.removeEventListener('aegis:sessions-changed', handleSessionsChanged);
-      window.removeEventListener('aegis:manual-reconnect', handleManualReconnect);
       gateway.forgetSessionTranscript();
       gateway.forgetSessionViewerPresence();
       gatewayManager.destroy();
     };
-  }, [addBootRecoveryLog, cachedSetupValidationPending, cancelGatewayMigrationRetry, emitGatewayProgress, loadAgentScopedModels, loadAvailableModels, restartGatewayFromBoot, setWorkspaceStartupMode, setupComplete, startInitialWorkspaceLoad, surfaceVerifiedGatewayHandoffFailure]);
+  }, [addBootRecoveryLog, cachedSetupValidationPending, cancelGatewayMigrationRetry, loadAgentScopedModels, loadAvailableModels, restartGatewayFromBoot, setWorkspaceStartupMode, setupComplete, startInitialWorkspaceLoad, surfaceVerifiedGatewayHandoffFailure]);
 
 
   // ── Pairing Handlers ──
@@ -1106,7 +973,7 @@ export default function App() {
     debugLog('gateway', '[App] [pairing] Pairing complete - reconnecting with new token');
     const target = await resolveGatewayConnectionTarget();
     await storeGatewayConnectionDeviceCredential(target.wsUrl, token);
-    // Reconnect gateway with new token
+    // 配对完成后以新的凭据重新连接。
     gatewayManager.reconnectWithToken(token);
     setPairingIssue(null);
     pairingTriggeredRef.current = false;
@@ -1139,8 +1006,8 @@ export default function App() {
     setGatewayBootError(null);
     setGatewayBootLogs(undefined);
     setGatewayRetrying(false);
-    // Probe immediately instead of waiting for the periodic poller
-    gatewayManager.reconnect();
+    // 错误页恢复后立即进入统一重连，不等待周期探测器。
+    void gatewayLifecycle.reconnect('gateway-error-screen-recovered');
   }, []);
 
   if (setupComplete === true && cachedSetupValidationPending) {

@@ -1,8 +1,4 @@
-// ═══════════════════════════════════════════════════════════
-// GatewayConnectionManager — orchestrator layer.
-// Combines state machine + action executor + event subscription.
-// App.tsx calls manager.init() and subscribes to state changes.
-// ═══════════════════════════════════════════════════════════
+// Gateway 连接编排层：组合状态机、动作执行器和事件订阅。
 
 import { gateway } from './index';
 import { GatewayStateMachine, type GatewayAction } from './GatewayStateMachine';
@@ -12,6 +8,7 @@ import {
   ensureSelectedGatewayRuntime,
   readGatewayProcessRuntimeStatus,
   restartSelectedGatewayRuntime,
+  stopSelectedGatewayRuntime,
   subscribeGatewayProcessRuntime,
   type GatewayProcessRuntimeStatus,
 } from './gatewayProcessObservation';
@@ -38,6 +35,7 @@ interface GatewayProcessRuntimePort {
   subscribe: (listener: (status: GatewayProcessRuntimeStatus) => void) => () => void;
   ensure: () => Promise<GatewayEnsureResult>;
   restart: () => Promise<GatewayRestartResult>;
+  stop: () => Promise<GatewayRestartResult>;
 }
 
 const defaultGatewayActionExecutor: GatewayActionExecutorPort = {
@@ -50,6 +48,7 @@ const defaultGatewayProcessRuntime: GatewayProcessRuntimePort = {
   subscribe: subscribeGatewayProcessRuntime,
   ensure: ensureSelectedGatewayRuntime,
   restart: restartSelectedGatewayRuntime,
+  stop: stopSelectedGatewayRuntime,
 };
 
 export class GatewayConnectionManager {
@@ -73,14 +72,14 @@ export class GatewayConnectionManager {
     private readonly processRuntime: GatewayProcessRuntimePort = defaultGatewayProcessRuntime,
   ) {}
 
-  /** Subscribe to state changes. Returns unsubscribe function. */
+  /** 订阅状态变化并返回取消函数。 */
   onStateChange(listener: StateListener): () => void {
     this.listeners.add(listener);
     listener(this.snapshot());
     return () => this.listeners.delete(listener);
   }
 
-  /** Initialize: subscribe to gateway status events + probe. */
+  /** 初始化进程状态订阅与探测。 */
   init(): void {
     this.rejectPendingStart('Gateway manager was reinitialized');
     const generation = this.lifecycleEpoch.activate();
@@ -102,30 +101,29 @@ export class GatewayConnectionManager {
 
   }
 
-  /** Notify that WebSocket has opened (called from App onStatusChange). */
+  /** 接收 App 转发的 WebSocket 已连接事实。 */
   notifyWsOpen(): void {
     this.dispatch({ type: 'WS_OPEN' });
   }
 
-  /** Notify that WebSocket has closed (called from App onStatusChange). */
+  /** 接收 App 转发的 WebSocket 已断开事实。 */
   notifyWsClose(): void {
     this.dispatch({ type: 'WS_CLOSE' });
   }
 
-  /** Manually trigger a retry from ERROR state. */
+  /** 从错误状态触发一次重试。 */
   retry(): void {
     this.beginRecovery('RETRY');
   }
 
-  /** Reset to DETECTING (e.g. after config change). */
+  /** 配置变化后重置为探测状态。 */
   reset(): void {
     this.invalidateLifecycle('Gateway lifecycle was reset');
     this.dispatch({ type: 'RESET' });
   }
 
   /**
-   * Immediately probe gateway process status and drive the FSM from the result.
-   * Use after reset() to avoid waiting up to 2s for the periodic poller to fire.
+   * 立即探测 Gateway 进程并驱动状态机，避免 reset 后等待周期探测。
    */
   probe(): void {
     const generation = this.lifecycleEpoch.capture();
@@ -151,7 +149,7 @@ export class GatewayConnectionManager {
     });
   }
 
-  /** Reset FSM to DETECTING and immediately probe — active reconnect. */
+  /** 重置状态机并立即探测，主动建立新连接。 */
   reconnect(): void {
     this.beginRecovery('RESET');
   }
@@ -232,6 +230,36 @@ export class GatewayConnectionManager {
     return result;
   }
 
+  async stop(): Promise<GatewayRestartResult> {
+    const generation = this.beginProcessRecovery();
+    let result: GatewayRestartResult;
+    try {
+      result = await this.processRuntime.stop();
+    } catch (error) {
+      result = { success: false, error: String(error) };
+    }
+    if (!this.isCurrent(generation)) return { ...result, superseded: true };
+    if (result.success === false) {
+      this.dispatch({
+        type: 'STATUS_RECEIVED',
+        processAlive: false,
+        endpointReady: false,
+        error: result.error ?? 'Gateway stop failed',
+        retrying: false,
+      });
+      return result;
+    }
+    gateway.disconnect();
+    this.dispatch({
+      type: 'STATUS_RECEIVED',
+      processAlive: false,
+      endpointReady: false,
+      error: null,
+      retrying: false,
+    });
+    return result;
+  }
+
   reconnectWithToken(token: string): void {
     this.invalidateLifecycle('Gateway credentials changed');
     this.dispatch({ type: 'RESET' });
@@ -244,7 +272,7 @@ export class GatewayConnectionManager {
     gateway.connect(url, token, deviceToken);
   }
 
-  /** Cleanup — call on unmount. */
+  /** 卸载时清理状态订阅与连接。 */
   destroy(): void {
     this.lifecycleEpoch.deactivate();
     this.statusUnsub?.();
@@ -254,7 +282,7 @@ export class GatewayConnectionManager {
     gateway.disconnect();
   }
 
-  // The single Gateway orchestration core: every fact and intent commits here.
+  // Gateway 连接事实与动作意图统一提交到该状态机入口。
   private dispatch(event: GatewayEvent): void {
     if (!this.lifecycleEpoch.isActive()) return;
     if (event.type === 'INITIALIZE') {
@@ -386,5 +414,5 @@ export class GatewayConnectionManager {
   }
 }
 
-/** Singleton — shared across the app. */
+/** 应用内共享的连接管理器单例。 */
 export const gatewayManager = new GatewayConnectionManager();

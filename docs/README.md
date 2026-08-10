@@ -106,12 +106,15 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 10. [OpenClaw Gateway 挑战与策略对齐](quality/openclaw-gateway-challenge-policy-alignment-2026-08-04.md)
 11. [Gateway 原生与扩展一致性复审](quality/gateway-native-extension-consistency-followup-audit-2026-08-09.md)
 12. [Tauri Command 消费者矩阵](quality/tauri-command-consumer-matrix-2026-08-09.md)
+13. [Gateway 生命周期统一验证](gateway/gateway-lifecycle-unification-validation-2026-08-10.md)
 
 对应规格与计划：
 
 - [`../specs/gateway/2026-07-18-openclaw-gateway-lifecycle-bugfix.md`](../specs/gateway/2026-07-18-openclaw-gateway-lifecycle-bugfix.md)
 - [`../specs/gateway/2026-07-24-openclaw-gateway-service-ownership-bugfix.md`](../specs/gateway/2026-07-24-openclaw-gateway-service-ownership-bugfix.md)
+- [`../specs/gateway/2026-08-10-gateway-lifecycle-unification.md`](../specs/gateway/2026-08-10-gateway-lifecycle-unification.md)
 - [`../plans/gateway/2026-07-24-openclaw-gateway-service-ownership.md`](../plans/gateway/2026-07-24-openclaw-gateway-service-ownership.md)
+- [`../plans/gateway/2026-08-10-gateway-lifecycle-unification.md`](../plans/gateway/2026-08-10-gateway-lifecycle-unification.md)
 
 ## 多智能体协作
 

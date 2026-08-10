@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
+import { shouldDeferColdGatewayRecovery } from '@/stores/app-store';
 
 const setupFlow = readdirSync(new URL('./useSetupFlow/', import.meta.url))
   .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
@@ -395,13 +396,8 @@ test('BUG-ONB-29 Gateway 核验与官方配置向导共享同一配置呈现容�
 });
 
 test('BUG-ONB-30 verified Gateway handoff cannot start cold recovery', () => {
-  const coldRecovery = app.slice(
-    app.indexOf('// During boot, separate two different failures:'),
-    app.indexOf('// ── uiScale'),
-  );
-
-  assert.match(coldRecovery, /if \(workspaceStartupMode === 'verified-gateway-handoff'\) return;/);
-  assert.match(coldRecovery, /workspaceStartupMode,/);
+  assert.equal(shouldDeferColdGatewayRecovery('verified-gateway-handoff'), true);
+  assert.equal(shouldDeferColdGatewayRecovery('cold'), false);
 });
 
 test('BUG-ONB-31 the explicit dashboard action lands on the dashboard', () => {

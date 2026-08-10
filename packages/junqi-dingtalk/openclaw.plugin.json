@@ -78,7 +78,7 @@
     },
     "dwsPath": {
       "label": "DWS executable path",
-      "help": "Optional absolute path. Required when PATH resolves to more than one DWS executable."
+      "help": "Optional absolute DWS executable or verified npm bin/dws.js path. Required when PATH resolution is unavailable or ambiguous."
     },
     "timeoutMs": {
       "label": "Command timeout"

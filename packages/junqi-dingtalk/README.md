@@ -10,7 +10,7 @@ Write tools require an OpenClaw plugin approval. Only `allow-once` and `deny` ar
 
 Configuration:
 
-- `dwsPath`: optional absolute DWS executable path. If omitted, the plugin resolves `PATH` and rejects ambiguous matches.
+- `dwsPath`: optional absolute DWS executable or verified npm `bin/dws.js` path. JavaScript entries run through the current Gateway Node.js runtime. If omitted, the plugin resolves `PATH` and rejects ambiguous matches.
 - `timeoutMs`: command timeout from 1 to 120 seconds. Default: 30 seconds.
 - `maxOutputBytes`: combined bounded output limit from 64 KiB to 8 MiB. Default: 2 MiB.
 

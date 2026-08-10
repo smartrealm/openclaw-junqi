@@ -19,7 +19,10 @@ function deferred<T>() {
 function coordinator(overrides: {
   ensureRunning?: () => Promise<GatewayEnsureResult>;
   restart?: () => Promise<GatewayRestartResult>;
+  stop?: () => Promise<GatewayRestartResult>;
   reconnect?: () => void;
+  captureConnectionId?: () => string | null;
+  waitForConnection?: (previousConnectionId: string | null) => Promise<string>;
   wait?: (delayMs: number) => Promise<boolean>;
   verifySelectedIdentity?: () => Promise<boolean>;
 } = {}) {
@@ -27,7 +30,12 @@ function coordinator(overrides: {
     manager: {
       ensureRunning: overrides.ensureRunning ?? (async () => ({ healthy: true, mode: 'native' })),
       restart: overrides.restart ?? (async () => ({ success: true })),
+      stop: overrides.stop ?? (async () => ({ success: true })),
       reconnect: overrides.reconnect ?? (() => undefined),
+    },
+    connection: {
+      captureConnectionId: overrides.captureConnectionId ?? (() => 'old-connection'),
+      waitForConnection: overrides.waitForConnection ?? (async () => 'new-connection'),
     },
     migrationRetry: {
       wait: overrides.wait ?? (async () => true),
@@ -47,11 +55,69 @@ test('ordinary lifecycle requests share one frontend operation', async () => {
   const first = lifecycle.restart('status-bar');
   const second = lifecycle.restart('top-bar');
   assert.equal(first, second);
-  await Promise.resolve();
+  await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
   assert.equal(calls, 1);
 
   pending.resolve({ success: true });
   assert.equal((await first).success, true);
+});
+
+test('restart success is withheld until a new attested connection settles', async () => {
+  const connection = deferred<string>();
+  const previousConnectionIds: Array<string | null> = [];
+  const lifecycle = coordinator({
+    captureConnectionId: () => 'old-connection',
+    waitForConnection: (previousConnectionId) => {
+      previousConnectionIds.push(previousConnectionId);
+      return connection.promise;
+    },
+  });
+
+  let completed = false;
+  const restart = lifecycle.restart('status-bar').then((result) => {
+    completed = true;
+    return result;
+  });
+  await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
+  assert.equal(completed, false);
+  assert.deepEqual(previousConnectionIds, ['old-connection']);
+
+  connection.resolve('new-connection');
+  const result = await restart;
+  assert.equal(result.success, true);
+  assert.equal(result.connectionId, 'new-connection');
+});
+
+test('connection settlement failure makes the unified lifecycle fail', async () => {
+  const result = await coordinator({
+    waitForConnection: async () => { throw new Error('attested connection timed out'); },
+  }).restart('channels-center');
+
+  assert.equal(result.success, false);
+  assert.match(result.error ?? '', /attested connection timed out/);
+});
+
+test('stop is serialized by the same lifecycle coordinator', async () => {
+  const pendingRestart = deferred<GatewayRestartResult>();
+  const calls: string[] = [];
+  const lifecycle = coordinator({
+    restart: () => {
+      calls.push('restart');
+      return pendingRestart.promise;
+    },
+    stop: async () => {
+      calls.push('stop');
+      return { success: true };
+    },
+  });
+
+  const restart = lifecycle.restart('settings');
+  const stop = lifecycle.stop('settings');
+  pendingRestart.resolve({ success: true });
+
+  assert.equal((await restart).success, true);
+  assert.equal((await stop).success, true);
+  assert.deepEqual(calls, ['restart', 'stop']);
 });
 
 test('a stronger restart requested during recovery is queued instead of being dropped', async () => {

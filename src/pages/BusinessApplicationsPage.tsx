@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import clsx from 'clsx';
 import { useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Building2,
   Filter,
@@ -39,8 +40,10 @@ import {
   type DingTalkRuntimeIdentityProjection,
 } from '@/business-applications/dingtalkTools';
 import { dingtalkPluginInstallBlocker } from '@/business-applications/dingtalkPluginInstall';
-import { authorizeDingTalkAgent } from '@/business-applications/dingtalkAgentAuthorization';
-import { waitForDingTalkGatewayReconnect } from '@/business-applications/dingtalkGatewayReconnect';
+import {
+  authorizeDingTalkAgent,
+  configureDingTalkDwsPath,
+} from '@/business-applications/dingtalkAgentAuthorization';
 import { useBusinessActivityStore } from '@/business-applications/activityStore';
 import { parseBusinessApplicationsView } from '@/business-applications/businessApplicationsView';
 import {
@@ -64,8 +67,8 @@ import {
   getCurrentRuntimeIdentity,
   subscribeRuntimeIdentity,
 } from '@/services/gateway/runtimeIdentity';
-import { restartSelectedGatewayRuntime } from '@/services/gateway/gatewayProcessObservation';
 import { gateway } from '@/services/gateway';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 import { useDingTalkApprovalTrace } from './businessApplications/useDingTalkApprovalTrace';
 
@@ -102,16 +105,6 @@ function createAttemptId(): string {
     throw new Error('当前环境无法生成业务操作幂等标识');
   }
   return globalThis.crypto.randomUUID();
-}
-
-function readDingTalkGatewayReconnectSnapshot() {
-  const currentIdentity = getCurrentRuntimeIdentity();
-  return {
-    connected: gateway.getStatus().connected,
-    connectionId: gateway.captureConnectionId(),
-    identityConnectionId: currentIdentity?.connectionId ?? null,
-    identityVerified: currentIdentity?.verified === true,
-  };
 }
 
 function useRuntimeIdentitySnapshot() {
@@ -247,6 +240,7 @@ function FilterPane({
 }
 
 export function BusinessApplicationsPage() {
+  const { t } = useTranslation();
   const location = useLocation();
   const identity = useRuntimeIdentitySnapshot();
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
@@ -405,6 +399,59 @@ export function BusinessApplicationsPage() {
     ]);
   }, [refreshPluginStatus, refreshRuntimeIdentity, refreshTools]);
 
+  const restartAndRefreshDingTalkGateway = useCallback(async () => {
+    const result = await gatewayLifecycle.restart('business-applications-dingtalk');
+    if (!result.success) throw new Error(result.error ?? t('gateway.progress.connectionFailed'));
+    await refreshAll();
+    await refreshDingTalkState();
+  }, [refreshDingTalkState, t]);
+
+  const finalizeDwsOperation = useCallback(async (payload: DwsOperationFinished) => {
+    if (payload.cancelled || !payload.success) {
+      const phase = payload.cancelled ? 'cancelled' : 'failed';
+      setDwsOperation((current) => current?.id === payload.operationId
+        ? {
+            ...current,
+            phase,
+            message: t(payload.cancelled
+              ? 'businessApplications.dws.cancelled'
+              : 'businessApplications.dws.failed'),
+          }
+        : current);
+      await refreshDingTalkState();
+      return;
+    }
+
+    try {
+      if (payload.kind === 'install') {
+        setDwsOperation((current) => current?.id === payload.operationId
+          ? { ...current, message: t('businessApplications.dws.configuring') }
+          : current);
+        if (payload.dwsPath) {
+          await configureDingTalkDwsPath(gateway, payload.dwsPath);
+        }
+        await restartAndRefreshDingTalkGateway();
+      } else {
+        await refreshDingTalkState();
+      }
+      setDwsOperation((current) => current?.id === payload.operationId
+        ? {
+            ...current,
+            phase: 'completed',
+            message: t(payload.kind === 'install'
+              ? 'businessApplications.dws.installCompleted'
+              : 'businessApplications.dws.authorizeCompleted'),
+          }
+        : current);
+    } catch (error) {
+      const detail = errorMessage(error);
+      setDwsOutput((current) => [...current, detail].slice(-400));
+      setDwsOperation((current) => current?.id === payload.operationId
+        ? { ...current, phase: 'failed', message: t('businessApplications.dws.integrationFailed') }
+        : current);
+    }
+  }, [refreshDingTalkState, restartAndRefreshDingTalkGateway, t]);
+
   useEffect(() => {
     void refreshTools();
   }, [refreshTools]);
@@ -420,7 +467,7 @@ export function BusinessApplicationsPage() {
   useEffect(() => {
     const outputUnlisten = subscribeTauriEvent<DwsOperationOutput>('dws-operation-output', (event) => {
       const payload = event.payload;
-      const line = `${payload.stream === 'stderr' ? '[错误] ' : ''}${payload.line}`;
+      const line = `${payload.stream === 'stderr' ? t('businessApplications.dws.errorPrefix') : ''}${payload.line}`;
       const cached = [...(dwsOutputCache.current[payload.operationId] ?? []), line].slice(-400);
       dwsOutputCache.current[payload.operationId] = cached;
       setDwsOperation((current) => {
@@ -431,18 +478,18 @@ export function BusinessApplicationsPage() {
     });
     const finishedUnlisten = subscribeTauriEvent<DwsOperationFinished>('dws-operation-finished', (event) => {
       const payload = event.payload;
-      setDwsOperation((current) => {
-        if (!current || current.id !== payload.operationId) return current;
-        const phase = payload.cancelled ? 'cancelled' : payload.success ? 'completed' : 'failed';
-        return { ...current, phase, message: payload.message };
-      });
-      void refreshDingTalkState();
+      if (!payload.success && payload.message) {
+        const cached = [...(dwsOutputCache.current[payload.operationId] ?? []), payload.message].slice(-400);
+        dwsOutputCache.current[payload.operationId] = cached;
+        setDwsOutput(cached);
+      }
+      void finalizeDwsOperation(payload);
     });
     return () => {
       outputUnlisten();
       finishedUnlisten();
     };
-  }, [refreshDingTalkState]);
+  }, [finalizeDwsOperation, t]);
 
   useEffect(() => {
     if (selectedTool) return;
@@ -684,17 +731,17 @@ export function BusinessApplicationsPage() {
           kind: started.kind,
           phase: 'running',
           message: started.kind === 'install'
-            ? '正在执行 DWS 官方 npm 安装命令。'
-            : '本机运行时会自动打开浏览器扫码；Docker 或无界面运行时请按设备码提示完成授权。',
+            ? t('businessApplications.dws.installRunning')
+            : t('businessApplications.dws.authorizeRunning'),
         });
         setDwsOutput(output);
       })
       .catch((error) => {
         const message = errorMessage(error);
-        setDwsOperation({ id: 'dws-start-failed', kind, phase: 'failed', message });
+        setDwsOperation({ id: 'dws-start-failed', kind, phase: 'failed', message: t('businessApplications.dws.startFailed') });
         setDwsOutput([message]);
       });
-  }, []);
+  }, [t]);
 
   const cancelCurrentDwsOperation = useCallback(() => {
     const current = getCurrentRuntimeIdentity();
@@ -708,15 +755,7 @@ export function BusinessApplicationsPage() {
   const restartGateway = useCallback(async () => {
     setPluginOperation('restarting');
     try {
-      const previousConnectionId = gateway.captureConnectionId();
-      const result = await restartSelectedGatewayRuntime();
-      if (!result.success) throw new Error(result.error ?? 'Gateway 重启失败');
-      await waitForDingTalkGatewayReconnect({
-        previousConnectionId,
-        read: readDingTalkGatewayReconnectSnapshot,
-      });
-      await refreshAll();
-      await refreshDingTalkState();
+      await restartAndRefreshDingTalkGateway();
       setPluginError(null);
       return true;
     } catch (error) {
@@ -725,7 +764,7 @@ export function BusinessApplicationsPage() {
     } finally {
       setPluginOperation(null);
     }
-  }, [refreshDingTalkState]);
+  }, [restartAndRefreshDingTalkGateway]);
 
   const authorizeCurrentAgent = useCallback(async () => {
     if (!activeAgentId) {
@@ -736,22 +775,14 @@ export function BusinessApplicationsPage() {
     setPluginError(null);
     try {
       await authorizeDingTalkAgent(gateway, activeAgentId);
-      const previousConnectionId = gateway.captureConnectionId();
-      const result = await restartSelectedGatewayRuntime();
-      if (!result.success) throw new Error(result.error ?? 'Gateway 重启失败');
-      await waitForDingTalkGatewayReconnect({
-        previousConnectionId,
-        read: readDingTalkGatewayReconnectSnapshot,
-      });
-      await refreshAll();
-      await refreshDingTalkState();
+      await restartAndRefreshDingTalkGateway();
       setPluginError(null);
     } catch (error) {
       setPluginError(errorMessage(error));
     } finally {
       setPluginOperation(null);
     }
-  }, [activeAgentId, refreshDingTalkState]);
+  }, [activeAgentId, restartAndRefreshDingTalkGateway]);
 
   const localInstallAvailable = Boolean(identity?.verified && identity.desktopMutationAllowed);
   const pluginVisibleInSession = allTools.length > 0;

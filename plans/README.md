@@ -31,6 +31,7 @@ plans/
 ## Gateway
 
 - [Gateway 服务归属](gateway/2026-07-24-openclaw-gateway-service-ownership.md)
+- [Gateway 生命周期统一](gateway/2026-08-10-gateway-lifecycle-unification.md)
 
 ## Collaboration
 

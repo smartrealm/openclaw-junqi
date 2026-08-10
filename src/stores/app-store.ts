@@ -18,6 +18,12 @@ export type PostStorageStep = "choosing-mode" | "gateway-stopped" | "configure-o
  * off an already authenticated Gateway connection without replaying boot UI.
  */
 export type WorkspaceStartupMode = "cold" | "verified-gateway-handoff";
+
+/** 已认证 Gateway 的交接未结束前，冷启动恢复不得抢占同一连接。 */
+export function shouldDeferColdGatewayRecovery(mode: WorkspaceStartupMode): boolean {
+  return mode === "verified-gateway-handoff";
+}
+
 /**
  * Editable storage choices belong to the in-progress JunQi setup session.
  * They intentionally do not survive an app restart: a directory selection is

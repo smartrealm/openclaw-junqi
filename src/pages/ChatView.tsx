@@ -19,7 +19,7 @@ import {
   parseOpenClawActiveLeafEntryId,
 } from '@/services/gateway/activeLeafEntryId';
 import { voiceRuntime } from '@/runtime/VoiceRuntime';
-import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { chatSendCoordinator } from '@/runtime/chatSendCoordinator';
@@ -1451,7 +1451,8 @@ function ChatViewContent() {
               {connectionError && <span className="opacity-60"> — {connectionError}</span>}
               <button onClick={() => {
                 startRecoverableTask(async () => {
-                  gatewayManager.reconnect();
+                  const result = await gatewayLifecycle.recover('chat-connection-banner');
+                  if (!result.success) throw new Error(result.error ?? 'Gateway recovery failed');
                 }, (error) => debugWarn('gateway', '[ChatView] Manual reconnect failed:', error));
               }} className="mx-2 underline hover:no-underline">
                 {t('connection.reconnect')}

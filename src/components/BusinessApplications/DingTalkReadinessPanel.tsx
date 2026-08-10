@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CircleAlert, CircleCheck, CircleDashed, Copy, ExternalLink, RefreshCw, Square, Terminal, Wrench } from 'lucide-react';
 import { Button } from '@/components/shared/button/Button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -24,8 +25,9 @@ function ReadinessStep({
   state: ReadinessStepState;
   description: string;
 }) {
+  const { t } = useTranslation();
   const Icon = state === 'ready' ? CircleCheck : state === 'blocked' ? CircleAlert : CircleDashed;
-  const stateLabel = state === 'ready' ? '已核验' : state === 'blocked' ? '需处理' : '待核验';
+  const stateLabel = t(`businessApplications.readiness.stepState.${state}`);
   const stateClass = state === 'ready'
     ? 'text-aegis-success'
     : state === 'blocked' ? 'text-aegis-warning' : 'text-aegis-text-dim';
@@ -112,6 +114,7 @@ export function DingTalkReadinessPanel({
   onCancelDws: () => void;
   onDismissDws: () => void;
 }) {
+  const { t } = useTranslation();
   const [guideOpen, setGuideOpen] = useState(false);
   const [authorizationGuideOpen, setAuthorizationGuideOpen] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
@@ -143,22 +146,24 @@ export function DingTalkReadinessPanel({
   };
   const dwsOperationActive = dwsOperation?.phase === 'running';
   const description = readiness.action === 'install-plugin' && !installAvailable
-    ? '当前 Gateway 尚未提供可验证的桌面安装边界。请先确认已连接并验证由 JunQi 管理的本机 Native 或 Docker Runtime，再重新检测。'
-    : readiness.description;
+    ? t('businessApplications.readiness.installUnavailable')
+    : readiness.rawDescription
+      ?? t(`businessApplications.readiness.${readiness.descriptionKey}`, readiness.descriptionParams);
+  const title = t(`businessApplications.readiness.${readiness.titleKey}`);
   const action = readiness.action === 'install-plugin'
     ? installAvailable
-      ? <Button size="xs" variant="outline" tone="primary" loading={busy} leadingIcon={<Wrench size={12} />} onClick={onInstallPlugin} title="在当前已验证的 Gateway 中安装钉钉业务插件">在 JunQi 安装</Button>
-      : <Button size="xs" variant="outline" tone="neutral" loading={busy} leadingIcon={<RefreshCw size={12} />} onClick={onRefresh}>重新检测</Button>
+      ? <Button size="xs" variant="outline" tone="primary" loading={busy} leadingIcon={<Wrench size={12} />} onClick={onInstallPlugin} title={t('businessApplications.readiness.installPluginTitle')}>{t('businessApplications.readiness.installInJunqi')}</Button>
+      : <Button size="xs" variant="outline" tone="neutral" loading={busy} leadingIcon={<RefreshCw size={12} />} onClick={onRefresh}>{t('businessApplications.readiness.refresh')}</Button>
     : readiness.action === 'configure-agent'
-      ? <Button size="xs" variant="outline" tone="warning" loading={busy && operation === 'authorizing'} disabled={!agentId} onClick={() => setAuthorizationGuideOpen(true)}>一键授权当前 Agent</Button>
+      ? <Button size="xs" variant="outline" tone="warning" loading={busy && operation === 'authorizing'} disabled={!agentId} onClick={() => setAuthorizationGuideOpen(true)}>{t('businessApplications.readiness.authorizeAgent')}</Button>
     : readiness.action === 'install-dws'
-      ? <Button size="xs" variant="outline" tone="warning" disabled={!installAvailable || dwsOperationActive} loading={dwsOperationActive} leadingIcon={<Terminal size={12} />} onClick={onInstallDws} title={installAvailable ? '在当前已验证的运行时执行 DWS 官方安装命令' : '远程或未验证 Gateway 不允许由桌面修改运行时'}>安装 DWS</Button>
+      ? <Button size="xs" variant="outline" tone="warning" disabled={!installAvailable || dwsOperationActive} loading={dwsOperationActive} leadingIcon={<Terminal size={12} />} onClick={onInstallDws} title={t(installAvailable ? 'businessApplications.readiness.installDwsTitle' : 'businessApplications.readiness.runtimeMutationBlocked')}>{t('businessApplications.readiness.installDws')}</Button>
     : readiness.action === 'authorize-dws'
-      ? <Button size="xs" variant="outline" tone="primary" disabled={!installAvailable || dwsOperationActive} loading={dwsOperationActive} leadingIcon={<Terminal size={12} />} onClick={onAuthorizeDws} title={installAvailable ? '在当前已验证的运行时启动 DWS 官方授权' : '远程或未验证 Gateway 不允许由桌面启动授权'}>扫码授权 DWS</Button>
+      ? <Button size="xs" variant="outline" tone="primary" disabled={!installAvailable || dwsOperationActive} loading={dwsOperationActive} leadingIcon={<Terminal size={12} />} onClick={onAuthorizeDws} title={t(installAvailable ? 'businessApplications.readiness.authorizeDwsTitle' : 'businessApplications.readiness.runtimeAuthorizationBlocked')}>{t('businessApplications.readiness.authorizeDws')}</Button>
     : readiness.action === 'restart-gateway'
-      ? <Button size="xs" variant="outline" tone="warning" loading={busy} onClick={onRestartGateway}>重启 Gateway</Button>
+      ? <Button size="xs" variant="outline" tone="warning" loading={busy} onClick={onRestartGateway}>{t('businessApplications.readiness.restartGateway')}</Button>
       : readiness.action === 'refresh'
-        ? <Button size="xs" variant="outline" tone="neutral" loading={busy} leadingIcon={<RefreshCw size={12} />} onClick={onRefresh}>重新检测</Button>
+        ? <Button size="xs" variant="outline" tone="neutral" loading={busy} leadingIcon={<RefreshCw size={12} />} onClick={onRefresh}>{t('businessApplications.readiness.refresh')}</Button>
         : null;
   const installationActive = installationProgress.phase === 'checking' || installationProgress.phase === 'installing';
   const installationVisible = installationProgress.phase !== 'idle';
@@ -186,7 +191,7 @@ export function DingTalkReadinessPanel({
         {operation && !(operation === 'installing' && installationVisible) && (
           <div
             role="progressbar"
-            aria-label={operation === 'installing' ? '正在安装钉钉业务插件' : operation === 'authorizing' ? '正在授权当前 Agent' : '正在重启 Gateway'}
+            aria-label={t(operation === 'installing' ? 'businessApplications.readiness.installingPlugin' : operation === 'authorizing' ? 'businessApplications.readiness.authorizingAgent' : 'businessApplications.readiness.restartingGateway')}
             className="relative h-1 overflow-hidden border-b border-aegis-border bg-aegis-bg/75"
           >
             <span className="aegis-indeterminate-progress absolute inset-y-0 w-2/5 bg-aegis-primary" />
@@ -195,7 +200,7 @@ export function DingTalkReadinessPanel({
         <div className="flex shrink-0 items-center gap-2 px-2.5 py-2">
           <Icon size={15} className="shrink-0" aria-hidden="true" />
           <div className="min-w-0 flex-1">
-            <p className="text-[10.5px] font-medium">{readiness.title}</p>
+            <p className="text-[10.5px] font-medium">{title}</p>
             <p className="mt-0.5 text-[9.5px] leading-4 text-aegis-text-dim">{description}</p>
           </div>
           {action && <div className="shrink-0">{action}</div>}
@@ -215,38 +220,38 @@ export function DingTalkReadinessPanel({
         )}
         {!installAvailable && (readiness.action === 'install-dws' || readiness.action === 'authorize-dws') && (
           <div className={variant === 'workspace' ? 'border-t border-current/15 px-4 py-3 text-[9.5px] text-aegis-text-dim' : 'mt-2 border-t border-current/15 pt-2 text-[9.5px] text-aegis-text-dim'}>
-            当前 Gateway 不是已验证的本机或 Docker 运行时，请按官方文档在 Gateway 宿主环境完成操作。
-            <button type="button" className="ml-1 text-aegis-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60" onClick={openGuide}>查看指南</button>
+            {t('businessApplications.readiness.remoteRuntimeGuide')}
+            <button type="button" className="ml-1 text-aegis-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60" onClick={openGuide}>{t('businessApplications.readiness.viewGuide')}</button>
           </div>
         )}
         {variant === 'workspace' && (
           <div className="grid border-t border-aegis-border bg-aegis-bg/70 xl:grid-cols-[minmax(240px,0.85fr)_minmax(280px,1fr)_minmax(230px,0.8fr)]">
             <section className="min-w-0 border-b border-aegis-border p-3 xl:border-b-0 xl:border-r" aria-labelledby="dingtalk-readiness-checks-title">
-              <h2 id="dingtalk-readiness-checks-title" className="mb-1 text-[10.5px] font-semibold text-aegis-text-secondary">接入检查</h2>
-              <ReadinessStep label="OpenClaw Session" state={sessionStep} description={sessionExists ? '当前业务视图已绑定真实 Session。' : '需要选择已连接的 OpenClaw Session。'} />
-              <ReadinessStep label="钉钉业务插件" state={pluginStep} description={runtimeToolAvailable ? '当前 Session 已返回插件运行时工具。' : pluginNeedsInstall ? '需要安装或更新固定校验的插件包。' : restartRequired ? '插件已更新，等待 Gateway 重启加载。' : '插件状态已读取，仍待 Gateway 会话核验。'} />
-              <ReadinessStep label="Agent 授权" state={agentStep} description={runtimeToolAvailable ? '当前 Agent 已通过有效工具投影核验。' : agentId ? `当前 Agent ${agentId} 的工具策略和插件授权名单待确认。` : 'Gateway 尚未返回可核验的 Agent ID。'} />
-              <ReadinessStep label="DWS 身份" state={dwsStep} description={runtime?.available && runtime.currentProfile && runtime.user ? '当前 Profile、用户资料和授权投影已读取。' : runtime?.available && runtime.currentProfile ? 'Profile 已读取，用户资料仍待核验。' : runtime?.available ? 'DWS 已安装，仍需完成官方授权。' : runtime ? '当前运行时未提供可用 DWS。' : '等待当前 Session 返回 DWS 状态。'} />
+              <h2 id="dingtalk-readiness-checks-title" className="mb-1 text-[10.5px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.accessChecks')}</h2>
+              <ReadinessStep label="OpenClaw Session" state={sessionStep} description={t(sessionExists ? 'businessApplications.readiness.sessionBound' : 'businessApplications.readiness.sessionNeeded')} />
+              <ReadinessStep label={t('businessApplications.readiness.pluginStep')} state={pluginStep} description={t(runtimeToolAvailable ? 'businessApplications.readiness.pluginToolReady' : pluginNeedsInstall ? 'businessApplications.readiness.pluginInstallNeeded' : restartRequired ? 'businessApplications.readiness.pluginRestartPending' : 'businessApplications.readiness.pluginSessionPending')} />
+              <ReadinessStep label={t('businessApplications.readiness.agentStep')} state={agentStep} description={t(runtimeToolAvailable ? 'businessApplications.readiness.agentVerified' : agentId ? 'businessApplications.readiness.agentPending' : 'businessApplications.readiness.agentIdMissing', { agentId })} />
+              <ReadinessStep label={t('businessApplications.readiness.dwsIdentityStep')} state={dwsStep} description={t(runtime?.available && runtime.currentProfile && runtime.user ? 'businessApplications.readiness.dwsIdentityReady' : runtime?.available && runtime.currentProfile ? 'businessApplications.readiness.dwsUserPending' : runtime?.available ? 'businessApplications.readiness.dwsAuthorizationNeeded' : runtime ? 'businessApplications.readiness.dwsRuntimeMissing' : 'businessApplications.readiness.dwsStatusPending')} />
             </section>
             <section className="min-w-0 border-b border-aegis-border p-3 xl:border-b-0 xl:border-r" aria-labelledby="dingtalk-current-identity-title">
-              <h2 id="dingtalk-current-identity-title" className="mb-2 text-[10.5px] font-semibold text-aegis-text-secondary">当前业务身份</h2>
+              <h2 id="dingtalk-current-identity-title" className="mb-2 text-[10.5px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.currentIdentity')}</h2>
               <DingTalkRuntimeIdentity runtime={runtime} mode="full" />
             </section>
             <section className="min-w-0 p-3" aria-labelledby="dingtalk-runtime-evidence-title">
-              <h2 id="dingtalk-runtime-evidence-title" className="mb-2 text-[10.5px] font-semibold text-aegis-text-secondary">当前核验证据</h2>
+              <h2 id="dingtalk-runtime-evidence-title" className="mb-2 text-[10.5px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.currentEvidence')}</h2>
               <dl className="grid grid-cols-[76px_minmax(0,1fr)] gap-x-2 gap-y-2 border-y border-aegis-border py-3 text-[10px]">
                 <dt className="text-aegis-text-dim">Session</dt>
-                <dd className="truncate font-mono text-aegis-text-secondary" title={sessionLabel ?? undefined}>{sessionLabel ?? '未选择'}</dd>
+                <dd className="truncate font-mono text-aegis-text-secondary" title={sessionLabel ?? undefined}>{sessionLabel ?? t('businessApplications.readiness.notSelected')}</dd>
                 <dt className="text-aegis-text-dim">Agent</dt>
-                <dd className="truncate font-mono text-aegis-text-secondary" title={agentId ?? undefined}>{agentId ?? '未返回'}</dd>
-                <dt className="text-aegis-text-dim">有效工具</dt>
+                <dd className="truncate font-mono text-aegis-text-secondary" title={agentId ?? undefined}>{agentId ?? t('businessApplications.readiness.notReturned')}</dd>
+                <dt className="text-aegis-text-dim">{t('businessApplications.readiness.effectiveTools')}</dt>
                 <dd className="font-mono tabular-nums text-aegis-text-secondary">{effectiveToolCount}</dd>
-                <dt className="text-aegis-text-dim">插件版本</dt>
-                <dd className="truncate font-mono text-aegis-text-secondary" title={pluginVersion ?? undefined}>{pluginVersion ?? '未读取'}</dd>
-                <dt className="text-aegis-text-dim">内置版本</dt>
-                <dd className="truncate font-mono text-aegis-text-secondary" title={bundledPluginVersion ?? undefined}>{bundledPluginVersion ?? '未读取'}</dd>
+                <dt className="text-aegis-text-dim">{t('businessApplications.readiness.pluginVersion')}</dt>
+                <dd className="truncate font-mono text-aegis-text-secondary" title={pluginVersion ?? undefined}>{pluginVersion ?? t('businessApplications.readiness.notRead')}</dd>
+                <dt className="text-aegis-text-dim">{t('businessApplications.readiness.bundledVersion')}</dt>
+                <dd className="truncate font-mono text-aegis-text-secondary" title={bundledPluginVersion ?? undefined}>{bundledPluginVersion ?? t('businessApplications.readiness.notRead')}</dd>
               </dl>
-              <p className="mt-3 text-[9.5px] leading-4 text-aegis-text-dim">这里仅展示当前 Gateway、Session 和 DWS 返回的结构化投影。插件已安装、Gateway 健康或本地按钮完成均不代表钉钉业务操作成功。</p>
+              <p className="mt-3 text-[9.5px] leading-4 text-aegis-text-dim">{t('businessApplications.readiness.evidenceBoundary')}</p>
             </section>
           </div>
         )}
@@ -254,28 +259,28 @@ export function DingTalkReadinessPanel({
       <Dialog open={guideOpen} onOpenChange={setGuideOpen}>
         <DialogContent className="w-[min(620px,calc(100vw-24px))] border-aegis-border bg-aegis-bg-solid p-0 text-aegis-text">
           <DialogHeader className="border-b border-aegis-border px-4 py-3 text-left">
-            <DialogTitle className="text-[13px]">安装 DWS</DialogTitle>
-            <DialogDescription className="text-[10.5px] text-aegis-text-dim">请在当前 OpenClaw Gateway 所在机器或容器中完成安装。JunQi 不会替你执行远程安装脚本。</DialogDescription>
+            <DialogTitle className="text-[13px]">{t('businessApplications.readiness.installDws')}</DialogTitle>
+            <DialogDescription className="text-[10.5px] text-aegis-text-dim">{t('businessApplications.readiness.guideDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 overflow-y-auto px-4 py-4">
-            <p className="text-[10.5px] font-medium text-aegis-text-secondary">选择与 Gateway 运行环境对应的入口</p>
+            <p className="text-[10.5px] font-medium text-aegis-text-secondary">{t('businessApplications.readiness.guideSelect')}</p>
             {DWS_INSTALL_COMMANDS.map(({ label, command }) => (
               <div key={command} className="rounded-md border border-aegis-border bg-aegis-surface/45 p-2">
                 <div className="mb-1 text-[10px] text-aegis-text-dim">{label}</div>
                 <div className="flex items-start gap-2">
                   <code className="min-w-0 flex-1 break-all font-mono text-[10px] leading-4 text-aegis-text-secondary">{command}</code>
-                  <button type="button" aria-label={`复制 ${label} 安装命令`} title={`复制 ${label} 安装命令`} onClick={() => void copyCommand(command)} className="shrink-0 rounded p-1 text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"><Copy size={12} /></button>
+                  <button type="button" aria-label={t('businessApplications.readiness.copyCommand', { label })} title={t('businessApplications.readiness.copyCommand', { label })} onClick={() => void copyCommand(command)} className="shrink-0 rounded p-1 text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"><Copy size={12} /></button>
                 </div>
-                {copiedCommand === command && <p className="mt-1 text-[9.5px] text-aegis-success">已复制</p>}
+                {copiedCommand === command && <p className="mt-1 text-[9.5px] text-aegis-success">{t('businessApplications.readiness.copied')}</p>}
               </div>
             ))}
             <div className="border-t border-aegis-border pt-3 text-[10.5px] leading-5 text-aegis-text-dim">
-              <p>安装后，在同一 Gateway 环境完成登录：<code className="font-mono text-aegis-text-secondary">dws auth login</code>；无图形界面时使用 <code className="font-mono text-aegis-text-secondary">dws auth login --device</code>。</p>
-              <p className="mt-1">授权完成后回到 JunQi，点击“重新检测”。JunQi 只会展示 DWS 返回的 Profile、用户与授权域。</p>
+              <p>{t('businessApplications.readiness.guideLoginPrefix')} <code className="font-mono text-aegis-text-secondary">dws auth login</code>{t('businessApplications.readiness.guideHeadlessPrefix')} <code className="font-mono text-aegis-text-secondary">dws auth login --device</code>。</p>
+              <p className="mt-1">{t('businessApplications.readiness.guideReturn')}</p>
             </div>
             <div className="flex flex-wrap justify-end gap-2">
-              <Button size="xs" variant="outline" tone="neutral" leadingIcon={<ExternalLink size={12} />} onClick={() => window.open(DWS_OFFICIAL_GUIDE, '_blank', 'noopener,noreferrer')}>打开官方文档</Button>
-              <Button size="xs" variant="solid" tone="primary" leadingIcon={<RefreshCw size={12} />} onClick={() => { setGuideOpen(false); onRefresh(); }}>重新检测</Button>
+              <Button size="xs" variant="outline" tone="neutral" leadingIcon={<ExternalLink size={12} />} onClick={() => window.open(DWS_OFFICIAL_GUIDE, '_blank', 'noopener,noreferrer')}>{t('businessApplications.readiness.openOfficialDocs')}</Button>
+              <Button size="xs" variant="solid" tone="primary" leadingIcon={<RefreshCw size={12} />} onClick={() => { setGuideOpen(false); onRefresh(); }}>{t('businessApplications.readiness.refresh')}</Button>
             </div>
           </div>
         </DialogContent>
@@ -283,37 +288,37 @@ export function DingTalkReadinessPanel({
       <Dialog open={authorizationGuideOpen} onOpenChange={setAuthorizationGuideOpen}>
         <DialogContent className="w-[min(560px,calc(100vw-24px))] border-aegis-border bg-aegis-bg-solid p-0 text-aegis-text">
           <DialogHeader className="border-b border-aegis-border px-4 py-3 text-left">
-            <DialogTitle className="text-[13px]">授权当前 Agent 使用钉钉</DialogTitle>
-            <DialogDescription className="text-[10.5px] text-aegis-text-dim">JunQi 会把当前 Agent 同时加入 OpenClaw 工具策略和钉钉插件授权名单，然后自动重启 Gateway 并重新检测。</DialogDescription>
+            <DialogTitle className="text-[13px]">{t('businessApplications.readiness.agentDialogTitle')}</DialogTitle>
+            <DialogDescription className="text-[10.5px] text-aegis-text-dim">{t('businessApplications.readiness.agentDialogDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 px-4 py-4">
             <div className="rounded-md border border-aegis-border bg-aegis-surface/45 p-3 text-[10.5px] leading-5">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-aegis-text-dim">当前 Agent</span>
-                <code className="font-mono text-aegis-text-secondary">{agentId ?? '未返回 Agent ID'}</code>
+                <span className="text-aegis-text-dim">{t('businessApplications.readiness.currentAgent')}</span>
+                <code className="font-mono text-aegis-text-secondary">{agentId ?? t('businessApplications.readiness.agentIdNotReturned')}</code>
               </div>
-              <p className="mt-2 text-aegis-text-dim">不会覆盖当前 Agent 已有的工具权限；若 Gateway 已明确拒绝钉钉插件，JunQi 会停在当前页面并说明需要解除的拒绝规则。</p>
+              <p className="mt-2 text-aegis-text-dim">{t('businessApplications.readiness.agentPolicyBoundary')}</p>
             </div>
-            <p className="text-[10px] leading-5 text-aegis-text-dim">当前 Session：<code className="font-mono text-aegis-text-secondary">{sessionLabel ?? '未选择'}</code>。只有 Gateway 重启并返回新的 <code className="font-mono text-aegis-text-secondary">tools.effective</code> 快照后，授权才会显示为有效。</p>
+            <p className="text-[10px] leading-5 text-aegis-text-dim">{t('businessApplications.readiness.currentSession')} <code className="font-mono text-aegis-text-secondary">{sessionLabel ?? t('businessApplications.readiness.notSelected')}</code>。{t('businessApplications.readiness.agentEffectivePrefix')} <code className="font-mono text-aegis-text-secondary">tools.effective</code> {t('businessApplications.readiness.agentEffectiveSuffix')}</p>
           </div>
           <div className="flex justify-end gap-2 border-t border-aegis-border px-4 py-3">
-            <Button size="xs" variant="outline" tone="neutral" onClick={() => setAuthorizationGuideOpen(false)}>关闭</Button>
-            <Button size="xs" variant="solid" tone="primary" disabled={!agentId} loading={busy && operation === 'authorizing'} onClick={() => { setAuthorizationGuideOpen(false); onAuthorizeAgent(); }}>授权并重启</Button>
+            <Button size="xs" variant="outline" tone="neutral" onClick={() => setAuthorizationGuideOpen(false)}>{t('businessApplications.readiness.close')}</Button>
+            <Button size="xs" variant="solid" tone="primary" disabled={!agentId} loading={busy && operation === 'authorizing'} onClick={() => { setAuthorizationGuideOpen(false); onAuthorizeAgent(); }}>{t('businessApplications.readiness.authorizeAndRestart')}</Button>
           </div>
         </DialogContent>
       </Dialog>
       <Dialog open={Boolean(dwsOperation)} onOpenChange={(open) => { if (!open && !dwsOperationActive) onDismissDws(); }}>
         <DialogContent className="w-[min(720px,calc(100vw-24px))] border-aegis-border bg-aegis-bg-solid p-0 text-aegis-text">
           <DialogHeader className="border-b border-aegis-border px-4 py-3 text-left">
-            <DialogTitle className="flex items-center gap-2 text-[13px]"><Terminal size={14} />{dwsOperation?.kind === 'install' ? '正在安装 DWS' : '正在进行 DWS 授权'}</DialogTitle>
-            <DialogDescription className="text-[10.5px] text-aegis-text-dim">{dwsOperation?.message ?? '正在等待 DWS 官方流程输出。凭据内容不会保留或展示。'}</DialogDescription>
+            <DialogTitle className="flex items-center gap-2 text-[13px]"><Terminal size={14} />{t(dwsOperation?.kind === 'install' ? 'businessApplications.readiness.installingDws' : 'businessApplications.readiness.authorizingDws')}</DialogTitle>
+            <DialogDescription className="text-[10.5px] text-aegis-text-dim">{dwsOperation?.message ?? t('businessApplications.readiness.waitingDwsOutput')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 p-4">
-            <div className="max-h-64 min-h-28 overflow-auto rounded-md border border-aegis-border bg-aegis-surface/55 p-2 font-mono text-[10px] leading-5 text-aegis-text-secondary" role="log" aria-live="polite" aria-label="DWS 官方流程输出">
-              {dwsOutput.length > 0 ? dwsOutput.map((line, index) => <div key={`${index}-${line}`} className="break-words">{line}</div>) : <span className="text-aegis-text-dim">等待输出...</span>}
+            <div className="max-h-64 min-h-28 overflow-auto rounded-md border border-aegis-border bg-aegis-surface/55 p-2 font-mono text-[10px] leading-5 text-aegis-text-secondary" role="log" aria-live="polite" aria-label={t('businessApplications.readiness.dwsOutput')}>
+              {dwsOutput.length > 0 ? dwsOutput.map((line, index) => <div key={`${index}-${line}`} className="break-words">{line}</div>) : <span className="text-aegis-text-dim">{t('businessApplications.readiness.waitingOutput')}</span>}
             </div>
             <div className="flex justify-end gap-2">
-              {dwsOperationActive ? <Button size="xs" variant="outline" tone="danger" leadingIcon={<Square size={11} />} onClick={onCancelDws}>取消</Button> : <Button size="xs" variant="solid" tone="primary" leadingIcon={<RefreshCw size={12} />} onClick={() => { onRefresh(); onDismissDws(); }}>重新检测</Button>}
+              {dwsOperationActive ? <Button size="xs" variant="outline" tone="danger" leadingIcon={<Square size={11} />} onClick={onCancelDws}>{t('businessApplications.readiness.cancel')}</Button> : <Button size="xs" variant="solid" tone="primary" leadingIcon={<RefreshCw size={12} />} onClick={() => { onRefresh(); onDismissDws(); }}>{t('businessApplications.readiness.refresh')}</Button>}
             </div>
           </div>
         </DialogContent>

@@ -4,6 +4,7 @@ import {
   getGatewayProcessStatus,
   probeSelectedGateway,
   restartGateway,
+  stopGateway,
   type LogEntry,
 } from '@/api/tauri-commands';
 import { formatGatewayLogs } from './gatewayLogFormatting';
@@ -105,4 +106,13 @@ export function restartSelectedGatewayRuntime(): Promise<GatewayRestartResult> {
       return { success: false, error: String(error) };
     }
   });
+}
+
+export async function stopSelectedGatewayRuntime(): Promise<GatewayRestartResult> {
+  try {
+    await stopGateway();
+    return { success: true, method: 'gateway-stop' };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
 }

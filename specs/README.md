@@ -31,6 +31,7 @@ specs/
 
 - [Gateway 生命周期](gateway/2026-07-18-openclaw-gateway-lifecycle-bugfix.md)
 - [Gateway 服务归属](gateway/2026-07-24-openclaw-gateway-service-ownership-bugfix.md)
+- [Gateway 生命周期统一](gateway/2026-08-10-gateway-lifecycle-unification.md)
 
 ## Collaboration
 

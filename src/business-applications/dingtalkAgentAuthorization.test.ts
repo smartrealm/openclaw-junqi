@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { authorizeDingTalkAgent } from './dingtalkAgentAuthorization';
+import {
+  authorizeDingTalkAgent,
+  configureDingTalkDwsPath,
+} from './dingtalkAgentAuthorization';
 
 function createGateway(config: Record<string, unknown>) {
   const writes: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -108,5 +111,40 @@ test('does not override the global OpenClaw deny policy', async () => {
     authorizeDingTalkAgent(fixture.gateway, 'dingtalk-business'),
     /全局工具策略明确拒绝了钉钉插件/,
   );
+  assert.equal(fixture.writes.length, 0);
+});
+
+test('将核验后的 DWS 运行路径写入插件配置且保留其他配置', async () => {
+  const fixture = createGateway({
+    plugins: {
+      entries: {
+        'junqi-dingtalk': { config: { allowedAgentIds: ['main'], timeoutMs: 30_000 } },
+      },
+    },
+  });
+
+  await configureDingTalkDwsPath(fixture.gateway, '/verified/npm/lib/node_modules/dingtalk-workspace-cli/bin/dws.js');
+
+  assert.deepEqual(JSON.parse(String(fixture.writes[0].params.raw)), {
+    plugins: {
+      entries: {
+        'junqi-dingtalk': { config: { dwsPath: '/verified/npm/lib/node_modules/dingtalk-workspace-cli/bin/dws.js' } },
+      },
+    },
+  });
+  assert.equal(fixture.writes[0].params.baseHash, 'config-hash');
+});
+
+test('DWS 运行路径未变化时不重复写配置', async () => {
+  const fixture = createGateway({
+    plugins: {
+      entries: {
+        'junqi-dingtalk': { config: { dwsPath: '/verified/npm/lib/node_modules/dingtalk-workspace-cli/bin/dws.js' } },
+      },
+    },
+  });
+
+  await configureDingTalkDwsPath(fixture.gateway, '/verified/npm/lib/node_modules/dingtalk-workspace-cli/bin/dws.js');
+
   assert.equal(fixture.writes.length, 0);
 });

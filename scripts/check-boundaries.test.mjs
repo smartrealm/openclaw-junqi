@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { describe, test } from 'node:test';
 import {
   MODULE_BOUNDARY_RULES,
+  extractGatewayLifecycleBypasses,
   extractModuleImports,
   scanModuleBoundaries,
 } from './check-boundaries.mjs';
@@ -50,6 +51,27 @@ describe('模块边界生产扫描器', () => {
   test('页面拒绝 Tauri core 和直接 invoke', () => {
     assert.equal(scan('pages/Foo.tsx', `import { invoke } from '@tauri-apps/api/core';`).length, 1);
     assert.equal(scan('pages/Foo.tsx', `void invoke('unsafe');`).length, 1);
+  });
+
+  test('普通 Gateway 生命周期不能绕过统一协调器', () => {
+    assert.deepEqual(extractGatewayLifecycleBypasses(`
+      import { restartGateway as restart } from '@/api/tauri-commands';
+      import { gatewayManager as manager } from '@/services/gateway/GatewayConnectionManager';
+      void restart();
+      manager.reconnect();
+    `), ['restartGateway', 'reconnect']);
+    assert.equal(scan('pages/Foo.tsx', `
+      import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+      gatewayManager.restart();
+    `).length, 1);
+    assert.equal(scan('services/gateway/gatewayProcessObservation.ts', `
+      import { restartGateway } from '@/api/tauri-commands';
+      void restartGateway();
+    `).length, 0);
+    assert.equal(scan('hooks/useSetupFlow/useWizardSession.ts', `
+      import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
+      gatewayManager.reconnect();
+    `).length, 0);
   });
 
   test('同层和外部包导入保持允许', () => {
