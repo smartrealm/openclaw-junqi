@@ -6,6 +6,8 @@ import {
   type DingTalkEffectiveTool,
   type DingTalkToolSchemaProjection,
 } from '@/business-applications/dingtalkTools';
+import type { DingTalkApprovalTraceProjection } from '@/business-applications/dingtalkApproval';
+import { DingTalkApprovalTracePanel } from './DingTalkApprovalTracePanel';
 import { PaneResizeHandle } from './PaneResizeHandle';
 
 function prettyJson(value: unknown): string {
@@ -36,6 +38,12 @@ export function DingTalkToolDetail({
   onArgumentsChange,
   onLoadSchema,
   onInvoke,
+  approvalTrace,
+  approvalTraceLoading,
+  approvalTraceError,
+  approvalTraceRefreshAvailable,
+  approvalTraceComplete,
+  onRefreshApprovalTrace,
 }: {
   tool: DingTalkEffectiveTool | null;
   width: number;
@@ -55,6 +63,12 @@ export function DingTalkToolDetail({
   onArgumentsChange: (value: string) => void;
   onLoadSchema: () => void;
   onInvoke: () => void;
+  approvalTrace: DingTalkApprovalTraceProjection | null;
+  approvalTraceLoading: boolean;
+  approvalTraceError: string | null;
+  approvalTraceRefreshAvailable: boolean;
+  approvalTraceComplete: boolean;
+  onRefreshApprovalTrace: () => void;
 }) {
   if (collapsed) {
     return (
@@ -184,6 +198,16 @@ export function DingTalkToolDetail({
               <div className="text-[10.5px] font-medium text-aegis-text-secondary">本次结果</div>
               <pre className="mt-1 max-h-[260px] overflow-auto rounded-md border border-aegis-border bg-aegis-bg p-2 whitespace-pre-wrap break-words font-mono text-[9.5px] leading-4 text-aegis-text-dim">{prettyJson(invocationOutput)}</pre>
             </div>
+          )}
+          {approvalTrace && (
+            <DingTalkApprovalTracePanel
+              trace={approvalTrace}
+              loading={approvalTraceLoading}
+              error={approvalTraceError}
+              refreshAvailable={approvalTraceRefreshAvailable}
+              complete={approvalTraceComplete}
+              onRefresh={onRefreshApprovalTrace}
+            />
           )}
         </div>
       )}

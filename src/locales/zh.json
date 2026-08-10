@@ -5892,7 +5892,23 @@
     "sidebarRecentActivity": "最近操作",
     "sidebarNoActivity": "本窗口尚无业务操作",
     "sidebarActivityState": "{{state}} · {{agent}}",
-    "sidebarNoActivityHint": "打开操作审计查看官方记录"
+    "sidebarNoActivityHint": "打开操作审计查看官方记录",
+    "approvalTrace": {
+      "title": "审批追溯",
+      "emptyTitle": "暂无可展示的审批追溯",
+      "emptyDescription": "DWS 当前结果没有返回审批实例、任务或操作记录，不生成推测节点。",
+      "observedAt": "观察于 {{time}}",
+      "instance": "实例",
+      "process": "流程",
+      "status": "状态",
+      "notReturned": "DWS 未返回",
+      "statusNotReturned": "DWS 未返回状态",
+      "recordFallback": "DWS 返回的审批记录",
+      "taskFallback": "待处理审批任务",
+      "refresh": "刷新追溯",
+      "refreshUnavailable": "需要 DWS 返回审批实例标识，并且当前 Session 提供审批记录或审批任务工具。",
+      "partialTools": "当前 Session 只提供部分审批追溯工具，刷新结果可能不完整。"
+    }
   },
   "businessGuide": {
     "title": "开始使用",

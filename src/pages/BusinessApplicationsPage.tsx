@@ -63,6 +63,7 @@ import {
 } from '@/services/gateway/runtimeIdentity';
 import { restartSelectedGatewayRuntime } from '@/services/gateway/gatewayProcessObservation';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
+import { useDingTalkApprovalTrace } from './businessApplications/useDingTalkApprovalTrace';
 
 type DomainFilter = 'all' | DingTalkDomain;
 type EffectFilter = 'all' | 'read' | 'write';
@@ -284,6 +285,14 @@ export function BusinessApplicationsPage() {
   const settleAttempt = useBusinessActivityStore((state) => state.settle);
 
   const selectedTool = allTools.find((tool) => tool.entry.id === selectedId) ?? null;
+  const approvalTrace = useDingTalkApprovalTrace({
+    activeSessionKey,
+    profile,
+    selectedToolId: selectedTool?.entry.id ?? null,
+    selectedDomain: selectedTool?.domain ?? null,
+    invocationOutput,
+    tools: allTools,
+  });
   const filteredTools = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return allTools.filter((tool) => {
@@ -454,6 +463,17 @@ export function BusinessApplicationsPage() {
     setSchemaError(null);
     if (rightCollapsed) setRightCollapsed(false);
   }, [rightCollapsed]);
+
+  const changeProfile = useCallback((value: string) => {
+    setProfile(value);
+    setInvocationOutput(undefined);
+    setInvocationError(null);
+  }, []);
+
+  useEffect(() => {
+    setInvocationOutput(undefined);
+    setInvocationError(null);
+  }, [activeSessionKey]);
 
   useEffect(() => {
     if (!selectedTool || selectedTool.entry.id === DINGTALK_RUNTIME_STATUS_TOOL) return;
@@ -797,10 +817,16 @@ export function BusinessApplicationsPage() {
             disabledReason={disabledReason}
             onWidthChange={setRightWidth}
             onCollapsedChange={setRightCollapsed}
-            onProfileChange={setProfile}
+            onProfileChange={changeProfile}
             onArgumentsChange={setArgumentsJson}
             onLoadSchema={() => void loadSchema()}
             onInvoke={invokeSelected}
+            approvalTrace={approvalTrace.trace}
+            approvalTraceLoading={approvalTrace.loading}
+            approvalTraceError={approvalTrace.error}
+            approvalTraceRefreshAvailable={approvalTrace.refreshAvailable}
+            approvalTraceComplete={approvalTrace.complete}
+            onRefreshApprovalTrace={() => void approvalTrace.refresh()}
           />
         </div>
       )}

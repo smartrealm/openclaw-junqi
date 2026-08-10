@@ -5894,7 +5894,23 @@
     "sidebarRecentActivity": "Recent operation",
     "sidebarNoActivity": "No business operation in this window",
     "sidebarActivityState": "{{state}} · {{agent}}",
-    "sidebarNoActivityHint": "Open the audit view for official records"
+    "sidebarNoActivityHint": "Open the audit view for official records",
+    "approvalTrace": {
+      "title": "Approval trace",
+      "emptyTitle": "No approval trace available",
+      "emptyDescription": "The current DWS result contains no approval instance, task, or operation record, so no inferred nodes are shown.",
+      "observedAt": "Observed at {{time}}",
+      "instance": "Instance",
+      "process": "Process",
+      "status": "Status",
+      "notReturned": "Not returned by DWS",
+      "statusNotReturned": "Status not returned by DWS",
+      "recordFallback": "Approval record returned by DWS",
+      "taskFallback": "Pending approval task",
+      "refresh": "Refresh trace",
+      "refreshUnavailable": "DWS must return an approval instance ID and the current Session must provide an approval record or task tool.",
+      "partialTools": "The current Session provides only part of the approval trace tools, so the refreshed result may be incomplete."
+    }
   },
   "businessGuide": {
     "title": "Get started",
