@@ -124,6 +124,8 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - Jarvis 合并后的侧栏、官方 Setup 客户端、安装完成门禁和安装回归定向测试 66 项通过；完整
   `pnpm test` 前端 2791 项、仓库脚本 235 项均通过且零失败；`pnpm lint` 通过，模块边界扫描
   928 个文件零违规，四处桌面版本一致，TypeScript 检查通过；独立 `pnpm build` 通过。
+- Jarvis 后续钉钉授权与重连提交的前端定向测试 12 项和 Rust DWS 授权命令测试 1 项通过；再次执行
+  `pnpm lint` 时模块边界扫描 930 个文件零违规，TypeScript 检查通过；合并后 `pnpm build` 再次通过。
 - 已通过 `pnpm collab:bundle`：schema 14、167 个校验文件，bundle SHA-256 为
   `0778a9538482e492b9acc8bb079dcec959e8546b07231de898f06138c1b9275f`，generated metadata 与 Tauri resource metadata 一致。
 - 已通过 `src/stores/gatewayDataStore.test.ts`：29 项通过，覆盖未知载荷和安全日志边界。
