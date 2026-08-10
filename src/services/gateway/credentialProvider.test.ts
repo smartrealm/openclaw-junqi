@@ -299,14 +299,14 @@ describe('Gateway runtime credential binding', () => {
     assert.equal(localStorage.getItem(GATEWAY_RUNTIME_ALIAS_KEY), null);
   });
 
-  it('falls back to the endpoint token after an interrupted alias migration', async () => {
+  it('does not reuse an endpoint credential after an instance alias is published', async () => {
     const endpointKey = gatewayRuntimeKeyFromUrl(gatewayUrl);
     localStorage.setItem(GATEWAY_RUNTIME_ALIAS_KEY, JSON.stringify({
       version: 1,
       aliases: [{ endpointRuntimeKey: endpointKey, collaborationInstanceId: 'instance-1', boundAtMs: 1 }],
     }));
     const state = credentialBackend([
-      [endpointKey, { token: 'endpoint-fallback', persistence: 'system' }],
+      [endpointKey, { token: 'stale-endpoint-token', persistence: 'system' }],
     ]);
 
     const credential = await getGatewayDeviceCredentialForUrl(gatewayUrl, {
@@ -314,7 +314,7 @@ describe('Gateway runtime credential binding', () => {
       resolveDeviceId: deviceId,
     });
 
-    assert.equal(credential.runtimeKey, endpointKey);
-    assert.equal(credential.token, 'endpoint-fallback');
+    assert.equal(credential.runtimeKey, collaborationInstanceRuntimeKey('instance-1'));
+    assert.equal(credential.token, null);
   });
 });

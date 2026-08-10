@@ -34,6 +34,8 @@ import {
 } from '@/services/gateway/workspaceBootstrapReadiness';
 import {
   gateway,
+  GatewayRequestTimeoutError,
+  GatewayRpcError,
   openClawGatewayDataRequester,
   subscribePrivilegedAuthorizationIssues,
   subscribePrivilegedAuthorizationResolved,
@@ -435,12 +437,11 @@ export default function App() {
       }).catch((err) => {
         const stage = useBootSequenceStore.getState().stages.conversation;
         if (stage.status !== 'pending' && stage.status !== 'running') return;
-        const errText = String(err);
-        const isHistoryUnavailableDuringStartup =
-          /chat\.history/i.test(errText) && /(unavailable|not available|not ready|warming|startup)/i.test(errText);
+        const isHistoryUnavailableDuringStartup = err instanceof GatewayRpcError
+          && err.code === 'UNAVAILABLE';
         useBootSequenceStore.getState().markStageCompleted(
           'conversation',
-          isHistoryUnavailableDuringStartup || errText.includes('Request timeout')
+          isHistoryUnavailableDuringStartup || err instanceof GatewayRequestTimeoutError
             ? 'Recent conversation is syncing in the background.'
             : 'Recent conversation will load after startup.',
         );

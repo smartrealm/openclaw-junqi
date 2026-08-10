@@ -1,5 +1,5 @@
 import { getCollaborationMaintenanceOwner } from '@/api/tauri-commands';
-import { gateway } from '@/services/gateway';
+import { gateway, GatewayDisconnectedError } from '@/services/gateway';
 import {
   collaborationClient,
   createCollaborationWriteRequest,
@@ -164,13 +164,8 @@ const defaultDependencies: CollaborationMaintenanceDependencies = {
   randomUUID: () => globalThis.crypto.randomUUID(),
   resolveOwnerId: async () => {
     if (isTauriRuntime()) {
-      const result = await getCollaborationMaintenanceOwner(legacyOwnerId());
+      const result = await getCollaborationMaintenanceOwner();
       if (!validOwnerId(result.owner)) throw new Error('Tauri returned an invalid maintenance owner');
-      try {
-        globalThis.localStorage?.setItem(MAINTENANCE_OWNER_STORAGE_KEY, result.owner);
-      } catch {
-        // The durable Tauri file remains authoritative when WebView storage is unavailable.
-      }
       return result.owner;
     }
     return resolveDefaultOwnerId();
@@ -179,15 +174,6 @@ const defaultDependencies: CollaborationMaintenanceDependencies = {
 
 function validOwnerId(value: unknown): value is string {
   return typeof value === 'string' && MAINTENANCE_OWNER_PATTERN.test(value);
-}
-
-function legacyOwnerId(): string | undefined {
-  try {
-    const stored = globalThis.localStorage?.getItem(MAINTENANCE_OWNER_STORAGE_KEY)?.trim();
-    return validOwnerId(stored) ? stored : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function isTauriRuntime(): boolean {
@@ -357,14 +343,10 @@ function parseStatus(
   const response = record(value);
   if (
     !response
-    || typeof response.active !== 'boolean'
     || typeof response.gateActive !== 'boolean'
     || typeof response.recoveryRequired !== 'boolean'
   ) {
     throw new Error('maintenance.status returned an invalid response');
-  }
-  if (response.active !== response.gateActive) {
-    throw new Error('maintenance.status active and gateActive must agree');
   }
   const runSnapshot = parseRunSnapshot(response, 'maintenance.status');
   const status = response.status;
@@ -374,14 +356,14 @@ function parseStatus(
   if (status === 'MALFORMED') {
     throw new Error('maintenance.status reported malformed durable lease state');
   }
-  const lease = response.active ? parseLeaseRecord(response.lease, identity) : null;
-  if (!response.active && response.lease != null) {
+  const lease = response.gateActive ? parseLeaseRecord(response.lease, identity) : null;
+  if (!response.gateActive && response.lease != null) {
     throw new Error('maintenance.status returned a lease while inactive');
   }
   const isInactive = status === 'INACTIVE';
   const isExpired = status === 'EXPIRED';
   if (
-    response.active === isInactive
+    response.gateActive === isInactive
     || response.recoveryRequired !== isExpired
     || (lease !== null && lease.status !== status)
   ) {
@@ -391,7 +373,7 @@ function parseStatus(
     availability: 'available',
     status,
     recoveryRequired: response.recoveryRequired,
-    active: response.active,
+    active: response.gateActive,
     collaborationInstanceId: identity.collaborationInstanceId,
     schemaVersion: identity.schemaVersion,
     databaseIntegrity: identity.databaseIntegrity,
@@ -776,7 +758,7 @@ export class CollaborationMaintenanceCoordinator {
     );
     try {
       const response = await this.dependencies.write(MAINTENANCE_EXIT_METHOD, request);
-      if (response.accepted !== true || (response as Record<string, unknown>).active !== false) {
+      if (response.accepted !== true || (response as Record<string, unknown>).gateActive !== false) {
         throw new Error('maintenance.exit returned an unverifiable response');
       }
     } catch (error) {
@@ -997,7 +979,7 @@ export class CollaborationMaintenanceCoordinator {
     lease: CollaborationMaintenanceLease,
   ): Promise<CapabilityIdentity> {
     const startedAt = this.dependencies.now();
-    let lastError: unknown = new Error('Gateway is not connected');
+    let lastError: unknown = new GatewayDisconnectedError();
     while (this.dependencies.now() - startedAt <= timeoutMs) {
       if (this.dependencies.isGatewayConnected()) {
         try {

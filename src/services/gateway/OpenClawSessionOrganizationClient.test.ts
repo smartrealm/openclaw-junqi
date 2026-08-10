@@ -72,11 +72,19 @@ describe('OpenClawSessionOrganizationClient', () => {
   it('identifies only explicit protocol incompatibility for capability reporting', async () => {
     const client = new OpenClawSessionOrganizationClient({
       runMutation: (_key, operation) => operation(),
-      request: async () => {
-        throw new GatewayRpcError('unknown field: pinned', 'INVALID_PARAMS');
+      request: async (method) => {
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
       },
     });
     await assert.rejects(client.setPinned(SESSION_KEY, true), SessionOrganizationProtocolUnsupportedError);
+
+    const invalidPatchClient = new OpenClawSessionOrganizationClient({
+      runMutation: (_key, operation) => operation(),
+      request: async () => {
+        throw new GatewayRpcError('unknown field: pinned', 'INVALID_REQUEST');
+      },
+    });
+    await assert.rejects(invalidPatchClient.setPinned(SESSION_KEY, true), GatewayRpcError);
 
     const deniedClient = new OpenClawSessionOrganizationClient({
       runMutation: (_key, operation) => operation(),

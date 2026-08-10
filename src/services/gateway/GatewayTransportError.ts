@@ -1,10 +1,10 @@
 export const GATEWAY_TRANSPORT_LIFECYCLE_ERROR_CODE = "GATEWAY_TRANSPORT_LIFECYCLE";
 
-export type GatewayTransportLifecycle = "closed" | "credentials-changed";
+export type GatewayTransportLifecycle = "closed" | "credentials-changed" | "target-changed";
 
 /**
- * Expected rejection for RPCs that were in flight while the socket lifecycle
- * moved on. Connection status already owns the user-visible recovery state.
+ * socket 生命周期变化时拒绝尚未完成的 RPC。
+ * 用户可见的恢复状态由连接状态机统一持有。
  */
 export class GatewayTransportLifecycleError extends Error {
   readonly code = GATEWAY_TRANSPORT_LIFECYCLE_ERROR_CODE;
@@ -15,6 +15,16 @@ export class GatewayTransportLifecycleError extends Error {
   ) {
     super(message);
     this.name = "GatewayTransportLifecycleError";
+  }
+}
+
+/** 本地等待超时，不代表远端操作失败或已取消。 */
+export class GatewayRequestTimeoutError extends Error {
+  readonly code = "GATEWAY_REQUEST_TIMEOUT";
+
+  constructor(readonly timeoutMs: number) {
+    super(`Request timeout (${timeoutMs}ms)`);
+    this.name = "GatewayRequestTimeoutError";
   }
 }
 

@@ -381,7 +381,7 @@ export async function getGatewayDeviceCredential(
   }
 }
 
-/** Instance-first lookup with an endpoint fallback for interrupted rebinds. */
+/** 按已解析的唯一运行时身份读取设备凭据。 */
 export async function getGatewayDeviceCredentialForUrl(
   gatewayUrl: string,
   options: RuntimeBindingOptions = {},
@@ -390,10 +390,7 @@ export async function getGatewayDeviceCredentialForUrl(
     gatewayUrl,
     options.storage ?? localStorage,
   );
-  const credential = await getGatewayDeviceCredential(activeRuntimeKey, options);
-  const endpointRuntimeKey = gatewayRuntimeKeyFromUrl(gatewayUrl);
-  if (credential.token || activeRuntimeKey === endpointRuntimeKey) return credential;
-  return getGatewayDeviceCredential(endpointRuntimeKey, options);
+  return getGatewayDeviceCredential(activeRuntimeKey, options);
 }
 
 export async function storeGatewayDeviceCredential(
@@ -473,7 +470,7 @@ export async function deleteGatewayDeviceCredential(
   }
 }
 
-/** Test-only reset for the process-local fallback. */
+/** 测试专用：清空进程内凭据状态。 */
 export function resetGatewayCredentialProviderForTests(): void {
   sessionCredentials.clear();
   runtimeSessionCredentials.clear();

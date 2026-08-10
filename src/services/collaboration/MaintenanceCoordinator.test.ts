@@ -50,7 +50,6 @@ function lease(
 
 function inactiveStatus(activeRuns: unknown[] = [], activeRunCount = activeRuns.length) {
   return {
-    active: false,
     gateActive: false,
     status: 'INACTIVE',
     recoveryRequired: false,
@@ -69,7 +68,6 @@ function activeStatus(
   leaseStatus: 'ACTIVE' | 'EXPIRED' = 'ACTIVE',
 ) {
   return {
-    active: true,
     gateActive: true,
     status: leaseStatus,
     recoveryRequired: leaseStatus === 'EXPIRED',
@@ -167,7 +165,7 @@ function harness(options: HarnessOptions = {}) {
           replayed: false,
           commandId: request.commandId,
           maintenanceLeaseId: request.maintenanceLeaseId,
-          active: false,
+          gateActive: false,
         };
       }
       throw new Error(`Unexpected write ${method}`);
@@ -203,8 +201,8 @@ async function expectMaintenanceError(
 }
 
 test('an explicitly missing collaboration plugin is the only unguarded update path', async () => {
-  const missing = Object.assign(new Error('unknown method junqi.collab.capabilities'), {
-    code: 'METHOD_NOT_FOUND',
+  const missing = Object.assign(new Error('unknown method: junqi.collab.capabilities'), {
+    code: 'INVALID_REQUEST',
   });
   const { coordinator, writes } = harness({
     capabilityValues: [missing],
@@ -220,8 +218,8 @@ test('an explicitly missing collaboration plugin is the only unguarded update pa
 });
 
 test('identity drift after an absence probe blocks an unguarded operation', async () => {
-  const missing = Object.assign(new Error('unknown method junqi.collab.capabilities'), {
-    code: 'METHOD_NOT_FOUND',
+  const missing = Object.assign(new Error('unknown method: junqi.collab.capabilities'), {
+    code: 'INVALID_REQUEST',
   });
   const { coordinator } = harness({
     capabilityValues: [missing],
@@ -243,8 +241,8 @@ test('identity drift after an absence probe blocks an unguarded operation', asyn
 });
 
 test('a missing collaboration RPC remains guarded when durable absence is not attested', async () => {
-  const missing = Object.assign(new Error('unknown method junqi.collab.capabilities'), {
-    code: 'METHOD_NOT_FOUND',
+  const missing = Object.assign(new Error('unknown method: junqi.collab.capabilities'), {
+    code: 'INVALID_REQUEST',
   });
   const { coordinator, writes } = harness({ capabilityValues: [missing] });
 
@@ -609,11 +607,10 @@ test('unknown maintenance status blocks the operation instead of assuming no act
 
 test('contradictory or temporally invalid maintenance status fails closed before any write', async () => {
   const variants = [
-    { ...inactiveStatus(), gateActive: true },
+    { ...inactiveStatus(), gateActive: 'true' },
     { ...activeStatus(), status: 'EXPIRED', recoveryRequired: false },
     { ...activeStatus(), recoveryRequired: true },
     {
-      active: true,
       gateActive: true,
       status: 'MALFORMED',
       recoveryRequired: true,

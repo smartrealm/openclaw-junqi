@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import { CollaborationSchemaInitializer } from "./database-schema-initializer.js";
 import { CollaborationError, assertCondition } from "./errors.js";
 import {
   PERSISTENCE_LIMITS,
@@ -11,9 +12,8 @@ import {
   boundedDiagnostic,
   sanitizeStoredJsonForOutput,
 } from "./persistence-policy.js";
-import { SCHEMA_SQL, SCHEMA_VERSION } from "./schema.js";
 import type { CommandKind, CommandRecord, EventRecord, OriginRef, RunSummary, RunStatus } from "./types.js";
-import { newId, nowMs, stableStringify } from "./util.js";
+import { nowMs, stableStringify } from "./util.js";
 
 type SqlRow = Record<string, SQLOutputValue>;
 type SynchronousResultConstraint<Result> = [Result] extends [never]
@@ -31,9 +31,8 @@ function rejectPromiseLikeTransactionResult(value: unknown): void {
   ) && typeof (value as { then?: unknown }).then === "function";
   if (!promiseLike) return;
 
-  // A JavaScript/any caller can bypass the compile-time contract. Observe a
-  // possible rejection, then throw while the SQL transaction is still open so
-  // the surrounding catch rolls it back instead of committing a partial unit.
+  // JavaScript 或 any 调用方可能绕过编译期约束。先接住潜在拒绝，再在 SQL
+  // 事务仍开启时抛错，让外层回滚而不是提交不完整工作单元。
   void Promise.resolve(value as PromiseLike<unknown>).catch(() => undefined);
   throw new TypeError(SYNCHRONOUS_TRANSACTION_ERROR);
 }
@@ -72,26 +71,6 @@ function numberValue(value: SQLOutputValue | undefined): number {
   return typeof value === "bigint" ? Number(value) : typeof value === "number" ? value : 0;
 }
 
-function legacyAttemptExecutionRuntime(row: SqlRow): "native" | "acp" {
-  if (typeof row.child_session_key === "string" && row.child_session_key.includes(":acp:")) {
-    return "acp";
-  }
-  if (typeof row.capability_snapshot_json !== "string" || typeof row.worker_agent_id !== "string") {
-    return "native";
-  }
-  try {
-    const snapshot = JSON.parse(row.capability_snapshot_json) as {
-      configuredFacts?: { agents?: Array<{ id?: unknown; runtimeType?: unknown }> };
-    };
-    const agent = snapshot.configuredFacts?.agents?.find(
-      (candidate) => candidate.id === row.worker_agent_id,
-    );
-    return agent?.runtimeType === "acp" ? "acp" : "native";
-  } catch {
-    return "native";
-  }
-}
-
 export class CollaborationDatabase {
   readonly db: DatabaseSync;
   readonly #instanceId: string;
@@ -107,11 +86,10 @@ export class CollaborationDatabase {
     this.db = new DatabaseSync(filePath);
     let instanceId: string;
     try {
-      this.db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;");
-      this.migrate();
-      const persistedInstanceId = this.getMetadata("collaboration_instance_id");
-      if (!persistedInstanceId) throw new Error("collaboration instance id is missing");
-      instanceId = persistedInstanceId;
+      this.db.exec(
+        "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;",
+      );
+      instanceId = new CollaborationSchemaInitializer(this.db).initialize();
       this.secureDatabaseFiles();
     } catch (error) {
       this.db.close();
@@ -122,192 +100,6 @@ export class CollaborationDatabase {
 
   close(): void {
     this.db.close();
-  }
-
-  migrate(): void {
-    this.transaction(() => {
-      this.db.exec(SCHEMA_SQL);
-      const current = this.getMetadata("schema_version");
-      const currentVersion = current == null ? 0 : Number(current);
-      if (!Number.isSafeInteger(currentVersion) || currentVersion < 0) {
-        throw new Error(`database schema version is invalid: ${current}`);
-      }
-      if (currentVersion > SCHEMA_VERSION) {
-        throw new Error(`database schema ${current} is newer than supported ${SCHEMA_VERSION}`);
-      }
-      if (currentVersion > 0 && currentVersion < 3) {
-        const conflict = this.db.prepare(`
-          SELECT origin_runtime_id, origin_agent_id, origin_session_key, origin_session_id, COUNT(*) AS active_count
-          FROM collaboration_runs
-          WHERE status NOT IN ('COMPLETED', 'CANCELLED', 'FAILED')
-          GROUP BY origin_runtime_id, origin_agent_id, origin_session_key, origin_session_id
-          HAVING COUNT(*) > 1
-          LIMIT 1
-        `).get() as SqlRow | undefined;
-        if (conflict) {
-          throw new Error(
-            `database schema 3 migration is blocked by ${numberValue(conflict.active_count)} active runs in session ${String(conflict.origin_session_id)}`,
-          );
-        }
-        this.db.exec(`
-          DROP INDEX IF EXISTS collaboration_runs_active_origin;
-          CREATE UNIQUE INDEX collaboration_runs_active_origin
-          ON collaboration_runs(origin_runtime_id, origin_agent_id, origin_session_key, origin_session_id)
-          WHERE status NOT IN ('COMPLETED', 'CANCELLED', 'FAILED');
-        `);
-      }
-      if (currentVersion < 5) {
-        const tombstoneColumns = new Set(
-          (this.db.prepare("PRAGMA table_info('tombstones')").all() as SqlRow[])
-            .map((row) => String(row.name)),
-        );
-        if (!tombstoneColumns.has("cleanup_status")) {
-          this.db.exec("ALTER TABLE tombstones ADD COLUMN cleanup_status TEXT NOT NULL DEFAULT 'COMPLETED'");
-        }
-        if (!tombstoneColumns.has("cleanup_error")) {
-          this.db.exec("ALTER TABLE tombstones ADD COLUMN cleanup_error TEXT");
-        }
-        if (!tombstoneColumns.has("cleanup_updated_at")) {
-          this.db.exec("ALTER TABLE tombstones ADD COLUMN cleanup_updated_at INTEGER NOT NULL DEFAULT 0");
-        }
-      }
-      if (currentVersion < 6) {
-        this.db.exec(`
-          INSERT OR IGNORE INTO command_receipt_conflicts(command_id, diagnostic, created_at)
-          SELECT sm.command_id, 'legacy command id was reused across session mutation and collaboration operations',
-                 MIN(sm.created_at)
-          FROM session_mutation_commands sm
-          WHERE EXISTS (SELECT 1 FROM commands c WHERE c.id = sm.command_id)
-             OR EXISTS (SELECT 1 FROM deletion_command_receipts d WHERE d.command_id = sm.command_id)
-          GROUP BY sm.command_id;
-
-          INSERT OR IGNORE INTO command_receipt_conflicts(command_id, diagnostic, created_at)
-          SELECT d.command_id, 'legacy deletion command id has conflicting payload hashes', MIN(d.created_at)
-          FROM deletion_command_receipts d
-          JOIN commands c ON c.id = d.command_id
-          WHERE d.payload_hash <> c.payload_hash
-          GROUP BY d.command_id;
-
-          INSERT OR IGNORE INTO command_receipts(
-            command_id, source, run_id, payload_hash, response_json, created_at, updated_at
-          )
-          SELECT command_id, 'LEGACY_DELETE', run_id, payload_hash, response_json, created_at, updated_at
-          FROM deletion_command_receipts;
-
-          INSERT OR IGNORE INTO command_receipts(
-            command_id, source, run_id, payload_hash, response_json, created_at, updated_at
-          )
-          SELECT id,
-            CASE
-              WHEN kind = 'PLAN' AND effect_key LIKE '%:plan:pending:%' THEN 'junqi.collab.plan.create'
-              WHEN kind = 'PLAN' AND effect_key LIKE '%:plan:revision:%' THEN 'junqi.collab.plan.revise'
-              WHEN kind = 'PROVISION' THEN 'junqi.collab.plan.approve'
-              WHEN kind = 'EXPORT' AND json_extract(payload_json, '$.jobId') IS NOT NULL THEN 'junqi.collab.export.create'
-              WHEN kind = 'EXPORT' AND json_extract(payload_json, '$.eventType') IS NOT NULL
-                THEN 'RUN:' || json_extract(payload_json, '$.eventType')
-              ELSE 'LEGACY_COMMAND'
-            END,
-            run_id, payload_hash, response_json, created_at, updated_at
-          FROM commands
-          WHERE response_json IS NOT NULL;
-
-          INSERT OR IGNORE INTO command_receipts(
-            command_id, source, run_id, payload_hash, response_json, created_at, updated_at
-          )
-          SELECT command_id, 'SESSION_MUTATION:' || operation, NULL, payload_hash, response_json, created_at, updated_at
-          FROM session_mutation_commands;
-        `);
-      }
-      if (currentVersion < 7) {
-        const commandColumns = new Set(
-          (this.db.prepare("PRAGMA table_info('commands')").all() as SqlRow[])
-            .map((row) => String(row.name)),
-        );
-        if (!commandColumns.has("available_at")) {
-          this.db.exec("ALTER TABLE commands ADD COLUMN available_at INTEGER NOT NULL DEFAULT 0");
-        }
-        this.db.exec(`
-          CREATE INDEX IF NOT EXISTS commands_available
-          ON commands(status, available_at, lease_expires_at, created_at);
-        `);
-      }
-      if (currentVersion < 8) {
-        const commandColumns = new Set(
-          (this.db.prepare("PRAGMA table_info('commands')").all() as SqlRow[])
-            .map((row) => String(row.name)),
-        );
-        if (!commandColumns.has("failure_count")) {
-          this.db.exec("ALTER TABLE commands ADD COLUMN failure_count INTEGER NOT NULL DEFAULT 0");
-        }
-      }
-      if (currentVersion < 9) {
-        const commandColumns = new Set(
-          (this.db.prepare("PRAGMA table_info('commands')").all() as SqlRow[])
-            .map((row) => String(row.name)),
-        );
-        if (!commandColumns.has("effect_started_at")) {
-          this.db.exec("ALTER TABLE commands ADD COLUMN effect_started_at INTEGER");
-        }
-      }
-      if (currentVersion < 10) {
-        const tombstoneColumns = new Set(
-          (this.db.prepare("PRAGMA table_info('tombstones')").all() as SqlRow[])
-            .map((row) => String(row.name)),
-        );
-        const additions = [
-          ["flow_reconciliation_command_id", "TEXT"],
-          ["openclaw_flow_id", "TEXT"],
-          ["openclaw_flow_revision", "INTEGER"],
-          ["flow_reconciliation_diagnostic", "TEXT"],
-          ["flow_reconciliation_abandoned_at", "INTEGER"],
-          ["flow_reconciliation_abandon_reason", "TEXT"],
-        ] as const;
-        for (const [column, type] of additions) {
-          if (!tombstoneColumns.has(column)) {
-            this.db.exec(`ALTER TABLE tombstones ADD COLUMN ${column} ${type}`);
-          }
-        }
-      }
-      if (currentVersion < 11) {
-        const tombstoneColumns = new Set(
-          (this.db.prepare("PRAGMA table_info('tombstones')").all() as SqlRow[])
-            .map((row) => String(row.name)),
-        );
-        if (!tombstoneColumns.has("deletion_job_id")) {
-          this.db.exec("ALTER TABLE tombstones ADD COLUMN deletion_job_id TEXT");
-        }
-      }
-      if (currentVersion < 12) {
-        const attemptColumns = new Set(
-          (this.db.prepare("PRAGMA table_info('attempts')").all() as SqlRow[])
-            .map((row) => String(row.name)),
-        );
-        if (!attemptColumns.has("execution_runtime")) {
-          this.db.exec(
-            "ALTER TABLE attempts ADD COLUMN execution_runtime TEXT NOT NULL DEFAULT 'native' CHECK(execution_runtime IN ('native', 'acp'))",
-          );
-        }
-        const legacyAttempts = this.db.prepare(`
-          SELECT a.id, a.worker_agent_id, a.child_session_key, r.capability_snapshot_json
-          FROM attempts a
-          JOIN collaboration_runs r ON r.id = a.run_id
-        `).all() as SqlRow[];
-        const updateRuntime = this.db.prepare(
-          "UPDATE attempts SET execution_runtime = ? WHERE id = ?",
-        );
-        for (const attempt of legacyAttempts) {
-          updateRuntime.run(legacyAttemptExecutionRuntime(attempt), String(attempt.id));
-        }
-      }
-      this.setMetadata("schema_version", String(SCHEMA_VERSION));
-      if (!this.getMetadata("collaboration_instance_id")) {
-        this.setMetadata("collaboration_instance_id", newId("instance"));
-      }
-      // Confirmation values are stale-state guards, not authentication
-      // credentials. They are derived from the instance id, so no secret or
-      // token needs to live in collaboration storage.
-      this.db.prepare("DELETE FROM metadata WHERE key = 'confirmation_secret'").run();
-    });
   }
 
   transaction<Result>(run: (() => Result) & SynchronousResultConstraint<Result>): Result {
@@ -1123,14 +915,6 @@ export class CollaborationDatabase {
       .prepare("SELECT source, payload_hash, response_json FROM command_receipts WHERE command_id = ?")
       .get(params.commandId) as SqlRow | undefined;
     const responseJson = params.response ? stableStringify(params.response) : null;
-    const conflict = this.db
-      .prepare("SELECT diagnostic FROM command_receipt_conflicts WHERE command_id = ?")
-      .get(params.commandId) as SqlRow | undefined;
-    if (conflict) {
-      throw new CollaborationError("IDEMPOTENCY_CONFLICT", "commandId is quarantined after a legacy namespace collision", {
-        diagnostic: boundedDiagnostic(conflict.diagnostic),
-      });
-    }
     if (existing) {
       if (existing.source !== params.source) {
         throw new CollaborationError("IDEMPOTENCY_CONFLICT", "commandId was already used by another collaboration operation");
@@ -1185,13 +969,6 @@ export class CollaborationDatabase {
         timestamp,
         timestamp,
       );
-  }
-
-  getCommandReceiptConflict(id: string): string | null {
-    const row = this.db
-      .prepare("SELECT diagnostic FROM command_receipt_conflicts WHERE command_id = ?")
-      .get(id) as SqlRow | undefined;
-    return typeof row?.diagnostic === "string" ? boundedDiagnostic(row.diagnostic) : null;
   }
 
   cancelPendingCommands(runId: string, kind?: CommandKind): number {

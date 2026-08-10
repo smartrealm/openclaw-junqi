@@ -83,15 +83,17 @@ test('commands.list is sent despite discovery omission and maps a missing method
   const unavailable = new OpenClawCommandsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    requestFenced: async () => {
+    requestFenced: async (method) => {
       omittedMethodSent = true;
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     },
   });
   const missing = new OpenClawCommandsClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    requestFenced: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
+    requestFenced: async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    },
   });
 
   await assert.rejects(unavailable.list(), OpenClawCommandsUnavailableError);

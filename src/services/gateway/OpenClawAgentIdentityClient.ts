@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_AGENT_IDENTITY_GET_METHOD = 'agent.identity.get' as const;
 
@@ -84,11 +84,6 @@ function buildParams(input: OpenClawAgentIdentityInput): Record<string, string> 
   };
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 function connectionUnavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
@@ -152,7 +147,7 @@ export class OpenClawAgentIdentityClient {
       }
       return parseOpenClawAgentIdentity(response);
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_AGENT_IDENTITY_GET_METHOD)) {
         throw new OpenClawAgentIdentityUnavailableError(
           'The connected OpenClaw Gateway does not support agent.identity.get',
         );

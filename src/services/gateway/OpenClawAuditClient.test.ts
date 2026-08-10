@@ -69,7 +69,7 @@ describe('OpenClawAuditClient', () => {
       async <T>(method: string) => {
         methods.push(method);
         if (method === 'audit.activity.list') {
-          throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+          throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
         }
         return { events: [legacyEvent], nextCursor: 'next-1' } as T;
       },
@@ -84,7 +84,9 @@ describe('OpenClawAuditClient', () => {
 
   it('does not pretend that a legacy Gateway supports activity-only filters', async () => {
     const client = new OpenClawAuditClient(
-      async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
+      async (method) => {
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+      },
     );
 
     await assert.rejects(
@@ -98,7 +100,9 @@ describe('OpenClawAuditClient', () => {
   });
 
   it('fails closed when Gateway rejects both audit methods', async () => {
-    const client = new OpenClawAuditClient(async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); });
+    const client = new OpenClawAuditClient(async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    });
     await assert.rejects(
       client.list({ runId: 'run-1' }),
       (error: unknown) => error instanceof OpenClawAuditUnsupportedError,

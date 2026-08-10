@@ -34,7 +34,6 @@ interface RpcDefinition {
 
 const READ_METHODS: readonly RpcDefinition[] = [
   { method: "junqi.collab.capabilities", scope: "operator.read", handle: (service) => service.capabilities() },
-  { method: "junqi.collab.plan.get", scope: "operator.read", handle: (service, params) => service.getPlan(params) },
   { method: "junqi.collab.run.get", scope: "operator.read", handle: (service, params) => service.getRun(params) },
   { method: "junqi.collab.run.list", scope: "operator.read", handle: (service, params) => service.listRuns(params) },
   { method: "junqi.collab.run.listBySession", scope: "operator.read", handle: (service, params) => service.listRunsBySession(params) },

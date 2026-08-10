@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_COMMANDS_LIST_METHOD = 'commands.list' as const;
 
@@ -239,11 +239,6 @@ function buildParams(input: OpenClawCommandsListInput): Record<string, unknown> 
   };
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 function connectionUnavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
@@ -268,7 +263,7 @@ export class OpenClawCommandsClient {
       }
       return parseOpenClawCommandsList(response);
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_COMMANDS_LIST_METHOD)) {
         throw new OpenClawCommandsUnavailableError('The connected OpenClaw Gateway does not support commands.list');
       }
       if (connectionUnavailable(error)) {

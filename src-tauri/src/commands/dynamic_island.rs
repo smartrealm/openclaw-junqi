@@ -356,7 +356,6 @@ pub async fn request_dynamic_island_hide(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
 pub async fn toggle_dynamic_island(app: AppHandle) -> Result<bool, String> {
     if let Some(window) = app.get_webview_window(DYNAMIC_ISLAND_LABEL) {
         let visible = window.is_visible().map_err(|error| error.to_string())?;
@@ -367,13 +366,6 @@ pub async fn toggle_dynamic_island(app: AppHandle) -> Result<bool, String> {
     }
     open_dynamic_island(app).await?;
     Ok(true)
-}
-
-#[tauri::command]
-pub async fn get_dynamic_island_visible(app: AppHandle) -> bool {
-    app.get_webview_window(DYNAMIC_ISLAND_LABEL)
-        .and_then(|window| window.is_visible().ok())
-        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -396,15 +388,6 @@ pub async fn set_dynamic_island_click_through(app: AppHandle, ignore: bool) -> R
     window
         .set_ignore_cursor_events(ignore)
         .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub async fn reposition_dynamic_island(app: AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window(DYNAMIC_ISLAND_LABEL)
-        .ok_or_else(|| "Dynamic island window is not open".to_string())?;
-    let expanded = current_frame(&window)?.height > (COMPACT_HEIGHT + EXPANDED_HEIGHT) / 2.0;
-    set_frame(&app, &window, target_frame(&app, expanded)?)
 }
 
 #[tauri::command]

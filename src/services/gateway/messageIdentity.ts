@@ -35,26 +35,13 @@ export function normalizeTranscriptClientMessageId(value: string, role?: unknown
   return value;
 }
 
-/**
- * Adapts OpenClaw transcript messages across wire versions. OpenClaw 2026.7.1
- * exposes its canonical history id under `__openclaw.id`; older payloads used
- * top-level `id` or `messageId` fields.
- */
+/** 只读取 OpenClaw 当前历史消息与发送运行的权威身份字段。 */
 export function readGatewayMessageIdentity(value: unknown): GatewayMessageIdentity {
   const message = record(value);
   if (!message) return {};
   const metadata = record(message.__openclaw);
-  const nativeMessageId = identityValue(
-    metadata?.id,
-    message.id,
-    message.messageId,
-  );
-  const rawClientMessageId = identityValue(
-    message.clientMessageId,
-    message.idempotencyKey,
-    metadata?.clientMessageId,
-    metadata?.idempotencyKey,
-  );
+  const nativeMessageId = identityValue(metadata?.id);
+  const rawClientMessageId = identityValue(message.idempotencyKey);
   const clientMessageId = rawClientMessageId
     ? normalizeTranscriptClientMessageId(rawClientMessageId, message.role)
     : undefined;

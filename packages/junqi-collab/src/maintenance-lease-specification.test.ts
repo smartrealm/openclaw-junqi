@@ -5,10 +5,12 @@ import { stableStringify } from "./util.js";
 
 const specification = new MaintenanceLeaseSpecification();
 
-test("maintenance lease specification upgrades legacy active state and requires an explicit expiry transition", () => {
+test("maintenance lease specification requires the current version and an explicit expiry transition", () => {
   const raw = stableStringify({
-    id: "maintenance-legacy",
-    reason: "database migration",
+    version: 1,
+    status: "ACTIVE",
+    id: "maintenance-current",
+    reason: "runtime update",
     owner: "desktop",
     enteredAt: 100,
     expiresAt: 200,
@@ -34,6 +36,20 @@ test("maintenance lease specification upgrades legacy active state and requires 
   assert.equal(persisted.status, "EXPIRED");
   assert.equal(persisted.kind === "VALID" && persisted.transitionRequired, false);
   assert.equal(persisted.kind === "VALID" && persisted.lease.expiredAt, 225);
+});
+
+test("maintenance lease specification rejects an unversioned persisted state", () => {
+  const inspection = specification.inspect(stableStringify({
+    id: "maintenance-unversioned",
+    reason: "runtime update",
+    owner: "desktop",
+    enteredAt: 100,
+    expiresAt: 200,
+  }), 150);
+
+  assert.equal(inspection.kind, "MALFORMED");
+  assert.equal(inspection.gateActive, true);
+  assert.equal(inspection.recoveryRequired, true);
 });
 
 test("maintenance lease specification fails closed with bounded diagnostics for corrupt state", () => {

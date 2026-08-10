@@ -1257,16 +1257,19 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("junqi-prompt-prefix-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        crate::commands::project_config::write_project_config(
-            root.to_string_lossy().into_owned(),
-            crate::commands::project_config::ProjectConfig {
-                agent: crate::commands::project_config::AgentConfig {
-                    default: "claude".to_string(),
-                    default_permission_mode: "ask".to_string(),
-                    prompt_prefix: "请使用中文回复。".to_string(),
-                },
-                git: crate::commands::project_config::GitConfig::default(),
+        let config = crate::commands::project_config::ProjectConfig {
+            agent: crate::commands::project_config::AgentConfig {
+                default: "claude".to_string(),
+                default_permission_mode: "ask".to_string(),
+                prompt_prefix: "请使用中文回复。".to_string(),
             },
+            git: crate::commands::project_config::GitConfig::default(),
+        };
+        let config_dir = root.join(".junqi");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("config.toml"),
+            toml::to_string_pretty(&config).unwrap(),
         )
         .unwrap();
 

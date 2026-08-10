@@ -36,13 +36,15 @@ interface OpenClawApprovalsState {
   ) => Promise<void>;
 }
 
+export const OPENCLAW_APPROVAL_REQUEST_FAILED = 'OPENCLAW_APPROVAL_REQUEST_FAILED';
+
 let requestSequence = 0;
 let historyRequestSequence = 0;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim()
     ? error.message
-    : 'OpenClaw approval request failed';
+    : OPENCLAW_APPROVAL_REQUEST_FAILED;
 }
 
 export const useOpenClawApprovalsStore = create<OpenClawApprovalsState>((set, get) => ({
@@ -136,7 +138,7 @@ export const useOpenClawApprovalsStore = create<OpenClawApprovalsState>((set, ge
   },
   resolve: async (connected, approval, decision) => {
     if (!connected) {
-      set({ error: 'Gateway is not connected' });
+      set({ error: null });
       return;
     }
     const id = `${approval.kind}:${approval.id}`;

@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 #[cfg(unix)]
 use std::ffi::{CString, OsStr};
 use std::fs::{self, File, OpenOptions};
@@ -17,19 +17,11 @@ const OWNER_PREFIX: &str = "junqi-desktop:";
 const MAX_OWNER_BYTES: usize = 142;
 const MAX_OWNER_FILE_BYTES: u64 = 256;
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CollaborationMaintenanceOwnerParams {
-    #[serde(default)]
-    legacy_owner: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CollaborationMaintenanceOwner {
     owner: String,
     created: bool,
-    adopted_legacy: bool,
 }
 
 fn owner_path() -> PathBuf {
@@ -347,10 +339,7 @@ fn read_owner_at(directory: &OwnerDirectory, name: &OsStr) -> Result<Option<Stri
 }
 
 #[cfg(unix)]
-fn load_or_create_owner_unix(
-    path: &Path,
-    legacy_owner: Option<&str>,
-) -> Result<CollaborationMaintenanceOwner, String> {
+fn load_or_create_owner_unix(path: &Path) -> Result<CollaborationMaintenanceOwner, String> {
     let parent = path
         .parent()
         .ok_or_else(|| "Collaboration maintenance owner path has no parent".to_string())?;
@@ -363,14 +352,10 @@ fn load_or_create_owner_unix(
         return Ok(CollaborationMaintenanceOwner {
             owner,
             created: false,
-            adopted_legacy: false,
         });
     }
 
-    let adopted_legacy = legacy_owner.and_then(|value| validate_owner(value).ok());
-    let owner = adopted_legacy
-        .clone()
-        .unwrap_or_else(|| format!("{OWNER_PREFIX}{}", uuid::Uuid::new_v4()));
+    let owner = format!("{OWNER_PREFIX}{}", uuid::Uuid::new_v4());
     let temporary_name = format!(
         ".collaboration-maintenance-owner-{}-{}.tmp",
         std::process::id(),
@@ -401,7 +386,6 @@ fn load_or_create_owner_unix(
             Ok(CollaborationMaintenanceOwner {
                 owner,
                 created: true,
-                adopted_legacy: adopted_legacy.is_some(),
             })
         }
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -413,7 +397,6 @@ fn load_or_create_owner_unix(
             Ok(CollaborationMaintenanceOwner {
                 owner,
                 created: false,
-                adopted_legacy: false,
             })
         }
         Err(error) => {
@@ -426,13 +409,10 @@ fn load_or_create_owner_unix(
     }
 }
 
-fn load_or_create_owner_at(
-    path: &Path,
-    legacy_owner: Option<&str>,
-) -> Result<CollaborationMaintenanceOwner, String> {
+fn load_or_create_owner_at(path: &Path) -> Result<CollaborationMaintenanceOwner, String> {
     #[cfg(unix)]
     {
-        load_or_create_owner_unix(path, legacy_owner)
+        load_or_create_owner_unix(path)
     }
 
     #[cfg(not(unix))]
@@ -442,7 +422,6 @@ fn load_or_create_owner_at(
                 return Ok(CollaborationMaintenanceOwner {
                     owner,
                     created: false,
-                    adopted_legacy: false,
                 });
             }
             Err(error) if path.exists() => return Err(error),
@@ -462,10 +441,7 @@ fn load_or_create_owner_at(
             );
         }
 
-        let adopted_legacy = legacy_owner.and_then(|value| validate_owner(value).ok());
-        let owner = adopted_legacy
-            .clone()
-            .unwrap_or_else(|| format!("{OWNER_PREFIX}{}", uuid::Uuid::new_v4()));
+        let owner = format!("{OWNER_PREFIX}{}", uuid::Uuid::new_v4());
         let temporary = parent.join(format!(
             ".collaboration-maintenance-owner-{}-{}.tmp",
             std::process::id(),
@@ -499,7 +475,6 @@ fn load_or_create_owner_at(
                 Ok(CollaborationMaintenanceOwner {
                     owner,
                     created: true,
-                    adopted_legacy: adopted_legacy.is_some(),
                 })
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -507,7 +482,6 @@ fn load_or_create_owner_at(
                 Ok(CollaborationMaintenanceOwner {
                     owner: read_owner(path)?,
                     created: false,
-                    adopted_legacy: false,
                 })
             }
             Err(error) => {
@@ -521,10 +495,8 @@ fn load_or_create_owner_at(
 }
 
 #[tauri::command]
-pub fn get_collaboration_maintenance_owner(
-    params: CollaborationMaintenanceOwnerParams,
-) -> Result<CollaborationMaintenanceOwner, String> {
-    load_or_create_owner_at(&owner_path(), params.legacy_owner.as_deref())
+pub fn get_collaboration_maintenance_owner() -> Result<CollaborationMaintenanceOwner, String> {
+    load_or_create_owner_at(&owner_path())
 }
 
 #[cfg(test)]
@@ -539,20 +511,17 @@ mod tests {
     }
 
     #[test]
-    fn adopts_legacy_owner_once_and_reuses_the_durable_value() {
+    fn creates_one_owner_and_reuses_the_durable_value() {
         let root = test_root();
         let path = root.join("owner");
-        let legacy = "junqi-desktop:legacy-owner-1";
 
-        let created = load_or_create_owner_at(&path, Some(legacy)).unwrap();
-        assert_eq!(created.owner, legacy);
+        let created = load_or_create_owner_at(&path).unwrap();
+        assert!(created.owner.starts_with(OWNER_PREFIX));
         assert!(created.created);
-        assert!(created.adopted_legacy);
 
-        let reused = load_or_create_owner_at(&path, Some("junqi-desktop:other-owner")).unwrap();
-        assert_eq!(reused.owner, legacy);
+        let reused = load_or_create_owner_at(&path).unwrap();
+        assert_eq!(reused.owner, created.owner);
         assert!(!reused.created);
-        assert!(!reused.adopted_legacy);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -564,7 +533,7 @@ mod tests {
         let path = root.join("owner");
         fs::write(&path, "not-an-owner").unwrap();
 
-        assert!(load_or_create_owner_at(&path, None).is_err());
+        assert!(load_or_create_owner_at(&path).is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), "not-an-owner");
 
         let _ = fs::remove_dir_all(root);
@@ -582,7 +551,7 @@ mod tests {
         let path = root.join("owner");
         symlink(&target, &path).unwrap();
 
-        assert!(load_or_create_owner_at(&path, None).is_err());
+        assert!(load_or_create_owner_at(&path).is_err());
 
         let _ = fs::remove_dir_all(root);
     }
@@ -599,7 +568,7 @@ mod tests {
         let linked_parent = root.join("linked-parent");
         symlink(&outside, &linked_parent).unwrap();
 
-        let result = load_or_create_owner_at(&linked_parent.join("owner"), None);
+        let result = load_or_create_owner_at(&linked_parent.join("owner"));
 
         assert!(result.is_err());
         assert!(!outside.join("owner").exists());
@@ -619,13 +588,12 @@ mod tests {
         let barrier = Arc::new(Barrier::new(WRITERS));
         let mut handles = Vec::with_capacity(WRITERS);
 
-        for index in 0..WRITERS {
+        for _ in 0..WRITERS {
             let path = path.clone();
             let barrier = Arc::clone(&barrier);
             handles.push(std::thread::spawn(move || {
-                let legacy_owner = format!("junqi-desktop:concurrent-owner-{index}");
                 barrier.wait();
-                load_or_create_owner_at(&path, Some(&legacy_owner))
+                load_or_create_owner_at(&path)
             }));
         }
 

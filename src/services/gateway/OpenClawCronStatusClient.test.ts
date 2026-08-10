@@ -47,12 +47,12 @@ test('OpenClawCronStatusClient preserves disabled scheduler state and an absent 
 
 test('OpenClawCronStatusClient requests despite discovery omission and refuses malformed status results', async () => {
   let calls = 0;
-  const unavailable = new OpenClawCronStatusClient(async () => {
+  const unavailable = new OpenClawCronStatusClient(async (method) => {
     calls += 1;
-    throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+    throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
   });
-  const missing = new OpenClawCronStatusClient(async () => {
-    throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+  const missing = new OpenClawCronStatusClient(async (method) => {
+    throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
   });
   const malformed = new OpenClawCronStatusClient(async () => ({
     enabled: true,

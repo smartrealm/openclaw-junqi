@@ -42,7 +42,9 @@ test('OpenClawModelAuthLogoutClient rejects malformed and mismatched official re
 
 test('OpenClawModelAuthLogoutClient maps an unsupported official RPC without a fallback', async () => {
   const client = new OpenClawModelAuthLogoutClient({
-    requestPrivileged: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
+    requestPrivileged: async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    },
   });
   await assert.rejects(client.logoutProvider('openai'), OpenClawModelAuthLogoutUnavailableError);
 });

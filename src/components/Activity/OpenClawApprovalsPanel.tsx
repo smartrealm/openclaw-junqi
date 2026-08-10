@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
+  OPENCLAW_APPROVAL_REQUEST_FAILED,
   useOpenClawApprovalsStore,
   type OpenClawApproval,
   type OpenClawApprovalDecision,
@@ -21,6 +22,12 @@ import {
 } from '@/stores/openclawApprovalsStore';
 
 const APPROVAL_REFRESH_INTERVAL_MS = 15_000;
+
+function approvalErrorLabel(error: string, t: (key: string, fallback: string) => string): string {
+  return error === OPENCLAW_APPROVAL_REQUEST_FAILED
+    ? t('activity.approvals.requestFailed', 'Unable to read native approvals.')
+    : error;
+}
 
 function decisionLabel(
   decision: OpenClawApprovalDecision,
@@ -260,14 +267,14 @@ function ApprovalHistorySection({ connected }: { connected: boolean }) {
       ) : historyLoading && !history ? (
         <p className="px-4 pb-4 text-[11px] text-aegis-text-dim">{t('activity.approvals.historyLoading', 'Loading approval history')}</p>
       ) : historyError && !history ? (
-        <div className="px-4 pb-4 text-[11px] text-aegis-danger" role="alert">{historyError}</div>
+        <div className="px-4 pb-4 text-[11px] text-aegis-danger" role="alert">{approvalErrorLabel(historyError, (key, fallback) => t(key, fallback))}</div>
       ) : unavailable ? (
         <p className="px-4 pb-4 text-[11px] text-aegis-text-dim">{t('activity.approvals.historyUnsupported', 'This Gateway does not expose native approval history.')}</p>
       ) : history?.items.length === 0 ? (
         <p className="px-4 pb-4 text-[11px] text-aegis-text-dim">{t('activity.approvals.historyEmpty', 'No terminal approvals in the Gateway history.')}</p>
       ) : (
         <>
-          {historyError && <p className="border-b border-aegis-danger/20 bg-aegis-danger/5 px-4 py-2 text-[10.5px] text-aegis-danger" role="alert">{historyError}</p>}
+          {historyError && <p className="border-b border-aegis-danger/20 bg-aegis-danger/5 px-4 py-2 text-[10.5px] text-aegis-danger" role="alert">{approvalErrorLabel(historyError, (key, fallback) => t(key, fallback))}</p>}
           {history?.items.map((approval) => (
             <ApprovalHistoryRow key={approval.id} approval={approval} />
           ))}
@@ -346,14 +353,14 @@ export function OpenClawApprovalsPanel({ connected }: { connected: boolean }) {
       ) : loading && !snapshot ? (
         <p className="px-4 py-4 text-[11px] text-aegis-text-dim">{t('activity.approvals.loading', 'Loading approvals')}</p>
       ) : error && !snapshot ? (
-        <div className="px-4 py-4 text-[11px] text-aegis-danger" role="alert">{error}</div>
+        <div className="px-4 py-4 text-[11px] text-aegis-danger" role="alert">{approvalErrorLabel(error, (key, fallback) => t(key, fallback))}</div>
       ) : unavailable ? (
         <p className="px-4 py-4 text-[11px] text-aegis-text-dim">{t('activity.approvals.unsupported', 'This Gateway does not expose native approval methods.')}</p>
       ) : snapshot?.approvals.length === 0 ? (
         <p className="px-4 py-4 text-[11px] text-aegis-text-dim">{t('activity.approvals.empty', 'No pending native approvals.')}</p>
       ) : (
         <>
-          {error && <p className="border-b border-aegis-danger/20 bg-aegis-danger/5 px-4 py-2 text-[10.5px] text-aegis-danger" role="alert">{error}</p>}
+          {error && <p className="border-b border-aegis-danger/20 bg-aegis-danger/5 px-4 py-2 text-[10.5px] text-aegis-danger" role="alert">{approvalErrorLabel(error, (key, fallback) => t(key, fallback))}</p>}
           {snapshot?.approvals.map((approval) => (
             <ApprovalRow
               key={`${approval.kind}:${approval.id}`}

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   isOpenClawChatSendDeliveryUncertain,
+  parseOpenClawLiveGatewayEvent,
   parseOpenClawChatRunStartup,
   resolveOpenClawChatDeltaText,
 } from './openClawChatEvent';
@@ -56,5 +57,66 @@ test('只接受 OpenClaw 官方启动阶段', () => {
     state: 'status',
     runId: 'run-one',
     phase: 'invented_phase',
+  }), null);
+});
+
+test('实时 Agent 事件必须在进入运行投影前通过完整协议解码', () => {
+  assert.equal(parseOpenClawLiveGatewayEvent({
+    type: 'event',
+    event: 'agent',
+    payload: {
+      runId: 'run-one',
+      seq: 3,
+      stream: 'assistant',
+      ts: 1_700_000_000_000,
+      data: { delta: '你好' },
+    },
+  })?.kind, 'agent');
+
+  assert.equal(parseOpenClawLiveGatewayEvent({
+    type: 'event',
+    event: 'agent',
+    payload: {
+      runId: 'run-one',
+      seq: 3,
+      stream: 'assistant',
+      ts: 1_700_000_000_000,
+      data: null,
+    },
+  }), null);
+});
+
+test('实时 Chat 事件只接受官方封闭状态及其必填字段', () => {
+  assert.equal(parseOpenClawLiveGatewayEvent({
+    type: 'event',
+    event: 'chat',
+    payload: {
+      sessionKey: 'agent:main:main',
+      runId: 'run-one',
+      seq: 4,
+      state: 'delta',
+      deltaText: '你好',
+    },
+  })?.kind, 'chat');
+
+  assert.equal(parseOpenClawLiveGatewayEvent({
+    type: 'event',
+    event: 'chat',
+    payload: {
+      sessionKey: 'agent:main:main',
+      runId: 'run-one',
+      seq: 4,
+      state: 'delta',
+    },
+  }), null);
+  assert.equal(parseOpenClawLiveGatewayEvent({
+    type: 'event',
+    event: 'chat',
+    payload: {
+      sessionKey: 'agent:main:main',
+      runId: 'run-one',
+      seq: 4,
+      state: 'invented',
+    },
   }), null);
 });

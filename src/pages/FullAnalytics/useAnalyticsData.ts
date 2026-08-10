@@ -29,6 +29,7 @@ import {
   type DailyEntry,
   type PresetId,
 } from './types';
+import type { OpenClawSessionUsageEntry } from '@/services/gateway/OpenClawUsageClient';
 import { getAgentColor } from './helpers';
 import { cacheGet, cacheSet, CACHE_KEY_FULL_COST, CACHE_KEY_FULL_USAGE } from './cache';
 import { debugError } from '@/utils/debugLog';
@@ -67,28 +68,18 @@ function normalizeModelWithProvider(modelRaw?: string, providerRaw?: string): st
   return provider ? `${provider}/${model}` : model;
 }
 
-function resolveSessionModelName(session: any): string {
-  const usage = session?.usage || {};
-  const metadata = session?.metadata || {};
+function resolveSessionModelName(session: OpenClawSessionUsageEntry): string {
+  const usageModel = session.usage?.modelUsage?.[0];
   return normalizeModelWithProvider(
     firstNonEmptyString(
-      session?.model,
-      session?.modelName,
-      session?.modelId,
-      session?.modelSlug,
-      usage?.model,
-      usage?.modelName,
-      usage?.modelId,
-      metadata?.model,
-      metadata?.modelName,
+      session.model,
+      session.modelOverride,
+      usageModel?.model,
     ),
     firstNonEmptyString(
-      session?.provider,
-      session?.modelProvider,
-      usage?.provider,
-      usage?.modelProvider,
-      metadata?.provider,
-      metadata?.modelProvider,
+      session.modelProvider,
+      session.providerOverride,
+      usageModel?.provider,
     ),
   );
 }
@@ -155,7 +146,7 @@ export interface AnalyticsData {
   // Filtered & derived
   daily:         DailyEntry[];
   totals:        CostTotals;
-  sessions:      any[];
+  sessions:      OpenClawSessionUsageEntry[];
   byAgent:       ByAgentEntry[];
   byModel:       ByModelEntry[];
   periodInfo:    { start: string; end: string; days: number };
@@ -232,14 +223,14 @@ export function useAnalyticsData(): AnalyticsData {
         ]);
 
         if (costResult.status === 'fulfilled' && costResult.value) {
-          setCostData(costResult.value as unknown as CostSummary);
+          setCostData(costResult.value);
           cacheSet(CACHE_KEY_FULL_COST, costResult.value);
         } else if (costResult.status === 'rejected') {
           debugError('analytics', '[Analytics] Cost fetch failed:', costResult.reason);
         }
 
         if (usageResult.status === 'fulfilled' && usageResult.value) {
-          setUsageData(usageResult.value as unknown as SessionsUsageResponse);
+          setUsageData(usageResult.value);
           cacheSet(CACHE_KEY_FULL_USAGE, usageResult.value);
         } else if (usageResult.status === 'rejected') {
           debugError('analytics', '[Analytics] Usage fetch failed:', usageResult.reason);
@@ -392,9 +383,9 @@ export function useAnalyticsData(): AnalyticsData {
     if (activePreset === 'all') return aggregates?.byAgent || [];
     const map = new Map<string, CostTotals>();
     for (const s of sessions) {
-      const aid      = (s as any).agentId || 'unknown';
+      const aid      = s.agentId || 'unknown';
       const existing = map.get(aid) || { ...EMPTY_TOTALS };
-      accumulateTotals(existing, (s as any).usage || {});
+      accumulateTotals(existing, s.usage || {});
       map.set(aid, existing);
     }
     return Array.from(map.entries()).map(([agentId, t]) => ({ agentId, totals: t }));
@@ -406,7 +397,7 @@ export function useAnalyticsData(): AnalyticsData {
       const model = resolveSessionModelName(s);
       const existing = map.get(model) || { count: 0, totals: { ...EMPTY_TOTALS } };
       existing.count++;
-      accumulateTotals(existing.totals, (s as any).usage || {});
+      accumulateTotals(existing.totals, s.usage || {});
       map.set(model, existing);
     }
     return Array.from(map.entries()).map(([model, data]) => ({

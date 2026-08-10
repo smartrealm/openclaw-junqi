@@ -30,6 +30,11 @@ interface OpenClawTaskLedgerState {
   dismissDelivery: (connected: boolean, task: OpenClawTaskSummary) => Promise<void>;
 }
 
+export const OPENCLAW_TASK_REQUEST_FAILED = 'OPENCLAW_TASK_REQUEST_FAILED';
+export const OPENCLAW_TASK_CANCEL_NOT_CONFIRMED = 'OPENCLAW_TASK_CANCEL_NOT_CONFIRMED';
+export const OPENCLAW_TASK_RETRY_NOT_CONFIRMED = 'OPENCLAW_TASK_RETRY_NOT_CONFIRMED';
+export const OPENCLAW_TASK_DISMISS_NOT_CONFIRMED = 'OPENCLAW_TASK_DISMISS_NOT_CONFIRMED';
+
 let listRequestSequence = 0;
 let detailRequestEpoch = 0;
 const detailRequestSequences = new Map<string, number>();
@@ -38,7 +43,7 @@ let cancellationRequestSequence = 0;
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim()
     ? error.message
-    : 'OpenClaw task ledger request failed';
+    : OPENCLAW_TASK_REQUEST_FAILED;
 }
 
 export const useOpenClawTaskLedgerStore = create<OpenClawTaskLedgerState>((set, get) => ({
@@ -132,7 +137,7 @@ export const useOpenClawTaskLedgerStore = create<OpenClawTaskLedgerState>((set, 
   },
   cancel: async (connected, task) => {
     if (!connected) {
-      set({ error: 'Gateway is not connected' });
+      set({ error: null });
       return;
     }
     const sequence = cancellationRequestSequence + 1;
@@ -142,7 +147,7 @@ export const useOpenClawTaskLedgerStore = create<OpenClawTaskLedgerState>((set, 
       const result = await gateway.cancelTask(task.id);
       if (sequence !== cancellationRequestSequence) return;
       if (!result.found || !result.cancelled) {
-        set({ error: result.reason || 'OpenClaw did not confirm task cancellation' });
+        set({ error: result.reason || OPENCLAW_TASK_CANCEL_NOT_CONFIRMED });
         return;
       }
       await get().refresh(gateway.getStatus().connected, false);
@@ -155,7 +160,7 @@ export const useOpenClawTaskLedgerStore = create<OpenClawTaskLedgerState>((set, 
   },
   retryDelivery: async (connected, task) => {
     if (!connected) {
-      set({ error: 'Gateway is not connected' });
+      set({ error: null });
       return;
     }
     const sequence = cancellationRequestSequence + 1;
@@ -166,7 +171,7 @@ export const useOpenClawTaskLedgerStore = create<OpenClawTaskLedgerState>((set, 
       if (sequence !== cancellationRequestSequence) return;
       const item = result.results.find((entry) => entry.taskId === task.id);
       if (!item?.ok) {
-        set({ error: item?.reason || 'OpenClaw did not confirm task delivery recovery' });
+        set({ error: item?.reason || OPENCLAW_TASK_RETRY_NOT_CONFIRMED });
         return;
       }
       await get().refresh(gateway.getStatus().connected, false);
@@ -179,7 +184,7 @@ export const useOpenClawTaskLedgerStore = create<OpenClawTaskLedgerState>((set, 
   },
   dismissDelivery: async (connected, task) => {
     if (!connected) {
-      set({ error: 'Gateway is not connected' });
+      set({ error: null });
       return;
     }
     const sequence = cancellationRequestSequence + 1;
@@ -190,7 +195,7 @@ export const useOpenClawTaskLedgerStore = create<OpenClawTaskLedgerState>((set, 
       if (sequence !== cancellationRequestSequence) return;
       const item = result.results.find((entry) => entry.taskId === task.id);
       if (!item?.ok) {
-        set({ error: item?.reason || 'OpenClaw did not confirm task delivery dismissal' });
+        set({ error: item?.reason || OPENCLAW_TASK_DISMISS_NOT_CONFIRMED });
         return;
       }
       await get().refresh(gateway.getStatus().connected, false);

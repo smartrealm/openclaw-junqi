@@ -1,3 +1,5 @@
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
+
 export const OPENCLAW_AUDIT_ACTIVITY_METHOD = 'audit.activity.list' as const;
 export const OPENCLAW_AUDIT_LEGACY_METHOD = 'audit.list' as const;
 
@@ -96,11 +98,6 @@ export class OpenClawAuditResponseError extends Error {
     super('The OpenClaw Gateway returned an invalid audit response');
     this.name = 'OpenClawAuditResponseError';
   }
-}
-
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -456,16 +453,17 @@ export class OpenClawAuditClient {
     try {
       return parseOpenClawAuditActivityPage(await this.request(OPENCLAW_AUDIT_ACTIVITY_METHOD, activityParams));
     } catch (error) {
-      if (!unsupportedMethod(error)) throw error;
+      if (!isOpenClawUnknownMethodError(error, OPENCLAW_AUDIT_ACTIVITY_METHOD)) throw error;
     }
     if (requiresActivity) throw new OpenClawAuditUnsupportedError();
     const legacyParams = requestParams(input, false);
     try {
       return parseOpenClawAuditLegacyPage(await this.request(OPENCLAW_AUDIT_LEGACY_METHOD, legacyParams));
     } catch (error) {
-      if (unsupportedMethod(error)) throw new OpenClawAuditUnsupportedError();
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_AUDIT_LEGACY_METHOD)) {
+        throw new OpenClawAuditUnsupportedError();
+      }
       throw error;
     }
   }
 }
-import { GatewayRpcError } from './Connection';

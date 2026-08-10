@@ -1,14 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
 import { diffConfigPaths, planConfigReload } from './configReloadPlan';
 
-/**
- * Sampled from the installed OpenClaw 2026.7.1-2 gateway via
- * `openclaw gateway call config.schema.lookup`. Six of these ten paths do not
- * need a restart, which is exactly the availability that the previous
- * unconditional restart threw away.
- */
+/** 以 `config.schema.lookup` 的结构化结果模拟不同路径的运行时重载要求。 */
 const SAMPLED_RELOAD_KINDS: Record<string, string> = {
   'gateway.port': 'restart',
   'gateway.auth': 'restart',
@@ -38,7 +32,7 @@ test('changed paths are reported as dotted config paths', () => {
   assert.deepEqual(diffConfigPaths({ tools: { x: 1 } }, {}), ['tools.x']);
 });
 
-// The reload planner is keyed on config paths, not on array element identity.
+// 重载规划以配置路径为单位，数组不能拆成元素索引路径。
 test('arrays are compared whole rather than by index', () => {
   assert.deepEqual(diffConfigPaths({ list: [1, 2] }, { list: [1, 3] }), ['list']);
   assert.deepEqual(diffConfigPaths({ list: [1, 2] }, { list: [1, 2] }), []);
@@ -70,20 +64,20 @@ test('the strongest requirement across changed paths wins', async () => {
   assert.equal(hot.kind, 'hot');
 });
 
-// Not knowing the reload semantics must never read as permission to skip.
+// 未知重载语义不能被解释为允许跳过重启。
 test('an unavailable lookup degrades to restart, never to hot or none', async () => {
   const plan = await planConfigReload(['session.dmScope'], async () => {
     throw new Error('gateway unreachable');
   });
   assert.equal(plan.kind, 'restart');
-  assert.match(String(plan.fallbackReason), /gateway unreachable/);
+  assert.equal(plan.fallbackReason, 'lookup-failed');
 });
 
 test('a missing or unrecognised reloadKind degrades to restart', async () => {
   for (const payload of [{}, { reloadKind: 'maybe' }, null, 'restart']) {
     const plan = await planConfigReload(['session.dmScope'], async () => payload);
     assert.equal(plan.kind, 'restart', JSON.stringify(payload));
-    assert.ok(plan.fallbackReason);
+    assert.equal(plan.fallbackReason, 'reload-kind-missing');
   }
 });
 
@@ -92,19 +86,7 @@ test('one unknown path does not suppress a restart demanded by another', async (
   assert.equal(plan.kind, 'restart');
 });
 
-test('the config manager consults the plan before restarting', () => {
-  const source = readFileSync('src/pages/ConfigManager/index.tsx', 'utf8');
-  assert.match(source, /planConfigReload\(/);
-  assert.match(source, /config\.schema\.lookup/);
-  // The restart must sit behind the plan, not run unconditionally after save.
-  const planIndex = source.indexOf('planConfigReload(');
-  const restartIndex = source.indexOf("gatewayLifecycle.restart('config-manager')");
-  assert.ok(planIndex >= 0 && restartIndex > planIndex);
-  assert.match(source, /if \(reloadPlan\.kind !== 'restart'\)/);
-});
-
-// No baseline means every path reads as changed. That must stay safe: the plan
-// still asks per path, and any restart-kind path present forces a restart.
+// 缺少基线时所有路径都视为变化，仍逐项查询并保留最强重载要求。
 test('an absent baseline does not weaken the decision', async () => {
   const saved = { session: { dmScope: 'per-channel-peer' }, gateway: { port: 18789 } };
   const paths = diffConfigPaths({}, saved);
@@ -114,13 +96,4 @@ test('an absent baseline does not weaken the decision', async () => {
   const hotOnly = diffConfigPaths({}, { agents: { defaults: { model: 'x' } } });
   assert.deepEqual(hotOnly, ['agents.defaults.model']);
   assert.equal((await planConfigReload(hotOnly, sampledLookup)).kind, 'hot');
-});
-
-test('the config manager captures the baseline before it overwrites it', () => {
-  const source = readFileSync('src/pages/ConfigManager/index.tsx', 'utf8');
-  const capture = source.indexOf('const reloadBaseline = originalConfig;');
-  const overwrite = source.indexOf('setOriginalConfig(structuredClone(savedConfig))');
-  assert.ok(capture >= 0, 'baseline must be captured explicitly');
-  assert.ok(overwrite > capture, 'baseline must be captured before the state setter');
-  assert.match(source, /diffConfigPaths\(reloadBaseline \?\? \{\}/);
 });

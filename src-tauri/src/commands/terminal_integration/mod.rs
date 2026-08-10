@@ -149,7 +149,6 @@ trait TerminalIntegrationBackend {
     const LAUNCHER_FILENAME: &'static str;
 
     fn apply_environment(enabled: bool) -> Result<EnvironmentBinding, String>;
-    fn detect_environment() -> EnvironmentBinding;
     fn is_environment_configured(binding: &EnvironmentBinding) -> bool;
     fn launcher_contents(target: &TerminalLauncherTarget) -> String;
 
@@ -178,10 +177,6 @@ impl<B: TerminalIntegrationBackend> TerminalIntegrationService<B> {
         let binding =
             B::apply_environment(false).map_err(|error| rollback_launcher(snapshot, error))?;
         Ok(Self::build_status(false, binding, false))
-    }
-
-    fn detect(requested: bool, runtime_ready: bool) -> TerminalIntegrationStatus {
-        Self::build_status(requested, B::detect_environment(), runtime_ready)
     }
 
     fn write_launcher(target: &TerminalLauncherTarget) -> Result<LauncherSnapshot, String> {
@@ -342,28 +337,6 @@ pub(crate) fn disable_terminal_integration_for_uninstall() -> Result<(), String>
 #[tauri::command]
 pub async fn apply_terminal_integration() -> Result<TerminalIntegrationStatus, String> {
     sync_terminal_integration().await
-}
-
-#[tauri::command]
-pub async fn get_terminal_integration_status() -> Result<TerminalIntegrationStatus, String> {
-    let requested = paths::terminal_integration_requested();
-    let runtime_ready = if requested {
-        match paths::active_runtime_mode() {
-            paths::OpenClawRuntimeMode::Docker => true,
-            paths::OpenClawRuntimeMode::Native => {
-                crate::commands::system::ensure_openclaw_relocation_complete().is_ok()
-                    && crate::commands::system::resolve_compatible_native_openclaw_runtime()
-                        .await
-                        .is_ok()
-            }
-        }
-    } else {
-        false
-    };
-    Ok(TerminalIntegrationService::<ActiveBackend>::detect(
-        requested,
-        runtime_ready,
-    ))
 }
 
 #[cfg(test)]

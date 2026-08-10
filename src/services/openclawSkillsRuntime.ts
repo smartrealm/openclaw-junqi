@@ -1,5 +1,5 @@
 import { gateway } from '@/services/gateway';
-import { GatewayRpcError } from '@/services/gateway/Connection';
+import { isOpenClawUnknownMethodError } from '@/services/gateway/GatewayProtocolEvidence';
 
 export interface OpenClawSkillGatewayClient {
   call(method: string, params?: Record<string, unknown>): Promise<unknown>;
@@ -212,17 +212,12 @@ export class OpenClawSkillProposalEventsUnsupportedError extends Error {
   }
 }
 
-function isUnsupportedGatewayMethodError(error: unknown): boolean {
-  if (!(error instanceof GatewayRpcError)) return false;
-  const code = error.code?.trim().toUpperCase();
-  return code === 'METHOD_NOT_FOUND' || code === 'UNKNOWN_METHOD' || code === 'UNKNOWN_COMMAND';
-}
-
 function rethrowUnsupportedGatewayMethod(
   error: unknown,
+  method: string,
   UnsupportedError: new () => Error,
 ): never {
-  if (isUnsupportedGatewayMethodError(error)) throw new UnsupportedError();
+  if (isOpenClawUnknownMethodError(error, method)) throw new UnsupportedError();
   throw error;
 }
 
@@ -1020,7 +1015,7 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
           ...(normalizedAgentId ? { agentId: normalizedAgentId } : {}),
         });
       } catch (error) {
-        return rethrowUnsupportedGatewayMethod(error, OpenClawSkillCardUnsupportedError);
+        return rethrowUnsupportedGatewayMethod(error, 'skills.skillCard', OpenClawSkillCardUnsupportedError);
       }
       const card = normalizeOpenClawSkillCard(response, normalizedSkillKey);
       if (!card) throw new Error('OpenClaw returned an invalid skill card response.');
@@ -1032,7 +1027,7 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
       try {
         response = await client.call('skills.curator.status', {});
       } catch (error) {
-        return rethrowUnsupportedGatewayMethod(error, OpenClawSkillCuratorUnsupportedError);
+        return rethrowUnsupportedGatewayMethod(error, 'skills.curator.status', OpenClawSkillCuratorUnsupportedError);
       }
       const status = normalizeOpenClawSkillCuratorStatus(response);
       if (!status) throw new Error('OpenClaw returned an invalid skill curator status response.');
@@ -1047,7 +1042,7 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
           ...(normalizedAgentId ? { agentId: normalizedAgentId } : {}),
         });
       } catch (error) {
-        return rethrowUnsupportedGatewayMethod(error, OpenClawSkillProposalsUnsupportedError);
+        return rethrowUnsupportedGatewayMethod(error, 'skills.proposals.list', OpenClawSkillProposalsUnsupportedError);
       }
       const manifest = normalizeOpenClawSkillProposalManifest(response);
       if (!manifest) throw new Error('OpenClaw returned an invalid skill proposal manifest response.');
@@ -1064,7 +1059,7 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
           ...(normalizedAgentId ? { agentId: normalizedAgentId } : {}),
         });
       } catch (error) {
-        return rethrowUnsupportedGatewayMethod(error, OpenClawSkillProposalInspectUnsupportedError);
+        return rethrowUnsupportedGatewayMethod(error, 'skills.proposals.inspect', OpenClawSkillProposalInspectUnsupportedError);
       }
       const inspection = normalizeOpenClawSkillProposalInspection(response, normalizedProposalId);
       if (!inspection) throw new Error('OpenClaw returned an invalid skill proposal inspection response.');
@@ -1088,7 +1083,11 @@ export function createOpenClawSkillsRuntime(client: OpenClawSkillGatewayClient) 
           ...(limit === undefined ? {} : { limit }),
         });
       } catch (error) {
-        return rethrowUnsupportedGatewayMethod(error, OpenClawSkillProposalEventsUnsupportedError);
+        return rethrowUnsupportedGatewayMethod(
+          error,
+          'skills.proposals.events.list',
+          OpenClawSkillProposalEventsUnsupportedError,
+        );
       }
       const page = normalizeOpenClawSkillProposalEventsPage(response, normalizedProposalId);
       if (!page) throw new Error('OpenClaw returned an invalid skill proposal events response.');

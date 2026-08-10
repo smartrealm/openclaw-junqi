@@ -1,4 +1,5 @@
 import { GatewayRpcError } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 import { requireOpenClawSessionTarget } from './OpenClawSessionTarget';
 
 type GatewayRequester = <T>(method: string, params: Record<string, unknown>) => Promise<T>;
@@ -58,11 +59,6 @@ function requiredText(value: string, field: string): string {
 function optionalAgentId(agentId?: string): { agentId?: string } {
   const normalized = agentId?.trim();
   return normalized ? { agentId: normalized } : {};
-}
-
-function isUnsupported(error: unknown): error is GatewayRpcError {
-  if (!(error instanceof GatewayRpcError)) return false;
-  return ['METHOD_NOT_FOUND', 'UNKNOWN_METHOD', 'UNKNOWN_COMMAND'].includes(error.code?.trim().toUpperCase() ?? '');
 }
 
 function parseEditor(value: unknown, method: string): Pick<SessionTranscriptForkResult, 'editorText' | 'editorAttachments'> {
@@ -125,7 +121,9 @@ export class SessionTranscriptHistoryClient {
     try {
       return await (privileged ? this.deps.requestPrivileged<T>(method, params) : this.deps.request<T>(method, params));
     } catch (error) {
-      if (isUnsupported(error)) throw new SessionTranscriptHistoryProtocolUnsupportedError(error);
+      if (error instanceof GatewayRpcError && isOpenClawUnknownMethodError(error, method)) {
+        throw new SessionTranscriptHistoryProtocolUnsupportedError(error);
+      }
       throw error;
     }
   }

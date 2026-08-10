@@ -58,9 +58,9 @@ describe('OpenClawTaskLedgerClient', () => {
 
   it('requests methods despite discovery omission and trusts Gateway unsupported responses', async () => {
     let calls = 0;
-    const client = createClient(async () => {
+    const client = createClient(async (method) => {
       calls += 1;
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     });
 
     assert.deepEqual(await client.list(), { tasks: [], availability: 'unavailable' });
@@ -72,8 +72,8 @@ describe('OpenClawTaskLedgerClient', () => {
   });
 
   it('treats an unadvertised-method protocol response as unavailable', async () => {
-    const client = createClient(async () => {
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+    const client = createClient(async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     });
 
     assert.deepEqual(await client.list(), { tasks: [], availability: 'unavailable' });

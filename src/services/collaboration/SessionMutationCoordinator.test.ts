@@ -88,7 +88,7 @@ function impact(options: {
     sessionKey: request.sessionKey,
     sessionId: request.sessionId,
     action: request.action,
-    activeRuns: runs.map((run) => ({ ...run, id: run.runId, runId: undefined })),
+    activeRuns: runs,
     blocked: runs.length > 0,
     runtimeMatches: options.runtimeMatches ?? true,
     activeMutation,

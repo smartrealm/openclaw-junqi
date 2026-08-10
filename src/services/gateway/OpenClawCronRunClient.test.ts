@@ -68,13 +68,13 @@ describe('OpenClawCronRunClient', () => {
   it('uses the same lane contract for unsupported responses', async () => {
     const lanes: string[] = [];
     const client = createClient(
-      async () => {
+      async (method) => {
         lanes.push('read');
-        throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
       },
-      async () => {
+      async (method) => {
         lanes.push('admin');
-        throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
       },
     );
 
@@ -119,9 +119,9 @@ describe('OpenClawCronRunClient', () => {
 
   it('requests methods despite discovery omission and trusts Gateway unsupported responses', async () => {
     let calls = 0;
-    const client = createClient(async () => {
+    const client = createClient(async (method) => {
       calls += 1;
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     });
 
     await assert.rejects(client.enqueue('job-1'), OpenClawCronRunUnsupportedError);
@@ -130,8 +130,8 @@ describe('OpenClawCronRunClient', () => {
   });
 
   it('maps an authoritative method-not-found response to unsupported', async () => {
-    const client = createClient(async () => {
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+    const client = createClient(async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     });
 
     await assert.rejects(client.list('job-1'), OpenClawCronRunUnsupportedError);

@@ -1,18 +1,12 @@
 import type { GatewayRuntimeConfig } from './types';
 import { getModelFallbacks, getModelPrimary } from './modelReference';
-import {
-  inspectInstalledModelVisibility,
-  isModelVisibleForInstalledRuntime,
-} from '@/services/gateway/modelVisibility';
 
 export type ModelRoutingIssueKind =
   | 'missing-primary'
   | 'replace-without-explicit-models'
   | 'replace-primary-not-explicit'
   | 'replace-fallback-not-explicit'
-  | 'fallback-repeats-primary'
-  | 'primary-not-visible'
-  | 'fallback-not-visible';
+  | 'fallback-repeats-primary';
 
 export interface ModelRoutingIssue {
   kind: ModelRoutingIssueKind;
@@ -25,7 +19,6 @@ export interface ModelRoutingHealth {
   primary?: string;
   fallbacks: string[];
   explicitProviderModels: string[];
-  configuredVisibilityRules: string[];
   issues: ModelRoutingIssue[];
 }
 
@@ -57,11 +50,6 @@ export function inspectModelRouting(config: GatewayRuntimeConfig): ModelRoutingH
   const primary = getModelPrimary(defaults?.model);
   const fallbacks = getModelFallbacks(defaults?.model);
   const explicitProviderModels = getExplicitProviderModelRefs(config);
-  const visibility = inspectInstalledModelVisibility(config);
-  const configuredVisibilityRules = [
-    ...visibility.exactModelRefs,
-    ...visibility.providerWildcards.map((provider) => `${provider}/*`),
-  ];
   const issues: ModelRoutingIssue[] = [];
 
   if (!primary) {
@@ -70,16 +58,6 @@ export function inspectModelRouting(config: GatewayRuntimeConfig): ModelRoutingH
 
   if (fallbacks.includes(primary ?? '')) {
     issues.push({ kind: 'fallback-repeats-primary', severity: 'warning', refs: [primary ?? ''].filter(Boolean) });
-  }
-
-  if (primary && !isModelVisibleForInstalledRuntime(primary, visibility)) {
-    issues.push({ kind: 'primary-not-visible', severity: 'error', refs: [primary] });
-  }
-  const hiddenFallbacks = fallbacks.filter((fallback) => (
-    !isModelVisibleForInstalledRuntime(fallback, visibility)
-  ));
-  if (hiddenFallbacks.length > 0) {
-    issues.push({ kind: 'fallback-not-visible', severity: 'error', refs: hiddenFallbacks });
   }
 
   if (mode === 'replace') {
@@ -100,7 +78,6 @@ export function inspectModelRouting(config: GatewayRuntimeConfig): ModelRoutingH
     primary,
     fallbacks,
     explicitProviderModels,
-    configuredVisibilityRules,
     issues,
   };
 }

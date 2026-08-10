@@ -1,4 +1,7 @@
-import { GatewayRpcError } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
+
+const OPENCLAW_SESSION_GROUPS_LIST_METHOD = 'sessions.groups.list';
+const OPENCLAW_SESSION_GROUPS_PUT_METHOD = 'sessions.groups.put';
 
 export interface OpenClawSessionGroup {
   readonly name: string;
@@ -32,11 +35,6 @@ function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
-}
-
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
 }
 
 function parseGroup(value: unknown): OpenClawSessionGroup {
@@ -76,10 +74,12 @@ export class OpenClawSessionGroupsClient {
   async list(): Promise<readonly OpenClawSessionGroup[]> {
     try {
       return parseOpenClawSessionGroups(
-        await this.request<unknown>('sessions.groups.list', {}),
+        await this.request<unknown>(OPENCLAW_SESSION_GROUPS_LIST_METHOD, {}),
       );
     } catch (error) {
-      if (unsupportedMethod(error)) throw new OpenClawSessionGroupsUnsupportedError();
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_SESSION_GROUPS_LIST_METHOD)) {
+        throw new OpenClawSessionGroupsUnsupportedError();
+      }
       throw error;
     }
   }
@@ -90,7 +90,7 @@ export class OpenClawSessionGroupsClient {
     const current = await this.list();
     if (current.some((group) => group.name === target)) return current;
     try {
-      const groups = parseMutationResult(await this.request<unknown>('sessions.groups.put', {
+      const groups = parseMutationResult(await this.request<unknown>(OPENCLAW_SESSION_GROUPS_PUT_METHOD, {
         names: [...current.map((group) => group.name), target],
       }));
       if (!groups.some((group) => group.name === target)) {
@@ -98,7 +98,9 @@ export class OpenClawSessionGroupsClient {
       }
       return groups;
     } catch (error) {
-      if (unsupportedMethod(error)) throw new OpenClawSessionGroupsUnsupportedError();
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_SESSION_GROUPS_PUT_METHOD)) {
+        throw new OpenClawSessionGroupsUnsupportedError();
+      }
       throw error;
     }
   }

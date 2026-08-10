@@ -110,15 +110,17 @@ test('OpenClawModelAuthStatusClient attempts omitted methods and maps connection
   const unavailable = new OpenClawModelAuthStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    requestFenced: async () => {
+    requestFenced: async (method) => {
       omittedMethodSent = true;
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     },
   });
   const missing = new OpenClawModelAuthStatusClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    requestFenced: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
+    requestFenced: async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    },
   });
   const disconnected = new OpenClawModelAuthStatusClient({
     captureConnectionId: () => 'gateway-a',

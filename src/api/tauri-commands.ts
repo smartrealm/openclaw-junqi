@@ -307,7 +307,6 @@ export const deleteSkillHubSkill = (skillName: string, skillPath: string) => (
 export interface CollaborationMaintenanceOwner {
   owner: string;
   created: boolean;
-  adoptedLegacy: boolean;
 }
 
 export type MaintenanceSeverity = 'error' | 'warning' | 'info';
@@ -351,10 +350,9 @@ export const repairOpenclaw = () => invoke<boolean>('repair_openclaw');
 export const diagnoseGatewayRecovery = (error: string) => (
   invoke<GatewayRecoveryRecommendation>('diagnose_gateway_recovery', { error })
 );
-/** Durable per-installation owner used to recover a persisted collaboration lease. */
-export const getCollaborationMaintenanceOwner = (legacyOwner?: string) => invoke<CollaborationMaintenanceOwner>(
+/** 用于恢复持久化协作租约的安装级稳定所有者。 */
+export const getCollaborationMaintenanceOwner = () => invoke<CollaborationMaintenanceOwner>(
   "get_collaboration_maintenance_owner",
-  { params: legacyOwner ? { legacyOwner } : {} },
 );
 export const runMaintenanceScan = () => invoke<MaintenanceReport>("run_maintenance_scan");
 export const installNode = (force = false, operationId?: string) => (

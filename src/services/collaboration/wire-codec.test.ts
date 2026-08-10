@@ -181,7 +181,7 @@ test('workflow template catalog rejects persisted Agent candidates and decodes d
   assert.equal(decodeRunGetResponse(run, 'run-1').snapshot.workflowTemplate?.templateId, 'template-1');
 });
 
-test('attempt abandon eligibility is backward-compatible and strictly typed when present', () => {
+test('attempt decoder requires the canonical runtime and abandon eligibility fields', () => {
   const response = runGetResponse();
   const attempt: Record<string, unknown> = {
     id: 'attempt-unknown-1',
@@ -205,9 +205,19 @@ test('attempt abandon eligibility is backward-compatible and strictly typed when
   };
   response.snapshot.attempts = [attempt];
 
-  const legacyDecoded = decodeRunGetResponse(response, 'run-1').snapshot.attempts[0];
-  assert.equal(legacyDecoded?.canAbandonWithResidualRisk, false);
-  assert.equal(legacyDecoded?.executionRuntime, 'native');
+  expectWireError(
+    () => decodeRunGetResponse(response, 'run-1'),
+    'snapshot.attempts[0].executionRuntime',
+  );
+  attempt.executionRuntime = 'native';
+  expectWireError(
+    () => decodeRunGetResponse(response, 'run-1'),
+    'snapshot.attempts[0].canAbandonWithResidualRisk',
+  );
+  attempt.canAbandonWithResidualRisk = false;
+  const decoded = decodeRunGetResponse(response, 'run-1').snapshot.attempts[0];
+  assert.equal(decoded?.canAbandonWithResidualRisk, false);
+  assert.equal(decoded?.executionRuntime, 'native');
 
   attempt.executionRuntime = 'acp';
   assert.equal(
@@ -400,15 +410,15 @@ test('write decoder binds success to the exact command and validated revisions',
   );
 });
 
-test('operational read decoder normalizes job aliases and rejects conflicts, drift, and wrong identity', () => {
+test('operational read decoder requires canonical job fields and rejects drift or wrong identity', () => {
   const deletionJob = {
     id: 'delete-job-1',
-    run_id: 'run-1',
+    runId: 'run-1',
     status: 'PARTIAL',
-    confirmation_digest: DELETE_DIGEST,
-    last_error: 'cleanup pending',
-    created_at: 10,
-    updated_at: 20,
+    confirmationDigest: DELETE_DIGEST,
+    lastError: 'cleanup pending',
+    createdAt: 10,
+    updatedAt: 20,
   };
   assert.deepEqual(
     decodeCollaborationReadResponse(
@@ -430,6 +440,14 @@ test('operational read decoder normalizes job aliases and rejects conflicts, dri
   expectWireError(
     () => decodeCollaborationReadResponse(
       'junqi.collab.run.delete.get',
+      { ...deletionJob, runId: undefined, run_id: 'run-1' },
+      { jobId: 'delete-job-1', expectedRunId: 'run-1' },
+    ),
+    'response.runId',
+  );
+  expectWireError(
+    () => decodeCollaborationReadResponse(
+      'junqi.collab.run.delete.get',
       { ...deletionJob, runId: 'run-other' },
       { jobId: 'delete-job-1', expectedRunId: 'run-1' },
     ),
@@ -446,7 +464,7 @@ test('operational read decoder normalizes job aliases and rejects conflicts, dri
   expectWireError(
     () => decodeCollaborationReadResponse(
       'junqi.collab.run.delete.get',
-      { ...deletionJob, updated_at: 9 },
+      { ...deletionJob, updatedAt: 9 },
       { jobId: 'delete-job-1', expectedRunId: 'run-1' },
     ),
     'response.updatedAt',
@@ -595,14 +613,14 @@ test('export decoders require completed job evidence and bind valid JSON artifac
   const exportDigest = 'a'.repeat(64);
   const completedJob = {
     id: 'export-job-1',
-    run_id: 'run-1',
+    runId: 'run-1',
     status: 'COMPLETED',
     format: 'json',
-    artifact_path: 'exports/export-job-1.json',
+    artifactPath: 'exports/export-job-1.json',
     digest: exportDigest,
-    last_error: null,
-    created_at: 10,
-    updated_at: 20,
+    lastError: null,
+    createdAt: 10,
+    updatedAt: 20,
   };
   assert.equal(
     decodeCollaborationReadResponse(
@@ -644,7 +662,7 @@ test('export decoders require completed job evidence and bind valid JSON artifac
       {
         ...completedJob,
         status: 'PENDING',
-        last_error: 'contradictory pending error',
+        lastError: 'contradictory pending error',
       },
       { jobId: 'export-job-1', expectedRunId: 'run-1' },
     ),
@@ -656,9 +674,9 @@ test('export decoders require completed job evidence and bind valid JSON artifac
       {
         ...completedJob,
         status: 'FAILED',
-        artifact_path: null,
+        artifactPath: null,
         digest: null,
-        last_error: null,
+        lastError: null,
       },
       { jobId: 'export-job-1', expectedRunId: 'run-1' },
     ),
@@ -669,18 +687,18 @@ test('export decoders require completed job evidence and bind valid JSON artifac
 test('deletion job decoder requires SHA-256 evidence and status-consistent diagnostics', () => {
   const completed = {
     id: 'delete-job-1',
-    run_id: 'run-1',
+    runId: 'run-1',
     status: 'COMPLETED',
-    confirmation_digest: DELETE_DIGEST,
-    last_error: null,
-    created_at: 1,
-    updated_at: 2,
+    confirmationDigest: DELETE_DIGEST,
+    lastError: null,
+    createdAt: 1,
+    updatedAt: 2,
   };
 
   expectWireError(
     () => decodeCollaborationReadResponse(
       'junqi.collab.run.delete.get',
-      { ...completed, confirmation_digest: 'not-a-digest' },
+      { ...completed, confirmationDigest: 'not-a-digest' },
       { jobId: 'delete-job-1', expectedRunId: 'run-1' },
     ),
     'response.confirmationDigest',
@@ -688,7 +706,7 @@ test('deletion job decoder requires SHA-256 evidence and status-consistent diagn
   expectWireError(
     () => decodeCollaborationReadResponse(
       'junqi.collab.run.delete.get',
-      { ...completed, last_error: 'cleanup still failed' },
+      { ...completed, lastError: 'cleanup still failed' },
       { jobId: 'delete-job-1', expectedRunId: 'run-1' },
     ),
     'response.lastError',
@@ -696,7 +714,7 @@ test('deletion job decoder requires SHA-256 evidence and status-consistent diagn
   expectWireError(
     () => decodeCollaborationReadResponse(
       'junqi.collab.run.delete.get',
-      { ...completed, status: 'PARTIAL', last_error: null },
+      { ...completed, status: 'PARTIAL', lastError: null },
       { jobId: 'delete-job-1', expectedRunId: 'run-1' },
     ),
     'response.lastError',

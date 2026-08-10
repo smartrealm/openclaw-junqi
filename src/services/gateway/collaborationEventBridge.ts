@@ -22,26 +22,19 @@ function extractChangedHintCandidate(message: unknown): {
   if (!envelope || envelope.type !== 'event') return { recognized: false };
   const payload = asRecord(envelope.payload);
 
-  // OpenClaw's public agent event API emits plugin streams in this shape.
+  // OpenClaw 通过 Agent stream 承载插件事件，协作插件也按此契约发送刷新提示。
   if (envelope.event === 'agent' && payload?.stream === COLLABORATION_CHANGED_EVENT) {
     return { recognized: true, candidate: payload.data };
-  }
-
-  // Keep the documented direct event name compatible if OpenClaw exposes a
-  // first-class plugin event transport in a future/runtime-specific build.
-  if (envelope.event === COLLABORATION_CHANGED_EVENT) {
-    return { recognized: true, candidate: asRecord(payload?.data) ?? payload };
   }
 
   return { recognized: false };
 }
 
 /**
- * Publish one raw Gateway event to collaboration listeners.
+ * 向协作监听器发布一个原始 Gateway 事件。
  *
- * The boolean reports whether the event belongs to the reserved collaboration
- * stream, even when malformed. Callers use it to prevent that stream from
- * falling through to unrelated generic `agent` event handling.
+ * 即使保留 stream 的载荷无效，返回值仍表明该事件属于协作 stream。调用方据此阻止该
+ * stream 落入无关的通用 `agent` 处理。
  */
 export function publishCollaborationChangedEvent(message: unknown): boolean {
   const extracted = extractChangedHintCandidate(message);
@@ -53,7 +46,7 @@ export function publishCollaborationChangedEvent(message: unknown): boolean {
     try {
       listener({ ...hint });
     } catch {
-      // A UI listener must not break Gateway event routing for other listeners.
+      // 单个界面监听器不能阻断其他 Gateway 事件路由。
     }
   }
   return true;
@@ -71,7 +64,7 @@ export function subscribeCollaborationChangedHints(
   };
 }
 
-/** Route reserved collaboration events before the normal ChatHandler path. */
+/** 在普通 ChatHandler 路径前路由保留的协作事件。 */
 export function routeGatewayEvent(
   message: unknown,
   fallback: (message: unknown) => void,

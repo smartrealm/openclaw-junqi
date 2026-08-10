@@ -2374,25 +2374,6 @@ mod tests {
     }
 }
 
-/// Stop the OpenClaw Docker container (without removing it).
-#[tauri::command]
-pub async fn stop_docker_gateway(
-    state: State<'_, crate::state::GatewayProcess>,
-) -> Result<String, String> {
-    let operation_gate = state.operation_gate.clone();
-    let _operation_guard = operation_gate.lock_owned().await;
-    let result = stop_docker_gateway_locked().await;
-    if result.is_ok() {
-        state.transition(
-            Some(crate::state::gateway_process::GatewayLifecycle::Stopped),
-            Some(crate::state::gateway_process::GatewayRuntimeMode::None),
-            None,
-            "stop_docker_gateway: container stopped",
-        );
-    }
-    result
-}
-
 pub(crate) async fn stop_docker_gateway_locked() -> Result<String, String> {
     let docker_bin = resolve_docker_bin().await?;
     let mapping = RuntimePathMapping::from_active_layout()?;

@@ -1,4 +1,4 @@
-import { GatewayRpcError } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 import type { CronAgentTurnAddParams } from './cronContract';
 
 export interface OpenClawCronManagedJob {
@@ -91,11 +91,6 @@ function validatePatch(patch: OpenClawCronMutationPatch): Record<string, unknown
   return source;
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 export class OpenClawCronManagementClient {
   constructor(
     private readonly request: OpenClawCronManagementRequester,
@@ -105,7 +100,9 @@ export class OpenClawCronManagementClient {
     try {
       return parseAddResult(await this.request<unknown>(CRON_ADD_METHOD, params));
     } catch (error) {
-      if (unsupportedMethod(error)) throw new OpenClawCronManagementUnsupportedError(CRON_ADD_METHOD);
+      if (isOpenClawUnknownMethodError(error, CRON_ADD_METHOD)) {
+        throw new OpenClawCronManagementUnsupportedError(CRON_ADD_METHOD);
+      }
       throw error;
     }
   }
@@ -127,7 +124,9 @@ export class OpenClawCronManagementClient {
         ...(revision === undefined ? {} : { expectedConfigRevision: revision }),
       }));
     } catch (error) {
-      if (unsupportedMethod(error)) throw new OpenClawCronManagementUnsupportedError(CRON_UPDATE_METHOD);
+      if (isOpenClawUnknownMethodError(error, CRON_UPDATE_METHOD)) {
+        throw new OpenClawCronManagementUnsupportedError(CRON_UPDATE_METHOD);
+      }
       throw error;
     }
   }
@@ -137,7 +136,9 @@ export class OpenClawCronManagementClient {
     try {
       parseRemoveResult(await this.request<unknown>(CRON_REMOVE_METHOD, { id }));
     } catch (error) {
-      if (unsupportedMethod(error)) throw new OpenClawCronManagementUnsupportedError(CRON_REMOVE_METHOD);
+      if (isOpenClawUnknownMethodError(error, CRON_REMOVE_METHOD)) {
+        throw new OpenClawCronManagementUnsupportedError(CRON_REMOVE_METHOD);
+      }
       throw error;
     }
   }

@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_MODEL_AUTH_STATUS_METHOD = 'models.authStatus' as const;
 
@@ -133,11 +133,6 @@ function provider(value: unknown): OpenClawModelAuthProvider {
   };
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 function connectionUnavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
@@ -170,7 +165,7 @@ export class OpenClawModelAuthStatusClient {
       }
       return parseOpenClawModelAuthStatus(response);
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_MODEL_AUTH_STATUS_METHOD)) {
         throw new OpenClawModelAuthStatusUnavailableError('The connected OpenClaw Gateway does not support models.authStatus');
       }
       if (connectionUnavailable(error)) {

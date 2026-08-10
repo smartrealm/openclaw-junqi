@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export type OpenClawTtsAutoMode = 'off' | 'always' | 'inbound' | 'tagged';
 
@@ -82,11 +82,6 @@ function personas(value: unknown): OpenClawTtsStatus['personas'] | null {
   return entries.some((entry) => entry === null) ? null : entries as OpenClawTtsStatus['personas'];
 }
 
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
-}
-
 function connectionUnavailable(error: unknown): boolean {
   return error instanceof GatewayDisconnectedError || error instanceof GatewayConnectionFenceError;
 }
@@ -130,7 +125,7 @@ export class OpenClawTtsStatusClient {
       }
       return parseOpenClawTtsStatus(response);
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, TTS_STATUS_METHOD)) {
         throw new OpenClawTtsStatusUnavailableError('The connected OpenClaw Gateway does not support tts.status');
       }
       if (connectionUnavailable(error)) {

@@ -73,22 +73,6 @@ pub async fn screenshot_fullscreen() -> Result<serde_json::Value, String> {
 
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn screenshot_check_permission() -> Result<serde_json::Value, String> {
-    // Write to a temp file instead of /dev/null for safety.
-    let tmp = std::env::temp_dir().join(format!("junqi-sc-probe-{}.png", std::process::id()));
-    let path_str = tmp.to_string_lossy().to_string();
-    let output = StdCommand::new("screencapture")
-        .args(["-x", "-t", "png", &path_str])
-        .output()
-        .map_err(|e| format!("screencapture failed: {}", e))?;
-    let _ = fs::remove_file(&tmp);
-    let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
-    let granted = output.status.success() && !stderr.contains("not authorized");
-    Ok(serde_json::json!({ "granted": granted }))
-}
-
-#[cfg(target_os = "macos")]
-#[tauri::command]
 pub fn screenshot_list_windows() -> Result<Vec<serde_json::Value>, String> {
     let output = StdCommand::new("screencapture")
         .arg("-l")
@@ -167,12 +151,6 @@ pub async fn screenshot_interactive() -> Result<serde_json::Value, String> {
 #[tauri::command]
 pub async fn screenshot_fullscreen() -> Result<serde_json::Value, String> {
     Err("UNSUPPORTED:截图功能仅支持 macOS".to_string())
-}
-
-#[cfg(not(target_os = "macos"))]
-#[tauri::command]
-pub fn screenshot_check_permission() -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({ "granted": false, "reason": "unsupported_platform" }))
 }
 
 #[cfg(not(target_os = "macos"))]

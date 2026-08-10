@@ -72,7 +72,6 @@ pub(crate) mod state_dir_probe;
 pub mod storage;
 pub mod system;
 pub mod system_metrics;
-pub mod terminal;
 pub mod terminal_clipboard;
 pub mod terminal_drop;
 pub mod terminal_hooks;

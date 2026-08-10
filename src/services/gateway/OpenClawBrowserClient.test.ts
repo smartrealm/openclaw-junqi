@@ -53,7 +53,9 @@ test('OpenClawBrowserClient validates URLs and browser control paths', async () 
 
 test('OpenClawBrowserClient maps authoritative unavailable states without inventing a browser response', async () => {
   const unsupported = new OpenClawBrowserClient({
-    request: async () => { throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND'); },
+    request: async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
+    },
   });
   const disconnected = new OpenClawBrowserClient({
     request: async () => { throw new GatewayDisconnectedError(); },

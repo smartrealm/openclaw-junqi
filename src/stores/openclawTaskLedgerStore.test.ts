@@ -90,6 +90,14 @@ test('does not claim cancellation when the native Gateway does not confirm it', 
   }
 });
 
+test('disconnected task actions defer to the shared offline state', async () => {
+  useOpenClawTaskLedgerStore.setState({ error: 'stale failure' });
+
+  await useOpenClawTaskLedgerStore.getState().cancel(false, task('task-1'));
+
+  assert.equal(useOpenClawTaskLedgerStore.getState().error, null);
+});
+
 test('refreshes only after the native Gateway confirms blocked completion delivery recovery', async () => {
   const originalRetry = gateway.retryTaskDelivery;
   const originalList = gateway.listTasks;

@@ -1,4 +1,5 @@
 import { gateway } from '@/services/gateway';
+import { isOpenClawUnknownMethodError } from '@/services/gateway/GatewayProtocolEvidence';
 import {
   COLLABORATION_PLUGIN_BUNDLE,
   type CollaborationPluginBundleMetadata,
@@ -46,7 +47,7 @@ export type CollaborationRpcCall = (
   params?: Record<string, unknown>,
 ) => Promise<unknown>;
 
-export type CollaborationClientErrorCode = CollaborationErrorCode | 'METHOD_NOT_FOUND';
+export type CollaborationClientErrorCode = CollaborationErrorCode | 'METHOD_UNAVAILABLE';
 
 export class CollaborationClientError extends Error {
   constructor(
@@ -91,59 +92,14 @@ function errorCodeFrom(value: unknown): CollaborationErrorCode {
   return isCollaborationErrorCode(value) ? value : 'RPC_FAILED';
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function hasExactUnknownMethodMessage(message: unknown, method: string): boolean {
-  return typeof message === 'string'
-    && /^(?:unknown method:?\s+|no handler for\s+)/i.test(message.trim())
-    && message.trim().replace(/^(?:unknown method:?\s+|no handler for\s+)/i, '').trim().toLowerCase()
-      === method.toLowerCase();
-}
-
-function methodFromMissingMessage(message: unknown): string | null {
-  if (typeof message !== 'string') return null;
-  const match = message.trim().match(/^(?:unknown method:?\s+|no handler for\s+)(\S+)$/i);
-  return match?.[1] ?? null;
-}
-
-/** Normalize OpenClaw's transport-specific missing-method response safely. */
-function isUnknownCollaborationMethodRecord(
-  value: unknown,
-  expectedMethods: readonly string[],
-  depth = 0,
-): boolean {
-  if (depth > 4 || !isRecord(value)) return false;
-  const code = value.code;
-  const method = typeof value.method === 'string' ? value.method : null;
-  const message = value.message;
-  const messageMethod = methodFromMissingMessage(message);
-  if (method && messageMethod && method !== messageMethod) return false;
-  const candidateMethods = method
-    ? [method]
-    : messageMethod
-      ? [messageMethod]
-      : [];
-  if (candidateMethods.some((candidate) => expectedMethods.includes(candidate))) {
-    if (code === 'METHOD_NOT_FOUND') return true;
-    if (code === 'INVALID_REQUEST' && candidateMethods.some((candidate) => hasExactUnknownMethodMessage(message, candidate))) {
-      return true;
-    }
-  }
-  return ['error', 'originalError', 'cause', 'details'].some((key) => (
-    isUnknownCollaborationMethodRecord(value[key], expectedMethods, depth + 1)
-  ));
-}
-
 export function isCollaborationMethodUnavailable(
   error: unknown,
   expectedMethods: readonly string[] = ['junqi.collab.capabilities', 'junqi.collab.maintenance.status'],
 ): boolean {
   if (error instanceof CollaborationClientError) {
-    return error.code === 'METHOD_NOT_FOUND' && expectedMethods.includes(error.method);
+    return error.code === 'METHOD_UNAVAILABLE' && expectedMethods.includes(error.method);
   }
-  return isUnknownCollaborationMethodRecord(error, expectedMethods);
+  return expectedMethods.some((method) => isOpenClawUnknownMethodError(error, method));
 }
 
 function decodeWire<T>(method: string, decode: () => T): T {
@@ -173,21 +129,20 @@ function normalizeRpcError(error: unknown, method: string): CollaborationClientE
     (typeof error === 'string' && error) ||
     `Collaboration RPC failed: ${method}`;
   const transportCode = record?.code ?? nested?.code;
-  const code = transportCode === 'METHOD_NOT_FOUND'
-    || (transportCode === 'INVALID_REQUEST' && hasExactUnknownMethodMessage(message, method))
-    ? 'METHOD_NOT_FOUND'
+  const code = isOpenClawUnknownMethodError(error, method)
+    ? 'METHOD_UNAVAILABLE'
     : errorCodeFrom(transportCode);
   const details = asRecord(record?.details ?? nested?.details) ?? undefined;
   return new CollaborationClientError(code, message, method, details, error);
 }
 
-function readString(record: Record<string, unknown>, camel: string, snake = camel): string | undefined {
-  const value = record[camel] ?? record[snake];
+function readString(record: Record<string, unknown>, field: string): string | undefined {
+  const value = record[field];
   return typeof value === 'string' ? value : undefined;
 }
 
-function readNumber(record: Record<string, unknown>, camel: string, snake = camel): number | undefined {
-  const value = record[camel] ?? record[snake];
+function readNumber(record: Record<string, unknown>, field: string): number | undefined {
+  const value = record[field];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
@@ -200,41 +155,34 @@ function invalidTombstoneField(method: string, field: string): never {
   );
 }
 
-function readOptionalAliasedTombstoneField(
+function readRequiredTombstoneField(
   record: Record<string, unknown>,
-  camel: string,
-  snake: string,
+  field: string,
   method: string,
 ): unknown {
-  const hasCamel = Object.prototype.hasOwnProperty.call(record, camel);
-  const hasSnake = Object.prototype.hasOwnProperty.call(record, snake);
-  if (hasCamel && hasSnake && !Object.is(record[camel], record[snake])) {
-    invalidTombstoneField(method, camel);
-  }
-  return hasCamel ? record[camel] : hasSnake ? record[snake] : undefined;
+  if (!Object.prototype.hasOwnProperty.call(record, field)) invalidTombstoneField(method, field);
+  return record[field];
 }
 
-function readOptionalNullableTombstoneString(
+function readRequiredNullableTombstoneString(
   record: Record<string, unknown>,
-  camel: string,
-  snake: string,
+  field: string,
   method: string,
 ): string | null {
-  const value = readOptionalAliasedTombstoneField(record, camel, snake, method);
-  if (value === undefined || value === null) return null;
-  if (typeof value !== 'string' || !value.trim()) invalidTombstoneField(method, camel);
+  const value = readRequiredTombstoneField(record, field, method);
+  if (value === null) return null;
+  if (typeof value !== 'string' || !value.trim()) invalidTombstoneField(method, field);
   return value.trim();
 }
 
-function readOptionalNullableTombstoneInteger(
+function readRequiredNullableTombstoneInteger(
   record: Record<string, unknown>,
-  camel: string,
-  snake: string,
+  field: string,
   method: string,
 ): number | null {
-  const value = readOptionalAliasedTombstoneField(record, camel, snake, method);
-  if (value === undefined || value === null) return null;
-  if (!Number.isSafeInteger(value) || Number(value) < 0) invalidTombstoneField(method, camel);
+  const value = readRequiredTombstoneField(record, field, method);
+  if (value === null) return null;
+  if (!Number.isSafeInteger(value) || Number(value) < 0) invalidTombstoneField(method, field);
   return Number(value);
 }
 
@@ -265,18 +213,46 @@ function assertFlowReconciliationAuditEvidence(
   }
 }
 
+const TOMBSTONE_WIRE_FIELDS = new Set([
+  'id',
+  'runId',
+  'actor',
+  'contentDigest',
+  'deletedAt',
+  'cleanupStatus',
+  'cleanupError',
+  'cleanupUpdatedAt',
+  'deletionJobId',
+  'deletionJobStatus',
+  'flowReconciliationCommandId',
+  'openclawFlowId',
+  'openclawFlowRevision',
+  'flowReconciliationDiagnostic',
+  'flowReconciliationAbandonedAt',
+  'flowReconciliationAbandonReason',
+]);
+
 function normalizeTombstone(value: unknown, method: string): CollaborationTombstone {
   const record = asRecord(value);
+  if (record && Object.keys(record).some((field) => !TOMBSTONE_WIRE_FIELDS.has(field))) {
+    throw new CollaborationClientError('INVALID_RESPONSE', `${method} returned an invalid tombstone`, method);
+  }
   const id = record ? readString(record, 'id')?.trim() : undefined;
-  const runId = record ? readString(record, 'runId', 'run_id')?.trim() : undefined;
+  const runId = record ? readString(record, 'runId')?.trim() : undefined;
   const actor = record ? readString(record, 'actor')?.trim() : undefined;
-  const contentDigest = record ? readString(record, 'contentDigest', 'content_digest')?.trim() : undefined;
-  const deletedAt = record ? readNumber(record, 'deletedAt', 'deleted_at') : undefined;
-  const cleanupStatus = record ? readString(record, 'cleanupStatus', 'cleanup_status') : undefined;
-  const cleanupErrorValue = record?.cleanupError ?? record?.cleanup_error ?? null;
-  const cleanupUpdatedAt = record ? readNumber(record, 'cleanupUpdatedAt', 'cleanup_updated_at') : undefined;
-  const deletionJobIdValue = record?.deletionJobId ?? record?.deletion_job_id ?? null;
-  const deletionJobStatusValue = record?.deletionJobStatus ?? record?.deletion_job_status ?? null;
+  const contentDigest = record ? readString(record, 'contentDigest')?.trim() : undefined;
+  const deletedAt = record ? readNumber(record, 'deletedAt') : undefined;
+  const cleanupStatus = record ? readString(record, 'cleanupStatus') : undefined;
+  const cleanupErrorValue = record
+    ? readRequiredTombstoneField(record, 'cleanupError', method)
+    : undefined;
+  const cleanupUpdatedAt = record ? readNumber(record, 'cleanupUpdatedAt') : undefined;
+  const deletionJobIdValue = record
+    ? readRequiredTombstoneField(record, 'deletionJobId', method)
+    : undefined;
+  const deletionJobStatusValue = record
+    ? readRequiredTombstoneField(record, 'deletionJobStatus', method)
+    : undefined;
   const deletionJobId = typeof deletionJobIdValue === 'string' ? deletionJobIdValue.trim() : deletionJobIdValue;
   if (
     !record
@@ -296,44 +272,39 @@ function normalizeTombstone(value: unknown, method: string): CollaborationTombst
     || (deletionJobStatusValue !== null
       && !['PENDING', 'FAILED', 'PARTIAL', 'COMPLETED'].includes(String(deletionJobStatusValue)))
     || ((deletionJobId === null) !== (deletionJobStatusValue === null))
+    || (actor !== 'retention-policy' && deletionJobId === null)
   ) {
     throw new CollaborationClientError('INVALID_RESPONSE', `${method} returned an invalid tombstone`, method);
   }
   const flowReconciliationAudit = {
-    flowReconciliationCommandId: readOptionalNullableTombstoneString(
+    flowReconciliationCommandId: readRequiredNullableTombstoneString(
       record,
       'flowReconciliationCommandId',
-      'flow_reconciliation_command_id',
       method,
     ),
-    openclawFlowId: readOptionalNullableTombstoneString(
+    openclawFlowId: readRequiredNullableTombstoneString(
       record,
       'openclawFlowId',
-      'openclaw_flow_id',
       method,
     ),
-    openclawFlowRevision: readOptionalNullableTombstoneInteger(
+    openclawFlowRevision: readRequiredNullableTombstoneInteger(
       record,
       'openclawFlowRevision',
-      'openclaw_flow_revision',
       method,
     ),
-    flowReconciliationDiagnostic: readOptionalNullableTombstoneString(
+    flowReconciliationDiagnostic: readRequiredNullableTombstoneString(
       record,
       'flowReconciliationDiagnostic',
-      'flow_reconciliation_diagnostic',
       method,
     ),
-    flowReconciliationAbandonedAt: readOptionalNullableTombstoneInteger(
+    flowReconciliationAbandonedAt: readRequiredNullableTombstoneInteger(
       record,
       'flowReconciliationAbandonedAt',
-      'flow_reconciliation_abandoned_at',
       method,
     ),
-    flowReconciliationAbandonReason: readOptionalNullableTombstoneString(
+    flowReconciliationAbandonReason: readRequiredNullableTombstoneString(
       record,
       'flowReconciliationAbandonReason',
-      'flow_reconciliation_abandon_reason',
       method,
     ),
   } satisfies Pick<

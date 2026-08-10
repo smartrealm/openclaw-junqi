@@ -62,9 +62,9 @@ describe('OpenClawCronManagementClient', () => {
 
   it('requests mutations despite discovery omission while invalid input remains local', async () => {
     let calls = 0;
-    const unsupported = new OpenClawCronManagementClient(async () => {
+    const unsupported = new OpenClawCronManagementClient(async (method) => {
       calls += 1;
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     });
     const invalidPatch = new OpenClawCronManagementClient(async () => {
       throw new Error('request should not be called');
@@ -83,8 +83,8 @@ describe('OpenClawCronManagementClient', () => {
   });
 
   it('maps authoritative method-not-found responses to unsupported without masking other Gateway errors', async () => {
-    const missing = new OpenClawCronManagementClient(async () => {
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+    const missing = new OpenClawCronManagementClient(async (method) => {
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     });
     const denied = new OpenClawCronManagementClient(async () => {
       throw new GatewayRpcError('forbidden', 'FORBIDDEN');

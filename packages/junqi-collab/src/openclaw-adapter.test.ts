@@ -19,7 +19,7 @@ test("configured agents are the intersection of plugin and coordinator spawn pol
     config: {
       current: () => ({
         agents: {
-          defaults: { subagents: { allowAgents: ["fallback"] } },
+          defaults: { subagents: { allowAgents: ["default-worker"] } },
           list: [
             { id: "Coordinator", subagents: { allowAgents: ["coordinator", "worker"] } },
             { id: "worker" },

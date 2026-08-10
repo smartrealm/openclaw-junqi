@@ -65,9 +65,9 @@ test('agent.identity.get is sent despite discovery omission and maps a missing m
   const client = new OpenClawAgentIdentityClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    requestFenced: async () => {
+    requestFenced: async (method) => {
       requestSent = true;
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     },
   });
 

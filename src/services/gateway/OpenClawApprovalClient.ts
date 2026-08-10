@@ -1,4 +1,4 @@
-import { GatewayRpcError } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_EXEC_APPROVAL_LIST_METHOD = 'exec.approval.list' as const;
 export const OPENCLAW_EXEC_APPROVAL_RESOLVE_METHOD = 'exec.approval.resolve' as const;
@@ -658,12 +658,6 @@ function parseList(value: unknown, kind: OpenClawLegacyApprovalKind): readonly O
   return value.map((item) => parseEnvelope(item, kind));
 }
 
-function isUnsupportedProtocolError(error: unknown): error is GatewayRpcError {
-  if (!(error instanceof GatewayRpcError)) return false;
-  const code = error.code?.trim().toUpperCase();
-  return code === 'METHOD_NOT_FOUND' || code === 'UNKNOWN_METHOD' || code === 'UNKNOWN_COMMAND';
-}
-
 function resolveMethod(kind: OpenClawLegacyApprovalKind): string {
   return kind === 'exec'
     ? OPENCLAW_EXEC_APPROVAL_RESOLVE_METHOD
@@ -701,7 +695,7 @@ export class OpenClawApprovalClient {
         availability: 'available',
       };
     } catch (error) {
-      if (isUnsupportedProtocolError(error)) {
+      if (isOpenClawUnknownMethodError(error, method)) {
         return { approvals: [], availability: 'unavailable' };
       }
       throw error;
@@ -747,7 +741,7 @@ export class OpenClawApprovalClient {
         availability: 'available',
       };
     } catch (error) {
-      if (isUnsupportedProtocolError(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_APPROVAL_HISTORY_METHOD)) {
         return { items: [], availability: 'unavailable' };
       }
       throw error;
@@ -766,7 +760,7 @@ export class OpenClawApprovalClient {
         availability: 'available',
       };
     } catch (error) {
-      if (isUnsupportedProtocolError(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_APPROVAL_GET_METHOD)) {
         return { approval: null, availability: 'unavailable' };
       }
       throw error;
@@ -788,7 +782,7 @@ export class OpenClawApprovalClient {
         decision,
       }));
     } catch (error) {
-      if (!isUnsupportedProtocolError(error)) throw error;
+      if (!isOpenClawUnknownMethodError(error, OPENCLAW_APPROVAL_RESOLVE_METHOD)) throw error;
     }
     const response = await this.request<unknown>(resolveMethod(approval.kind), {
       id: approval.id,
@@ -817,7 +811,7 @@ export class OpenClawApprovalClient {
         decision,
       }));
     } catch (error) {
-      if (isUnsupportedProtocolError(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_APPROVAL_RESOLVE_METHOD)) {
         throw new Error('The connected OpenClaw Gateway does not support the unified approval resolver');
       }
       throw error;

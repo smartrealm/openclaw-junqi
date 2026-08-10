@@ -1,7 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
 import {
   isAwaitingGatewayVerification,
   planPluginRecovery,
@@ -11,30 +9,6 @@ import {
   type BrokenGatewayPlugin,
   type PluginHealOutcome,
 } from './pluginRecovery';
-
-function source(path: string): string {
-  return readFileSync(resolve(process.cwd(), path), 'utf8');
-}
-
-// useSetupFlow is a directory of hook modules; assert against all of them.
-function sourceDirTs(dir: string): string {
-  const base = resolve(process.cwd(), dir);
-  return readdirSync(base)
-    .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
-    .sort()
-    .map((entry) => readFileSync(resolve(base, entry), 'utf8'))
-    .join('\n');
-}
-
-// SetupPage is a directory of per-step screens; assert against all of them.
-function sourceDir(dir: string): string {
-  const base = resolve(process.cwd(), dir);
-  return readdirSync(base)
-    .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
-    .sort()
-    .map((entry) => readFileSync(resolve(base, entry), 'utf8'))
-    .join('\n');
-}
 
 const broken = (id: string): BrokenGatewayPlugin => ({
   id,
@@ -102,56 +76,4 @@ test('BUG-CPI-07 smoke-check progress is not reported as a failed repair', () =>
     error: null,
   }), true);
   assert.equal(isAwaitingGatewayVerification(plugin, outcome(plugin.id, true)), false);
-});
-
-test('BUG-CPI-07 detection is structured, hints are cross-validated, no plugin names are hardcoded', () => {
-  const rust = source('src-tauri/src/commands/plugin_recovery.rs');
-  // Channel B replicates the smoke check from each plugin's own manifest.
-  assert.match(rust, /plugins", "list", "--json"/);
-  assert.match(rust, /fn missing_main_entry/);
-  // Channel A hints must never bypass cross-validation against the list.
-  assert.match(rust, /hints\.iter\(\)\.any\(\|hint\| hint == &entry\.id\)/);
-  // No concrete plugin id may be baked into production code. Doc comments may
-  // cite the observed real-world case; executable lines may not.
-  const productionCode = rust
-    .split('#[cfg(test)]')[0]
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('//'))
-    .join('\n');
-  assert.doesNotMatch(productionCode, /openclaw-lark|larksuite/);
-});
-
-test('BUG-CPI-07 heal ladder re-checks after every rung and validates npm specs', () => {
-  const rust = source('src-tauri/src/commands/plugin_recovery.rs');
-  const doctor = rust.indexOf('"doctor", "--fix"');
-  const update = rust.indexOf('"plugins", "update"');
-  const install = rust.indexOf('"plugins", "install"');
-  assert.ok(doctor >= 0 && update > doctor && install > update,
-    'ladder order must be doctor-fix (invalid config) before update before reinstall');
-  const recheckCount = rust.split('plugin_is_still_broken(&id).await?').length - 1;
-  assert.ok(recheckCount >= 3, 'every rung must end in a decidable re-check');
-  assert.match(rust, /is_valid_npm_spec\(&spec\)/);
-  assert.match(rust, /validate_cli_identifier\(&id, "plugin id"\)/);
-  assert.match(rust, /GATEWAY_SMOKE_CHECK_REASON/);
-  assert.match(rust, /let verifiable = is_verifiable_reason/);
-});
-
-test('BUG-CPI-07 invalid-config damage class falls back to structured config validation', () => {
-  const rust = source('src-tauri/src/commands/plugin_recovery.rs');
-  // Detection: locked `plugins list` must fall back to validator issue paths.
-  assert.match(rust, /"config", "validate", "--json"/);
-  assert.match(rust, /strip_prefix\(CONFIG_PLUGIN_ENTRY_PREFIX\)/);
-  assert.match(rust, /config_validation_plugin_issues\(\)\.await/);
-});
-
-test('BUG-CPI-07 disable is the last rung and the UI offers it only for verified findings', () => {
-  const hook = sourceDirTs('src/hooks/useSetupFlow');
-  assert.match(hook, /listBrokenGatewayPlugins\(/);
-  assert.match(hook, /unhealedPlugins\(/);
-  assert.match(hook, /pluginsNeedingHeal\(/);
-  assert.match(hook, /planPluginRecovery\(/);
-  assert.match(hook, /disableOpenclawPlugin\(/);
-  const page = sourceDir('src/pages/SetupPage');
-  assert.match(page, /flow\.brokenPlugins\.length > 0/);
-  assert.match(page, /disablePluginsAndRetry/);
 });

@@ -292,26 +292,6 @@ pub async fn return_to_desktop(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Write a debug line to the temp directory (used to trace model sync).
-#[tauri::command]
-pub async fn write_models_log(msg: String) -> Result<(), String> {
-    use std::io::Write;
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let line = format!("[{}] {}\n", ms, msg);
-    let path = std::env::temp_dir().join("junqi-models.log");
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|e| format!("open: {}", e))?
-        .write_all(line.as_bytes())
-        .map_err(|e| format!("write: {}", e))
-}
-
 #[cfg(test)]
 mod tests {
     use super::control_ui_url;

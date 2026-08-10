@@ -52,6 +52,7 @@ import {
   loadAgentProfile,
   saveAgentProfile,
 } from '@/services/agentProfiles';
+import type { OpenClawSessionUsageEntry } from '@/services/gateway/OpenClawUsageClient';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -778,18 +779,18 @@ export function AgentSettingsPanel({
   const usageSessions = useMemo(() => {
     if (!agent || !sessionsUsage?.sessions) return [];
     const agentId = agent.id;
-    return (sessionsUsage.sessions as any[]).filter((s: any) => {
+    return sessionsUsage.sessions.filter((s: OpenClawSessionUsageEntry) => {
       // Match by agentId field (if present) or by key pattern
       if (s.agentId === agentId) return true;
-      const key = s.key || '';
+      const key = s.key;
       return key.startsWith(`agent:${agentId}:`);
-    }).map((s: any) => ({
+    }).map((s) => ({
       key: s.key || s.sessionId || '',
-      label: s.label || s.displayName || '',
-      model: s.model || '',
-      totalTokens: s.usage?.totalTokens ?? s.totalTokens ?? 0,
-      running: false, // usage data is historical — never "running"
-      updatedAt: s.updatedAt || s.usage?.lastActivity || 0,
+      label: s.label || '',
+      model: s.model || s.modelOverride || '',
+      totalTokens: s.usage?.totalTokens ?? 0,
+      running: false, // usage 数据是历史快照，不代表当前正在运行。
+      updatedAt: s.updatedAt ?? s.usage?.lastActivity ?? 0,
     }));
   }, [agent, sessionsUsage]);
 

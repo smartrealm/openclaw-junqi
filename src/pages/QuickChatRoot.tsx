@@ -118,10 +118,10 @@ export default function QuickChatRoot() {
           });
         }
       },
-      onScopeError: (error) => useChatStore.getState().setConnectionStatus({
+      onAuthorizationIssue: (issue) => useChatStore.getState().setConnectionStatus({
         connected: false,
         connecting: false,
-        error,
+        error: issue.message,
       }),
     });
 

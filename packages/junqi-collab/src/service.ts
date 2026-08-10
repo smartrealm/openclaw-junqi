@@ -552,15 +552,6 @@ export class CollaborationService {
         .run(cutoff);
       this.database.db
         .prepare(
-          `DELETE FROM deletion_command_receipts
-           WHERE run_id IN (
-             SELECT run_id FROM tombstones
-             WHERE deleted_at < ? AND cleanup_status = 'COMPLETED'
-           )`,
-        )
-        .run(cutoff);
-      this.database.db
-        .prepare(
           `DELETE FROM deletion_jobs
            WHERE status = 'COMPLETED' AND updated_at < ?
              AND run_id IN (
@@ -796,34 +787,14 @@ export class CollaborationService {
 
   private resolveStoredExportPath(storedPath: string): string {
     const exportDir = path.resolve(this.dataDir, "exports");
-    if (!path.isAbsolute(storedPath)) {
-      assertCondition(
-        /^[A-Za-z0-9._-]+\.json$/.test(storedPath),
-        "INVALID_REQUEST",
-        "Managed export artifact id is invalid",
-      );
-      const resolved = path.join(exportDir, storedPath);
-      this.assertManagedExportPath(resolved);
-      return resolved;
-    }
-    try {
-      this.assertManagedExportPath(storedPath);
-      return path.resolve(storedPath);
-    } catch {
-      const fileName = path.basename(storedPath);
-      assertCondition(
-        /^[A-Za-z0-9._-]+\.json$/.test(fileName),
-        "INVALID_REQUEST",
-        "Legacy export artifact path cannot be remapped safely",
-      );
-      const remapped = path.join(exportDir, fileName);
-      assertCondition(
-        existsSync(remapped),
-        "NOT_FOUND",
-        "Legacy export artifact was not copied into the current managed state directory",
-      );
-      return remapped;
-    }
+    assertCondition(
+      !path.isAbsolute(storedPath) && /^[A-Za-z0-9._-]+\.json$/.test(storedPath),
+      "INVALID_REQUEST",
+      "Managed export artifact id is invalid",
+    );
+    const resolved = path.join(exportDir, storedPath);
+    this.assertManagedExportPath(resolved);
+    return resolved;
   }
 
   private deleteRunWithStagedArtifacts(params: {
@@ -889,6 +860,11 @@ export class CollaborationService {
           );
           this.extendDeleteCommandLease(params.currentDeleteCommand);
         }
+        assertCondition(
+          params.deletionJobId != null || params.actor === "retention-policy",
+          "INVALID_REQUEST",
+          "Explicit deletion requires an authoritative deletion job",
+        );
         const exportPaths = (this.database.db
           .prepare("SELECT artifact_path FROM export_jobs WHERE run_id = ? AND artifact_path IS NOT NULL")
           .all(params.runId) as SqlRow[]).map((row) => this.resolveStoredExportPath(String(row.artifact_path)));
@@ -1066,7 +1042,7 @@ export class CollaborationService {
   } {
     return this.database.transaction(() => {
       const tombstone = this.database.db
-        .prepare("SELECT deletion_job_id FROM tombstones WHERE run_id = ?")
+        .prepare("SELECT actor, deletion_job_id FROM tombstones WHERE run_id = ?")
         .get(runId) as SqlRow | undefined;
       if (!tombstone) return { jobId: null, usable: true, diagnostic: null };
       const recordedJobId = typeof tombstone.deletion_job_id === "string"
@@ -1084,47 +1060,14 @@ export class CollaborationService {
         this.logger.warn(`deletion tombstone ${runId} references a missing or mismatched job ${recordedJobId}`);
         return { jobId: recordedJobId, usable: false, diagnostic };
       }
-
-      // Legacy tombstones predate the authoritative job reference. Only a
-      // single candidate can be adopted safely; ambiguity is retained rather
-      // than rewriting historical jobs by run id. The adoption itself is a
-      // CAS so two recovery workers cannot choose different owners.
-      const candidates = this.database.db
-        .prepare("SELECT id FROM deletion_jobs WHERE run_id = ? ORDER BY created_at DESC, updated_at DESC, id DESC")
-        .all(runId) as SqlRow[];
-      if (candidates.length === 1) {
-        const candidateId = String(candidates[0]!.id);
-        const adopted = this.database.db
-          .prepare(
-            "UPDATE tombstones SET deletion_job_id = ? WHERE run_id = ? AND deletion_job_id IS NULL AND cleanup_status IN ('PENDING', 'PARTIAL')",
-          )
-          .run(candidateId, runId);
-        if (Number(adopted.changes) === 1) {
-          return { jobId: candidateId, usable: true, diagnostic: null };
-        }
-        const current = this.database.db
-          .prepare("SELECT deletion_job_id FROM tombstones WHERE run_id = ?")
-          .get(runId) as SqlRow | undefined;
-        if (typeof current?.deletion_job_id === "string" && current.deletion_job_id.length > 0) {
-          return {
-            jobId: current.deletion_job_id,
-            usable: current.deletion_job_id === candidateId,
-            diagnostic: current.deletion_job_id === candidateId
-              ? null
-              : "Deletion tombstone owner changed during recovery",
-          };
-        }
-        return { jobId: null, usable: false, diagnostic: "Deletion tombstone owner could not be adopted safely" };
+      if (tombstone.actor === "retention-policy") {
+        return { jobId: null, usable: true, diagnostic: null };
       }
-      if (candidates.length > 1) {
-        this.logger.warn(`deletion tombstone ${runId} has ${candidates.length} legacy jobs; recovery will not guess an owner`);
-        return {
-          jobId: null,
-          usable: false,
-          diagnostic: `Deletion tombstone has ${candidates.length} legacy jobs and no authoritative owner`,
-        };
-      }
-      return { jobId: null, usable: true, diagnostic: null };
+      return {
+        jobId: null,
+        usable: false,
+        diagnostic: "Explicit deletion tombstone has no authoritative deletion job",
+      };
     });
   }
 
@@ -1260,11 +1203,9 @@ export class CollaborationService {
           this.fsyncDirectory(path.resolve(this.dataDir, "exports"));
           this.removeEmptyStagingDirectory(runId);
         }
-        // A committed deletion must remove the Run in the same SQLite
-        // transaction as its tombstone. Seeing both means the durable facts
-        // disagree (for example after manual repair or legacy corruption).
-        // Restore artifacts, then retain an explicit PARTIAL fence instead of
-        // silently marking the deletion complete or retrying the delete.
+        // 已提交的删除必须在写入墓碑的同一 SQLite 事务中移除 Run。两者同时
+        // 存在说明持久化事实已冲突，例如人工修复造成数据漂移。此时先恢复
+        // 制品，再保留明确的 PARTIAL 栅栏，不能静默完成或重试删除。
         const diagnostic = "Deletion tombstone references a Run that still exists; manual reconciliation is required";
         const hasTombstone = Boolean(
           this.database.db.prepare("SELECT 1 FROM tombstones WHERE run_id = ?").get(runId),
@@ -2908,14 +2849,6 @@ export class CollaborationService {
         effectKey: `collab:${runId}:delete:${digest}`,
         response,
       });
-      this.insertDeletionCommandReceipt({
-        commandId: envelope.commandId,
-        source: "junqi.collab.run.delete",
-        runId,
-        deletionJobId: jobId,
-        payloadHash: envelope.payloadHash,
-        response,
-      });
     });
     void this.drainCommands();
     return response!;
@@ -2970,11 +2903,10 @@ export class CollaborationService {
           deletionJobId: jobId,
           status: "COMPLETED",
         });
-        this.insertDeletionCommandReceipt({
+        this.database.reserveCommandReceipt({
           commandId: envelope.commandId,
           source: "junqi.collab.run.delete.retry",
           runId,
-          deletionJobId: jobId,
           payloadHash: envelope.payloadHash,
           response,
         });
@@ -3064,11 +2996,10 @@ export class CollaborationService {
           deletionJobId: jobId,
           status: "COMPLETED",
         });
-        this.insertDeletionCommandReceipt({
+        this.database.reserveCommandReceipt({
           commandId: envelope.commandId,
           source: "junqi.collab.run.delete.retry",
           runId,
-          deletionJobId: jobId,
           payloadHash: envelope.payloadHash,
           response,
         });
@@ -3121,14 +3052,6 @@ export class CollaborationService {
           ...(flowReconciliationAbandonment ? { flowReconciliationAbandonment } : {}),
         },
         effectKey: `collab:${runId}:delete-retry:${jobId}:${envelope.commandId}`,
-        response,
-      });
-      this.insertDeletionCommandReceipt({
-        commandId: envelope.commandId,
-        source: "junqi.collab.run.delete.retry",
-        runId,
-        deletionJobId: jobId,
-        payloadHash: envelope.payloadHash,
         response,
       });
       return { kind: "QUEUED", response };
@@ -3222,8 +3145,8 @@ export class CollaborationService {
 
   exportDownload(paramsInput: Record<string, unknown>): Record<string, unknown> {
     const job = this.exportGet(paramsInput);
-    assertCondition(job.status === "COMPLETED" && typeof job.artifact_path === "string", "INVALID_TRANSITION", "Export is not ready");
-    const artifactPath = this.resolveStoredExportPath(job.artifact_path);
+    assertCondition(job.status === "COMPLETED" && typeof job.artifactPath === "string", "INVALID_TRANSITION", "Export is not ready");
+    const artifactPath = this.resolveStoredExportPath(job.artifactPath);
     assertCondition(
       statSync(artifactPath).size <= PERSISTENCE_LIMITS.exportBytes,
       "CAPACITY_EXCEEDED",
@@ -3247,7 +3170,7 @@ export class CollaborationService {
       sessionId,
       activeOnly: true,
       limit: 100,
-    });
+    }).map((run) => this.sessionMutationRunSummary(run));
     const mutation = this.findUnresolvedSessionMutation({ runtimeId, sessionKey, sessionId });
     return {
       runtimeId,
@@ -3465,8 +3388,6 @@ export class CollaborationService {
 
   private maintenanceStatusProjection(inspection: MaintenanceLeaseInspection): Record<string, unknown> {
     return {
-      // `active` remains the compatibility alias consumed by existing clients.
-      active: inspection.gateActive,
       gateActive: inspection.gateActive,
       status: inspection.status,
       recoveryRequired: inspection.recoveryRequired,
@@ -3570,6 +3491,18 @@ export class CollaborationService {
     };
   }
 
+  private sessionMutationRunSummary(
+    run: ReturnType<CollaborationDatabase["getRunSummary"]>,
+  ): Record<string, unknown> {
+    const decorated = this.decorateRunAllowedActions(run);
+    const { id, ...summary } = decorated;
+    return {
+      runId: id,
+      ...summary,
+      lastEventSequence: this.database.getLastSequence(id),
+    };
+  }
+
   enterMaintenance(paramsInput: Record<string, unknown>): Record<string, unknown> {
     const params = parseJsonObject(paramsInput, "params");
     const envelope = this.validateWriteEnvelope(params);
@@ -3662,7 +3595,6 @@ export class CollaborationService {
         replayed: false,
         commandId: envelope.commandId,
         maintenanceLeaseId: leaseId,
-        active: false,
         gateActive: false,
         status: "INACTIVE",
         recoveryRequired: false,
@@ -8565,12 +8497,6 @@ export class CollaborationService {
     payloadHash: string,
     operation: "SESSION_MUTATION:PREPARE" | "SESSION_MUTATION:COMPLETE",
   ): Record<string, unknown> | null {
-    const quarantined = this.database.getCommandReceiptConflict(commandId);
-    if (quarantined) {
-      throw new CollaborationError("IDEMPOTENCY_CONFLICT", "commandId is quarantined after a legacy namespace collision", {
-        diagnostic: quarantined,
-      });
-    }
     const receipt = this.database.getCommandReceipt(commandId);
     if (receipt) {
       assertCondition(
@@ -8584,20 +8510,13 @@ export class CollaborationService {
         : { accepted: true, replayed: true, commandId });
     }
     const row = this.database.db
-      .prepare("SELECT operation, payload_hash, response_json FROM session_mutation_commands WHERE command_id = ?")
+      .prepare("SELECT command_id FROM session_mutation_commands WHERE command_id = ?")
       .get(commandId) as SqlRow | undefined;
-    if (row) {
-      assertCondition(`SESSION_MUTATION:${String(row.operation)}` === operation, "IDEMPOTENCY_CONFLICT", "commandId was already used by another session mutation operation");
-      assertCondition(row.payload_hash === payloadHash, "IDEMPOTENCY_CONFLICT", "commandId was already used with another payload");
-      return this.writeResponse({
-        ...parseJson<Record<string, unknown>>(row.response_json, {}),
-        replayed: true,
-      });
-    }
-    const deletionReceipt = this.database.db
-      .prepare("SELECT command_id FROM deletion_command_receipts WHERE command_id = ?")
-      .get(commandId) as SqlRow | undefined;
-    assertCondition(!deletionReceipt, "IDEMPOTENCY_CONFLICT", "commandId was already used by a deletion command");
+    assertCondition(
+      !row,
+      "IDEMPOTENCY_CONFLICT",
+      "commandId has a session mutation record without its authoritative receipt",
+    );
     const runCommand = this.database.db.prepare("SELECT id FROM commands WHERE id = ?").get(commandId) as SqlRow | undefined;
     assertCondition(!runCommand, "IDEMPOTENCY_CONFLICT", "commandId was already used by another collaboration command");
     return null;
@@ -8611,10 +8530,6 @@ export class CollaborationService {
     response: Record<string, unknown>;
   }): void {
     assertBoundedJson(params.response, "session mutation command response", PERSISTENCE_LIMITS.commandResponseBytes);
-    const deletionReceipt = this.database.db
-      .prepare("SELECT 1 FROM deletion_command_receipts WHERE command_id = ?")
-      .get(params.commandId);
-    assertCondition(!deletionReceipt, "IDEMPOTENCY_CONFLICT", "commandId was already used by a deletion command");
     const runCommand = this.database.db.prepare("SELECT 1 FROM commands WHERE id = ?").get(params.commandId);
     assertCondition(!runCommand, "IDEMPOTENCY_CONFLICT", "commandId was already used by another collaboration command");
     this.database.reserveCommandReceipt({
@@ -8635,44 +8550,6 @@ export class CollaborationService {
         params.commandId,
         params.mutationId,
         params.operation,
-        params.payloadHash,
-        stableStringify(params.response),
-        timestamp,
-        timestamp,
-      );
-  }
-
-  private insertDeletionCommandReceipt(params: {
-    commandId: string;
-    source: "junqi.collab.run.delete" | "junqi.collab.run.delete.retry";
-    runId: string;
-    deletionJobId: string;
-    payloadHash: string;
-    response: Record<string, unknown>;
-  }): void {
-    assertBoundedJson(params.response, "deletion command response", PERSISTENCE_LIMITS.commandResponseBytes);
-    const mutationCommand = this.database.db
-      .prepare("SELECT 1 FROM session_mutation_commands WHERE command_id = ?")
-      .get(params.commandId);
-    assertCondition(!mutationCommand, "IDEMPOTENCY_CONFLICT", "commandId was already used by a session mutation command");
-    this.database.reserveCommandReceipt({
-      commandId: params.commandId,
-      source: params.source,
-      runId: params.runId,
-      payloadHash: params.payloadHash,
-      response: params.response,
-    });
-    const timestamp = nowMs();
-    this.database.db
-      .prepare(
-        `INSERT INTO deletion_command_receipts(
-          command_id, run_id, deletion_job_id, payload_hash, response_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        params.commandId,
-        params.runId,
-        params.deletionJobId,
         params.payloadHash,
         stableStringify(params.response),
         timestamp,
@@ -8730,17 +8607,10 @@ export class CollaborationService {
   }
 
   private replayedResponse(commandId: string, payloadHash: string, operation: string): Record<string, unknown> | null {
-    const quarantined = this.database.getCommandReceiptConflict(commandId);
-    if (quarantined) {
-      throw new CollaborationError("IDEMPOTENCY_CONFLICT", "commandId is quarantined after a legacy namespace collision", {
-        diagnostic: quarantined,
-      });
-    }
     const receipt = this.database.getCommandReceipt(commandId);
     if (receipt) {
       assertCondition(
-        receipt.source === operation
-          || (receipt.source === "LEGACY_DELETE" && operation.startsWith("junqi.collab.run.delete")),
+        receipt.source === operation,
         "IDEMPOTENCY_CONFLICT",
         "commandId was already used by another collaboration operation",
       );
@@ -8752,29 +8622,14 @@ export class CollaborationService {
     const mutationCommand = this.database.db
       .prepare("SELECT command_id FROM session_mutation_commands WHERE command_id = ?")
       .get(commandId) as SqlRow | undefined;
-    assertCondition(!mutationCommand, "IDEMPOTENCY_CONFLICT", "commandId was already used by a session mutation command");
-    const deletionReceipt = this.database.db
-      .prepare("SELECT payload_hash, response_json FROM deletion_command_receipts WHERE command_id = ?")
-      .get(commandId) as SqlRow | undefined;
-    if (deletionReceipt) {
-      assertCondition(
-        operation.startsWith("junqi.collab.run.delete"),
-        "IDEMPOTENCY_CONFLICT",
-        "commandId was already used by a deletion command",
-      );
-      assertCondition(
-        deletionReceipt.payload_hash === payloadHash,
-        "IDEMPOTENCY_CONFLICT",
-        "commandId was already used with another deletion payload",
-      );
-      return this.writeResponse({
-        ...parseJson<Record<string, unknown>>(deletionReceipt.response_json, {}),
-        replayed: true,
-      });
-    }
+    assertCondition(
+      !mutationCommand,
+      "IDEMPOTENCY_CONFLICT",
+      "commandId has a session mutation record without its authoritative receipt",
+    );
     const row = this.database.db.prepare("SELECT payload_hash, response_json FROM commands WHERE id = ?").get(commandId) as SqlRow | undefined;
     if (!row) return null;
-    throw new CollaborationError("IDEMPOTENCY_CONFLICT", "commandId is reserved by an internal or legacy collaboration command");
+    throw new CollaborationError("IDEMPOTENCY_CONFLICT", "commandId is reserved by an internal collaboration command");
   }
 
   private requireRunRevision(runId: string, expected?: number): ReturnType<CollaborationDatabase["getRunSummary"]> {
@@ -9772,26 +9627,26 @@ function deliveryAttemptAuditObject(row: SqlRow): Record<string, unknown> {
 function exportJobObject(row: SqlRow): Record<string, unknown> {
   return {
     id: String(row.id),
-    run_id: String(row.run_id),
+    runId: String(row.run_id),
     status: String(row.status),
     format: String(row.format),
-    artifact_path: nullableString(row.artifact_path),
+    artifactPath: nullableString(row.artifact_path),
     digest: nullableString(row.digest),
-    last_error: typeof row.last_error === "string" ? boundedDiagnostic(row.last_error) : null,
-    created_at: numberValue(row.created_at),
-    updated_at: numberValue(row.updated_at),
+    lastError: typeof row.last_error === "string" ? boundedDiagnostic(row.last_error) : null,
+    createdAt: numberValue(row.created_at),
+    updatedAt: numberValue(row.updated_at),
   };
 }
 
 function deletionJobObject(row: SqlRow): Record<string, unknown> {
   return {
     id: String(row.id),
-    run_id: String(row.run_id),
+    runId: String(row.run_id),
     status: String(row.status),
-    confirmation_digest: String(row.confirmation_digest),
-    last_error: typeof row.last_error === "string" ? boundedDiagnostic(row.last_error) : null,
-    created_at: numberValue(row.created_at),
-    updated_at: numberValue(row.updated_at),
+    confirmationDigest: String(row.confirmation_digest),
+    lastError: typeof row.last_error === "string" ? boundedDiagnostic(row.last_error) : null,
+    createdAt: numberValue(row.created_at),
+    updatedAt: numberValue(row.updated_at),
   };
 }
 

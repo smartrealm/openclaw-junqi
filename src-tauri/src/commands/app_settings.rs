@@ -357,6 +357,19 @@ pub async fn load_agent_profiles() -> Result<BTreeMap<String, AgentProfileMetada
     .map_err(|e| e.to_string())?
 }
 
+fn apply_agent_profile(
+    settings: &mut AppSettings,
+    agent_id: String,
+    profile: AgentProfileMetadata,
+) -> Option<AgentProfileMetadata> {
+    if profile.domain.is_empty() && profile.scope.is_empty() {
+        settings.agent_profiles.remove(&agent_id)
+    } else {
+        settings.agent_profiles.insert(agent_id, profile.clone());
+        Some(profile)
+    }
+}
+
 #[tauri::command]
 pub async fn save_agent_profile(
     agent_id: String,
@@ -377,12 +390,7 @@ pub async fn save_agent_profile(
             .lock()
             .map_err(|_| "settings lock poisoned".to_string())?;
         let mut settings = load_settings_unlocked();
-        let saved = if profile.domain.is_empty() && profile.scope.is_empty() {
-            settings.agent_profiles.remove(&agent_id)
-        } else {
-            settings.agent_profiles.insert(agent_id, profile.clone());
-            Some(profile)
-        };
+        let saved = apply_agent_profile(&mut settings, agent_id, profile);
         persist_settings(&settings)?;
         Ok::<Option<AgentProfileMetadata>, String>(saved)
     })
@@ -403,18 +411,6 @@ pub async fn delete_agent_profile(agent_id: String) -> Result<(), String> {
     })
     .await
     .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub fn save_app_settings(mut settings: AppSettings) -> Result<(), String> {
-    let _guard = settings_lock().lock();
-    // Agent profiles have their own command boundary. Preserve them when an
-    // older settings writer sends an AppSettings payload without that field.
-    settings.agent_profiles = load_settings_unlocked().agent_profiles;
-    settings.language = normalize_application_language(&settings.language)
-        .unwrap_or(FALLBACK_APPLICATION_LANGUAGE)
-        .to_string();
-    persist_settings(&settings)
 }
 
 #[tauri::command]
@@ -480,20 +476,6 @@ pub async fn reset_terminal_settings() -> Result<AppSettings, String> {
             .map_err(|_| "settings lock poisoned".to_string())?;
         let mut settings = load_settings_unlocked();
         apply_terminal_settings_defaults(&mut settings);
-        persist_settings(&settings)?;
-        Ok::<AppSettings, String>(settings)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub async fn detect_agent_paths() -> Result<AppSettings, String> {
-    tokio::task::spawn_blocking(|| {
-        let mut settings = load_settings_unlocked();
-        settings.claude_path = detect_path("claude");
-        settings.codex_path = detect_path("codex");
-        let _guard = settings_lock().lock();
         persist_settings(&settings)?;
         Ok::<AppSettings, String>(settings)
     })
@@ -597,6 +579,49 @@ mod tests {
             AGENT_PROFILE_SCOPE_MAX_CHARS
         )
         .is_err());
+    }
+
+    #[test]
+    fn agent_profile_mutation_preserves_other_profiles_and_application_settings() {
+        let mut settings = AppSettings {
+            language: "zh".to_string(),
+            claude_path: "/custom/bin/claude".to_string(),
+            ..AppSettings::default()
+        };
+        let existing = AgentProfileMetadata {
+            domain: "legal".to_string(),
+            scope: "review".to_string(),
+        };
+        settings
+            .agent_profiles
+            .insert("legal".to_string(), existing.clone());
+        let research = AgentProfileMetadata {
+            domain: "research".to_string(),
+            scope: "internal".to_string(),
+        };
+
+        assert_eq!(
+            apply_agent_profile(&mut settings, "research".to_string(), research.clone()),
+            Some(research.clone())
+        );
+        assert_eq!(settings.language, "zh");
+        assert_eq!(settings.claude_path, "/custom/bin/claude");
+        assert_eq!(settings.agent_profiles.get("legal"), Some(&existing));
+        assert_eq!(settings.agent_profiles.get("research"), Some(&research));
+
+        assert_eq!(
+            apply_agent_profile(
+                &mut settings,
+                "research".to_string(),
+                AgentProfileMetadata {
+                    domain: String::new(),
+                    scope: String::new(),
+                },
+            ),
+            Some(research)
+        );
+        assert_eq!(settings.agent_profiles.get("legal"), Some(&existing));
+        assert_eq!(settings.agent_profiles.get("research"), None);
     }
 
     #[test]

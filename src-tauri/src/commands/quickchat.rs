@@ -61,8 +61,7 @@ impl ResourceDropCoordinator {
     }
 }
 
-/// Open (or refocus) the QuickChatWindow, optionally seeding it with file paths.
-#[tauri::command]
+/// 打开或聚焦 QuickChatWindow，并在需要时传入文件路径。
 pub async fn open_quickchat_with_files(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
     if !paths.is_empty() {
         *QUICKCHAT_SEED.lock().unwrap() = paths.clone();
@@ -158,18 +157,11 @@ pub async fn close_quickchat(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub async fn get_quickchat_visible(app: AppHandle) -> bool {
-    app.get_webview_window(LABEL)
-        .map(|w| w.is_visible().unwrap_or(false))
-        .unwrap_or(false)
-}
-
 /// Helper called by the lib drag-drop bridge when files land on a non-quickchat
 /// window — opens a QuickChatWindow seeded with those paths.
 pub fn spawn_quickchat_for_paths(app: &AppHandle, paths: Vec<String>) {
     // Capture only file-name labels for the toast; the actual paths flow through
-    // via the open_quickchat_with_files command.
+    // 由同一 Rust 生命周期函数完成窗口创建与文件种子传递。
     let labels: Vec<String> = paths
         .iter()
         .map(|p| {

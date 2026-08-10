@@ -102,6 +102,8 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 8. [Gateway Client 平台身份对齐](quality/gateway-client-platform-identity-alignment-2026-08-03.md)
 9. [OpenClaw Operator Protocol v4 对齐](quality/openclaw-operator-protocol-v4-alignment-2026-08-03.md)
 10. [OpenClaw Gateway 挑战与策略对齐](quality/openclaw-gateway-challenge-policy-alignment-2026-08-04.md)
+11. [Gateway 原生与扩展一致性复审](quality/gateway-native-extension-consistency-followup-audit-2026-08-09.md)
+12. [Tauri Command 消费者矩阵](quality/tauri-command-consumer-matrix-2026-08-09.md)
 
 对应规格与计划：
 

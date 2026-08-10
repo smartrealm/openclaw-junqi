@@ -8,36 +8,51 @@ import {
   withoutDeletedSessions,
 } from '@/utils/sessionLifecycle';
 import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawChatRunProjection';
-import { GatewayRpcError } from '@/services/gateway/Connection';
+import { isOpenClawUnknownMethodError } from '@/services/gateway/GatewayProtocolEvidence';
 import {
+  parseOpenClawCostUsageSummary,
+  parseOpenClawSessionsUsage,
+  type OpenClawCostUsageDailyEntry,
+  type OpenClawCostUsageSummary,
+  type OpenClawCostUsageTotals,
+  type OpenClawSessionsUsageResult,
+} from '@/services/gateway/OpenClawUsageClient';
+import {
+  OPENCLAW_SESSIONS_PREVIEW_METHOD,
   OPENCLAW_SESSIONS_PREVIEW_MAX_KEYS,
   OpenClawSessionPreviewClient,
   OpenClawSessionPreviewResponseError,
   type OpenClawSessionPreviewEntry,
 } from '@/services/gateway/OpenClawSessionPreviewClient';
 import {
+  OPENCLAW_TOOLS_EFFECTIVE_METHOD,
   OpenClawToolsEffectiveClient,
   OpenClawToolsEffectiveResponseError,
   type OpenClawToolsEffectiveEntry,
   type OpenClawToolsEffectiveResult,
 } from '@/services/gateway/OpenClawToolsEffectiveClient';
 import {
+  OPENCLAW_TOOLS_CATALOG_METHOD,
   OpenClawToolsCatalogClient,
   OpenClawToolsCatalogResponseError,
   type OpenClawToolsCatalogResult,
 } from '@/services/gateway/OpenClawToolsCatalogClient';
 import {
+  OPENCLAW_TOOLS_INVOKE_METHOD,
   OpenClawToolsInvokeClient,
   type OpenClawToolsInvokeInput,
   type OpenClawToolsInvokeResult,
 } from '@/services/gateway/OpenClawToolsInvokeClient';
 import {
+  OPENCLAW_ARTIFACTS_DOWNLOAD_METHOD,
+  OPENCLAW_ARTIFACTS_LIST_METHOD,
   OpenClawArtifactsClient,
   OpenClawArtifactsResponseError,
   type OpenClawArtifactSummary,
   type OpenClawArtifactsDownloadResult,
 } from '@/services/gateway/OpenClawArtifactsClient';
 import {
+  OPENCLAW_MEMORY_SEARCH_METHOD,
   OpenClawMemorySearchClient,
   OpenClawMemorySearchResponseError,
   type OpenClawMemorySearchResponse,
@@ -53,6 +68,7 @@ import {
   type OpenClawMemoryStatusInput,
 } from '@/services/gateway/OpenClawMemoryDiagnosticsClient';
 import {
+  OPENCLAW_SESSIONS_SEARCH_METHOD,
   OpenClawSessionSearchClient,
   OpenClawSessionSearchResponseError,
   type OpenClawSessionSearchResult,
@@ -155,10 +171,20 @@ export interface SessionInfo {
   running?: boolean;
   totalTokens?: number;
   contextTokens?: number;
+  maxTokens?: number;
+  compactions?: number;
+  lastActive?: string;
+  lastTimestamp?: number | string;
+  createdAt?: number | string;
+  updatedAt?: number | string;
+  status?: string;
+  hasActiveRun?: boolean;
+  hasActiveSubagentRun?: boolean;
+  runningUpdatedAt?: number;
   kind?: string;
   pinned?: boolean;
   archived?: boolean;
-  [k: string]: any;
+  [k: string]: unknown;
 }
 
 export interface AgentInfo {
@@ -166,72 +192,13 @@ export interface AgentInfo {
   name?: string;
   model?: string;
   workspace?: string;
-  [k: string]: any;
+  [k: string]: unknown;
 }
 
-export interface DailyEntry {
-  date: string;
-  totalCost: number;
-  inputCost: number;
-  outputCost: number;
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cacheReadCost: number;
-  cacheWriteCost: number;
-  totalTokens: number;
-  missingCostEntries: number;
-  requests?: number;
-  [k: string]: any;
-}
-
-export interface CostSummary {
-  days: number;
-  daily: DailyEntry[];
-  totals: {
-    totalCost: number;
-    inputCost: number;
-    outputCost: number;
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-    cacheReadCost: number;
-    cacheWriteCost: number;
-    totalTokens: number;
-    missingCostEntries: number;
-    requests?: number;
-    [k: string]: any;
-  };
-  updatedAt?: number;
-}
-
-export interface SessionsUsage {
-  updatedAt: number;
-  startDate: string;
-  endDate: string;
-  sessions: any[];
-  totals: CostUsageTotals;
-  aggregates: Record<string, any>;
-  cacheStatus?: Record<string, any>;
-  [k: string]: any;
-}
-
-export interface CostUsageTotals {
-  totalCost: number;
-  inputCost: number;
-  outputCost: number;
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cacheReadCost: number;
-  cacheWriteCost: number;
-  totalTokens: number;
-  missingCostEntries: number;
-  [k: string]: any;
-}
+export type DailyEntry = OpenClawCostUsageDailyEntry;
+export type CostSummary = OpenClawCostUsageSummary;
+export type SessionsUsage = OpenClawSessionsUsageResult;
+export type CostUsageTotals = OpenClawCostUsageTotals;
 
 export type SessionsUsageRange = '7d' | '30d' | '90d' | '1y' | 'all';
 
@@ -855,6 +822,12 @@ function isGatewayRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function gatewayErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message.trim()
+    ? error.message
+    : String(error);
+}
+
 function gatewayCollection(response: unknown, key: string): unknown[] | null {
   if (Array.isArray(response)) return response;
   if (!isGatewayRecord(response) || !Array.isArray(response[key])) return null;
@@ -865,67 +838,6 @@ function isAgentInfo(value: unknown): value is AgentInfo {
   return isGatewayRecord(value)
     && typeof value.id === 'string'
     && value.id.trim().length > 0;
-}
-
-const COST_METRIC_KEYS = [
-  'totalCost',
-  'inputCost',
-  'outputCost',
-  'input',
-  'output',
-  'cacheRead',
-  'cacheWrite',
-  'cacheReadCost',
-  'cacheWriteCost',
-  'totalTokens',
-  'missingCostEntries',
-] as const;
-
-function hasCostMetrics(value: Record<string, unknown>): boolean {
-  return COST_METRIC_KEYS.every((key) => typeof value[key] === 'number' && Number.isFinite(value[key]));
-}
-
-function isDailyEntry(value: unknown): value is DailyEntry {
-  return isGatewayRecord(value)
-    && typeof value.date === 'string'
-    && hasCostMetrics(value)
-    && (value.requests === undefined || typeof value.requests === 'number');
-}
-
-function isCostSummary(value: unknown): value is CostSummary {
-  if (!isGatewayRecord(value) || typeof value.days !== 'number' || !Array.isArray(value.daily)) {
-    return false;
-  }
-  if (!isGatewayRecord(value.totals) || !hasCostMetrics(value.totals)) return false;
-  if (value.totals.requests !== undefined && typeof value.totals.requests !== 'number') return false;
-  if (value.updatedAt !== undefined && typeof value.updatedAt !== 'number') return false;
-  return value.daily.every(isDailyEntry);
-}
-
-function isDateLabel(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
-}
-
-function isSessionUsageRow(value: unknown): boolean {
-  if (!isGatewayRecord(value) || typeof value.key !== 'string' || value.key.trim().length === 0) return false;
-  if (value.sessionId !== undefined
-    && (typeof value.sessionId !== 'string' || value.sessionId.trim().length === 0)) return false;
-  if (value.updatedAt !== undefined
-    && (typeof value.updatedAt !== 'number' || !Number.isFinite(value.updatedAt))) return false;
-  return value.usage === null || isGatewayRecord(value.usage);
-}
-
-function isSessionsUsage(value: unknown): value is SessionsUsage {
-  return isGatewayRecord(value)
-    && typeof value.updatedAt === 'number'
-    && Number.isFinite(value.updatedAt)
-    && isDateLabel(value.startDate)
-    && isDateLabel(value.endDate)
-    && Array.isArray(value.sessions)
-    && value.sessions.every(isSessionUsageRow)
-    && isGatewayRecord(value.totals)
-    && hasCostMetrics(value.totals)
-    && isGatewayRecord(value.aggregates);
 }
 
 export function parseGatewayAgentList(response: unknown): {
@@ -959,11 +871,11 @@ export function parseGatewayCronJobList(response: unknown): CronJob[] | null {
 }
 
 export function parseGatewayCostSummary(response: unknown): CostSummary | null {
-  return isCostSummary(response) ? response : null;
+  return parseOpenClawCostUsageSummary(response);
 }
 
 export function parseGatewaySessionsUsage(response: unknown): SessionsUsage | null {
-  return isSessionsUsage(response) ? response : null;
+  return parseOpenClawSessionsUsage(response);
 }
 
 interface GatewayRequestTicket<Connection> {
@@ -1257,9 +1169,9 @@ async function fetchSessions(): Promise<boolean> {
       store.setLoading('sessions', false);
     }
     return true;
-  } catch (e: any) {
+  } catch (error: unknown) {
     if (!isCurrentGatewayRequest(ticket)) return false;
-    store.setError('sessions', e?.message || String(e));
+    store.setError('sessions', gatewayErrorMessage(error));
     store.setLoading('sessions', false);
     return false;
   }
@@ -1285,9 +1197,9 @@ async function fetchAgents(): Promise<boolean> {
       snapshot.scope,
     );
     return true;
-  } catch (e: any) {
+  } catch (error: unknown) {
     if (!isCurrentGatewayRequest(ticket)) return false;
-    store.setError('agents', e?.message || String(e));
+    store.setError('agents', gatewayErrorMessage(error));
     store.setLoading('agents', false);
     return false;
   }
@@ -1307,9 +1219,9 @@ async function fetchCost() {
       return;
     }
     store.setCostSummary(summary);
-  } catch (e: any) {
+  } catch (error: unknown) {
     if (!isCurrentGatewayRequest(ticket)) return;
-    store.setError('cost', e?.message || String(e));
+    store.setError('cost', gatewayErrorMessage(error));
     store.setLoading('cost', false);
   }
 }
@@ -1328,9 +1240,9 @@ async function fetchUsage() {
       return;
     }
     store.setSessionsUsage(usage);
-  } catch (e: any) {
+  } catch (error: unknown) {
     if (!isCurrentGatewayRequest(ticket)) return;
-    store.setError('usage', e?.message || String(e));
+    store.setError('usage', gatewayErrorMessage(error));
     store.setLoading('usage', false);
   }
 }
@@ -1367,12 +1279,12 @@ async function fetchCron(): Promise<boolean> {
       }
     } else {
       store.setCronStatus(null);
-      store.setCronStatusError(statusResponse.reason?.message || String(statusResponse.reason));
+      store.setCronStatusError(gatewayErrorMessage(statusResponse.reason));
     }
     return true;
-  } catch (e: any) {
+  } catch (error: unknown) {
     if (!isCurrentGatewayRequest(ticket)) return false;
-    store.setError('cron', e?.message || String(e));
+    store.setError('cron', gatewayErrorMessage(error));
     store.setLoading('cron', false);
     return false;
   }
@@ -1566,7 +1478,7 @@ function chunkSessionPreviewKeys(keys: readonly string[]): string[][] {
 
 function sessionPreviewFailureCode(error: unknown): string {
   if (error instanceof OpenClawSessionPreviewResponseError) return error.code;
-  return isUnsupportedGatewayMethodError(error)
+  return isOpenClawUnknownMethodError(error, OPENCLAW_SESSIONS_PREVIEW_METHOD)
     ? 'OPENCLAW_SESSIONS_PREVIEW_UNSUPPORTED'
     : 'OPENCLAW_SESSIONS_PREVIEW_FAILED';
 }
@@ -1641,7 +1553,7 @@ export async function ensureSessionPreviewsFresh(
 
 function toolsEffectiveFailureCode(error: unknown): string {
   if (error instanceof OpenClawToolsEffectiveResponseError) return error.code;
-  return isUnsupportedGatewayMethodError(error)
+  return isOpenClawUnknownMethodError(error, OPENCLAW_TOOLS_EFFECTIVE_METHOD)
     ? 'OPENCLAW_TOOLS_EFFECTIVE_UNSUPPORTED'
     : 'OPENCLAW_TOOLS_EFFECTIVE_FAILED';
 }
@@ -1850,7 +1762,7 @@ export async function invokeOpenClawTool(
       idempotencyKey: input.idempotencyKey?.trim() || createToolsInvokeIdempotencyKey(),
     });
   } catch (error) {
-    if (isUnsupportedGatewayMethodError(error)) {
+    if (isOpenClawUnknownMethodError(error, OPENCLAW_TOOLS_INVOKE_METHOD)) {
       throw new OpenClawToolsInvokeUnavailableError(
         'OPENCLAW_TOOLS_INVOKE_UNSUPPORTED',
         'The OpenClaw Gateway does not support tools.invoke',
@@ -1862,36 +1774,30 @@ export async function invokeOpenClawTool(
 
 function toolsCatalogFailureCode(error: unknown): string {
   if (error instanceof OpenClawToolsCatalogResponseError) return error.code;
-  return isUnsupportedGatewayMethodError(error)
+  return isOpenClawUnknownMethodError(error, OPENCLAW_TOOLS_CATALOG_METHOD)
     ? 'OPENCLAW_TOOLS_CATALOG_UNSUPPORTED'
     : 'OPENCLAW_TOOLS_CATALOG_FAILED';
 }
 
-function sessionArtifactsFailureCode(error: unknown): string {
+function sessionArtifactsFailureCode(error: unknown, method: string): string {
   if (error instanceof OpenClawArtifactsResponseError) return error.code;
-  return isUnsupportedGatewayMethodError(error)
+  return isOpenClawUnknownMethodError(error, method)
     ? 'OPENCLAW_ARTIFACTS_UNSUPPORTED'
     : 'OPENCLAW_ARTIFACTS_FAILED';
 }
 
 function memorySearchFailureCode(error: unknown): string {
   if (error instanceof OpenClawMemorySearchResponseError) return error.code;
-  return isUnsupportedGatewayMethodError(error)
+  return isOpenClawUnknownMethodError(error, OPENCLAW_MEMORY_SEARCH_METHOD)
     ? 'OPENCLAW_MEMORY_SEARCH_UNSUPPORTED'
     : 'OPENCLAW_MEMORY_SEARCH_FAILED';
-}
-
-function isUnsupportedGatewayMethodError(error: unknown): boolean {
-  if (!(error instanceof GatewayRpcError)) return false;
-  const code = error.code?.trim().toUpperCase();
-  return code === 'METHOD_NOT_FOUND' || code === 'UNKNOWN_METHOD' || code === 'UNKNOWN_COMMAND';
 }
 
 function memoryDiagnosticsFailureCode(error: unknown, method: string): string {
   if (error instanceof OpenClawMemoryDiagnosticsResponseError) {
     return error.code;
   }
-  if (isUnsupportedGatewayMethodError(error)) {
+  if (isOpenClawUnknownMethodError(error, method)) {
     return 'OPENCLAW_MEMORY_DIAGNOSTICS_UNSUPPORTED';
   }
   return method === OPENCLAW_MEMORY_STATUS_METHOD
@@ -1901,7 +1807,7 @@ function memoryDiagnosticsFailureCode(error: unknown, method: string): string {
 
 function sessionSearchFailureCode(error: unknown): string {
   if (error instanceof OpenClawSessionSearchResponseError) return error.code;
-  return isUnsupportedGatewayMethodError(error)
+  return isOpenClawUnknownMethodError(error, OPENCLAW_SESSIONS_SEARCH_METHOD)
     ? 'OPENCLAW_SESSIONS_SEARCH_UNSUPPORTED'
     : 'OPENCLAW_SESSIONS_SEARCH_FAILED';
 }
@@ -1991,7 +1897,7 @@ export async function refreshSessionArtifacts(
     if (!isCurrentSessionArtifactsRequest(ticket)) return false;
     store.clearSessionArtifacts(normalizedSessionKey);
     store.setSessionArtifactsLoading(null);
-    store.setSessionArtifactsError(sessionArtifactsFailureCode(error));
+    store.setSessionArtifactsError(sessionArtifactsFailureCode(error, OPENCLAW_ARTIFACTS_LIST_METHOD));
     return false;
   }
 }
@@ -2232,7 +2138,10 @@ export async function saveSessionArtifact(
       ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
     });
   } catch (error) {
-    return { success: false, errorCode: sessionArtifactsFailureCode(error) };
+    return {
+      success: false,
+      errorCode: sessionArtifactsFailureCode(error, OPENCLAW_ARTIFACTS_DOWNLOAD_METHOD),
+    };
   }
   if (result.artifact.id !== normalizedArtifactId) {
     return { success: false, errorCode: 'OPENCLAW_ARTIFACT_RESPONSE_MISMATCH' };
@@ -2373,78 +2282,38 @@ export async function fetchFullUsage(
 // ═══════════════════════════════════════════════════════════
 
 const SUB_AGENT_RE = /^agent:([^:]+):subagent:/;
-const SUBAGENT_STALE_ACTIVE_GRACE_MS = 60_000;
-
-function timestampMs(value: unknown): number | null {
-  const numeric = typeof value === 'number'
-    ? value
-    : typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim())
-      ? Number(value)
-      : Number.NaN;
-  if (Number.isFinite(numeric) && numeric > 0) {
-    return numeric < 1_000_000_000_000 ? numeric * 1000 : numeric;
-  }
-  if (typeof value !== 'string' || !value.trim()) return null;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-function normalizedState(value: unknown): string {
-  return typeof value === 'string' ? value.trim().toLowerCase() : '';
-}
 
 /**
- * OpenClaw exposes active-run state on sessions.list. Older rows can omit it,
- * so only a recent timestamp with no contradictory lifecycle field is used as
- * a compatibility fallback.
+ * 只投影 OpenClaw sessions.list 明确返回的活动运行字段。
+ * 字段缺失表示运行事实未知，客户端保守显示为非活动。
  */
-export function isRunningSubagentSession(session: SessionInfo, now = Date.now()): boolean {
+export function isRunningSubagentSession(session: SessionInfo): boolean {
   if (typeof session.hasActiveRun === 'boolean') return session.hasActiveRun;
   if (typeof session.hasActiveSubagentRun === 'boolean') return session.hasActiveSubagentRun;
-
-  const state = normalizedState(session.subagentRunState || session.status);
-  const explicitlyActive = state === 'running' || state === 'active' || state === 'started' || state === 'working';
-  const hasExplicitTerminalState = Boolean(state) && !explicitlyActive;
-  if (hasExplicitTerminalState) return false;
-  if (session.running === true || explicitlyActive) {
-    return true;
-  }
-  if (session.running === false) return false;
-
-  const updatedAt = timestampMs(session.updatedAt ?? session.lastActivityAt ?? session.startedAt);
-  return updatedAt !== null && now >= updatedAt && now - updatedAt <= SUBAGENT_STALE_ACTIVE_GRACE_MS;
+  return false;
 }
 
 /**
- * Sync runningSubAgents from sessions data.
- * Called every 10s in tickFast() after fetchSessions().
- * Sessions with key "agent:<id>:subagent:<uuid>" that appear in sessions.list
- * that are ACTUALLY running. sessions.list also returns ended sub-agent
- * sessions (status=done / endedAt set), so presence alone is NOT "active" —
- * we must filter out ended ones, otherwise AgentHub shows long-dead sub-agents
- * as perpetually running (and users think tokens are being burned).
+ * 从 sessions.list 同步当前明确处于活动运行的子智能体。
+ * 会话存在本身不代表仍在运行，必须先通过官方活动字段筛选。
  */
 function syncRunningSubAgents() {
   const store = useGatewayDataStore.getState();
   const sessions = store.sessions;
   const prev = store.runningSubAgents;
 
-  // IMPORTANT: reuse the existing RunningSubAgent object when its fields are
-  // unchanged so that the resulting array elements share references with `prev`.
-  // This lets `changed` (below) stay false on a no-op poll and prevents
-  // subscribers (AgentHub TreeView) from re-rendering and restarting SVG
-  // <animateMotion> animations, which caused the visible flicker.
+  // 字段未变时复用对象引用，避免无变化轮询使订阅者重渲染并重启动效。
   const running: RunningSubAgent[] = [];
   const now = Date.now();
   for (const s of sessions) {
     const match = s.key?.match(SUB_AGENT_RE);
     if (!match) continue;
-    if (!isRunningSubagentSession(s, now)) continue;
+    if (!isRunningSubagentSession(s)) continue;
 
     const agentId = match[1];
     const existing = prev.find((r) => r.sessionKey === s.key);
     const label = s.label || s.displayName || '';
-    // Reuse the exact same object reference if nothing changed.
+    // 没有变化时保留原对象引用。
     if (existing && existing.agentId === agentId && existing.label === label) {
       running.push(existing);
     } else {
@@ -2457,7 +2326,7 @@ function syncRunningSubAgents() {
     }
   }
 
-  // Only update store if list actually changed
+  // 仅在列表真实变化时更新 store。
   const prevKeys = new Set(prev.map((r) => r.sessionKey));
   const newKeys = new Set(running.map((r) => r.sessionKey));
   const changed =
@@ -2509,38 +2378,46 @@ function scheduleSessionsChangedRefresh(detail: { reason?: string; sessionKey?: 
   }, 80);
 }
 
+function previewGatewayEventPayload(payload: unknown): string {
+  try {
+    const serialized = JSON.stringify(payload);
+    return typeof serialized === 'string' ? serialized.slice(0, 200) : String(serialized);
+  } catch {
+    return '[不可序列化的事件载荷]';
+  }
+}
+
 /**
- * Handle a non-chat gateway event and update the store.
- * Call this from gateway.ts handleEvent for non-chat events.
+ * 处理非聊天 Gateway 事件并更新数据投影。
+ * 仅由 Gateway 事件分发器传入，不在此处创建本地生命周期状态。
  */
-export function handleGatewayEvent(event: string, payload: any) {
+export function handleGatewayEvent(event: string, payload: unknown): void {
   const store = useGatewayDataStore.getState();
+  const eventPayload = isGatewayRecord(payload) ? payload : null;
 
   switch (event) {
-    // OpenClaw emits this for metadata, lifecycle and transcript changes to
-    // subscribed clients. Refresh both data surfaces instead of manufacturing
-    // local shadow state.
+    // OpenClaw 用该事件通知元数据、生命周期和转录变化。只刷新权威投影，
+    // 不根据载荷制造本地影子状态。
     case 'sessions.changed': {
-      const reason = typeof payload?.reason === 'string' ? payload.reason : '';
-      const phase = typeof payload?.phase === 'string' ? payload.phase : '';
-      const sessionKey = typeof payload?.sessionKey === 'string'
-        ? payload.sessionKey.trim()
-        : typeof payload?.key === 'string'
-          ? payload.key.trim()
+      const reason = typeof eventPayload?.reason === 'string' ? eventPayload.reason : '';
+      const phase = typeof eventPayload?.phase === 'string' ? eventPayload.phase : '';
+      const sessionKey = typeof eventPayload?.sessionKey === 'string'
+        ? eventPayload.sessionKey.trim()
+        : typeof eventPayload?.key === 'string'
+          ? eventPayload.key.trim()
           : '';
       if (reason === 'delete' || reason === 'deleted') {
         if (sessionKey) {
-          const sessionId = typeof payload?.sessionId === 'string'
-            ? payload.sessionId
+          const sessionId = typeof eventPayload?.sessionId === 'string'
+            ? eventPayload.sessionId
             : store.sessions.find((session) => session.key === sessionKey)?.sessionId;
           markSessionDeleted(sessionKey, sessionId);
           requestFence.invalidate('sessions');
           store.setSessions(store.sessions.filter((session) => session.key !== sessionKey));
         }
       }
-      // The event itself is OpenClaw's invalidation contract. Lifecycle and
-      // transcript updates commonly carry `phase` rather than `reason`, so all
-      // sessions.changed events refresh the authoritative session projection.
+      // 该事件本身是 OpenClaw 的失效通知契约。生命周期和转录更新可能传递
+      // `phase` 而非 `reason`，因此均刷新权威会话投影。
       scheduleSessionsChangedRefresh({
         reason: reason || phase || 'gateway-event',
         sessionKey: sessionKey || undefined,
@@ -2548,23 +2425,22 @@ export function handleGatewayEvent(event: string, payload: any) {
       break;
     }
 
-    // Current OpenClaw documents a `cron` event family but no public payload
-    // schema for a local state projection. Treat it as invalidation only.
+    // 当前 OpenClaw 只公开 cron 事件族，未公开可投影到本地状态的载荷 schema，
+    // 因此仅将其作为失效通知。
     case 'cron': {
       void fetchCron();
       debugLog('datastore', '[DataStore] Cron changed; refreshing Gateway projection');
       break;
     }
 
-    // ── Heartbeat / health events ──
+    // 心跳和健康事件属于预期后台事件，不写入控制台。
     case 'tick':
     case 'health':
-      // Expected background events from gateway; keep console clean.
       break;
 
-    // ── Catch-all logging ──
+    // 其他事件只记录受限预览，避免日志路径再次因未知载荷失败。
     default:
-      debugLog('datastore', '[DataStore] Unhandled event:', event, JSON.stringify(payload).substring(0, 200));
+      debugLog('datastore', '[DataStore] Unhandled event:', event, previewGatewayEventPayload(payload));
       break;
   }
 }

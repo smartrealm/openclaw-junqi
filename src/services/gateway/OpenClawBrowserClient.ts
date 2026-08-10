@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_BROWSER_REQUEST_METHOD = 'browser.request' as const;
 
@@ -111,11 +111,6 @@ function requireHttpUrl(value: string): string {
     throw new Error('Browser URL must use HTTP or HTTPS');
   }
   return parsed.toString();
-}
-
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
 }
 
 function connectionUnavailable(error: unknown): boolean {
@@ -242,7 +237,7 @@ export class OpenClawBrowserClient {
         ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
       }, input.timeoutMs);
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_BROWSER_REQUEST_METHOD)) {
         throw new OpenClawBrowserUnavailableError(
           'OPENCLAW_BROWSER_UNSUPPORTED',
           'The connected OpenClaw Gateway does not support browser.request',

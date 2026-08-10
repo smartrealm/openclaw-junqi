@@ -2,6 +2,9 @@
 
 日期：2026-07-20
 
+> 本文是 2026-07-20 的历史审计快照，文中的“当前”均只指当日基线。现行 schema 14 与后续整改证据见
+> [`gateway-native-extension-consistency-followup-audit-2026-08-09.md`](../quality/gateway-native-extension-consistency-followup-audit-2026-08-09.md)，不得用本文的 schema 12 结果证明当前工作树。
+
 审计基线：JunQi Collaboration Plugin `0.3.0`，SQLite schema `12`，OpenClaw `2026.7.1`。
 
 状态：代码层领域状态、插件自动化和当前 schema 12 bundle parity 已通过；这不等同于生产验收。现有隔离真实 Gateway evidence 仍绑定上一版 schema 11 archive，不能证明当前 archive。P0-01/02/03/04/05/06/07/08/09/10/11/12/13/14 的当前包复验、浏览器视觉 QA 与 24 小时故障注入/soak 仍是开放发布门槛。本文不把 capability 声明、局部真实行为、mock runtime 或单元测试解释成其余链路的真实 Gateway 证据。

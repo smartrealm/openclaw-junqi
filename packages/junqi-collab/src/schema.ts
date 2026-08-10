@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 export const SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -226,6 +226,9 @@ CREATE TABLE IF NOT EXISTS commands (
 CREATE INDEX IF NOT EXISTS commands_pending
 ON commands(status, lease_expires_at, created_at);
 
+CREATE INDEX IF NOT EXISTS commands_available
+ON commands(status, available_at, lease_expires_at, created_at);
+
 CREATE INDEX IF NOT EXISTS commands_run_active
 ON commands(run_id, status, kind, id)
 WHERE status IN ('PENDING', 'LEASED', 'UNKNOWN');
@@ -294,19 +297,6 @@ CREATE TABLE IF NOT EXISTS deletion_jobs (
 CREATE INDEX IF NOT EXISTS deletion_jobs_run_status
 ON deletion_jobs(run_id, status);
 
-CREATE TABLE IF NOT EXISTS deletion_command_receipts (
-  command_id TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL,
-  deletion_job_id TEXT NOT NULL,
-  payload_hash TEXT NOT NULL,
-  response_json TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS deletion_command_receipts_run
-ON deletion_command_receipts(run_id, created_at);
-
 CREATE TABLE IF NOT EXISTS command_receipts (
   command_id TEXT PRIMARY KEY,
   source TEXT NOT NULL,
@@ -319,12 +309,6 @@ CREATE TABLE IF NOT EXISTS command_receipts (
 
 CREATE INDEX IF NOT EXISTS command_receipts_run
 ON command_receipts(run_id, created_at);
-
-CREATE TABLE IF NOT EXISTS command_receipt_conflicts (
-  command_id TEXT PRIMARY KEY,
-  diagnostic TEXT NOT NULL,
-  created_at INTEGER NOT NULL
-);
 
 CREATE TABLE IF NOT EXISTS session_mutations (
   id TEXT PRIMARY KEY,
@@ -378,7 +362,8 @@ CREATE TABLE IF NOT EXISTS tombstones (
   openclaw_flow_revision INTEGER,
   flow_reconciliation_diagnostic TEXT,
   flow_reconciliation_abandoned_at INTEGER,
-  flow_reconciliation_abandon_reason TEXT
+  flow_reconciliation_abandon_reason TEXT,
+  CHECK(deletion_job_id IS NOT NULL OR actor = 'retention-policy')
 );
 
 CREATE INDEX IF NOT EXISTS tombstones_deleted_at

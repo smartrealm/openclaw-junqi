@@ -14,7 +14,10 @@ import { debugError, debugLog, debugWarn } from '@/utils/debugLog';
 import i18n from '@/i18n';
 import { gatewayLocaleForLanguage } from './gatewayLocale';
 import type { GatewayHelloObservation, RuntimeIdentity } from '@/types/gatewayRuntime';
-import { GatewayTransportLifecycleError } from './GatewayTransportError';
+import {
+  GatewayRequestTimeoutError,
+  GatewayTransportLifecycleError,
+} from './GatewayTransportError';
 import {
   buildGatewayHelloObservation,
   invalidateGatewayRuntimeIdentity,
@@ -131,9 +134,9 @@ export const DAILY_OPERATOR_SCOPES: readonly GatewayOperatorScope[] = [
 
 export interface GatewayConnectionOptions {
   scopes?: readonly GatewayOperatorScope[];
-  /** A one-operation connection that must not own global polling or runtime identity. */
+  /** 仅服务一次操作的连接，不持有全局轮询或运行时身份。 */
   transient?: boolean;
-  /** Persists a rotated device token after a non-transient hello handshake. */
+  /** 非临时连接完成握手后持久化轮换的设备凭据。 */
   persistDeviceCredential?: (gatewayUrl: string, token: string) => Promise<unknown>;
 }
 
@@ -252,27 +255,25 @@ export interface GatewayCallbacks {
   onMessage: (msg: ChatMessage) => void;
   onStreamChunk: (sessionKey: string, messageId: string, content: string, media?: MediaInfo, runId?: string | null) => void;
   onStreamEnd: (sessionKey: string, messageId: string, content: string, media?: MediaInfo, meta?: StreamEndMeta) => void;
-  /** Authoritative run state observed from OpenClaw sessions.list after reconnect. */
+  /** 重连后从 OpenClaw sessions.list 读取的权威运行状态。 */
   onSessionRunReconciliation?: (resolution: GatewaySessionRunReconciliation) => void;
-  /** A run sequence gap requires a durable history refresh before trusting live text. */
+  /** 运行序号出现缺口时，必须刷新持久历史后才能信任实时文本。 */
   onStreamReconciliationNeeded?: (sessionKey: string, runId: string) => void;
-  /** A durable transcript snapshot could not be tied to the locally active run. */
+  /** 持久转录快照无法绑定到本地活动运行。 */
   onSessionRunReconciliationNeeded?: (sessionKey: string) => void;
-  /** An official `session.message` notification changed a durable transcript. */
+  /** 官方 `session.message` 通知已改变持久转录。 */
   onTranscriptChanged?: (sessionKey: string) => void;
   /** 持久转录消息仅更新未读与会话投影，不作为通知来源。 */
   onTranscriptMessage?: (notice: GatewayTranscriptMessageNotice) => void;
   onStatusChange: (status: { connected: boolean; connecting: boolean; error?: string }) => void;
   onRetryState?: (state: GatewayRetryState) => void;
-  /** Structured authorization failure from the Gateway protocol. */
+  /** Gateway 协议返回的结构化授权失败。 */
   onAuthorizationIssue?: (issue: GatewayAuthorizationIssue) => void;
-  /** @deprecated Use onAuthorizationIssue. Retained for auxiliary clients. */
-  onScopeError?: (error: string) => void;
-  /** Fired after successful re-pairing (token received) */
+  /** 重新配对成功并收到 token 后触发。 */
   onPairingComplete?: (token: string) => void;
-  /** Raw, normalized hello-ok facts before local runtime attestation. */
+  /** 本地运行时认证前经过规范化的 hello-ok 事实。 */
   onHello?: (observation: GatewayHelloObservation) => void;
-  /** Cross-checked Gateway identity, or null when its socket is invalidated. */
+  /** 交叉核验后的 Gateway 身份；socket 失效时为 null。 */
   onRuntimeIdentity?: (identity: RuntimeIdentity | null) => void;
 }
 
@@ -383,6 +384,28 @@ function gatewayRpcError(value: unknown): GatewayRpcError {
   return new GatewayRpcError(message, code, error?.details);
 }
 
+class GatewayConnectionTarget {
+  constructor(
+    readonly url: string,
+    readonly token: string,
+    readonly deviceToken: string,
+  ) {}
+
+  equals(other: GatewayConnectionTarget): boolean {
+    return this.url === other.url
+      && this.token === other.token
+      && this.deviceToken === other.deviceToken;
+  }
+
+  withToken(token: string): GatewayConnectionTarget {
+    return new GatewayConnectionTarget(this.url, token, this.deviceToken);
+  }
+
+  withDeviceToken(deviceToken: string): GatewayConnectionTarget {
+    return new GatewayConnectionTarget(this.url, this.token, deviceToken);
+  }
+}
+
 export class GatewayConnection {
   private ws: WebSocket | null = null;
   private connected = false;
@@ -400,38 +423,47 @@ export class GatewayConnection {
   private readonly helloListeners = new Set<(observation: GatewayHelloObservation | null) => void>();
   private readonly capabilityRegistry = new GatewayCapabilityRegistry();
 
-  // ── Pairing detection (gentle retry instead of exponential backoff) ──
+  // 配对等待采用固定间隔，不进入普通指数退避。
   private pairingRequired = false;
   private pairingRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly PAIRING_RETRY_MS = 5_000;
 
-  // Device identity challenge facts are owned by the active socket only.
+  // 设备身份挑战事实只属于当前活动 socket。
   private challengeNonce: string | null = null;
   private challengeTimestamp: number | null = null;
 
 
-  // ── Server-policy activity watchdog ──
+  // 服务端策略驱动的活动看门狗。
   private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   private lastGatewayActivityAt: number | null = null;
   private gatewayTickIntervalMs = DEFAULT_GATEWAY_TICK_INTERVAL_MS;
   private msgRouter = new MessageRouter();
 
-  // ── Last error for diagnostics and recovery surfaces ──
+  // 最近一次错误只用于诊断和恢复界面。
   private lastError: string | null = null;
   private readonly requestedScopes: readonly GatewayOperatorScope[];
   private readonly transient: boolean;
 
-  url = '';
-  /** Explicit/shared Gateway token. Device credentials are stored separately. */
-  token = '';
-  deviceToken = '';
+  private target = new GatewayConnectionTarget('', '', '');
+
+  get url(): string {
+    return this.target.url;
+  }
+
+  get token(): string {
+    return this.target.token;
+  }
+
+  get deviceToken(): string {
+    return this.target.deviceToken;
+  }
   private readonly persistDeviceCredential: (gatewayUrl: string, token: string) => Promise<unknown>;
   private readonly resolvePlatform: () => Promise<GatewayClientPlatform>;
   private readonly signDeviceChallenge: typeof signGatewayDeviceChallenge;
   private readonly connectTimeoutMs: number;
 
-  // ── Event callback (set by ChatHandler) ──
-  /** Called for every incoming non-response event from the WebSocket. */
+  // ChatHandler 注入的非响应事件回调。
+  /** 每个 WebSocket 非响应事件都会调用。 */
   onEvent: (msg: unknown) => void = () => {};
 
   constructor(
@@ -444,9 +476,7 @@ export class GatewayConnection {
     this.resolvePlatform = dependencies.resolvePlatform ?? resolveGatewayClientPlatform;
     this.signDeviceChallenge = dependencies.signDeviceChallenge ?? signGatewayDeviceChallenge;
     this.connectTimeoutMs = dependencies.connectTimeoutMs ?? GATEWAY_CONNECT_TIMEOUT_MS;
-    // Register message handlers once — they never change and MessageRouter
-    // uses set() semantics, so calling this in connect() would be a no-op,
-    // but initializing here is the correct ownership model.
+    // 消息处理器由连接实例持有且保持不变，因此只在构造阶段注册一次。
     this.initMessageRouter();
   }
 
@@ -494,12 +524,12 @@ export class GatewayConnection {
     this.helloPolicy = null;
   }
 
-  /** Returns true when the WebSocket is established and handshake succeeded */
+  /** WebSocket 已建立且握手成功时返回 true。 */
   isConnected(): boolean {
     return this.connected;
   }
 
-  /** The attested socket identity used by requestFenced. */
+  /** requestFenced 使用的已认证 socket 身份。 */
   getAttestedConnectionId(): string | null {
     return this.runtimeIdentityConnectionId;
   }
@@ -552,20 +582,22 @@ export class GatewayConnection {
     deviceToken = '',
     resetReconnectAttempts = true,
   ) {
-    this.url = url;
-    this.token = token;
-    this.deviceToken = deviceToken;
+    const nextTarget = new GatewayConnectionTarget(url, token, deviceToken);
+    const sameTarget = this.target.equals(nextTarget);
+    if (sameTarget && this.ws && (this.connected || this.connecting)) return;
+    if (!sameTarget || this.ws) {
+      this.clearTransport(new GatewayTransportLifecycleError(
+        sameTarget ? 'Gateway connection closed' : 'Gateway connection target changed',
+        sameTarget ? 'closed' : 'target-changed',
+      ));
+    }
+    this.target = nextTarget;
     resetReconnectAttempts ? this.retryPolicy.begin() : this.retryPolicy.beginRetry();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
 
-    if (this.ws && (this.connected || this.connecting)) return;
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
     this.helloPolicy = null;
     if (!this.transient) this.publishHello(null);
     this.challengeNonce = null;
@@ -577,25 +609,22 @@ export class GatewayConnection {
 
     debugLog('gateway', '[GW] Connecting:', url);
 
-    // Capture the WS instance locally so all handlers can guard against stale
-    // close/open events from a previous connection being replaced mid-flight.
-    // Without this guard, disconnect() + immediate connect() causes the old
-    // onclose to fire AFTER the new WS is created, setting this.ws = null and
-    // this.connecting = false on the new connection before its challenge arrives.
+    // 局部保存 socket，使所有处理器都能拒绝被新连接替代后的旧事件。
+    // 这可避免旧 onclose 在新 socket 创建后清空新连接状态。
     const ws = new WebSocket(url);
     this.ws = ws;
     this.startAttemptDeadline(ws);
     this.emitRetryState('attempting');
 
     ws.onopen = () => {
-      if (this.ws !== ws) return; // stale — a newer connection replaced us
+      if (this.ws !== ws) return;
       debugLog('gateway', '[GW] Open — waiting for connect.challenge...');
       this.challengeNonce = null;
       this.challengeTimestamp = null;
     };
 
     ws.onmessage = (event) => {
-      if (this.ws !== ws) return; // stale
+      if (this.ws !== ws) return;
       try {
         const msg = JSON.parse(event.data);
         this.handleMessage(msg);
@@ -605,7 +634,7 @@ export class GatewayConnection {
     };
 
     ws.onclose = (event) => {
-      if (this.ws !== ws) return; // stale — ignore close from a superseded WS
+      if (this.ws !== ws) return;
       debugLog('gateway', '[GW] Closed:', event.code, event.reason);
       this.stopHeartbeat();
       this.clearAttemptTimers();
@@ -621,21 +650,11 @@ export class GatewayConnection {
       ));
       this.emitStatus();
 
-      // 1008 is a generic policy close. Only the structured Gateway code (or a
-      // legacy reason that explicitly says pairing required) may enter pairing.
-      if (!this.pairingRequired) {
-        const closeIssue = classifyGatewayAuthorizationError({ message: event.reason });
-        if (closeIssue?.kind === 'pairing_required') {
-          this.pairingRequired = true;
-          this.emitAuthorizationIssue(closeIssue);
-        }
-      }
-
       if (this.transient) {
         return;
       }
 
-      // Pairing required — gentle retry instead of exponential backoff
+      // 配对等待使用固定间隔，其他关闭原因进入普通连接重试。
       if (this.pairingRequired) {
         this.schedulePairingRetry();
         return;
@@ -652,6 +671,12 @@ export class GatewayConnection {
   }
 
   disconnect() {
+    this.clearTransport(new GatewayTransportLifecycleError());
+    this.emitRetryState('idle');
+    this.emitStatus();
+  }
+
+  private clearTransport(error: GatewayTransportLifecycleError): void {
     this.stopHeartbeat();
     this.stopPairingRetry();
     this.clearAttemptTimers();
@@ -660,19 +685,18 @@ export class GatewayConnection {
       this.reconnectTimer = null;
     }
     if (this.ws) {
-      this.ws.close();
+      const socket = this.ws;
       this.ws = null;
+      socket.close();
     }
     this.helloPolicy = null;
     this.challengeNonce = null;
     this.challengeTimestamp = null;
-    this.rejectAllPending(new GatewayTransportLifecycleError());
+    this.rejectAllPending(error);
     this.connected = false;
     this.connecting = false;
     if (!this.transient) this.publishHello(null);
     if (!this.transient) this.invalidateObservedRuntimeIdentity();
-    this.emitRetryState('idle');
-    this.emitStatus();
   }
 
   private scheduleReconnect() {
@@ -812,7 +836,7 @@ export class GatewayConnection {
         }
         if (!this.transient && hello.authDeviceToken) {
           const previousDeviceToken = this.deviceToken.trim();
-          this.deviceToken = hello.authDeviceToken;
+          this.target = this.target.withDeviceToken(hello.authDeviceToken);
           // 共享 token 已完成当前连接时，设备 token 只保留在进程内，避免首次进入
           // 工作区又为独立 Keychain 项发起授权。无共享 token 的设备认证仍需持久化。
           if (!this.token.trim() && hello.authDeviceToken !== previousDeviceToken) {
@@ -1091,7 +1115,7 @@ export class GatewayConnection {
     pending.timer = timeoutMs === null ? null : setTimeout(() => {
       if (this.pendingRequests.get(id) !== pending) return;
       this.clearPendingRequest(id, pending);
-      handlers.reject(`Request timeout (${timeoutMs}ms)`);
+      handlers.reject(new GatewayRequestTimeoutError(timeoutMs));
     }, timeoutMs);
     return true;
   }
@@ -1179,11 +1203,7 @@ export class GatewayConnection {
   }
 
   private emitAuthorizationIssue(issue: GatewayAuthorizationIssue): void {
-    if (this.callbacks?.onAuthorizationIssue) {
-      this.callbacks.onAuthorizationIssue(issue);
-      return;
-    }
-    this.callbacks?.onScopeError?.(issue.message);
+    this.callbacks?.onAuthorizationIssue?.(issue);
   }
 
   private invalidateObservedRuntimeIdentity() {
@@ -1243,7 +1263,7 @@ export class GatewayConnection {
     }
   }
 
-  /** Derive HTTP base URL from the WebSocket URL */
+  /** 从 WebSocket 地址派生 HTTP 基址。 */
   getHttpBaseUrl(): string {
     return this.url
       .replace(/^ws:/, 'http:')
@@ -1251,30 +1271,21 @@ export class GatewayConnection {
       .replace(/\/+$/, '');
   }
 
-  /** Reconnect with a new token (after pairing approval) */
+  /** 配对批准后使用新 token 重连。 */
   reconnectWithToken(newToken: string) {
     debugLog('gateway', '[GW] Reconnecting with new token');
-    this.stopHeartbeat();
-    this.stopPairingRetry();
-    this.clearAttemptTimers();
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    this.connected = false;
-    this.connecting = false;
-    this.invalidateObservedRuntimeIdentity();
-    this.retryPolicy.reset();
-    this.rejectAllPending(new GatewayTransportLifecycleError(
+    this.clearTransport(new GatewayTransportLifecycleError(
       'Gateway credentials changed',
       'credentials-changed',
     ));
-    this.token = newToken;
-    setTimeout(() => this.connect(this.url, newToken, this.deviceToken), 300);
+    this.retryPolicy.reset();
+    const nextTarget = this.target.withToken(newToken);
+    this.target = nextTarget;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.target.equals(nextTarget)) return;
+      this.connect(nextTarget.url, nextTarget.token, nextTarget.deviceToken);
+    }, 300);
   }
 
 }

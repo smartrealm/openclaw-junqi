@@ -96,9 +96,9 @@ test('agents workspace client sends requests without a method advertisement and 
   const unavailable = new OpenClawAgentsWorkspaceClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    requestFenced: async () => {
+    requestFenced: async (method) => {
       sent = true;
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     },
   });
   let current = true;

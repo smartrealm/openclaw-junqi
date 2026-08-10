@@ -31,7 +31,7 @@ test("desktop facts use an exact allowlist and discard sensitive or unknown fiel
   assert.doesNotMatch(JSON.stringify(facts), /PRIVATE_/);
 });
 
-test("stored JSON output drops legacy sensitive keys recursively", () => {
+test("stored JSON output drops untrusted sensitive keys recursively", () => {
   const output = sanitizeStoredJsonForOutput({
     safe: "business evidence",
     nested: {
@@ -40,7 +40,7 @@ test("stored JSON output drops legacy sensitive keys recursively", () => {
       token: "PRIVATE_TOKEN",
       evidence: "verified",
     },
-  }, "legacy payload", 4096);
+  }, "untrusted payload", 4096);
   assert.deepEqual(output, { safe: "business evidence", nested: { evidence: "verified" } });
 });
 

@@ -1,8 +1,8 @@
 import {
   GatewayConnectionFenceError,
   GatewayDisconnectedError,
-  GatewayRpcError,
 } from './Connection';
+import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 
 export const OPENCLAW_AGENT_WAIT_METHOD = 'agent.wait' as const;
 
@@ -48,11 +48,6 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function nonEmptyText(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function unsupportedMethod(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && (error.code === 'METHOD_NOT_FOUND' || error.code === 'UNKNOWN_METHOD' || error.code === 'UNKNOWN_COMMAND');
 }
 
 function connectionUnavailable(error: unknown): boolean {
@@ -106,7 +101,7 @@ export class OpenClawAgentWaitClient {
       if (result.runId !== normalizedRunId) throw new OpenClawAgentWaitResponseError();
       return result;
     } catch (error) {
-      if (unsupportedMethod(error)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_AGENT_WAIT_METHOD)) {
         throw new OpenClawAgentWaitUnavailableError(
           'The connected OpenClaw Gateway does not support agent.wait',
         );

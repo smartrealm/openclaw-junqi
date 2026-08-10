@@ -21,6 +21,7 @@ import { useChatStore, type Session } from '@/stores/chatStore';
 import { resolveNewSessionAgentId } from '@/utils/sessionLifecycle';
 import { useAppStore } from '@/stores/app-store';
 import { useGatewayDataStore, refreshAll, ensureGroupFresh } from '@/stores/gatewayDataStore';
+import type { OpenClawCostUsageTotals } from '@/services/gateway/OpenClawUsageClient';
 import { sessionActivityTime, sortSessionsByActivity } from '@/components/Layout/sidebarUtils';
 import clsx from 'clsx';
 import { themeColorVar } from '@/utils/theme-colors';
@@ -99,6 +100,16 @@ const getAgentName = (id: string) => {
     coder: 'dashboard.agent.coder',
   };
   return names[key] ?? id;
+};
+
+type DashboardSession = Session;
+type DashboardAgentRow = {
+  agentId: string;
+  model?: string;
+  activeSessions: number;
+  running: boolean;
+  lastActive?: string;
+  totals?: Partial<OpenClawCostUsageTotals>;
 };
 
 // ════════════════════════════════════════════════════════════
@@ -251,42 +262,42 @@ export function DashboardPage() {
   const today = localDateKey(now);
   const yesterday = previousLocalDateKey(now);
 
-  const allDaily: any[] = useMemo(() => costData?.daily || [], [costData]);
+  const allDaily = useMemo(() => costData?.daily || [], [costData]);
 
   // Today's cost + change vs yesterday
   const todayCost = useMemo(
-    () => allDaily.find((d: any) => d.date === today)?.totalCost || 0,
+    () => allDaily.find((d) => d.date === today)?.totalCost || 0,
     [allDaily, today]
   );
   const yesterdayCost = useMemo(
-    () => allDaily.find((d: any) => d.date === yesterday)?.totalCost || 0,
+    () => allDaily.find((d) => d.date === yesterday)?.totalCost || 0,
     [allDaily, yesterday]
   );
   const changePercent = costChangePercent(todayCost, yesterdayCost);
 
   const rollingCost = costData?.totals?.totalCost
-    ?? allDaily.reduce((sum: number, d: any) => sum + (d.totalCost || 0), 0);
+    ?? allDaily.reduce((sum, d) => sum + (d.totalCost || 0), 0);
   const budgetPct = budgetProgress(rollingCost, budgetLimit);
 
   // Sparklines: last 7 and last 30 days (oldest → newest)
   const spark7 = useMemo(() => {
     const sorted = [...allDaily].sort((a, b) => a.date.localeCompare(b.date));
-    return sorted.slice(-7).map((d: any) => d.totalCost);
+    return sorted.slice(-7).map((d) => d.totalCost);
   }, [allDaily]);
 
   const spark30 = useMemo(() => {
     const sorted = [...allDaily].sort((a, b) => a.date.localeCompare(b.date));
-    return sorted.slice(-30).map((d: any) => d.totalCost);
+    return sorted.slice(-30).map((d) => d.totalCost);
   }, [allDaily]);
 
   // Tokens today (from daily cost data)
-  const todayEntry   = useMemo(() => allDaily.find((d: any) => d.date === today), [allDaily, today]);
+  const todayEntry   = useMemo(() => allDaily.find((d) => d.date === today), [allDaily, today]);
   const tokensIn     = todayEntry?.input  || 0;
   const tokensOut    = todayEntry?.output || 0;
   const tokensToday  = tokensIn + tokensOut;
 
   // Context usage from main session
-  const mainSession  = sessions.find((s: any) => isGatewayMainSession(s.key, gatewayMainSessionKey));
+  const mainSession  = sessions.find((s) => isGatewayMainSession(s.key, gatewayMainSessionKey));
   const mainModel    = hasProviders ? (mainSession?.model || '—') : '—';
   const shortModel   = mainModel.split('/').pop() || mainModel;
   const ctxUsed      = mainSession?.totalTokens   || 0;
@@ -298,16 +309,16 @@ export function DashboardPage() {
     [chatSessions],
   );
   const recentSessions = useMemo(() => {
-    const byKey = new Map<string, any>();
+    const byKey = new Map<string, DashboardSession>();
     for (const s of sessions) {
       if (!s?.key || isIsolatedExecutionSessionKey(String(s.key))) continue;
-      byKey.set(s.key, s);
+      byKey.set(s.key, { ...s, label: s.label ?? '' });
     }
     for (const s of chatSessions) {
       if (!s?.key || isIsolatedExecutionSessionKey(String(s.key))) continue;
       byKey.set(s.key, { ...(byKey.get(s.key) ?? {}), ...s });
     }
-    return sortSessionsByActivity(Array.from(byKey.values()).filter((s: any) => {
+    return sortSessionsByActivity(Array.from(byKey.values()).filter((s) => {
       if (s.archived) return false;
       if (activityProjection.bySessionKey.get(s.key)?.active
         || s.hasPendingCompletion || s.lastMessage || s.lastTimestamp || s.lastActive) return true;
@@ -332,12 +343,12 @@ export function DashboardPage() {
     return parts[0] === 'agent' && parts[1] ? parts[1] : 'main';
   }, []);
 
-  const modelForAgent = useCallback((agentId: string, usageRow?: any) => {
-    const direct = usageRow?.model || usageRow?.totals?.model;
+  const modelForAgent = useCallback((agentId: string, usageRow?: DashboardAgentRow) => {
+    const direct = usageRow?.model;
     if (direct) return shortModelName(direct);
-    const sessionModel = sessions.find((s: any) => agentIdFromKey(s.key) === agentId && s.model)?.model;
+    const sessionModel = sessions.find((s) => agentIdFromKey(s.key) === agentId && s.model)?.model;
     if (sessionModel) return shortModelName(sessionModel);
-    const agentModel = agents.find((a: any) => a.id === agentId)?.model;
+    const agentModel = agents.find((a) => a.id === agentId)?.model;
     if (agentModel) return shortModelName(agentModel);
     return '—';
   }, [sessions, agents, agentIdFromKey]);
@@ -345,10 +356,10 @@ export function DashboardPage() {
   // Agent list: merge usage aggregates + currently active/running sessions.
   // Usage-only was wrong because an active agent with zero/unknown cost disappeared.
   const agentList = useMemo(() => {
-    const byAgent = new Map<string, any>();
-    const usageRows: any[] = usageData?.aggregates?.byAgent || [];
+    const byAgent = new Map<string, DashboardAgentRow>();
+    const usageRows = usageData?.aggregates?.byAgent || [];
     for (const row of usageRows) {
-      const id = row.agentId || row.agent || row.id || 'main';
+      const id = row.agentId || 'main';
       byAgent.set(id, { ...row, agentId: id, activeSessions: 0, running: false });
     }
     for (const s of activitySessions) {
@@ -363,7 +374,7 @@ export function DashboardPage() {
         activeSessions: (prev.activeSessions || 0) + 1,
         running: Boolean(prev.running || isRunning),
         lastActive: s.lastActive || prev.lastActive,
-        model: prev.model || s.model,
+        model: prev.model || s.model || undefined,
         totals: {
           ...(prev.totals || {}),
           totalCost: prev.totals?.totalCost || 0,
@@ -372,27 +383,27 @@ export function DashboardPage() {
       });
     }
     return Array.from(byAgent.values())
-      .filter((a: any) => (a.activeSessions || 0) > 0 || (a.totals?.totalCost || 0) > 0)
-      .sort((a: any, b: any) => Number(b.running) - Number(a.running) || (b.totals?.totalCost || 0) - (a.totals?.totalCost || 0));
+      .filter((a) => (a.activeSessions || 0) > 0 || (a.totals?.totalCost || 0) > 0)
+      .sort((a, b) => Number(b.running) - Number(a.running) || (b.totals?.totalCost || 0) - (a.totals?.totalCost || 0));
   }, [activityProjection, activitySessions, usageData, agentIdFromKey]);
 
   const activeAgentTokenTotal = useMemo(
-    () => agentList.reduce((sum: number, a: any) => sum + (a.totals?.totalTokens || 0), 0),
+    () => agentList.reduce((sum, a) => sum + (a.totals?.totalTokens || 0), 0),
     [agentList],
   );
   const activeAgentModelCount = useMemo(
-    () => new Set(agentList.map((a: any) => modelForAgent(a.agentId || a.agent || a.id || 'unknown', a)).filter(Boolean).filter((m) => m !== '—')).size,
+    () => new Set(agentList.map((a) => modelForAgent(a.agentId, a)).filter(Boolean).filter((m) => m !== '—')).size,
     [agentList, modelForAgent],
   );
   const maxAgentTokens = useMemo(
-    () => Math.max(...agentList.map((a: any) => a.totals?.totalTokens || 0), 1),
+    () => Math.max(...agentList.map((a) => a.totals?.totalTokens || 0), 1),
     [agentList]
   );
 
   const agentDisplayNameFor = useCallback((agentId: string) => {
     const fallback = t(getAgentName(agentId), { defaultValue: agentId });
     return getAgentDisplayName(
-      agents.find((agent: any) => agent.id === agentId),
+      agents.find((agent) => agent.id === agentId),
       fallback,
     );
   }, [agents, t]);
@@ -405,7 +416,7 @@ export function DashboardPage() {
   // Activity feed items
   const feedItems = useMemo(() => {
     return recentSessions
-      .map((s: any) => {
+      .map((s) => {
         const key = s.key || 'unknown';
         const isMain = isGatewayMainSession(key, gatewayMainSessionKey);
         const merged = { ...s, ...(chatSessionByKey.get(key) ?? {}) };
@@ -413,7 +424,7 @@ export function DashboardPage() {
         const sessionModel = merged.model || s.model;
         const fullModel = typeof sessionModel === 'string' && sessionModel.trim()
           ? sessionModel.trim()
-          : agents.find((agent: any) => agent.id === agentIdFromKey(key))?.model;
+          : agents.find((agent) => agent.id === agentIdFromKey(key))?.model;
         const label = getSessionDisplayLabel(merged, {
           mainSessionLabel: t('dashboard.mainSession', 'Main Session'),
           mainSessionKey: gatewayMainSessionKey,
@@ -736,7 +747,7 @@ export function DashboardPage() {
                 <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-aegis-text-muted font-medium">
                   <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{hasChartData ? t('dashboard.inputCostLabel') : t('dashboard.input')}</span>
                   <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{hasChartData ? t('dashboard.outputCostLabel') : t('dashboard.output')}</span>
-                  {chartData.some((d: any) => hasChartData ? d.cache > 0 : d.cacheTokens > 0) && (
+                  {chartData.some((d) => hasChartData ? d.cache > 0 : d.cacheTokens > 0) && (
                     <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-success" />{hasChartData ? t('dashboard.cacheCostLabel', 'Cache') : t('dashboard.cacheTokenLabel', 'Cache')}</span>
                   )}
                 </div>
@@ -810,8 +821,8 @@ export function DashboardPage() {
 
           <div className="space-y-0">
             {agentList.length > 0 ? (
-              agentList.slice(0, 5).map((a: any) => {
-                const id      = a.agentId || a.agent || a.id || 'unknown';
+              agentList.slice(0, 5).map((a) => {
+                const id      = a.agentId;
                 const tokenCount = a.totals?.totalTokens || 0;
                 const model = modelForAgent(id, a);
                 return (
@@ -944,7 +955,7 @@ export function DashboardPage() {
           </div>
 
           <div className="space-y-1">
-            {recentSessions.map((s: any) => {
+            {recentSessions.map((s) => {
               const key   = s.key || 'unknown';
               const merged = { ...s, ...(chatSessionByKey.get(key) ?? {}) };
               const isMain = isGatewayMainSession(key, gatewayMainSessionKey);
@@ -963,7 +974,7 @@ export function DashboardPage() {
                   isMain={isMain}
                   name={label}
                   model={sModel}
-                  detail={isMain ? t('dashboard.compactCount', { n: s.compactions || s.compactionCount || 0 }) : timeAgo(lastActiveIso)}
+                  detail={isMain ? t('dashboard.compactCount', { n: s.compactionCount || 0 }) : timeAgo(lastActiveIso)}
                   tokens={formatTokens(s.totalTokens || 0)}
                   avatarBg={isMain ? themeColorVar('primary', 0.12) : themeColorVar('accent', 0.1)}
                   avatarColor={isMain ? themeColorVar('primary') : themeColorVar('accent')}

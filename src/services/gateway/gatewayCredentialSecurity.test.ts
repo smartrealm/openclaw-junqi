@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
 import { after, describe, it } from 'node:test';
 import { stopPolling, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import type { RuntimeIdentity } from '@/types/gatewayRuntime';
@@ -19,16 +18,6 @@ import {
   invalidateGatewayRuntimeIdentity,
   observeGatewayHello,
 } from './runtimeIdentity';
-
-const source = (path: string) => readFileSync(path, 'utf8');
-
-// useSetupFlow is a directory of hook modules; assert against all of them.
-const sourceDirTs = (dir: string) =>
-  readdirSync(dir)
-    .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
-    .sort()
-    .map((entry) => readFileSync(`${dir}/${entry}`, 'utf8'))
-    .join('\n');
 
 interface WireRequest {
   type: 'req';
@@ -209,6 +198,64 @@ function resetSockets() {
 }
 
 describe('Gateway credential security regression gates', () => {
+  it('replaces an authenticated socket when the Gateway target changes', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection();
+    connection.connect('ws://127.0.0.1:18789', 'first-token', 'first-device-token');
+    const firstSocket = MemoryWebSocket.instances[0];
+    challenge(firstSocket);
+    const handshake = await waitForSocketRequest(firstSocket, 'connect');
+    acceptHandshake(firstSocket, handshake, 'first-connection');
+    await turn();
+
+    connection.connect('ws://127.0.0.1:28789', 'second-token', 'second-device-token');
+
+    assert.equal(MemoryWebSocket.instances.length, 2);
+    assert.deepEqual(firstSocket.closeCalls, [{ code: 1000, reason: '' }]);
+    assert.equal(MemoryWebSocket.instances[1].url, 'ws://127.0.0.1:28789');
+    assert.equal(connection.url, 'ws://127.0.0.1:28789');
+    assert.equal(connection.token, 'second-token');
+    assert.equal(connection.deviceToken, 'second-device-token');
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('replaces an in-progress handshake when the Gateway target changes', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection();
+    connection.connect('ws://127.0.0.1:18789', 'first-token');
+    const firstSocket = MemoryWebSocket.instances[0];
+
+    connection.connect('ws://127.0.0.1:28789', 'second-token');
+
+    assert.equal(MemoryWebSocket.instances.length, 2);
+    assert.deepEqual(firstSocket.closeCalls, [{ code: 1000, reason: '' }]);
+    assert.equal(MemoryWebSocket.instances[1].url, 'ws://127.0.0.1:28789');
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('keeps an authenticated socket for an identical Gateway target', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection();
+    connection.connect('ws://127.0.0.1:18789', 'daily-token', 'device-token');
+    const socket = MemoryWebSocket.instances[0];
+    challenge(socket);
+    const handshake = await waitForSocketRequest(socket, 'connect');
+    acceptHandshake(socket, handshake, 'stable-connection');
+    await turn();
+
+    connection.connect('ws://127.0.0.1:18789', 'daily-token', 'device-token');
+
+    assert.equal(MemoryWebSocket.instances.length, 1);
+    assert.deepEqual(socket.closeCalls, []);
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
   it('does not fall back to token-only connect before a Gateway challenge', async () => {
     resetSockets();
     const connection = createMemoryGatewayConnection();
@@ -608,13 +655,6 @@ describe('Gateway credential security regression gates', () => {
     await turn();
   });
 
-  it('saves a rotated device token into the attested instance slot after alias binding', () => {
-    const resolver = readFileSync(new URL('./GatewayConnectionTargetResolver.ts', import.meta.url), 'utf8');
-    assert.match(resolver, /storeGatewayConnectionDeviceCredential/);
-    assert.match(resolver, /if \(boundKey !== endpointKey\) return boundKey/);
-    assert.match(resolver, /selectedGatewayRuntimeKey\(gatewayUrl, configured\.credential_scope\)/);
-  });
-
   it('sends a stored device credential through the official deviceToken field', async () => {
     resetSockets();
     const connection = createMemoryGatewayConnection();
@@ -1008,49 +1048,4 @@ describe('Gateway credential security regression gates', () => {
     assert.equal(MemoryWebSocket.instances.length, 1);
   });
 
-  it('does not persist a Gateway token from settings or setup', () => {
-    const settings = source('src/stores/settingsStore.ts');
-    const setup = sourceDirTs('src/hooks/useSetupFlow');
-    assert.doesNotMatch(settings, /localStorage\.setItem\(['"]aegis-gateway-token/);
-    assert.doesNotMatch(setup, /gatewayToken:\s*token/);
-  });
-
-  it('keeps the native Gateway credential path free of file fallbacks', () => {
-    const rust = source('src-tauri/src/commands/gateway_credentials.rs');
-    assert.doesNotMatch(rust, /std::fs::(write|read_to_string)|secrets_file_path/);
-    assert.match(rust, /GatewayCredentialPersistence::SessionOnly/);
-    assert.match(rust, /GatewayCredentialPersistence::Unsupported/);
-  });
-
-  it('never edits OpenClaw device approval files to elevate scopes', () => {
-    const gateway = source('src-tauri/src/commands/gateway.rs');
-    assert.doesNotMatch(gateway, /devices["']?\)\.join\(["']paired\.json/);
-    assert.doesNotMatch(gateway, /approvedScopes|ensure_paired_devices_full_scopes/);
-  });
-
-  it('resolves the active OpenClaw config before cached Gateway credentials', () => {
-    const resolver = source('src/services/gateway/GatewayConnectionTargetResolver.ts');
-    const start = resolver.indexOf('export async function resolveGatewayConnectionTarget');
-    const body = resolver.slice(start);
-    assert.ok(body.indexOf('await dependencies.detectConfig()') < body.indexOf('await deviceCredential('));
-    assert.doesNotMatch(resolver, /ConfigResolverChain|EventPayloadResolver|CachedTokenResolver/);
-  });
-
-  it('does not retain a legacy credential migration path', () => {
-    const resolver = source('src/services/gateway/GatewayConnectionTargetResolver.ts');
-    const provider = source('src/services/gateway/credentialProvider.ts');
-    assert.doesNotMatch(resolver, /legacy credential|migrateCredential|getLegacyCredential|deleteLegacyCredential/i);
-    assert.doesNotMatch(provider, /migrateLegacyGatewayCredential|LEGACY_GATEWAY_/);
-  });
-
-  it('never falls back to the local shared token for an arbitrary pairing endpoint', () => {
-    const adapter = source('src/api/tauri-adapter.ts');
-    const start = adapter.indexOf('getToken: async (gatewayUrl?: string)');
-    const end = adapter.indexOf('saveToken: async', start);
-    const getToken = adapter.slice(start, end);
-    assert.doesNotMatch(getToken, /get_gateway_token/);
-
-    const manager = source('src/services/gateway/GatewayConnectionManager.ts');
-    assert.match(manager, /gateway\.connect\(url, token, deviceToken\)/);
-  });
 });

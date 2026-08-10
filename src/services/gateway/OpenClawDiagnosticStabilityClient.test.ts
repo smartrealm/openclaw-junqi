@@ -69,9 +69,9 @@ test('OpenClawDiagnosticStabilityClient requests despite discovery omission and 
   const client = new OpenClawDiagnosticStabilityClient({
     captureConnectionId: () => 'gateway-a',
     isConnectionCurrent: () => true,
-    requestFenced: async () => {
+    requestFenced: async (method) => {
       sent = true;
-      throw new GatewayRpcError('missing', 'METHOD_NOT_FOUND');
+      throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
     },
   });
 

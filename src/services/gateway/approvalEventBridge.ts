@@ -206,7 +206,6 @@ export class GatewayApprovalEventSubscription {
         if (!status.connecting) onConnectionFailure(status.error ?? new Error('Approval event connection closed'));
       },
       onAuthorizationIssue: onConnectionFailure,
-      onScopeError: onConnectionFailure,
     };
 
     try {

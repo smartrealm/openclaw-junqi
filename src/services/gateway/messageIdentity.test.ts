@@ -4,10 +4,8 @@ import {
   readGatewayMessageIdentity,
 } from './messageIdentity';
 
-test('reads the canonical OpenClaw history id before legacy top-level aliases', () => {
+test('reads only the current OpenClaw history and run identity fields', () => {
   assert.deepEqual(readGatewayMessageIdentity({
-    id: 'legacy-id',
-    messageId: 'legacy-message-id',
     idempotencyKey: 'client-command-1',
     __openclaw: { id: 'native-message-1' },
   }), {
@@ -16,14 +14,17 @@ test('reads the canonical OpenClaw history id before legacy top-level aliases', 
   });
 });
 
-test('falls back to legacy ids and rejects malformed identity values', () => {
-  assert.deepEqual(readGatewayMessageIdentity({ messageId: 'legacy-message-1' }), {
-    nativeMessageId: 'legacy-message-1',
-  });
+test('rejects undeclared identity aliases and malformed current fields', () => {
   assert.deepEqual(readGatewayMessageIdentity({
-    id: ' ',
-    messageId: 'bad\nvalue',
-    __openclaw: { id: 'x'.repeat(513) },
+    id: 'top-level-id',
+    messageId: 'top-level-message-id',
+    clientMessageId: 'top-level-client-id',
+    idempotencyKey: 'bad\nvalue',
+    __openclaw: {
+      id: 'x'.repeat(513),
+      clientMessageId: 'metadata-client-id',
+      idempotencyKey: 'metadata-idempotency-key',
+    },
   }), {});
   assert.deepEqual(readGatewayMessageIdentity(null), {});
 });

@@ -112,7 +112,7 @@ test('uses the official native deletion RPC when collaboration is not installed'
   const calls: unknown[][] = [];
   setSessionLifecycleDependenciesForTests({
     bootstrapCollaboration: async () => {
-      throw { code: 'METHOD_NOT_FOUND', message: 'unknown method junqi.collab.capabilities' };
+      throw { code: 'INVALID_REQUEST', message: 'unknown method: junqi.collab.capabilities' };
     },
     deleteSession: async (...args) => {
       calls.push(args);
@@ -132,7 +132,7 @@ test('stops a pending Gateway send before a native session reset', async () => {
   useChatStore.setState({ typingBySession: { [KEY]: true } });
   setSessionLifecycleDependenciesForTests({
     bootstrapCollaboration: async () => {
-      throw { code: 'METHOD_NOT_FOUND', message: 'unknown method junqi.collab.capabilities' };
+      throw { code: 'INVALID_REQUEST', message: 'unknown method: junqi.collab.capabilities' };
     },
     abortChat: async (sessionKey, sessionId) => {
       steps.push(`abort:${sessionKey}:${sessionId}`);
@@ -193,7 +193,7 @@ test('allows official native reset without a locally cached session identity', a
   let resetCalls = 0;
   setSessionLifecycleDependenciesForTests({
     bootstrapCollaboration: async () => {
-      throw { code: 'METHOD_NOT_FOUND', message: 'unknown method junqi.collab.capabilities' };
+      throw { code: 'INVALID_REQUEST', message: 'unknown method: junqi.collab.capabilities' };
     },
     listSessions: async () => ({ sessions: [{ key: KEY }] }),
     resetSession: async () => {
@@ -209,29 +209,25 @@ test('allows official native reset without a locally cached session identity', a
   assert.equal(resetCalls, 1);
 });
 
-test('recognizes nested missing-method errors but not general unavailability', () => {
+test('recognizes only the official exact missing-method error', () => {
   assert.equal(isCollaborationMethodUnavailable({
-    originalError: { error: { code: 'METHOD_NOT_FOUND', message: 'No handler for junqi.collab.capabilities' } },
-  }), true);
+    originalError: { error: { code: 'INVALID_REQUEST', message: 'unknown method: junqi.collab.capabilities' } },
+  }), false);
   assert.equal(isCollaborationMethodUnavailable(new Error('junqi.collab.capabilities temporarily unavailable')), false);
   assert.equal(isCollaborationMethodUnavailable({
     code: 'INVALID_REQUEST',
-    method: 'junqi.collab.capabilities',
     message: 'unknown method: junqi.collab.capabilities',
   }), true);
   assert.equal(isCollaborationMethodUnavailable({
     code: 'INVALID_REQUEST',
-    method: 'junqi.collab.capabilities',
     message: 'unknown method: sessions.reset',
   }), false);
   assert.equal(isCollaborationMethodUnavailable({
     code: 'METHOD_NOT_FOUND',
-    method: 'tasks.get',
-    message: 'no handler for tasks.get',
+    message: 'unknown method: junqi.collab.capabilities',
   }), false);
   assert.equal(isCollaborationMethodUnavailable({
-    code: 'METHOD_NOT_FOUND',
-    method: 'junqi.collab.capabilities',
-    message: 'unknown method: sessions.reset',
+    code: 'INVALID_REQUEST',
+    message: 'Unknown method: junqi.collab.capabilities',
   }), false);
 });

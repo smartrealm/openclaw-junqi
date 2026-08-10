@@ -79,7 +79,7 @@ function capabilitiesResponse(collaborationInstanceId: string): Record<string, u
     allowedAgentIds: ['coordinator', 'worker'],
     repairs: [],
     maintenance: {
-      active: false,
+      gateActive: false,
       lease: null,
       activeRuns: [],
       activeRunCount: 0,
@@ -212,7 +212,7 @@ function tombstone(overrides: Partial<CollaborationTombstone> = {}): Collaborati
   return {
     id: 'tombstone-1',
     runId: 'run-1',
-    actor: 'operator',
+    actor: 'retention-policy',
     contentDigest: 'a'.repeat(64),
     deletedAt: 20,
     cleanupStatus: 'COMPLETED',
