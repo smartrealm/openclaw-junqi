@@ -12,6 +12,9 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 当前新增审查目标：按 DWS 审批命令契约规划审批实例、审批任务、流程记录和人工审核追溯 UI。现有钉钉工具工作台
 只有通用工具详情和 metadata 审计，尚无真实字段支撑的审批流程图；实现前必须取得 DWS 结构化返回或官方 schema 证据。
 
+当前界面修复目标：确保仪表盘侧栏的智能体、模型服务、通道和定时任务始终位于会话列表上方，固定导航不被
+会话区域挤压，并以单一配置守护入口顺序、路由与激活规则。
+
 ## 已完成内容
 
 - `Blues-Code/dingtalk` 已通过合并提交 `4b7bb79f` 进入 `main`，其提交 `3dbd5c56` 已是 `main` 的祖先。
@@ -46,6 +49,8 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - 已删除客户端复制的模型可见性算法。配置页只判断可由静态配置证明的结构问题，模型目录、认证、别名和
   智能体作用域结果由 Gateway `models.list` 提供。
 - 授权、配对、权限和限流分类只接受结构化错误码；WebSocket 关闭原因和普通错误文案不再生成授权事实。
+- 仪表盘侧栏主要入口已收束为单一导航配置；新建对话和四个功能入口固定在会话列表上方，只有会话列表占用
+  剩余空间并滚动。当前安装应用的钉钉工具清单为 30 项，落后于源码资源的 33 项，不能代表当前提交界面。
 - Gateway 请求超时已使用稳定错误类型，未知方法证据精确绑定当前请求方法；启动期历史预热不再解析错误文案。
 - 原生 Gateway 客户端、技能运行时、数据仓和协作插件探测现共用 `GatewayProtocolEvidence`。三个非官方未知方法
   错误码、宽松文本和嵌套异常不再生成能力缺失；协作领域改用本地 `METHOD_UNAVAILABLE` 状态。
@@ -76,6 +81,8 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - `src/services/gateway/GatewayCapabilityRegistry.ts`：能力调用证据与失败状态记录。
 - `src/services/gateway/GatewayProtocolEvidence.ts`：未知方法与当前请求身份绑定的单一协议证据解析器。
 - `src/services/gateway/OpenClawUsageClient.ts`：OpenClaw cost 与 session usage 的结构、校验和页面类型来源。
+- `src/components/Layout/workbenchNavigation.ts`：仪表盘侧栏主要入口、路由和激活规则的单一来源。
+- `docs/quality/workbench-sidebar-navigation-visibility-2026-08-10.md`：侧栏入口存在性、布局根因和验证边界。
 - `plans/business/2026-08-10-dingtalk-approval-trace-ui.md`：DWS 审批命令核对、流程投影边界与 UI 实施顺序。
 - `src/business-applications/dingtalkApproval.ts`、`src/pages/businessApplications/useDingTalkApprovalTrace.ts`、`src/components/BusinessApplications/DingTalkApprovalTracePanel.tsx`：DWS 审批实例、任务和记录的脱敏投影、只读汇聚与流程时间线展示。
 - `src/services/chat/sendTransaction.ts`：聊天发送、投递不确定性与本地任务检查点收敛边界。
@@ -100,6 +107,7 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
   `pnpm collab:validate`。
 - 审批追溯新增 7 项投影测试通过；钉钉插件清单由 30 个扩展为 33 个工具，包含审批记录、审批任务和流程预测，
   `pnpm dingtalk:test`、`pnpm lint` 和 `pnpm build` 均已通过。
+- 仪表盘侧栏导航新增 2 项行为测试通过，覆盖四个入口的完整顺序、目标路由和无子串误判的激活规则。
 - 已通过 `pnpm collab:bundle`：schema 14、167 个校验文件，bundle SHA-256 为
   `0778a9538482e492b9acc8bb079dcec959e8546b07231de898f06138c1b9275f`，generated metadata 与 Tauri resource metadata 一致。
 - 已通过 `src/stores/gatewayDataStore.test.ts`：29 项通过，覆盖未知载荷和安全日志边界。
@@ -120,6 +128,7 @@ schema 单一权威和 session mutation wire DTO 已完成；当前继续审查 
 - 本轮未执行 Docker Gateway 回放；此前两次隔离 structural harness 均通过 bundle 校验和 Docker preflight，但固定摘要的
   OpenClaw `2026.7.1` 镜像在 600 秒拉取上限处超时，插件和 Gateway 尚未启动。两次均确认无受控容器、网络或 volume 遗留。
 - 尚未完成 macOS、Windows、Linux 的凭据库、WebView、窗口和真实 UI 验收。
+- 尚未用当前提交重新生成并安装 macOS 桌面包；Windows 和 Linux 的侧栏窄高度、亮色及暗色视觉仍未真机验收。
 - Node 的 Tauri 内部桥不等于真实 WebView 到 Rust handler 的端到端调用；该路径仍需桌面真机验证。
 
 ## 失败方案与约束

@@ -151,6 +151,7 @@ Gateway 交接、官方 Wizard、完成门禁到 Dashboard 的端到端顺序；
 
 目录：[`quality/`](quality/)
 
+- [仪表盘侧栏导航可见性核对](quality/workbench-sidebar-navigation-visibility-2026-08-10.md)
 - [Gateway 原生能力与扩展一致性审计](quality/gateway-native-extension-consistency-audit-2026-08-09.md)
 - [Gateway 原生能力与扩展一致性验证](quality/gateway-native-extension-consistency-validation-2026-08-09.md)
 - [OpenClaw Runtime 配置 Schema 信封审计](quality/openclaw-runtime-config-schema-envelope-audit-2026-08-09.md)

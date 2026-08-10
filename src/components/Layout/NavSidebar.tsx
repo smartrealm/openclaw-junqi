@@ -42,6 +42,11 @@ import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigati
 import { SessionChannelIcon } from '@/components/shared/SessionChannelIcon';
 import { SessionActionsMenu } from '@/components/Chat/session-actions/SessionActionsMenu';
 import { FloatingMenuPortal } from '@/components/shared/FloatingMenuPortal';
+import {
+  isWorkbenchNavigationItemActive,
+  WORKBENCH_NAVIGATION_ITEMS,
+  type WorkbenchNavigationIcon,
+} from './workbenchNavigation';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
 const BusinessApplicationsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.BusinessApplicationsPanel })));
@@ -62,6 +67,13 @@ const BACKGROUND_ACTIVITY_ITEMS: ReadonlyArray<{
 ];
 
 const SESSION_BUCKET_SELECTION_STORAGE_KEY = 'junqi:sidebar-session-bucket';
+
+const WORKBENCH_NAVIGATION_ICONS: Record<WorkbenchNavigationIcon, LucideIcon> = {
+  agents: Bot,
+  models: Cpu,
+  channels: MessageSquare,
+  cron: Clock,
+};
 
 function readPreferredSessionBucket(): SessionBucketKey {
   try {
@@ -537,9 +549,10 @@ function WorkbenchPanel() {
 
   return (
     <>
-      <SidebarPrimaryAction
-        icon={<Plus size={16} />}
-        onClick={() => {
+      <div className="shrink-0">
+        <SidebarPrimaryAction
+          icon={<Plus size={16} />}
+          onClick={() => {
             if (!newSessionAgentId) return;
             void createNativeSession({
               agentId: newSessionAgentId,
@@ -554,52 +567,47 @@ function WorkbenchPanel() {
                 result.error,
               );
             });
-        }}
-        disabled={!newSessionAgentId}
-      >
-        {t('sidebar.newChat', '新建对话')}
-      </SidebarPrimaryAction>
+          }}
+          disabled={!newSessionAgentId}
+        >
+          {t('sidebar.newChat', '新建对话')}
+        </SidebarPrimaryAction>
 
-      {/* 四个带前置图标的平铺导航项，仅保留图标和名称，激活项使用主色。 */}
-      <div className="mb-4 flex flex-col gap-1 pe-4 ps-[var(--aegis-sidebar-menu-row-inset)]">
-        {[
-          { key: 'agents',  to: '/agents',                  label: t('sidebar.nav.agents',  '智能体'),   icon: <Bot size={14} /> },
-          { key: 'models',  to: '/config?tab=providers',    label: t('sidebar.nav.models',  '模型服务'), icon: <Cpu size={14} /> },
-          { key: 'channels', to: '/channels',              label: t('sidebar.nav.channels', '通道'),     icon: <MessageSquare size={14} /> },
-          { key: 'cron',    to: '/cron',                    label: t('sidebar.nav.cron',    '定时任务'), icon: <Clock size={14} /> },
-        ].map((it) => {
-          const active = location.pathname === it.to.split('?')[0] && (
-            (it.to.includes('tab=providers') && location.search.includes('tab=providers')) ||
-            (it.to === '/channels' && location.pathname.startsWith('/channels')) ||
-            (it.to === '/agents' && location.pathname.startsWith('/agents')) ||
-            (it.to === '/cron' && location.pathname.startsWith('/cron'))
-          );
-          const rowClassName = clsx(
-            'h-8 rounded-md text-[13px] text-left flex items-center gap-2.5 transition-colors',
-            active
-              ? 'text-aegis-primary bg-aegis-primary/[0.08] font-semibold'
-              : 'text-aegis-text-secondary hover:text-aegis-text hover:bg-aegis-hover/30',
-          );
-          const rowContent = (
-            <>
-              <span className={clsx('shrink-0', active ? 'text-aegis-primary' : 'text-aegis-text-dim')}>
-                {it.icon}
-              </span>
-              <span className="flex-1 truncate">{it.label}</span>
-            </>
-          );
+        <nav
+          className="mb-4 flex flex-col gap-1 pe-4 ps-[var(--aegis-sidebar-menu-row-inset)]"
+          aria-label={t('sidebar.primaryNavigation', '主要功能')}
+        >
+          {WORKBENCH_NAVIGATION_ITEMS.map((item) => {
+            const active = isWorkbenchNavigationItemActive(item, location.pathname, location.search);
+            const Icon = WORKBENCH_NAVIGATION_ICONS[item.key];
+            const rowClassName = clsx(
+              'h-8 rounded-md text-[13px] text-left flex items-center gap-2.5 transition-colors',
+              active
+                ? 'text-aegis-primary bg-aegis-primary/[0.08] font-semibold'
+                : 'text-aegis-text-secondary hover:text-aegis-text hover:bg-aegis-hover/30',
+            );
+            const rowContent = (
+              <>
+                <span className={clsx('shrink-0', active ? 'text-aegis-primary' : 'text-aegis-text-dim')}>
+                  <Icon size={14} aria-hidden="true" />
+                </span>
+                <span className="flex-1 truncate">{t(item.labelKey, item.fallback)}</span>
+              </>
+            );
 
-          return (
-            <button
-              key={it.key}
-              type="button"
-              onClick={() => navigate(it.to)}
-              className={clsx(rowClassName, 'pe-2 ps-[var(--aegis-sidebar-menu-button-icon-padding)]')}
-            >
-              {rowContent}
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => navigate(item.to)}
+                className={clsx(rowClassName, 'pe-2 ps-[var(--aegis-sidebar-menu-button-icon-padding)]')}
+                aria-current={active ? 'page' : undefined}
+              >
+                {rowContent}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
       <div className="flex shrink-0 items-center gap-2 px-4 pb-1.5">
