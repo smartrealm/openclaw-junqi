@@ -713,21 +713,3 @@ export function isOpenClawWizardSessionLost(error: unknown): boolean {
 export function isOpenClawWizardStepDesynchronized(error: unknown): boolean {
   return classifyOpenClawWizardFailure(error) === 'step_desynchronized';
 }
-
-export function requiresOpenClawOnboarding(configExists: boolean, config: unknown): boolean {
-  if (!configExists || !config || typeof config !== 'object') return true;
-  const cfg = config as Record<string, unknown>;
-  const agents = cfg.agents;
-  const defaults = agents && typeof agents === 'object'
-    ? (agents as Record<string, unknown>).defaults
-    : null;
-  const model = defaults && typeof defaults === 'object'
-    ? (defaults as Record<string, unknown>).model
-    : null;
-  const primary = typeof model === 'string'
-    ? model
-    : model && typeof model === 'object'
-      ? (model as Record<string, unknown>).primary
-      : null;
-  return !(typeof primary === 'string' && primary.trim());
-}

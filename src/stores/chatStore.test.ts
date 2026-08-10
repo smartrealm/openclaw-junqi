@@ -895,7 +895,6 @@ test('session category updates only after Gateway confirms the patched entry', a
       key: sessionKey,
       sessionId: 'gateway-project-alpha',
       label: 'Project session',
-      groupId: 'Projects',
       category: 'Projects',
     }]);
   } finally {

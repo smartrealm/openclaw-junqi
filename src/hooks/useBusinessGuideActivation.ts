@@ -1,11 +1,9 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { isBusinessGuideActive } from '@/business-guide/activation';
 import {
-  openClawRuntimeConfigClient,
-  openClawSetupVerificationClient,
+  openClawSetupClient,
 } from '@/services/gateway';
 import { getCurrentRuntimeIdentity, subscribeRuntimeIdentity } from '@/services/gateway/runtimeIdentity';
-import { requiresOpenClawOnboarding } from '@/services/openclawWizard';
 import { useAppStore } from '@/stores/app-store';
 import { useChatStore } from '@/stores/chatStore';
 
@@ -21,13 +19,12 @@ const unverifiedRuntime: RuntimeVerification = {
 
 async function verifySelectedRuntime(): Promise<RuntimeVerification> {
   try {
-    const [config, verification] = await Promise.all([
-      openClawRuntimeConfigClient.read(),
-      openClawSetupVerificationClient.verify(),
+    const [detection, verification] = await Promise.all([
+      openClawSetupClient.detect(),
+      openClawSetupClient.verify(),
     ]);
     return {
-      configurationVerified: config.exists
-        && !requiresOpenClawOnboarding(config.exists, config.config),
+      configurationVerified: detection.setupComplete,
       modelVerified: verification.ok,
     };
   } catch {

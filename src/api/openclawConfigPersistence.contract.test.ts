@@ -59,7 +59,6 @@ test('active OpenClaw config access crosses one typed renderer boundary', () => 
     assert.doesNotMatch(rendererSource, new RegExp(`invoke(?:<[^>]+>)?\\(["']${activeConfigCommandNames.source}["']`));
     assert.doesNotMatch(rendererSource, /window\.aegis\.config\.(?:detect|read|write|parse)/);
   }
-  assert.match(setupFlow, /validateActiveOpenclawConfig/);
   assert.match(configManager, /parseActiveOpenclawConfig/);
   assert.doesNotMatch(app, /readActiveOpenclawConfig/);
   assert.doesNotMatch(channelConfig, /writeActiveOpenclawConfig/);

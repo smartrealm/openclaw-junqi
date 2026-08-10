@@ -27,6 +27,7 @@ interface SetupEnvironmentReviewPorts {
   beginRun: () => number;
   isRunActive: (runId: number) => boolean;
   resolveOnboardingRequirement: () => Promise<boolean>;
+  isGatewayConnected: () => boolean;
   updateOnboardingRequirement: (required: boolean) => void;
   setGatewayRunning: (running: boolean) => void;
   setInstallMode: (mode: InstallMode) => void;
@@ -58,6 +59,7 @@ export function useSetupEnvironmentReview({
   beginRun,
   isRunActive,
   resolveOnboardingRequirement,
+  isGatewayConnected,
   updateOnboardingRequirement,
   setGatewayRunning,
   setInstallMode,
@@ -113,9 +115,6 @@ export function useSetupEnvironmentReview({
         return "choosing-mode";
       }
 
-      const onboardingRequired = await resolveOnboardingRequirement();
-      if (cancelled()) return null;
-      updateOnboardingRequirement(onboardingRequired);
       if (openclaw.path) {
         setInstallTarget({
           tier: "existing",
@@ -126,7 +125,10 @@ export function useSetupEnvironmentReview({
       try {
         const reachable = await probeSelectedGateway();
         if (cancelled()) return null;
-        if (reachable) {
+        if (reachable && isGatewayConnected()) {
+          const onboardingRequired = await resolveOnboardingRequirement();
+          if (cancelled()) return null;
+          updateOnboardingRequirement(onboardingRequired);
           setGatewayRunning(true);
           commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
           return onboardingRequired ? "configure-openclaw" : "ready";
@@ -144,7 +146,7 @@ export function useSetupEnvironmentReview({
       setOpenclawStatus(null);
       return "choosing-mode";
     }
-  }, [commitSteps, isRunActive, navigationLeavingRef, relocationRequestedRef, resolveOnboardingRequirement, setGatewayRunning, setInstallMode, setInstallTarget, setOpenclawStatus, setSetupComplete, stepsRef, updateOnboardingRequirement]);
+  }, [commitSteps, isGatewayConnected, isRunActive, navigationLeavingRef, relocationRequestedRef, resolveOnboardingRequirement, setGatewayRunning, setInstallMode, setInstallTarget, setOpenclawStatus, setSetupComplete, stepsRef, updateOnboardingRequirement]);
 
   useEffect(() => {
     if (setupStep !== "detecting") return;

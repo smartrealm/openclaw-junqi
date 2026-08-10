@@ -8,18 +8,24 @@ import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
+import { isFeatureEnabled } from '@/config/edition';
 import { useChatStore, type Session } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showConfirm } from '@/components/shared/alertStore';
 import { SidebarPrimaryAction } from './SidebarPrimaryAction';
 import { resolveTab, type SidebarTab } from './tab-utils';
 import {
-  bucketSessionsByActivity,
-  isSessionBucketKey,
-  resolveExpandedSessionBuckets,
+  extendSidebarSessionCreationFallbackOrder,
+  filterSidebarSessionsByAgent,
+  normalizeSidebarSessionGrouping,
+  promoteSidebarSessionCreationFallbackOrder,
+  projectSidebarSessions,
+  resolveSidebarSessionAgentId,
   sessionActivityTime,
   sortSessionsByActivity,
-  type SessionBucketKey,
+  sortSidebarSessions,
+  type SidebarSessionGrouping,
+  type SidebarSessionSortMode,
 } from './sidebarUtils';
 import { applySessionRename } from '@/utils/sessionRename';
 import { deleteSessionEverywhere } from '@/utils/sessionDelete';
@@ -47,6 +53,7 @@ import {
   WORKBENCH_NAVIGATION_ITEMS,
   type WorkbenchNavigationIcon,
 } from './workbenchNavigation';
+import { SessionScopeControls } from './SessionScopeControls';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
 const BusinessApplicationsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.BusinessApplicationsPanel })));
@@ -66,7 +73,7 @@ const BACKGROUND_ACTIVITY_ITEMS: ReadonlyArray<{
   { kind: 'system', labelKey: 'sidebar.background.system', fallback: '系统', Icon: Cpu },
 ];
 
-const SESSION_BUCKET_SELECTION_STORAGE_KEY = 'junqi:sidebar-session-bucket';
+const SIDEBAR_SESSION_GROUPING_STORAGE_KEY = 'junqi:sidebar:sessions:grouping';
 
 const WORKBENCH_NAVIGATION_ICONS: Record<WorkbenchNavigationIcon, LucideIcon> = {
   agents: Bot,
@@ -75,20 +82,12 @@ const WORKBENCH_NAVIGATION_ICONS: Record<WorkbenchNavigationIcon, LucideIcon> = 
   cron: Clock,
 };
 
-function readPreferredSessionBucket(): SessionBucketKey {
+function readSidebarSessionGrouping(): SidebarSessionGrouping {
   try {
-    const stored = window.localStorage.getItem(SESSION_BUCKET_SELECTION_STORAGE_KEY);
-    return isSessionBucketKey(stored) ? stored : 'today';
+    return normalizeSidebarSessionGrouping(window.localStorage.getItem(SIDEBAR_SESSION_GROUPING_STORAGE_KEY));
   } catch {
-    return 'today';
+    return 'category';
   }
-}
-
-function sessionAgentId(session: Session, sessionKey: string): string {
-  if (session.agentId) return session.agentId;
-  const parts = String(sessionKey || '').split(':');
-  if (parts[0] !== 'agent') return 'main';
-  return parts[1] || 'main';
 }
 
 function compactMeta(value: string, max = 22): string {
@@ -123,14 +122,15 @@ function SessionRowItem({ session, sessionKey, currentTitle, isActive, activity 
   const navigate = useNavigate();
   const agents = useGatewayDataStore((st) => st.agents);
   const defaultAgentId = useGatewayDataStore((st) => st.defaultAgentId);
+  const defaultMainSessionKey = useChatStore((st) => st.defaultMainSessionKey);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(currentTitle);
   const [renamingInFlight, setRenamingInFlight] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const agentId = sessionAgentId(session, sessionKey);
+  const agentId = resolveSidebarSessionAgentId(session, defaultAgentId, defaultMainSessionKey) ?? '';
   const agentFallbackName = agentId === defaultAgentId ? t('agents.mainAgent', 'Main Agent') : agentId;
-  const agentName = getAgentDisplayName(agents.find((agent: any) => agent?.id === agentId), agentFallbackName);
+  const agentName = getAgentDisplayName(agents.find((agent) => agent.id === agentId), agentFallbackName);
   const agentLabel = compactMeta(agentName, 20);
   const channelPresentation = resolveSessionChannelPresentation(session);
   const channelLabel = channelPresentation?.label ?? null;
@@ -385,33 +385,68 @@ function WorkbenchPanel() {
   const location = useLocation();
   const sessions = useChatStore((st) => st.sessions);
   const defaultMainSessionKey = useChatStore((st) => st.defaultMainSessionKey);
+  const sessionGroupCatalog = useChatStore((st) => st.sessionGroupCatalog);
+  const refreshSessionGroupCatalog = useChatStore((st) => st.refreshSessionGroupCatalog);
   const cronJobs = useGatewayDataStore((st) => st.cronJobs);
   const agents = useGatewayDataStore((st) => st.agents);
   const defaultAgentId = useGatewayDataStore((st) => st.defaultAgentId);
+  const agentsLoading = useGatewayDataStore((st) => st.loading.agents);
+  const sessionsLoading = useGatewayDataStore((st) => st.loading.sessions);
+  const agentsError = useGatewayDataStore((st) => st.errors.agents);
+  const sessionsError = useGatewayDataStore((st) => st.errors.sessions);
   const activeKey = useChatStore((st) => st.activeSessionKey) ?? '';
-  const newSessionAgentId = resolveNewSessionAgentId(
-    activeKey,
-    agents.map((agent) => agent.id),
-    defaultAgentId,
-  );
   const typingBySession = useChatStore((st) => st.typingBySession);
   const typingStartedAtBySession = useChatStore((st) => st.typingStartedAtBySession);
   const thinkingBySession = useChatStore((st) => st.thinkingBySession);
   const sendingBySession = useChatStore((st) => st.sendingBySession);
   const compactionStatusBySession = useChatStore((st) => st.compactionStatusBySession);
-  const [nowMs, setNowMs] = useState(Date.now());
   const [backgroundUserOpen, setBackgroundUserOpen] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const [preferredBucket, setPreferredBucket] = useState<SessionBucketKey>(readPreferredSessionBucket);
+  const [grouping, setGrouping] = useState<SidebarSessionGrouping>(readSidebarSessionGrouping);
+  const [sortMode, setSortMode] = useState<SidebarSessionSortMode>('created');
   const setSessionArchived = useChatStore((state) => state.setSessionArchived);
+  const agentIds = useMemo(() => agents.map((agent) => agent.id), [agents]);
+  const activeAgentId = resolveNewSessionAgentId(activeKey, agentIds, defaultAgentId);
+  const [selectedAgentId, setSelectedAgentId] = useState(activeAgentId ?? '');
+  const [sessionCreationFallbackOrder, setSessionCreationFallbackOrder] = useState<ReadonlyMap<string, number>>(
+    () => new Map(),
+  );
+  const previousActiveSessionKeyRef = useRef(activeKey);
 
-  // Per-session first user message, keyed for O(1) lookups during render.
-  // Without this we'd have to walk messagesPerSession on every session row.
+  useEffect(() => {
+    const activeSessionChanged = previousActiveSessionKeyRef.current !== activeKey;
+    previousActiveSessionKeyRef.current = activeKey;
+    setSelectedAgentId((current) => {
+      if (activeSessionChanged && activeAgentId) return activeAgentId;
+      if (current && agentIds.includes(current)) return current;
+      return activeAgentId ?? '';
+    });
+  }, [activeAgentId, activeKey, agentIds]);
+
+  useEffect(() => {
+    void refreshSessionGroupCatalog().catch(() => undefined);
+  }, [refreshSessionGroupCatalog]);
+
+  useEffect(() => {
+    setSessionCreationFallbackOrder((current) => extendSidebarSessionCreationFallbackOrder(current, sessions));
+  }, [sessions]);
+
+  const agentOptions = useMemo(() => agents.map((agent) => ({
+    id: agent.id,
+    label: getAgentDisplayName(
+      agent,
+      agent.id === defaultAgentId ? t('agents.mainAgent', 'Main Agent') : agent.id,
+    ),
+  })), [agents, defaultAgentId, t]);
+
+  // 按会话缓存第一条用户消息，避免每次渲染会话行时重复遍历消息。
   const messagesPerSession = useChatStore((st) => st.messagesPerSession);
   const firstUserByKey = useMemo(() => {
     const out: Record<string, string> = {};
     for (const [k, msgs] of Object.entries(messagesPerSession)) {
-      const first = msgs.find((m: any) => m?.role === 'user' && typeof m.content === 'string' && m.content.trim());
+      const first = msgs.find((message) => (
+        message.role === 'user' && typeof message.content === 'string' && message.content.trim()
+      ));
       if (first) out[k] = first.content;
     }
     return out;
@@ -423,40 +458,34 @@ function WorkbenchPanel() {
     messageFallback: firstUserByKey[session.key],
   }), [defaultMainSessionKey, firstUserByKey, t]);
 
-  const presentation = useMemo(
-    () => partitionSessionsForPresentation(
-      sessions.filter((session) => !session.archived),
-      cronJobs,
-    ),
-    [cronJobs, sessions],
-  );
+  const scopedSessions = useMemo(() => filterSidebarSessionsByAgent(
+    sessions,
+    selectedAgentId,
+    defaultAgentId,
+    defaultMainSessionKey,
+  ), [defaultAgentId, defaultMainSessionKey, selectedAgentId, sessions]);
+  const presentation = useMemo(() => partitionSessionsForPresentation(
+    scopedSessions.filter((session) => !session.archived),
+    cronJobs,
+  ), [cronJobs, scopedSessions]);
   const visibleSessions = presentation.conversations;
-  const pinnedSessions = useMemo(
-    () => sortSessionsByActivity(visibleSessions.filter((session) => session.pinned)),
-    [visibleSessions],
-  );
-  const sessionCategories = useMemo(() => {
-    const categories = new Map<string, SessionCategory>();
-    for (const session of visibleSessions) {
-      const category = typeof session.category === 'string' ? session.category.trim() : '';
-      if (category) categories.set(category, { id: category, label: category });
-    }
-    return [...categories.values()];
-  }, [visibleSessions]);
-  const groupedSessions = useMemo(() => new Map(sessionCategories.map((category) => [
-    category.id,
-    sortSessionsByActivity(visibleSessions.filter((session) => !session.pinned && session.category === category.id)),
-  ])), [sessionCategories, visibleSessions]);
-  const ungroupedSessions = useMemo(
-    () => visibleSessions.filter((session) => !session.pinned && !session.groupId),
-    [visibleSessions],
-  );
-  const archivedSessions = useMemo(
-    () => sortSessionsByActivity(sessions.filter((session) => session.archived)),
-    [sessions],
-  );
+  const sidebarProjection = useMemo(() => projectSidebarSessions({
+    sessions: visibleSessions,
+    agentId: selectedAgentId,
+    defaultAgentId,
+    defaultMainSessionKey,
+    grouping,
+    sortMode,
+    creationFallbackOrder: sessionCreationFallbackOrder,
+    categoryOrder: sessionGroupCatalog,
+  }), [defaultAgentId, defaultMainSessionKey, grouping, selectedAgentId, sessionCreationFallbackOrder, sessionGroupCatalog, sortMode, visibleSessions]);
+  const archivedSessions = useMemo(() => sortSidebarSessions(
+    scopedSessions.filter((session) => session.archived),
+    sortMode,
+    sessionCreationFallbackOrder,
+  ), [scopedSessions, sessionCreationFallbackOrder, sortMode]);
   const activityProjection = useMemo(() => projectSessionActivity({
-    sessions: sessions.filter((session) => !session.archived),
+    sessions: scopedSessions.filter((session) => !session.archived),
     activeSessionKey: activeKey,
     jobs: cronJobs,
     typingBySession,
@@ -464,29 +493,11 @@ function WorkbenchPanel() {
     thinkingBySession,
     sendingBySession,
     compactionStatusBySession,
-  }), [activeKey, compactionStatusBySession, cronJobs, sendingBySession, sessions, thinkingBySession, typingBySession, typingStartedAtBySession]);
+  }), [activeKey, compactionStatusBySession, cronJobs, scopedSessions, sendingBySession, thinkingBySession, typingBySession, typingStartedAtBySession]);
   const backgroundTotal = Object.values(presentation.background)
     .reduce((total, group) => total + group.length, 0);
   const backgroundRunning = Object.values(presentation.background)
     .some((group) => group.some((session) => activityProjection.bySessionKey.get(session.key)?.active));
-  const buckets = useMemo(() => bucketSessionsByActivity(ungroupedSessions, nowMs), [nowMs, ungroupedSessions]);
-  const requiredSessionKeys = useMemo(() => {
-    const keys = new Set<string>();
-    for (const session of visibleSessions) {
-      if (
-        session.key === activeKey
-        || session.hasPendingCompletion === true
-        || activityProjection.bySessionKey.get(session.key)?.active
-      ) {
-        keys.add(session.key);
-      }
-    }
-    return keys;
-  }, [activeKey, activityProjection, visibleSessions]);
-  const expandedBucketKeys = useMemo(
-    () => resolveExpandedSessionBuckets(buckets, preferredBucket, requiredSessionKeys),
-    [buckets, preferredBucket, requiredSessionKeys],
-  );
   const routedBackgroundSessionKey = useMemo(
     () => new URLSearchParams(location.search).get('session')?.trim() ?? '',
     [location.search],
@@ -498,11 +509,6 @@ function WorkbenchPanel() {
       .some((group) => group.some((session) => session.key === selectedKey));
   }, [activeKey, location.pathname, presentation.background, routedBackgroundSessionKey]);
   const backgroundOpen = backgroundUserOpen || backgroundRunning || backgroundHasSelectedSession;
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const openBackgroundSession = useCallback((kind: BackgroundActivityKind, sessionKey: string) => {
     setBackgroundUserOpen(true);
@@ -525,15 +531,7 @@ function WorkbenchPanel() {
     );
   }, [t]);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(SESSION_BUCKET_SELECTION_STORAGE_KEY, preferredBucket);
-    } catch {
-      // Storage may be unavailable in hardened webviews; in-memory state still works.
-    }
-  }, [preferredBucket]);
-
-  const renderRow = (sx: typeof visibleSessions[number]) => {
+  const renderRow = (sx: Session) => {
     const activity = activityProjection.bySessionKey.get(sx.key);
     if (!activity) return null;
     return (
@@ -543,32 +541,47 @@ function WorkbenchPanel() {
     );
   };
 
-  const toggleBucket = (key: SessionBucketKey) => {
-    setPreferredBucket((current) => current === key && key !== 'today' ? 'today' : key);
-  };
+  const createSelectedAgentSession = useCallback(() => {
+    if (!selectedAgentId) return;
+    void createNativeSession({ agentId: selectedAgentId }).then((result) => {
+      if (result.ok) {
+        setSessionCreationFallbackOrder((current) => promoteSidebarSessionCreationFallbackOrder(
+          extendSidebarSessionCreationFallbackOrder(current, [result.session]),
+          result.session.key,
+        ));
+        navigate('/chat');
+        return;
+      }
+      useNotificationStore.getState().addToast(
+        'error',
+        t('sidebar.newChat', '新建对话'),
+        result.error,
+      );
+    });
+  }, [navigate, selectedAgentId, t]);
+
+  const changeGrouping = useCallback((nextGrouping: SidebarSessionGrouping) => {
+    setGrouping(nextGrouping);
+    try {
+      window.localStorage.setItem(SIDEBAR_SESSION_GROUPING_STORAGE_KEY, nextGrouping);
+    } catch {
+      // 本地偏好不可写时保留当前窗口状态，不影响 Gateway 会话数据。
+    }
+  }, []);
+
+  const visibleRowCount = Number(Boolean(sidebarProjection.mainSession))
+    + sidebarProjection.pinnedSessions.length
+    + sidebarProjection.flatSessions.length
+    + sidebarProjection.ungroupedSessions.length
+    + sidebarProjection.categories.reduce((total, category) => total + category.sessions.length, 0);
 
   return (
     <>
       <div className="shrink-0">
         <SidebarPrimaryAction
           icon={<Plus size={16} />}
-          onClick={() => {
-            if (!newSessionAgentId) return;
-            void createNativeSession({
-              agentId: newSessionAgentId,
-            }).then((result) => {
-              if (result.ok) {
-                navigate('/chat');
-                return;
-              }
-              useNotificationStore.getState().addToast(
-                'error',
-                t('sidebar.newChat', 'New chat'),
-                result.error,
-              );
-            });
-          }}
-          disabled={!newSessionAgentId}
+          onClick={createSelectedAgentSession}
+          disabled={!selectedAgentId}
         >
           {t('sidebar.newChat', '新建对话')}
         </SidebarPrimaryAction>
@@ -610,60 +623,74 @@ function WorkbenchPanel() {
         </nav>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 px-4 pb-1.5">
-        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-aegis-text-dim">
-          {t('sidebar.userSessions', '用户会话')}
-        </span>
-        <span className="font-mono text-[10.5px] text-aegis-text-dim/70">{visibleSessions.length}</span>
-      </div>
+      <SessionScopeControls
+        agents={agentOptions}
+        selectedAgentId={selectedAgentId}
+        grouping={grouping}
+        sortMode={sortMode}
+        agentsLoading={agentsLoading}
+        agentsFailed={Boolean(agentsError)}
+        onAgentChange={setSelectedAgentId}
+        onGroupingChange={changeGrouping}
+        onSortModeChange={setSortMode}
+        onCreateAgent={() => navigate('/agents?new=1')}
+        onOpenAgentSettings={() => {
+          if (selectedAgentId) navigate(`/agents?agent=${encodeURIComponent(selectedAgentId)}`);
+        }}
+      />
 
       <div className="flex-1 overflow-y-auto min-h-0 px-1">
-        {visibleSessions.length === 0 && (
+        {agentsError ? (
+          <div role="alert" className="mx-3 mb-2 rounded-md border border-aegis-danger/20 bg-aegis-danger/[0.06] px-3 py-2 text-[11px] text-aegis-danger">
+            {t('sidebar.sessions.loadAgentsFailed', '智能体列表加载失败，Gateway 将自动重试。')}
+          </div>
+        ) : sessionsError ? (
+          <div role="alert" className="mx-3 mb-2 rounded-md border border-aegis-danger/20 bg-aegis-danger/[0.06] px-3 py-2 text-[11px] text-aegis-danger">
+            {t('sidebar.sessions.loadSessionsFailed', '会话列表加载失败，Gateway 将自动重试。')}
+          </div>
+        ) : visibleRowCount === 0 && (agentsLoading || sessionsLoading) ? (
+          <div role="status" className="px-4 py-3 text-[13px] text-aegis-text-dim">
+            {t('sidebar.sessions.loading', '正在加载会话')}
+          </div>
+        ) : visibleRowCount === 0 ? (
           <div className="px-4 py-3 text-[13px] text-aegis-text-dim">{t('sidebar.noSessions', '暂无对话')}</div>
-        )}
+        ) : null}
 
-        {pinnedSessions.length > 0 && (
+        {sidebarProjection.mainSession ? (
+          <div className="mb-1">
+            {renderRow(sidebarProjection.mainSession)}
+          </div>
+        ) : null}
+
+        {sidebarProjection.pinnedSessions.length > 0 && (
           <div className="mb-2">
             <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold text-aegis-text-dim">
               <Pin size={11} className="opacity-70" aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{t('chat.pinnedSessions')}</span>
-              <span className="text-[10.5px] font-mono text-aegis-text-dim/70">{pinnedSessions.length}</span>
+              <span className="text-[10.5px] font-mono text-aegis-text-dim/70">{sidebarProjection.pinnedSessions.length}</span>
             </div>
-            {pinnedSessions.map(renderRow)}
+            {sidebarProjection.pinnedSessions.map(renderRow)}
           </div>
         )}
 
-        {sessionCategories.map((category) => {
-          const groupSessions = groupedSessions.get(category.id) ?? [];
-          if (groupSessions.length === 0) return null;
-          return (
-            <div key={category.id} className="mb-2">
-              <SessionCategoryHeader category={category} count={groupSessions.length} />
-              {groupSessions.map(renderRow)}
-            </div>
-          );
-        })}
+        {sidebarProjection.categories.map((category) => (
+          <div key={category.id} className="mb-2">
+            <SessionCategoryHeader category={category} count={category.sessions.length} />
+            {category.sessions.map(renderRow)}
+          </div>
+        ))}
 
-        {buckets.map((bucket) => {
-          if (bucket.sessions.length === 0) return null;
-          const isOpen = expandedBucketKeys.has(bucket.key);
-          return (
-            <div key={bucket.key} className="mb-2">
-              <button
-                type="button"
-                onClick={() => toggleBucket(bucket.key)}
-                className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-normal text-aegis-text-dim transition-colors hover:text-aegis-text-secondary"
-              >
-                {isOpen
-                  ? <ChevronDown size={11} className="opacity-60" />
-                  : <ChevronRight size={11} className="opacity-60" />}
-                <span className="flex-1 truncate">{t(bucket.labelKey, bucket.fallback)}</span>
-                <span className="text-[10.5px] font-mono text-aegis-text-dim/70">{bucket.sessions.length}</span>
-              </button>
-              {isOpen && bucket.sessions.map(renderRow)}
-            </div>
-          );
-        })}
+        {sidebarProjection.ungroupedSessions.length > 0 ? (
+          <div className="mb-2">
+            {sidebarProjection.ungroupedSessions.map(renderRow)}
+          </div>
+        ) : null}
+
+        {sidebarProjection.flatSessions.length > 0 ? (
+          <div className="mb-2">
+            {sidebarProjection.flatSessions.map(renderRow)}
+          </div>
+        ) : null}
 
         {archivedSessions.length > 0 && (
           <div className="mt-2 border-t border-aegis-border/70 pt-2">
@@ -849,6 +876,19 @@ function WorkbenchPanel() {
           )}
         </div>
       )}
+
+      {isFeatureEnabled('sessions') ? (
+        <div className="mx-3 shrink-0 border-t border-aegis-border/70 py-1.5">
+          <button
+            type="button"
+            onClick={() => navigate('/sessions')}
+            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-aegis-text-dim transition-colors hover:bg-aegis-hover/30 hover:text-aegis-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/50"
+          >
+            <span className="min-w-0 flex-1 truncate">{t('sidebar.sessions.all', '所有会话')}</span>
+            <ChevronRight size={13} aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
     </>
   );
 }

@@ -69,7 +69,6 @@ export function projectOpenClawSessionForChat(value: unknown): Session {
     lastTimestamp: number(source.lastActivityAt) ?? number(source.updatedAt),
     createdAt: number(source.createdAt),
     category: category ?? null,
-    ...(category ? { groupId: category } : {}),
     kind: text(source.kind),
     channel,
     lastChannel,

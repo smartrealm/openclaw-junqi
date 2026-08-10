@@ -52,9 +52,9 @@ Gateway 服务交接使用有界等待。服务已启动但连接身份发生变
 失败原因，不以“端口可达”伪报成功。
 
 Gateway 就绪仍是第三阶段“运行时”的真实完成检查点，但用户界面立即激活第四阶段“配置 OpenClaw”。同一配置页面先展示
-Gateway 已就绪及“核验配置”操作；用户显式开始核验后，加载、失败或官方 Wizard 步骤在原位置替换，不再出现第二个页面或
+Gateway 已就绪及“核验配置”操作；用户显式开始核验后，JunQi 请求官方 `openclaw.setup.detect`，加载、失败或官方 Wizard 步骤在原位置替换，不再出现第二个页面或
 场景跳转。运行时完成与配置完成仍是不同事实：顶部运行时步骤显示完成，配置步骤保持当前，Gateway 就绪不能单独表示模型、
-凭据或配置已成功。已有配置满足门禁时直接进入完成页，不会生成 JunQi 自己的渠道决策步骤。
+凭据或配置已成功。官方 `setupComplete` 为真时直接进入完成页，不会生成 JunQi 自己的渠道决策步骤。
 
 ### 5. 执行官方 OpenClaw Wizard
 
@@ -62,6 +62,9 @@ Gateway 已就绪及“核验配置”操作；用户显式开始核验后，加
 渠道以及官方允许跳过的步骤均由 Wizard 返回的结构化步骤决定。JunQi 的首次请求只发送默认 `wizard.start` 参数，不附加
 `flow` 或 `skipChannels`；Gateway 在同一会话中决定渠道选择、授权、跳过说明及后续步骤。JunQi 不重写步骤、不猜测插件结果，
 也不把本地默认值写入 OpenClaw 配置。
+
+官方 Wizard 自身包含可选的模型实时验证，并允许用户按官方步骤跳过或在失败后继续。JunQi 不在官方终态后再次强制验证，
+也不以客户端规则推翻用户已经在官方流程中作出的选择。
 
 每个已知官方 `step.type` 使用独立渲染器：`note`、`text`、`select`、`multiselect`、`confirm`、`progress` 与 `action`。
 策略注册表只按协议类型分派，不按模型、渠道或步骤 id 猜测流程。Gateway 返回渠道跳过说明时，`note` 渲染器在当前配置会话中原样呈现；
@@ -75,17 +78,16 @@ Wizard 的交互请求必须在已核验的 Gateway 连接上执行。离开、�
 完成条件分层处理：
 
 1. 所选 Gateway 必须可连接并且身份、运行方式和配置目标一致；
-2. OpenClaw 配置必须按官方 `config.get` 结果确认存在且有效；
-3. 如果当前 Gateway 提供官方实时模型验证方法，验证结果必须是 `verified` 才能通过；
-4. 如果当前 Gateway 没有该官方方法，结果是 `unavailable`，JunQi 显示“模型待核验”并允许继续，不伪报模型成功；
-5. 官方方法明确返回认证失败、模型不存在、超时或其他失败时，结果是 `failed`，流程停留在修正模型或凭据的入口。
+2. 已连接 Gateway 必须通过官方 `openclaw.setup.detect` 返回结构化 `setupComplete`；
+3. `setupComplete=false` 时进入官方 Wizard，客户端不从配置字段自行推断完成；
+4. 官方 Wizard 返回终态后，只继续核验 Gateway 服务交接和认证连接，不增加模型验证门禁。
 
-因此，“配置向导已完成”“Gateway 已启动”和“默认模型已通过实时验证”是三个不同事实，不能合并成一个成功提示。
+`openclaw.setup.verify` 仍用于模型配置或业务入口中的明确实时测试，但不参与首次安装完成判定。
 
 ### 7. 进入 Ready 与 Dashboard
 
 Ready 页是配置完成后的交接页，不是永久健康保证。用户进入 Dashboard 前，JunQi 会在同一操作中再次核验当前 Gateway
-和配置；核验失败会回到真实的 Gateway、Wizard 或模型待核验状态。
+和官方 `setupComplete`；核验失败会回到真实的 Gateway 或 Wizard 状态。
 
 进入 Dashboard 后，短暂的“正在连接 Gateway”表示桌面工作台正在建立长期会话、模型目录和事件订阅连接，不代表正在重复
 安装或重复运行 Wizard。Gateway handoff 已经核验时，工作台只保留必要的连接状态，不重放冷启动流程。
@@ -111,6 +113,7 @@ Ready 页是配置完成后的交接页，不是永久健康保证。用户进�
 - [首次启动往返导航审计](setup-round-trip-navigation-audit-2026-08-08.md)：回退、锁和页面生命周期根因；
 - [首次启动往返导航修复验证](setup-round-trip-navigation-validation-2026-08-08.md)：自动化、本机安装包和未验证边界；
 - [新手引导编排重构记录](onboarding-orchestration-redesign-2026-08-05.md)：状态归属和官方 Wizard 边界；
+- [安装完成契约审计](../quality/openclaw-installation-completion-contract-audit-2026-08-09.md)：官方 `setupComplete` 与 Wizard 终态边界；
 - [Wizard 与 Gateway 生命周期全量审查](wizard-and-gateway-lifecycle-full-audit-2026-08-02.md)：生命周期入口和协议审计；
 - [首次启动流程预览](../previews/junqi-first-run-flow.html)：当前桌面流程的静态视觉预览；
 - [`specs/installation/`](../../specs/installation/) 与 [`plans/installation/`](../../plans/installation/)：对应验收条件和实施顺序。

@@ -313,7 +313,7 @@ export interface Session {
   derivedTitle?: string;
   /** OpenClaw 返回的最近消息预览。 */
   lastMessagePreview?: string;
-  /** OpenClaw user-defined session organization bucket. `null` means ungrouped. */
+  /** OpenClaw 用户定义的会话分类；`null` 表示未分组。 */
   category?: string | null;
   agentId?: string;
   createdAt?: number | string;
@@ -388,8 +388,6 @@ export interface Session {
   // User-controlled lifecycle flags (SPEC: archive + pin)
   pinned?: boolean;
   archived?: boolean;
-  /** Renderer projection of OpenClaw's native `category` field. */
-  groupId?: string;
 }
 
 function recordsHaveEqualValues(
@@ -1419,15 +1417,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const hydratedTopic = changedIdentityKeys.has(session.key) ? undefined : previous?.topic;
       const merged: Session = {
         ...session,
-        // OpenClaw's `sessions.list` response is authoritative for labels.
-        // User mutations are only applied locally after `sessions.patch`
-        // confirms them, so no client-side shadow value is needed here.
+        // OpenClaw 的 `sessions.list` 响应是标签的权威来源。
+        // 用户修改只在 `sessions.patch` 确认后写入本地，因此不保留客户端影子字段。
         label: typeof session.label === 'string' ? session.label : '',
         pinned: session.pinned,
         archived: session.archived,
-        ...(typeof session.category === 'string' && session.category.trim()
-          ? { groupId: session.category.trim() }
-          : {}),
         topic: hasCachedMessages
           ? resolveSessionProjectionTopic({ ...session, topic: hydratedTopic }, cachedMessages, session.lastMessage)
           : resolveSessionProjectionTopic({ ...session, topic: hydratedTopic }, [], session.lastMessage),
@@ -1494,7 +1488,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           hasPendingCompletion: false,
           pinned: undefined,
           archived: undefined,
-          groupId: undefined,
           category: null,
           activeLeafEntryId: undefined,
         } : {}),
@@ -1761,8 +1754,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sessions: updateSession(state.sessions, key, (item) => ({
         ...item,
         ...(confirmedCategory
-          ? { groupId: confirmedCategory, category: confirmedCategory }
-          : { groupId: undefined, category: null }),
+          ? { category: confirmedCategory }
+          : { category: null }),
       })),
     }));
   },
