@@ -878,6 +878,22 @@
       "privacy": "安全与隐私"
     },
     "language": "语言",
+    "runtimeLanguage": "OpenClaw 运行时语言",
+    "runtimeLanguageHint": "控制官方 Wizard 与已接入 OpenClaw 本地化接口的插件文案。该设置独立于 JunQi 界面语言。",
+    "runtimeLanguageRefresh": "刷新运行时语言",
+    "runtimeLanguageDisconnected": "连接并完成 Gateway 身份核验后可读取运行时语言。",
+    "runtimeLanguageOptions": {
+      "en": "English",
+      "zh-CN": "简体中文",
+      "zh-TW": "繁體中文"
+    },
+    "runtimeLanguageUnknown": "当前 Runtime 配置了无法识别的语言：{{locale}}",
+    "runtimeLanguagePluginBoundary": "未接入 OpenClaw 本地化接口的插件仍会显示其原始文案。",
+    "runtimeLanguageSave": "保存并应用",
+    "runtimeLanguageSaving": "正在保存",
+    "runtimeLanguageApplied": "运行时语言已保存，Gateway 已通过统一生命周期入口重启。",
+    "runtimeLanguageExternalRestart": "运行时语言已保存。请由该 Runtime 的所有者重启 Gateway 后生效。",
+    "runtimeLanguageSavedRestartFailed": "运行时语言已保存，但 Gateway 重启失败：{{error}}",
     "notifications": "通知",
     "enableNotifications": "启用通知",
     "notificationsDesc": "前台显示应用内提示；切到后台时显示系统通知",

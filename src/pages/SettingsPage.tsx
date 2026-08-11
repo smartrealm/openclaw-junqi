@@ -48,6 +48,7 @@ import { FontPanel } from '@/components/settings/FontPanel';
 import { SettingsSwitch } from '@/components/settings/SettingsSwitch';
 import { JarvisVoiceSettingsPanel } from '@/components/settings/JarvisVoiceSettingsPanel';
 import { OpenClawTtsStatusPanel } from '@/components/settings/OpenClawTtsStatusPanel';
+import { OpenClawRuntimeLanguagePanel } from '@/components/settings/OpenClawRuntimeLanguagePanel';
 import {
   clearPetAsset,
   clearPetPackage,
@@ -63,6 +64,7 @@ import { StructuredPlanSettingsPanel } from '@/components/settings/StructuredPla
 import { useJarvisVoiceSettings } from '@/hooks/useJarvisVoiceSettings';
 import { useOpenClawTtsStatus } from '@/hooks/useOpenClawTtsStatus';
 import { useOpenClawPlanToolSetting } from '@/hooks/useOpenClawPlanToolSetting';
+import { useOpenClawRuntimeLanguageSetting } from '@/hooks/useOpenClawRuntimeLanguageSetting';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 import { ACCENT_COLORS, type AccentColor } from '@/theme/accent';
 import { APP_LANGUAGE_OPTIONS, type AppLanguage } from '@/i18n/languages';
@@ -218,6 +220,7 @@ export function SettingsPageFull() {
   const jarvisVoiceSettings = useJarvisVoiceSettings(activeTab === 'jarvis');
   const structuredPlans = useOpenClawPlanToolSetting(activeTab === 'connect' && connected);
   const openClawTtsStatus = useOpenClawTtsStatus(activeTab === 'notify' && connected);
+  const runtimeLanguage = useOpenClawRuntimeLanguageSetting(activeTab === 'appearance' && connected);
 
   useEffect(() => {
     if (activeTab !== 'connect') return;
@@ -492,6 +495,19 @@ export function SettingsPageFull() {
           ))}
         </div>
       </GlassCard>
+
+      <OpenClawRuntimeLanguagePanel
+        connected={connected}
+        currentLocale={runtimeLanguage.currentLocale}
+        selectedLocale={runtimeLanguage.selectedLocale}
+        rawLocale={runtimeLanguage.rawLocale}
+        loading={runtimeLanguage.loading}
+        saving={runtimeLanguage.saving}
+        message={runtimeLanguage.message}
+        onSelectLocale={runtimeLanguage.selectLocale}
+        onRefresh={() => void runtimeLanguage.refresh()}
+        onSave={() => void runtimeLanguage.save()}
+      />
 
       {/* Theme — 1:1 junqi ThemePanel: system toggle + 2×2 manual cards */}
       <GlassCard delay={0.08}>

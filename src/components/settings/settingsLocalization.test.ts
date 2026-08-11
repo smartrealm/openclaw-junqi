@@ -19,6 +19,8 @@ const dynamicTranslationKeys = [
     .map((category) => 'maintenance.category.' + category),
   ...['teal', 'blue', 'purple', 'rose', 'amber', 'emerald']
     .map((color) => 'settings.accent.' + color),
+  ...['en', 'zh-CN', 'zh-TW']
+    .map((locale) => 'settings.runtimeLanguageOptions.' + locale),
   ...['robot', 'jellyfish', 'blue-mascot', 'lobster', 'cat', 'ghost']
     .map((skin) => 'pet.settings.' + skin),
   ...['tool-calls', 'remote-login', 'python-venv', 'node-version', 'proxy', 'git-branch', 'git-diff']

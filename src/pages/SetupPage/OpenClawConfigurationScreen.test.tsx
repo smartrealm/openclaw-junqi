@@ -4,6 +4,7 @@ import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { SetupFlow } from '@/hooks/useSetupFlow';
 import { OpenClawConfigurationScreen } from './OpenClawConfigurationScreen';
+import { WizardScreen } from './WizardScreen';
 
 type VerificationFlow = Pick<
   SetupFlow,
@@ -42,7 +43,34 @@ test('Gateway 就绪在配置阶段显示显式核验操作', () => {
   assert.match(html, /Configure OpenClaw/);
   assert.match(html, /Gateway is ready/);
   assert.match(html, /Verify configuration/);
+  assert.match(html, /Debug Log/);
+  assert.match(html, /No installation or startup action has run yet/);
   assert.doesNotMatch(html, /Verifying configuration/);
+});
+
+test('等待官方向导步骤时仍默认展开日志', () => {
+  const flow = {
+    presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
+    goBack: async () => undefined,
+  } as unknown as SetupFlow;
+  const wizard = {
+    wizardStep: null,
+    wizardSubmitting: false,
+    wizardActivity: null,
+    wizardError: null,
+    wizardRecoveryRequired: false,
+    submitWizardStep: async () => null,
+    pollWizard: async () => null,
+    retryWizard: async () => null,
+    reclaimWizard: async () => null,
+  };
+
+  const html = renderToStaticMarkup(
+    <WizardScreen flow={flow} logs={[]} wizard={wizard} />,
+  );
+
+  assert.match(html, /Debug Log/);
+  assert.match(html, /No installation or startup action has run yet/);
 });
 
 test('配置核验中的同一容器锁定重复操作', () => {

@@ -97,6 +97,7 @@ export function WizardScreen({
         title={t(copy.titleKey, copy.titleFallback)}
         subtitle={t(copy.connectingKey, copy.connectingFallback)}
         logs={logs}
+        logVisibility="expanded"
         previousAction={{ onClick: flow.goBack, disabled: wizard.wizardSubmitting }}
         secondaryAction={secondaryAction}
         nextAction={{

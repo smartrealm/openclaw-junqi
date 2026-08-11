@@ -878,6 +878,22 @@
       "privacy": "Security & Privacy"
     },
     "language": "Language",
+    "runtimeLanguage": "OpenClaw runtime language",
+    "runtimeLanguageHint": "Controls official Wizard copy and plugins that use the OpenClaw localization API. This setting is independent from the JunQi interface language.",
+    "runtimeLanguageRefresh": "Refresh runtime language",
+    "runtimeLanguageDisconnected": "Connect and verify the Gateway identity to read the runtime language.",
+    "runtimeLanguageOptions": {
+      "en": "English",
+      "zh-CN": "简体中文",
+      "zh-TW": "繁體中文"
+    },
+    "runtimeLanguageUnknown": "The current Runtime has an unrecognized language configured: {{locale}}",
+    "runtimeLanguagePluginBoundary": "Plugins that do not use the OpenClaw localization API will continue to show their original copy.",
+    "runtimeLanguageSave": "Save and apply",
+    "runtimeLanguageSaving": "Saving",
+    "runtimeLanguageApplied": "The runtime language was saved and the Gateway restarted through the shared lifecycle.",
+    "runtimeLanguageExternalRestart": "The runtime language was saved. Ask the Runtime owner to restart the Gateway to apply it.",
+    "runtimeLanguageSavedRestartFailed": "The runtime language was saved, but the Gateway restart failed: {{error}}",
     "notifications": "Notifications",
     "enableNotifications": "Enable Notifications",
     "notificationsDesc": "Show in-app alerts in the foreground and system notifications in the background",
