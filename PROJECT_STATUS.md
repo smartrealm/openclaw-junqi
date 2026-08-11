@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-发布 `3.0.1` 补丁版本，并恢复由版本标签触发的 GitHub Release 闭环。
+完成 `3.0.1` 标签发布，并保留可复核的发布链路与验证结果。
 
 ## 已完成内容
 
@@ -16,6 +16,8 @@
 - 已确认唯一正式发布入口是 `.github/workflows/tag-release.yml`：推送 `v*` 标签后构建 macOS ARM64、macOS x64 与 Windows x64 安装包，并在同一提交的 `main` CI 成功后创建 GitHub Release。
 - 已确认 `v3.0.0` 的三平台构建均成功，但发布前置 CI 因后续推送取消而失败；本次改为先推送版本提交、确认其 CI 成功，再创建 `v3.0.1` 标签。
 - 已将 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 与 `src-tauri/Cargo.lock` 同步为 `3.0.1`。
+- 已推送 `v3.0.1`，标签发布工作流的 verify、macOS ARM64、macOS x64、Windows x64、publish 与 summary 均成功。
+- GitHub Release `v3.0.1` 已发布，包含两种 macOS DMG、Windows NSIS、更新包签名及 `latest.json`。
 
 ## 关键技术决策
 
@@ -54,7 +56,7 @@
 
 - 远端 Dependabot 会在提交并推送后异步重新扫描；告警状态须以 GitHub 后续扫描结果为准。
 - 尚未完成本轮 macOS、Windows、Linux 的桌面安装包和真机 PDF 视觉验收。
-- 尚未创建 `v3.0.1`；待版本提交的 `main` CI 成功后再打标签，避免标签发布因 CI 竞态失败。
+- Windows 发布物使用短期内部测试证书，仍不具备公共 CA 信任；受控测试设备之外可能被 Smart App Control 阻止。
 
 ## 失败方案
 
@@ -64,6 +66,5 @@
 
 ## 下一步顺序
 
-1. 审查最终差异并完成完整 Emoji 扫描。
-2. 提交并推送 `3.0.1` 版本提交，确认同一提交的 `main` CI 成功。
-3. 创建并推送 `v3.0.1`，观察标签工作流和 GitHub Release。
+1. 在目标 macOS 与 Windows 设备安装 `v3.0.1`，验证安装、启动、更新与证书提示。
+2. 等待 GitHub Dependabot 异步重扫并复核公开告警状态。
