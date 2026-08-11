@@ -515,7 +515,6 @@ test('BUG-IW-04 wizard presentation stays within the installed strict schema', (
 test('BUG-ONB-27 官方授权字段通过桌面 Shell 呈现', () => {
   const wizard = readFileSync(new URL('../pages/SetupPage/wizard/WizardAuthorizationHint.tsx', import.meta.url), 'utf8');
 
-  assert.match(wizard, /openWizardExternalUrl\(externalUrl\)/);
   assert.match(wizard, /deviceCode\.code/);
   assert.doesNotMatch(wizard, /target="_blank"/);
   assert.doesNotMatch(setupPage, /openclawWizardQr|openclawTerminalQr|getGatewayLogs/);

@@ -16,13 +16,13 @@ test('二维码登录控制使用管理员连接，状态核验使用普通连�
     },
   });
 
-  await client.start({ channel: 'qqbot' });
-  await client.wait({ channel: 'qqbot' });
+  await client.start({ accountId: 'work' });
+  await client.wait({ accountId: 'work' });
   await client.status({ channel: 'qqbot' });
 
   assert.deepEqual(privilegedCalls, [
-    { method: 'web.login.start', params: { channel: 'qqbot' } },
-    { method: 'web.login.wait', params: { channel: 'qqbot' } },
+    { method: 'web.login.start', params: { accountId: 'work' } },
+    { method: 'web.login.wait', params: { accountId: 'work' } },
   ]);
   assert.deepEqual(ordinaryCalls, [
     { method: 'channels.status', params: { channel: 'qqbot' } },

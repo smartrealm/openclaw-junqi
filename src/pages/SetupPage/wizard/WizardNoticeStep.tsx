@@ -1,4 +1,3 @@
-import { WizardAuthorizationHint } from "./WizardAuthorizationHint";
 import type { WizardStepRendererProps } from "./WizardStepTypes";
 
 export function WizardNoticeStep({
@@ -10,7 +9,6 @@ export function WizardNoticeStep({
       <pre className="whitespace-pre-wrap break-words font-[inherit]">
         {step.message || t("setup.wizard.readyForStep")}
       </pre>
-      <WizardAuthorizationHint externalUrl={step.externalUrl} deviceCode={step.deviceCode} />
     </div>
   );
 }

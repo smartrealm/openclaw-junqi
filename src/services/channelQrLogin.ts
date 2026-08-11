@@ -1,9 +1,8 @@
-export type ChannelQrPhase = 'idle' | 'preparing' | 'waiting' | 'verifying' | 'connected' | 'denied' | 'expired' | 'error' | 'cancelled';
+export type ChannelQrPhase = 'idle' | 'preparing' | 'waiting' | 'verifying' | 'connected' | 'expired' | 'error' | 'cancelled';
 
 export interface ChannelQrState {
   phase: ChannelQrPhase;
   qrDataUrl: string | null;
-  qrContent: string | null;
   message: string;
   error: string;
 }
@@ -17,15 +16,13 @@ export interface ChannelStatusGateway {
   status(params: Record<string, unknown>): Promise<unknown>;
 }
 
-type QrLoginOutcome = 'waiting' | 'connected' | 'denied' | 'expired' | 'error';
+type QrLoginOutcome = 'waiting' | 'connected';
 
 const CHANNEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const MAX_QR_DATA_URL_LENGTH = 16_384;
-const MAX_QR_CONTENT_LENGTH = 4_096;
 const QR_LOGIN_SESSION_TIMEOUT_MS = 10 * 60_000;
 const MAX_GATEWAY_MESSAGE_LENGTH = 512;
 const MIN_PENDING_POLL_DELAY_MS = 1_000;
-const MAX_PENDING_POLL_DELAY_MS = 60_000;
 const CHANNEL_STATUS_ATTEMPTS = 5;
 const CHANNEL_STATUS_RETRY_MS = 1_000;
 const CHANNEL_STATUS_TIMEOUT_MS = 15_000;
@@ -33,11 +30,7 @@ const CHANNEL_STATUS_TIMEOUT_MS = 15_000;
 interface QrResult {
   message?: string;
   qrDataUrl?: string;
-  qrContent?: string;
-  sessionId?: string;
   connected?: boolean;
-  status?: string;
-  pollAfterMs?: number;
 }
 
 type StateListener = (state: ChannelQrState) => void;
@@ -126,17 +119,6 @@ export function safeChannelQrDataUrl(value: unknown): string | null {
     : null;
 }
 
-export function safeChannelQrContent(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const content = value.trim();
-  // 二维码载荷可能是链接、深链或不透明设备码；桌面端只在本地编码，不加载或执行其内容。
-  return content.length > 0
-    && content.length <= MAX_QR_CONTENT_LENGTH
-    && !/[\u0000-\u001F\u007F]/.test(content)
-    ? content
-    : null;
-}
-
 function safeGatewayMessage(value: unknown): string {
   return typeof value === 'string'
     ? value
@@ -152,39 +134,25 @@ function resultRecord(value: unknown): QrResult {
 }
 
 function qrLoginOutcome(result: QrResult): QrLoginOutcome {
-  if (result.connected === true || result.status === 'connected') return 'connected';
-  if (result.status === 'denied') return 'denied';
-  if (result.status === 'expired') return 'expired';
-  if (result.status === 'error') return 'error';
+  if (result.connected === true) return 'connected';
   return 'waiting';
-}
-
-function pendingPollDelay(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return MIN_PENDING_POLL_DELAY_MS;
-  return Math.max(MIN_PENDING_POLL_DELAY_MS, Math.min(MAX_PENDING_POLL_DELAY_MS, Math.round(value)));
-}
-
-function validSessionId(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 && value.length <= 256 ? value : null;
 }
 
 export class ChannelQrLoginSession {
   private generation = 0;
   private deadline = 0;
-  private sessionId: string | null = null;
   private verificationController: AbortController | null = null;
   private listeners = new Set<StateListener>();
   private state: ChannelQrState = {
     phase: 'idle',
     qrDataUrl: null,
-    qrContent: null,
     message: '',
     error: '',
   };
 
   constructor(
     private readonly gateway: ChannelQrLoginGateway,
-    private readonly channelId: string,
+    channelId: string,
     private readonly accountId?: string,
     private readonly verifyConnected?: ConnectedVerifier,
   ) {
@@ -208,11 +176,9 @@ export class ChannelQrLoginSession {
     this.verificationController = null;
     const generation = ++this.generation;
     this.deadline = Date.now() + QR_LOGIN_SESSION_TIMEOUT_MS;
-    this.sessionId = null;
-    this.publish({ phase: 'preparing', qrDataUrl: null, qrContent: null, message: '', error: '' });
+    this.publish({ phase: 'preparing', qrDataUrl: null, message: '', error: '' });
     try {
       const result = resultRecord(await this.gateway.start({
-        channel: this.channelId,
         ...this.accountParams(),
         force,
         timeoutMs: 30000,
@@ -223,35 +189,17 @@ export class ChannelQrLoginSession {
         await this.publishConnected(generation, safeGatewayMessage(result.message));
         return;
       }
-      if (outcome === 'denied' || outcome === 'expired') {
-        this.publishTerminal(outcome, safeGatewayMessage(result.message));
-        return;
-      }
-      if (outcome === 'error') {
-        this.publish({
-          phase: 'error',
-          qrDataUrl: null,
-          qrContent: null,
-          message: safeGatewayMessage(result.message),
-          error: 'qr_login_failed',
-        });
-        return;
-      }
       const qrDataUrl = safeChannelQrDataUrl(result.qrDataUrl);
-      const qrContent = safeChannelQrContent(result.qrContent);
-      this.sessionId = validSessionId(result.sessionId);
       this.publish({
-        phase: qrDataUrl || qrContent ? 'waiting' : 'preparing',
+        phase: qrDataUrl ? 'waiting' : 'preparing',
         qrDataUrl,
-        qrContent,
         message: safeGatewayMessage(result.message),
         error: '',
       });
-      await this.waitUntilConnected(generation, qrDataUrl, qrContent);
+      await this.waitUntilConnected(generation, qrDataUrl);
     } catch {
       if (this.isCurrent(generation)) {
-        this.sessionId = null;
-        this.publish({ phase: 'error', qrDataUrl: null, qrContent: null, message: '', error: 'qr_request_failed' });
+        this.publish({ phase: 'error', qrDataUrl: null, message: '', error: 'qr_request_failed' });
       }
     }
   }
@@ -260,29 +208,23 @@ export class ChannelQrLoginSession {
     this.verificationController?.abort();
     this.verificationController = null;
     this.generation += 1;
-    this.sessionId = null;
-    this.publish({ ...this.state, phase: 'cancelled', qrDataUrl: null, qrContent: null });
+    this.publish({ ...this.state, phase: 'cancelled', qrDataUrl: null });
   }
 
   private async waitUntilConnected(
     generation: number,
     initialQrDataUrl: string | null,
-    initialQrContent: string | null,
   ): Promise<void> {
     let currentQrDataUrl = initialQrDataUrl;
-    let currentQrContent = initialQrContent;
     while (this.isCurrent(generation)) {
       if (Date.now() >= this.deadline) {
-        this.sessionId = null;
-        this.publish({ phase: 'expired', qrDataUrl: null, qrContent: null, message: '', error: 'qr_expired' });
+        this.publish({ phase: 'expired', qrDataUrl: null, message: '', error: 'qr_expired' });
         return;
       }
       const result = resultRecord(await this.gateway.wait({
-        channel: this.channelId,
         ...this.accountParams(),
-        ...(this.sessionId ? { sessionId: this.sessionId } : {}),
         timeoutMs: 120000,
-        currentQrDataUrl,
+        ...(currentQrDataUrl ? { currentQrDataUrl } : {}),
       }));
       if (!this.isCurrent(generation)) return;
       const outcome = qrLoginOutcome(result);
@@ -290,60 +232,29 @@ export class ChannelQrLoginSession {
         await this.publishConnected(generation, safeGatewayMessage(result.message));
         return;
       }
-      if (outcome === 'denied' || outcome === 'expired') {
-        this.sessionId = null;
-        this.publishTerminal(outcome, safeGatewayMessage(result.message));
-        return;
-      }
-      if (outcome === 'error') {
-        this.sessionId = null;
-        this.publish({
-          phase: 'error',
-          qrDataUrl: null,
-          qrContent: null,
-          message: safeGatewayMessage(result.message),
-          error: 'qr_login_failed',
-        });
-        return;
-      }
       const nextQrDataUrl = safeChannelQrDataUrl(result.qrDataUrl);
-      const nextQrContent = safeChannelQrContent(result.qrContent);
       currentQrDataUrl = nextQrDataUrl ?? currentQrDataUrl;
-      currentQrContent = nextQrContent ?? currentQrContent;
-      this.sessionId = validSessionId(result.sessionId) ?? this.sessionId;
       this.publish({
-        phase: currentQrDataUrl || currentQrContent ? 'waiting' : 'preparing',
+        phase: currentQrDataUrl ? 'waiting' : 'preparing',
         qrDataUrl: currentQrDataUrl,
-        qrContent: currentQrContent,
         message: safeGatewayMessage(result.message),
         error: '',
       });
-      if (!nextQrDataUrl && !nextQrContent) {
-        await this.delayBeforeNextPoll(generation, pendingPollDelay(result.pollAfterMs));
+      if (!nextQrDataUrl) {
+        await this.delayBeforeNextPoll(generation, MIN_PENDING_POLL_DELAY_MS);
       }
     }
   }
 
-  private publishTerminal(outcome: Extract<QrLoginOutcome, 'denied' | 'expired'>, message: string): void {
-    this.publish({
-      phase: outcome,
-      qrDataUrl: null,
-      qrContent: null,
-      message,
-      error: outcome === 'expired' ? 'qr_expired' : 'qr_denied',
-    });
-  }
-
   private async publishConnected(generation: number, message: string): Promise<void> {
     if (!this.verifyConnected) {
-      this.publish({ phase: 'connected', qrDataUrl: null, qrContent: null, message, error: '' });
+      this.publish({ phase: 'connected', qrDataUrl: null, message, error: '' });
       return;
     }
 
     this.publish({
       phase: 'verifying',
       qrDataUrl: null,
-      qrContent: null,
       message,
       error: '',
     });
@@ -354,11 +265,10 @@ export class ChannelQrLoginSession {
       if (!this.isCurrent(generation)) return;
       this.publish(
         connected
-          ? { phase: 'connected', qrDataUrl: null, qrContent: null, message, error: '' }
+          ? { phase: 'connected', qrDataUrl: null, message, error: '' }
           : {
               phase: 'error',
               qrDataUrl: null,
-              qrContent: null,
               message,
               error: 'qr_not_ready',
             },
@@ -368,7 +278,6 @@ export class ChannelQrLoginSession {
       this.publish({
         phase: 'error',
         qrDataUrl: null,
-        qrContent: null,
         message,
         error: 'qr_status_failed',
       });

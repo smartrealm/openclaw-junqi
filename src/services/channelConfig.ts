@@ -118,8 +118,7 @@ export function buildChannelGroups(config: GatewayRuntimeConfig | null): Channel
     .map(([id, cfg]) => ({
       id,
       enabled: cfg?.enabled !== false,
-      // Recognition belongs to the selected Runtime catalog. Config parsing
-      // alone cannot declare a channel known.
+      // 渠道是否已知由所选 Runtime 的目录判定，不能只凭配置内容认定。
       known: false,
       config: cfg,
       accounts: getChannelAccounts(id, cfg, config?.bindings),
@@ -128,9 +127,8 @@ export function buildChannelGroups(config: GatewayRuntimeConfig | null): Channel
 }
 
 /**
- * Mirrors OpenClaw's selected-Runtime default-agent contract: an absent
- * `agents.list` means the implicit `main` agent; otherwise the explicitly
- * default entry wins, falling back to the first configured entry.
+ * 遵循所选 OpenClaw Runtime 的默认智能体契约：缺少 `agents.list` 时使用隐式
+ * `main` 智能体；否则优先使用显式默认项，未指定时使用第一个已配置项。
  */
 export function getChannelAgentOptions(config: GatewayRuntimeConfig | null): ChannelAgentOption[] {
   const configured = (config?.agents?.list ?? []).filter((agent) => (
@@ -151,19 +149,8 @@ export function getChannelAgentOptions(config: GatewayRuntimeConfig | null): Cha
   });
 }
 
-function hasUsableValue(value: unknown): boolean {
-  return typeof value === 'string' ? value.trim().length > 0 : value !== undefined && value !== null;
-}
-
-export function getRequiredCredentialFields(channelId: string): string[] {
-  // DingTalk is the only JunQi-managed external plugin and therefore the only
-  // reviewed channel-specific exception. All other requirements come from the
-  // selected Runtime's capability schema/status, never from Desktop metadata.
-  return channelId === 'dingtalk-connector' ? ['clientId', 'clientSecret'] : [];
-}
-
 export function assessChannelAccountReadiness(
-  channelId: string,
+  _channelId: string,
   account: ChannelAccountBinding,
   runtime?: ChannelAccountRuntimeState,
 ): ChannelAccountReadiness {
@@ -173,24 +160,17 @@ export function assessChannelAccountReadiness(
     return { state: 'disabled', missingFields: [], messages };
   }
 
-  const reviewedLocalRequirements = getRequiredCredentialFields(channelId);
-  const missingFields = runtime
-    ? []
-    : reviewedLocalRequirements.filter((field) => !hasUsableValue(account.config[field]));
-  if (!runtime && reviewedLocalRequirements.length === 0) {
+  if (!runtime) {
     messages.push('unknown');
     return { state: 'unknown', missingFields: [], messages };
   }
-  const runtimeMissing = runtime?.configured === false || runtime?.linked === false;
-  if (runtimeMissing || missingFields.length > 0) {
+  if (runtime.configured === false || runtime.linked === false) {
     messages.push('missing_credentials');
-    return { state: 'missing_credentials', missingFields, messages };
+    return { state: 'missing_credentials', missingFields: [], messages };
   }
 
-  // Root bindings are overrides. OpenClaw routes an unmatched channel/account
-  // to its selected default agent, so absence of an explicit binding is not a
-  // delivery failure and must not make a healthy Wizard-configured account
-  // appear unusable.
+  // 根级 binding 只是覆盖项；没有显式绑定时由 OpenClaw 默认智能体接管，
+  // 因而不能把官方向导配置完成的账号误判为不可用。
   messages.push(account.agentId ? 'ready' : 'default_agent');
   return { state: 'ready', missingFields: [], messages };
 }
@@ -282,7 +262,7 @@ export function removeChannel(config: GatewayRuntimeConfig, channelId: string): 
 
 export function addChannel(config: GatewayRuntimeConfig, channelId: string): GatewayRuntimeConfig {
   const channels = { ...(config.channels ?? {}) };
-  // The Runtime/plugin owns every channel-specific default.
+  // 所有渠道专属默认值都由 Runtime 或插件拥有。
   channels[channelId] = { enabled: true };
   return { ...config, channels };
 }
@@ -307,8 +287,7 @@ export function upsertChannelAccount(
     return updateChannelBinding({ ...config, channels }, channelId, account, requestedAgentId);
   }
 
-  // The editor starts from the complete current object, so replacement keeps
-  // unknown official fields while allowing a user-cleared field to disappear.
+  // 编辑器从当前完整对象开始，替换时保留未知官方字段，同时允许删除用户清空的字段。
   channels[channelId] = cleanConfig;
   return updateChannelBinding({ ...config, channels }, channelId, account, requestedAgentId);
 }
@@ -346,80 +325,6 @@ export function removeChannelAccount(
   const bindings = (config.bindings ?? []).filter((binding) => !(
     binding.match?.channel === channelId && binding.match.accountId === accountId
   ));
-  return { ...config, channels, bindings };
-}
-
-function hasManagedBinding(
-  bindings: ChannelRouteBinding[],
-  channelId: string,
-  accountId: string | undefined,
-): boolean {
-  return bindings.some((binding) => (
-    binding.type !== 'acp'
-    && binding.match?.channel === channelId
-    && binding.match.accountId === accountId
-    && !binding.match.peer
-    && !binding.match.guildId
-    && !binding.match.teamId
-    && !binding.match.roles?.length
-  ));
-}
-
-function migrateLegacyDingtalkFields(value: Record<string, unknown>): Record<string, unknown> {
-  const next = { ...value };
-  if (next.clientId === undefined && next.appKey !== undefined) next.clientId = next.appKey;
-  if (next.clientSecret === undefined && next.appSecret !== undefined) next.clientSecret = next.appSecret;
-  if (next.endpoint === undefined && next.callbackUrl !== undefined) next.endpoint = next.callbackUrl;
-  delete next.appKey;
-  delete next.appSecret;
-  delete next.robotCode;
-  delete next.callbackUrl;
-  delete next.useStream;
-  return next;
-}
-
-export function migrateLegacyChannelBindings(config: GatewayRuntimeConfig): GatewayRuntimeConfig {
-  const bindings = (config.bindings ?? []).map((binding) => (
-    binding.match?.channel === 'dingtalk'
-      ? { ...binding, match: { ...binding.match, channel: 'dingtalk-connector' } }
-      : binding
-  ));
-  const channels: Record<string, ChannelConfig> = {};
-  for (const [channelId, rawChannel] of Object.entries(config.channels ?? {})) {
-    if (isChannelConfigurationMetadataKey(channelId)) {
-      Reflect.set(channels, channelId, rawChannel);
-      continue;
-    }
-    const officialChannelId = channelId === 'dingtalk' ? 'dingtalk-connector' : channelId;
-    const channel: Record<string, unknown> = channelId === 'dingtalk'
-      ? migrateLegacyDingtalkFields({ ...(rawChannel ?? {}) })
-      : { ...(rawChannel ?? {}) };
-    const channelAgentId = typeof channel.agentId === 'string' ? channel.agentId.trim() : '';
-    delete channel.agentId;
-    if (channelAgentId && !hasManagedBinding(bindings, officialChannelId, undefined)) {
-      bindings.push({ type: 'route', agentId: channelAgentId, match: { channel: officialChannelId } });
-    }
-    if (isRecord(channel.accounts)) {
-      const accounts: Record<string, unknown> = {};
-      for (const [accountId, rawAccount] of Object.entries(channel.accounts)) {
-        const rawAccountRecord = isRecord(rawAccount) ? { ...rawAccount } : {};
-        const account = channelId === 'dingtalk'
-          ? migrateLegacyDingtalkFields(rawAccountRecord)
-          : rawAccountRecord;
-        const accountAgentId = typeof account.agentId === 'string' ? account.agentId.trim() : '';
-        delete account.agentId;
-        if (accountAgentId && !hasManagedBinding(bindings, officialChannelId, accountId)) {
-          bindings.push({ type: 'route', agentId: accountAgentId, match: { channel: officialChannelId, accountId } });
-        }
-        accounts[accountId] = account;
-      }
-      channel.accounts = accounts;
-    }
-    Reflect.set(channels, officialChannelId, {
-      ...(channels[officialChannelId] ?? {}),
-      ...channel,
-    });
-  }
   return { ...config, channels, bindings };
 }
 
@@ -504,15 +409,13 @@ export async function persistChannelsOnlyWithRepository(
   base: GatewayRuntimeConfig,
   next: GatewayRuntimeConfig,
 ): Promise<GatewayRuntimeConfig> {
-  const normalizedBase = migrateLegacyChannelBindings(base);
-  const normalizedNext = migrateLegacyChannelBindings(next);
   let lastConflict: unknown;
 
   for (let attempt = 0; attempt < CHANNEL_CONFIG_SAVE_ATTEMPTS; attempt += 1) {
     const latest = await repository.read();
     const partitions = mergeChannelConfigPartitions(
-      normalizedBase,
-      normalizedNext,
+      base,
+      next,
       latest.config,
     );
     const merged: GatewayRuntimeConfig = {

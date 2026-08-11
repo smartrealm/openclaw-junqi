@@ -2,7 +2,6 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ChannelQrLoginSession,
-  safeChannelQrContent,
   safeChannelQrDataUrl,
   type ChannelQrLoginGateway,
 } from './channelQrLogin';
@@ -38,8 +37,8 @@ describe('ChannelQrLoginSession', () => {
     session.subscribe((state) => phases.push(state.phase));
     await session.start();
     assert.deepEqual(gateway.calls, [
-      { method: 'web.login.start', params: { channel: 'whatsapp', accountId: 'work', force: false, timeoutMs: 30000 } },
-      { method: 'web.login.wait', params: { channel: 'whatsapp', accountId: 'work', timeoutMs: 120000, currentQrDataUrl: 'data:image/png;base64,AAAA' } },
+      { method: 'web.login.start', params: { accountId: 'work', force: false, timeoutMs: 30000 } },
+      { method: 'web.login.wait', params: { accountId: 'work', timeoutMs: 120000, currentQrDataUrl: 'data:image/png;base64,AAAA' } },
     ]);
     assert.deepEqual(phases, ['idle', 'preparing', 'waiting', 'connected']);
     assert.equal(session.snapshot().message, 'linked');
@@ -94,34 +93,13 @@ describe('ChannelQrLoginSession', () => {
     assert.equal(safeChannelQrDataUrl(`data:image/png;base64,${'A'.repeat(16_400)}`), null);
   });
 
-  test('accepts bounded opaque QR payloads from the selected local provider', () => {
-    assert.equal(safeChannelQrContent('https://ilinkai.weixin.qq.com/login?id=one'), 'https://ilinkai.weixin.qq.com/login?id=one');
-    assert.equal(safeChannelQrContent('dingtalk://dingtalkclient/action/openapp?corpId=one'), 'dingtalk://dingtalkclient/action/openapp?corpId=one');
-    assert.equal(safeChannelQrContent('sgnl://linkdevice?uuid=one'), 'sgnl://linkdevice?uuid=one');
-    assert.equal(safeChannelQrContent(`https://example.com/${'x'.repeat(4_100)}`), null);
-    assert.equal(safeChannelQrContent('opaque\nprovider-payload'), null);
-  });
-
-  test('preserves an opaque provider session across QR waits', async () => {
-    const gateway = rpc([
-      { qrContent: 'https://ilinkai.weixin.qq.com/login?id=one', sessionId: 'provider-session', message: 'scan' },
-      { connected: true, message: 'linked' },
-    ]);
-    const session = new ChannelQrLoginSession(gateway, 'openclaw-weixin');
-    await session.start();
-    assert.deepEqual(gateway.calls, [
-      { method: 'web.login.start', params: { channel: 'openclaw-weixin', force: false, timeoutMs: 30000 } },
-      { method: 'web.login.wait', params: { channel: 'openclaw-weixin', sessionId: 'provider-session', timeoutMs: 120000, currentQrDataUrl: null } },
-    ]);
-  });
-
   test('关闭对话框只停止本地投影，不调用不存在的取消 RPC', async () => {
     let resolveWait: ((value: unknown) => void) | undefined;
     const gateway: ChannelQrLoginGateway & { calls: Array<{ method: string; params: Record<string, unknown> }> } = {
       calls: [],
       async start(params) {
         this.calls.push({ method: 'web.login.start', params });
-        return { qrContent: 'https://example.com/qr', sessionId: 'session-1' };
+        return { qrDataUrl: 'data:image/png;base64,AAAA' };
       },
       async wait(params) {
         this.calls.push({ method: 'web.login.wait', params });
@@ -175,7 +153,7 @@ describe('ChannelQrLoginSession', () => {
       async start(params) {
         calls.push({ method: 'web.login.start', params });
         if (calls.filter((call) => call.method === 'web.login.start').length === 1) {
-          return { qrContent: 'https://example.com/first', sessionId: 'first-session' };
+          return { qrDataUrl: 'data:image/png;base64,AAAA' };
         }
         return { connected: true };
       },
@@ -194,23 +172,4 @@ describe('ChannelQrLoginSession', () => {
     assert.equal(session.snapshot().phase, 'connected');
   });
 
-  test('maps explicit provider terminal states without waiting for the local deadline', async () => {
-    const denied = new ChannelQrLoginSession(rpc([{ status: 'denied', message: 'declined' }]), 'whatsapp');
-    await denied.start();
-    assert.equal(denied.snapshot().phase, 'denied');
-
-    const expired = new ChannelQrLoginSession(rpc([
-      { qrDataUrl: 'data:image/png;base64,AAAA' },
-      { status: 'expired' },
-    ]), 'whatsapp');
-    await expired.start();
-    assert.equal(expired.snapshot().phase, 'expired');
-
-    const failed = new ChannelQrLoginSession(rpc([
-      { status: 'error', message: 'provider ended login' },
-    ]), 'qqbot');
-    await failed.start();
-    assert.equal(failed.snapshot().phase, 'error');
-    assert.equal(failed.snapshot().error, 'qr_login_failed');
-  });
 });

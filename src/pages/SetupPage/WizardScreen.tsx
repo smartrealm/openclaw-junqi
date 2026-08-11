@@ -7,6 +7,7 @@ import { SetupShell } from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
 import type { OpenClawWizardStep } from "@/services/openclawWizard";
 import { isWizardBodyMessageStep, WizardStepRenderer } from "./wizard/WizardStepRenderer";
+import { WizardAuthorizationHint } from "./wizard/WizardAuthorizationHint";
 import { wizardValuesEqual } from "./wizard/WizardStepValue";
 
 export { WizardAuthorizationHint } from "./wizard/WizardAuthorizationHint";
@@ -23,6 +24,13 @@ export function wizardInitialValue(step: OpenClawWizardStep): unknown {
   if (step.type === "text") return typeof step.initialValue === "string" ? step.initialValue : "";
   if (step.type === "action") return true;
   return undefined;
+}
+
+export function wizardLogVisibility(
+  step: OpenClawWizardStep | null,
+  error: string | null,
+): "collapsed" | "expanded" {
+  return !step || error ? "expanded" : "collapsed";
 }
 
 type WizardController = Pick<SetupFlow,
@@ -94,10 +102,11 @@ export function WizardScreen({
     return (
       <SetupShell
         active={flow.presentation.stage}
+        contentIdentity="wizard-connecting"
         title={t(copy.titleKey, copy.titleFallback)}
         subtitle={t(copy.connectingKey, copy.connectingFallback)}
         logs={logs}
-        logVisibility="expanded"
+        logVisibility={wizardLogVisibility(step, wizard.wizardError)}
         previousAction={{ onClick: flow.goBack, disabled: wizard.wizardSubmitting }}
         secondaryAction={secondaryAction}
         nextAction={{
@@ -134,10 +143,11 @@ export function WizardScreen({
   return (
     <SetupShell
       active={flow.presentation.stage}
+      contentIdentity={presentedStep.id}
       title={wizardTitle}
       subtitle={wizardSubtitle}
       logs={logs}
-      logVisibility="expanded"
+      logVisibility={wizardLogVisibility(step, wizard.wizardError)}
       previousAction={{
         label: t("setup.wizard.pauseAndReturn", "暂停并返回"),
         onClick: flow.goBack,
@@ -169,6 +179,11 @@ export function WizardScreen({
           value={value}
           setValue={setValue}
           t={t}
+        />
+        <WizardAuthorizationHint
+          externalUrl={presentedStep.externalUrl}
+          deviceCode={presentedStep.deviceCode}
+          message={presentedStep.message}
         />
       </div>
     </SetupShell>

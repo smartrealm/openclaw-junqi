@@ -42,6 +42,7 @@ const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
   'styles/themes/aegis-light.css': 24,
   'styles/themes/aegis-midnight.css': 33, // 语义令牌定义
   'utils/theme-colors.ts': 1, // 令牌转换回退值和说明
+  'utils/qrCode.ts': 2, // 二维码像素内容色必须保持稳定黑白对比
   'workbench/components/WorkbenchTerminalPane.tsx': 0,
 };
 

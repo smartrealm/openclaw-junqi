@@ -1,6 +1,27 @@
 import { Copy, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { QrCodeDisplay } from "@/components/shared/QrCodeDisplay";
 import type { OpenClawWizardStep } from "@/services/openclawWizard";
+
+const HTTPS_URL_PATTERN = /https:\/\/[^\s<>"'`]+/giu;
+
+export function resolveWizardAuthorizationUrl({
+  externalUrl,
+  message,
+}: Pick<OpenClawWizardStep, "externalUrl" | "message">): string | undefined {
+  if (externalUrl) return externalUrl;
+  if (!message) return undefined;
+
+  const candidates = Array.from(new Set(message.match(HTTPS_URL_PATTERN) ?? []))
+    .filter((candidate) => {
+      try {
+        return new URL(candidate).protocol === "https:";
+      } catch {
+        return false;
+      }
+    });
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
 
 async function openWizardExternalUrl(value?: string): Promise<void> {
   if (!value) return;
@@ -15,12 +36,18 @@ async function openWizardExternalUrl(value?: string): Promise<void> {
 export function WizardAuthorizationHint({
   externalUrl,
   deviceCode,
-}: Pick<OpenClawWizardStep, "externalUrl" | "deviceCode">) {
+  message,
+}: Pick<OpenClawWizardStep, "externalUrl" | "deviceCode" | "message">) {
   const { t } = useTranslation();
-  if (!externalUrl && !deviceCode) return null;
+  const authorizationUrl = resolveWizardAuthorizationUrl({ externalUrl, message });
+
+  if (!authorizationUrl && !deviceCode) return null;
 
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-aegis-border pt-4">
+    <div
+      data-wizard-authorization="true"
+      className="mt-4 grid gap-4 border-t border-aegis-border pt-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+    >
       <div className="min-w-0 flex-1 space-y-2">
         {deviceCode && (
           <div className="rounded-md border border-aegis-border bg-aegis-surface px-3 py-2">
@@ -30,25 +57,39 @@ export function WizardAuthorizationHint({
             <code className="mt-1 block break-all text-sm font-semibold text-aegis-text">{deviceCode.code}</code>
           </div>
         )}
-        {externalUrl && (
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => void navigator.clipboard.writeText(externalUrl).catch(() => undefined)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-aegis-primary hover:underline"
-            >
-              <Copy size={13} />{t("common.copy")}
-            </button>
-            <button
-              type="button"
-              onClick={() => void openWizardExternalUrl(externalUrl)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-aegis-primary hover:underline"
-            >
-              <ExternalLink size={13} />{t("setup.wizard.openInBrowser")}
-            </button>
+        {authorizationUrl && (
+          <div className="space-y-3">
+            <p className="text-xs leading-5 text-aegis-text-muted">
+              {t("setup.wizard.scanQrHint")}
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => void navigator.clipboard.writeText(authorizationUrl).catch(() => undefined)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-aegis-primary hover:underline"
+              >
+                <Copy size={13} />{t("common.copy")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void openWizardExternalUrl(authorizationUrl)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-aegis-primary hover:underline"
+              >
+                <ExternalLink size={13} />{t("setup.wizard.openInBrowser")}
+              </button>
+            </div>
           </div>
         )}
       </div>
+      {authorizationUrl && (
+        <div data-wizard-authorization-qr="true">
+          <QrCodeDisplay
+            content={authorizationUrl}
+            alt={t("setup.wizard.qrAlt")}
+            className="h-[184px] w-[184px]"
+          />
+        </div>
+      )}
     </div>
   );
 }

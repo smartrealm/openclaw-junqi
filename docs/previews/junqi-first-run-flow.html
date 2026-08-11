@@ -248,7 +248,7 @@
       </svg>
     </div>
     <div class="cards">
-      <div class="card"><p class="card-kicker">UNIFIED CONFIGURATION STAGE</p><h3>Gateway 就绪后原地核验 OpenClaw 配置</h3><ul><li>运行时步骤完成后，顶部直接激活“配置 OpenClaw”；Gateway 就绪仅作为该页面中的真实检查结果</li><li>用户点击核验配置后，加载、真实错误或官方 Wizard 步骤在同一页面替换，不自动跳转或重放操作</li><li>配置核验、向导连接与正式步骤默认展开执行日志，用户仍可手动收起</li><li>首次配置只启动默认 <code>wizard.start</code>；模型、凭据、工作区和可选消息渠道均在同一个官方向导会话中呈现</li><li>官方跳过渠道时，JunQi 在当前会话的结构化说明步骤中展示 Gateway 返回的原因；不会额外创建渠道步骤或静默跳过</li></ul></div>
+      <div class="card"><p class="card-kicker">UNIFIED CONFIGURATION STAGE</p><h3>Gateway 就绪后原地核验 OpenClaw 配置</h3><ul><li>运行时步骤完成后，顶部直接激活“配置 OpenClaw”；Gateway 就绪仅作为该页面中的真实检查结果</li><li>用户点击核验配置后，加载、真实错误或官方 Wizard 步骤在同一页面替换，不自动跳转或重放操作</li><li>配置核验与官方 Wizard 虽共享视觉场景，但切换后会重置主体滚动位置，不能因上一状态的日志滚动而出现空白视口</li><li>配置核验和向导连接默认展开日志，正常交互步骤默认收起，步骤失败时自动展开</li><li>首次配置只启动默认 <code>wizard.start</code>；模型、凭据、工作区和可选消息渠道均在同一个官方向导会话中呈现</li><li>任意步骤返回结构化 <code>externalUrl</code> 时由共享组件生成本地二维码、浏览器入口与复制操作；第三方步骤只在正文存在唯一 HTTPS 地址时原样投影二维码，不读取历史日志或推断授权状态</li><li>渠道插件正式返回 <code>qrDataUrl</code> 时直接显示官方 PNG；未提供结构化地址或图片的终端二维码不会被客户端猜测重建</li><li>官方跳过渠道时，JunQi 在当前会话的结构化说明步骤中展示 Gateway 返回的原因；不会额外创建渠道步骤或静默跳过</li></ul></div>
     </div>
   </section>
 

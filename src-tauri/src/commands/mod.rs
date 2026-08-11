@@ -56,7 +56,6 @@ pub mod plugin_recovery;
 pub mod process_control;
 pub mod project_config;
 pub mod pty_neu;
-pub mod qr;
 pub mod quickchat;
 pub mod runtime_identity;
 pub(crate) mod runtime_policy;

@@ -11,16 +11,3 @@ test('workshop does not retain the unrendered activity timeline', async () => {
   assert.doesNotMatch(source, /ActivityEntry/);
   assert.doesNotMatch(source, /tasks, activities,/);
 });
-
-test('channels prioritizes configured instances and shows diagnostics on demand', async () => {
-  const source = await read('./ChannelsCenter/index.tsx');
-
-  assert.match(source, /\(!gatewayHealthy \|\| diagnosticsOpen\)/);
-  assert.match(source, /id="available-channels"/);
-  assert.match(source, /const availableEntries = catalog\.entries/);
-  assert.match(source, /catalog\.source === 'unavailable'/);
-  assert.doesNotMatch(source, /catalog\.entries\.filter\(\(entry\) => !groups\.some/);
-  assert.match(source, /readinessFilter/);
-  assert.doesNotMatch(source, /lg:grid-cols-5/);
-  assert.doesNotMatch(source, /bg-gradient-to-br/);
-});

@@ -39,7 +39,7 @@ export interface OfficialChannelCapability {
   required: string[];
   support: Record<string, unknown>;
   actions: string[];
-  qrLogin: boolean;
+  gatewayMethods: string[];
 }
 
 export interface ChannelAccountRuntimeStatus {
@@ -145,11 +145,9 @@ export function normalizeOfficialChannelCatalog(payload: unknown): OfficialChann
 }
 
 export async function loadOfficialChannelCatalog(_force = false): Promise<OfficialChannelCatalog> {
-  // Never substitute a JunQi-maintained channel list. The selected OpenClaw
-  // runtime is the sole catalog authority, and every load re-reads it so an
-  // OpenClaw upgrade/plugin change is reflected without restarting JunQi.
-  // Failures must reach the page: turning them into an empty catalog makes a
-  // loading or runtime error indistinguishable from "OpenClaw has no channels".
+  // 不使用 JunQi 自建渠道清单。所选 OpenClaw Runtime 是唯一目录权威，每次加载都重新读取，
+  // 以便 OpenClaw 升级或插件变化无需重启 JunQi 即可呈现。失败必须传递给页面，不能用空目录
+  // 混淆“Runtime 加载失败”与“OpenClaw 没有渠道”。
   return normalizeOfficialChannelCatalog(await getOpenclawChannelCatalog());
 }
 
@@ -169,6 +167,11 @@ export function normalizeOfficialChannelCapability(payload: unknown): OfficialCh
   const configSchema = asJsonObject(plugin?.configSchema);
   const schemaRoot = asJsonObject(configSchema?.schema);
   const schema = asJsonObject(schemaRoot?.properties) as Record<string, OpenClawFieldSchema> | undefined;
+  const gatewayMethodDescriptors = Array.isArray(plugin?.gatewayMethodDescriptors)
+    ? plugin.gatewayMethodDescriptors
+      .map((descriptor) => asJsonObject(descriptor)?.name)
+      .filter((method): method is string => typeof method === 'string')
+    : [];
   return {
     channel: row.channel,
     accountId: typeof row.accountId === 'string' ? row.accountId : undefined,
@@ -184,7 +187,12 @@ export function normalizeOfficialChannelCapability(payload: unknown): OfficialCh
     actions: Array.isArray(row.actions)
       ? row.actions.filter((action: unknown): action is string => typeof action === 'string')
       : [],
-    qrLogin: row.qrLogin === true,
+    gatewayMethods: Array.from(new Set([
+      ...(Array.isArray(plugin?.gatewayMethods)
+        ? plugin.gatewayMethods.filter((method): method is string => typeof method === 'string')
+        : []),
+      ...gatewayMethodDescriptors,
+    ])),
   };
 }
 
@@ -193,15 +201,38 @@ export function loadOfficialChannelCapability(
   _force = false,
 ): Promise<OfficialChannelCapability | null> {
   const channel = assertChannelCliIdentifier(channelId, 'Channel ID');
-  // Capabilities belong to the selected OpenClaw runtime and can change after
-  // an upgrade or plugin operation. Re-read them instead of retaining a
-  // renderer-lifetime JunQi cache.
+  // capability 属于所选 OpenClaw Runtime，升级或插件操作后可能变化，因此每次重新读取，
+  // 不保留覆盖整个渲染进程生命周期的 JunQi 缓存。
   return getOpenclawChannelCapabilities(channel)
     .then(normalizeOfficialChannelCapability);
 }
 
 export function loadOfficialChannelStatus(channel?: string, probe = false): Promise<unknown> {
   return getOpenclawChannelStatus(channel, probe);
+}
+
+export type OpenClawChannelStatusCall = (
+  method: 'channels.status',
+  params: { probe: boolean; timeoutMs: number; channel?: string },
+) => Promise<unknown>;
+
+export async function loadOfficialChannelRuntimeState(
+  call: OpenClawChannelStatusCall,
+  channel?: string,
+  probe = false,
+): Promise<unknown> {
+  const params = {
+    probe,
+    timeoutMs: probe ? 15000 : 8000,
+    ...(channel ? { channel } : {}),
+  };
+  try {
+    return await call('channels.status', params);
+  } catch {
+    // Gateway RPC 不可用时仍由所选 Runtime 的官方 CLI 返回配置态或探测结果，
+    // 页面不自行解释连接失败，也不把空数据伪装成无渠道。
+    return loadOfficialChannelStatus(channel, probe);
+  }
 }
 
 export function loadOfficialChannelLogs(channel?: string, lines = 200): Promise<unknown> {
@@ -213,7 +244,10 @@ export function channelLinkMode(
   installed: boolean,
 ): ChannelLinkMode {
   if (!installed) return 'terminal_setup';
-  if (capability?.qrLogin) return 'embedded_qr';
+  if (
+    capability?.gatewayMethods.includes('web.login.start')
+    && capability.gatewayMethods.includes('web.login.wait')
+  ) return 'embedded_qr';
   return 'none';
 }
 
