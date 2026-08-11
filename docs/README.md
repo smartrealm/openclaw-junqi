@@ -6,6 +6,8 @@
 
 - [安装与首次启动流程](installation/junqi-installation-flow.md)：JunQi 的桌面职责、官方 Wizard 交接与未验证平台边界。
 - [OpenClaw Wizard 流程](installation/openclaw-wizard-start-flow.md)：`wizard.start`、步骤循环、取消恢复、完整配置与渠道流程的官方契约及 JunQi 适配边界。
+- [OpenClaw Wizard 终态交接审计](quality/openclaw-wizard-terminal-handoff-audit-2026-08-11.md)：官方终态、Gateway 后置核验、重试边界与授权等待投影的缺陷和验证记录。
+- [OpenClaw 渠道二维码生命周期审计](quality/openclaw-channel-qr-lifecycle-audit-2026-08-11.md)：Web 扫码开始、监听、二维码轮换、成功回调和界面恢复的协议差异与修复记录。
 - [OpenClaw 第三方渠道支持](channels/openclaw-third-party-channel-support.md)：官方目录、外部插件、国内重点渠道、扫码能力和 JunQi 呈现边界。
 - [Gateway 生命周期验证](gateway/gateway-lifecycle-unification-validation-2026-08-10.md)：统一恢复、重启和身份核验的当前证据。
 - [钉钉业务工作台术语](business/CONTEXT.md)：DWS、Gateway 和业务投影的边界。

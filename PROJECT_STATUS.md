@@ -4,9 +4,18 @@
 
 ## 当前目标
 
-优化 OpenClaw 渠道配置的可视化链路，在不改变上游渠道语义的前提下统一目录、账号、路由、状态核验、扫码和 Gateway 生命周期入口。
+收敛 OpenClaw Wizard 终态交接与渠道二维码授权生命周期，确保 JunQi 只投影官方步骤、等待、二维码轮换和成功终态，不创建第二套授权语义。
 
 ## 已完成内容
+
+- 官方 Wizard `done` 与 JunQi 后置 Gateway 核验已经拆成两个不可混淆的恢复阶段；终态后的失败只显示“重新核验”，不再调用 `wizard.start`、`wizard.next` 或恢复已回收会话。
+- 官方服务交接后统一通过 Gateway 生命周期协调器重新解析目标和凭据、建立认证连接，再探测所选 Runtime；只有两层核验都成功后才清除 onboarding requirement 并进入 Ready。
+- 授权步骤提交后，旧二维码和旧表单立即替换为等待投影，避免已回答步骤继续表现为可操作；暂停只中止当前客户端请求，恢复时继续同一个官方会话。
+- `wizard.next` 不再使用短于插件授权流程的客户端固定超时；渠道插件继续拥有扫码轮询、过期和授权终态，JunQi 不实现第二套轮询状态机。
+- 新增终态恢复、统一 Gateway 重连和授权等待投影的行为回归测试，并同步 OpenClaw Wizard 正式文档、首次启动流程图和审计记录。
+- 渠道中心扫码改为 OpenClaw 原生有界等待：显示官方 `qrDataUrl`，收到轮换二维码后在剩余窗口内继续监听，未连接且无新二维码时停止自动请求并保留二维码。
+- 官方 `connected: true` 直接收敛扫码成功；删除二维码会话专用的 `channels.status` 成功门禁、十分钟客户端轮询、客户端过期推断及其旧错误状态。
+- 扫码对话框复用共享 Dialog、二维码和加载组件，补齐继续监听、生成新二维码、错误内联反馈、键盘关闭和本地代际围栏；官方等待期间不并发开始请求。
 
 - 渠道中心由单文件堆叠界面调整为紧凑的目录与详情双栏，并拆分渠道列表、渠道详情、渠道目录和账号编辑四个单一职责组件。
 - 渠道目录改为可搜索对话框，安装状态、图标、来源与可配置入口全部来自当前所选 Runtime；主页面不再平铺重复的渠道卡片和汇总卡片。
@@ -38,6 +47,12 @@
 
 ## 关键技术决策
 
+- 官方 Wizard 终态是不可重放边界。终态后的 Runtime 交接失败不是 Wizard 失败，恢复操作不得重新进入配置会话。
+- Gateway 后置核验必须复用全局生命周期协调器；首次配置不能拥有独立的连接轮询和凭据刷新路径。
+- 授权等待时限和终态属于 OpenClaw Runner 或渠道插件。客户端只投影等待状态并提供显式暂停，不根据本地超时推断失败。
+- 渠道中心的 `web.login.start` 与 `web.login.wait` 结果是扫码状态的权威来源。`channels.status` 只用于成功后的独立运行观测，不能覆盖官方登录终态。
+- OpenClaw 未提供通用结构化二维码过期状态；JunQi 不从消息文本、等待时长或本地截止时间推断过期。
+
 - 渠道 UI 只投影 OpenClaw 目录、schema、capability、status 与 bindings，不维护渠道专属凭据模型、状态机或成功 fallback。
 - Gateway 生命周期由全局协调器独占；渠道配置只提出一次重启意图，不拥有第二套重启、重试或健康探测控制面。
 - 后台渠道探测属于局部刷新：已有快照继续可读，加载状态独立显示，失败保留上一份证据并明确报告错误。
@@ -48,6 +63,18 @@
 - Wizard 和插件文案由 OpenClaw Runtime 返回。JunQi 只呈现结构化文本，不为未接入 `createSetupTranslator` 的插件维护客户端翻译表。
 
 ## 核心文件
+
+- `src/hooks/useSetupFlow/useWizardSession.ts`
+- `src/hooks/useSetupFlow/types.ts`
+- `src/pages/SetupPage/WizardScreen.tsx`
+- `src/services/openclawWizard.ts`
+- `src/services/channelQrLogin.ts`
+- `src/pages/ChannelsCenter/ChannelQrLoginDialog.tsx`
+- `src/services/gateway/OpenClawChannelQrLoginClient.ts`
+- `docs/quality/openclaw-channel-qr-lifecycle-audit-2026-08-11.md`
+- `docs/quality/openclaw-wizard-terminal-handoff-audit-2026-08-11.md`
+- `docs/installation/openclaw-wizard-start-flow.md`
+- `docs/previews/junqi-first-run-flow.html`
 
 - `src/pages/ChannelsCenter/index.tsx`
 - `src/pages/ChannelsCenter/ChannelListPanel.tsx`
@@ -82,6 +109,12 @@
 
 ## 测试与验证
 
+- OpenClaw Wizard、首次配置界面与设置流程定向回归测试通过，97 项测试通过。
+- `pnpm exec tsc --noEmit`、`pnpm test`、`pnpm lint` 与 `pnpm build` 通过。
+- 本次没有修改 Rust；未重复执行 Rust 格式、编译与测试。
+- 渠道二维码状态机与 Gateway 客户端定向测试 14 项通过；覆盖开始、官方等待、轮换二维码、继续监听、成功终态、刷新围栏、取消围栏、结果校验和脱敏。
+- 完整 `pnpm test` 通过，共 2780 项测试通过；`pnpm lint`、`pnpm build` 与 `git diff --check` 通过。
+
 - 渠道配置、渠道 Runtime、渠道加载呈现与维护页定向回归测试通过，27 项测试通过。
 - `pnpm test` 完整前端与脚本测试通过；既有 Radix 服务端渲染测试仍输出 `useLayoutEffect` 警告，不影响退出状态，本次渠道组件未引入该警告链路。
 - `pnpm lint` 通过：模块边界、版本一致性和 TypeScript 类型检查通过。
@@ -107,6 +140,11 @@
 
 ## 已知问题与未验证边界
 
+- 尚未使用真实 macOS 安装包复测“官方配置完成、服务交接后首次认证连接失败、点击重新核验”的完整链路。
+- Windows 服务交接、Credential Manager 和安装后首次授权仍需 Windows 真机验证。
+- 钉钉扫码轮询、过期与成功终态继续由插件拥有；当前自动化只验证 JunQi 不保留旧二维码、不并行轮询且不重启 Wizard。
+- 渠道中心的真实 WhatsApp、Zalo Personal、多账号、二维码轮换和等待恢复尚未在目标平台账号上完成真机验证。
+
 - 本次渠道中心布局尚未在真实 macOS、Windows 与 Linux 安装包中完成亮色、暗色、窄窗口、键盘焦点和屏幕阅读器视觉验收。
 - 当前自动化验证了状态请求参数、Runtime 权威边界和配置持久化；真实渠道的安装、授权、入站、出站、掉线恢复和多账号路由仍需使用各平台账号逐项验收。
 - 尚未在真实 macOS、Windows、Linux 安装包上执行长时间窗口帧率、CPU 与内存对比；不能将当前源码验证描述为目标平台性能验收。
@@ -122,8 +160,7 @@
 
 ## 下一步顺序
 
-1. 在亮色、暗色和窄窗口下真机核验渠道双栏、目录对话框、账号编辑、键盘焦点与错误状态。
-2. 使用真实 DingTalk、Feishu、WhatsApp 与一个凭据型渠道验证安装、授权、探测、入站、出站和掉线恢复。
-3. 在 macOS、Windows 与 Linux 目标设备持续运行 Dashboard 和 Chat，采集修复前后的帧率、CPU、内存与 Gateway 诊断。
-4. 为缺少定价的实际模型补充经供应商确认的价格配置，并复核 OpenClaw 重新聚合后的费用结果。
-5. 在第三方 DingTalk 插件接入 OpenClaw 本地化后，以 `zh-CN`、`zh-TW` 和 `en` 完成官方 Wizard 真机验证。
+1. 使用真实 macOS 安装包复测官方 Wizard 终态、服务交接失败和“重新核验”恢复，确认不会再次出现配置步骤。
+2. 在 Windows 真机验证服务交接、Credential Manager、授权等待与终态恢复。
+3. 在亮色、暗色和窄窗口下核验 Wizard 授权与渠道中心扫码对话框的准备、监听、暂停、失败、成功和键盘交互。
+4. 使用真实 DingTalk、Feishu、WhatsApp、Zalo Personal 与一个凭据型渠道验证安装、授权、二维码轮换、探测、入站、出站和掉线恢复。

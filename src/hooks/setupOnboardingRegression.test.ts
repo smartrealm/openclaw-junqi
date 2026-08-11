@@ -69,9 +69,13 @@ test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway r
   );
 
   assert.match(completion, /await handoffGatewayToOfficialService\(\)/);
-  assert.match(setupFlow, /GATEWAY_HANDOFF_CONNECTION_TIMEOUT_MS = 120_000/);
-  assert.match(completion, /waitForGatewayConnection\(operationId, GATEWAY_HANDOFF_CONNECTION_TIMEOUT_MS\)/);
+  assert.match(completion, /gatewayLifecycle\.reconnect\(WIZARD_COMPLETION_RECONNECT_SOURCE\)/);
   assert.match(completion, /await probeSelectedGateway\(\)/);
+  assert.ok(
+    completion.indexOf('await probeSelectedGateway()')
+      < completion.indexOf('updateOnboardingRequirement(false)'),
+    '只有所选 Gateway 探测成功后才能清除首次配置要求',
+  );
 });
 
 test('BUG-ONB-34 cached setup validates installation before Gateway recovery', () => {
@@ -206,7 +210,7 @@ test('BUG-WFR-04 stale wizard operations cannot commit after setup navigation or
   assert.match(back, /invalidateWizardOperations\(\)/);
 });
 
-test('BUG-ONB-49 wizard recovery avoids the destructive status read and keeps healthy transport', () => {
+test('BUG-ONB-49 wizard recovery avoids destructive status reads and lets authorization own its timeout', () => {
   const wizardOperations = hookFile('useWizardSession');
   const waitForConnection = wizardOperations.slice(
     wizardOperations.indexOf('const waitForGatewayConnection'),
@@ -216,10 +220,14 @@ test('BUG-ONB-49 wizard recovery avoids the destructive status read and keeps he
     wizardClient.indexOf('async resume()'),
     wizardClient.indexOf('async back()'),
   );
+  const next = wizardClient.slice(
+    wizardClient.indexOf('async next('),
+    wizardClient.indexOf('async resume()'),
+  );
 
   assert.doesNotMatch(resume, /callGateway\('wizard\.status'/);
   assert.match(resume, /callGateway\('wizard\.next'/);
-  assert.doesNotMatch(wizardClient, /timeoutMs:\s*null/);
+  assert.match(next, /timeoutMs:\s*null/);
   assert.doesNotMatch(waitForConnection, /gatewayManager\.reconnect\(\)/);
   assert.match(wizardOperations, /setup\.wizard\.connectingGateway/);
   assert.match(wizardOperations, /setup\.wizard\.inspectingSession/);
@@ -570,6 +578,19 @@ test('BUG-ONB-50 retry recovers an upstream-reaped Wizard session instead of sur
   assert.match(retry, /wizardClientRef\.current!\.retry\(\)/);
   assert.match(retry, /isOpenClawWizardSessionLost\(error\)/);
   assert.match(retry, /recoverLostWizardSession\(wizardClientRef\.current!\)/);
+  assert.match(retry, /recoveryMode === "runtime"[\s\S]*?applyWizardResult\(completedResult, operationId\)/);
+  assert.match(setupFlow, /setWizardRecoveryMode\("runtime"\)/);
+});
+
+test('BUG-WIZ-01 返回配置页后继续 Gateway 终态核验而不重启官方向导', () => {
+  const wizardHook = hookFile('useWizardSession');
+  const autoStart = wizardHook.slice(
+    wizardHook.indexOf('const wizardAutoStartRef'),
+    wizardHook.indexOf('return {', wizardHook.indexOf('const wizardAutoStartRef')),
+  );
+
+  assert.match(autoStart, /wizardRecoveryModeRef\.current === "runtime"[\s\S]*?retryOfficialOnboarding\(\)/);
+  assert.match(autoStart, /void startOfficialOnboarding\(\)/);
 });
 
 test('BUG-ONB-46 Gateway 执行的进度步骤只由官方会话轮询', () => {

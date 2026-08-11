@@ -28,7 +28,7 @@ Wizard 步骤文本属于 Runtime 或插件所有。接入 OpenClaw `createSetup
 | --- | --- | --- |
 | Wizard 返回 `externalUrl` | 结构化授权地址 | 本地二维码、复制地址、浏览器打开 |
 | 钉钉当前授权 note | 当前 step 正文中的唯一 HTTPS 授权地址 | 保留原文并原样生成本地二维码 |
-| 声明 `web.login.start` 与 `web.login.wait` 的渠道插件 | `qrDataUrl`、`message`、`connected` | 直接显示官方 PNG 二维码并轮询官方结果 |
+| 声明 `web.login.start` 与 `web.login.wait` 的渠道插件 | `qrDataUrl`、`message`、`connected` | 显示官方 PNG 二维码，在单次官方等待窗口内监听轮换与终态；等待结束后由用户继续监听或重新生成 |
 | 飞书当前扫码创建应用流程 | 插件内部直接向终端输出二维码，Wizard step 不携带二维码地址 | 保留官方原始步骤；上游未提供结构化载荷前不抓取终端画面或伪造地址 |
 | 企业微信外部插件 | 由当前已安装插件版本定义的配置字段与连接方式 | 按当前插件的正式 schema 和 Wizard step 呈现，不从渠道名称推断扫码入口 |
 | 其他渠道 | 取决于当前 Runtime 插件的 Wizard step 或正式 `gatewayMethods` | 动态呈现；没有正式载荷时显示不可用，不按渠道名称硬编码扫码能力 |
@@ -45,6 +45,7 @@ Wizard 步骤文本属于 Runtime 或插件所有。接入 OpenClaw `createSetup
 - OpenClaw Web 扫码请求的封闭参数 schema：[`packages/gateway-protocol/src/schema/channels.ts`](https://github.com/openclaw/openclaw/blob/main/packages/gateway-protocol/src/schema/channels.ts)
 - OpenClaw Web 扫码插件选择和结果转发：[`src/gateway/server-methods/web.ts`](https://github.com/openclaw/openclaw/blob/main/src/gateway/server-methods/web.ts)
 - WhatsApp 插件对 Web 扫码方法的正式声明：[`extensions/whatsapp/src/shared.ts`](https://github.com/openclaw/openclaw/blob/main/extensions/whatsapp/src/shared.ts)
+- OpenClaw macOS 客户端的有界扫码等待与二维码轮换：[`apps/macos/Sources/OpenClaw/ChannelsStore+Lifecycle.swift`](https://github.com/openclaw/openclaw/blob/main/apps/macos/Sources/OpenClaw/ChannelsStore%2BLifecycle.swift)
 - 钉钉官方插件当前仍只在 note 正文输出授权 URL：[`src/onboarding.ts`](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/main/src/onboarding.ts)
 
 流程静态预览见 [`../previews/junqi-first-run-flow.html`](../previews/junqi-first-run-flow.html)。

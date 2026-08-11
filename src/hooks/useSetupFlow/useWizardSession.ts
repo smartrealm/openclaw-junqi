@@ -29,11 +29,12 @@ import {
   type OpenClawWizardStep,
 } from "@/services/openclawWizard";
 import { cacheGatewayTarget } from "./helpers";
-import type { StepStatus } from "./types";
+import type { StepStatus, WizardRecoveryMode } from "./types";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import { getGatewayDeviceCredentialForUrl } from "@/services/gateway/credentialProvider";
 
 const GATEWAY_HANDOFF_CONNECTION_TIMEOUT_MS = 120_000;
+const WIZARD_COMPLETION_RECONNECT_SOURCE = "wizard-completion";
 
 export interface WizardSessionPorts {
   setupStep: SetupStep;
@@ -71,13 +72,15 @@ export function useWizardSession({
   const [wizardStep, setWizardStep] = useState<OpenClawWizardStep | null>(null);
   const [wizardSubmitting, setWizardSubmitting] = useState(false);
   const [wizardError, setWizardError] = useState<string | null>(null);
-  const [wizardRecoveryRequired, setWizardRecoveryRequired] = useState(false);
+  const [wizardRecoveryMode, setWizardRecoveryModeState] = useState<WizardRecoveryMode>(null);
   const [wizardActivity, setWizardActivity] = useState<string | null>(null);
   const wizardSubmitInFlightRef = useRef(false);
   const wizardNavigationInFlightRef = useRef<"next" | null>(null);
   const wizardRecoveryInFlightRef = useRef<"retry" | "reclaim" | null>(null);
   const wizardOperationRef = useRef(0);
   const wizardSessionScopeRef = useRef<OpenClawWizardSessionScope | null>(null);
+  const wizardRecoveryModeRef = useRef<WizardRecoveryMode>(null);
+  const completedWizardResultRef = useRef<OpenClawWizardResult | null>(null);
   const wizardClientRef = useRef<OpenClawWizardClient | null>(null);
   if (!wizardClientRef.current) {
     wizardClientRef.current = new OpenClawWizardClient(
@@ -85,6 +88,10 @@ export function useWizardSession({
       createScopedOpenClawWizardSessionStore(() => wizardSessionScopeRef.current),
     );
   }
+  const setWizardRecoveryMode = useCallback((mode: WizardRecoveryMode) => {
+    wizardRecoveryModeRef.current = mode;
+    setWizardRecoveryModeState(mode);
+  }, []);
   const wizardFailureMessage = useCallback((error: unknown): string => {
     const diagnostic = sanitizeSetupDiagnostic(error instanceof Error ? error.message : error);
     appendSetupLog({
@@ -190,7 +197,7 @@ export function useWizardSession({
       gatewayManager.connect(gatewayWsUrl, token, deviceToken);
       return true;
     } catch {
-      // The normal connection resolver can still read settings/config later.
+      // 常规连接解析器稍后仍可重新读取设置和配置。
       gatewayManager.reconnect();
       return false;
     }
@@ -240,9 +247,13 @@ export function useWizardSession({
     }
     if (result.status === "cancelled") {
       setWizardStep(null);
+      setWizardRecoveryMode(null);
       throw new OpenClawWizardCancelledError();
     }
     if (result.done || result.status === "done") {
+      completedWizardResultRef.current = result;
+      setWizardStep(null);
+      setWizardRecoveryMode("runtime");
       // 官方会话已经终态，即使下方运行时交接失败也不能重放已接受的凭据；恢复只能重新
       // 核验 Gateway 所有权与所选配置身份。
       // 官方向导可能默认安装平台服务，宣布完成前必须收敛所有权，避免前台子进程与系统服务
@@ -250,7 +261,14 @@ export function useWizardSession({
       try {
         await handoffGatewayToOfficialService();
         assertWizardOperationCurrent(operationId);
-        await waitForGatewayConnection(operationId, GATEWAY_HANDOFF_CONNECTION_TIMEOUT_MS);
+        const reconnected = await gatewayLifecycle.reconnect(WIZARD_COMPLETION_RECONNECT_SOURCE);
+        assertWizardOperationCurrent(operationId);
+        if (!reconnected.success) {
+          throw new Error(reconnected.error || t(
+            "setup.wizard.connectionTimeout",
+            "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成经认证的 Gateway 连接。",
+          ));
+        }
         assertWizardOperationCurrent(operationId);
         const selectedGatewayReady = await probeSelectedGateway();
         assertWizardOperationCurrent(operationId);
@@ -268,23 +286,26 @@ export function useWizardSession({
           handoffError instanceof Error ? handoffError.message : handoffError,
         );
         setWizardStep(null);
-        setWizardRecoveryRequired(false);
+        setWizardRecoveryMode("runtime");
+        setWizardActivity(null);
+        setWizardError(message);
         setGatewayRunning(false);
         patchStep("gateway", "error", message);
         appendSetupLog({ source: "setup", step: "gateway", message, level: "error" });
         setSetupError(message);
         report(message);
-        replaceSetupStep("error");
+        replaceSetupStep("configure-openclaw");
         return result;
       }
-      updateOnboardingRequirement(false);
+      completedWizardResultRef.current = null;
       setWizardStep(null);
+      setWizardActivity(null);
       setWizardError(null);
-      setWizardRecoveryRequired(false);
+      setWizardRecoveryMode(null);
       setSetupError(null);
+      setGatewayRunning(true);
+      updateOnboardingRequirement(false);
       setPostStorageStep("ready");
-      await refreshGatewayConnectionTarget();
-      assertWizardOperationCurrent(operationId);
       report(t("setup.ready"), 100);
       replaceSetupStep("ready");
       return result;
@@ -296,7 +317,7 @@ export function useWizardSession({
     report(result.step.title || result.step.message || t("setup.wizard.title", "配置 OpenClaw"), 82);
     replaceSetupStep("configure-openclaw");
     return result;
-  }, [appendSetupLog, assertWizardOperationCurrent, refreshGatewayConnectionTarget, report, setGatewayRunning, setPostStorageStep, replaceSetupStep, setSetupError, t, updateOnboardingRequirement]);
+  }, [appendSetupLog, assertWizardOperationCurrent, report, setGatewayRunning, setPostStorageStep, replaceSetupStep, setSetupError, setWizardRecoveryMode, t, updateOnboardingRequirement]);
 
   const recoverLostWizardSession = useCallback(async (
     client: OpenClawWizardClient,
@@ -324,7 +345,7 @@ export function useWizardSession({
   const startOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     const operationId = beginWizardOperation();
     setWizardError(null);
-    setWizardRecoveryRequired(false);
+    setWizardRecoveryMode(null);
     setWizardSubmitting(true);
     try {
       showWizardActivity(t("setup.wizard.connectingGateway", "正在连接 OpenClaw Gateway…"));
@@ -349,7 +370,7 @@ export function useWizardSession({
     } catch (error) {
       if (error instanceof OpenClawWizardOperationSupersededError) return null;
       const message = wizardFailureMessage(error);
-      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
+      setWizardRecoveryMode(classifyOpenClawWizardFailure(error) === "already_running" ? "reclaim" : "wizard");
       setWizardActivity(null);
       setWizardError(message);
       setSetupError(message);
@@ -358,12 +379,12 @@ export function useWizardSession({
     } finally {
       if (wizardOperationRef.current === operationId) setWizardSubmitting(false);
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, replaceSetupStep, setSetupError, showWizardActivity, t, waitForGatewayConnection, wizardFailureMessage]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, replaceSetupStep, setSetupError, setWizardRecoveryMode, showWizardActivity, t, waitForGatewayConnection, wizardFailureMessage]);
 
   const resumeOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     const operationId = beginWizardOperation();
     setWizardError(null);
-    setWizardRecoveryRequired(false);
+    setWizardRecoveryMode(null);
     setWizardSubmitting(true);
     try {
       showWizardActivity(t("setup.wizard.connectingGateway", "正在连接 OpenClaw Gateway…"));
@@ -386,7 +407,7 @@ export function useWizardSession({
         }
       }
       const message = wizardFailureMessage(failure);
-      setWizardRecoveryRequired(classifyOpenClawWizardFailure(failure) === "already_running");
+      setWizardRecoveryMode(classifyOpenClawWizardFailure(failure) === "already_running" ? "reclaim" : "wizard");
       setWizardActivity(null);
       setWizardError(message);
       setSetupError(message);
@@ -395,7 +416,7 @@ export function useWizardSession({
     } finally {
       if (wizardOperationRef.current === operationId) setWizardSubmitting(false);
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, replaceSetupStep, setSetupError, showWizardActivity, t, waitForGatewayConnection, wizardFailureMessage]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverLostWizardSession, replaceSetupStep, setSetupError, setWizardRecoveryMode, showWizardActivity, t, waitForGatewayConnection, wizardFailureMessage]);
 
   const submitWizardStep = useCallback(async (stepId: string, value?: unknown) => {
     // React 状态更新异步。终态说明在按钮进入提交态前可能收到双击，第二个请求会与官方
@@ -405,7 +426,7 @@ export function useWizardSession({
     wizardSubmitInFlightRef.current = true;
     wizardNavigationInFlightRef.current = "next";
     setWizardError(null);
-    setWizardRecoveryRequired(false);
+    setWizardRecoveryMode(null);
     setWizardSubmitting(true);
     try {
       await waitForGatewayConnection(operationId);
@@ -442,7 +463,7 @@ export function useWizardSession({
         }
       }
       const message = wizardFailureMessage(error);
-      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
+      setWizardRecoveryMode(classifyOpenClawWizardFailure(error) === "already_running" ? "reclaim" : "wizard");
       setWizardError(message);
       setSetupError(message);
       return null;
@@ -453,16 +474,27 @@ export function useWizardSession({
         setWizardSubmitting(false);
       }
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverAfterGatewayHandoff, recoverLostWizardSession, resumeOfficialOnboarding, setSetupError, t, waitForGatewayConnection, wizardFailureMessage]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, recoverAfterGatewayHandoff, recoverLostWizardSession, resumeOfficialOnboarding, setSetupError, setWizardRecoveryMode, t, waitForGatewayConnection, wizardFailureMessage]);
 
   const retryOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     if (wizardRecoveryInFlightRef.current || wizardNavigationInFlightRef.current) return null;
     const operationId = beginWizardOperation();
     wizardRecoveryInFlightRef.current = "retry";
     setWizardError(null);
-    setWizardRecoveryRequired(false);
+    const recoveryMode = wizardRecoveryModeRef.current;
+    setWizardRecoveryMode(recoveryMode);
     setWizardSubmitting(true);
     try {
+      if (recoveryMode === "runtime") {
+        const completedResult = completedWizardResultRef.current;
+        if (!completedResult) {
+          throw new Error(t(
+            "setup.wizard.missingCompletionState",
+            "OpenClaw 配置已经完成，但本地恢复状态已失效。请重新核验当前运行时。",
+          ));
+        }
+        return await applyWizardResult(completedResult, operationId);
+      }
       await waitForGatewayConnection(operationId);
       let result: OpenClawWizardResult;
       try {
@@ -478,7 +510,7 @@ export function useWizardSession({
     } catch (error) {
       if (error instanceof OpenClawWizardOperationSupersededError) return null;
       const message = wizardFailureMessage(error);
-      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
+      setWizardRecoveryMode(classifyOpenClawWizardFailure(error) === "already_running" ? "reclaim" : recoveryMode || "wizard");
       setWizardError(message);
       setSetupError(message);
       replaceSetupStep("configure-openclaw");
@@ -489,7 +521,7 @@ export function useWizardSession({
         setWizardSubmitting(false);
       }
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, setWizardRecoveryMode, t, waitForGatewayConnection, wizardFailureMessage]);
 
   const pollOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     if (wizardNavigationInFlightRef.current || wizardRecoveryInFlightRef.current) return null;
@@ -501,12 +533,11 @@ export function useWizardSession({
     const operationId = beginWizardOperation();
     wizardRecoveryInFlightRef.current = "reclaim";
     setWizardError(null);
-    setWizardRecoveryRequired(false);
+    setWizardRecoveryMode(null);
     setWizardSubmitting(true);
     try {
-      // OpenClaw exposes no API for enumerating another client's wizard. A
-      // selected-runtime restart safely clears that in-memory lock without
-      // changing the selected data directory, workspace, or configuration.
+      // OpenClaw 没有枚举其他客户端向导的接口。重启所选运行时只清除进程内会话锁，
+      // 不改变所选数据目录、工作区或配置。
       wizardClientRef.current!.forgetSession();
       const restarted = await gatewayLifecycle.restart("wizard-reclaim");
       if (restarted?.success === false) {
@@ -519,7 +550,7 @@ export function useWizardSession({
     } catch (error) {
       if (error instanceof OpenClawWizardOperationSupersededError) return null;
       const message = wizardFailureMessage(error);
-      setWizardRecoveryRequired(classifyOpenClawWizardFailure(error) === "already_running");
+      setWizardRecoveryMode(classifyOpenClawWizardFailure(error) === "already_running" ? "reclaim" : "wizard");
       setWizardError(message);
       setSetupError(message);
       replaceSetupStep("configure-openclaw");
@@ -530,7 +561,7 @@ export function useWizardSession({
         setWizardSubmitting(false);
       }
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, waitForGatewayConnection, wizardFailureMessage]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, setWizardRecoveryMode, waitForGatewayConnection, wizardFailureMessage]);
 
   const wizardAutoStartRef = useRef(false);
   useEffect(() => {
@@ -541,15 +572,19 @@ export function useWizardSession({
     if (navigationLeavingRef.current || wizardStep || wizardSubmitting || wizardError) return;
     if (wizardAutoStartRef.current) return;
     wizardAutoStartRef.current = true;
+    if (wizardRecoveryModeRef.current === "runtime") {
+      void retryOfficialOnboarding();
+      return;
+    }
     void startOfficialOnboarding();
-  }, [setupStep, startOfficialOnboarding, wizardError, wizardStep, wizardSubmitting]);
+  }, [setupStep, retryOfficialOnboarding, startOfficialOnboarding, wizardError, wizardStep, wizardSubmitting]);
 
   return {
     wizardStep,
     wizardSubmitting,
     wizardActivity,
     wizardError,
-    wizardRecoveryRequired,
+    wizardRecoveryMode,
     submitWizardStep,
     pollWizard: pollOfficialOnboarding,
     retryWizard: retryOfficialOnboarding,

@@ -243,7 +243,7 @@ export function useSetupFlow(
     wizardSubmitting,
     wizardActivity,
     wizardError,
-    wizardRecoveryRequired,
+    wizardRecoveryMode,
     submitWizardStep,
     pollWizard,
     retryWizard,
@@ -600,7 +600,7 @@ export function useSetupFlow(
       || runtimeSelectionInFlightRef.current
       || gatewayReadyContinuationInFlightRef.current
       || dashboardEntryInFlightRef.current
-      || isWizardOperationInFlight()
+      || (setupStep !== "configure-openclaw" && isWizardOperationInFlight())
     ),
   });
 
@@ -917,7 +917,7 @@ export function useSetupFlow(
     wizardSubmitting,
     wizardActivity,
     wizardError,
-    wizardRecoveryRequired,
+    wizardRecoveryMode,
     needsOnboarding,
     gatewayReadyContinuation,
     repairing,

@@ -7,7 +7,6 @@ import {
   OpenClawWizardCancelledError,
   OpenClawWizardClient,
   OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS,
-  OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS,
   OpenClawWizardOperationSupersededError,
   createScopedOpenClawWizardSessionStore,
 } from './openclawWizard';
@@ -50,7 +49,7 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
     {
       method: 'wizard.next',
       params: { sessionId: 'session-1', answer: { stepId: 'provider', value: { id: 'dynamic' } } },
-      options: { timeoutMs: OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS },
+      options: { timeoutMs: null },
     },
   ]);
   await assert.rejects(() => client.next('provider', 'again'), /not running/);
@@ -114,7 +113,7 @@ test('首次引导只启动官方完整向导并保留渠道跳过说明', async
   });
 });
 
-test('wizard client retains its session when a bounded interactive request times out', async () => {
+test('wizard client lets the official plugin own interactive authorization timeout', async () => {
   const calls: Array<{ method: string; options?: { timeoutMs?: number | null } }> = [];
   const client = new OpenClawWizardClient(async (method, _params, options) => {
     calls.push({ method, ...(options ? { options } : {}) });
@@ -126,20 +125,20 @@ test('wizard client retains its session when a bounded interactive request times
         step: { id: 'external-authorization', type: 'action' },
       };
     }
-    throw new Error(`Request timeout (${OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS}ms)`);
+    throw new Error('Gateway transport closed');
   });
 
   await client.start();
   await assert.rejects(
     () => client.next('external-authorization'),
-    /Request timeout/,
+    /Gateway transport closed/,
   );
 
   assert.equal(client.activeSessionId, 'session-timeout');
   assert.equal(client.currentStepView?.id, 'external-authorization');
   assert.deepEqual(calls.at(-1), {
     method: 'wizard.next',
-    options: { timeoutMs: OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS },
+    options: { timeoutMs: null },
   });
 });
 

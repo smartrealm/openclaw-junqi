@@ -130,7 +130,8 @@ test("BUG-WFR-05 stale Wizard completion cannot commit official-service handoff 
   );
   assert.match(applyResult, /result: OpenClawWizardResult,\s*operationId: number/);
   assert.match(applyResult, /await handoffGatewayToOfficialService\(\);\s*assertWizardOperationCurrent\(operationId\)/);
+  assert.match(applyResult, /await gatewayLifecycle\.reconnect\(WIZARD_COMPLETION_RECONNECT_SOURCE\);\s*assertWizardOperationCurrent\(operationId\)/);
   assert.match(applyResult, /await probeSelectedGateway\(\);\s*assertWizardOperationCurrent\(operationId\)/);
   assert.doesNotMatch(applyResult, /probeActiveRuntimeModel|modelProbe/);
-  assert.match(applyResult, /await refreshGatewayConnectionTarget\(\);\s*assertWizardOperationCurrent\(operationId\)/);
+  assert.doesNotMatch(applyResult, /await refreshGatewayConnectionTarget\(\)/);
 });

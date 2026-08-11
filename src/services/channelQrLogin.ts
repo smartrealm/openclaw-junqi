@@ -1,10 +1,12 @@
-export type ChannelQrPhase = 'idle' | 'preparing' | 'waiting' | 'verifying' | 'connected' | 'expired' | 'error' | 'cancelled';
+export type ChannelQrPhase = 'idle' | 'preparing' | 'waiting' | 'pending' | 'connected' | 'error' | 'cancelled';
+
+export type ChannelQrError = '' | 'qr_start_failed' | 'qr_wait_failed' | 'qr_invalid_response';
 
 export interface ChannelQrState {
   phase: ChannelQrPhase;
   qrDataUrl: string | null;
   message: string;
-  error: string;
+  error: ChannelQrError;
 }
 
 export interface ChannelQrLoginGateway {
@@ -12,104 +14,27 @@ export interface ChannelQrLoginGateway {
   wait(params: Record<string, unknown>): Promise<unknown>;
 }
 
-export interface ChannelStatusGateway {
-  status(params: Record<string, unknown>): Promise<unknown>;
+interface QrStartResult {
+  message: string;
+  qrDataUrl: string | null;
+  connected: boolean;
 }
 
-type QrLoginOutcome = 'waiting' | 'connected';
-
-const CHANNEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const MAX_QR_DATA_URL_LENGTH = 16_384;
-const QR_LOGIN_SESSION_TIMEOUT_MS = 10 * 60_000;
-const MAX_GATEWAY_MESSAGE_LENGTH = 512;
-const MIN_PENDING_POLL_DELAY_MS = 1_000;
-const CHANNEL_STATUS_ATTEMPTS = 5;
-const CHANNEL_STATUS_RETRY_MS = 1_000;
-const CHANNEL_STATUS_TIMEOUT_MS = 15_000;
-
-interface QrResult {
-  message?: string;
-  qrDataUrl?: string;
-  connected?: boolean;
+interface QrWaitResult {
+  message: string;
+  qrDataUrl: string | null;
+  connected: boolean;
 }
 
 type StateListener = (state: ChannelQrState) => void;
-type ConnectedVerifier = (signal: AbortSignal) => Promise<boolean>;
 
-async function abortableDelay(delayMs: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return;
-  await new Promise<void>((resolve) => {
-    const timeout = window.setTimeout(done, delayMs);
-    signal.addEventListener('abort', done, { once: true });
-    function done() {
-      window.clearTimeout(timeout);
-      signal.removeEventListener('abort', done);
-      resolve();
-    }
-  });
-}
+const CHANNEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const MAX_QR_DATA_URL_LENGTH = 16_384;
+const MAX_GATEWAY_MESSAGE_LENGTH = 512;
+const QR_START_TIMEOUT_MS = 30_000;
+const QR_WAIT_WINDOW_MS = 120_000;
 
-function statusAccountConnected(payload: unknown, channelId: string, accountId?: string): boolean {
-  if (!payload || typeof payload !== 'object') return false;
-  const root = payload as Record<string, unknown>;
-  const accountMap = root.channelAccounts;
-  const accounts = accountMap && typeof accountMap === 'object'
-    ? (accountMap as Record<string, unknown>)[channelId]
-    : undefined;
-  const rows = Array.isArray(accounts)
-    ? accounts.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object')
-    : [];
-  const expectedAccountId = accountId && accountId !== 'default' ? accountId : undefined;
-  const account = expectedAccountId
-    ? rows.find((row) => row.accountId === expectedAccountId)
-    : rows.find((row) => row.accountId === 'default') ?? rows[0];
-  if (account?.connected === true) return true;
-  if (account?.linked === true && account.running === true) return true;
-
-  // 渠道级汇总只能核验默认账号，不能用其他账号的健康状态确认当前扫码账号。
-  if (expectedAccountId) return false;
-  const channelMap = root.channels;
-  const channel = channelMap && typeof channelMap === 'object'
-    ? (channelMap as Record<string, unknown>)[channelId]
-    : undefined;
-  return Boolean(
-    channel
-    && typeof channel === 'object'
-    && (channel as Record<string, unknown>).connected === true,
-  );
-}
-
-export function createOfficialChannelConnectedVerifier(
-  gateway: ChannelStatusGateway,
-  channelId: string,
-  accountId?: string,
-): ConnectedVerifier {
-  if (!CHANNEL_ID_PATTERN.test(channelId)) {
-    throw new Error('Channel ID is invalid for status verification.');
-  }
-  return async (signal) => {
-    let lastError: unknown;
-    for (let attempt = 0; attempt < CHANNEL_STATUS_ATTEMPTS; attempt += 1) {
-      if (signal.aborted) return false;
-      try {
-        const status = await gateway.status({
-          channel: channelId,
-          probe: true,
-          timeoutMs: CHANNEL_STATUS_TIMEOUT_MS,
-        });
-        if (statusAccountConnected(status, channelId, accountId)) return true;
-        lastError = undefined;
-      } catch (error) {
-        lastError = error;
-      }
-      if (attempt < CHANNEL_STATUS_ATTEMPTS - 1) {
-        await abortableDelay(CHANNEL_STATUS_RETRY_MS, signal);
-      }
-    }
-    if (lastError) throw lastError;
-    return false;
-  };
-}
+class InvalidQrResultError extends Error {}
 
 export function safeChannelQrDataUrl(value: unknown): string | null {
   return typeof value === 'string'
@@ -119,29 +44,59 @@ export function safeChannelQrDataUrl(value: unknown): string | null {
     : null;
 }
 
-function safeGatewayMessage(value: unknown): string {
-  return typeof value === 'string'
-    ? value
-      .replace(/[\u0000-\u001F\u007F]/g, ' ')
-      .replace(/\b(token|secret|password|credential)\s*[:=]\s*\S+/gi, '$1=[REDACTED]')
-      .trim()
-      .slice(0, MAX_GATEWAY_MESSAGE_LENGTH)
-    : '';
+function safeGatewayMessage(value: string): string {
+  return value
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\b(token|secret|password|credential)\s*[:=]\s*\S+/gi, '$1=[REDACTED]')
+    .trim()
+    .slice(0, MAX_GATEWAY_MESSAGE_LENGTH);
 }
 
-function resultRecord(value: unknown): QrResult {
-  return value && typeof value === 'object' ? value as QrResult : {};
+function resultObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new InvalidQrResultError('OpenClaw QR result must be an object.');
+  }
+  return value as Record<string, unknown>;
 }
 
-function qrLoginOutcome(result: QrResult): QrLoginOutcome {
-  if (result.connected === true) return 'connected';
-  return 'waiting';
+function optionalQrDataUrl(value: unknown): string | null {
+  if (value === undefined) return null;
+  const qrDataUrl = safeChannelQrDataUrl(value);
+  if (!qrDataUrl) {
+    throw new InvalidQrResultError('OpenClaw QR result contains an invalid PNG data URL.');
+  }
+  return qrDataUrl;
+}
+
+function parseStartResult(value: unknown): QrStartResult {
+  const result = resultObject(value);
+  if (typeof result.message !== 'string') {
+    throw new InvalidQrResultError('OpenClaw QR start result requires a message.');
+  }
+  if (result.connected !== undefined && typeof result.connected !== 'boolean') {
+    throw new InvalidQrResultError('OpenClaw QR start result contains an invalid connected field.');
+  }
+  return {
+    message: safeGatewayMessage(result.message),
+    qrDataUrl: optionalQrDataUrl(result.qrDataUrl),
+    connected: result.connected === true,
+  };
+}
+
+function parseWaitResult(value: unknown): QrWaitResult {
+  const result = resultObject(value);
+  if (typeof result.message !== 'string' || typeof result.connected !== 'boolean') {
+    throw new InvalidQrResultError('OpenClaw QR wait result requires message and connected fields.');
+  }
+  return {
+    message: safeGatewayMessage(result.message),
+    qrDataUrl: optionalQrDataUrl(result.qrDataUrl),
+    connected: result.connected,
+  };
 }
 
 export class ChannelQrLoginSession {
   private generation = 0;
-  private deadline = 0;
-  private verificationController: AbortController | null = null;
   private listeners = new Set<StateListener>();
   private state: ChannelQrState = {
     phase: 'idle',
@@ -154,7 +109,6 @@ export class ChannelQrLoginSession {
     private readonly gateway: ChannelQrLoginGateway,
     channelId: string,
     private readonly accountId?: string,
-    private readonly verifyConnected?: ConnectedVerifier,
   ) {
     if (!CHANNEL_ID_PATTERN.test(channelId)) {
       throw new Error('Channel ID is invalid for QR login.');
@@ -172,125 +126,107 @@ export class ChannelQrLoginSession {
   }
 
   async start(force = false): Promise<void> {
-    this.verificationController?.abort();
-    this.verificationController = null;
+    if (this.state.phase === 'preparing' || this.state.phase === 'waiting') return;
     const generation = ++this.generation;
-    this.deadline = Date.now() + QR_LOGIN_SESSION_TIMEOUT_MS;
     this.publish({ phase: 'preparing', qrDataUrl: null, message: '', error: '' });
     try {
-      const result = resultRecord(await this.gateway.start({
+      const result = parseStartResult(await this.gateway.start({
         ...this.accountParams(),
         force,
-        timeoutMs: 30000,
+        timeoutMs: QR_START_TIMEOUT_MS,
       }));
       if (!this.isCurrent(generation)) return;
-      const outcome = qrLoginOutcome(result);
-      if (outcome === 'connected') {
-        await this.publishConnected(generation, safeGatewayMessage(result.message));
+      if (result.connected) {
+        this.publishConnected(result.message);
         return;
       }
-      const qrDataUrl = safeChannelQrDataUrl(result.qrDataUrl);
-      this.publish({
-        phase: qrDataUrl ? 'waiting' : 'preparing',
-        qrDataUrl,
-        message: safeGatewayMessage(result.message),
-        error: '',
-      });
-      await this.waitUntilConnected(generation, qrDataUrl);
-    } catch {
-      if (this.isCurrent(generation)) {
-        this.publish({ phase: 'error', qrDataUrl: null, message: '', error: 'qr_request_failed' });
-      }
-    }
-  }
-
-  cancel(): void {
-    this.verificationController?.abort();
-    this.verificationController = null;
-    this.generation += 1;
-    this.publish({ ...this.state, phase: 'cancelled', qrDataUrl: null });
-  }
-
-  private async waitUntilConnected(
-    generation: number,
-    initialQrDataUrl: string | null,
-  ): Promise<void> {
-    let currentQrDataUrl = initialQrDataUrl;
-    while (this.isCurrent(generation)) {
-      if (Date.now() >= this.deadline) {
-        this.publish({ phase: 'expired', qrDataUrl: null, message: '', error: 'qr_expired' });
+      if (!result.qrDataUrl) {
+        this.publish({ phase: 'pending', qrDataUrl: null, message: result.message, error: '' });
         return;
       }
-      const result = resultRecord(await this.gateway.wait({
-        ...this.accountParams(),
-        timeoutMs: 120000,
-        ...(currentQrDataUrl ? { currentQrDataUrl } : {}),
-      }));
-      if (!this.isCurrent(generation)) return;
-      const outcome = qrLoginOutcome(result);
-      if (outcome === 'connected') {
-        await this.publishConnected(generation, safeGatewayMessage(result.message));
-        return;
-      }
-      const nextQrDataUrl = safeChannelQrDataUrl(result.qrDataUrl);
-      currentQrDataUrl = nextQrDataUrl ?? currentQrDataUrl;
-      this.publish({
-        phase: currentQrDataUrl ? 'waiting' : 'preparing',
-        qrDataUrl: currentQrDataUrl,
-        message: safeGatewayMessage(result.message),
-        error: '',
-      });
-      if (!nextQrDataUrl) {
-        await this.delayBeforeNextPoll(generation, MIN_PENDING_POLL_DELAY_MS);
-      }
-    }
-  }
-
-  private async publishConnected(generation: number, message: string): Promise<void> {
-    if (!this.verifyConnected) {
-      this.publish({ phase: 'connected', qrDataUrl: null, message, error: '' });
-      return;
-    }
-
-    this.publish({
-      phase: 'verifying',
-      qrDataUrl: null,
-      message,
-      error: '',
-    });
-    const controller = new AbortController();
-    this.verificationController = controller;
-    try {
-      const connected = await this.verifyConnected(controller.signal);
-      if (!this.isCurrent(generation)) return;
-      this.publish(
-        connected
-          ? { phase: 'connected', qrDataUrl: null, message, error: '' }
-          : {
-              phase: 'error',
-              qrDataUrl: null,
-              message,
-              error: 'qr_not_ready',
-            },
-      );
-    } catch {
+      this.publish({ phase: 'waiting', qrDataUrl: result.qrDataUrl, message: result.message, error: '' });
+      await this.waitWithinWindow(generation, result.qrDataUrl);
+    } catch (error) {
       if (!this.isCurrent(generation)) return;
       this.publish({
         phase: 'error',
         qrDataUrl: null,
-        message,
-        error: 'qr_status_failed',
+        message: '',
+        error: error instanceof InvalidQrResultError ? 'qr_invalid_response' : 'qr_start_failed',
       });
-    } finally {
-      if (this.verificationController === controller) {
-        this.verificationController = null;
-      }
     }
   }
 
-  private async delayBeforeNextPoll(generation: number, delayMs: number): Promise<void> {
-    await new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
-    if (!this.isCurrent(generation)) return;
+  async continueWaiting(): Promise<void> {
+    const qrDataUrl = this.state.qrDataUrl;
+    const canContinue = this.state.phase === 'pending' || this.state.error === 'qr_wait_failed';
+    if (!qrDataUrl || !canContinue) return;
+    const generation = ++this.generation;
+    this.publish({ ...this.state, phase: 'waiting', error: '' });
+    await this.waitWithinWindow(generation, qrDataUrl);
+  }
+
+  cancel(): void {
+    this.generation += 1;
+    this.publish({ ...this.state, phase: 'cancelled', qrDataUrl: null });
+  }
+
+  private async waitWithinWindow(generation: number, initialQrDataUrl: string): Promise<void> {
+    const startedAt = Date.now();
+    let currentQrDataUrl = initialQrDataUrl;
+    let didRunFinalWait = false;
+    try {
+      while (this.isCurrent(generation)) {
+        const remainingMs = QR_WAIT_WINDOW_MS - (Date.now() - startedAt);
+        if (remainingMs <= 0 && didRunFinalWait) {
+          this.publishPending(currentQrDataUrl, this.state.message);
+          return;
+        }
+        const timeoutMs = remainingMs > 0 ? remainingMs : 1;
+        if (remainingMs <= 0) didRunFinalWait = true;
+        const result = parseWaitResult(await this.gateway.wait({
+          ...this.accountParams(),
+          timeoutMs,
+          currentQrDataUrl,
+        }));
+        if (!this.isCurrent(generation)) return;
+        if (result.connected) {
+          this.publishConnected(result.message);
+          return;
+        }
+        if (!result.qrDataUrl) {
+          this.publishPending(currentQrDataUrl, result.message);
+          return;
+        }
+        currentQrDataUrl = result.qrDataUrl;
+        this.publish({
+          phase: 'waiting',
+          qrDataUrl: currentQrDataUrl,
+          message: result.message,
+          error: '',
+        });
+        if (didRunFinalWait) {
+          this.publishPending(currentQrDataUrl, result.message);
+          return;
+        }
+      }
+    } catch (error) {
+      if (!this.isCurrent(generation)) return;
+      this.publish({
+        phase: 'error',
+        qrDataUrl: currentQrDataUrl,
+        message: this.state.message,
+        error: error instanceof InvalidQrResultError ? 'qr_invalid_response' : 'qr_wait_failed',
+      });
+    }
+  }
+
+  private publishPending(qrDataUrl: string, message: string): void {
+    this.publish({ phase: 'pending', qrDataUrl, message, error: '' });
+  }
+
+  private publishConnected(message: string): void {
+    this.publish({ phase: 'connected', qrDataUrl: null, message, error: '' });
   }
 
   private accountParams(): Record<string, string> {
