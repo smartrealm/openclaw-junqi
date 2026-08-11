@@ -259,7 +259,7 @@ export interface ChatMessage {
   timestamp: string;
   runId?: string | null;
   responseState?: 'streaming' | 'final' | 'error' | 'aborted';
-  status?: 'pending' | 'sent' | 'queued' | 'failed' | 'cancelled';
+  status?: 'pending' | 'held' | 'sent' | 'queued' | 'failed' | 'cancelled';
   deliveryError?: string;
   isStreaming?: boolean;
   mediaUrl?: string;

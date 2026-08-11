@@ -74,7 +74,8 @@ export function setupStepEntryState(
   if (reducedMotion || direction === 0) {
     return { opacity: 1, x: 0, y: 0 };
   }
-  if (mode === 'ambient') return { opacity: 0.98, x: 0, y: 4 };
+  // 运行状态会随探测和日志更新；进入时保持几何位置，避免状态交接被误感知为页面闪动。
+  if (mode === 'ambient') return { opacity: 1, x: 0, y: 0 };
   return {
     opacity: 0.96,
     x: direction * 12,
@@ -115,10 +116,13 @@ export function SetupStepTransition({
   );
 }
 
-export function SetupStepScene({ children }: { children: ReactNode }) {
+export function SetupStepScene({ children, className }: { children: ReactNode; className?: string }) {
   const context = useContext(SetupStepTransitionContext);
+  const sceneClassName = ['flex w-full min-w-0 max-w-full justify-center overflow-x-clip', className]
+    .filter(Boolean)
+    .join(' ');
   if (!context) {
-    return <div className="flex w-full min-w-0 max-w-full justify-center overflow-x-clip">{children}</div>;
+    return <div className={sceneClassName}>{children}</div>;
   }
 
   const { direction, mode, reducedMotion, scene } = context;
@@ -131,7 +135,7 @@ export function SetupStepScene({ children }: { children: ReactNode }) {
         duration: reducedMotion ? 0 : mode === 'ambient' ? 0.14 : 0.18,
         ease: [0.22, 1, 0.36, 1],
       }}
-      className="flex w-full min-w-0 max-w-full justify-center overflow-x-clip"
+      className={sceneClassName}
       data-setup-scene-motion={mode}
     >
       {children}

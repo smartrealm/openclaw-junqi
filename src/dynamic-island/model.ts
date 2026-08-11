@@ -1,4 +1,3 @@
-import type { AgentWorkspaceTask, AgentWorkspaceTaskStatus } from '@/stores/agentWorkspaceStore';
 import type { PomodoroState } from '@/stores/petStore';
 import type { VoicePhase } from '@/types/voice';
 import type {
@@ -8,15 +7,6 @@ import type {
   VoiceModeSnapshot,
 } from '@/services/voice/VoiceModeCoordinator';
 import type { FocusProjection } from '@/focus/focusContext';
-
-export interface DynamicIslandTask {
-  id: string;
-  title: string;
-  agent: string;
-  projectPath: string;
-  status: AgentWorkspaceTaskStatus;
-  updatedAt: number;
-}
 
 export interface DynamicIslandSessionActivity {
   id: string;
@@ -77,7 +67,6 @@ export interface DynamicIslandSnapshot {
   petEnabled: boolean;
   dndMode: boolean;
   autoExpand: boolean;
-  tasks: DynamicIslandTask[];
   focus: FocusProjection | null;
   pomodoro: Pick<PomodoroState, 'enabled' | 'running' | 'paused' | 'phase' | 'endsAt' | 'pausedRemainingMs'>;
   resourceDrop: DynamicIslandDrop | null;
@@ -109,7 +98,6 @@ export function resolveDynamicIslandAgentActivity(input: {
   voicePhase: VoicePhase;
   voiceInput: DynamicIslandVoiceInput;
   sessionPhase?: DynamicIslandSessionActivity['phase'];
-  runningTaskCount: number;
 }): DynamicIslandAgentActivity | null {
   if (isDynamicIslandVoiceInputActive(input.voiceInput)) {
     if (input.voiceInput.phase === 'thinking') return 'thinking';
@@ -121,7 +109,7 @@ export function resolveDynamicIslandAgentActivity(input: {
   if (input.voicePhase === 'speaking' || input.voicePhase === 'queued') return 'generating';
   if (input.sessionPhase === 'thinking') return 'thinking';
   if (input.sessionPhase === 'generating') return 'generating';
-  if (input.runningTaskCount > 0 || input.sessionPhase === 'observing' || input.sessionPhase === 'compacting') return 'working';
+  if (input.sessionPhase === 'observing' || input.sessionPhase === 'compacting') return 'working';
   return null;
 }
 
@@ -144,7 +132,6 @@ export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
   petEnabled: false,
   dndMode: false,
   autoExpand: true,
-  tasks: [],
   focus: null,
   pomodoro: {
     enabled: false,
@@ -157,56 +144,14 @@ export const EMPTY_DYNAMIC_ISLAND_SNAPSHOT: DynamicIslandSnapshot = {
   resourceDrop: null,
 };
 
-const VISIBLE_TASK_STATUSES = new Set<AgentWorkspaceTaskStatus>([
-  'running',
-  'input_required',
-  'awaiting_review',
-  'done',
-  'failed',
-  'interrupted',
-]);
-
-const TASK_PRIORITY: Record<AgentWorkspaceTaskStatus, number> = {
-  input_required: 0,
-  awaiting_review: 1,
-  failed: 2,
-  interrupted: 3,
-  running: 4,
-  done: 5,
-  pending: 6,
-  todo: 7,
-  detached: 8,
-  cancelled: 9,
-};
-
-export function selectDynamicIslandTasks(tasks: AgentWorkspaceTask[], limit = 4): DynamicIslandTask[] {
-  return tasks
-    .filter((task) => !task.isDraft && VISIBLE_TASK_STATUSES.has(task.status))
-    .sort((left, right) => (
-      TASK_PRIORITY[left.status] - TASK_PRIORITY[right.status]
-      || right.updatedAt - left.updatedAt
-    ))
-    .slice(0, Math.max(0, limit))
-    .map((task) => ({
-      id: task.id,
-      title: task.title?.trim() || task.prompt.trim().slice(0, 64) || 'Agent task',
-      agent: task.agent,
-      projectPath: task.projectPath,
-      status: task.status,
-      updatedAt: task.updatedAt,
-    }));
-}
-
 export function shouldShowDynamicIsland(input: {
   enabled: boolean;
   preview?: boolean;
   mainMinimized: boolean;
   sessionRunning: boolean;
   voiceActive?: boolean;
-  tasks: DynamicIslandTask[];
   focus?: FocusProjection | null;
   resourceDrop: DynamicIslandDrop | null;
-  terminalPulse: boolean;
 }): boolean {
   if (!input.enabled) return false;
   if (input.preview) return true;
@@ -214,13 +159,7 @@ export function shouldShowDynamicIsland(input: {
   if (!input.mainMinimized) return false;
   return Boolean(input.focus)
     || input.sessionRunning
-    || Boolean(input.voiceActive)
-    || input.terminalPulse
-    || input.tasks.some((task) => (
-      task.status === 'running'
-      || task.status === 'input_required'
-      || task.status === 'awaiting_review'
-    ));
+    || Boolean(input.voiceActive);
 }
 
 export function shouldPeekForSnapshot(
@@ -256,14 +195,7 @@ export function shouldPeekForSnapshot(
     && previousObserverHealth.get(activity.id) !== activity.observer.health
   ))) return true;
 
-  const oldStatuses = new Map(previous.tasks.map((task) => [task.id, task.status]));
-  return next.tasks.some((task) => {
-    if (oldStatuses.get(task.id) === task.status) return false;
-    return task.status === 'input_required'
-      || task.status === 'awaiting_review'
-      || task.status === 'done'
-      || task.status === 'failed';
-  });
+  return false;
 }
 
 export function formatRemainingTime(snapshot: DynamicIslandSnapshot, now: number): string | null {

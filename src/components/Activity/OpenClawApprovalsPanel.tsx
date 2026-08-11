@@ -156,8 +156,9 @@ function ApprovalRow({
                   type="button"
                   onClick={() => onResolve(approval, decision)}
                   disabled={expired || resolvingId !== null}
+                  aria-busy={resolvingId === `${approval.kind}:${approval.id}`}
                   className={clsx(
-                    'inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[10.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45',
+                    'inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[10.5px] font-medium transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45',
                     decision === 'deny'
                       ? 'border-aegis-danger/35 text-aegis-danger hover:bg-aegis-danger/10'
                       : decision === 'allow-always'
@@ -337,13 +338,13 @@ export function OpenClawApprovalsPanel({ connected }: { connected: boolean }) {
             type="button"
             onClick={() => void refresh(connected, true)}
             disabled={!connected || loading}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-45"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-colors motion-reduce:transition-none hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-45"
             title={t('common.refresh', 'Refresh')}
             aria-label={t('common.refresh', 'Refresh')}
           >
             <RefreshCw size={12} className={clsx(loading && 'animate-spin')} />
           </button>
-          {loading && <LoaderCircle size={13} className="animate-spin text-aegis-text-dim" aria-label={t('activity.approvals.loading', 'Loading approvals')} />}
+          {loading && <LoaderCircle size={13} className="animate-spin motion-reduce:animate-none text-aegis-text-dim" aria-label={t('activity.approvals.loading', 'Loading approvals')} />}
         </div>
       </div>
 

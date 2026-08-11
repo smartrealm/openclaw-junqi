@@ -25,7 +25,7 @@ export interface ChatSendMessage {
   role: 'user';
   content: string;
   timestamp: string;
-  status?: 'pending' | 'sent' | 'queued' | 'failed' | 'cancelled';
+  status?: 'pending' | 'held' | 'sent' | 'queued' | 'failed' | 'cancelled';
   deliveryError?: string;
   mediaUrl?: string;
   mediaType?: string;
@@ -76,6 +76,11 @@ export interface ChatSendRequest {
 
 export interface ChatSendDispatchCancelled {
   cancelled: true;
+  clientMessageId: string;
+}
+
+export interface ChatSendHeldForSessionMutation {
+  heldForSessionMutation: true;
   clientMessageId: string;
 }
 
@@ -160,12 +165,12 @@ export class ChatSendCoordinator {
       }
       if (request.optimisticMessage === false) {
         state.updateMessage(sessionKey, clientMessageId, {
-          status: 'queued',
+          status: 'held',
           deliveryError: undefined,
           retryPayload,
         });
       }
-      return { queued: true, queue: 'session' as const, clientMessageId };
+      return { heldForSessionMutation: true, clientMessageId } satisfies ChatSendHeldForSessionMutation;
     }
 
     if (request.optimisticMessage !== false) {

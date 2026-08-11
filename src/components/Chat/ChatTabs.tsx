@@ -1099,11 +1099,11 @@ export function ChatTabs() {
     setTooltipTarget(null);
   }, []);
 
-  // ── Status ──
+  // 连接状态由文字和主题色共同表达；持续脉冲会干扰会话标签的稳定阅读。
   const statusDotClass = connected
     ? 'bg-aegis-primary'
     : connecting
-      ? 'bg-aegis-warning animate-pulse'
+      ? 'bg-aegis-warning'
       : 'bg-aegis-danger';
 
   const statusLabel = connected
@@ -1167,7 +1167,7 @@ export function ChatTabs() {
 
   return (
     <div
-      className="shrink-0 flex items-center h-[38px] bg-[var(--aegis-bg-frosted-60)] backdrop-blur-xl border-b border-[rgb(var(--aegis-overlay)/0.06)] relative z-20"
+      className="shrink-0 flex items-center h-[38px] bg-[var(--aegis-bg-frosted-60)] backdrop-blur-sm border-b border-[rgb(var(--aegis-overlay)/0.06)] relative z-20"
       role="tablist"
       aria-label={t('chat.sessions')}
     >

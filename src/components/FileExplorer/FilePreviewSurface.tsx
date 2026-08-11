@@ -69,7 +69,7 @@ export function FilePreviewSurface({
 
   if (content.kind === 'image') {
     return (
-      <div className={`flex min-h-[220px] items-center justify-center overflow-auto bg-[rgb(var(--aegis-overlay)/0.03)] p-3 ${boundedHeight}`}>
+      <div className={`flex min-h-[220px] items-center justify-center overflow-auto bg-aegis-surface p-3 ${boundedHeight}`}>
         <img
           src={content.url}
           alt={fileName}
@@ -177,7 +177,7 @@ export function FilePreviewSurface({
         <button
           type="button"
           onClick={onOpenExternal}
-          className="flex items-center gap-1.5 rounded border border-[rgb(var(--aegis-overlay)/0.1)] px-3 py-1.5 text-[11px] text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text"
+          className="flex items-center gap-1.5 rounded border border-aegis-border px-3 py-1.5 text-[11px] text-aegis-text-muted transition-colors hover:bg-aegis-hover hover:text-aegis-text"
         >
           <ExternalLink size={12} />
           {t('file.openExternal', 'Open with system app')}

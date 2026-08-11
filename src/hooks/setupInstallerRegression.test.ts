@@ -240,6 +240,11 @@ test('dependency runtime locations are explicit onboarding choices instead of ch
   assert.match(storageCommands, /Custom portable Git is only supported on Windows/);
 });
 
+test('storage read failures retry the native query without reloading the desktop WebView', () => {
+  assert.match(storageGate, /onClick: \(\) => void loadStorageStatus\(\)/);
+  assert.doesNotMatch(storageGate, /window\.location\.reload\(\)/);
+});
+
 test('default setup never constructs private Node.js or Git directories under OpenClaw state', () => {
   assert.doesNotMatch(paths, /runtime_dir\(\)\.join\("node"\)/);
   assert.doesNotMatch(paths, /runtime_dir\(\)\.join\("git"\)/);

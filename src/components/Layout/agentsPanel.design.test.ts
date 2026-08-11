@@ -16,5 +16,5 @@ test('agent rows open details directly without duplicated skill accordions', asy
   assert.doesNotMatch(agentsPanel, /gateway\.getSkills\(expandedAgentId\)/);
   assert.doesNotMatch(agentsPanel, /ChevronDown|ChevronRight|isExpanded/);
   assert.doesNotMatch(agentsPanel, /to: '\/agent-run'/);
-  assert.equal(source.match(/to: '\/ai-workspace'/g)?.length, 1);
+  assert.doesNotMatch(source, /to: '\/ai-workspace'/);
 });

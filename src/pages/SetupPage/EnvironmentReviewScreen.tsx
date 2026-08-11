@@ -1,4 +1,4 @@
-// Stable result page for step 2. Returning here never replays detection.
+// 环境复核只展示当前探测结果；返回该页不会重新触发检测。
 import { CheckCircle2, Container, Monitor, RefreshCw, Server } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -30,6 +30,7 @@ export function EnvironmentReviewScreen({ flow, logs }: { flow: SetupFlow; logs:
       title={t("setup.runtimeTitle")}
       subtitle={t("setup.runtimeSubtitle")}
       logs={logs}
+      contentSizing="runtime"
       previousAction={{ onClick: flow.goBack, disabled: actionsDisabled }}
       secondaryAction={{
         label: flow.checkingDocker

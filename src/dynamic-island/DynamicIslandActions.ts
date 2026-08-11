@@ -1,5 +1,4 @@
 export type DynamicIslandAction =
-  | { type: 'open-task'; taskId: string }
   | { type: 'open-session'; sessionKey: string }
   | { type: 'open-focus' }
   | { type: 'toggle-dnd' }

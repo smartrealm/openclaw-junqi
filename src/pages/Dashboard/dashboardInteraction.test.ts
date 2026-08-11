@@ -68,7 +68,6 @@ test('quick actions expose real product routes in addition to compaction', () =>
   assert.match(dashboard, /navigate\('\/analytics'\)/);
   assert.match(dashboard, /navigate\('\/skills'\)/);
   assert.match(dashboard, /navigate\('\/activity'\)/);
-  assert.match(dashboard, /navigate\('\/ai-workspace'\)/);
   assert.match(dashboard, /navigate\('\/terminal'\)/);
   assert.match(dashboard, /navigate\('\/cron'\)/);
   assert.match(dashboard, /isFeatureEnabled\('chat'\)/);
@@ -79,4 +78,12 @@ test('Gateway startup stays inside the dashboard instead of blocking the workben
   assert.match(dashboard, /role="status"/);
   assert.match(dashboard, /gatewayLifecycle\.recover\('dashboard'\)/);
   assert.match(dashboard, /dashboard\.gatewayConnectingDescription/);
+});
+
+test('dashboard refresh feedback avoids decorative motion while retaining real Gateway state', () => {
+  assert.match(dashboard, /gatewayConnecting/);
+  assert.doesNotMatch(dashboard, /animate-pulse-soft/);
+  assert.doesNotMatch(dashboard, /animate-slide-down/);
+  assert.doesNotMatch(components, /animate-slide-in-right/);
+  assert.doesNotMatch(components, /boxShadow: `0 0 6px/);
 });

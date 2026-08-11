@@ -11,7 +11,7 @@ import {
   RefreshCw,
   Wifi, WifiOff, Bot, Shield, Activity, Zap, ChevronRight,
   TrendingUp, TrendingDown, Minus, MessageSquarePlus,
-  ChartNoAxesCombined, Blocks, Gauge, Clock3, FolderKanban, TerminalSquare,
+  ChartNoAxesCombined, Blocks, Gauge, Clock3, TerminalSquare,
 } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { SceneTransition } from '@/components/shared/SceneTransition';
@@ -73,7 +73,7 @@ import { DashboardTokenUsageSummary } from './DashboardTokenUsageSummary';
 
 const CostChart = lazy(() => import('./CostChart').then((m) => ({ default: m.CostChart })));
 
-// ── Agent emoji + display name helpers ───────────────────────
+// ── 智能体图标与展示名称辅助函数 ───────────────────────
 
 import {
   SoccerBall, Cube, MagnifyingGlass, Lightbulb,
@@ -441,7 +441,6 @@ export function DashboardPage() {
         });
         return {
           color: isMain ? themeColorVar('primary') : themeColorVar('accent'),
-          glowColor: isMain ? themeColorVar('primary', 0.38) : themeColorVar('accent', 0.38),
           text: label,
           time: formatActivityTime(timestamp),
           timeTitle: formatActivityTimeTitle(timestamp),
@@ -466,13 +465,10 @@ export function DashboardPage() {
       recoveryReason={sceneRecovery.reason}
     >
 
-      {/* ════ SECTION 1: TOP BAR ════ */}
+      {/* ════ 第一部分：顶部栏 ════ */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-xl bg-gradient-to-br from-aegis-primary/15 to-aegis-primary/5 border border-aegis-primary/20 flex items-center justify-center"
-            style={{ boxShadow: `0 0 18px ${themeColorVar('primary', 0.16)}` }}
-          >
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-aegis-primary/10">
             <Shield size={20} className="text-aegis-primary" />
           </div>
           <div className="flex flex-col gap-0.5">
@@ -480,45 +476,36 @@ export function DashboardPage() {
               <h1 className="text-[20px] font-bold text-aegis-text tracking-normal">
                 {t('dashboard.title')}
               </h1>
-              {/* Status badge — inline with title so the idle/working state reads naturally */}
-              <AnimatePresence initial={false} mode="wait">
-                <motion.div
-                  key={`${connected}-${agentStatus}`}
-                  initial={{ opacity: 0, y: -3 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 3 }}
-                  transition={{ duration: 0.18 }}
-                  className={clsx(
-                    'flex min-w-[68px] items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border',
-                    connected
-                      ? agentStatus === 'working'
-                        ? 'bg-aegis-success/[0.08] border-aegis-success/30 text-aegis-success'
-                        : 'bg-aegis-text-dim/[0.06] border-aegis-text-dim/20 text-aegis-text-dim'
-                      : 'bg-aegis-danger/[0.08] border-aegis-danger/30 text-aegis-danger',
-                  )}
-                >
+              {/* 状态由真实连接和运行投影驱动，不为轮询刷新附加入场或脉冲动效。 */}
+              <div
+                className={clsx(
+                  'flex min-w-[68px] items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border',
+                  connected
+                    ? agentStatus === 'working'
+                      ? 'bg-aegis-success/[0.08] border-aegis-success/30 text-aegis-success'
+                      : 'bg-aegis-text-dim/[0.06] border-aegis-text-dim/20 text-aegis-text-dim'
+                    : 'bg-aegis-danger/[0.08] border-aegis-danger/30 text-aegis-danger',
+                )}
+              >
+                <span className={clsx(
+                  'flex h-3.5 w-3.5 items-center justify-center rounded-full border',
+                  connected
+                    ? agentStatus === 'working'
+                      ? 'border-aegis-success/30 bg-aegis-success/[0.06]'
+                      : 'border-aegis-text-dim/25 bg-aegis-text-dim/[0.04]'
+                    : 'border-aegis-danger/30 bg-aegis-danger/[0.06]',
+                )}>
                   <span className={clsx(
-                    'relative flex items-center justify-center w-3.5 h-3.5 rounded-full border',
+                    'h-1.5 w-1.5 rounded-full',
                     connected
-                      ? agentStatus === 'working'
-                        ? 'border-aegis-success/30 bg-aegis-success/[0.06]'
-                        : 'border-aegis-text-dim/25 bg-aegis-text-dim/[0.04]'
-                      : 'border-aegis-danger/30 bg-aegis-danger/[0.06]',
-                  )}>
-                    <span className={clsx(
-                      'w-1.5 h-1.5 rounded-full',
-                      connected
-                        ? agentStatus === 'working'
-                          ? 'bg-aegis-success animate-pulse-soft'
-                          : 'bg-aegis-text-dim'
-                        : 'bg-aegis-danger animate-pulse-soft',
-                    )} />
-                  </span>
-                  {connected
-                    ? (agentStatus === 'working' ? t('dashboard.working') : t('dashboard.idle'))
-                    : t('dashboard.offline')}
-                </motion.div>
-              </AnimatePresence>
+                      ? agentStatus === 'working' ? 'bg-aegis-success' : 'bg-aegis-text-dim'
+                      : 'bg-aegis-danger',
+                  )} />
+                </span>
+                {connected
+                  ? (agentStatus === 'working' ? t('dashboard.working') : t('dashboard.idle'))
+                  : t('dashboard.offline')}
+              </div>
             </div>
             <p className="text-[12px] text-aegis-text-dim">{t('dashboard.openclawControlPlane', 'OpenClaw control plane')}</p>
           </div>
@@ -537,7 +524,7 @@ export function DashboardPage() {
             )}
           </div>
 
-          {/* Refresh button */}
+          {/* 刷新按钮 */}
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -554,7 +541,7 @@ export function DashboardPage() {
             />
           </button>
 
-          {/* Connectivity icon */}
+          {/* 连接状态图标 */}
           {connected
             ? <Wifi size={15} className="text-aegis-success" />
             : <WifiOff size={15} className="text-aegis-danger" />
@@ -610,10 +597,10 @@ export function DashboardPage() {
         )}
       </AnimatePresence>
 
-      {/* ════ SETUP BANNER: shown when no AI provider is configured ════ */}
+      {/* ════ 配置提示：尚未配置模型时显示 ════ */}
       {connected && !hasProviders && !modelsLoading && (
         <div
-          className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-aegis-warning/30 bg-aegis-warning/[0.06] animate-slide-down"
+          className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-aegis-warning/30 bg-aegis-warning/[0.06]"
         >
           <div className="flex items-center gap-2.5 text-[13px] text-aegis-warning">
             <Zap size={15} className="shrink-0" />
@@ -681,7 +668,7 @@ export function DashboardPage() {
           {budgetPct !== null && (
             <div className="h-1.5 overflow-hidden rounded-full bg-[rgb(var(--aegis-overlay)/0.06)]" aria-hidden="true">
               <div
-                className={clsx('h-full rounded-full transition-[width] duration-500', budgetPct >= 100 ? 'bg-aegis-danger' : 'bg-aegis-primary')}
+                className={clsx('h-full rounded-full transition-[width] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none', budgetPct >= 100 ? 'bg-aegis-danger' : 'bg-aegis-primary')}
                 style={{ width: `${budgetPct}%` }}
               />
             </div>
@@ -887,7 +874,7 @@ export function DashboardPage() {
           <div className="grid grid-cols-2 gap-2">
             {isFeatureEnabled('chat') && (
               <QuickAction icon={MessageSquarePlus} label={t('chat.newSession', 'New session')}
-                glowColor={themeColorVar('primary', 0.08)} bgColor={themeColorVar('primary', 0.1)} iconColor={themeColorVar('primary')}
+                bgColor={themeColorVar('primary', 0.1)} iconColor={themeColorVar('primary')}
                 onClick={() => {
                   const agentId = resolveNewSessionAgentId(
                     activeSessionKey,
@@ -907,42 +894,37 @@ export function DashboardPage() {
             )}
             {isFeatureEnabled('agents') && (
               <QuickAction icon={Bot} label={t('nav.agents', 'Agents')}
-                glowColor={themeColorVar('accent', 0.08)} bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
+                bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
                 onClick={() => navigate('/agents')} />
             )}
             {isFeatureEnabled('analytics') && (
               <QuickAction icon={ChartNoAxesCombined} label={t('nav.usage', 'Usage')}
-                glowColor={themeColorVar('success', 0.08)} bgColor={themeColorVar('success', 0.1)} iconColor={themeColorVar('success')}
+                bgColor={themeColorVar('success', 0.1)} iconColor={themeColorVar('success')}
                 onClick={() => navigate('/analytics')} />
             )}
             {isFeatureEnabled('skills') && (
               <QuickAction icon={Blocks} label={t('nav.skills', 'Skills')}
-                glowColor={themeColorVar('accent', 0.08)} bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
+                bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
                 onClick={() => navigate('/skills')} />
             )}
             <QuickAction icon={Activity} label={t('nav.activity', '活动中心')}
-              glowColor={themeColorVar('primary', 0.08)} bgColor={themeColorVar('primary', 0.1)} iconColor={themeColorVar('primary')}
+              bgColor={themeColorVar('primary', 0.1)} iconColor={themeColorVar('primary')}
               onClick={() => navigate('/activity')} />
-            {isFeatureEnabled('agentRun') && (
-              <QuickAction icon={FolderKanban} label={t('nav.aiWorkspace', 'AI 工作台')}
-                glowColor={themeColorVar('accent', 0.08)} bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
-                onClick={() => navigate('/ai-workspace')} />
-            )}
             {isFeatureEnabled('terminal') && (
               <QuickAction icon={TerminalSquare} label={t('nav.terminal', '终端')}
-                glowColor={themeColorVar('success', 0.08)} bgColor={themeColorVar('success', 0.1)} iconColor={themeColorVar('success')}
+                bgColor={themeColorVar('success', 0.1)} iconColor={themeColorVar('success')}
                 onClick={() => navigate('/terminal')} />
             )}
             {isFeatureEnabled('cron') && (
               <QuickAction icon={Clock3} label={t('nav.cron', '定时任务')}
-                glowColor={themeColorVar('warning', 0.08)} bgColor={themeColorVar('warning', 0.1)} iconColor={themeColorVar('warning')}
+                bgColor={themeColorVar('warning', 0.1)} iconColor={themeColorVar('warning')}
                 onClick={() => navigate('/cron')} />
             )}
             <QuickAction icon={RefreshCw} label={t('dashboard.compact')}
-              glowColor={themeColorVar('warning', 0.08)} bgColor={themeColorVar('warning', 0.1)} iconColor={themeColorVar('warning')}
+              bgColor={themeColorVar('warning', 0.1)} iconColor={themeColorVar('warning')}
               onClick={() => void handleQuickAction('compact')} loading={quickActionLoading === 'compact'} disabled={!connected} />
             <QuickAction icon={Gauge} label={t('dashboard.systemStatus')}
-              glowColor={themeColorVar('accent', 0.08)} bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
+              bgColor={themeColorVar('accent', 0.1)} iconColor={themeColorVar('accent')}
               onClick={() => void handleQuickAction('status')} loading={false} />
           </div>
         </GlassCard>
@@ -1011,7 +993,7 @@ export function DashboardPage() {
             </div>
             <div className="flex items-center gap-2">
               {connected && (
-                <span className="text-[10px] font-bold text-aegis-success bg-aegis-success-surface px-2 py-0.5 rounded-md tracking-normal animate-pulse-soft">
+                <span className="rounded-md bg-aegis-success-surface px-2 py-0.5 text-[10px] font-bold tracking-normal text-aegis-success">
                   {t('dashboard.live', 'LIVE')}
                 </span>
               )}
@@ -1027,7 +1009,6 @@ export function DashboardPage() {
                 <FeedItem
                   key={item.sessionKey}
                   color={item.color}
-                  glowColor={item.glowColor}
                   text={item.text}
                   time={item.time}
                   timeTitle={item.timeTitle}

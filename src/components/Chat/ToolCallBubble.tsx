@@ -23,6 +23,11 @@ export interface ToolCallInfo {
 // 工具分类只影响语义化主题色，不改变工具能力或执行状态。
 type ToolCategory = 'search' | 'file' | 'exec' | 'memory' | 'agent' | 'media' | 'misc';
 
+type ToolStatusPresentation = {
+  labelKey: 'running' | 'done' | 'error' | 'cancelled' | 'verificationRequired';
+  className: string;
+};
+
 interface ToolPresentation {
   icon: React.ReactNode;
   category: ToolCategory;
@@ -85,6 +90,15 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+// 仅将 Gateway 已给出的状态映射为展示文案，不推断工具执行结果。
+function getToolStatusPresentation(status: ToolCallInfo['status']): ToolStatusPresentation {
+  if (status === 'running') return { labelKey: 'running', className: 'text-aegis-primary bg-aegis-primary/10' };
+  if (status === 'error') return { labelKey: 'error', className: 'text-aegis-danger bg-aegis-danger/10' };
+  if (status === 'cancelled') return { labelKey: 'cancelled', className: 'text-aegis-text-dim bg-aegis-hover' };
+  if (status === 'verification_required') return { labelKey: 'verificationRequired', className: 'text-aegis-warning bg-aegis-warning/10' };
+  return { labelKey: 'done', className: 'text-aegis-success bg-aegis-success/10' };
+}
+
 interface ToolCallBubbleProps {
   tool: ToolCallInfo;
 }
@@ -98,6 +112,8 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
   const catColor = CATEGORY_COLORS[info.category];
   const summary = tool.input ? summarizeInput(tool.toolName, tool.input) : '';
   const hasDetails = !!(tool.input && Object.keys(tool.input).length > 0) || !!tool.output || !!tool.error;
+  const statusPresentation = getToolStatusPresentation(tool.status);
+  const statusLabel = t(`chat.trace.nodeStatus.${statusPresentation.labelKey}`);
 
   return (
     <div className="ml-[46px] mr-4 py-[2px]">
@@ -148,6 +164,16 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
             {toolLabel}
           </span>
 
+          <span
+            className={clsx(
+              'shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium transition-colors duration-200 motion-reduce:transition-none',
+              statusPresentation.className,
+            )}
+            data-tool-status={tool.status}
+          >
+            {statusLabel}
+          </span>
+
           {/* 摘要或关键参数 */}
           {summary && (
             <span className="text-[10px] text-aegis-text-dim/60 font-mono truncate min-w-0">
@@ -171,8 +197,17 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
         </button>
 
         {/* 按需展开的真实输入、输出与错误 */}
-        {expanded && hasDetails && (
-          <div className="border-t border-aegis-border/70 bg-aegis-hover/20 px-2.5 py-2.5 space-y-2">
+        {hasDetails && (
+          <div
+            className={clsx(
+              'grid transition-[grid-template-rows,opacity] duration-[var(--aegis-duration-slow)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none',
+              expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+            )}
+            aria-hidden={!expanded}
+            data-tool-detail-visibility={expanded ? 'expanded' : 'collapsed'}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="border-t border-aegis-border/70 bg-aegis-hover/20 px-2.5 py-2.5 space-y-2">
             {tool.input && Object.keys(tool.input).length > 0 && (
               <div>
                 <div className="text-[9px] font-medium text-aegis-text-dim/50 uppercase tracking-wider mb-1">
@@ -220,6 +255,8 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
                 </pre>
               </div>
             )}
+              </div>
+            </div>
           </div>
         )}
       </div>

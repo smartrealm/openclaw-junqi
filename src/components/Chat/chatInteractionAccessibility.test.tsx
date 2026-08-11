@@ -22,4 +22,6 @@ test('工具详情仅在上游提供可展示内容时允许展开', () => {
   assert.match(withoutDetails, /<button[^>]*disabled=""/);
   assert.match(withDetails, /<button[^>]*aria-expanded="false"/);
   assert.doesNotMatch(withDetails, /disabled=""/);
+  assert.match(withDetails, /data-tool-detail-visibility="collapsed"/);
+  assert.match(withDetails, /data-tool-status="done"/);
 });

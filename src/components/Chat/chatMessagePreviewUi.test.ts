@@ -57,6 +57,22 @@ test('main and quick chat reuse the shared message preview panel', () => {
   assert.match(quickChatSource, /\boverlay\b/);
 });
 
+test('Quick Chat keeps the compact desktop shell within Aegis surfaces and reduces nonessential motion', () => {
+  assert.match(quickChatSource, /bg-aegis-bg text-aegis-text/);
+  assert.match(quickChatSource, /bg-aegis-surface/);
+  assert.doesNotMatch(quickChatSource, /bg-black\//);
+  assert.doesNotMatch(quickChatSource, /bg-white\//);
+  assert.match(quickChatSource, /motion-reduce:animate-none/);
+  assert.match(quickChatSource, /focus-visible:ring-2 focus-visible:ring-aegis-primary/);
+});
+
+test('main chat keeps connection feedback and lazy fallbacks visually stationary', () => {
+  assert.doesNotMatch(chatSource, /animate-pulse-soft/);
+  assert.doesNotMatch(chatSource, /animate-pulse/);
+  assert.match(chatSource, /bg-aegis-warning rounded-full/);
+  assert.match(chatSource, /h-11 rounded-xl border border-aegis-border bg-aegis-surface/);
+});
+
 test('chat side panels use the shared compact scrollbar', () => {
   assert.match(chatSource, /chat-scrollbar/);
   assert.match(panelSource, /chat-scrollbar/);

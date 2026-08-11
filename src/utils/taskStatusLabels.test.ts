@@ -13,8 +13,7 @@ test('every named status resolves to a key', () => {
   }
 });
 
-// An upstream vocabulary change must surface as an untranslated status, never
-// as a confident but wrong label.
+// 上游新增状态必须保留原文，不能显示为客户端虚构的确定标签。
 test('an unknown status falls back to itself instead of being invented', () => {
   assert.equal(taskStatusLabelKey('not_a_status'), null);
   assert.equal(resolveStatusLabel('not_a_status', echo), 'not_a_status');
@@ -32,9 +31,7 @@ test('all three locales cover the full vocabulary', () => {
   }
 });
 
-// The regression this replaces: ActivityCenter, TimelinePage and the dynamic
-// island each carried a private table, so one status could read differently
-// depending on which surface showed it.
+// 活动中心和时间线必须使用同一词汇表，避免同一状态在不同页面显示不同名称。
 test('no surface keeps a private status table', () => {
   for (const file of ['src/pages/ActivityCenter.tsx', 'src/pages/TimelinePage.tsx']) {
     const source = readFileSync(file, 'utf8');
@@ -44,15 +41,8 @@ test('no surface keeps a private status table', () => {
   }
 });
 
-test('the authoritative task statuses are all covered', () => {
-  const store = readFileSync('src/stores/agentWorkspaceStore.ts', 'utf8');
-  const union = store.slice(store.indexOf('export type AgentWorkspaceTaskStatus'));
-  const declared = [...union.slice(0, union.indexOf(';')).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
-  assert.ok(declared.length >= 10);
-  for (const status of declared) {
-    assert.ok(
-      LABELLED_STATUSES.includes(status as (typeof LABELLED_STATUSES)[number]),
-      `AgentWorkspaceTaskStatus '${status}' has no label`,
-    );
-  }
+test('词汇表不再依赖已删除的本地 AgentRun 状态模型', () => {
+  const source = readFileSync('src/utils/taskStatusLabels.ts', 'utf8');
+  assert.doesNotMatch(source, /AgentWorkspaceTaskStatus/);
+  assert.ok(LABELLED_STATUSES.length > 0);
 });

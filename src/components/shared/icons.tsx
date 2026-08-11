@@ -117,7 +117,6 @@ export const Icon = {
     memory:     makeRendered(Brain),
     skills:     makeRendered(Puzzle),
     terminal:   makeRendered(Terminal),
-    agentRun:   makeRendered(Sparkles),
     files:      makeRendered(FolderOpen),
     calendar:   makeRendered(CalendarDays),
     settings:   makeRendered(Settings2),

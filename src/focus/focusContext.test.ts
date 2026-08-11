@@ -4,62 +4,31 @@ import { focusNavigationTarget, projectFocusContext, type FocusContext } from '.
 
 const base: FocusContext = {
   schemaVersion: 1,
-  target: { kind: 'agent-task', id: 'task-1' },
-  title: 'Ship focus context',
-  detail: 'codex · /repo',
-  route: '/agent-run?taskId=task-1',
+  target: { kind: 'chat-session', id: 'session-1' },
+  title: '会话焦点',
+  detail: 'main',
+  route: '/chat?session=session-1',
   focusedAt: 10,
 };
 
-test('focus projection keeps identity while taking live status from its authority', () => {
+test('焦点投影保留会话身份并读取实时状态', () => {
   const projected = projectFocusContext(base, {
-    agentTasks: [{ id: 'task-1', title: 'Updated title', status: 'running', agent: 'codex', projectPath: '/repo' }],
+    chatSessions: [{ key: 'session-1', label: '更新后的会话标题', hasActiveRun: true }],
   });
-  assert.equal(projected?.title, 'Updated title');
+  assert.equal(projected?.title, '更新后的会话标题');
   assert.equal(projected?.state, 'running');
-  assert.equal(projected?.detail, 'codex · /repo');
+  assert.equal(projected?.detail, 'main');
 });
 
-test('missing focus authority is unavailable rather than silently retargeted', () => {
-  const projected = projectFocusContext(base, { agentTasks: [] });
+test('不存在的原生会话保留不可用状态而不重定向', () => {
+  const projected = projectFocusContext(base, { chatSessions: [] });
   assert.equal(projected?.state, 'unavailable');
-  assert.equal(projected?.target.id, 'task-1');
+  assert.equal(projected?.target.id, 'session-1');
 });
 
-test('all focus target kinds resolve only allowlisted internal navigation', () => {
-  assert.equal(focusNavigationTarget(base), '/agent-run?taskId=task-1');
-  assert.equal(focusNavigationTarget({ ...base, target: { kind: 'task-brief', id: 'brief-1' }, route: '/briefs?brief=brief-1' }), '/briefs?brief=brief-1');
-  assert.equal(focusNavigationTarget({ ...base, target: { kind: 'chat-session', id: 'abc' }, route: '/chat?session=abc' }), '/chat?session=abc');
+test('焦点导航只允许会话内部路由', () => {
+  assert.equal(focusNavigationTarget(base), '/chat?session=session-1');
   assert.equal(focusNavigationTarget({ ...base, route: 'https://example.com' }), null);
   assert.equal(focusNavigationTarget({ ...base, route: '/settings/../secret' }), null);
   assert.equal(focusNavigationTarget({ ...base, route: '/briefs?brief=task-1' }), null);
-});
-
-test('chat, worktree, and brief projections use their live authority states', () => {
-  const chat = projectFocusContext({
-    ...base,
-    target: { kind: 'chat-session', id: 'session-1' },
-    route: '/chat?session=session-1',
-  }, {
-    chatSessions: [{ key: 'session-1', label: 'Session', hasActiveRun: true }],
-  });
-  assert.equal(chat?.state, 'running');
-
-  const worktree = projectFocusContext({
-    ...base,
-    target: { kind: 'worktree', id: 'worktree-1' },
-    route: '/ai-workspace',
-  }, {
-    worktrees: [{ id: 'worktree-1', path: '/repo', branch: 'main', lifecycle: 'waking' }],
-  });
-  assert.equal(worktree?.state, 'running');
-
-  const archivedBrief = projectFocusContext({
-    ...base,
-    target: { kind: 'task-brief', id: 'brief-1' },
-    route: '/briefs?brief=brief-1',
-  }, {
-    taskBriefs: [{ id: 'brief-1', title: 'Brief', status: 'archived', projectPath: '/repo' }],
-  });
-  assert.equal(archivedBrief?.state, 'unavailable');
 });

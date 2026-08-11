@@ -107,17 +107,15 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   );
   const isTyping = useChatStore((state) => Boolean(state.typingBySession[sessionKey]));
   const isRequestActive = useChatStore((state) => selectSessionRequestActive(state, sessionKey));
-  const queue = useChatStore((state) => state.messageQueue[sessionKey] ?? EMPTY_QUEUE);
-  const queueCount = queue.length;
-  const failedQueuedMessage = queue.find((message) => message.failed);
+  const pendingHandoffs = useChatStore((state) => state.messageQueue[sessionKey] ?? EMPTY_QUEUE);
+  const pendingHandoffCount = pendingHandoffs.length;
+  const failedPendingHandoff = pendingHandoffs.find((message) => message.failed);
   const voiceOutputActive = useVoiceStore((state) =>
     state.remoteOutput !== null
       || ((state.phase === 'queued' || state.phase === 'speaking') && state.sessionKey === sessionKey),
   );
 
-  // Gateway-normalized response groups are the single projection authority in
-  // both the main chat and QuickChat. The compact window must not reconstruct
-  // tool/file/decision state from plain assistant text.
+  // Gateway 规范化后的响应组是主会话和 Quick Chat 唯一的投影来源；紧凑窗口不得从普通助手文本重建工具、文件或决策状态。
   const messages = useChatStore((s) =>
     sessionKey ? s.messagesPerSession[sessionKey] ?? EMPTY_MESSAGES : EMPTY_MESSAGES
   );
@@ -232,11 +230,11 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     }
   }, [attachmentErrorMessage, text, sending, connected, files, sessionId, sessionKey, t]);
 
-  const handleRetryQueuedMessage = useCallback(async () => {
-    if (!failedQueuedMessage) return;
+  const handleRetryPendingHandoff = useCallback(async () => {
+    if (!failedPendingHandoff) return;
     setSendError('');
-    await useChatStore.getState().retryQueuedMessage(sessionKey, failedQueuedMessage.id);
-  }, [failedQueuedMessage, sessionKey]);
+    await useChatStore.getState().retryQueuedMessage(sessionKey, failedPendingHandoff.id);
+  }, [failedPendingHandoff, sessionKey]);
 
   const handleStop = useCallback(async () => {
     voiceRuntime.interruptGlobally(sessionKey);
@@ -275,7 +273,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     switch (block.type) {
       case 'message':
         return (
-          <Suspense fallback={<div className="ml-[46px] min-h-8 animate-pulse rounded-lg bg-white/[0.04]" />}>
+          <Suspense fallback={<div className="ml-[46px] min-h-8 animate-pulse rounded-lg bg-aegis-surface motion-reduce:animate-none" />}>
             <MessageBubble
               block={block}
               sessionKey={sessionKey}
@@ -286,7 +284,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         );
       case 'tool':
         return (
-          <Suspense fallback={<div className="ml-[46px] h-7 animate-pulse rounded bg-white/[0.04]" />}>
+          <Suspense fallback={<div className="ml-[46px] h-7 animate-pulse rounded bg-aegis-surface motion-reduce:animate-none" />}>
             <ToolCallBubble tool={{
               toolName: block.toolName,
               input: block.input,
@@ -298,7 +296,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         );
       case 'thinking':
         return (
-          <Suspense fallback={<div className="ml-[46px] h-7 animate-pulse rounded bg-white/[0.04]" />}>
+          <Suspense fallback={<div className="ml-[46px] h-7 animate-pulse rounded bg-aegis-surface motion-reduce:animate-none" />}>
             <ThinkingBubble content={block.content} isStreaming={block.isStreaming} />
           </Suspense>
         );
@@ -349,7 +347,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     return (
       <section key={group.id} className="relative space-y-2 py-1" data-quickchat-response-group={group.id}>
         {chrome.owner === 'group' && (
-          <Suspense fallback={<div className="absolute left-1 top-1 h-8 w-8 animate-pulse rounded-full bg-aegis-primary/15" />}>
+          <Suspense fallback={<div className="absolute left-1 top-1 h-8 w-8 animate-pulse rounded-full bg-aegis-primary/15 motion-reduce:animate-none" />}>
             <AssistantResponseAvatar sessionKey={group.sessionKey} className="absolute left-1 top-1 z-[1]" />
           </Suspense>
         )}
@@ -368,14 +366,14 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
             {[0, 1, 2].map((index) => (
               <span
                 key={index}
-                className="h-1.5 w-1.5 rounded-full bg-aegis-primary animate-pulse"
+                className="h-1.5 w-1.5 rounded-full bg-aegis-primary animate-pulse motion-reduce:animate-none"
                 style={{ animationDelay: `${index * 140}ms` }}
               />
             ))}
           </div>
         )}
         {chrome.owner === 'group' && (
-          <Suspense fallback={<div className="ml-[46px] h-4 w-28 animate-pulse rounded bg-white/[0.04]" />}>
+          <Suspense fallback={<div className="ml-[46px] h-4 w-28 animate-pulse rounded bg-aegis-surface motion-reduce:animate-none" />}>
             <AssistantResponseFooter
               sessionKey={group.sessionKey}
               block={representative}
@@ -418,9 +416,9 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     : -1;
 
   return (
-    <div className="relative flex h-screen flex-col bg-black/40 text-aegis-text select-none">
-      {/* Title bar — frameless so we draw our own drag region */}
-      <div {...{ [titleDragRegion]: '' }} className="flex items-center gap-2 px-3 py-2 border-b border-white/10 bg-black/20">
+    <div className="relative flex h-screen flex-col select-none bg-aegis-bg text-aegis-text">
+      {/* 无边框窗口在此提供自定义拖拽区域。 */}
+      <div {...{ [titleDragRegion]: '' }} className="flex items-center gap-2 border-b border-aegis-border/60 bg-aegis-surface px-3 py-2">
         <GripVertical size={12} className="opacity-40" />
         <Sparkles size={12} className="text-aegis-primary" />
         <span className="text-[12px] font-semibold tracking-wide">JunQi Quick Chat</span>
@@ -430,7 +428,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         <span
           className={clsx(
             'ml-1 h-1.5 w-1.5 rounded-full',
-            connected ? 'bg-emerald-400' : connecting ? 'bg-amber-400 animate-pulse' : 'bg-red-400',
+            connected ? 'bg-aegis-success' : connecting ? 'bg-aegis-warning' : 'bg-aegis-danger',
           )}
           title={connected
             ? t('connection.connected')
@@ -441,7 +439,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         <div className="ml-auto flex items-center gap-0.5" {...{ 'data-tauri-drag-region': false } as any}>
           <button
             onClick={handleClose}
-            className="w-6 h-6 rounded flex items-center justify-center text-aegis-text-dim hover:text-aegis-text hover:bg-white/10 transition-colors"
+            className="flex h-6 w-6 items-center justify-center rounded text-aegis-text-dim transition-colors duration-[var(--aegis-duration-fast)] hover:bg-aegis-elevated hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 motion-reduce:transition-none"
             title={t('pet.quickChat.close')}
           >
             <X size={12} />
@@ -449,13 +447,13 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         </div>
       </div>
 
-      {/* Attachment chips */}
+      {/* 附件仅显示已经由桌面运行时读取的真实资源。 */}
       {files.length > 0 && (
-        <div className="px-3 py-2 border-b border-white/5 flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5 border-b border-aegis-border/50 px-3 py-2">
           {files.map((f, i) => (
             <div
               key={i}
-              className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.06] border border-white/10 text-[11px]"
+              className="flex items-center gap-1 rounded-md border border-aegis-border bg-aegis-elevated px-2 py-1 text-[11px]"
               title={f.path}
             >
               {f.isDir
@@ -467,7 +465,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         </div>
       )}
 
-      {/* Uses the same normalized response groups as the main chat. */}
+      {/* 与主会话使用同一份规范化响应组。 */}
       <div ref={messagesRef} className="flex-1 overflow-y-auto px-4 py-3 text-[13px] leading-relaxed">
         {quickChatResponseGroups.length === 0 && !isTyping && messages.length === 0 && files.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center text-aegis-text-dim gap-1.5">
@@ -481,14 +479,14 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         ))}
         {isTyping && typingOwnerGroupIndex < 0 && (
           <section className="relative space-y-2 py-1" data-quickchat-response-group="typing">
-            <Suspense fallback={<div className="absolute left-1 top-1 h-8 w-8 animate-pulse rounded-full bg-aegis-primary/15" />}>
+            <Suspense fallback={<div className="absolute left-1 top-1 h-8 w-8 animate-pulse rounded-full bg-aegis-primary/15 motion-reduce:animate-none" />}>
               <AssistantResponseAvatar sessionKey={sessionKey} className="absolute left-1 top-1" />
             </Suspense>
             <div className="ml-[46px] inline-flex items-center gap-1.5 rounded-lg border border-aegis-primary/20 bg-aegis-primary/[0.06] px-2.5 py-2" aria-label={t('chat.assistantPreparing', 'Assistant is preparing a response')}>
               {[0, 1, 2].map((index) => (
                 <span
                   key={index}
-                  className="h-1.5 w-1.5 rounded-full bg-aegis-primary animate-pulse"
+                  className="h-1.5 w-1.5 rounded-full bg-aegis-primary animate-pulse motion-reduce:animate-none"
                   style={{ animationDelay: `${index * 140}ms` }}
                 />
               ))}
@@ -504,14 +502,14 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
           </section>
         )}
         {sendError && <div className="mt-2 text-[11px] text-aegis-danger">{sendError}</div>}
-        {failedQueuedMessage && (
+        {failedPendingHandoff && (
           <div className="mt-2 flex items-center gap-2 text-[11px] text-aegis-danger">
-            <span className="min-w-0 flex-1 truncate" title={failedQueuedMessage.error}>
-              {failedQueuedMessage.error || t('chat.sendFailed')}
+            <span className="min-w-0 flex-1 truncate" title={failedPendingHandoff.error}>
+              {failedPendingHandoff.error || t('chat.sendFailed')}
             </span>
             <button
               type="button"
-              onClick={() => { void handleRetryQueuedMessage(); }}
+              onClick={() => { void handleRetryPendingHandoff(); }}
               className="shrink-0 rounded-md border border-aegis-danger/30 px-2 py-1 font-medium hover:bg-aegis-danger/10"
             >
               {t('common.retry')}
@@ -520,8 +518,8 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         )}
       </div>
 
-      {/* Input */}
-      <div className="border-t border-white/10 p-2.5 bg-black/30">
+      {/* 输入区保持稳定的桌面表面，发送状态只改变控件本身。 */}
+      <div className="border-t border-aegis-border/60 bg-aegis-surface p-2.5">
         <textarea
           ref={inputRef}
           value={text}
@@ -530,21 +528,21 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
           rows={3}
           placeholder={files.length ? t('pet.quickChat.questionPlaceholder') : t('pet.quickChat.dropPlaceholder')}
           className={clsx(
-            'w-full bg-black/30 border border-white/15 rounded-md px-2.5 py-2 text-[13px] resize-none outline-none',
-            'focus:border-aegis-primary/50 transition-colors placeholder:text-aegis-text-dim/60'
+            'w-full resize-none rounded-md border border-aegis-border bg-aegis-bg px-2.5 py-2 text-[13px] text-aegis-text outline-none',
+            'placeholder:text-aegis-text-dim/60 transition-[background-color,border-color,color] duration-[var(--aegis-duration-fast)] focus:border-aegis-primary/50 focus-visible:ring-2 focus-visible:ring-aegis-primary/35 motion-reduce:transition-none'
           )}
         />
         <div className="flex items-center justify-between mt-1.5 px-0.5">
           <div className="text-[10px] text-aegis-text-dim opacity-60">
-            {queueCount > 0
-              ? t('chat.queueMore', { n: queueCount })
+            {pendingHandoffCount > 0
+              ? t('chat.sessionMutationHandoffMore', { n: pendingHandoffCount })
               : text.length > 0 && t('pet.quickChat.characterCount', { count: text.length })}
           </div>
           <div className="flex items-center gap-1.5">
             {(isRequestActive || voiceOutputActive) && (
               <button
                 onClick={() => { void handleStop(); }}
-                className="flex h-7 w-7 items-center justify-center rounded-md bg-aegis-danger/80 text-white transition-colors hover:bg-aegis-danger"
+                className="flex h-7 w-7 items-center justify-center rounded-md bg-aegis-danger text-[var(--aegis-btn-primary-text)] transition-[background-color,transform] duration-[var(--aegis-duration-fast)] hover:bg-aegis-danger/85 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-danger/50 motion-reduce:transition-none"
                 title={t('chat.stopped')}
               >
                 <Square size={11} fill="currentColor" />
@@ -554,10 +552,10 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
               onClick={handleSend}
               disabled={sending || !connected || !text.trim()}
               className={clsx(
-                'px-3 py-1 rounded-md text-[11px] font-semibold transition-all',
+                'rounded-md px-3 py-1 text-[11px] font-semibold transition-[background-color,color,transform,opacity] duration-[var(--aegis-duration-fast)] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 motion-reduce:transition-none',
                 sending || !connected || !text.trim()
-                  ? 'bg-white/10 text-aegis-text-dim cursor-not-allowed'
-                  : 'bg-aegis-primary text-white hover:brightness-110'
+                  ? 'cursor-not-allowed bg-aegis-elevated text-aegis-text-dim'
+                  : 'bg-aegis-primary text-[var(--aegis-btn-primary-text)] hover:bg-aegis-primary-hover'
               )}
             >
               {sending

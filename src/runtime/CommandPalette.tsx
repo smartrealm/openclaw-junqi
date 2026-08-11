@@ -7,8 +7,8 @@ import { useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, MessageCircle, Kanban, DollarSign, Clock, Bot, Brain,
   Settings, Wifi, WifiOff, Heart, Mail, Calendar, RefreshCw,
-  Globe, Bell, BellOff, BookOpenText, Command, Sparkles, Terminal, Cpu,
-  Activity, FolderKanban,
+  Globe, Bell, BellOff, BookOpenText, Command, Terminal, Cpu,
+  Activity,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -26,15 +26,6 @@ import {
 } from '@/processing/sessionCompactionFeedback';
 import { useNotificationStore } from '@/stores/notificationStore';
 import clsx from 'clsx';
-
-const QUICK_AGENTS = [
-  { id: 'claude', label: 'Claude Code', desc: 'Anthropic Claude', keywords: ['claude', 'anthropic'] },
-  { id: 'codex', label: 'Codex', desc: 'OpenAI Codex CLI', keywords: ['codex', 'openai'] },
-  { id: 'gemini', label: 'Gemini CLI', desc: 'Google Gemini', keywords: ['gemini', 'google'] },
-  { id: 'pi', label: 'Pi', desc: 'Pi coding agent', keywords: ['pi'] },
-  { id: 'qwen', label: 'Qwen CLI', desc: 'Alibaba Qwen', keywords: ['qwen', 'alibaba', 'tongyi'] },
-  { id: 'ollama', label: 'Ollama', desc: 'Local Ollama models', keywords: ['ollama', 'local'] },
-];
 
 interface PaletteCommand {
   id: string;
@@ -80,7 +71,6 @@ export function CommandPalette() {
     { id: 'nav-agents', feature: 'agents', icon: Bot, name: t('nav.agents'), shortcut: 'Ctrl+6', keywords: ['agents', 'وكلاء', 'sessions'], action: () => navigate('/agents') },
     { id: 'nav-memory', feature: 'memory', icon: Brain, name: t('nav.memory'), shortcut: 'Ctrl+7', keywords: ['memory', 'ذاكرة', 'search'], action: () => navigate('/memory') },
     { id: 'nav-activity', feature: 'dashboard', icon: Activity, name: t('nav.activity', 'Activity Center'), keywords: ['activity', 'runs', 'approvals', '活动', '审批'], action: () => navigate('/activity') },
-    { id: 'nav-ai-workspace', feature: 'agentRun', icon: FolderKanban, name: t('nav.aiWorkspace', 'AI Workspace'), keywords: ['workspace', 'agent run', 'tasks', '工作台'], action: () => navigate('/ai-workspace') },
     { id: 'nav-settings', feature: 'settings', icon: Settings, name: t('nav.settings'), shortcut: 'Ctrl+,', keywords: ['settings', 'إعدادات'], action: () => navigate('/settings') },
 
     // 操作
@@ -104,16 +94,6 @@ export function CommandPalette() {
       });
     }},
 
-    // Agent launchers (kooky ⌘P pattern: type to filter, Enter to launch)
-    ...QUICK_AGENTS.map((a) => ({
-      id: `agent-${a.id}`,
-      icon: Sparkles,
-      name: a.label,
-      description: a.desc,
-      keywords: ['agent', 'launch', 'start', ...a.keywords, a.label.toLowerCase()],
-      shortcut: `→ /agent-run?agent=${a.id}`,
-      action: () => navigate(`/agent-run?agent=${a.id}`),
-    })),
     { id: 'agent-terminal', icon: Terminal, name: t('palette.openTerminal', 'Open Terminal'), keywords: ['terminal', 'shell', 'bash', 'zsh'], shortcut: 'Ctrl+T', action: () => navigate('/terminal') },
     { id: 'nav-openclaw-commands', feature: 'tools', icon: BookOpenText, name: t('nav.openclawCommands', 'OpenClaw commands'), keywords: ['openclaw', 'commands', 'runtime', '命令', '运行时', 'مرجع'], action: () => navigate('/openclaw-commands') },
     { id: 'agent-status', icon: Cpu, name: t('palette.systemStatus', 'System Status'), keywords: ['status', 'system', 'health'], action: () => navigate('/perf') },

@@ -302,12 +302,13 @@ export function AudioPlayer({ src, className, sessionKey = null, trackVoiceOutpu
       <button
         onClick={togglePlay}
         disabled={loading}
+        aria-label={playing ? t('media.pause') : t('media.play')}
         className={clsx(
-          'w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-all',
+          'w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-[background-color,color,box-shadow,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none',
           playing
-            ? 'bg-aegis-primary text-aegis-btn-primary-text shadow-md shadow-aegis-primary/30'
+            ? 'bg-aegis-primary text-aegis-btn-primary-text shadow-sm'
             : 'bg-aegis-primary/20 text-aegis-primary hover:bg-aegis-primary/30',
-          loading && 'opacity-50 animate-pulse'
+          loading && 'opacity-50 animate-pulse motion-reduce:animate-none'
         )}
       >
         {playing ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
@@ -327,7 +328,7 @@ export function AudioPlayer({ src, className, sessionKey = null, trackVoiceOutpu
             style={{ width: `${progress}%` }}
           />
           {/* Hover expand */}
-          <div className="absolute inset-0 h-full group-hover:h-2 transition-all" />
+          <div className="absolute inset-0 h-full transition-[height] duration-[var(--aegis-duration-fast)] ease-[var(--aegis-ease-standard)] group-hover:h-2 motion-reduce:transition-none" />
         </div>
 
         {/* Time display */}
@@ -342,6 +343,7 @@ export function AudioPlayer({ src, className, sessionKey = null, trackVoiceOutpu
         {/* Speed button */}
         <button
           onClick={cycleSpeed}
+          aria-label={t('media.playbackSpeed')}
           className="px-1.5 py-0.5 rounded text-[10px] font-mono text-aegis-text-dim hover:text-aegis-text-muted hover:bg-aegis-surface transition-colors"
           title={t('media.playbackSpeed')}
         >
@@ -351,6 +353,7 @@ export function AudioPlayer({ src, className, sessionKey = null, trackVoiceOutpu
         {/* Mute button */}
         <button
           onClick={toggleMute}
+          aria-label={muted ? t('media.unmute') : t('media.mute')}
           className="p-1 rounded hover:bg-aegis-surface text-aegis-text-dim hover:text-aegis-text-muted transition-colors"
           title={muted ? t('media.unmute') : t('media.mute')}
         >

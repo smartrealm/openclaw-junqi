@@ -22,7 +22,6 @@ const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
   'components/Terminal/PaneSearchBar.tsx': 0, // xterm 搜索装饰色从当前主题解析
   'components/Terminal/terminalShared.ts': 20, // xterm 回退契约
   'components/settings/ThemePicker.tsx': 11, // 主题色板和预览画布
-  'pages/AgentRunView.tsx': 0,
   'pages/SetupPage/WizardScreen.tsx': 0, // 向导改由主题令牌呈现，不保留硬编码颜色
   'pages/SetupPage/shared.tsx': 10, // 主题色板
   'pet/PetBubble.tsx': 0,
@@ -42,7 +41,6 @@ const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
   'styles/themes/aegis-midnight.css': 33, // 语义令牌定义
   'utils/theme-colors.ts': 1, // 令牌转换回退值和说明
   'utils/qrCode.ts': 2, // 二维码像素内容色必须保持稳定黑白对比
-  'workbench/components/WorkbenchTerminalPane.tsx': 0,
 };
 
 function sourceFiles(root: string): string[] {

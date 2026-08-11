@@ -4,7 +4,6 @@
 //   - claude_path / codex_path: optional override of the agent executable
 //   - send_shortcut: "enter" | "mod_enter"
 //   - terminal_shift_enter_newline: bool
-//   - claude_force_default_tui: bool
 //   - language: native menu locale synchronized from the webview
 //
 use std::collections::BTreeMap;
@@ -26,10 +25,6 @@ fn normalize_send_shortcut(value: String) -> String {
 }
 
 fn default_shift_enter_newline() -> bool {
-    true
-}
-
-fn default_claude_force_default_tui() -> bool {
     true
 }
 
@@ -172,8 +167,6 @@ pub struct AppSettings {
     pub send_shortcut: String,
     #[serde(default = "default_shift_enter_newline")]
     pub terminal_shift_enter_newline: bool,
-    #[serde(default = "default_claude_force_default_tui")]
-    pub claude_force_default_tui: bool,
     #[serde(default = "default_terminal_scrollback")]
     pub terminal_scrollback: u32,
     #[serde(default)]
@@ -188,7 +181,6 @@ impl Default for AppSettings {
             codex_path: String::new(),
             send_shortcut: default_send_shortcut(),
             terminal_shift_enter_newline: default_shift_enter_newline(),
-            claude_force_default_tui: default_claude_force_default_tui(),
             terminal_scrollback: default_terminal_scrollback(),
             agent_profiles: BTreeMap::new(),
         }
@@ -291,7 +283,6 @@ fn load_settings_unlocked() -> AppSettings {
             codex_path: detect_path("codex"),
             send_shortcut: default_send_shortcut(),
             terminal_shift_enter_newline: default_shift_enter_newline(),
-            claude_force_default_tui: default_claude_force_default_tui(),
             terminal_scrollback: default_terminal_scrollback(),
             agent_profiles: BTreeMap::new(),
         };
@@ -323,10 +314,6 @@ fn agent_program_from_settings(settings: &AppSettings, agent: &str) -> String {
 
 pub fn get_agent_program(agent: &str) -> String {
     agent_program_from_settings(&load_settings_unlocked(), agent)
-}
-
-pub fn claude_force_default_tui() -> bool {
-    load_settings_unlocked().claude_force_default_tui
 }
 
 pub fn application_language() -> String {
@@ -481,32 +468,6 @@ pub async fn reset_terminal_settings() -> Result<AppSettings, String> {
     })
     .await
     .map_err(|e| e.to_string())?
-}
-
-pub fn detect_claude_version() -> Option<String> {
-    run_version_command(&get_agent_program("claude"))
-}
-
-pub fn detect_codex_version() -> Option<String> {
-    run_version_command(&get_agent_program("codex"))
-}
-
-fn run_version_command(binary: &str) -> Option<String> {
-    let output = Command::new(binary).arg("--version").output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if s.is_empty() {
-        let s2 = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if s2.is_empty() {
-            None
-        } else {
-            Some(s2)
-        }
-    } else {
-        Some(s)
-    }
 }
 
 #[cfg(test)]
@@ -676,18 +637,7 @@ mod tests {
     }
 
     #[test]
-    fn ai_agent_entry_points_use_the_configured_program() {
-        assert!(
-            include_str!("agent_task_pty.rs").contains("app_settings::get_agent_program(spec.bin)")
-        );
-        assert!(include_str!("agent_assist.rs").contains("app_settings::get_agent_program(&agent)"));
+    fn git_commit_message_generation_uses_the_configured_program() {
         assert!(include_str!("git_neu.rs").contains("app_settings::get_agent_program(\"codex\")"));
-    }
-
-    #[test]
-    fn version_detection_uses_the_same_configured_agent_program() {
-        let source = include_str!("app_settings.rs");
-        assert!(source.contains("run_version_command(&get_agent_program(\"claude\"))"));
-        assert!(source.contains("run_version_command(&get_agent_program(\"codex\"))"));
     }
 }

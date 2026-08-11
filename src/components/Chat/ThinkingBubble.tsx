@@ -44,12 +44,12 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
           type="button"
           onClick={() => setExpanded(true)}
           aria-expanded="false"
-          className="inline-flex min-h-[28px] items-center gap-2 rounded-lg border border-aegis-primary/15 bg-aegis-primary/[0.04] px-2.5 py-1.5 text-start transition-colors hover:bg-aegis-primary/[0.07] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+          className="inline-flex min-h-[28px] items-center gap-2 rounded-lg border border-aegis-border bg-aegis-card px-2.5 py-1.5 text-start transition-[background-color,border-color,box-shadow] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-safe:animate-fade-in motion-reduce:transition-none hover:border-aegis-border-hover hover:bg-aegis-hover/35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
         >
           <span className="w-3 h-3 flex items-center justify-center shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-aegis-primary/55" />
           </span>
-          <span className="text-[11px] font-medium text-aegis-primary/85">
+          <span className="text-[11px] font-medium text-aegis-text-secondary">
             {t('thinking.thoughtProcess')}
           </span>
           <span className="text-[9px] text-aegis-text-dim/55 font-mono tabular-nums">
@@ -66,10 +66,10 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
     <div className="pl-[46px] py-[2px] min-w-0">
       <div
         className={clsx(
-          'rounded-xl overflow-hidden transition-[border-color,background-color] duration-200',
+          'rounded-lg overflow-hidden motion-safe:animate-fade-in transition-[border-color,background-color,box-shadow] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none',
           isStreaming
             ? 'border border-aegis-primary/20 bg-aegis-primary/[0.04]'
-            : 'border border-aegis-primary/12 bg-aegis-primary/[0.02]',
+            : 'border border-aegis-border bg-aegis-card',
         )}
       >
         <button
@@ -79,7 +79,7 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
           aria-expanded={!isStreaming || undefined}
           className={clsx(
             'flex min-h-[32px] w-full items-center gap-2 px-2.5 py-1.5 text-start',
-            !isStreaming && 'cursor-pointer transition-colors hover:bg-aegis-hover/45 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-aegis-primary/60',
+            !isStreaming && 'cursor-pointer transition-colors motion-reduce:transition-none hover:bg-aegis-hover/45 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-aegis-primary/60',
           )}
         >
           {isStreaming ? (
@@ -98,7 +98,7 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
 
           <span className={clsx(
             'text-[11px] font-medium',
-            isStreaming ? 'text-aegis-primary/75' : 'text-aegis-primary/70',
+            isStreaming ? 'text-aegis-primary/75' : 'text-aegis-text-secondary',
           )}>
             {isStreaming ? t('thinking.thinking') : t('thinking.thoughtProcess')}
           </span>

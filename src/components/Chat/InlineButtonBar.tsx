@@ -1,19 +1,6 @@
-// ═══════════════════════════════════════════════════════════
-// InlineButtonBar — Render Gateway inline buttons
-//
-// When the AI uses the `message` tool with `buttons` param,
-// this component renders them as clickable button rows.
-// Clicking sends `callback_data: <value>` as a user message.
-//
-// Button format (from Gateway protocol):
-//   buttons: [[{ text, callback_data, style? }]]
-//   style: "primary" | "success" | "danger"
-//
-// Follows the same protocol as Telegram inline keyboards.
-// ═══════════════════════════════════════════════════════════
+// 内联按钮严格投影 Gateway 提供的 callback_data；本组件不增加本地决策语义。
 
 import { useState, useCallback } from 'react';
-import { Check } from 'lucide-react';
 import clsx from 'clsx';
 
 interface InlineButton {
@@ -38,7 +25,7 @@ export function InlineButtonBar({ buttons, onCallback }: InlineButtonBarProps) {
   const [clicked, setClicked] = useState<string | null>(null);
 
   const handleClick = useCallback((callbackData: string) => {
-    if (clicked) return; // Prevent double-click
+    if (clicked) return;
     setClicked(callbackData);
     onCallback(callbackData);
   }, [clicked, onCallback]);
@@ -46,40 +33,33 @@ export function InlineButtonBar({ buttons, onCallback }: InlineButtonBarProps) {
   if (!buttons || buttons.length === 0) return null;
 
   return (
-    <div
-      className="px-5 py-1 animate-[inline-button-bar-in_180ms_ease-out]"
-    >
-      <style>
-        {'@keyframes inline-button-bar-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}'}
-      </style>
+    <div className="px-5 py-1 motion-safe:animate-fade-in">
       <div className="space-y-1.5 max-w-[85%]">
         {buttons.map((row, rowIdx) => (
           <div key={rowIdx} className="flex flex-wrap gap-1.5">
             {row.map((btn, btnIdx) => {
-              const isClicked = clicked === btn.callback_data;
+              const isSelected = clicked === btn.callback_data;
               const isDisabled = clicked !== null;
               const styleKey = btn.style || 'default';
 
               return (
                 <button
                   key={`${rowIdx}-${btnIdx}`}
-                  onClick={() => handleClick(btn.callback_data)}
-                  disabled={isDisabled}
-                  className={clsx(
-                    'px-3.5 py-2 rounded-xl text-[12px] font-medium border transition-all duration-200',
-                    'active:scale-[0.97]',
-                    isClicked
+                onClick={() => handleClick(btn.callback_data)}
+                disabled={isDisabled}
+                aria-pressed={isSelected}
+                className={clsx(
+                  'rounded-md border px-3 py-1.5 text-[12px] font-medium transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none',
+                  'active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50',
+                    isSelected
                       ? 'bg-aegis-accent/20 border-aegis-accent/40 text-aegis-accent ring-2 ring-aegis-accent/20'
                       : isDisabled
                         ? 'opacity-40 cursor-not-allowed ' + STYLE_CLASSES[styleKey]
                         : STYLE_CLASSES[styleKey]
-                  )}
-                >
-                  {btn.text}
-                  {isClicked && (
-                    <Check size={9} className="ms-1.5 opacity-60" />
-                  )}
-                </button>
+                )}
+              >
+                {btn.text}
+              </button>
               );
             })}
           </div>

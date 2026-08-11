@@ -75,7 +75,6 @@ export function AppLayout() {
   const routeScrollRef = useRef<HTMLDivElement>(null);
   const isWorkspacePage = matchPath('/welcome', location.pathname) !== null;
   const isTerminalPage = matchPath('/terminal/*', location.pathname) !== null;
-  const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
   const usesGlobalSidebar = !isWorkspacePage;
 
   // 注册全局键盘快捷键。
@@ -91,7 +90,7 @@ export function AppLayout() {
       {/* 自定义窗口标题栏 */}
       <TopBar
         hideSidebarToggle={isWorkspacePage}
-        sidebarTarget={isTerminalPage ? 'terminal' : isAgentWorkspacePage ? 'agent-workspace' : 'app'}
+        sidebarTarget={isTerminalPage ? 'terminal' : 'app'}
       />
 
       {/* 导航标签栏 */}
@@ -106,7 +105,7 @@ export function AppLayout() {
         <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
           <div
             ref={routeScrollRef}
-            className={`route-scrollbar flex-1 h-full ${isTerminalPage || isAgentWorkspacePage ? 'overflow-hidden' : 'overflow-y-auto'}`}
+            className={`route-scrollbar flex-1 h-full ${isTerminalPage ? 'overflow-hidden' : 'overflow-y-auto'}`}
             data-route-scroll
           >
             <BusinessGuide />

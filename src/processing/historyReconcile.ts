@@ -15,7 +15,7 @@ type HistoryLikeMessage = {
   toolName?: string;
   toolCallId?: string;
   thinkingContent?: string;
-  status?: 'pending' | 'sent' | 'queued' | 'failed' | 'cancelled';
+  status?: 'pending' | 'held' | 'sent' | 'queued' | 'failed' | 'cancelled';
   deliveryError?: string;
   isStreaming?: boolean;
   responseState?: 'streaming' | 'final' | 'error' | 'aborted';

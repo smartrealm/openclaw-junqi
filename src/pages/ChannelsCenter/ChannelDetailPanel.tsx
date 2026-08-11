@@ -207,7 +207,7 @@ export function ChannelDetailPanel({
         </div>
       </div>
 
-      <div className="space-y-3 p-4">
+      <div className="space-y-4 p-4">
         {hasChannelLogPayload && (
           <details open className="rounded-md border border-aegis-border bg-aegis-surface">
             <summary className="cursor-pointer px-3 py-2 text-[10.5px] font-semibold text-aegis-text-secondary">
@@ -219,6 +219,7 @@ export function ChannelDetailPanel({
           </details>
         )}
 
+        <div className="divide-y divide-aegis-border overflow-hidden rounded-md border border-aegis-border bg-aegis-surface">
         {group.accounts.map((account) => {
           const runtime = channelAccountStatus(runtimeSnapshot, group.id, account.id);
           const readiness = getReadiness(account);
@@ -232,7 +233,7 @@ export function ChannelDetailPanel({
           const runtimeBusyPrefix = `${group.id}:${account.id}`;
 
           return (
-            <section key={account.id} className="rounded-md border border-aegis-border bg-aegis-bg">
+            <section key={account.id}>
               <div className="grid grid-cols-1 gap-3 px-3 py-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -252,7 +253,7 @@ export function ChannelDetailPanel({
                     value={account.agentId ?? ''}
                     onChange={(event) => onBind(group, account, event.target.value)}
                     disabled={saving}
-                    className="h-8 w-full rounded-md border border-aegis-border bg-aegis-surface px-2 text-[10.5px] text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35"
+                    className="h-8 w-full rounded-md border border-aegis-border bg-aegis-input px-2 text-[10.5px] text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35"
                   >
                     <option value="">{t('channelsCenter.defaultAgentRoute', 'Runtime default agent (no override)')}</option>
                     {agents.map((agent) => (
@@ -264,7 +265,7 @@ export function ChannelDetailPanel({
                 </label>
               </div>
 
-              <div className="flex flex-wrap items-center gap-1.5 border-t border-aegis-border bg-aegis-surface/30 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-aegis-border bg-aegis-bg/35 px-3 py-2">
                 {linkMode !== 'none' && (
                   <button type="button" onClick={() => onLink(catalogEntry, group, account)} disabled={Boolean(accountActionBusy)} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-aegis-primary/20 px-2 text-[10px] font-semibold text-aegis-primary hover:bg-aegis-primary/5 disabled:opacity-50">
                     {linkMode === 'embedded_qr' ? <QrCode size={11} /> : <Link2 size={11} />}
@@ -320,6 +321,7 @@ export function ChannelDetailPanel({
             </section>
           );
         })}
+        </div>
       </div>
     </main>
   );

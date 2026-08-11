@@ -9,7 +9,6 @@ import {
   Clock3,
   Coins,
   Cpu,
-  FolderKanban,
   MemoryStick,
   Puzzle,
   RefreshCw,
@@ -29,9 +28,7 @@ import {
   useGatewayDataStore,
   type SessionInfo,
 } from '@/stores/gatewayDataStore';
-import { useAgentWorkspaceStore, type AgentWorkspaceTask } from '@/stores/agentWorkspaceStore';
 import { useSkillsStore } from '@/stores/skillsStore';
-import { agentTaskNeedsAttention } from '@/pages/AgentWorkspace/taskListModel';
 import { sessionActivityTime } from '@/components/Layout/sidebarUtils';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
@@ -40,7 +37,6 @@ import { formatTokens } from '@/utils/format';
 import { shortModelName, formatActivityTimeTitle } from '@/pages/Dashboard/dashboardData';
 import { activitySessionMetrics, mergeActivitySessions, type ActivitySessionRecord } from '@/utils/activitySessions';
 import { resolveStatusLabel } from '@/utils/taskStatusLabels';
-import { createAgentRunTaskRoute } from '@/utils/agentTaskRoute';
 import { OpenClawApprovalsPanel } from '@/components/Activity/OpenClawApprovalsPanel';
 import { OpenClawTaskLedgerPanel } from '@/components/Activity/OpenClawTaskLedgerPanel';
 import { GatewayAuditLedgerPanel } from '@/components/Activity/GatewayAuditLedgerPanel';
@@ -55,7 +51,7 @@ type ActivityFilter = 'all' | 'running' | 'attention' | 'done' | 'failed';
 interface ActivityEntry {
   id: string;
   title: string;
-  kind: 'session' | 'workspace' | 'collaboration';
+  kind: 'session' | 'collaboration';
   agent: string;
   model?: string;
   runtime?: string;
@@ -76,7 +72,7 @@ interface ActivityLabels {
   genericSession: string;
   collaborationUntitled: string;
   collaborationRuntime: string;
-  /** Only the derived "needs attention" state; plain statuses use the shared vocabulary. */
+  /** 仅“待关注”是派生状态，其他状态使用共享词汇表。 */
   attention: string;
   t: (key: string, options?: Record<string, unknown>) => string;
 }
@@ -87,10 +83,6 @@ function toLifecycle(status: string, attention: boolean): LifecycleState {
   if (status === 'failed' || status === 'error') return 'failed';
   if (status === 'done' || status === 'completed' || status === 'success') return 'ended';
   return 'idle';
-}
-
-function isTerminalStatus(status: string): boolean {
-  return ['done', 'completed', 'success', 'failed', 'error', 'cancelled', 'interrupted'].includes(status);
 }
 
 function formatDuration(ms?: number): string | null {
@@ -113,26 +105,6 @@ function runtimeForSession(session: Session): string {
 
 function agentIdForSession(session: Session | SessionInfo): string {
   return session.agentId || session.key.split(':')[1] || 'main';
-}
-
-function workspaceEntry(task: AgentWorkspaceTask, labels: ActivityLabels): ActivityEntry {
-  const attention = agentTaskNeedsAttention(task);
-  const durationMs = isTerminalStatus(task.status) ? Math.max(0, task.updatedAt - task.createdAt) : undefined;
-  return {
-    id: `workspace:${task.id}`,
-    title: task.title || task.prompt.trim().split(/\r?\n/)[0]?.slice(0, 100) || 'AI workspace task',
-    kind: 'workspace',
-    agent: task.agent,
-    runtime: task.launchMode === 'worktree' ? 'Worktree' : 'Local workspace',
-    project: task.projectPath.split(/[\\/]/).pop() || task.projectPath,
-    status: task.status,
-    statusLabel: resolveStatusLabel(task.status, labels.t),
-    lifecycle: toLifecycle(task.status, attention),
-    timestamp: task.attentionRequestedAt ?? task.updatedAt ?? task.createdAt,
-    durationMs,
-    attention,
-    href: createAgentRunTaskRoute(task.id),
-  };
 }
 
 function collaborationEntry(
@@ -232,7 +204,6 @@ export function ActivityCenterPage() {
   const gatewaySessions = useGatewayDataStore((state) => state.sessions);
   const agents = useGatewayDataStore((state) => state.agents);
   const sessionsUsage = useGatewayDataStore((state) => state.sessionsUsage);
-  const workspaceTasks = useAgentWorkspaceStore((state) => state.tasks);
   const skills = useSkillsStore((state) => state.skills);
   const refreshSkills = useSkillsStore((state) => state.refresh);
   const collaborationRunsById = useCollaborationStore((state) => state.runsById);
@@ -294,7 +265,6 @@ export function ActivityCenterPage() {
       })
       .filter((entry): entry is ActivityEntry => Boolean(entry));
     return [
-      ...workspaceTasks.filter((task) => !task.isDraft).map((task) => workspaceEntry(task, labels)),
       ...sessionEntries,
       ...collaborationNeedsYou.map((item) => collaborationEntry(item, agents, labels)),
     ]
@@ -304,7 +274,7 @@ export function ActivityCenterPage() {
         if (right.status === 'running' && left.status !== 'running') return 1;
         return right.timestamp - left.timestamp;
       });
-  }, [activityProjection, agents, collaborationNeedsYou, labels, sessionRecords, workspaceTasks]);
+  }, [activityProjection, agents, collaborationNeedsYou, labels, sessionRecords]);
 
   const visibleEntries = useMemo(() => entries.filter((entry) => entryMatches(entry, filter)), [entries, filter]);
   const attentionEntries = useMemo(() => entries.filter((entry) => entry.attention), [entries]);
@@ -325,10 +295,6 @@ export function ActivityCenterPage() {
   }, [refreshSkills, refreshing]);
 
   const openEntry = (entry: ActivityEntry) => {
-    if (entry.kind === 'workspace') {
-      navigate(entry.href);
-      return;
-    }
     if (entry.kind === 'collaboration') {
       navigate(entry.href);
       return;
@@ -358,9 +324,6 @@ export function ActivityCenterPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => navigate('/ai-workspace')} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-border px-2.5 text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-aegis-hover hover:text-aegis-text">
-            <FolderKanban size={13} />{t('activity.openWorkspace', '打开 AI 工作台')}
-          </button>
           <button type="button" onClick={() => void handleRefresh()} disabled={refreshing} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-aegis-border px-2.5 text-[11px] font-medium text-aegis-text-secondary transition-colors hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-50" title={t('common.refresh', '刷新')}>
             <RefreshCw size={13} className={clsx(refreshing && 'animate-spin')} />
             <span className="hidden sm:inline">{t('common.refresh', '刷新')}</span>

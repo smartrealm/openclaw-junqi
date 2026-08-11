@@ -15,7 +15,6 @@ export type EditionFeatureKey =
   | 'businessApplications'
   | 'skills'
   | 'terminal'
-  | 'agentRun'
   | 'memory'
   | 'configManager'
   | 'sessions'
@@ -52,7 +51,6 @@ const allEnabled = (): EditionFeatures => ({
   businessApplications: true,
   skills: true,
   terminal: true,
-  agentRun: true,
   memory: true,
   configManager: true,
   sessions: true,
@@ -130,7 +128,6 @@ const APP_ROUTE_ORDER: { feature: EditionFeatureKey; path: string }[] = [
   { feature: 'businessApplications', path: '/business-applications' },
   { feature: 'skills', path: '/skills' },
   { feature: 'terminal', path: '/terminal' },
-  { feature: 'agentRun', path: '/agent-run' },
   { feature: 'memory', path: '/memory' },
   { feature: 'configManager', path: '/config' },
   { feature: 'sessions', path: '/sessions' },
@@ -175,9 +172,6 @@ const PATH_PREFIXES: { prefix: string; feature: EditionFeatureKey }[] = [
   { prefix: '/agents', feature: 'agents' },
   { prefix: '/skills', feature: 'skills' },
   { prefix: '/terminal', feature: 'terminal' },
-  { prefix: '/agent-run', feature: 'agentRun' },
-  { prefix: '/ai-workspace', feature: 'agentRun' },
-  { prefix: '/briefs', feature: 'agentRun' },
   { prefix: '/memory', feature: 'memory' },
   { prefix: '/', feature: 'dashboard' },
 ];

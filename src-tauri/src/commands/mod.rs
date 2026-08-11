@@ -5,10 +5,6 @@ pub mod font;
 pub mod terminal_keep_awake;
 pub mod terminal_open_in;
 
-pub mod agent_assist;
-pub mod agent_event_watcher;
-pub mod agent_task_pty;
-pub mod agent_workspace_storage;
 pub mod app_autostart;
 pub mod app_settings;
 pub mod builtin_skills;
@@ -36,7 +32,6 @@ pub(crate) mod gateway_update_handoff;
 pub mod git_neu;
 #[cfg(any(windows, test))]
 pub(crate) mod git_runtime;
-pub mod hooks;
 pub mod maintenance;
 pub mod managed_files;
 pub mod managed_runtime;
@@ -83,7 +78,4 @@ pub(crate) mod uninstall;
 pub mod voice;
 pub mod voice_capture;
 pub mod voice_talk_playback;
-pub mod workbench_provider;
-pub mod workbench_pty;
-pub mod workbench_session;
 pub mod workspace;

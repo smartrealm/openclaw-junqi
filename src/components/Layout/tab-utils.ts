@@ -3,10 +3,10 @@ export type SidebarTab = 'workbench' | 'agents' | 'businessApplications' | 'tool
 
 const TAB_ROUTE_MAP: [SidebarTab, string[]][] = [
   ['workbench', ['/', '/chat', '/welcome', '/session']],
-  ['agents',    ['/agents', '/agent-run', '/agents/live', '/channels', '/memory', '/config', '/sessions', '/skills', '/skill-hub']],
+  ['agents',    ['/agents', '/agents/live', '/channels', '/memory', '/config', '/sessions', '/skills', '/skill-hub']],
   ['businessApplications', ['/business-applications']],
   ['commands',  ['/openclaw-commands']],
-  ['tools',     ['/terminal', '/files', '/cron', '/sandbox', '/git', '/calendar', '/tools', '/kanban', '/timeline', '/activity', '/workshop', '/ai-workspace', '/briefs']],
+  ['tools',     ['/terminal', '/files', '/cron', '/sandbox', '/git', '/calendar', '/tools', '/kanban', '/timeline', '/activity', '/workshop']],
   ['settings',  ['/settings', '/logs', '/perf', '/analytics']],
 ];
 

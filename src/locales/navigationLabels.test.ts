@@ -2,17 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import zh from './zh.json';
 import en from './en.json';
+import zhTW from './zh-TW.json';
 
-test('agent run and Agent tasks have distinct navigation labels', () => {
-  assert.notEqual(zh.nav.agentRun, zh.nav.agentTasks);
-  assert.notEqual(en.nav.agentRun, en.nav.agentTasks);
-  assert.equal(zh.nav.agentTasks, 'Agent 任务');
-  assert.equal(en.nav.agentTasks, 'Agent Tasks');
-});
-
-test('the legacy welcome route is named as a project launcher', () => {
-  assert.equal(zh.nav.agentWorkspace, '项目启动');
-  assert.equal(en.nav.agentWorkspace, 'Project launcher');
+test('已删除的本地工作台翻译命名空间不会回归', () => {
+  for (const locale of [zh, en, zhTW]) {
+    assert.equal(Object.prototype.hasOwnProperty.call(locale, 'agentWorkspace'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(locale, 'taskBriefs'), false);
+  }
 });
 
 test('the tool entry identifies the OpenClaw-native tool surface', () => {

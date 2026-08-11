@@ -58,6 +58,24 @@ test('CHAT-14 persisted OpenClaw media uses a state-scoped preview bridge', () =
   assert.match(config.app.security.csp, /connect-src[^;]*junqi-preview/);
 });
 
+test('CHAT-18 desktop media save failures stay inside the native save boundary', () => {
+  const image = source('src/components/Chat/ChatImage.tsx');
+  const video = source('src/components/Chat/ChatVideo.tsx');
+  assert.match(image, /saveChatMedia\(src, suggestedName\)/);
+  assert.match(video, /saveChatMedia\(src, suggestedName\)/);
+  assert.doesNotMatch(image, /window\.open\(/);
+  assert.doesNotMatch(video, /window\.open\(/);
+});
+
+test('CHAT-19 inline media previews retain keyboard access to their native controls', () => {
+  const image = source('src/components/Chat/ChatImage.tsx');
+  const video = source('src/components/Chat/ChatVideo.tsx');
+  assert.match(image, /onKeyDown=\{handleImageKeyDown\}/);
+  assert.match(image, /tabIndex=\{0\}/);
+  assert.match(video, /onKeyDown=\{handleVideoKeyDown\}/);
+  assert.match(video, /tabIndex=\{0\}/);
+});
+
 test('CHAT-17 native file actions never fall back to the retired uploads bridge', () => {
   const resultCards = source('src/components/Chat/ResultCards.tsx');
   const markdown = source('src/components/Chat/ChatMarkdownRenderer.tsx');

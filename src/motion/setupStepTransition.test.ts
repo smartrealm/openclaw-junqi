@@ -40,11 +40,11 @@ test('setup step transition presents reduced motion immediately', () => {
   assert.deepEqual(setupStepEntryState(-1, true), { opacity: 1, x: 0, y: 0 });
 });
 
-test('setup step transition uses ambient motion for runtime states', () => {
+test('运行时状态不位移动画，避免探测进度交接时闪动', () => {
   assert.equal(setupStepMotionMode('decision'), 'directional');
   assert.equal(setupStepMotionMode('official-wizard'), 'directional');
   assert.equal(setupStepMotionMode('operation'), 'ambient');
   assert.equal(setupStepMotionMode('gateway-ready'), 'ambient');
   assert.equal(setupStepMotionMode('failure'), 'ambient');
-  assert.deepEqual(setupStepEntryState(1, false, 'ambient'), { opacity: 0.98, x: 0, y: 4 });
+  assert.deepEqual(setupStepEntryState(1, false, 'ambient'), { opacity: 1, x: 0, y: 0 });
 });

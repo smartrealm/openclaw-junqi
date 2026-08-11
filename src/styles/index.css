@@ -1074,6 +1074,16 @@ html {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* 这是全局可访问性兜底；局部组件仍可为静态等待态提供明确外观。 */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
   .collaboration-history-drawer-backdrop,
   .collaboration-history-drawer-panel,
   .aegis-workspace-entry-fallback #app-root,

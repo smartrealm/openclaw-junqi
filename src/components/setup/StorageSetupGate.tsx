@@ -455,7 +455,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
         subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
         logs={logs}
         previousAction={{ onClick: handleBack }}
-        nextAction={{ label: t('common.retry', '重试'), onClick: () => window.location.reload(), icon: 'none' }}
+        nextAction={{ label: t('common.retry', '重试'), onClick: () => void loadStorageStatus(), icon: 'none' }}
       >
         <section className="border-y border-aegis-border py-7">
           <h1 className="text-lg font-semibold">{t('storage.loadFailed', '无法读取存储配置')}</h1>

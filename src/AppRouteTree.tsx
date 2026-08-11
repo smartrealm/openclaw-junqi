@@ -1,9 +1,8 @@
 import { lazy } from 'react';
-import { Navigate, Routes, Route, useLocation } from 'react-router-dom';
+import { Navigate, Routes, Route } from 'react-router-dom';
 import { FeatureRoute } from '@/components/FeatureRoute';
 import { getFirstEnabledAppPath } from '@/config/edition';
 import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
-import { canonicalizeLegacyAgentWorkspaceTaskRoute } from '@/utils/agentTaskRoute';
 
 const AppLayout = lazy(() => import('@/components/Layout/AppLayout').then(m => ({ default: m.AppLayout })));
 const DashboardPage = lazy(() => import('@/pages/Dashboard').then(m => ({ default: m.DashboardPage })));
@@ -21,9 +20,6 @@ const SkillHubManagerPage = lazy(() => import('@/pages/SkillHubManager').then(m 
 const TimelinePage = lazy(() => import('@/pages/TimelinePage').then(m => ({ default: m.TimelinePage })));
 const ActivityCenterPage = lazy(() => import('@/pages/ActivityCenter').then(m => ({ default: m.ActivityCenterPage })));
 const WelcomePageView = lazy(() => import('@/pages/WelcomePageView').then(m => ({ default: m.default })));
-const AgentRunRoute = lazy(() => import('@/pages/AgentRunView').then(m => ({ default: m.AgentRunRoute })));
-const AgentWorkspacePage = lazy(() => import('@/pages/AgentWorkspace').then(m => ({ default: m.AgentWorkspacePage })));
-const TaskBriefsPage = lazy(() => import('@/pages/TaskBriefs').then(m => ({ default: m.TaskBriefsPage })));
 const SessionViewPage = lazy(() => import('@/pages/SessionViewPage').then(m => ({ default: m.default })));
 const TerminalPage = lazy(() => import('@/pages/TerminalPage').then(m => ({ default: m.TerminalPage })));
 const SettingsPageFull = lazy(() => import('@/pages/SettingsPage').then(m => ({ default: m.SettingsPageFull })));
@@ -41,24 +37,6 @@ const OpenClawCommandsPage = lazy(() => import('@/pages/OpenClawCommands').then(
 
 export function UnknownAppRouteFallback() {
   return <Navigate replace to={getFirstEnabledAppPath()} />;
-}
-
-export function resolveLegacyAgentWorkspaceRedirectTarget(
-  pathname: string,
-  search: string,
-  hash: string,
-): string | null {
-  const currentTarget = `${pathname}${search}${hash}`;
-  const canonicalTarget = canonicalizeLegacyAgentWorkspaceTaskRoute(currentTarget);
-  return canonicalTarget === currentTarget ? null : canonicalTarget;
-}
-
-export function AgentWorkspaceRoute() {
-  const { pathname, search, hash } = useLocation();
-  const redirectTarget = resolveLegacyAgentWorkspaceRedirectTarget(pathname, search, hash);
-  if (redirectTarget) return <Navigate replace to={redirectTarget} />;
-
-  return <FeatureRoute feature="agentRun"><AgentWorkspacePage /></FeatureRoute>;
 }
 
 export default function AppRouteTree() {
@@ -79,9 +57,6 @@ export default function AppRouteTree() {
         <Route path="/timeline" element={<FeatureRoute feature="workshop"><TimelinePage /></FeatureRoute>} />
         <Route path="/activity" element={<ActivityCenterPage />} />
         <Route path="/welcome" element={<FeatureRoute feature="dashboard"><WelcomePageView /></FeatureRoute>} />
-        <Route path="/agent-run" element={<FeatureRoute feature="agentRun"><AgentRunRoute /></FeatureRoute>} />
-        <Route path="/ai-workspace" element={<AgentWorkspaceRoute />} />
-        <Route path="/briefs" element={<FeatureRoute feature="agentRun"><TaskBriefsPage /></FeatureRoute>} />
         <Route path="/session" element={<FeatureRoute feature="dashboard"><SessionViewPage /></FeatureRoute>} />
         <Route path="/terminal" element={<FeatureRoute feature="terminal"><TerminalPage /></FeatureRoute>} />
         <Route path="/memory" element={<FeatureRoute feature="memory"><MemoryExplorerPage /></FeatureRoute>} />

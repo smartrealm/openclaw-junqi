@@ -44,12 +44,7 @@ import { TerminalOpenInAppIcon, type TerminalOpenInApp } from '@/components/Term
 import type { TerminalSidebarMode } from '@/components/Terminal/terminalWorkspaceTree';
 import { resolveNotificationTarget } from '@/utils/notificationTarget';
 import { projectSessionActivity } from '@/utils/sessionPresentation';
-import {
-  AGENT_WORKSPACE_SIDEBAR_MODE_EVENT,
-  readAgentWorkspaceSidebarMode,
-  requestAgentWorkspaceSidebarToggle,
-} from './agentWorkspaceSidebarEvents';
-import { isWorkspaceSidebarMode, type WorkspaceSidebarMode } from './workspaceSidebarChannel';
+import { isWorkspaceSidebarMode } from './workspaceSidebarChannel';
 import { FocusControl } from '@/components/Focus/FocusControl';
 import { BusinessGuideTrigger } from '@/components/BusinessGuide/BusinessGuideTrigger';
 import { WorkspaceChromeIconButton } from './WorkspaceChrome';
@@ -240,7 +235,7 @@ export function toNotificationPanelItem(
  */
 interface TopBarProps {
   hideSidebarToggle?: boolean;
-  sidebarTarget?: 'app' | 'terminal' | 'agent-workspace';
+  sidebarTarget?: 'app' | 'terminal';
   showBack?: boolean;
   backFallback?: string;
 }
@@ -261,28 +256,19 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
   const sidebarMode = useSettingsStore((s) => s.sidebarMode);
   const cycleSidebar = useSettingsStore((s) => s.cycleSidebar);
   const [terminalSidebarMode, setTerminalSidebarMode] = useState<TerminalSidebarMode>(readTerminalSidebarMode);
-  const [agentWorkspaceSidebarMode, setAgentWorkspaceSidebarMode] = useState<WorkspaceSidebarMode>(readAgentWorkspaceSidebarMode);
   useEffect(() => {
     const updateTerminal = (event: Event) => {
       const mode = (event as CustomEvent<TerminalSidebarMode>).detail;
       if (isWorkspaceSidebarMode(mode)) setTerminalSidebarMode(mode);
     };
-    const updateAgentWorkspace = (event: Event) => {
-      const mode = (event as CustomEvent<WorkspaceSidebarMode>).detail;
-      if (isWorkspaceSidebarMode(mode)) setAgentWorkspaceSidebarMode(mode);
-    };
     window.addEventListener(TERMINAL_SIDEBAR_MODE_EVENT, updateTerminal);
-    window.addEventListener(AGENT_WORKSPACE_SIDEBAR_MODE_EVENT, updateAgentWorkspace);
     return () => {
       window.removeEventListener(TERMINAL_SIDEBAR_MODE_EVENT, updateTerminal);
-      window.removeEventListener(AGENT_WORKSPACE_SIDEBAR_MODE_EVENT, updateAgentWorkspace);
     };
   }, []);
   const workspaceSidebarMode = sidebarTarget === 'terminal'
     ? terminalSidebarMode
-    : sidebarTarget === 'agent-workspace'
-      ? agentWorkspaceSidebarMode
-      : null;
+    : null;
   const effectiveSidebarMode = workspaceSidebarMode
     ? workspaceSidebarMode === 'full' ? 'expanded' : workspaceSidebarMode === 'compact' ? 'mini' : 'hidden'
     : sidebarMode;
@@ -298,15 +284,13 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
       : t('nav.sidebarExpand', 'Expand sidebar');
   const handleSidebarToggle = sidebarTarget === 'terminal'
     ? requestTerminalSidebarToggle
-    : sidebarTarget === 'agent-workspace'
-      ? requestAgentWorkspaceSidebarToggle
-      : cycleSidebar;
+    : cycleSidebar;
   const terminalOpenDirectory = useWorkspaceStore((state) => {
     const active = state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
     if (!active || active.sshRemoteHost) return '';
     return active.worktreePath || active.projectDirectory || active.workingDirectory;
   });
-  const terminalPaletteShortcut = APP_PLATFORM === 'macos' ? '⌘P' : 'Ctrl+P';
+  const terminalPaletteShortcut = APP_PLATFORM === 'macos' ? 'Cmd+P' : 'Ctrl+P';
 
   // Zoom cancellation: webview setZoom scales everything, but traffic lights
   // are native window chrome → we cancel the zoom on the bar so they stay
@@ -557,8 +541,8 @@ export function TopBar({ hideSidebarToggle = false, sidebarTarget = 'app', showB
             className={clsx(
               'w-[5px] h-[5px] rounded-full shrink-0',
               status === 'idle' && 'bg-aegis-success',
-              status === 'working' && 'bg-aegis-primary animate-pulse',
-              status === 'connecting' && 'bg-aegis-warning animate-pulse',
+              status === 'working' && 'bg-aegis-primary',
+              status === 'connecting' && 'bg-aegis-warning',
               status === 'disconnected' && 'bg-aegis-text-dim',
             )}
           />

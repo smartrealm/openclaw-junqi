@@ -4,8 +4,7 @@ type Label = &'static str;
 type Icon = &'static str;
 
 const CANDIDATES: &[(&str, Label, Icon)] = &[
-    // AI 助手：需要和 agent_task_pty::AGENTS 保持同步。
-    // 图标由前端 icons.tsx 的 agent registry 解析。
+    // AI 助手命令由终端工具列表直接呈现。
     ("claude", "Claude Code", ""),
     ("codex", "Codex", ""),
     ("gemini", "Gemini CLI", ""),

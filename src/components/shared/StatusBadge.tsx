@@ -1,15 +1,4 @@
-// ─────────────────────────────────────────────────────────────────
-// StatusBadge — kooky-aligned 4-state agent lifecycle indicator.
-//
-//  idle      gray      no activity
-//  running   blue      agent actively producing output
-//  attention amber     agent needs user input (e.g. permission prompt)
-//  failed    red       error / exception
-//  ended     green     completed successfully
-//
-// Used in: AgentRunView status bar, FollowUpDock input, Pane tab strip,
-// NotificationBell, Workspace sidebar.
-// ─────────────────────────────────────────────────────────────────
+// 状态徽标统一呈现会话与活动记录共用的生命周期状态。
 
 import type { ReactNode } from 'react';
 import { Circle, AlertCircle, CheckCircle2 } from 'lucide-react';
@@ -23,28 +12,24 @@ import {
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 
-/**
- * Agent lifecycle vocabulary. Kept as this module's public domain type
- * because callers (AgentRunView, ActivityCenter) speak lifecycle, not
- * presentation tones — `resolveStatusTone` bridges the two.
- */
+/** 生命周期词汇由该模块公开，颜色映射统一委托给 `resolveStatusTone`。 */
 export type LifecycleState = 'idle' | 'running' | 'attention' | 'failed' | 'ended';
 
 export interface StatusBadgeProps {
   state: LifecycleState;
-  /** Show a text label next to the dot. Default false (dot only). */
+  /** 是否在图标旁显示文字，默认仅显示图标。 */
   label?: boolean;
-  /** Pixel size for the dot/icon. Default 8. */
+  /** 图标尺寸，默认 8 像素。 */
   size?: number;
-  /** Optional override for the displayed text. */
+  /** 可选的显示文字覆盖值。 */
   labelText?: string;
-  /** Additional className on the root span. */
+  /** 根元素附加样式。 */
   className?: string;
-  /** Pulse animation (for "running" — subtle infinite glow). Default true when state=running. */
+  /** 是否显示运行中的脉冲反馈，未指定时遵循共享状态色规则。 */
   pulse?: boolean;
 }
 
-/** Glyph shape per lifecycle state. Color comes from the shared tone table. */
+/** 生命周期状态决定图形，颜色来自共享状态色表。 */
 const STATE_GLYPH: Record<LifecycleState, 'spinner' | 'alert' | 'check' | 'dot'> = {
   idle: 'dot',
   running: 'spinner',
@@ -110,11 +95,6 @@ export function StatusBadge({
 }
 
 /**
- * Compact inline dot for tab strips and list rows.
- *
- * Re-exported from the shared Aegis primitive rather than reimplemented:
- * this module previously carried its own third copy of `StatusDot`
- * (BUG-FCA-04). A `LifecycleState` is a valid `tone` because
- * `resolveStatusTone` accepts the lifecycle vocabulary.
+ * 标签栏与列表行使用的紧凑状态点直接复用共享 Aegis 原语，避免重复维护颜色与状态映射。
  */
 export { StatusDot } from './badge';

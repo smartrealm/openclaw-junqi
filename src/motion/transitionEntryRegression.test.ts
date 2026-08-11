@@ -48,6 +48,39 @@ test('root transition styles include reduced-motion and no-API fallback', async 
   assert.match(css, /::view-transition-new\(root\)/);
   assert.match(css, /aegis-workspace-entry-fallback/);
   assert.match(css, /prefers-reduced-motion: reduce/);
+  assert.match(css, /\*::before,[\s\S]*?animation-duration:\s*0\.01ms\s*!important/);
+  assert.match(css, /transition-duration:\s*0\.01ms\s*!important/);
+});
+
+test('persistent chrome uses static state indicators instead of decorative pulses', async () => {
+  const [topBar, statusBar, sidebar, tabs] = await Promise.all([
+    read('../components/Layout/TopBar.tsx'),
+    read('../components/Layout/StatusBar.tsx'),
+    read('../components/Layout/NavSidebar.tsx'),
+    read('../components/Chat/ChatTabs.tsx'),
+  ]);
+
+  assert.doesNotMatch(topBar, /status === 'working' && 'bg-aegis-primary animate-pulse'/);
+  assert.doesNotMatch(topBar, /status === 'connecting' && 'bg-aegis-warning animate-pulse'/);
+  assert.match(statusBar, /<StatusDot[^>]*live=\{false\}/);
+  assert.doesNotMatch(statusBar, /reconnectBusy && 'animate-pulse'/);
+  assert.doesNotMatch(sidebar, /state === 'running' && 'animate-pulse bg-aegis-success'/);
+  assert.doesNotMatch(tabs, /bg-aegis-warning animate-pulse/);
+});
+
+test('Gateway recovery preserves page geometry and only uses a brief opacity acknowledgement', async () => {
+  const scene = await read('../components/shared/SceneTransition.tsx');
+
+  assert.match(scene, /if \(reducedMotion \|\| recoveryRevision === 0\)/);
+  assert.match(scene, /opacity: \[0\.94, 1\]/);
+  assert.match(scene, /y: 0/);
+  assert.match(scene, /scale: 1/);
+  assert.match(scene, /filter: 'saturate\(1\)'/);
+  assert.match(scene, /duration: 0\.16/);
+  assert.match(scene, /initial=\{false\}/);
+  assert.doesNotMatch(scene, /y: \[7, 0\]/);
+  assert.doesNotMatch(scene, /scale: \[0\.997, 1\]/);
+  assert.doesNotMatch(scene, /saturate\(0\.82\)/);
 });
 
 test('theme fallback swaps colors without moving the application root', async () => {

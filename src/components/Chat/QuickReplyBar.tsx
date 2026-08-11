@@ -1,18 +1,9 @@
-// ═══════════════════════════════════════════════════════════
-// QuickReplyBar — Render AI-suggested quick reply buttons
-//
-// Displayed above the message input when the last AI message
-// contains [[button:...]] markers. Clicking sends the button
-// text as a user message.
-//
-// Buttons auto-dismiss after one click or when a new message
-// arrives. Visually similar to InlineButtonBar but positioned
-// as a floating bar (like ClarifyCard was).
-// ═══════════════════════════════════════════════════════════
+// 快捷回复只投影现有消息中的按钮标记，点击后仍由上层发送真实用户消息。
 
 import { useState, useCallback } from 'react';
-import { X, Check } from 'lucide-react';
+import { X } from 'lucide-react';
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
 import type { ParsedButton } from '@/utils/buttonParser';
 
 interface QuickReplyBarProps {
@@ -22,10 +13,11 @@ interface QuickReplyBarProps {
 }
 
 export function QuickReplyBar({ buttons, onSend, onDismiss }: QuickReplyBarProps) {
+  const { t } = useTranslation();
   const [clicked, setClicked] = useState<string | null>(null);
 
   const handleClick = useCallback((btn: ParsedButton) => {
-    if (clicked) return; // Prevent double-click
+    if (clicked) return;
     setClicked(btn.value);
     onSend(btn.value);
   }, [clicked, onSend]);
@@ -33,31 +25,27 @@ export function QuickReplyBar({ buttons, onSend, onDismiss }: QuickReplyBarProps
   if (!buttons.length) return null;
 
   return (
-    <div className="mx-4 mb-2 animate-[quick-reply-in_180ms_ease-out]">
-      <style>
-        {'@keyframes quick-reply-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}'}
-      </style>
+    <div className="mx-4 mb-2 motion-safe:animate-fade-in">
       <div className={clsx(
-        'relative rounded-xl border px-4 py-3',
-        'bg-[rgb(var(--aegis-bg-secondary))] border-[rgb(var(--aegis-overlay)/0.10)]',
-        'shadow-lg shadow-black/10'
+        'relative rounded-lg border px-3 py-2.5',
+        'bg-aegis-surface border-aegis-border shadow-sm',
       )}>
-        {/* Dismiss button */}
         <button
+          type="button"
           onClick={onDismiss}
+          aria-label={t('chat.dismissQuickReplies')}
           className={clsx(
-            'absolute top-2 end-2 p-1 rounded-lg transition-colors',
+            'absolute top-2 end-2 rounded-md p-1 transition-colors',
             'text-aegis-text-dim hover:text-aegis-text-secondary',
-            'hover:bg-[rgb(var(--aegis-overlay)/0.08)]'
+            'hover:bg-aegis-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50'
           )}
         >
           <X size={14} />
         </button>
 
-        {/* Buttons row */}
         <div className="flex flex-wrap gap-2 pe-6">
           {buttons.map((btn, idx) => {
-            const isClicked = clicked === btn.value;
+            const isSelected = clicked === btn.value;
             const isDisabled = clicked !== null;
 
             return (
@@ -65,24 +53,22 @@ export function QuickReplyBar({ buttons, onSend, onDismiss }: QuickReplyBarProps
                 key={idx}
                 onClick={() => handleClick(btn)}
                 disabled={isDisabled}
+                aria-pressed={isSelected}
                 className={clsx(
-                  'px-4 py-2 rounded-xl text-[13px] font-medium border transition-all duration-200 active:scale-[0.96]',
-                  isClicked
-                    ? 'bg-aegis-accent/20 border-aegis-accent/40 text-aegis-accent ring-2 ring-aegis-accent/20'
+                  'rounded-md border px-3 py-1.5 text-[13px] font-medium transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50',
+                  isSelected
+                    ? 'bg-aegis-primary/10 border-aegis-primary/35 text-aegis-primary'
                     : isDisabled
-                      ? 'opacity-35 cursor-not-allowed bg-[rgb(var(--aegis-overlay)/0.04)] border-[rgb(var(--aegis-overlay)/0.08)] text-aegis-text-dim'
+                      ? 'cursor-not-allowed border-aegis-border bg-aegis-surface text-aegis-text-dim opacity-45'
                       : clsx(
-                        'bg-[rgb(var(--aegis-overlay)/0.05)] border-[rgb(var(--aegis-overlay)/0.12)]',
+                        'bg-aegis-elevated border-aegis-border',
                         'text-aegis-text-secondary',
-                        'hover:bg-aegis-accent/10 hover:border-aegis-accent/25 hover:text-aegis-accent',
-                        'active:bg-aegis-accent/15'
+                        'hover:bg-aegis-primary/10 hover:border-aegis-primary/30 hover:text-aegis-primary',
+                        'active:bg-aegis-primary/15'
                       )
                 )}
               >
                 {btn.text}
-                {isClicked && (
-                  <Check size={11} className="ms-1.5 opacity-60" />
-                )}
               </button>
             );
           })}

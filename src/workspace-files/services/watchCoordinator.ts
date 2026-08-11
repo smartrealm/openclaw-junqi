@@ -1,5 +1,4 @@
-import type { HostId } from '@/workbench/domain/types';
-import type { WorkspaceFileScope } from '../domain/types';
+import type { HostId, WorkspaceFileScope } from '../domain/types';
 
 export type WorkspaceFileEventKind = 'created' | 'changed' | 'deleted' | 'renamed' | 'overflow';
 

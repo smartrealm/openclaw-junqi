@@ -5,7 +5,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { APP_PLATFORM } from '@/components/Terminal/platform';
 
 // ═══════════════════════════════════════════════════════════
-// Keyboard Shortcuts — Global hotkeys for OpenClaw Desktop
+// 键盘快捷键：JunQi Desktop 全局快捷操作
 // ═══════════════════════════════════════════════════════════
 
 const NAV_ROUTES = ['/', '/chat', '/workshop', '/analytics', '/cron', '/agents', '/business-applications', '/settings'];
@@ -22,24 +22,21 @@ export function useKeyboardShortcuts() {
       const tag = (e.target as HTMLElement)?.tagName;
       const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable;
 
-      // ── Always active (even in inputs) ──
+      // 输入控件聚焦时仍然生效。
 
-      // Ctrl+K / Ctrl+P → Command Palette (kooky-style ⌘P, plus ⌘K alias)
+      // Ctrl+K 和 Ctrl+P 打开命令面板。
       if (ctrl && (e.key === 'k' || e.key === 'p')) {
-        // Terminal owns Cmd/Ctrl+P because its palette includes workspaces,
-        // folders, and recents. Cmd/Ctrl+K still opens the global palette.
+        // 终端面板使用 Cmd/Ctrl+P 展示工作区、目录和最近项目；Cmd/Ctrl+K 仍打开全局面板。
         if (e.key === 'p' && location.pathname === '/terminal') return;
         e.preventDefault();
         setCommandPaletteOpen(!commandPaletteOpen);
         return;
       }
 
-      // Ctrl+L → Multi-line composer (kooky-style prompt editor)
+      // Ctrl+L 打开多行输入编辑器。
       if (ctrl && e.key === 'l') {
-        // Don't hijack if user is selecting text outside chat/agent contexts.
-        const onComposerHost = location.pathname === '/chat'
-          || location.pathname === '/agent-run'
-          || location.pathname === '/ai-workspace';
+        // 仅在会话输入区接管多行编辑快捷键。
+        const onComposerHost = location.pathname === '/chat';
         if (onComposerHost) {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('aegis:open-multi-line-composer'));
@@ -47,7 +44,7 @@ export function useKeyboardShortcuts() {
         }
       }
 
-      // Escape → close palette / modals
+      // Escape 关闭命令面板或模态界面。
       if (e.key === 'Escape') {
         if (commandPaletteOpen) {
           setCommandPaletteOpen(false);
@@ -58,12 +55,10 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Kooky uses Cmd+D / Cmd+Shift+D, which macOS does not pass through as
-      // terminal EOF. On Windows and Linux, Ctrl+D is shell EOF, so require
-      // Alt as the platform-safe equivalent. Handle this before the input
-      // guard: xterm owns a textarea and used to swallow the advertised split
-      // shortcut before the workspace store saw it.
-      const onTerminalWorkspace = location.pathname === '/terminal' || location.pathname === '/agent-run';
+      // macOS 使用 Cmd+D 和 Cmd+Shift+D，避免与终端 EOF 冲突。
+      // Windows 和 Linux 的 Ctrl+D 是 shell EOF，因此额外要求 Alt。
+      // 该逻辑必须先于输入控件守卫执行，否则 xterm 的 textarea 会提前吞掉拆分快捷键。
+      const onTerminalWorkspace = location.pathname === '/terminal';
       const splitModifier = APP_PLATFORM === 'macos'
         ? e.metaKey && !e.ctrlKey && !e.altKey
         : e.ctrlKey && e.altKey && !e.metaKey;
@@ -80,10 +75,10 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // ── Only when NOT in text inputs ──
+      // 以下快捷键只在文本输入控件未聚焦时生效。
       if (isInput) return;
 
-      // Ctrl+1-8 → Navigate pages
+      // Ctrl+1 至 Ctrl+8 切换页面。
       if (ctrl && !shift) {
         const num = parseInt(e.key);
         if (num >= 1 && num <= 8 && NAV_ROUTES[num - 1]) {
@@ -93,17 +88,17 @@ export function useKeyboardShortcuts() {
         }
       }
 
-      // Ctrl+, → Settings
+      // Ctrl+, 打开设置。
       if (ctrl && e.key === ',') {
         e.preventDefault();
         navigate('/settings');
         return;
       }
 
-      // Ctrl+N → New chat tab (navigate to chat + open picker)
+      // Ctrl+N 新建会话；终端页面中则新建终端工作区。
       if (ctrl && e.key === 'n') {
         e.preventDefault();
-        if (location.pathname === '/terminal' || location.pathname === '/agent-run') {
+        if (location.pathname === '/terminal') {
           window.dispatchEvent(new CustomEvent('junqi:new-terminal-workspace'));
           return;
         }
@@ -111,21 +106,20 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Ctrl+O → Open a project directory in the terminal workspace.
+      // Ctrl+O 在终端工作区打开项目目录。
       if (ctrl && e.key === 'o') {
-        if (location.pathname === '/terminal' || location.pathname === '/agent-run') {
+        if (location.pathname === '/terminal') {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('junqi:open-terminal-folder'));
           return;
         }
       }
 
-      // Ctrl+W → close the current terminal tab (kooky ⌘W). Closing a pane
-      // is structural and remains behind an explicit pane control.
+      // Ctrl+W 关闭当前终端标签；窗格关闭属于结构操作，仍通过显式控件完成。
       if (ctrl && e.key === 'w' && !shift) {
         e.preventDefault();
         const wsPath = location.pathname;
-        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+        if (wsPath === '/terminal') {
           window.dispatchEvent(new CustomEvent('junqi:close-terminal-tab'));
           return;
         }
@@ -135,44 +129,41 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Ctrl+T → New terminal tab in the focused pane (kooky ⌘T).
+      // Ctrl+T 在当前聚焦窗格中新建终端标签。
       if (ctrl && e.key === 't' && !shift) {
         const wsPath = location.pathname;
-        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+        if (wsPath === '/terminal') {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('junqi:new-terminal-tab'));
           return;
         }
       }
 
-      // Ctrl+Shift+T → Reopen the last closed terminal tab. The focused pane
-      // claims this runtime-only history and spawns a fresh PTY with the same
-      // title and cwd, matching Kooky's reopen fallback semantics.
+      // Ctrl+Shift+T 重新打开最近关闭的终端标签。
+      // 当前窗格持有仅限本次运行的历史，并以相同标题和工作目录创建新的 PTY。
       if (ctrl && e.key === 't' && shift) {
         const wsPath = location.pathname;
-        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+        if (wsPath === '/terminal') {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('junqi:reopen-terminal-tab'));
           return;
         }
       }
 
-      // Ctrl+Shift+E → toggle the focused pane's zoom (kooky ⌘⇧E).
-      // Plain Ctrl+E remains available to the terminal as its native
-      // line-end editing shortcut.
+      // Ctrl+Shift+E 切换当前窗格缩放；Ctrl+E 保留给终端原生行尾编辑操作。
       if (ctrl && e.key === 'e' && shift) {
         const wsPath = location.pathname;
-        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+        if (wsPath === '/terminal') {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('junqi:toggle-terminal-pane-zoom'));
           return;
         }
       }
 
-      // Ctrl+Tab / Ctrl+Shift+Tab → Cycle tabs
+      // Ctrl+Tab 和 Ctrl+Shift+Tab 循环切换标签。
       if (ctrl && e.key === 'Tab') {
         e.preventDefault();
-        if (location.pathname === '/terminal' || location.pathname === '/agent-run') {
+        if (location.pathname === '/terminal') {
           window.dispatchEvent(new CustomEvent('junqi:cycle-terminal-tab', {
             detail: { direction: shift ? -1 : 1 },
           }));
@@ -192,7 +183,7 @@ export function useKeyboardShortcuts() {
       // Ctrl+R → Refresh
       if (ctrl && e.key === 'r' && !shift) {
         e.preventDefault();
-        if (location.pathname === '/terminal' || location.pathname === '/agent-run') {
+        if (location.pathname === '/terminal') {
           window.dispatchEvent(new CustomEvent('junqi:rename-terminal-tab'));
           return;
         }

@@ -32,3 +32,25 @@ test('setup shell keeps navigation actions reachable below overflowing step cont
   assert.match(html, /<footer[^>]*shrink-0/);
   assert.match(html, />Continue</);
 });
+
+test('运行时检测与复核共享稳定的窗口自适应内容区域', () => {
+  const html = renderToStaticMarkup(
+    <SetupShell
+      active={0}
+      title="环境检测"
+      subtitle="确认 OpenClaw 与 Gateway"
+      logs={[]}
+      contentSizing="runtime"
+      nextAction={{ label: '正在检测', disabled: true, loading: true }}
+    >
+      <div>检测状态</div>
+    </SetupShell>,
+  );
+
+  assert.match(html, /data-setup-content-sizing="runtime"/);
+  assert.match(html, /min-h-0 flex-1/);
+  assert.match(html, /flex h-full min-h-0 flex-col/);
+  assert.match(html, /overflow-hidden/);
+  assert.match(html, /overflow-y-auto overscroll-contain/);
+  assert.match(html, /\[scrollbar-gutter:stable\]/);
+});
