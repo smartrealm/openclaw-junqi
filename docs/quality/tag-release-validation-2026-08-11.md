@@ -31,3 +31,12 @@
 - 本地验证只证明源码、契约和当前 macOS 构建环境通过，不证明 Windows 安装、macOS 公证或线上 Release 成功。
 - 标签推送后必须继续核对远端工作流；工作流仍在运行时只能表述为已触发。
 - 发布前完整测试发现安装进度和颜色预算守护仍绑定旧实现数量；现已改为渲染运行与失败状态并核对语义主题色，同时删除已归零的颜色预算条目。
+
+## 发布结果
+
+- 标签：`v3.1.0`
+- 发布提交：`e17676dd5cf2b58207f5f720fdb3412d639a99f3`
+- 同提交 `CI`：通过。
+- `Tagged Desktop Release`：通过，macOS ARM64、macOS x64 与 Windows x64 制品均已上传。
+- GitHub Release：`https://github.com/smartrealm/openclaw-junqi/releases/tag/v3.1.0`
+- 目标设备安装、macOS 公证和 Windows 公共证书信任仍需分别实测；当前成功结论只覆盖工作流声明的签名与制品校验边界。
