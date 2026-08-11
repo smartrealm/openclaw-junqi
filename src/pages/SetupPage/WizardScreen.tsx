@@ -136,6 +136,7 @@ export function WizardScreen({
       title={wizardTitle}
       subtitle={wizardSubtitle}
       logs={logs}
+      logVisibility={messageRenderedInBody ? "expanded" : "collapsed"}
       previousAction={{
         label: t("setup.wizard.pauseAndReturn", "暂停并返回"),
         onClick: flow.goBack,

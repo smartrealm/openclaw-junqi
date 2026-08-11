@@ -220,6 +220,7 @@ export function SetupShell({
   nextAction,
   wide = false,
   showLogToggle = true,
+  logVisibility = "collapsed",
 }: {
   active: number;
   activeComplete?: boolean;
@@ -233,11 +234,16 @@ export function SetupShell({
   nextAction?: SetupNextAction;
   wide?: boolean;
   showLogToggle?: boolean;
+  logVisibility?: "collapsed" | "expanded";
 }) {
   const { t } = useTranslation();
-  const [showLogs, setShowLogs] = useState(false);
+  const [showLogs, setShowLogs] = useState(logVisibility === "expanded");
   const isRuntime = active >= 2 && active < 4;
   const showActions = previousAction || secondaryAction || nextAction;
+
+  useEffect(() => {
+    setShowLogs(logVisibility === "expanded");
+  }, [logVisibility]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-aegis-bg text-aegis-text" dir="ltr">

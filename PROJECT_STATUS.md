@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-修复仪表盘费用首屏空态和历史用量后台轮询造成的窗口卡顿，同时保持 OpenClaw 官方统计语义。
+修复 OpenClaw 配置向导确认提示的重复渲染，并在精简向导步骤中自动展开日志，同时保持 OpenClaw 原生本地化与步骤语义。
 
 ## 已完成内容
 
@@ -14,6 +14,9 @@
 - `cost` 和 `usage` 改为可释放的页面级轮询：Dashboard、活动中心与已打开的智能体设置面板持有读取，最后一个消费者离开后停止对应定时器。
 - 手动刷新仅执行一次官方读取，不再意外启动长期的费用或历史用量后台轮询。
 - 会话列表使用递归投影比较替换完整 `JSON.stringify` 比较；无变化 Gateway 快照不会触发 Zustand 更新和订阅者重渲染。
+- 确认步骤的 Runtime 提示只由确认控件渲染，不再同时作为页面副标题重复显示。
+- 通知、确认、进度和操作类官方向导步骤默认展开现有日志，用户可手动收起；其他步骤保持收起，避免长表单被日志挤压。
+- 已核验 JunQi 启动时使用 Gateway 配置的 `OPENCLAW_LOCALE`，首次创建配置才按当前应用语言写入该值。当前已安装第三方 DingTalk 插件将凭据保留提示静态写为英文，未使用 OpenClaw 本地化接口；客户端不重写第三方 Runtime 文案。
 
 ## 关键技术决策
 
@@ -29,6 +32,10 @@
 - `src/pages/ActivityCenter.tsx`
 - `src/pages/AgentHub/AgentSettingsPanel.tsx`
 - `docs/gateway/gateway-lifecycle-unification-validation-2026-08-10.md`
+- `src/pages/SetupPage/WizardScreen.tsx`
+- `src/pages/SetupPage/wizard/WizardStepRenderer.tsx`
+- `src/components/setup/SetupFlowPanels.tsx`
+- `docs/installation/junqi-installation-flow.md`
 
 ## 测试与验证
 
@@ -37,6 +44,7 @@
 - `pnpm build` 通过：协作插件、钉钉插件、TypeScript 与 Vite 生产构建通过。
 - `git diff --check` 通过。
 - 本机 Gateway 诊断仍记录过事件循环延迟；修复后尚未进行目标平台长时间帧率与 CPU 对比。
+- 尚未在目标设备使用该第三方 DingTalk 插件完成向导；其英文凭据保留提示需要插件提供方接入 OpenClaw 原生 locale 后验证。
 
 ## 已知问题与未验证边界
 
@@ -52,3 +60,4 @@
 
 1. 在 macOS、Windows 与 Linux 目标设备持续运行 Dashboard 和 Chat，采集修复前后的帧率、CPU、内存与 Gateway 诊断。
 2. 为缺少定价的实际模型补充经供应商确认的价格配置，并复核 OpenClaw 重新聚合后的费用结果。
+3. 在第三方 DingTalk 插件接入 OpenClaw 本地化后，以 `zh-CN`、`zh-TW` 和 `en` 完成官方 Wizard 真机验证。

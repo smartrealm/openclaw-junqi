@@ -24,3 +24,20 @@ test('setup footer renders Back separately from a loading primary action', () =>
   assert.match(markup, /data-setup-footer-primary="true"/);
   assert.match(markup, /Confirming storage location/);
 });
+
+test('精简的运行时步骤可按调用方请求默认展开日志', () => {
+  const markup = renderToStaticMarkup(
+    <SetupShell
+      active={3}
+      title="配置"
+      subtitle="官方向导"
+      logs={[{ source: 'gateway', message: '等待确认', ts: 0, level: 'info' }]}
+      logVisibility="expanded"
+    >
+      <div>确认现有凭据</div>
+    </SetupShell>,
+  );
+
+  assert.match(markup, /Debug Log/);
+  assert.match(markup, /等待确认/);
+});
