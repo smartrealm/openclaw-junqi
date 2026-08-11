@@ -2,10 +2,6 @@ import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react'
 import { useTranslation } from 'react-i18next';
 import { shouldDeferColdGatewayRecovery, useAppStore } from '@/stores/app-store';
 import { useTheme } from '@/theme/useTheme';
-import { useAgentWorkspacePersistence } from '@/hooks/useAgentWorkspacePersistence';
-import { useAgentWorkspaceTaskEvents } from '@/hooks/useAgentWorkspaceTaskEvents';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useWorkbenchSessionPersistence } from '@/workbench/session/useWorkbenchSessionPersistence';
 import { projectChatNotification } from '@/services/gateway/chatNotificationProjection';
 
 const AppRoutes = lazy(() => import('@/AppRoutes'));
@@ -126,11 +122,6 @@ type SessionLoadResult = 'loaded' | 'failed' | 'superseded';
 
 export default function App() {
   const { t } = useTranslation();
-  const workspaces = useWorkspaceStore((state) => state.workspaces);
-  useAgentWorkspacePersistence(workspaces);
-  useAgentWorkspaceTaskEvents();
-  useWorkbenchSessionPersistence();
-
   const {
     addMessage,
     updateStreamingMessage,

@@ -19,31 +19,24 @@ export function SceneTransition({
   const reducedMotion = useReducedMotion();
 
   useEffect(() => {
-    if (reducedMotion) {
+    if (reducedMotion || recoveryRevision === 0) {
       controls.set({ opacity: 1, y: 0, scale: 1, filter: 'saturate(1)' });
       return;
     }
-    if (recoveryRevision === 0) {
-      void controls.start({
-        opacity: 1,
-        y: 0,
-        transition: { duration: 0.32, ease: [0.22, 1, 0.36, 1] },
-      });
-      return;
-    }
+    // Gateway 恢复只说明连接状态改变，不能让整页位移、缩放或改变饱和度。
     void controls.start({
-      opacity: [0.78, 1],
-      y: [7, 0],
-      scale: [0.997, 1],
-      filter: ['saturate(0.82)', 'saturate(1)'],
-      transition: { duration: 0.52, ease: [0.22, 1, 0.36, 1] },
+      opacity: [0.94, 1],
+      y: 0,
+      scale: 1,
+      filter: 'saturate(1)',
+      transition: { duration: 0.16, ease: [0.22, 1, 0.36, 1] },
     });
   }, [controls, recoveryRevision, reducedMotion]);
 
   return (
     <motion.div
       className={className}
-      initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+      initial={false}
       animate={controls}
       data-scene-recovery={recoveryReason ?? undefined}
     >

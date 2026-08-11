@@ -14,6 +14,8 @@
 - [AI 原生交互示例代码归档](design/ai-native-interaction-examples.md)：用户提供的交互组件结构与关键实现片段。
 - [AI 原生交互全量审查](design/ai-native-interaction-audit-2026-08-11.md)：当前 UI/UX 范围、真实状态边界和问题分级。
 - [AI 原生交互实施计划](../plans/2026-08-11-ai-native-interaction-rollout.md)：按会话、控制面、任务与文件、工作台分批的实施顺序。
+- [本地 AgentRun 对齐规格](../specs/openclaw-agent-run-alignment.md)：本地 PTY、工作树与任务路径替换为 OpenClaw 会话、托管工作树和 ACP 的边界。
+- [本地 AgentRun 对齐计划](../plans/openclaw-agent-run-alignment.md)：调用图审查、协议接入、遗留删除与验证顺序。
 - [钉钉业务工作台术语](business/CONTEXT.md)：DWS、Gateway 和业务投影的边界。
 - [架构决策](adr/)：仍在生效的长期决策。
 - [流程预览](previews/)：安装流程和业务工作台的静态预览。

@@ -19,7 +19,7 @@ export function requestTerminalAgentPanelToggle(): void {
   requestTerminalChromeAction(TERMINAL_AGENT_PANEL_TOGGLE_EVENT);
 }
 
-/** Ask the workbench to reveal the repository tree behind a terminal pane. */
+/** 请求终端外壳展开当前面板对应的仓库树。 */
 export function requestTerminalFileTreeReveal(repositoryRoot?: string): void {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent<{ repositoryRoot?: string }>(TERMINAL_FILE_TREE_REVEAL_EVENT, {

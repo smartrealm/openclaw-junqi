@@ -168,7 +168,7 @@ export function StatusBar() {
           title={t('statusBar.gatewayPanelTitle', 'Gateway 控制')}
           aria-label={t('statusBar.gatewayPanelTitle', 'Gateway 控制')}
         >
-          <StatusDot tone={reconnectBusy ? 'warn' : connected ? 'ok' : isVerifiedHandoff ? 'warn' : 'err'} size="sm" live={connected || reconnectBusy} />
+          <StatusDot tone={reconnectBusy ? 'warn' : connected ? 'ok' : isVerifiedHandoff ? 'warn' : 'err'} size="sm" live={false} />
           <span className="font-medium">{t('statusBar.gateway', '网关')}</span>
           <span className="font-mono text-aegis-text">:{port}</span>
           <ChevronUp size={10} className={clsx('transition-transform', !gatewayPanelOpen && 'rotate-180')} />
@@ -184,7 +184,6 @@ export function StatusBar() {
               : connected
                 ? 'text-aegis-text-secondary hover:text-aegis-primary hover:bg-aegis-primary/8'
                 : 'text-aegis-warning hover:bg-aegis-warning/8',
-            reconnectBusy && 'animate-pulse',
           )}
           title={gatewayMsg || gatewayPanelTitle}
           aria-label={gatewayActionLabel}

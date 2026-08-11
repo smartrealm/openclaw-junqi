@@ -223,6 +223,7 @@ export function SetupShell({
   showLogToggle = true,
   logVisibility = "collapsed",
   contentIdentity,
+  contentSizing = "natural",
 }: {
   active: number;
   activeComplete?: boolean;
@@ -238,12 +239,14 @@ export function SetupShell({
   showLogToggle?: boolean;
   logVisibility?: "collapsed" | "expanded";
   contentIdentity?: string;
+  contentSizing?: "natural" | "runtime";
 }) {
   const { t } = useTranslation();
   const [showLogs, setShowLogs] = useState(logVisibility === "expanded");
   const scrollKey = useSetupStepScrollKey(contentIdentity);
   const isRuntime = active >= 2 && active < 4;
   const showActions = previousAction || secondaryAction || nextAction;
+  const hasStableRuntimeViewport = contentSizing === "runtime";
   // 调用方要求默认展开时，即使首条运行日志尚未到达也保留日志区域，避免界面布局跳动。
   const shouldShowLogs = isRuntime && showLogToggle && (logs.length > 0 || logVisibility === "expanded");
 
@@ -263,15 +266,29 @@ export function SetupShell({
         data-setup-scroll-key={scrollKey ?? "setup"}
         className="flex min-h-0 flex-1 flex-col items-center overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-6 sm:py-8"
       >
-        <SetupStepScene>
-          <section className={clsx("w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
+        <SetupStepScene className={hasStableRuntimeViewport ? "min-h-0 flex-1" : undefined}>
+          <section className={clsx(
+            "w-full",
+            wide ? "max-w-5xl" : "max-w-3xl",
+            // 运行时探测会持续更新日志与状态文案。内容区只占用窗口扣除步骤条和底栏后的剩余空间，
+            // 让更新在卡片内部收敛，避免反复推动外层布局或在窄窗口中触发页面滚动。
+            hasStableRuntimeViewport && "flex h-full min-h-0 flex-col",
+          )}>
             <div className="mb-4 text-center sm:mb-6">
               {eyebrow && <div className="mb-2 text-xs font-semibold text-aegis-primary" dir="auto">{eyebrow}</div>}
               <h1 className="text-2xl font-semibold tracking-normal text-aegis-text sm:text-[30px]" dir="auto">{title}</h1>
               <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
             </div>
-            <div className={clsx(wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6")}>
-              {children}
+            <div
+              data-setup-content-sizing={contentSizing}
+              className={clsx(
+                wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6",
+                hasStableRuntimeViewport && "flex min-h-0 flex-1 flex-col overflow-hidden",
+              )}
+            >
+              <div className={hasStableRuntimeViewport ? "min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]" : undefined}>
+                {children}
+              </div>
               {shouldShowLogs && (
                 <div className="mt-5 border-t border-aegis-border pt-4">
                   <button
@@ -323,7 +340,7 @@ export function SetupShell({
                 type="button"
                 onClick={nextAction.onClick}
                 disabled={nextAction.disabled || nextAction.loading}
-                className="inline-flex w-full min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-primary bg-aegis-primary px-4 py-2.5 text-[15px] font-bold text-[var(--aegis-btn-primary-text)] transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] shadow-lg hover:bg-aegis-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
+                className="inline-flex w-full min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-primary bg-aegis-primary px-4 py-2.5 text-[15px] font-bold text-[var(--aegis-btn-primary-text)] transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] shadow-sm hover:bg-aegis-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
               >
                 {nextAction.loading && <RefreshCw size={15} className="animate-spin" />}
                 {nextAction.label}
@@ -373,7 +390,7 @@ export function StatusPanel({
             </div>
           )}
           <div className="text-base font-semibold text-aegis-text" dir="auto">{title}</div>
-          <p className="mt-2 max-w-[68ch] break-words text-sm leading-6 text-aegis-text-muted" dir="auto">{message}</p>
+          <p className="mt-2 min-h-12 max-w-[68ch] break-words text-sm leading-6 text-aegis-text-muted" dir="auto">{message}</p>
           {footer && <div className="mt-4">{footer}</div>}
         </div>
       </div>

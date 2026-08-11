@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
   User, RotateCcw, Pencil, Trash2,
   ChevronDown, ChevronRight, AlertTriangle,
@@ -437,6 +437,7 @@ export const MessageBubble = memo(function MessageBubble({
   groupPosition = 'standalone',
 }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
+  const reduceMotion = useReducedMotion() ?? false;
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const responseSessionKey = sessionKey ?? activeSessionKey;
   const [copied, setCopied] = useState(false);
@@ -647,24 +648,23 @@ function stripInlineCodeTicks(md: string): string {
               {content.trim() && (
                 <pre className="markdown-body assistant-markdown-body leading-relaxed whitespace-pre-wrap break-words font-[inherit]">
                   {content}
-                  {/* Blinking caret — visually anchors the current write position
-                      and signals "agent is still typing" even on long pauses. */}
+                  {/* 光标仅标识真实流式输出位置；减少动态效果时保持静止。 */}
                   <span
                     aria-hidden
                     className="inline-block w-[2px] h-[1em] ml-0.5 align-text-bottom"
                     style={{
                       background: 'rgb(var(--aegis-primary))',
-                      animation: 'aegis-caret 1s steps(2) infinite',
+                      animation: reduceMotion ? 'none' : 'aegis-caret 1s steps(2) infinite',
                     }}
                   />
                 </pre>
               )}
-              {/* Thinking prelude — only when empty, otherwise blink caret is enough */}
+              {/* 空回复时显示处理中状态；已有文本时仅保留输出光标。 */}
               {isEmptyAssistantStreaming && (
               <div
                 className={clsx(
                   'inline-flex items-center gap-1.5 select-none',
-                  'px-3 py-2 rounded-xl border border-aegis-primary/25 bg-[color-mix(in_srgb,rgb(var(--aegis-primary))_14%,rgb(var(--aegis-elevated)))] shadow-[0_4px_16px_rgb(var(--aegis-primary)/0.10)]',
+                  'rounded-lg border border-aegis-primary/25 bg-[color-mix(in_srgb,rgb(var(--aegis-primary))_14%,rgb(var(--aegis-elevated)))] px-3 py-2',
                 )}
                 aria-label={t('chat.assistantPreparing')}
               >
@@ -678,8 +678,7 @@ function stripInlineCodeTicks(md: string): string {
                       background: i === 1
                         ? 'rgb(var(--aegis-primary))'
                         : 'color-mix(in srgb, rgb(var(--aegis-primary)) 62%, rgb(var(--aegis-text)) 18%)',
-                      boxShadow: i === 1 ? '0 0 10px rgb(var(--aegis-primary)/0.45)' : 'none',
-                      animation: `typing-dot 1.15s ease-in-out ${i * 0.16}s infinite`,
+                      animation: reduceMotion ? 'none' : `typing-dot 1.15s ease-in-out ${i * 0.16}s infinite`,
                     }}
                   />
                 ))}
@@ -708,13 +707,11 @@ function stripInlineCodeTicks(md: string): string {
                   <ChatMarkdownRenderer markdown={content} />
                 )}
               </div>
-              {/* Blinking caret — gives a clear "still typing" signal while the
-                  LLM is streaming tokens in. Goes inside the markdown flow so
-                  it sits right after the latest content. */}
+              {/* 光标位于最新正文之后，减少动态效果时保持静止。 */}
               {block.isStreaming && (
                 <span
-                  className="inline-block w-[7px] h-[16px] ms-0.5 align-text-bottom -mb-[3px] rounded-sm bg-aegis-primary/70 animate-pulse"
-                  style={{ animationDuration: '0.9s' }}
+                  className="inline-block w-[7px] h-[16px] ms-0.5 align-text-bottom -mb-[3px] rounded-sm bg-aegis-primary/70"
+                  style={{ animation: reduceMotion ? 'none' : 'aegis-caret 0.9s steps(2) infinite' }}
                   aria-hidden
                 />
               )}

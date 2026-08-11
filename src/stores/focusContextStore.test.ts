@@ -4,10 +4,10 @@ import { useFocusContextStore } from './focusContextStore';
 
 const validFocus = {
   schemaVersion: 1 as const,
-  target: { kind: 'agent-task' as const, id: 'task-1' },
-  title: 'Task',
-  detail: '/repo',
-  route: '/agent-run?taskId=task-1',
+  target: { kind: 'chat-session' as const, id: 'session-1' },
+  title: 'Session',
+  detail: 'main',
+  route: '/chat?session=session-1',
   focusedAt: 1,
 };
 

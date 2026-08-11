@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { useAgentWorkspaceStore } from '@/stores/agentWorkspaceStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { usePetStore } from '@/stores/petStore';
@@ -27,7 +26,6 @@ import {
   isVoiceActivePhase,
   isDynamicIslandVoiceInputActive,
   projectDynamicIslandVoiceInput,
-  selectDynamicIslandTasks,
   shouldShowDynamicIsland,
   type DynamicIslandDrop,
   type DynamicIslandSessionActivity,
@@ -61,7 +59,6 @@ export default function DynamicIslandRuntime() {
   const voicePhase = remoteVoiceOutput ? 'speaking' : localVoicePhase;
   const voiceQueueLength = remoteVoiceOutput ? 0 : localVoiceQueueLength;
   const voiceInput = useMemo(() => projectDynamicIslandVoiceInput(voiceMode), [voiceMode]);
-  const tasks = useAgentWorkspaceStore((state) => state.tasks);
   const focus = useFocusProjection();
   const pomodoro = usePetStore((state) => state.pomodoro);
   const petEnabled = usePetStore((state) => state.enabled);
@@ -69,7 +66,6 @@ export default function DynamicIslandRuntime() {
   const [mainMinimized, setMainMinimized] = useState(false);
   const [previewActive, setPreviewActive] = useState(false);
   const [resourceDrop, setResourceDrop] = useState<DynamicIslandDrop | null>(null);
-  const [terminalPulse, setTerminalPulse] = useState(false);
   const resourceDropRef = useRef(resourceDrop);
   const resourceDropTimerRef = useRef<number | null>(null);
   const previewRef = useRef<DynamicIslandPreview | null>(null);
@@ -91,15 +87,12 @@ export default function DynamicIslandRuntime() {
       },
     });
   }
-  const terminalPulseTimerRef = useRef<number | null>(null);
-  const previousTaskStatusesRef = useRef<Map<string, string> | null>(null);
   const snapshotUpdateSchedulerRef = useRef<DynamicIslandUpdateScheduler | null>(null);
   resourceDropRef.current = resourceDrop;
 
   const observerVisible = enabled && openClawSessionObserverEnabled && mainMinimized && connected;
   const observerDigests = useOpenClawSessionObserver(observerVisible);
 
-  const visibleTasks = useMemo(() => selectDynamicIslandTasks(tasks), [tasks]);
   const activityProjection = useMemo(() => projectSessionActivity({
     sessions: chatSessions,
     activeSessionKey,
@@ -187,28 +180,9 @@ export default function DynamicIslandRuntime() {
     mainMinimized,
     sessionRunning,
     voiceActive,
-    tasks: visibleTasks,
     focus,
     resourceDrop,
-    terminalPulse,
   });
-
-  useEffect(() => {
-    const previous = previousTaskStatusesRef.current;
-    previousTaskStatusesRef.current = new Map(visibleTasks.map((task) => [task.id, task.status]));
-    if (!previous) return;
-    const reachedTerminalState = visibleTasks.some((task) => (
-      previous.get(task.id) !== task.status
-      && (task.status === 'done' || task.status === 'failed' || task.status === 'interrupted')
-    ));
-    if (!reachedTerminalState) return;
-    if (terminalPulseTimerRef.current !== null) window.clearTimeout(terminalPulseTimerRef.current);
-    setTerminalPulse(true);
-    terminalPulseTimerRef.current = window.setTimeout(() => {
-      setTerminalPulse(false);
-      terminalPulseTimerRef.current = null;
-    }, 5_400);
-  }, [visibleTasks]);
 
   const snapshot = useMemo<DynamicIslandSnapshot>(() => ({
     revision: ++revisionRef.current,
@@ -225,7 +199,6 @@ export default function DynamicIslandRuntime() {
     petEnabled,
     dndMode,
     autoExpand,
-    tasks: visibleTasks,
     focus,
     pomodoro: {
       enabled: pomodoro.enabled,
@@ -236,7 +209,7 @@ export default function DynamicIslandRuntime() {
       pausedRemainingMs: pomodoro.pausedRemainingMs,
     },
     resourceDrop,
-  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, executionPlan, focus, petEnabled, pomodoro, previewActive, resourceDrop, sessionActivities, sessionRunning, visibleTasks, voiceInput, voicePhase, voiceQueueLength]);
+  }), [activeSessionKey, autoExpand, connected, connecting, dndMode, executionPlan, focus, petEnabled, pomodoro, previewActive, resourceDrop, sessionActivities, sessionRunning, voiceInput, voicePhase, voiceQueueLength]);
   const latestSnapshotRef = useRef(snapshot);
   latestSnapshotRef.current = snapshot;
   if (!snapshotUpdateSchedulerRef.current) {
@@ -306,10 +279,6 @@ export default function DynamicIslandRuntime() {
     subscribeTauriEvent<DynamicIslandAction>('dynamic-island:action', (event) => {
       const action = event.payload;
       switch (action.type) {
-        case 'open-task':
-          useAgentWorkspaceStore.getState().selectTask(action.taskId);
-          void invoke('dynamic_island_focus_main', { route: '/ai-workspace' });
-          break;
         case 'open-session': {
           const chat = useChatStore.getState();
           if (action.sessionKey && chat.sessions.some((session) => session.key === action.sessionKey)) {
@@ -383,7 +352,6 @@ export default function DynamicIslandRuntime() {
     previewRef.current?.dispose();
     visibilityControllerRef.current?.dispose();
     snapshotUpdateSchedulerRef.current?.dispose();
-    if (terminalPulseTimerRef.current !== null) window.clearTimeout(terminalPulseTimerRef.current);
   }, []);
 
   return null;

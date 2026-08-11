@@ -55,6 +55,10 @@ function taskTitle(task: OpenClawTaskSummary): string {
   return task.title ?? task.progressSummary ?? task.terminalSummary ?? task.id;
 }
 
+export function taskDetailVisibility(expanded: boolean, hasDetail: boolean): 'expanded' | 'collapsed' {
+  return expanded && hasDetail ? 'expanded' : 'collapsed';
+}
+
 function formatTimestamp(value: string | number | undefined): string | null {
   if (value === undefined) return null;
   const date = typeof value === 'number' ? new Date(value) : new Date(value);
@@ -209,12 +213,12 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
             type="button"
             onClick={toggleDetail}
             disabled={!connected}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-45"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-[background-color,color,transform] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-hover hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 disabled:cursor-not-allowed disabled:opacity-45"
             title={expanded ? t('activity.tasks.hideDetails', 'Hide details') : t('activity.tasks.showDetails', 'Show details')}
             aria-label={expanded ? t('activity.tasks.hideDetails', 'Hide details') : t('activity.tasks.showDetails', 'Show details')}
             aria-expanded={expanded}
           >
-            {detailLoadingId === task.id ? <LoaderCircle size={13} className="animate-spin" /> : <ChevronDown size={14} className={clsx(expanded && 'rotate-180')} />}
+            {detailLoadingId === task.id ? <LoaderCircle size={13} className="animate-spin" /> : <ChevronDown size={14} className={clsx('transition-transform duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none', expanded && 'rotate-180')} />}
           </button>
           {canRecoverDelivery && (
             <>
@@ -222,7 +226,7 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
                 type="button"
                 onClick={confirmRetryDelivery}
                 disabled={!connected || cancellingTaskId !== null || retryingTaskId !== null || dismissingTaskId !== null}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-primary/10 hover:text-aegis-primary disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-[background-color,color,transform] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-primary/10 hover:text-aegis-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
                 title={t('activity.tasks.retry', 'Retry completion delivery')}
                 aria-label={t('activity.tasks.retry', 'Retry completion delivery')}
               >
@@ -232,7 +236,7 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
                 type="button"
                 onClick={confirmDismissDelivery}
                 disabled={!connected || cancellingTaskId !== null || retryingTaskId !== null || dismissingTaskId !== null}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-[background-color,color,transform] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-hover hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
                 title={t('activity.tasks.dismiss', 'Dismiss completion delivery')}
                 aria-label={t('activity.tasks.dismiss', 'Dismiss completion delivery')}
               >
@@ -245,7 +249,7 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
               type="button"
               onClick={confirmCancel}
               disabled={!connected || cancellingTaskId !== null || retryingTaskId !== null || dismissingTaskId !== null}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-danger/10 hover:text-aegis-danger disabled:cursor-not-allowed disabled:opacity-45"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-aegis-text-dim transition-[background-color,color,transform] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-danger/10 hover:text-aegis-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-danger/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               title={t('activity.tasks.cancel', 'Cancel task')}
               aria-label={t('activity.tasks.cancel', 'Cancel task')}
             >
@@ -254,7 +258,17 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
           )}
         </div>
       </div>
-      {expanded && detail && <div className="border-t border-aegis-border bg-aegis-hover/20"><TaskDetails task={detail} /></div>}
+      <div
+        data-task-detail-visibility={taskDetailVisibility(expanded, detail !== undefined)}
+        className={clsx(
+          'grid transition-[grid-template-rows,opacity] duration-[var(--aegis-duration-slow)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none',
+          taskDetailVisibility(expanded, detail !== undefined) === 'expanded' ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          {detail && <div className="border-t border-aegis-border bg-aegis-hover/20"><TaskDetails task={detail} /></div>}
+        </div>
+      </div>
       {expanded && detailErrors[task.id] && <p className="border-t border-aegis-danger/20 bg-aegis-danger/5 px-4 py-2 text-[10.5px] text-aegis-danger" role="alert">{detailErrors[task.id]}</p>}
     </article>
   );

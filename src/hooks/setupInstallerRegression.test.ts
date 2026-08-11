@@ -240,6 +240,11 @@ test('dependency runtime locations are explicit onboarding choices instead of ch
   assert.match(storageCommands, /Custom portable Git is only supported on Windows/);
 });
 
+test('storage read failures retry the native query without reloading the desktop WebView', () => {
+  assert.match(storageGate, /onClick: \(\) => void loadStorageStatus\(\)/);
+  assert.doesNotMatch(storageGate, /window\.location\.reload\(\)/);
+});
+
 test('default setup never constructs private Node.js or Git directories under OpenClaw state', () => {
   assert.doesNotMatch(paths, /runtime_dir\(\)\.join\("node"\)/);
   assert.doesNotMatch(paths, /runtime_dir\(\)\.join\("git"\)/);
@@ -349,14 +354,11 @@ test('installation steps and activity log use aligned fixed-height viewports', (
   assert.match(setupFlowPanels, /viewport\.scrollTo\(\{/);
 });
 
-test('installation progress has distinct running and failure visuals', () => {
-  assert.equal(
-    (setupFlowPanels.match(/linear-gradient\(90deg, rgb\(var\(--aegis-primary\)\), rgb\(var\(--aegis-success\)\)/g) ?? []).length,
-    3,
-  );
-  assert.match(setupFlowPanels, /!isError && "animate-pulse"/);
-  assert.match(setupFlowPanels, /isError\s*\? ["']rgb\(248 113 113\)["']/);
-  assert.match(setupFlowPanels, /isError \? ["']none["'] : ["']0 0 14px/);
+test('installation progress keeps running and failure feedback in the shared theme', () => {
+  assert.match(setupFlowPanels, /isError \? "bg-aegis-danger" : "bg-aegis-primary"/);
+  assert.match(setupFlowPanels, /!isError && !reduceMotion && "animate-pulse"/);
+  assert.doesNotMatch(setupFlowPanels, /linear-gradient\(/);
+  assert.doesNotMatch(setupFlowPanels, /rgb\(248 113 113\)/);
 });
 
 test('installation footer reports the current step instead of a live log message', () => {

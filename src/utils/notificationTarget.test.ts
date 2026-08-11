@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveNotificationTarget } from './notificationTarget';
 
-test('notification targets canonicalize the legacy agent-task route', () => {
-  assert.deepEqual(resolveNotificationTarget('/ai-workspace?task=42'), {
+test('通知内部目标保持 Gateway 或运行时提供的原始路由', () => {
+  assert.deepEqual(resolveNotificationTarget('/chat?session=test-42'), {
     kind: 'internal',
-    value: '/agent-run?taskId=42',
+    value: '/chat?session=test-42',
   });
 });
 

@@ -203,7 +203,7 @@ export function JarvisVoiceOverlay({
           ref={stopButtonRef}
           type="button"
           onClick={onStop}
-          className="inline-flex h-11 items-center gap-2 rounded-lg bg-aegis-danger px-5 text-[12px] font-semibold text-white transition-colors hover:bg-aegis-danger/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-danger/50"
+          className="inline-flex h-11 items-center gap-2 rounded-lg bg-aegis-danger px-5 text-[12px] font-semibold text-aegis-btn-primary-text transition-colors hover:bg-aegis-danger/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-danger/50"
         >
           <Square size={13} fill="currentColor" />
           {t('input.jarvisStop')}

@@ -108,7 +108,7 @@ export function MessageInput() {
   });
 
   return (
-    <div className="shrink-0 min-w-0 border-t border-[rgb(var(--aegis-overlay)/0.04)] bg-[var(--aegis-bg-frosted-60)] backdrop-blur-xl">
+    <div className="shrink-0 min-w-0 border-t border-[rgb(var(--aegis-overlay)/0.04)] bg-[var(--aegis-bg-frosted-60)] backdrop-blur-sm">
       <ComposerAttachmentTray
         files={attachments.files}
         onPreview={attachments.setLightbox}

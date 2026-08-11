@@ -27,13 +27,10 @@ test('terminal views use one terminal type source', () => {
   );
 });
 
-test('live Rust agent metadata stays intact', () => {
-  const agents = source('src-tauri/src/commands/agent_task_pty.rs');
-  const providers = source('src-tauri/src/commands/workbench_provider.rs');
-  assert.doesNotMatch(agents, /#\[allow\(dead_code\)\]\s+pub\(crate\) label/);
-  assert.doesNotMatch(agents, /#\[allow\(dead_code\)\]\s+resume_flag/);
-  assert.match(agents, /spec\.resume_flag/);
-  assert.match(providers, /label: spec\.label\.to_string\(\)/);
+test('遗弃的本地智能体工作台后端实现已删除', () => {
+  assert.equal(existsSync(new URL('src-tauri/src/commands/agent_task_pty.rs', root)), false);
+  assert.equal(existsSync(new URL('src-tauri/src/commands/workbench_provider.rs', root)), false);
+  assert.equal(existsSync(new URL('src-tauri/src/commands/workbench_pty.rs', root)), false);
 });
 
 test('unused Rust path and state helpers stay removed', () => {

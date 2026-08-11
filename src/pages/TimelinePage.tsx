@@ -1,6 +1,4 @@
-// TimelinePage — one activity view for chat sessions, AI-workspace tasks and
-// workshop work. The AI-workspace rows intentionally read the persisted task
-// store used by AgentWorkspace; this page does not maintain a second workflow.
+// 时间线只投影 Gateway 会话与既有 Workshop 记录，不维护客户端任务状态。
 
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -8,25 +6,13 @@ import { useTranslation } from 'react-i18next';
 import { TimelineView, type TimelineTask } from '@/components/shared/TimelineView';
 import { useChatStore, type Session } from '@/stores/chatStore';
 import { useGatewayDataStore, type SessionInfo } from '@/stores/gatewayDataStore';
-import { useAgentWorkspaceStore, type AgentWorkspaceTask } from '@/stores/agentWorkspaceStore';
 import { useWorkshopStore } from '@/stores/workshopStore';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { sessionActivityTime } from '@/components/Layout/sidebarUtils';
 import { getSessionDisplayLabel } from '@/utils/sessionLabel';
 import { sessionExecutionState } from '@/utils/sessionPresentation';
 import { activitySessionMetrics, mergeActivitySessions } from '@/utils/activitySessions';
-import { createAgentRunTaskRoute } from '@/utils/agentTaskRoute';
 import { resolveStatusLabel } from '@/utils/taskStatusLabels';
-
-function workspaceStatus(status: AgentWorkspaceTask['status']): TimelineTask['status'] {
-  if (status === 'running') return 'running';
-  if (status === 'input_required' || status === 'awaiting_review') return status;
-  if (status === 'failed') return 'failed';
-  if (status === 'done') return 'done';
-  if (status === 'cancelled') return 'cancelled';
-  if (status === 'interrupted' || status === 'detached') return status;
-  return status === 'todo' ? 'todo' : 'pending';
-}
 
 function sessionStatus(session: Session | SessionInfo): TimelineTask['status'] {
   const state = sessionExecutionState(session as Session);
@@ -46,7 +32,7 @@ function modelName(value: unknown): string | undefined {
   return value.trim().split('/').filter(Boolean).pop();
 }
 
-// Status wording lives in one shared vocabulary; see utils/taskStatusLabels.
+// 状态文案统一由共享词汇表提供，避免不同页面对同一状态使用不同名称。
 
 function latestUserPrompt(messages: Array<{ role?: string; content?: string; timestamp?: string }> | undefined): { text?: string; timestamp?: number } {
   if (!messages) return {};
@@ -58,7 +44,6 @@ function latestUserPrompt(messages: Array<{ role?: string; content?: string; tim
 }
 
 function deriveTimelineTasks({
-  workspaceTasks,
   workshopTasks,
   chatSessions,
   gatewaySessions,
@@ -67,7 +52,6 @@ function deriveTimelineTasks({
   agents,
   t,
 }: {
-  workspaceTasks: AgentWorkspaceTask[];
   workshopTasks: Array<{ id: string; title: string; assignedAgent?: string; status: string; createdAt: string }>;
   chatSessions: Session[];
   gatewaySessions: SessionInfo[];
@@ -77,26 +61,6 @@ function deriveTimelineTasks({
   t: (key: string, options?: Record<string, unknown>) => string;
 }): TimelineTask[] {
   const out: TimelineTask[] = [];
-
-  for (const task of workspaceTasks.filter((candidate) => !candidate.isDraft)) {
-    const durationMs = task.status === 'done' || task.status === 'failed'
-      ? Math.max(0, task.updatedAt - task.createdAt)
-      : undefined;
-    out.push({
-      id: `workspace:${task.id}`,
-      title: task.title || task.prompt.trim().split(/\r?\n/)[0]?.slice(0, 90) || 'AI workspace task',
-      agent: task.agent,
-      runtime: task.launchMode === 'worktree' ? '工作树' : '本地工作区',
-      status: workspaceStatus(task.status),
-      statusLabel: resolveStatusLabel(workspaceStatus(task.status), t),
-      createdAt: task.updatedAt || task.createdAt,
-      durationMs,
-      project: task.projectPath.split(/[\\/]/).pop() || task.projectPath,
-      additions: task.additions,
-      deletions: task.deletions,
-      href: createAgentRunTaskRoute(task.id),
-    });
-  }
 
   for (const task of workshopTasks) {
     const created = Date.parse(task.createdAt);
@@ -158,7 +122,6 @@ function deriveTimelineTasks({
 export function TimelinePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const workspaceTasks = useAgentWorkspaceStore((state) => state.tasks);
   const workshopTasks = useWorkshopStore((state) => state.tasks);
   const chatSessions = useChatStore((state) => state.sessions);
   const messagesPerSession = useChatStore((state) => state.messagesPerSession);
@@ -166,7 +129,6 @@ export function TimelinePage() {
   const sessionsUsage = useGatewayDataStore((state) => state.sessionsUsage);
   const agents = useGatewayDataStore((state) => state.agents);
   const tasks = useMemo(() => deriveTimelineTasks({
-    workspaceTasks,
     workshopTasks,
     chatSessions,
     gatewaySessions,
@@ -174,16 +136,12 @@ export function TimelinePage() {
     messagesPerSession,
     agents,
     t,
-  }), [agents, chatSessions, gatewaySessions, messagesPerSession, sessionsUsage, t, workshopTasks, workspaceTasks]);
+  }), [agents, chatSessions, gatewaySessions, messagesPerSession, sessionsUsage, t, workshopTasks]);
 
   return (
     <TimelineView
       tasks={tasks}
       onTaskClick={(task) => {
-        if (task.id.startsWith('workspace:')) {
-          navigate(task.href || '/ai-workspace');
-          return;
-        }
         if (task.id.startsWith('session:')) {
           const sessionKey = task.id.slice('session:'.length);
           useChatStore.getState().openTab(sessionKey);

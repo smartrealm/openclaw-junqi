@@ -157,7 +157,7 @@ function ApprovalRow({
                   onClick={() => onResolve(approval, decision)}
                   disabled={expired || resolvingId !== null}
                   className={clsx(
-                    'inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[10.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45',
+                    'inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[10.5px] font-medium transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45',
                     decision === 'deny'
                       ? 'border-aegis-danger/35 text-aegis-danger hover:bg-aegis-danger/10'
                       : decision === 'allow-always'

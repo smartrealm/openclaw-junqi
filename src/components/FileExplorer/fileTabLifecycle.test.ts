@@ -43,8 +43,8 @@ test("BUG-FILE-STALE-02 a tab whose file disappeared is taken down", () => {
   assert.match(documentHook, /document\.snapshot\(\)\.status === "error"/);
   assert.match(capabilities, /return !entries\.some\(\(entry\) => !entry\.is_dir && entry\.name === fileName\)/);
 
-  // FileManager remains the legacy FileViewer host and closes missing tabs.
-  // The new AI workspace owns documents through EditorDocumentManager instead.
+  // FileManager 仍负责关闭已删除文件的标签页。
+  // 共享文档控制器负责编辑文档的状态与写入协调。
   assert.match(fileManager, /onFileMissing=\{closeTab\}/);
   const documentManager = readFileSync(
     new URL("../../workspace-files/services/editorDocumentManager.ts", import.meta.url),

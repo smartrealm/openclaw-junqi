@@ -1161,7 +1161,7 @@ function ChatViewContent() {
         if (outcome === 'running') return null;
         return (
           <div className="mx-auto w-full max-w-[760px] px-3">
-            <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface animate-pulse" />}>
+            <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface" />}>
               <ExecutionPlanCard
                 plan={block.plan}
                 outcome={outcome}
@@ -1307,7 +1307,7 @@ function ChatViewContent() {
         data-response-chrome-owner={chrome.owner}
       >
         {chrome.owner === 'group' && (
-          <Suspense fallback={<div className="absolute left-2 top-2 h-8 w-8 rounded-full bg-aegis-primary/15 animate-pulse" />}>
+          <Suspense fallback={<div className="absolute left-2 top-2 h-8 w-8 rounded-full bg-aegis-primary/15" />}>
             <AssistantResponseAvatar
               sessionKey={group.sessionKey}
               className="absolute left-1 top-1 z-[1]"
@@ -1339,7 +1339,7 @@ function ChatViewContent() {
           );
         })}
         {chrome.owner === 'group' && (
-          <Suspense fallback={<div className="ml-[46px] h-4 w-32 rounded bg-[rgb(var(--aegis-overlay)/0.04)] animate-pulse" />}>
+          <Suspense fallback={<div className="ml-[46px] h-4 w-32 rounded bg-[rgb(var(--aegis-overlay)/0.04)]" />}>
             <AssistantResponseFooter
               sessionKey={group.sessionKey}
               block={representativeBlock}
@@ -1416,7 +1416,7 @@ function ChatViewContent() {
         )}>
           {connecting ? (
             <span className="flex items-center justify-center gap-2">
-              <span className="w-1.5 h-1.5 bg-aegis-warning rounded-full animate-pulse-soft" />
+              <span className="w-1.5 h-1.5 bg-aegis-warning rounded-full" />
               {t('connection.connectingBanner')}
             </span>
           ) : (
@@ -1588,10 +1588,10 @@ function ChatViewContent() {
       {activeExecutionPlan && (
         <div
           data-execution-plan-placement="composer-above"
-          className="shrink-0 bg-[var(--aegis-bg-frosted-60)] px-3 pt-3 backdrop-blur-xl"
+          className="shrink-0 bg-[var(--aegis-bg-frosted-60)] px-3 pt-3 backdrop-blur-sm"
         >
           <div className="mx-auto w-full max-w-[760px]">
-            <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface animate-pulse" />}>
+            <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface" />}>
               <ExecutionPlanCard plan={activeExecutionPlan} outcome="running" />
             </Suspense>
           </div>

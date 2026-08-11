@@ -1,21 +1,12 @@
 // ── Notification local store (ported from junqi notification.rs) ──────────────
 //
-// Manages JunQi's application config directory — a per-user persistent store of
-// "which notification IDs have been read" + a local notifications queue that
-// other modules (e.g. agent_task_pty) can push to.
-//
-// Architecture:
-//   - `get_notifications` — returns persisted local items merged with read state
-//   - `push_local_notification` — called by other Rust modules to push a
-//     notification (e.g. "task failed", "task needs input")
-//   - read/clear commands — mutate either all records or an explicit record set
+// 管理 JunQi 应用配置目录中的本地通知队列及其已读状态。
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, Emitter};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationItem {
@@ -261,23 +252,6 @@ fn sanitize_text(s: &str, max_len: usize) -> String {
     cleaned
 }
 
-/// 后端产生的通知写入成功后立即通知所有 WebView 刷新和呈现。
-pub fn push_local_notification(
-    app: &AppHandle,
-    level: &str,
-    title: &str,
-    body: &str,
-    url: Option<&str>,
-) {
-    let Ok(result) = persist_notification(create_notification(level, title, body, url)) else {
-        return;
-    };
-    if !result.inserted {
-        return;
-    }
-    let _ = app.emit("junqi:notification-created", result);
-}
-
 fn load_local_notifications(path: &Path) -> Vec<NotificationItem> {
     if !path.exists() {
         return Vec::new();
@@ -469,12 +443,16 @@ mod tests {
 
     #[test]
     fn frontend_notification_payload_is_sanitized_before_persistence() {
-        let created =
-            create_notification("unexpected", "title\0", "body\x07", Some("/ai-workspace\0"));
+        let created = create_notification(
+            "unexpected",
+            "title\0",
+            "body\x07",
+            Some("/chat?session=test\0"),
+        );
         assert_eq!(created.level, "info");
         assert_eq!(created.title, "title");
         assert_eq!(created.body, "body");
-        assert_eq!(created.url.as_deref(), Some("/ai-workspace"));
+        assert_eq!(created.url.as_deref(), Some("/chat?session=test"));
         assert!(!created.is_read);
     }
 

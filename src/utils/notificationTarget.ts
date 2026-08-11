@@ -1,5 +1,3 @@
-import { canonicalizeLegacyAgentWorkspaceTaskRoute } from './agentTaskRoute';
-
 export type NotificationTarget =
   | { kind: 'internal'; value: string }
   | { kind: 'external'; value: string };
@@ -9,7 +7,7 @@ export function resolveNotificationTarget(url: string | null | undefined): Notif
   if (!value || value.includes('\0')) return null;
 
   if (value.startsWith('/') && !value.startsWith('//') && !value.includes('\\')) {
-    return { kind: 'internal', value: canonicalizeLegacyAgentWorkspaceTaskRoute(value) };
+    return { kind: 'internal', value };
   }
 
   try {
@@ -18,7 +16,7 @@ export function resolveNotificationTarget(url: string | null | undefined): Notif
       return { kind: 'external', value: parsed.toString() };
     }
   } catch {
-    // Invalid and unsupported targets are intentionally inert.
+    // 非法或不支持的目标不执行任何动作。
   }
 
   return null;

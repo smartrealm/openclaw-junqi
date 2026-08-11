@@ -21,8 +21,6 @@ function toolCategories(t: ReturnType<typeof useTranslation>['t']): ReadonlyArra
   return [
     { to: '/activity',  icon: <Activity size={14} />,  label: t('nav.activity', '活动中心'), feature: 'dashboard' },
     { to: '/workshop', icon: <Folder size={14} />,    label: t('nav.workspace', '工作空间'), feature: 'workshop' },
-    { to: '/ai-workspace', icon: <Bot size={14} />,   label: t('nav.agentTasks', 'Agent 任务'), feature: 'agentRun' },
-    { to: '/briefs', icon: <BookOpenText size={14} />, label: t('nav.taskBriefs'), feature: 'agentRun' },
     { to: '/terminal', icon: <Terminal size={14} />,  label: t('nav.terminal', '终端'), feature: 'terminal' },
     { to: '/files',    icon: <FileText size={14} />,  label: t('nav.files', '文件管理'), feature: 'files' },
     { to: OPENCLAW_TOOLS_ROUTE, icon: <Database size={14} />, label: t('nav.openClawTools', 'OpenClaw 工具'), feature: 'configManager' },

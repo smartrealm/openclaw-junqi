@@ -31,12 +31,10 @@ test('Dynamic Island maps only projected activity phases and removes duplicate r
   const base = {
     voicePhase: 'idle' as const,
     voiceInput: { mode: 'off' as const, phase: 'off' as const, error: null },
-    runningTaskCount: 0,
   };
   assert.equal(resolveDynamicIslandAgentActivity({ ...base, sessionPhase: 'thinking' }), 'thinking');
   assert.equal(resolveDynamicIslandAgentActivity({ ...base, sessionPhase: 'generating' }), 'generating');
   assert.equal(resolveDynamicIslandAgentActivity({ ...base, sessionPhase: 'observing' }), 'working');
-  assert.equal(resolveDynamicIslandAgentActivity({ ...base, runningTaskCount: 2 }), 'working');
   assert.equal(resolveDynamicIslandAgentActivity({ ...base, voicePhase: 'listening' }), 'listening');
   assert.equal(resolveDynamicIslandAgentActivity({ ...base, voicePhase: 'speaking' }), 'generating');
   assert.equal(resolveDynamicIslandAgentActivity({

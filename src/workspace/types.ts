@@ -1,14 +1,12 @@
-// Workspace pane tree.
+// 终端工作区面板树。
 //
-// The model deliberately keeps pane identity separate from pane metadata. A
-// previous version stored a second `config.id`, which could diverge from the
-// leaf id after nested splits and leave focus pointing at a pane that did not
-// exist. Kooky uses one identity per pane; JunQi does the same here.
+// 面板身份与元数据分离。旧实现额外存储 `config.id`，嵌套分屏后可能与叶节点 id 偏离，
+// 导致焦点指向不存在的面板；当前每个面板只保留一个身份来源。
 
 /** What kind of content a leaf pane renders. */
 export type LeafKind = 'shell' | 'agent';
 
-/** Mirror of AgentRunView's local AgentType to avoid a circular import. */
+/** 终端中可启动的本地命令目录标识。 */
 export type AgentType = 'claude' | 'codex' | 'pi';
 
 /** Runtime-independent configuration attached to one pane. */
@@ -63,7 +61,7 @@ export interface Workspace {
   worktreePath?: string;
   /** SSH destination for a remote-only workspace (for example user@host). */
   sshRemoteHost?: string;
-  /** Keep the project in the drawer but omit it from the AI workspace rail. */
+  /** 保留项目记录，但不在终端项目栏展示。 */
   hiddenFromRail?: boolean;
 }
 

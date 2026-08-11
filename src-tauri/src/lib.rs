@@ -275,12 +275,6 @@ pub fn run() {
             commands::git_neu::git_pull,
             commands::git_neu::git_remote_counts,
             commands::git_neu::generate_commit_message,
-            commands::agent_assist::generate_task_name,
-            // Worktree task commands (ported from junqi git.rs)
-            commands::git_neu::create_task_worktree,
-            commands::git_neu::merge_task_worktree,
-            commands::git_neu::remove_task_worktree,
-            commands::git_neu::worktree_diff_stats,
             commands::git_neu::git_diff_shortstat,
             commands::git_neu::git_file_diff_stats,
             // JunQi-style file system commands
@@ -317,8 +311,6 @@ pub fn run() {
             commands::app_settings::save_terminal_scrollback,
             commands::app_settings::save_terminal_shift_enter_newline,
             commands::app_settings::reset_terminal_settings,
-            // Hooks (minimal port of junqi hooks.rs)
-            commands::hooks::get_hook_readiness,
             // Skill hub (minimal port of junqi skills.rs)
             commands::skills::get_skill_hub_config,
             commands::skills::set_skill_hub_path,
@@ -342,30 +334,6 @@ pub fn run() {
             commands::notification::mark_notification_read,
             commands::notification::mark_all_notifications_read,
             commands::notification::clear_notifications,
-            // Agent task PTY (PR-0.3 — minimal port)
-            commands::agent_task_pty::run_task,
-            commands::agent_task_pty::agent_send_input,
-            commands::agent_task_pty::agent_resize_pty,
-            commands::agent_task_pty::cancel_task,
-            commands::agent_task_pty::complete_task,
-            commands::agent_task_pty::reset_task_process,
-            commands::agent_task_pty::get_task_output_snapshot,
-            commands::agent_task_pty::get_active_task_ids,
-            commands::agent_workspace_storage::load_agent_workspace_tasks,
-            commands::agent_workspace_storage::save_agent_workspace_tasks,
-            commands::workbench_provider::probe_workbench_providers,
-            commands::workbench_pty::create_workbench_pty,
-            commands::workbench_pty::close_workbench_pty_tab,
-            commands::workbench_pty::close_workbench_pty_tabs,
-            commands::workbench_pty::input_workbench_pty,
-            commands::workbench_pty::resize_workbench_pty,
-            commands::workbench_pty::snapshot_workbench_pty,
-            commands::workbench_pty::stop_all_workbench_ptys,
-            commands::workbench_pty::stop_workbench_pty,
-            commands::workbench_pty::stop_workbench_ptys,
-            commands::workbench_session::load_workbench_session,
-            commands::workbench_session::reset_workbench_session,
-            commands::workbench_session::save_workbench_session,
         ])
         .setup(|app| {
             if std::env::args().any(|arg| arg == "--voice-resident") {
@@ -597,9 +565,6 @@ pub fn run() {
         }
         if let RunEvent::Exit = event {
             commands::terminal_keep_awake::shutdown();
-            if let Err(error) = commands::workbench_pty::stop_all_workbench_ptys() {
-                eprintln!("[workbench] failed to drain PTYs during application exit: {error}");
-            }
             // Kill the gateway child process on app exit
             let state = app_handle.state::<GatewayProcess>();
             if let Ok(mut child_lock) = state.child.lock() {
@@ -610,13 +575,4 @@ pub fn run() {
             };
         }
     });
-}
-
-#[cfg(test)]
-mod namespace_tests {
-    #[test]
-    fn application_startup_does_not_install_agent_hooks() {
-        let eager_install_call = ["hooks::", "ensure_installed"].concat();
-        assert!(!include_str!("lib.rs").contains(&eager_install_call));
-    }
 }

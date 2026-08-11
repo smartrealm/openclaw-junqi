@@ -1,55 +1,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { AgentWorkspaceTask } from '@/stores/agentWorkspaceStore';
 import {
   EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
   formatElapsedTime,
   formatRemainingTime,
   isDynamicIslandVoiceInputActive,
   projectDynamicIslandVoiceInput,
-  selectDynamicIslandTasks,
   shouldShowDynamicIsland,
   shouldPeekForSnapshot,
 } from './model';
-
-const task = (id: string, status: AgentWorkspaceTask['status'], updatedAt: number): AgentWorkspaceTask => ({
-  id,
-  status,
-  updatedAt,
-  createdAt: updatedAt,
-  projectPath: '/tmp/project',
-  prompt: `Prompt ${id}`,
-  agent: 'codex',
-  permissionMode: 'auto_edit',
-});
-
-test('attention tasks sort ahead of recent running and completed tasks', () => {
-  const selected = selectDynamicIslandTasks([
-    task('done', 'done', 30),
-    task('running', 'running', 40),
-    task('attention', 'input_required', 10),
-    task('ignored', 'todo', 50),
-  ]);
-  assert.deepEqual(selected.map((item) => item.id), ['attention', 'running', 'done']);
-});
-
-test('auto peek only reacts to meaningful status transitions', () => {
-  const running = { ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT, tasks: [selectDynamicIslandTasks([task('a', 'running', 1)])[0]] };
-  assert.equal(shouldPeekForSnapshot(EMPTY_DYNAMIC_ISLAND_SNAPSHOT, running), false);
-  const attention = { ...running, tasks: [selectDynamicIslandTasks([task('a', 'input_required', 2)])[0]] };
-  assert.equal(shouldPeekForSnapshot(running, attention), true);
-  assert.equal(shouldPeekForSnapshot(attention, { ...attention, autoExpand: false }), false);
-});
 
 test('editing a static focus snapshot does not masquerade as active work', () => {
   const focused = {
     ...EMPTY_DYNAMIC_ISLAND_SNAPSHOT,
     focus: {
       schemaVersion: 1 as const,
-      target: { kind: 'task-brief' as const, id: 'brief-1' },
+      target: { kind: 'chat-session' as const, id: 'agent:main:main' },
       title: 'Initial title',
       detail: '/repo',
-      route: '/briefs?brief=brief-1',
+      route: '/chat',
       focusedAt: 1,
       state: 'idle' as const,
     },
@@ -139,38 +108,32 @@ test('session activity elapsed time stays readable under one minute and after on
 });
 
 test('the island is conditional unless a file drag needs immediate feedback', () => {
-  const running = selectDynamicIslandTasks([task('a', 'running', 1)]);
   const base = {
     enabled: true,
     mainMinimized: false,
     sessionRunning: false,
-    tasks: running,
     resourceDrop: null,
-    terminalPulse: false,
   };
   assert.equal(shouldShowDynamicIsland(base), false);
-  assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], preview: true }), true);
-  assert.equal(shouldShowDynamicIsland({ ...base, mainMinimized: true }), true);
-  assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], mainMinimized: true }), false);
+  assert.equal(shouldShowDynamicIsland({ ...base, preview: true }), true);
+  assert.equal(shouldShowDynamicIsland({ ...base, mainMinimized: true }), false);
   assert.equal(shouldShowDynamicIsland({
     ...base,
-    tasks: [],
     mainMinimized: true,
     focus: {
       schemaVersion: 1,
-      target: { kind: 'task-brief', id: 'brief-1' },
-      title: 'Focused brief',
-      detail: '/repo',
-      route: '/briefs?brief=brief-1',
+      target: { kind: 'chat-session', id: 'agent:main:main' },
+      title: 'Focused session',
+      detail: 'main',
+      route: '/chat',
       focusedAt: 1,
       state: 'idle',
     },
   }), true);
-  assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], mainMinimized: true, voiceActive: true }), true);
-  assert.equal(shouldShowDynamicIsland({ ...base, tasks: [], voiceActive: true }), false);
+  assert.equal(shouldShowDynamicIsland({ ...base, mainMinimized: true, voiceActive: true }), true);
+  assert.equal(shouldShowDynamicIsland({ ...base, voiceActive: true }), false);
   assert.equal(shouldShowDynamicIsland({
     ...base,
-    tasks: [],
     resourceDrop: { phase: 'dragging', count: 1, labels: ['brief.pdf'] },
   }), true);
   assert.equal(shouldShowDynamicIsland({ ...base, enabled: false, mainMinimized: true }), false);

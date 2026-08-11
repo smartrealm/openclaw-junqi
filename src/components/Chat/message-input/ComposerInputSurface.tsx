@@ -57,9 +57,9 @@ export function ComposerInputSurface({
     <div className="mx-auto flex w-full max-w-[784px] min-w-0 items-end gap-2 px-3 pb-3 pt-2" dir={dir}>
       <div
         className={clsx(
-          'relative flex flex-1 flex-col gap-1 rounded-2xl border border-aegis-border bg-aegis-surface px-2.5 py-2 shadow-[0_1px_2px_rgb(var(--aegis-overlay)/0.04)]',
-          'transition-[border-color,box-shadow,background-color] duration-200 focus-within:border-aegis-primary/35',
-          'focus-within:shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.06),0_6px_20px_rgb(var(--aegis-overlay)/0.06)]',
+          'relative flex flex-1 flex-col gap-1 rounded-xl border border-aegis-border bg-aegis-surface px-2.5 py-2 shadow-sm',
+          'transition-[border-color,box-shadow,background-color] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] focus-within:border-aegis-primary/35',
+          'focus-within:shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.06)]',
           !connected && 'opacity-40',
         )}
         onDrop={attachments.drop}
@@ -180,7 +180,7 @@ export function ComposerInputSurface({
             className={clsx(
               'relative grid size-[34px] shrink-0 place-items-center rounded-lg transition-[background-color,color,box-shadow,transform] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
               canSend
-                ? 'bg-aegis-primary text-[rgb(var(--aegis-btn-primary-text))] shadow-[0_2px_8px_rgb(var(--aegis-primary)/0.3)] hover:-translate-y-px hover:shadow-[0_4px_16px_rgb(var(--aegis-primary)/0.4)]'
+                ? 'bg-aegis-primary text-[rgb(var(--aegis-btn-primary-text))] hover:bg-aegis-primary-hover active:scale-[0.98]'
                 : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text',
               'disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none',
             )}

@@ -854,7 +854,7 @@ function WorkbenchPanel() {
                               >
                                 <span className={clsx(
                                   'h-1.5 w-1.5 shrink-0 rounded-full',
-                                  state === 'running' && 'animate-pulse bg-aegis-success',
+                                  state === 'running' && 'bg-aegis-success',
                                   state === 'done' && 'bg-aegis-primary/70',
                                   state === 'failed' && 'bg-aegis-danger',
                                   (state === 'stopped' || state === 'unknown') && 'bg-aegis-border',
@@ -987,8 +987,6 @@ function miniItemsFor(
       { to: '/business-applications?view=runtime', icon: <Settings2 size={20} />, label: t('businessApplications.workspaceRuntime', '接入与授权'), feature: 'businessApplications' },
     ];
     case 'tools': return [
-      { to: '/ai-workspace', icon: <Bot size={20} />, label: t('nav.agentTasks', 'Agent 任务'), feature: 'agentRun' },
-      { to: '/briefs', icon: <BookOpenText size={20} />, label: t('nav.taskBriefs'), feature: 'agentRun' },
       { to: '/terminal', icon: <Terminal size={20} />, label: t('nav.terminal', 'Terminal'), feature: 'terminal' },
       { to: '/files', icon: <Folder size={20} />, label: t('nav.files', 'Files'), feature: 'files' },
       { to: OPENCLAW_TOOLS_ROUTE, icon: <Cpu size={20} />, label: t('nav.openClawTools', 'OpenClaw Tools'), feature: 'configManager' },

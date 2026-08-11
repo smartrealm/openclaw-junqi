@@ -36,10 +36,8 @@ export function useKeyboardShortcuts() {
 
       // Ctrl+L → Multi-line composer (kooky-style prompt editor)
       if (ctrl && e.key === 'l') {
-        // Don't hijack if user is selecting text outside chat/agent contexts.
-        const onComposerHost = location.pathname === '/chat'
-          || location.pathname === '/agent-run'
-          || location.pathname === '/ai-workspace';
+        // 仅在会话输入区接管多行编辑快捷键。
+        const onComposerHost = location.pathname === '/chat';
         if (onComposerHost) {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('aegis:open-multi-line-composer'));
@@ -63,7 +61,7 @@ export function useKeyboardShortcuts() {
       // Alt as the platform-safe equivalent. Handle this before the input
       // guard: xterm owns a textarea and used to swallow the advertised split
       // shortcut before the workspace store saw it.
-      const onTerminalWorkspace = location.pathname === '/terminal' || location.pathname === '/agent-run';
+      const onTerminalWorkspace = location.pathname === '/terminal';
       const splitModifier = APP_PLATFORM === 'macos'
         ? e.metaKey && !e.ctrlKey && !e.altKey
         : e.ctrlKey && e.altKey && !e.metaKey;
@@ -103,7 +101,7 @@ export function useKeyboardShortcuts() {
       // Ctrl+N → New chat tab (navigate to chat + open picker)
       if (ctrl && e.key === 'n') {
         e.preventDefault();
-        if (location.pathname === '/terminal' || location.pathname === '/agent-run') {
+        if (location.pathname === '/terminal') {
           window.dispatchEvent(new CustomEvent('junqi:new-terminal-workspace'));
           return;
         }
@@ -113,7 +111,7 @@ export function useKeyboardShortcuts() {
 
       // Ctrl+O → Open a project directory in the terminal workspace.
       if (ctrl && e.key === 'o') {
-        if (location.pathname === '/terminal' || location.pathname === '/agent-run') {
+        if (location.pathname === '/terminal') {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('junqi:open-terminal-folder'));
           return;
@@ -125,7 +123,7 @@ export function useKeyboardShortcuts() {
       if (ctrl && e.key === 'w' && !shift) {
         e.preventDefault();
         const wsPath = location.pathname;
-        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+        if (wsPath === '/terminal') {
           window.dispatchEvent(new CustomEvent('junqi:close-terminal-tab'));
           return;
         }
@@ -138,7 +136,7 @@ export function useKeyboardShortcuts() {
       // Ctrl+T → New terminal tab in the focused pane (kooky ⌘T).
       if (ctrl && e.key === 't' && !shift) {
         const wsPath = location.pathname;
-        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+        if (wsPath === '/terminal') {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('junqi:new-terminal-tab'));
           return;
@@ -150,7 +148,7 @@ export function useKeyboardShortcuts() {
       // title and cwd, matching Kooky's reopen fallback semantics.
       if (ctrl && e.key === 't' && shift) {
         const wsPath = location.pathname;
-        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+        if (wsPath === '/terminal') {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('junqi:reopen-terminal-tab'));
           return;
@@ -162,7 +160,7 @@ export function useKeyboardShortcuts() {
       // line-end editing shortcut.
       if (ctrl && e.key === 'e' && shift) {
         const wsPath = location.pathname;
-        if (wsPath === '/terminal' || wsPath === '/agent-run') {
+        if (wsPath === '/terminal') {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent('junqi:toggle-terminal-pane-zoom'));
           return;
@@ -172,7 +170,7 @@ export function useKeyboardShortcuts() {
       // Ctrl+Tab / Ctrl+Shift+Tab → Cycle tabs
       if (ctrl && e.key === 'Tab') {
         e.preventDefault();
-        if (location.pathname === '/terminal' || location.pathname === '/agent-run') {
+        if (location.pathname === '/terminal') {
           window.dispatchEvent(new CustomEvent('junqi:cycle-terminal-tab', {
             detail: { direction: shift ? -1 : 1 },
           }));
@@ -192,7 +190,7 @@ export function useKeyboardShortcuts() {
       // Ctrl+R → Refresh
       if (ctrl && e.key === 'r' && !shift) {
         e.preventDefault();
-        if (location.pathname === '/terminal' || location.pathname === '/agent-run') {
+        if (location.pathname === '/terminal') {
           window.dispatchEvent(new CustomEvent('junqi:rename-terminal-tab'));
           return;
         }

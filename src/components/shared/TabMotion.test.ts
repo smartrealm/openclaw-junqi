@@ -20,7 +20,6 @@ test('surfaces that retain tabs consume the shared indicator', async () => {
     read('../../pages/SettingsPage.tsx'),
     read('../Chat/ChatTabs.tsx'),
     read('../../pages/SkillsPage/index.tsx'),
-    read('../../pages/AgentWorkspace/index.tsx'),
   ]);
 
   for (const source of sources) {
@@ -38,11 +37,4 @@ test('page entrance motion stays on the inner scene and respects reduced motion'
   assert.match(css, /@keyframes aegis-page-enter/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(css, /\.aegis-page-transition\s*\{\s*will-change: auto/);
-});
-
-test('workspace tab indicators are scoped per split group', async () => {
-  const source = await read('../../pages/AgentWorkspace/index.tsx');
-
-  assert.match(source, /indicatorId=\{`agent-workspace-active-tab-\$\{groupId\}`\}/);
-  assert.match(source, /transitionKey=\{activeTab\?\.id \?\? 'empty'\}/);
 });

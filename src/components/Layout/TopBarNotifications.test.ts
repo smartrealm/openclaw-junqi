@@ -10,7 +10,7 @@ test('TopBar maps persisted notification fields and localized body', () => {
     title: 'Task needs attention',
     body: 'English body',
     bodyZh: '中文内容',
-    url: '/ai-workspace',
+    url: '/chat?session=test-1',
     agent: 'claude',
     createdAt: '2026-07-14T10:00:00Z',
     isRead: false,
@@ -22,7 +22,7 @@ test('TopBar maps persisted notification fields and localized body', () => {
   assert.equal(mapped.body, '中文内容');
   assert.equal(mapped.timestamp, item.createdAt);
   assert.equal(mapped.read, false);
-  assert.equal(mapped.url, '/ai-workspace');
+  assert.equal(mapped.url, '/chat?session=test-1');
   assert.equal(mapped.agent, 'claude');
 });
 

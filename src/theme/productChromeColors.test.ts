@@ -22,7 +22,6 @@ const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
   'components/Terminal/PaneSearchBar.tsx': 0, // xterm 搜索装饰色从当前主题解析
   'components/Terminal/terminalShared.ts': 20, // xterm 回退契约
   'components/settings/ThemePicker.tsx': 11, // 主题色板和预览画布
-  'pages/AgentRunView.tsx': 0,
   'pages/SetupPage/WizardScreen.tsx': 0, // 向导改由主题令牌呈现，不保留硬编码颜色
   'pages/SetupPage/shared.tsx': 10, // 主题色板
   'pet/PetBubble.tsx': 0,
@@ -33,7 +32,7 @@ const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
   'pet/pomodoroView.ts': 4,
   'pet/skins/index.tsx': 13, // 萌宠绘图色板
   'runtime/fatalErrorOverlay.ts': 3, // React 启动前的紧急错误界面
-  'styles/index.css': 6, // CSS 遮罩哨兵色，不用于产品界面
+  'styles/index.css': 0, // 基础样式完全由主题令牌提供，不保留遮罩颜色字面量
   'styles/primitives.css': 10, // 固定的数据可视化基础色
   'styles/terminal-kooky.css': 0, // 终端界面必须使用语义主题令牌
   'styles/terminal.css': 0, // 终端与 ANSI 主题别名
@@ -43,7 +42,6 @@ const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
   'styles/themes/aegis-midnight.css': 33, // 语义令牌定义
   'utils/theme-colors.ts': 1, // 令牌转换回退值和说明
   'utils/qrCode.ts': 2, // 二维码像素内容色必须保持稳定黑白对比
-  'workbench/components/WorkbenchTerminalPane.tsx': 0,
 };
 
 function sourceFiles(root: string): string[] {

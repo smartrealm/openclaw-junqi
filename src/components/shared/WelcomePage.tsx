@@ -63,13 +63,6 @@ interface GitBranchInfo {
   current: boolean;
 }
 
-interface SavedTodo {
-  at: number;
-  agent: string;
-  prompt: string;
-  perm: string;
-}
-
 type View = 'projects' | 'timeline' | 'skills';
 
 function toolIcon(id: string): React.ReactNode {
@@ -100,15 +93,6 @@ function toolIcon(id: string): React.ReactNode {
     just: <Settings2 size={14} strokeWidth={1.75} />,
   };
   return icons[id] ?? <Box size={14} strokeWidth={1.75} />;
-}
-
-function readSavedTodos(): SavedTodo[] {
-  try {
-    const value = JSON.parse(localStorage.getItem('junqi:saved-todos') || '[]');
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
 }
 
 const PROJECT_AVATAR_CLASSES = [
@@ -187,7 +171,6 @@ export function WelcomePage({ onLaunchTool, onOpenProject }: WelcomePageProps) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [tools, setTools] = useState<CLITool[]>([]);
   const [toolsLoading, setToolsLoading] = useState(true);
-  const [savedTodos, setSavedTodos] = useState<SavedTodo[]>(readSavedTodos);
   const projectLoadId = useRef(0);
 
   const workshopTasks = useWorkshopStore((state) => state.tasks);
@@ -361,14 +344,6 @@ export function WelcomePage({ onLaunchTool, onOpenProject }: WelcomePageProps) {
     }
   }, [t]);
 
-  const deleteTodo = useCallback((index: number) => {
-    setSavedTodos((current) => {
-      const updated = current.filter((_, itemIndex) => itemIndex !== index);
-      localStorage.setItem('junqi:saved-todos', JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
-
   const sidebarItems: Array<{ key: View; icon: React.ReactNode; label: string }> = [
     { key: 'projects', icon: <Layers size={15} />, label: t('welcome.projects', 'Projects') },
     { key: 'timeline', icon: <Clock size={15} />, label: t('welcome.timeline', 'Timeline') },
@@ -456,18 +431,12 @@ export function WelcomePage({ onLaunchTool, onOpenProject }: WelcomePageProps) {
             actionError={actionError}
             tools={tools}
             toolsLoading={toolsLoading}
-            savedTodos={savedTodos}
             onQueryChange={setQuery}
             onBrowse={browseForProject}
             onOpenProject={openProject}
             onRemoveProject={removeProject}
             onRetry={refreshProjects}
             onLaunchTool={(tool) => onLaunchTool?.(tool)}
-            onOpenTodo={(todo) => {
-              const params = new URLSearchParams({ agent: todo.agent, prompt: todo.prompt });
-              navigate(`/agent-run?${params.toString()}`);
-            }}
-            onDeleteTodo={deleteTodo}
           />
         )}
         {view === 'timeline' && (
@@ -495,15 +464,12 @@ interface ProjectsViewProps {
   actionError: string | null;
   tools: CLITool[];
   toolsLoading: boolean;
-  savedTodos: SavedTodo[];
   onQueryChange: (query: string) => void;
   onBrowse: () => void;
   onOpenProject: (project: WorkspaceProject) => void;
   onRemoveProject: (path: string) => void;
   onRetry: () => void;
   onLaunchTool: (tool: CLITool) => void;
-  onOpenTodo: (todo: SavedTodo) => void;
-  onDeleteTodo: (index: number) => void;
 }
 
 function ProjectsView({
@@ -517,15 +483,12 @@ function ProjectsView({
   actionError,
   tools,
   toolsLoading,
-  savedTodos,
   onQueryChange,
   onBrowse,
   onOpenProject,
   onRemoveProject,
   onRetry,
   onLaunchTool,
-  onOpenTodo,
-  onDeleteTodo,
 }: ProjectsViewProps) {
   const { t } = useTranslation();
   const hasQuery = query.trim().length > 0;
@@ -647,35 +610,6 @@ function ProjectsView({
               )}
             </div>
           </section>
-
-          {savedTodos.length > 0 && (
-            <section className="mt-7" aria-labelledby="saved-prompts-heading">
-              <div className="mb-2.5 flex items-baseline justify-between gap-3">
-                <h2 id="saved-prompts-heading" className="text-[13px] font-semibold text-aegis-text">
-                  {t('welcome.savedPrompts', 'Saved prompts')}
-                </h2>
-                <span className="font-mono text-[10px] text-aegis-text-dim">{savedTodos.length}</span>
-              </div>
-              <div className="border-y border-aegis-border">
-                {savedTodos.map((todo, index) => (
-                  <div key={`${todo.at}:${index}`} className="flex h-11 items-center gap-2 border-b border-aegis-border px-2 last:border-b-0">
-                    <span className="shrink-0 rounded bg-aegis-overlay/[0.05] px-1.5 py-0.5 font-mono text-[9.5px] text-aegis-text-dim">{todo.agent}</span>
-                    <button type="button" onClick={() => onOpenTodo(todo)} className="min-w-0 flex-1 truncate text-start text-[11.5px] text-aegis-text-secondary hover:text-aegis-text focus-visible:outline-none focus-visible:underline">
-                      {todo.prompt}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteTodo(index)}
-                      title={t('common.delete', 'Delete')}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-aegis-text-dim hover:bg-aegis-danger/10 hover:text-aegis-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-danger/35"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
 
           <details className="group/tools mt-7 border-y border-aegis-border">
             <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-2 text-[12px] font-semibold text-aegis-text marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-aegis-primary/40">

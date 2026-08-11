@@ -1,7 +1,8 @@
-// kooky PaneComposerBar 1:1 port — Pane 底部内嵌 Prompt 输入框
-// 默认隐藏，⌘L 触发滑出。Return 发送，Shift+Return 换行，Esc 关闭。
+// 终端窗格底部内嵌 Prompt 输入框。
+// 默认收起，快捷键触发展开。Return 发送，Shift+Return 换行，Esc 关闭。
 
 import { useRef, useEffect, useCallback } from "react";
+import { useReducedMotion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 
 export interface PaneComposerBarProps {
@@ -21,6 +22,7 @@ export function PaneComposerBar({
 }: PaneComposerBarProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { t } = useTranslation();
+  const reduceMotion = useReducedMotion();
 
   // 打开时自动聚焦
   useEffect(() => {
@@ -54,17 +56,21 @@ export function PaneComposerBar({
 
   return (
     <div
+      aria-hidden={!isOpen}
       style={{
         flexShrink: 0,
         overflow: "hidden",
-        // 高度自适应内容，上下限由内部 textarea 保证
-        borderTop: "1px solid var(--aegis-border)",
+        // 保持容器挂载，以便收起和展开能使用同一条真实布局过渡。
+        borderTop: `1px solid ${isOpen ? "var(--aegis-border)" : "transparent"}`,
         background: "rgb(var(--aegis-surface))",
+        maxHeight: isOpen ? 288 : 0,
+        opacity: isOpen ? 1 : 0,
         transform: isOpen ? "translateY(0)" : "translateY(100%)",
-        // ponytail: display:none when closed avoids height:0 rendering quirks
-        display: isOpen ? "flex" : "none",
+        pointerEvents: isOpen ? "auto" : "none",
         flexDirection: "column",
-        transition: "transform 0.2s",
+        transition: reduceMotion
+          ? "none"
+          : "max-height var(--aegis-duration-slow) var(--aegis-ease-standard), opacity var(--aegis-duration-normal) var(--aegis-ease-standard), transform var(--aegis-duration-slow) var(--aegis-ease-standard)",
       }}
     >
       <textarea
@@ -72,6 +78,7 @@ export function PaneComposerBar({
         value={draft}
         onChange={(e) => onDraftChange(e.target.value)}
         onKeyDown={handleKeyDown}
+        tabIndex={isOpen ? undefined : -1}
         placeholder={t('common.enterPrompt', '输入 Prompt…')}
         style={{
           flex: 1,
@@ -115,6 +122,7 @@ export function PaneComposerBar({
         </span>
         <button
           onClick={handleSendClick}
+          tabIndex={isOpen ? undefined : -1}
           disabled={!draft.trim()}
           style={{
             padding: "2px 16px",

@@ -5,13 +5,11 @@ import { readFileSync } from 'node:fs';
 const service = readFileSync(new URL('./localEditorDocuments.ts', import.meta.url), 'utf8');
 const viewer = readFileSync(new URL('../../components/FileExplorer/FileViewer.tsx', import.meta.url), 'utf8');
 const documentHook = readFileSync(new URL('../../components/FileExplorer/useWorkspaceFileDocument.ts', import.meta.url), 'utf8');
-const workspace = readFileSync(new URL('../../pages/AgentWorkspace/index.tsx', import.meta.url), 'utf8');
 
 test('FileViewer detach retains the shared document while explicit tab close releases it', () => {
   assert.match(documentHook, /acquireLocalEditorDocument\(projectPath, filePath, ownerId\)/);
   assert.doesNotMatch(documentHook, /document\.dispose\(\)/);
   assert.match(viewer, /releaseLocalEditorDocuments\(paths\.map\(leaseForPath\)\)/);
-  assert.match(workspace, /await releaseLocalEditorDocument\(localPath, tab\.filePath/);
 });
 
 test('deleted files tombstone the shared controller before releasing the final owner', () => {

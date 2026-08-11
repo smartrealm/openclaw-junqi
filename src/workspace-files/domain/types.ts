@@ -1,4 +1,4 @@
-import type { HostId } from '@/workbench/domain/types';
+export type HostId = string;
 
 export type WorkspaceFilePolicy = 'workspace' | 'terminal-strict' | 'managed-readonly';
 

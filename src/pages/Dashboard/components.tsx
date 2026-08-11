@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════
 // Dashboard/components.tsx
-// Sub-components: ContextRing, QuickAction, SessionItem,
-//                 FeedItem, AgentItem
+// 子组件：ContextRing、QuickAction、SessionItem、
+//         FeedItem、AgentItem
 // ═══════════════════════════════════════════════════════════
 
 import { Pin, PinOff } from 'lucide-react';
@@ -11,7 +11,7 @@ import { Badge, StatusDot } from '@/components/shared/badge';
 import i18n from '@/i18n';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
-// ── Format helpers (shared with index.tsx) ──────────────────
+// ── 与 index.tsx 共享的格式化函数 ──────────────────
 export const fmtCost = (n: number) => `$${n.toFixed(2)}`;
 
 export const fmtCostShort = (n: number) =>
@@ -37,7 +37,7 @@ export const fmtUptime = (ms: number) => {
 };
 
 // ═══════════════════════════════════════════════════════════
-// ContextRing — SVG circular progress ring
+// ContextRing — SVG 上下文占用环
 // ═══════════════════════════════════════════════════════════
 export function ContextRing({ percentage }: { percentage: number }) {
   const size = 88;
@@ -49,28 +49,22 @@ export function ContextRing({ percentage }: { percentage: number }) {
              : percentage > 60 ? 'warning'
              : 'primary';
   const color = themeColorVar(tone);
-  const shadowColor = themeColorVar(tone, 0.25);
+  const transition = 'stroke-dashoffset var(--aegis-duration-normal) var(--aegis-ease-standard)';
 
   return (
     <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
-        {/* Track */}
+        {/* 轨道 */}
         <circle cx={size / 2} cy={size / 2} r={r}
           fill="none" stroke="rgb(var(--aegis-overlay) / 0.04)" strokeWidth={sw} />
-        {/* Glow layer */}
-        <circle cx={size / 2} cy={size / 2} r={r}
-          fill="none" stroke={color} strokeWidth={sw + 4}
-          strokeLinecap="round" strokeDasharray={c} strokeDashoffset={offset}
-          opacity={0.12}
-          style={{ transition: 'stroke-dashoffset 1.5s ease', filter: 'blur(3px)' }} />
-        {/* Fill */}
+        {/* 进度仅过渡几何变化，避免数据刷新时叠加光晕和迟滞。 */}
         <circle cx={size / 2} cy={size / 2} r={r}
           fill="none" stroke={color} strokeWidth={sw}
           strokeLinecap="round" strokeDasharray={c} strokeDashoffset={offset}
-          style={{ transition: 'stroke-dashoffset 1.5s ease' }} />
+          style={{ transition }} />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-[20px] font-extrabold" style={{ color, textShadow: `0 0 12px ${shadowColor}` }}>
+        <span className="text-[20px] font-extrabold" style={{ color }}>
           {Math.round(percentage)}%
         </span>
       </div>
@@ -79,12 +73,11 @@ export function ContextRing({ percentage }: { percentage: number }) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// QuickAction — Action button with hover glow
+// 快捷操作仅呈现真实跳转或运行时操作，不额外叠加演示式光晕。
 // ═══════════════════════════════════════════════════════════
-export function QuickAction({ icon: Icon, label, glowColor, bgColor, iconColor, onClick, loading, disabled }: {
+export function QuickAction({ icon: Icon, label, bgColor, iconColor, onClick, loading, disabled }: {
   icon: React.ElementType;
   label: string;
-  glowColor: string;
   bgColor: string;
   iconColor: string;
   onClick: () => void;
@@ -98,21 +91,16 @@ export function QuickAction({ icon: Icon, label, glowColor, bgColor, iconColor, 
       className={clsx(
         'relative flex min-h-[58px] items-center gap-2.5 rounded-lg p-2.5 text-left',
         'border border-[rgb(var(--aegis-overlay)/0.05)] bg-[rgb(var(--aegis-overlay)/0.015)]',
-        'transition-all duration-250 overflow-hidden',
+        'transition-[background-color,border-color,color,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] overflow-hidden',
         (loading || disabled) && 'opacity-45 cursor-not-allowed',
-        !loading && !disabled && 'group hover:border-[rgb(var(--aegis-overlay)/0.12)] hover:-translate-y-0.5 active:translate-y-0'
+        !loading && !disabled && 'group hover:border-[rgb(var(--aegis-overlay)/0.12)] active:opacity-80'
       )}
     >
-      {/* Radial hover glow */}
-      <div
-        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl"
-        style={{ background: `radial-gradient(ellipse at top, ${glowColor}, transparent)` }}
-      />
       {loading ? (
         <LoadingIndicator size={18} className="text-aegis-text-dim relative z-10" />
       ) : (
         <div
-          className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-transform duration-250 group-hover:scale-105"
+          className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
           style={{ background: bgColor, border: `1px solid ${bgColor}` }}
         >
           <Icon size={16} style={{ color: iconColor }} />
@@ -126,7 +114,7 @@ export function QuickAction({ icon: Icon, label, glowColor, bgColor, iconColor, 
 }
 
 // ═══════════════════════════════════════════════════════════
-// SessionItem — Single session row
+// SessionItem — 单个会话行
 // ═══════════════════════════════════════════════════════════
 export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, avatarColor, icon: Icon, pinned, onPinToggle, onClick }: {
   isMain?: boolean;
@@ -144,7 +132,7 @@ export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, ava
   return (
     <div
       className={clsx(
-        'w-full flex items-center gap-1 rounded-lg transition-all duration-200',
+        'w-full flex items-center gap-1 rounded-lg transition-[background-color,border-color,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)]',
         isMain
           ? 'bg-aegis-primary-surface border border-aegis-primary/10'
           : 'hover:bg-[rgb(var(--aegis-overlay)/0.03)] cursor-pointer'
@@ -153,7 +141,7 @@ export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, ava
       <button
         type="button"
         onClick={onClick}
-        className="min-w-0 flex flex-1 items-center gap-2 px-2 py-1.5 text-left"
+        className="min-w-0 flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
       >
         <div
           className="w-[26px] h-[26px] rounded-md flex items-center justify-center flex-shrink-0"
@@ -193,11 +181,10 @@ export function SessionItem({ isMain, name, model, detail, tokens, avatarBg, ava
 }
 
 // ═══════════════════════════════════════════════════════════
-// FeedItem — Activity feed entry with connector line
+// FeedItem — 带连接线的活动记录
 // ═══════════════════════════════════════════════════════════
-export function FeedItem({ color, glowColor, text, time, timeTitle, isLast, agentName, model, modelTitle, tokens, running, onClick }: {
+export function FeedItem({ color, text, time, timeTitle, isLast, agentName, model, modelTitle, tokens, running, onClick }: {
   color: string;
-  glowColor: string;
   text: string;
   time: string;
   timeTitle?: string;
@@ -212,12 +199,12 @@ export function FeedItem({ color, glowColor, text, time, timeTitle, isLast, agen
   const content = (
     <>
       <div className="flex flex-col items-center pt-1.5">
-        <div
-          className="w-[7px] h-[7px] rounded-full flex-shrink-0"
-          style={{ background: color, boxShadow: `0 0 6px ${glowColor}` }}
+          <div
+            className="w-[7px] h-[7px] rounded-full flex-shrink-0"
+            style={{ background: color }}
         />
         {!isLast && (
-          <div className="w-px flex-1 mt-1 bg-gradient-to-b from-white/[0.06] to-transparent" />
+          <div className="mt-1 w-px flex-1 bg-[rgb(var(--aegis-overlay)/0.06)]" />
         )}
       </div>
       <div className="flex-1 min-w-0">
@@ -238,7 +225,7 @@ export function FeedItem({ color, glowColor, text, time, timeTitle, isLast, agen
           )}
           {running && (
             <span
-              className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-aegis-success"
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-aegis-success"
               title={i18n.t('dashboard.working', { defaultValue: 'Working' }) as string}
             />
           )}
@@ -246,7 +233,7 @@ export function FeedItem({ color, glowColor, text, time, timeTitle, isLast, agen
       </div>
     </>
   );
-  const rowClass = 'w-full text-left flex gap-2.5 px-1 py-2 border-b border-[rgb(var(--aegis-overlay)/0.025)] last:border-b-0 animate-slide-in-right rounded-md';
+  const rowClass = 'w-full text-left flex gap-2.5 px-1 py-2 border-b border-[rgb(var(--aegis-overlay)/0.025)] last:border-b-0 rounded-md';
   if (!onClick) return <div className={rowClass}>{content}</div>;
   return (
     <button type="button" onClick={onClick} className={`${rowClass} hover:bg-[rgb(var(--aegis-overlay)/0.02)] transition-colors`}>
@@ -256,7 +243,7 @@ export function FeedItem({ color, glowColor, text, time, timeTitle, isLast, agen
 }
 
 // ═══════════════════════════════════════════════════════════
-// AgentItem — Agent row with relative token bar
+// AgentItem — 含 Token 占用条的智能体行
 // ═══════════════════════════════════════════════════════════
 export function AgentItem({ emoji, name, model, tokens, tokenCount, maxTokens, sessions, running }: {
   emoji: React.ReactNode;
@@ -271,7 +258,6 @@ export function AgentItem({ emoji, name, model, tokens, tokenCount, maxTokens, s
   const barPct = maxTokens > 0 ? Math.min(100, (tokenCount / maxTokens) * 100) : 0;
   const tone = running ? 'running' : 'neutral';
   const barColor = themeColorVar('primary');
-  const barShadow = themeColorVar('primary', 0.2);
 
   return (
     <div className="flex items-center gap-3 py-2.5 border-b border-[rgb(var(--aegis-overlay)/0.04)] last:border-b-0">
@@ -287,8 +273,8 @@ export function AgentItem({ emoji, name, model, tokens, tokenCount, maxTokens, s
         <div className="flex items-center gap-2">
           <div className="flex-1 h-1 rounded-full bg-[rgb(var(--aegis-overlay)/0.04)] overflow-hidden">
             <div
-              className="h-full rounded-full transition-all duration-700"
-              style={{ width: `${barPct}%`, background: barColor, boxShadow: `0 0 4px ${barShadow}` }}
+              className="h-full rounded-full transition-[width] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none"
+              style={{ width: `${barPct}%`, background: barColor }}
             />
           </div>
           <span className="text-[10px] text-aegis-text-muted font-mono flex-shrink-0 truncate max-w-[112px]">{model}</span>

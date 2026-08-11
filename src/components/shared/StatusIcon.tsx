@@ -1,17 +1,4 @@
-// ── StatusIcon — adapted from junqi's StatusIcon ──────────────────────────────
-//
-// Original junqi typing uses TaskStatus = 'todo' | 'pending' | 'running' |
-// 'input_required' | 'detached' | 'interrupted' | 'done' | 'failed' | 'cancelled'.
-//
-// Junqi's existing stores use overlapping but distinct vocabularies:
-//   - bootSequenceStore: 'pending' | 'running' | 'completed' | 'skipped' | 'error'
-//   - chatStore toolStatus: 'running' | 'done' | 'error'
-//   - chatStore message.status: 'sent' | 'queued' | 'cancelled'
-//   - workshopStore: 'queue' | 'inProgress' | 'review' | 'done'
-//
-// To keep one icon set for all of them, this component accepts a union of
-// known statuses from every layer. Unrecognized statuses fall through to a
-// neutral outlined circle.
+// 状态图标接受现有状态源的并集；未知值使用中性描边圆，避免推断运行时语义。
 //
 import {
   CheckCircle2,
@@ -28,13 +15,9 @@ import {
 import { LoadingIndicator } from "./LoadingIndicator";
 import { resolveStatusTone, statusToneColor } from "./status/statusTone";
 
-/**
- * Union of all status strings the app actually renders as an icon.
- * Add new variants here when adopting a new vocabulary; the `default`
- * branch keeps unknown values from blowing up.
- */
+/** 应用实际以图标呈现的状态词汇并集。 */
 export type StatusIconValue =
-  // junqi-style TaskStatus
+  // 任务与会话的通用状态
   | "todo"
   | "pending"
   | "running"
@@ -48,18 +31,18 @@ export type StatusIconValue =
   | "blocked"
   | "timed_out"
   | "unknown"
-  // bootSequenceStore
+  // 启动序列状态
   | "completed"
   | "skipped"
   | "error"
-  // chatStore.message.status
+  // 会话消息状态
   | "sent"
   | "queued"
-  // workshopStore
+  // 工作台状态
   | "queue"
   | "inProgress"
   | "review"
-  // AgentRunView / agent lifecycle
+  // 生命周期状态
   | "idle";
 
 interface StatusIconProps {
@@ -68,12 +51,7 @@ interface StatusIconProps {
 }
 
 /**
- * Glyph per status. Shape is the status's own concern — an hourglass and a
- * cross mean different things at a glance — but color is not: it comes from
- * the shared tone table so the same meaning is painted the same way in every
- * presentation shape (BUG-FCA-04).
- *
- * `spinner` is special-cased: `LoadingIndicator` carries its own styling.
+ * 状态决定图形形状，颜色统一来自共享状态色表；加载图标保留其自身样式。
  */
 const STATUS_GLYPH: Record<StatusIconValue, LucideIcon | "spinner"> = {
   running: "spinner",
@@ -110,8 +88,7 @@ const STATUS_GLYPH: Record<StatusIconValue, LucideIcon | "spinner"> = {
 export function StatusIcon({ status, size = 14 }: StatusIconProps) {
   const glyph = STATUS_GLYPH[status];
 
-  // Unknown value: a neutral play icon makes the gap visible instead of
-  // silently rendering as "not started".
+  // 未识别值使用中性播放图标，明确暴露词汇缺口而不是静默伪装成未开始。
   if (!glyph) {
     return <PlayCircle size={size} style={{ color: statusToneColor("neutral") }} />;
   }

@@ -10,7 +10,9 @@ import {
   resolveManualChunk,
 } from "./scripts/vite-chunk-strategy.mjs";
 
-const host = process.env.TAURI_DEV_HOST;
+// Tauri 的默认开发地址使用 localhost。显式绑定 IPv4 回环地址，避免部分系统仅监听
+// IPv6 回环后 WebView 无法加载前端；远程调试仍由 Tauri_DEV_HOST 明确指定。
+const host = process.env.TAURI_DEV_HOST ?? '127.0.0.1';
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), enforceJavaScriptChunkBudget()],
@@ -28,11 +30,11 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    host: host || false,
-    hmr: host
+    host,
+    hmr: process.env.TAURI_DEV_HOST
       ? {
           protocol: "ws",
-          host,
+          host: process.env.TAURI_DEV_HOST,
           port: 5174,
         }
       : undefined,

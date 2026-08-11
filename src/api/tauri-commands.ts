@@ -839,79 +839,11 @@ export const signGatewayDeviceChallenge = (params: GatewayDeviceChallengeParams)
 // mirror the Rust command names and serde field casing so IPC drift is found
 // at this single, typed boundary.
 
-export interface AgentTaskLaunchRequest {
-  taskId: string;
-  projectPath: string;
-  prompt: string;
-  agent: string;
-  permissionMode: string;
-  images?: readonly string[];
-  texts?: readonly string[];
-  cols?: number;
-  rows?: number;
-  resumeId?: string | null;
-}
-
-export interface AgentTaskWorktreeResult {
-  worktreePath: string;
-  worktreeBranch: string;
-  baseBranch: string;
-}
-
-export interface WorktreeDiffStats {
-  additions: number;
-  deletions: number;
-}
-
 export interface TaskWorktreeParams {
   projectPath: string;
   worktreePath: string;
   branch: string;
 }
-
-export interface MergeTaskWorktreeParams extends TaskWorktreeParams {
-  baseBranch: string;
-}
-
-export const runAgentTask = (
-  request: AgentTaskLaunchRequest,
-  onOutput: Channel<string>,
-) => invoke<void>('run_task', { request, onOutput });
-
-export const sendAgentTaskInput = (taskId: string, data: string) => (
-  invoke<void>('agent_send_input', { taskId, data })
-);
-
-export const resizeAgentTaskPty = (taskId: string, cols: number, rows: number) => (
-  invoke<void>('agent_resize_pty', { taskId, cols, rows })
-);
-
-export const cancelAgentTask = (taskId: string, projectPath?: string | null) => (
-  invoke<void>('cancel_task', { taskId, projectPath: projectPath ?? null })
-);
-
-export const completeAgentTask = (taskId: string) => invoke<void>('complete_task', { taskId });
-export const resetAgentTaskProcess = (taskId: string) => invoke<void>('reset_task_process', { taskId });
-
-export const createAgentTaskWorktree = (params: {
-  projectPath: string;
-  taskId: string;
-  baseBranch: string;
-}) => invoke<AgentTaskWorktreeResult>('create_task_worktree', params);
-
-export const mergeAgentTaskWorktree = (params: MergeTaskWorktreeParams) => (
-  invoke<string>('merge_task_worktree', { ...params })
-);
-
-export const removeAgentTaskWorktree = (params: TaskWorktreeParams) => (
-  invoke<void>('remove_task_worktree', { ...params })
-);
-
-export const getAgentTaskWorktreeDiffStats = (params: {
-  projectPath: string;
-  worktreePath: string;
-  baseBranch: string;
-}) => invoke<WorktreeDiffStats>('worktree_diff_stats', params);
 
 export interface NativeSessionContent {
   type: 'text' | 'tool_use' | 'thinking';
@@ -1051,19 +983,6 @@ export const readProjectConfig = (projectPath: string) => (
   invoke<ProjectConfigSnapshot>('read_project_config', { projectPath })
 );
 
-export interface TaskHookReadiness {
-  agent: 'claude' | 'codex';
-  usable: boolean;
-  reason?: 'version_too_low' | 'no_node' | 'not_installed';
-  detected_version?: string;
-  min_version?: string;
-}
-
-export const getTaskHookReadiness = () => invoke<TaskHookReadiness[]>('get_hook_readiness');
-export const getAgentTaskOutputSnapshot = (taskId: string) => (
-  invoke<string>('get_task_output_snapshot', { taskId })
-);
-
 export interface NativeDirectoryEntry {
   name: string;
   path: string;
@@ -1089,13 +1008,6 @@ export interface SessionMetricsSnapshot {
 export const readSessionMetrics = (sessionPath: string) => (
   invoke<SessionMetricsSnapshot>('read_session_metrics', { sessionPath })
 );
-
-export const generateTaskName = (params: {
-  projectPath: string;
-  agent: string;
-  sessionPath?: string | null;
-  originalPrompt: string;
-}) => invoke<string>('generate_task_name', params);
 
 export const getQuickChatSeed = () => invoke<string[]>('get_quickchat_seed');
 
