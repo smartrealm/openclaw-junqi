@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-以 `main` 为基准整合本地长期分支的已提交改动，并在不触碰其他工作树未提交内容的前提下统一分支基线。
+为已整合的 `main` 准备 `3.1.0` 标签版本，完成版本一致性验证并通过远端标签工作流发布桌面制品。
 
 ## 已完成内容
 
@@ -12,6 +12,8 @@
 - `Blues-Code/code`、`Blues-Code/dingtalk` 和 `daxia` 经共同祖先核对后没有独有提交，无需重复合并。
 - Jarvis 工作树中的未提交改动已明确排除在本次整合之外，没有被覆盖、暂存或带入 `main`。
 - 合并后的前端完整测试、静态检查和生产构建均已通过。
+- 桌面版本已从 `3.0.1` 提升到 `3.1.0`，四个版本来源保持一致。
+- 发布前测试发现的安装进度旧视觉计数和过期颜色预算已改为行为与语义 token 守护。
 
 ## 关键技术决策
 
@@ -29,6 +31,13 @@
 - `src/components/setup/SetupFlowPanels.tsx`
 - `src/styles/index.css`
 - `docs/design/ai-native-interaction-reference.md`
+- `docs/quality/tag-release-validation-2026-08-11.md`
+- `package.json`
+- `src-tauri/Cargo.toml`
+- `src-tauri/Cargo.lock`
+- `src-tauri/tauri.conf.json`
+- `src/components/setup/SetupFlowPanels.test.tsx`
+- `src/theme/productChromeColors.test.ts`
 
 ## 测试与验证
 
@@ -47,4 +56,4 @@
 
 1. 在 Jarvis 工作树所有者完成并提交其当前改动后，再按共同祖先审查新增提交。
 2. 对合并后的聊天交互执行桌面真机视觉与键盘操作验收。
-3. 需要推送或发布时，先核对所有分支指针、版本文件和发布工作流，再单独执行远端操作。
+3. 推送 `main` 与 `v3.1.0` 后，核对同一提交的 CI、标签构建和 GitHub Release 结果。

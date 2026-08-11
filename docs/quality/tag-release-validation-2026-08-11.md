@@ -2,24 +2,32 @@
 
 ## 依据
 
-- `.github/workflows/tag-release.yml` 是当前唯一会创建 GitHub Release 的工作流，触发条件为推送匹配 `v*` 的版本标签。
-- 工作流要求标签提交位于 `main` 的祖先链上，标签版本与 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.lock` 四处版本完全一致。
-- 发布任务仅在同一提交的 `main` push CI 已成功后创建 Release，防止未经过完整 CI 的制品被发布。
+- `.github/workflows/tag-release.yml` 是当前版本标签发布入口，触发条件为推送匹配 `v*` 的标签。
+- 工作流要求标签提交位于远端 `main` 的祖先链上，标签版本与 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.lock` 四处版本完全一致。
+- 发布任务只接受同一提交的 `main` push CI 成功结果，随后构建 macOS ARM64、macOS x64 与 Windows x64 制品并创建 GitHub Release。
+- Windows 制品使用短期内部测试证书，不具备公共证书颁发机构信任；macOS 制品使用 Tauri updater 签名，但本地验证不等同于公证和目标设备验收。
 
-## 当前行为
+## 当前变更
 
-`v3.0.0` 的安装包构建全部成功，但发布任务失败。失败原因是该提交的 `main` CI 在后续推送时被取消，无法满足“同一提交 CI 成功”的发布门禁。
+相对 `v3.0.1`，当前主线新增或完善了安装向导长选项搜索、渠道扫码生命周期、OpenClaw 运行时语言对齐和聊天原生交互，因此按向后兼容的新能力提升为 `3.1.0`。
 
-`.github/workflows/release.yml` 只用于候选构建和证据链验证，不创建 GitHub Release；手动运行它不会代替标签发布。
+桌面版本已同步到以下四个来源：
 
-## 本次目标
+- `package.json`
+- `src-tauri/Cargo.toml`
+- `src-tauri/Cargo.lock`
+- `src-tauri/tauri.conf.json`
 
-1. 将桌面版本提升到 `3.0.1`，并同步 Cargo 锁文件。
-2. 先推送版本提交并确认对应 `main` CI 成功。
-3. 创建并推送 `v3.0.1`，由 `tag-release.yml` 自动构建 macOS ARM64、macOS x64 与 Windows x64 制品并创建 GitHub Release。
+## 发布顺序
 
-## 验收与边界
+1. 执行版本一致性、完整前端测试、Rust 测试和生产构建。
+2. 提交 `3.1.0` 版本变更并推送 `main`。
+3. 创建带注释标签 `v3.1.0` 并推送标签。
+4. 核对 `CI` 与 `Tagged Desktop Release` 均绑定同一提交。
+5. 只有远端工作流和 GitHub Release 均成功后，才能声明正式发布完成。
 
-- 本地验收：四处版本一致性脚本、标签发布工作流的定向契约测试、`git diff --check`。
-- 远端验收：标签工作流的 verify、三平台 build、publish 与 summary 都为成功，并且 GitHub Release 存在且绑定 `v3.0.1`。
-- Windows 包仍使用短期内部测试证书，不能表述为公共 CA 信任；macOS、Windows 真实安装验收由目标设备完成。
+## 验收边界
+
+- 本地验证只证明源码、契约和当前 macOS 构建环境通过，不证明 Windows 安装、macOS 公证或线上 Release 成功。
+- 标签推送后必须继续核对远端工作流；工作流仍在运行时只能表述为已触发。
+- 发布前完整测试发现安装进度和颜色预算守护仍绑定旧实现数量；现已改为渲染运行与失败状态并核对语义主题色，同时删除已归零的颜色预算条目。

@@ -33,7 +33,6 @@ const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
   'pet/pomodoroView.ts': 4,
   'pet/skins/index.tsx': 13, // 萌宠绘图色板
   'runtime/fatalErrorOverlay.ts': 3, // React 启动前的紧急错误界面
-  'styles/index.css': 6, // CSS 遮罩哨兵色，不用于产品界面
   'styles/primitives.css': 10, // 固定的数据可视化基础色
   'styles/terminal-kooky.css': 0, // 终端界面必须使用语义主题令牌
   'styles/terminal.css': 0, // 终端与 ANSI 主题别名

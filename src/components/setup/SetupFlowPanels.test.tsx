@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SetupShell } from './SetupFlowPanels';
+import { InstallationConsole, SetupShell } from './SetupFlowPanels';
 
 test('setup footer renders Back separately from a loading primary action', () => {
   const markup = renderToStaticMarkup(
@@ -57,4 +57,32 @@ test('默认展开的日志区域在首条日志到达前保持可见', () => {
 
   assert.match(markup, /Debug Log/);
   assert.match(markup, /No installation or startup action has run yet/);
+});
+
+test('安装进度使用主题状态色区分运行和失败', () => {
+  const runningMarkup = renderToStaticMarkup(
+    <InstallationConsole
+      flow={{
+        installTarget: null,
+        steps: [{ id: 'gateway', label: 'Gateway', status: 'running', progress: 50 }],
+      }}
+      logs={[]}
+      setupStep="gateway"
+    />,
+  );
+  const failedMarkup = renderToStaticMarkup(
+    <InstallationConsole
+      flow={{
+        installTarget: null,
+        steps: [{ id: 'gateway', label: 'Gateway', status: 'error' }],
+      }}
+      logs={[]}
+      setupStep="error"
+    />,
+  );
+
+  assert.match(runningMarkup, /bg-aegis-primary/);
+  assert.match(runningMarkup, /animate-pulse/);
+  assert.match(failedMarkup, /bg-aegis-danger/);
+  assert.doesNotMatch(runningMarkup + failedMarkup, /linear-gradient|box-shadow/);
 });

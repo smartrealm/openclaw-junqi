@@ -349,16 +349,6 @@ test('installation steps and activity log use aligned fixed-height viewports', (
   assert.match(setupFlowPanels, /viewport\.scrollTo\(\{/);
 });
 
-test('installation progress has distinct running and failure visuals', () => {
-  assert.equal(
-    (setupFlowPanels.match(/linear-gradient\(90deg, rgb\(var\(--aegis-primary\)\), rgb\(var\(--aegis-success\)\)/g) ?? []).length,
-    3,
-  );
-  assert.match(setupFlowPanels, /!isError && "animate-pulse"/);
-  assert.match(setupFlowPanels, /isError\s*\? ["']rgb\(248 113 113\)["']/);
-  assert.match(setupFlowPanels, /isError \? ["']none["'] : ["']0 0 14px/);
-});
-
 test('installation footer reports the current step instead of a live log message', () => {
   assert.match(setupPage, /const runningStepLabel = t\("setup\.installPanel\.runningStep"/);
   assert.match(setupPage, /label: runningStepLabel, disabled: true/);
