@@ -8,7 +8,7 @@ JunQi 是 OpenClaw Gateway 的 Tauri 桌面客户端。安装流程只负责桌�
 2. JunQi 按所选运行时检测或准备 Node、npm、OpenClaw、Docker 与必要系统能力。路径和凭据始终绑定该运行时，不能使用开发机默认值。
 3. JunQi 启动或复用 Gateway，并在认证连接与 Runtime Identity 均完成核验后继续。端口可达或进程启动不等于交接成功。
 4. JunQi 调用官方 `openclaw.setup.detect`。官方判断需要配置时，在同一会话呈现官方 Wizard；官方不支持该方法时才进入同一 Gateway 的官方 Wizard，不以本地标记跳过。
-5. Wizard 的模型、凭据、工作区、渠道及可跳过步骤均按其结构化步骤呈现。确认步骤的提示只在其确认控件中显示一次；内容精简的通知、确认、进度和操作步骤默认展开日志，用户仍可手动收起。JunQi 不补充、改写或伪造任何 OpenClaw 结果。
+5. Wizard 的模型、凭据、工作区、渠道及可跳过步骤均按其结构化步骤呈现。确认步骤的提示只在其确认控件中显示一次；配置 OpenClaw 的整个 Wizard 默认展开日志，用户仍可手动收起。JunQi 不补充、改写或伪造任何 OpenClaw 结果。
 6. 完成后进入 Dashboard。后续连接异常由统一 Gateway 生命周期协调器处理，不能把旧连接、文本日志或本地缓存当作成功。
 
 ## 当前验证与边界

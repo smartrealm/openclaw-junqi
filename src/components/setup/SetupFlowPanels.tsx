@@ -240,6 +240,8 @@ export function SetupShell({
   const [showLogs, setShowLogs] = useState(logVisibility === "expanded");
   const isRuntime = active >= 2 && active < 4;
   const showActions = previousAction || secondaryAction || nextAction;
+  // 调用方要求默认展开时，即使首条运行日志尚未到达也保留日志区域，避免界面布局跳动。
+  const shouldShowLogs = isRuntime && showLogToggle && (logs.length > 0 || logVisibility === "expanded");
 
   useEffect(() => {
     setShowLogs(logVisibility === "expanded");
@@ -262,7 +264,7 @@ export function SetupShell({
             </div>
             <div className={clsx(wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6")}>
               {children}
-              {isRuntime && showLogToggle && logs.length > 0 && (
+              {shouldShowLogs && (
                 <div className="mt-5 border-t border-aegis-border pt-4">
                   <button
                     type="button"
