@@ -1,5 +1,5 @@
-// PDF preview component powered by pdfjs-dist (canvas rendering, no native plugin).
-// Accepts raw base64 PDF data so it works inside the desktop webview CSP.
+// PDF 预览使用 pdfjs-dist 的画布渲染，不依赖原生插件。
+// 接收原始 base64 数据，以满足桌面 WebView 的内容安全策略。
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.min.mjs';
@@ -7,9 +7,9 @@ import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, ExternalLink, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { releasePdfDocument } from './pdfDocumentLifecycle';
 
-// Use upstream worker directly. We pin pdfjs-dist to a Chromium-compatible
-// release, so no custom worker/polyfill bridge is needed.
+// 直接使用上游 Worker，避免维护自定义桥接层。
 import pdfjsWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
@@ -108,13 +108,13 @@ function CanvasPdfPreview({ base64, onOpenExternal }: { base64: string; onOpenEx
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
       loadingTask = pdfjs.getDocument({
         data: bytes,
-        // Compatibility-first options for desktop-generated PDFs.
+        // 桌面生成的 PDF 出现局部错误时仍尽量呈现可读取页面。
         stopAtErrors: false,
       });
       loadingTask.promise
         .then((pdf) => {
           if (disposed || loadVersion !== loadVersionRef.current) {
-            pdf.destroy().catch(() => {});
+            void releasePdfDocument(pdf);
             return;
           }
           setDoc(pdf);
@@ -203,11 +203,9 @@ function CanvasPdfPreview({ base64, onOpenExternal }: { base64: string; onOpenEx
     renderPage(doc, page, scale);
   }, [doc, page, scale, renderPage]);
 
-  // A loaded document holds resources on the pdf.js worker side. The loading
-  // task is disposed above, but the document it produced outlives it — without
-  // this, every PDF opened leaks its own worker-side document.
+  // 加载任务已在上方中止；文档实例仍需单独清理其已加载的 Worker 侧资源。
   useEffect(() => () => {
-    void doc?.destroy().catch(() => {});
+    if (doc) void releasePdfDocument(doc);
   }, [doc]);
 
   useEffect(() => {
