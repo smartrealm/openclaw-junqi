@@ -7,9 +7,7 @@ import {
   buildChannelGroups,
   channelAccountEditorValues,
   getChannelAgentOptions,
-  getRequiredCredentialFields,
   persistChannelsOnlyWithRepository,
-  migrateLegacyChannelBindings,
   removeAgentChannelBindings,
   upsertChannelAccount,
   type ChannelConfigRepository,
@@ -97,8 +95,7 @@ describe('channelConfig', () => {
     });
   });
 
-  test('non-DingTalk channels never use JunQi credential definitions or defaults', () => {
-    assert.deepEqual(getRequiredCredentialFields('future-runtime-channel'), []);
+  test('渠道配置不使用 JunQi 自定义凭据要求或默认值', () => {
     assert.deepEqual(
       addChannel(cfg({ channels: {} }), 'future-runtime-channel').channels?.['future-runtime-channel'],
       { enabled: true },
@@ -111,9 +108,7 @@ describe('channelConfig', () => {
     assert.equal(assessChannelAccountReadiness('future-runtime-channel', account).state, 'unknown');
   });
 
-  test('official dingtalk-connector accounts require the current plugin credentials', () => {
-    assert.deepEqual(getRequiredCredentialFields('dingtalk-connector'), ['clientId', 'clientSecret']);
-
+  test('账号是否缺少凭据完全服从 Runtime 状态', () => {
     const [account] = buildChannelGroups(cfg({
       channels: {
         'dingtalk-connector': {
@@ -132,8 +127,17 @@ describe('channelConfig', () => {
 
     assert.ok(account);
     assert.deepEqual(assessChannelAccountReadiness('dingtalk-connector', account), {
+      state: 'unknown',
+      missingFields: [],
+      messages: ['unknown'],
+    });
+    assert.deepEqual(assessChannelAccountReadiness('dingtalk-connector', account, {
+      enabled: true,
+      configured: false,
+      linked: null,
+    }), {
       state: 'missing_credentials',
-      missingFields: ['clientSecret'],
+      missingFields: [],
       messages: ['missing_credentials'],
     });
   });
@@ -163,50 +167,6 @@ describe('channelConfig', () => {
     assert.equal(next.bindings?.some((binding) => binding.agentId === 'old'), false);
     assert.equal(next.bindings?.some((binding) => binding.agentId === 'vip'), true);
     assert.equal(next.bindings?.some((binding) => binding.type === 'acp'), true);
-  });
-
-  test('save migration converts legacy agent bindings and preserves channel metadata', () => {
-    const migrated = migrateLegacyChannelBindings(cfg({
-      channels: {
-        telegram: {
-          agentId: 'main',
-          accounts: { work: { agentId: 'support', botToken: 'token' } },
-        },
-        defaults: { enabled: true },
-        modelByChannel: { openai: { telegram: 'openai/gpt-5.6' } },
-      },
-    }));
-    assert.equal(migrated.channels?.telegram?.agentId, undefined);
-    assert.equal(migrated.channels?.telegram?.accounts?.work?.agentId, undefined);
-    assert.deepEqual(migrated.channels?.defaults, { enabled: true });
-    assert.deepEqual(migrated.channels?.modelByChannel, {
-      openai: { telegram: 'openai/gpt-5.6' },
-    });
-    assert.deepEqual(migrated.bindings, [
-      { type: 'route', agentId: 'main', match: { channel: 'telegram' } },
-      { type: 'route', agentId: 'support', match: { channel: 'telegram', accountId: 'work' } },
-    ]);
-  });
-
-  test('save migration repairs the retired dingtalk alias and credential fields', () => {
-    const migrated = migrateLegacyChannelBindings(cfg({
-      channels: {
-        dingtalk: {
-          appKey: 'client',
-          appSecret: 'secret',
-          robotCode: 'retired',
-          callbackUrl: 'https://example.test/callback',
-        },
-      },
-      bindings: [{ type: 'route', agentId: 'ops', match: { channel: 'dingtalk' } }],
-    }));
-    assert.equal(migrated.channels?.dingtalk, undefined);
-    assert.deepEqual(migrated.channels?.['dingtalk-connector'], {
-      clientId: 'client',
-      clientSecret: 'secret',
-      endpoint: 'https://example.test/callback',
-    });
-    assert.equal(migrated.bindings?.[0]?.match.channel, 'dingtalk-connector');
   });
 
   test('removeAgentChannelBindings clears channel and account bindings without touching other channels', () => {

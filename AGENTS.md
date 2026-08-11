@@ -159,6 +159,8 @@ JunQi Desktop 是基于 Tauri 2、Rust、React 18、TypeScript、Vite 6 和 Open
 
 环境版本由 `.tool-versions`、`package.json#packageManager` 和 `rust-toolchain.toml` 锁定。
 
+- 依赖覆盖以项目锁定的 pnpm 版本为准。当前 pnpm 9 只读取根 `package.json#pnpm.overrides`；生成锁文件、冻结安装和安全审计时，若全局 pnpm 与项目版本不一致，必须显式使用项目锁定版本，不能依据全局 pnpm 的配置行为判断覆盖是否生效。
+
 ```bash
 pnpm install --frozen-lockfile
 pnpm tauri dev

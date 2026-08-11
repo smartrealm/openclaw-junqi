@@ -1,21 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Activity, AlertCircle, Bot, Check, ChevronDown, Copy, Download, Link2, ListFilter, LogOut, MessageSquare, MoreHorizontal, Pencil, Play, Plus, Power, QrCode, RefreshCw, Save, Settings2, ShieldCheck, Square, TerminalSquare, Trash2, Wifi, WifiOff, X } from 'lucide-react';
-import clsx from 'clsx';
+import { AlertCircle, MoreHorizontal, Plus, RefreshCw, Settings2 } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { gateway, openClawChannelQrLoginClient } from '@/services/gateway';
-import { clearGatewayLogs, type LogEntry } from '@/api/tauri-commands';
-import { translateGatewayLogPayload } from '@/hooks/gatewayLogEvents';
 import type { AgentConfig, GatewayRuntimeConfig } from '@/types/openclawConfig';
-import { ChannelOfficialSchemaEditor } from '@/pages/ConfigManager/ChannelOfficialSchemaEditor';
 import {
   assessChannelAccountReadiness,
   addChannelAccount,
   buildChannelGroups,
-  channelAccountEditorValues,
   getChannelAgentOptions,
   persistChannelsOnly,
   removeChannelAccount,
@@ -25,7 +20,6 @@ import {
   updateChannelEnabled,
   upsertChannelAccount,
   type ChannelAccountReadiness,
-  type ChannelAccountReadinessState,
   type ChannelGroupView,
   type ChannelAccountBinding,
 } from '@/services/channelConfig';
@@ -35,12 +29,11 @@ import {
   channelAccountStatus,
   channelErrorMessage,
   channelLinkMode,
-  isOpenClawChannelIdentifier,
   installManagedExternalChannelPlugin,
   loadOfficialChannelCapability,
   loadOfficialChannelCatalog,
   loadOfficialChannelLogs,
-  loadOfficialChannelStatus,
+  loadOfficialChannelRuntimeState,
   redactChannelSecrets,
   runtimeChannelIds,
   type ChannelsRuntimeSnapshot,
@@ -49,6 +42,15 @@ import {
   type OfficialChannelCapability,
 } from '@/services/openclawChannelRuntime';
 import { ChannelQrLoginDialog } from './ChannelQrLoginDialog';
+import { ChannelAccountDialog } from './ChannelAccountDialog';
+import { ChannelCatalogDialog, type ChannelCatalogItem } from './ChannelCatalogDialog';
+import { ChannelDetailPanel } from './ChannelDetailPanel';
+import { ChannelListPanel, type ChannelReadinessFilter } from './ChannelListPanel';
+import {
+  nextChannelAccountId,
+  type ChannelGroupWithName,
+  type EditingAccountState,
+} from './channelCenterTypes';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import {
   DropdownMenu,
@@ -56,17 +58,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ChannelRuntimeIcon } from '@/components/shared/ChannelRuntimeIcon';
 import { runChannelRuntimeAction } from '@/services/channelRuntimeActions';
 import { openClawRuntimeConfigClient } from '@/services/gateway';
+import { useNotificationStore } from '@/stores/notificationStore';
 import {
-  getChannelAttentionCount,
   shouldShowChannelCenterSkeleton,
 } from './channelCenterPresentation';
-import {
-  loadGatewayProcessLogs,
-  observeSelectedGatewayProcess,
-} from '@/services/gateway/gatewayProcessObservation';
 
 function channelName(
   t: ReturnType<typeof useTranslation>['t'],
@@ -87,62 +84,6 @@ function catalogEntryStateLabel(
   return `${entry.installed ? t('channelsCenter.installed', 'Installed') : t('channelsCenter.installable', 'Installable')} · ${entry.origin}`;
 }
 
-type ChannelGroupWithName = ChannelGroupView & { name: string };
-type ReadinessFilter = 'all' | ChannelAccountReadinessState;
-
-interface EditingAccountState {
-  mode: 'new' | 'edit';
-  group: ChannelGroupWithName;
-  account?: ChannelAccountBinding;
-  /** Draft channel defaults for a just-installed plugin, not yet persisted. */
-  draftConfig?: GatewayRuntimeConfig;
-}
-
-interface GatewayUiStatus {
-  running: boolean;
-  ready: boolean;
-  error?: string | null;
-}
-
-function nextAccountId(channelId: string, groups: ChannelGroupWithName[]) {
-  const used = new Set(groups.find((group) => group.id === channelId)?.accounts.map((account) => account.id) ?? []);
-  let index = 1;
-  let id = `${channelId}-${index}`;
-  while (used.has(id)) {
-    index += 1;
-    id = `${channelId}-${index}`;
-  }
-  return id;
-}
-
-function cleanAccountConfig(values: Record<string, unknown>): Record<string, unknown> {
-  const next: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(values)) {
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (trimmed) next[key] = trimmed;
-      continue;
-    }
-    if (value !== undefined && value !== null) next[key] = value;
-  }
-  return next;
-}
-
-function readinessTone(readiness: ChannelAccountReadiness, gatewayHealthy: boolean) {
-  if (readiness.state === 'ready' && gatewayHealthy) return 'success';
-  if (readiness.state === 'ready' && !gatewayHealthy) return 'warning';
-  if (readiness.state === 'missing_credentials') return 'danger';
-  if (readiness.state === 'unbound' || readiness.state === 'unknown') return 'warning';
-  return 'muted';
-}
-
-function readinessClasses(readiness: ChannelAccountReadiness, gatewayHealthy: boolean) {
-  const tone = readinessTone(readiness, gatewayHealthy);
-  if (tone === 'success') return 'bg-aegis-success/10 text-aegis-success border-aegis-success/20';
-  if (tone === 'danger') return 'bg-aegis-danger/10 text-aegis-danger border-aegis-danger/20';
-  if (tone === 'warning') return 'bg-aegis-warning/10 text-aegis-warning border-aegis-warning/20';
-  return 'bg-[rgb(var(--aegis-overlay)/0.04)] text-aegis-text-dim border-[rgb(var(--aegis-overlay)/0.08)]';
-}
 
 function officialAccountReadiness(
   channelId: string,
@@ -153,176 +94,10 @@ function officialAccountReadiness(
   return assessChannelAccountReadiness(channelId, account, runtime);
 }
 
-function textValue(config: Record<string, unknown>, key: string, fallback = '') {
-  const value = config[key];
-  return typeof value === 'string' ? value : fallback;
-}
-
-function boolValue(config: Record<string, unknown>, key: string, fallback: boolean) {
-  const value = config[key];
-  return typeof value === 'boolean' ? value : fallback;
-}
-
-interface ChannelAccountModalProps {
-  state: EditingAccountState;
-  agents: AgentConfig[];
-  saving: boolean;
-  t: ReturnType<typeof useTranslation>['t'];
-  onClose: () => void;
-  onSave: (accountId: string, accountConfig: Record<string, unknown>) => void;
-  onDelete: (account: ChannelAccountBinding) => void;
-}
-
-function ChannelAccountModal({ state, agents, saving, t, onClose, onSave, onDelete }: ChannelAccountModalProps) {
-  const [accountId, setAccountId] = useState(state.account?.id ?? nextAccountId(state.group.id, [state.group]));
-  const [values, setValues] = useState<Record<string, unknown>>(() => (
-    channelAccountEditorValues(state.account)
-  ));
-
-  const trimmedAccountId = accountId.trim();
-  const accountIdValid = isOpenClawChannelIdentifier(trimmedAccountId);
-  const duplicateAccountId = state.mode === 'new' && state.group.accounts.some((account) => account.id === trimmedAccountId);
-  const canSave = accountIdValid && !duplicateAccountId && !saving;
-
-  const setField = (key: string, value: unknown) => {
-    setValues((prev) => ({ ...prev, [key]: value }));
-  };
-
-  return (
-    <div className="fixed inset-0 z-[2147482000] flex items-center justify-center bg-aegis-scrim p-4">
-      <div className="w-full max-w-[620px] max-h-[88vh] overflow-hidden rounded-lg border border-[rgb(var(--aegis-overlay)/0.12)] bg-aegis-bg shadow-2xl">
-        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-[rgb(var(--aegis-overlay)/0.08)]">
-          <div className="min-w-0">
-            <h3 className="text-[16px] font-extrabold text-aegis-text">
-              {state.mode === 'new'
-                ? t('channelsCenter.addAccount', 'Add account')
-                : t('channelsCenter.editAccount', 'Edit account')}
-            </h3>
-            <p className="text-[11px] text-aegis-text-dim mt-0.5">
-              {state.group.name} · {state.group.id}
-            </p>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-lg text-aegis-text-dim hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.06)]">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="overflow-y-auto max-h-[calc(88vh-132px)] px-5 py-4 space-y-5">
-          <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label={t('channelsCenter.accountId', 'Account ID')}>
-              <input
-                value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
-                disabled={state.mode === 'edit'}
-                aria-invalid={!accountIdValid || duplicateAccountId}
-                className={clsx(
-                  'w-full rounded-lg border bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 text-[12px] text-aegis-text font-mono focus:outline-none disabled:opacity-60',
-                  (!accountIdValid || duplicateAccountId)
-                    ? 'border-aegis-danger/45 focus:border-aegis-danger/60'
-                    : 'border-[rgb(var(--aegis-overlay)/0.1)] focus:border-aegis-primary/40'
-                )}
-              />
-              {!accountIdValid && state.mode === 'new' && (
-                <div className="mt-1 text-[10px] text-aegis-danger">
-                  {t('channelsCenter.invalidAccountId', 'Use 1-128 letters, numbers, period, underscore, hyphen, or colon; begin with a letter or number.')}
-                </div>
-              )}
-              {accountIdValid && duplicateAccountId && (
-                <div className="mt-1 text-[10px] text-aegis-danger">
-                  {t('channelsCenter.duplicateAccountId', 'This account ID already exists in the selected channel.')}
-                </div>
-              )}
-            </Field>
-            <Field label={t('channelsCenter.accountName', 'Display name')}>
-              <input
-                value={textValue(values, 'name')}
-                onChange={(e) => setField('name', e.target.value)}
-                placeholder={t('channelsCenter.accountNamePlaceholder', 'Optional display name')}
-                className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-[rgb(var(--aegis-overlay)/0.04)] px-3 py-2 text-[12px] text-aegis-text focus:outline-none focus:border-aegis-primary/40"
-              />
-            </Field>
-          </section>
-
-          <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label={t('channelsCenter.accountStatus', 'Status')}>
-              <label className="flex items-center justify-between rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.025)] px-3 py-2">
-                <span className="text-[12px] text-aegis-text">{t('config.enabled', 'Enabled')}</span>
-                <input
-                  type="checkbox"
-                  checked={boolValue(values, 'enabled', true)}
-                  onChange={(e) => setField('enabled', e.target.checked)}
-                />
-              </label>
-            </Field>
-            <Field label={t('channelsCenter.boundAgent', 'Bound agent')}>
-              <select
-                value={textValue(values, 'agentId')}
-                onChange={(e) => setField('agentId', e.target.value)}
-                className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-aegis-bg px-3 py-2 text-[12px] text-aegis-text focus:outline-none focus:border-aegis-primary/40"
-              >
-                <option value="">{t('channelsCenter.defaultAgentRoute', 'Runtime default agent (no override)')}</option>
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name || agent.id}{agent.default ? ` · ${t('channelsCenter.defaultAgent', 'default')}` : ''}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </section>
-
-          <section className="space-y-3">
-            <ChannelOfficialSchemaEditor
-              channelId={state.group.id}
-              value={values}
-              account={state.account?.source === 'account' || state.mode === 'new'}
-              initiallyOpen
-              disabled={saving}
-              onChange={setValues}
-            />
-          </section>
-        </div>
-
-        <div className="flex items-center gap-2 px-5 py-4 border-t border-[rgb(var(--aegis-overlay)/0.08)]">
-          {state.mode === 'edit' && state.account?.source === 'account' && (
-            <button
-              onClick={() => onDelete(state.account!)}
-              disabled={saving}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-aegis-danger/25 bg-aegis-danger/10 text-aegis-danger text-[12px] font-bold disabled:opacity-50"
-            >
-              <Trash2 size={13} />
-              {t('common.remove', 'Remove')}
-            </button>
-          )}
-          <div className="flex-1" />
-          <button onClick={onClose} disabled={saving} className="px-4 py-2 rounded-lg text-[12px] font-semibold text-aegis-text-dim hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.06)] disabled:opacity-50">
-            {t('common.cancel', 'Cancel')}
-          </button>
-          <button
-            onClick={() => onSave(trimmedAccountId, cleanAccountConfig(values))}
-            disabled={!canSave}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-aegis-primary text-[rgb(var(--aegis-btn-primary-text))] text-[12px] font-extrabold disabled:opacity-50"
-          >
-            {saving ? <LoadingIndicator size={13} /> : <Save size={13} />}
-            {t('settings.save', 'Save')}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
-  return (
-    <label className="block">
-      <span className="block text-[10px] font-bold text-aegis-text-dim mb-1.5">{label}</span>
-      {children}
-    </label>
-  );
-}
-
 export function ChannelsCenterPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const addToast = useNotificationStore((state) => state.addToast);
   const [searchParams, setSearchParams] = useSearchParams();
   const focusedAgentId = searchParams.get('agent')?.trim() || '';
   const [config, setConfig] = useState<GatewayRuntimeConfig | null>(null);
@@ -331,12 +106,8 @@ export function ChannelsCenterPage() {
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editingAccount, setEditingAccount] = useState<EditingAccountState | null>(null);
-  const [gatewayStatus, setGatewayStatus] = useState<GatewayUiStatus | null>(null);
-  const [gatewayLogs, setGatewayLogs] = useState<LogEntry[]>([]);
-  const [gatewayLoading, setGatewayLoading] = useState(false);
-  const [gatewayActionBusy, setGatewayActionBusy] = useState(false);
-  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
-  const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>('all');
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [readinessFilter, setReadinessFilter] = useState<ChannelReadinessFilter>('all');
   const [catalog, setCatalog] = useState<OfficialChannelCatalog>({ source: 'unavailable', entries: [] });
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ChannelsRuntimeSnapshot | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(true);
@@ -349,24 +120,6 @@ export function ChannelsCenterPage() {
   const [qrTarget, setQrTarget] = useState<{ channelId: string; accountId: string } | null>(null);
   const [capabilityByChannel, setCapabilityByChannel] = useState<Record<string, OfficialChannelCapability | null>>({});
   const savingRef = useRef(false);
-  const gatewayRefreshTimersRef = useRef<number[]>([]);
-
-  const loadGatewaySnapshot = useCallback(async () => {
-    setGatewayLoading(true);
-    try {
-      const [status, logs] = await Promise.all([
-        observeSelectedGatewayProcess(),
-        loadGatewayProcessLogs(120),
-      ]);
-      setGatewayStatus(status);
-      setGatewayLogs(logs);
-    } catch (err) {
-      setGatewayStatus({ running: false, ready: false, error: err instanceof Error ? err.message : String(err) });
-      setGatewayLogs([]);
-    } finally {
-      setGatewayLoading(false);
-    }
-  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -392,11 +145,11 @@ export function ChannelsCenterPage() {
     try {
       const [nextCatalog, nextSnapshot] = await Promise.all([
         loadOfficialChannelCatalog(probe),
-        gateway.call('channels.status', {
+        loadOfficialChannelRuntimeState(
+          (method, params) => gateway.call(method, params),
+          channelId,
           probe,
-          timeoutMs: probe ? 15000 : 8000,
-          ...(channelId ? { channel: channelId } : {}),
-        }).catch(() => loadOfficialChannelStatus(channelId, probe)),
+        ),
       ]);
       setCatalog(nextCatalog);
       if (channelId) {
@@ -419,29 +172,10 @@ export function ChannelsCenterPage() {
     }
   }, []);
 
-  const clearGatewayRefreshTimers = useCallback(() => {
-    gatewayRefreshTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
-    gatewayRefreshTimersRef.current = [];
-  }, []);
-
-  const scheduleGatewayRefresh = useCallback(() => {
-    clearGatewayRefreshTimers();
-    [900, 2200, 4200, 7000].forEach((delay) => {
-      const timerId = window.setTimeout(() => {
-        void loadGatewaySnapshot();
-        void load();
-        void loadOfficialState(false);
-      }, delay);
-      gatewayRefreshTimersRef.current.push(timerId);
-    });
-  }, [clearGatewayRefreshTimers, loadGatewaySnapshot, load, loadOfficialState]);
-
   useEffect(() => {
     void load();
-    void loadGatewaySnapshot();
     void loadOfficialState(false);
-    return () => clearGatewayRefreshTimers();
-  }, [clearGatewayRefreshTimers, load, loadGatewaySnapshot, loadOfficialState]);
+  }, [load, loadOfficialState]);
 
   const officialChannelIds = useMemo(() => new Set(catalog.entries.map((entry) => entry.id)), [catalog]);
   const groups = useMemo(() =>
@@ -496,22 +230,34 @@ export function ChannelsCenterPage() {
     setExpanded((current) => current ?? filteredGroups[0].id);
   }, [focusedAgentId, filteredGroups]);
 
-  const filteredAccountCount = filteredGroups.reduce((sum, group) => sum + group.accounts.length, 0);
-  // 渠道目录同时承担发现入口；已配置渠道仍需保留，以便继续添加或关联账号。
-  const availableEntries = catalog.entries;
-  const gatewayHealthy = Boolean(gatewayStatus?.running && gatewayStatus?.ready);
-  const gatewayStateLabel = gatewayLoading
-    ? t('channelsCenter.gatewayChecking', 'Checking Gateway')
-    : gatewayHealthy
-      ? t('channelsCenter.gatewayHealthy', 'Gateway running')
-      : t('channelsCenter.gatewayOffline', 'Gateway offline');
-  const latestGatewayLog = gatewayLogs[gatewayLogs.length - 1];
   const initialLoading = shouldShowChannelCenterSkeleton({
     runtimeLoaded,
     loadingConfig: loading,
     hasConfig: config !== null,
   });
-  const attentionCount = getChannelAttentionCount(accountCount, readinessSummary.ready);
+  const selectedGroup = filteredGroups.find((group) => group.id === expanded) ?? filteredGroups[0];
+  const catalogItems = useMemo<ChannelCatalogItem[]>(() => catalog.entries.map((entry) => ({
+    entry,
+    label: channelName(t, entry.id, runtimeSnapshot?.channelLabels?.[entry.id]),
+    stateLabel: catalogEntryStateLabel(t, catalog, entry),
+    configured: configuredChannelIds.has(entry.id),
+    systemImage: runtimeSnapshot?.channelSystemImages?.[entry.id],
+    requiresManagedInstall: Boolean(
+      entry.managedInstall
+      && catalog.source === 'openclaw-cli'
+      && !entry.installed
+    ),
+  })), [catalog, configuredChannelIds, runtimeSnapshot?.channelLabels, runtimeSnapshot?.channelSystemImages, t]);
+
+  useEffect(() => {
+    if (filteredGroups.length === 0) {
+      setExpanded(null);
+      return;
+    }
+    if (!filteredGroups.some((group) => group.id === expanded)) {
+      setExpanded(filteredGroups[0].id);
+    }
+  }, [expanded, filteredGroups]);
 
   const saveConfig = async (
     base: GatewayRuntimeConfig,
@@ -533,7 +279,7 @@ export function ChannelsCenterPage() {
       } else {
         showAlert(t('common.saved', 'Saved'), successMessage, 'success');
       }
-      scheduleGatewayRefresh();
+      await Promise.all([load(), loadOfficialState(false)]);
       window.dispatchEvent(new CustomEvent('aegis:config-saved', { detail: { channelsChanged: true } }));
       return true;
     } catch (err) {
@@ -615,52 +361,22 @@ export function ChannelsCenterPage() {
     }
   };
 
-  const handleGatewayRestart = async () => {
-    if (gatewayActionBusy) return;
-    setGatewayActionBusy(true);
+  const handleCopyRedacted = async (group: ChannelGroupWithName) => {
     try {
-      const result = await gatewayLifecycle.restart('channels-center');
-      if (!result?.success) {
-        throw new Error(result?.error || 'Gateway restart failed');
-      }
-      showAlert(t('common.saved', 'Saved'), t('channelsCenter.gatewayRestarted', 'Gateway restart triggered.'), 'success');
-      scheduleGatewayRefresh();
-    } catch (err) {
-      showAlert(t('channelsCenter.gatewayRestartFailed', 'Gateway restart failed'), err instanceof Error ? err.message : String(err), 'error');
-    } finally {
-      setGatewayActionBusy(false);
-      void loadGatewaySnapshot();
-    }
-  };
-
-  const handleCopyDiagnostics = async () => {
-    const payload = {
-      status: gatewayStatus,
-      logs: gatewayLogs,
-      officialRuntime: redactChannelSecrets(runtimeSnapshot),
-      channels: groups.map((group) => ({
-        id: group.id,
-        enabled: group.enabled,
-        known: group.known,
-        accounts: group.accounts.map((account) => ({
-          id: account.id,
-          enabled: account.enabled,
-          source: account.source,
-          agentId: account.agentId ?? null,
-          readiness: officialAccountReadiness(group.id, account, runtimeSnapshot),
-        })),
-      })),
-    };
-    await navigator.clipboard.writeText(JSON.stringify(payload, null, 2)).catch(() => undefined);
-    showAlert(t('common.copied', 'Copied'), t('channelsCenter.diagnosticsCopied', 'Diagnostics copied.'), 'success');
-  };
-
-  const handleClearGatewayLogs = async () => {
-    try {
-      await clearGatewayLogs();
-      setGatewayLogs([]);
-    } catch {
-      // The refresh path retains the current diagnostics after a failed clear.
+      await navigator.clipboard.writeText(JSON.stringify(redactChannelSecrets(group.config), null, 2));
+      addToast(
+        'info',
+        t('channelsCenter.copyRedacted', 'Copy redacted'),
+        t('common.copied', 'Copied'),
+      );
+    } catch (reason: unknown) {
+      addToast(
+        'error',
+        t('channelsCenter.copyRedacted', 'Copy redacted'),
+        reason instanceof Error
+          ? reason.message
+          : t('settings.attachmentsOperationFailed', 'Operation failed'),
+      );
     }
   };
 
@@ -727,22 +443,19 @@ export function ChannelsCenterPage() {
         setCapabilityByChannel((current) => ({ ...current, [entry.id]: capability ?? null }));
       }
       if (channelLinkMode(capability ?? null, true) === 'embedded_qr') {
-        const accountId = nextAccountId(entry.id, groups);
+        const accountId = nextChannelAccountId(entry.id, groups);
         setQrTarget({ channelId: entry.id, accountId });
         return;
       }
     }
     if (entry.managedInstall && entry.installed && config) {
-      // Keep the draft out of live React state until the user explicitly
-      // saves credentials. The schema is read from the installed OpenClaw
-      // plugin, so JunQi never invents DingTalk configuration fields.
+      // 用户明确保存前不把草稿写入实时配置；字段完全来自已安装插件 schema，
+      // JunQi 不定义任何渠道专属凭据。
       const draftConfig: GatewayRuntimeConfig = {
         ...config,
         channels: {
           ...(config.channels ?? {}),
-          // The plugin owns all non-universal defaults. In particular, do
-          // not carry JunQi's retired DingTalk streaming fields into a live
-          // OpenClaw schema.
+          // 非通用默认值由插件拥有，草稿只保留跨渠道稳定的启用字段。
           [entry.id]: { enabled: true },
         },
       };
@@ -763,16 +476,13 @@ export function ChannelsCenterPage() {
   };
 
   const handleCatalogEntry = (entry: OfficialChannelCatalogEntry) => {
+    setCatalogOpen(false);
     const configured = groups.find((group) => group.id === entry.id);
     if (!configured) {
       void handleAdd(entry);
       return;
     }
     setExpanded(entry.id);
-    document.getElementById(`configured-channel-${entry.id}`)?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'center',
-    });
   };
 
   const handleInstallManagedPlugin = async (channelId: string) => {
@@ -801,9 +511,9 @@ export function ChannelsCenterPage() {
     }
   };
 
-  const handleExpand = (group: ChannelGroupWithName, open: boolean) => {
-    setExpanded(open ? null : group.id);
-    if (!open && !Object.prototype.hasOwnProperty.call(capabilityByChannel, group.id)) {
+  const handleSelectGroup = (group: ChannelGroupWithName) => {
+    setExpanded(group.id);
+    if (!Object.prototype.hasOwnProperty.call(capabilityByChannel, group.id)) {
       void loadOfficialChannelCapability(group.id)
         .then((capability) => setCapabilityByChannel((current) => ({ ...current, [group.id]: capability })))
         .catch(() => setCapabilityByChannel((current) => ({ ...current, [group.id]: null })));
@@ -811,68 +521,65 @@ export function ChannelsCenterPage() {
   };
 
   return (
-    <PageTransition className="p-5 space-y-5 max-w-[1100px] mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
+    <PageTransition className="mx-auto w-full max-w-[1180px] space-y-4 p-5">
+      <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+        <div className="min-w-0">
           <h1 className="text-[18px] font-bold text-aegis-text">
             {t('sidebar.nav.channels', 'Channels')}
           </h1>
-          <p className="text-[12px] text-aegis-text-dim mt-0.5">
+          <p className="mt-0.5 text-[12px] text-aegis-text-dim">
             {t('channelsCenter.subtitle', 'Connect agents to channels provided by the selected OpenClaw Runtime.')}
           </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-aegis-text-muted">
-            <span className="inline-flex items-center gap-1.5 rounded-md border border-aegis-border bg-aegis-surface px-2 py-1">
-              <span className={clsx('h-1.5 w-1.5 rounded-full', gatewayHealthy ? 'bg-aegis-success' : 'bg-aegis-warning')} />
-              {gatewayStateLabel}
-            </span>
-            {runtimeLoading && <span className="inline-flex items-center gap-1.5"><LoadingIndicator size={10} />{t('channelsCenter.loadingRuntime', 'Loading the OpenClaw channel catalog')}</span>}
-            {!runtimeLoading && catalog.version && <span className="font-mono">{catalog.version}</span>}
+          <div className="mt-1.5 flex items-center gap-2 text-[10px] text-aegis-text-muted">
+            <span>{catalog.source === 'unavailable' ? t('channelsCenter.catalogUnavailable', 'OpenClaw catalog unavailable') : catalog.source}</span>
+            {catalog.version && <span className="font-mono">{catalog.version}</span>}
+            {runtimeLoading && <LoadingIndicator size={10} />}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => { void load(); void loadOfficialState(false); }} disabled={loading || saving || runtimeLoading} title={t('common.refresh', 'Refresh')} className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.05)] disabled:opacity-50">
-            <RefreshCw size={15} className={loading || runtimeLoading ? 'animate-spin' : undefined} />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { void load(); void loadOfficialState(false); }}
+            disabled={loading || saving || runtimeLoading}
+            title={t('common.refresh', 'Refresh')}
+            aria-label={t('common.refresh', 'Refresh')}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-aegis-border text-aegis-text-muted hover:bg-aegis-hover hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading || runtimeLoading ? 'animate-spin' : undefined} />
           </button>
-          <button data-tour="channels-add" onClick={() => document.getElementById('available-channels')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="inline-flex items-center gap-2 px-3 h-8 rounded-md bg-aegis-primary text-white font-semibold text-[11px] hover:opacity-90">
-            <Plus size={14} />
+          <button
+            type="button"
+            data-tour="channels-add"
+            onClick={() => setCatalogOpen(true)}
+            disabled={catalog.source === 'unavailable'}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-aegis-primary px-3 text-[11px] font-semibold text-[rgb(var(--aegis-btn-primary-text))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35 disabled:opacity-50"
+          >
+            <Plus size={13} />
             {t('channelsCenter.addChannels', 'Add channel')}
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button type="button" aria-label={t('channelsCenter.moreActions', 'More channel actions')} className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.05)] hover:text-aegis-text">
-                <MoreHorizontal size={15} />
+              <button
+                type="button"
+                aria-label={t('channelsCenter.moreActions', 'More channel actions')}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-aegis-border text-aegis-text-muted hover:bg-aegis-hover hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35"
+              >
+                <MoreHorizontal size={14} />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48 text-[11px]">
-              <DropdownMenuItem onSelect={() => setDiagnosticsOpen(true)} className="justify-start">
-                <TerminalSquare size={14} />{t('channelsCenter.diagnostics', 'Diagnostics')}
-              </DropdownMenuItem>
+            <DropdownMenuContent align="end" className="w-44 text-[11px]">
               <DropdownMenuItem onSelect={() => navigate('/config?tab=channels')} className="justify-start">
-                <Settings2 size={14} />{t('channelsCenter.advancedConfig', 'Advanced config')}
+                <Settings2 size={13} />
+                {t('channelsCenter.advancedConfig', 'Advanced config')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <div className="rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2.5">
-          <div className="text-[10px] text-aegis-text-muted">{t('channelsCenter.summary.configured', 'Configured channels')}</div>
-          <div className="mt-1 text-[17px] font-semibold tabular-nums text-aegis-text">{groups.length}</div>
-        </div>
-        <div className="rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2.5">
-          <div className="text-[10px] text-aegis-text-muted">{t('channelsCenter.summary.ready', 'Running accounts')}</div>
-          <div className="mt-1 text-[17px] font-semibold tabular-nums text-aegis-success">{readinessSummary.ready}</div>
-        </div>
-        <div className={clsx('rounded-lg border px-3 py-2.5', attentionCount > 0 ? 'border-aegis-warning/25 bg-aegis-warning/5' : 'border-aegis-border bg-aegis-surface')}>
-          <div className="text-[10px] text-aegis-text-muted">{t('channelsCenter.summary.attention', 'Needs attention')}</div>
-          <div className={clsx('mt-1 text-[17px] font-semibold tabular-nums', attentionCount > 0 ? 'text-aegis-warning' : 'text-aegis-text')}>{attentionCount}</div>
-        </div>
-      </div>
+      </header>
 
       {(error || runtimeError) && (
-        <div className="flex items-start gap-2 rounded-xl border border-aegis-danger/20 bg-aegis-danger/10 px-4 py-3 text-[12px] text-aegis-danger" role="alert">
-          <AlertCircle size={15} className="mt-0.5 shrink-0" />
+        <div className="flex items-start gap-2 rounded-md border border-aegis-danger/20 bg-aegis-danger/5 px-3 py-2.5 text-[11px] text-aegis-danger" role="alert">
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />
           <div className="min-w-0 space-y-1">
             {error && <div className="break-words">{error}</div>}
             {runtimeError && (
@@ -885,459 +592,104 @@ export function ChannelsCenterPage() {
       )}
 
       {initialLoading ? (
-        <div className="space-y-4 py-4" aria-busy="true" aria-label={t('channelsCenter.loadingRuntime', 'Loading the OpenClaw channel catalog')}>
-          <div className="flex items-center justify-center gap-2 py-4 text-sm text-aegis-text-muted">
+        <div
+          className="grid min-h-[520px] grid-cols-1 overflow-hidden rounded-lg border border-aegis-border bg-aegis-card lg:grid-cols-[260px_minmax(0,1fr)]"
+          aria-busy="true"
+          aria-label={t('channelsCenter.loadingRuntime', 'Loading the OpenClaw channel catalog')}
+        >
+          <div className="space-y-2 border-b border-aegis-border p-3 lg:border-b-0 lg:border-e">
+            {[0, 1, 2, 3].map((item) => (
+              <div key={item} className="h-12 animate-pulse rounded-md bg-aegis-surface" />
+            ))}
+          </div>
+          <div className="flex items-center justify-center gap-2 text-[12px] text-aegis-text-muted">
             <LoadingIndicator size={18} />
             {t('channelsCenter.loadingRuntime', 'Loading the OpenClaw channel catalog')}
           </div>
-          {[0, 1, 2].map((item) => (
-            <div key={item} className="h-16 animate-pulse rounded-md border border-aegis-border bg-aegis-surface" />
-          ))}
         </div>
       ) : (
-        <>
-          {(!gatewayHealthy || diagnosticsOpen) && <section className={clsx(
-            'rounded-md border px-4 py-3',
-            gatewayHealthy
-              ? 'border-aegis-success/20 bg-aegis-success/5'
-              : 'border-aegis-warning/25 bg-aegis-warning/10'
-          )}>
-            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-              <div className="flex items-start gap-3 min-w-0 flex-1">
-                <div className={clsx(
-                  'w-9 h-9 rounded-md flex items-center justify-center shrink-0',
-                  gatewayHealthy ? 'bg-aegis-success/12 text-aegis-success' : 'bg-aegis-warning/12 text-aegis-warning'
-                )}>
-                  {gatewayLoading
-                    ? <LoadingIndicator size={18} />
-                    : gatewayHealthy
-                      ? <Wifi size={18} />
-                      : <WifiOff size={18} />}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[14px] font-extrabold text-aegis-text">{gatewayStateLabel}</div>
-                  <div className="mt-0.5 text-[11px] text-aegis-text-dim truncate">
-                    {gatewayStatus?.error
-                      ? gatewayStatus.error
-                      : latestGatewayLog
-                        ? latestGatewayLog.message
-                        : t('channelsCenter.gatewayHint', 'Channel changes require Gateway restart before runtime adapters reconnect.')}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => void loadGatewaySnapshot()}
-                  disabled={gatewayLoading || gatewayActionBusy}
-                  className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-[11px] font-semibold text-aegis-text-muted hover:text-aegis-text disabled:opacity-50"
-                >
-                  <RefreshCw size={13} className={gatewayLoading ? 'animate-spin' : undefined} />
-                  {t('common.refresh', 'Refresh')}
-                </button>
-                <button
-                  onClick={() => void handleGatewayRestart()}
-                  disabled={gatewayActionBusy}
-                  className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-aegis-primary/25 bg-aegis-primary/10 text-[11px] font-semibold text-aegis-primary disabled:opacity-50"
-                >
-                  {gatewayActionBusy ? <LoadingIndicator size={13} /> : <Power size={13} />}
-                  {t('channelsCenter.restartGateway', 'Restart Gateway')}
-                </button>
-                <button
-                  onClick={() => setDiagnosticsOpen((open) => !open)}
-                  className="inline-flex items-center gap-2 px-3 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.1)] text-[11px] font-semibold text-aegis-text-muted hover:text-aegis-text"
-                >
-                  <TerminalSquare size={13} />
-                  {diagnosticsOpen ? t('channelsCenter.hideLogs', 'Hide logs') : t('channelsCenter.showLogs', 'Show logs')}
-                </button>
-              </div>
-            </div>
-
-            {diagnosticsOpen && (
-              <div className="mt-3 rounded-lg border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.035)] overflow-hidden">
-                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[rgb(var(--aegis-overlay)/0.08)]">
-                  <span className="text-[10px] uppercase tracking-widest font-extrabold text-aegis-text-muted">
-                    {t('channelsCenter.gatewayLogs', 'Gateway logs')}
-                  </span>
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => void handleCopyDiagnostics()} className="inline-flex items-center gap-1 text-[10px] font-bold text-aegis-text-dim hover:text-aegis-text"><Copy size={11} />{t('channelsCenter.copyDiagnostics', 'Copy diagnostics')}</button>
-                    <button onClick={() => void handleClearGatewayLogs()} className="text-[10px] font-bold text-aegis-text-dim hover:text-aegis-text">{t('settings.gatewayLog.clear')}</button>
-                  </div>
-                </div>
-                {gatewayLogs.length === 0 ? (
-                  <div className="px-3 py-5 text-center text-[11px] text-aegis-text-dim">
-                    {t('settings.gatewayLog.empty')}
-                  </div>
-                ) : (
-                  <pre className="max-h-[240px] overflow-auto px-3 py-2 text-[10px] leading-relaxed text-aegis-text-dim whitespace-pre-wrap break-all">
-                    {gatewayLogs.map((entry) => {
-                      const time = new Date(entry.timestamp_ms).toLocaleTimeString();
-                      const message = translateGatewayLogPayload(entry, (key, options) => t(key, options))
-                        ?? entry.message;
-                      return `[${time}] ${entry.level.toUpperCase()} ${entry.source}: ${message}`;
-                    }).join('\n')}
-                  </pre>
-                )}
-              </div>
+        <div className="grid min-h-[520px] grid-cols-1 overflow-hidden rounded-lg border border-aegis-border bg-aegis-card lg:grid-cols-[260px_minmax(0,1fr)]">
+          <ChannelListPanel
+            groups={groups}
+            filteredGroups={filteredGroups}
+            selectedGroupId={selectedGroup?.id}
+            runtimeSnapshot={runtimeSnapshot}
+            accountCount={accountCount}
+            readyCount={readinessSummary.ready}
+            readinessCounts={readinessSummary}
+            readinessFilter={readinessFilter}
+            saving={saving}
+            focusedAgentName={focusedAgentId ? focusedAgent?.name || focusedAgentId : undefined}
+            getReadiness={(group, accountId) => {
+              const account = group.accounts.find((item) => item.id === accountId);
+              return account
+                ? officialAccountReadiness(group.id, account, runtimeSnapshot)
+                : { state: 'unknown', missingFields: [], messages: ['unknown'] };
+            }}
+            onFilterChange={setReadinessFilter}
+            onSelect={handleSelectGroup}
+            onClearAgentFocus={() => {
+              const next = new URLSearchParams(searchParams);
+              next.delete('agent');
+              setSearchParams(next, { replace: true });
+            }}
+            onAddChannel={() => setCatalogOpen(true)}
+          />
+          <ChannelDetailPanel
+            group={selectedGroup}
+            allGroupCount={groups.length}
+            catalog={catalog}
+            runtimeSnapshot={runtimeSnapshot}
+            capability={selectedGroup ? capabilityByChannel[selectedGroup.id] : undefined}
+            agents={agents}
+            saving={saving}
+            runtimeLoading={runtimeLoading}
+            pluginInstalling={pluginInstalling}
+            accountActionBusy={accountActionBusy}
+            channelLogsBusy={channelLogsBusy}
+            channelLogPayload={selectedGroup ? channelLogPayloads[selectedGroup.id] : undefined}
+            hasChannelLogPayload={Boolean(selectedGroup && Object.prototype.hasOwnProperty.call(channelLogPayloads, selectedGroup.id))}
+            getReadiness={(account) => (
+              selectedGroup
+                ? officialAccountReadiness(selectedGroup.id, account, runtimeSnapshot)
+                : { state: 'unknown', missingFields: [], messages: ['unknown'] }
             )}
-          </section>}
-
-          <section className="space-y-3">
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <div>
-                <h2 className="text-[13px] font-semibold text-aegis-text-secondary">
-                  {t('channelsCenter.configured', 'Configured channels')}
-                </h2>
-                <div className="mt-0.5 text-[10px] text-aegis-text-dim">
-                  {groups.length} {t('channelsCenter.enabledChannels', 'channels')} · {readinessSummary.ready} / {accountCount} {t('channelsCenter.readyAccounts', 'ready')}
-                </div>
-                </div>
-                {saving && <span className="inline-flex items-center gap-1.5 text-[11px] text-aegis-primary"><LoadingIndicator size={12} />{t('agentSettings.saving', 'Saving...')}</span>}
-              </div>
-
-              {groups.length > 0 && (
-                <div className="flex flex-col gap-2 border-y border-[rgb(var(--aegis-overlay)/0.08)] py-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="inline-flex items-center gap-1.5 text-[11px] font-bold text-aegis-text-dim">
-                      <ListFilter size={13} />
-                      {t('channelsCenter.filterByStatus', 'Filter by status')}
-                      <span className="font-mono text-[10px] text-aegis-text-muted">
-                        {filteredAccountCount} / {accountCount}
-                      </span>
-                    </div>
-                    {focusedAgentId && (
-                      <div className="flex items-center gap-2 rounded-lg border border-aegis-primary/20 bg-aegis-primary/10 px-2.5 py-1.5">
-                        <Bot size={12} className="text-aegis-primary" />
-                        <span className="text-[11px] font-bold text-aegis-primary truncate max-w-[220px]">
-                          {t('channelsCenter.focusedAgent', 'Focused agent')}: {focusedAgent?.name || focusedAgentId}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const next = new URLSearchParams(searchParams);
-                            next.delete('agent');
-                            setSearchParams(next, { replace: true });
-                          }}
-                          className="rounded p-0.5 text-aegis-primary/70 hover:bg-aegis-primary/15 hover:text-aegis-primary"
-                          title={t('channelsCenter.clearAgentFocus', 'Clear agent focus')}
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {([
-                      ['all', t('channelsCenter.filterAll', 'All'), accountCount],
-                      ['ready', t('channelsCenter.readiness.ready', 'Ready'), readinessSummary.ready],
-                      ['missing_credentials', t('channelsCenter.readiness.missing_credentials', 'Missing credentials'), readinessSummary.missing_credentials],
-                      ['unbound', t('channelsCenter.readiness.unbound', 'Unbound'), readinessSummary.unbound],
-                      ['disabled', t('channelsCenter.readiness.disabled', 'Disabled'), readinessSummary.disabled],
-                      ['unknown', t('channelsCenter.readiness.unknown', 'Runtime status unavailable'), readinessSummary.unknown],
-                    ] as const).map(([key, label, count]) => (
-                      <button
-                        key={key}
-                        onClick={() => setReadinessFilter(key)}
-                        className={clsx(
-                          'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition-colors',
-                          readinessFilter === key
-                            ? 'bg-aegis-primary/10 text-aegis-primary'
-                            : 'text-aegis-text-dim hover:text-aegis-text hover:bg-[rgb(var(--aegis-overlay)/0.04)]'
-                        )}
-                      >
-                        <span>{label}</span>
-                        <span className="rounded bg-[rgb(var(--aegis-overlay)/0.08)] px-1.5 py-0.5 text-[9px]">
-                          {count}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {groups.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[rgb(var(--aegis-overlay)/0.12)] py-14 text-center">
-                <MessageSquare size={32} className="mx-auto text-aegis-text-dim opacity-50" />
-                <div className="mt-3 text-[14px] font-semibold text-aegis-text">{t('channelsCenter.emptyTitle', 'No channels configured')}</div>
-                <div className="mt-1 text-[12px] text-aegis-text-dim">{t('channelsCenter.emptyHint', 'Add a channel below to let agents receive and respond from messaging apps.')}</div>
-              </div>
-            ) : filteredGroups.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[rgb(var(--aegis-overlay)/0.12)] py-10 text-center">
-                <ListFilter size={28} className="mx-auto text-aegis-text-dim opacity-50" />
-                <div className="mt-3 text-[14px] font-semibold text-aegis-text">{t('channelsCenter.noFilterResults', 'No matching accounts')}</div>
-                <div className="mt-1 text-[12px] text-aegis-text-dim">{t('channelsCenter.noFilterResultsHint', 'Change the status filter to view other channel accounts.')}</div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {filteredGroups.map((group) => {
-                  const open = expanded === group.id;
-                  const originalAccountCount = groups.find((item) => item.id === group.id)?.accounts.length ?? group.accounts.length;
-                  const catalogEntry = catalog.entries.find((entry) => entry.id === group.id);
-                  const pluginMissing = Boolean(
-                    catalogEntry?.managedInstall
-                    && catalog.source === 'openclaw-cli'
-                    && catalogEntry?.installed === false,
-                  );
-                  return (
-                    <div id={`configured-channel-${group.id}`} key={group.id} className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] overflow-hidden">
-                      <button onClick={() => handleExpand(group, open)} className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left hover:bg-[rgb(var(--aegis-overlay)/0.03)]">
-                        <div className="w-8 h-8 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] flex items-center justify-center text-[10px] font-bold text-aegis-text-muted">
-                          <ChannelRuntimeIcon systemImage={runtimeSnapshot?.channelSystemImages?.[group.id]} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[14px] font-bold text-aegis-text">{group.name}</span>
-                            {!group.known && <span className="rounded px-1.5 py-0.5 text-[9px] font-bold bg-yellow-500/10 text-yellow-400">{t('config.unknownChannel', 'Unknown')}</span>}
-                          </div>
-                          <div className="text-[11px] text-aegis-text-dim font-mono">
-                            {group.id} · {group.accounts.length}{readinessFilter !== 'all' ? ` / ${originalAccountCount}` : ''} {t('channelsCenter.accountUnit', 'account(s)')}
-                          </div>
-                        </div>
-                        <span className={clsx('inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold', group.enabled ? 'text-aegis-success' : 'text-aegis-text-dim')}>
-                          {group.enabled ? <Check size={11} /> : <AlertCircle size={11} />}
-                          {group.enabled ? t('config.enabled', 'Enabled') : t('config.disabled', 'Disabled')}
-                        </span>
-                        <ChevronDown size={15} className={clsx('text-aegis-text-dim transition-transform', open && 'rotate-180')} />
-                      </button>
-
-                      {open && (
-                        <div className="border-t border-[rgb(var(--aegis-overlay)/0.08)] px-4 py-4 space-y-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {pluginMissing && (
-                              <button
-                                type="button"
-                                onClick={() => void handleInstallManagedPlugin(group.id)}
-                                disabled={saving || Boolean(pluginInstalling)}
-                                className="inline-flex items-center gap-2 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 px-3 py-1.5 text-[12px] font-semibold text-aegis-primary disabled:opacity-50"
-                              >
-                                {pluginInstalling === group.id ? <LoadingIndicator size={13} /> : <Download size={13} />}
-                                {t('channelsCenter.installOfficialPlugin', 'Install official plugin')}
-                              </button>
-                            )}
-                            <button onClick={() => handleToggle(group.id, !group.enabled)} disabled={saving} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text">
-                              <ShieldCheck size={13} />
-                              {group.enabled ? t('channelsCenter.disable', 'Disable') : t('channelsCenter.enable', 'Enable')}
-                            </button>
-                            {capabilityByChannel[group.id]?.schema.accounts?.additionalProperties && (
-                              <button
-                                onClick={() => setEditingAccount({ mode: 'new', group })}
-                                disabled={saving}
-                                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-[12px] font-semibold text-aegis-primary disabled:opacity-50"
-                              >
-                                <Plus size={13} />
-                                {t('channelsCenter.addAccount', 'Add account')}
-                              </button>
-                            )}
-                            <button onClick={() => void loadOfficialState(true, group.id)} disabled={runtimeLoading} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text disabled:opacity-50">
-                              <Activity size={13} />
-                              {t('channelsCenter.probe', 'Probe')}
-                            </button>
-                            <button onClick={() => void handleChannelLogs(group.id)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text">
-                              {channelLogsBusy === group.id ? <LoadingIndicator size={13} /> : <TerminalSquare size={13} />}
-                              {t('channelsCenter.channelLogs', 'Channel logs')}
-                            </button>
-                            <button onClick={() => navigator.clipboard.writeText(JSON.stringify(redactChannelSecrets(group.config), null, 2)).catch(() => undefined)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] text-[12px] font-semibold text-aegis-text-muted hover:text-aegis-text">
-                              <Copy size={13} />
-                              {t('channelsCenter.copyRedacted', 'Copy redacted')}
-                            </button>
-                            <button onClick={() => handleRemove(group)} disabled={saving} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-aegis-danger/25 bg-aegis-danger/10 text-[12px] font-semibold text-aegis-danger">
-                              <Trash2 size={13} />
-                              {t('common.remove', 'Remove')}
-                            </button>
-                          </div>
-
-                          {Object.prototype.hasOwnProperty.call(channelLogPayloads, group.id) && (
-                            <pre className="max-h-64 overflow-auto rounded-md border border-aegis-border bg-aegis-bg p-3 text-[10px] leading-relaxed text-aegis-text-muted whitespace-pre-wrap break-all">{JSON.stringify(channelLogPayloads[group.id], null, 2)}</pre>
-                          )}
-
-                          <div className="space-y-2">
-                            {group.accounts.map((account) => {
-                              const runtime = channelAccountStatus(runtimeSnapshot, group.id, account.id);
-                              const readiness = officialAccountReadiness(group.id, account, runtimeSnapshot);
-                              const readinessLabel = readiness.state === 'ready' && !gatewayHealthy
-                                ? t('channelsCenter.waitingGateway', 'Waiting for Gateway')
-                                : t(`channelsCenter.readiness.${readiness.state}`, readiness.state);
-                              const readinessHint = readiness.state === 'missing_credentials'
-                                ? t('channelsCenter.missingFields', { fields: readiness.missingFields.join(', '), defaultValue: `Missing ${readiness.missingFields.join(', ')}` })
-                                : readiness.state === 'unknown'
-                                  ? t('channelsCenter.runtimeStatusUnavailable', 'Runtime status unavailable; JunQi will not guess channel requirements.')
-                                : readiness.state === 'ready' && !gatewayHealthy
-                                  ? t('channelsCenter.gatewayOfflineHint', 'Gateway is offline. Restart or refresh Gateway to activate this account.')
-                                  : t(`channelsCenter.readinessHint.${readiness.state}`, '');
-
-                              const catalogEntry = catalog.entries.find((entry) => entry.id === group.id);
-                              const linkMode = channelLinkMode(capabilityByChannel[group.id], catalogEntry?.installed === true);
-                              const runtimeBusyPrefix = `${group.id}:${account.id}`;
-
-                              return (
-                                <div key={account.id} className="rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-aegis-bg px-3 py-2.5">
-                                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center">
-                                  <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <MessageSquare size={13} className="text-aegis-text-dim" />
-                                      <span className="text-[13px] font-semibold text-aegis-text truncate">{account.label}</span>
-                                      <span className="text-[10px] font-mono text-aegis-text-dim">{account.id}</span>
-                                      <span className={clsx('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-extrabold', readinessClasses(readiness, gatewayHealthy))}>
-                                        {readiness.state === 'ready' && gatewayHealthy ? <Check size={10} /> : <AlertCircle size={10} />}
-                                        {readinessLabel}
-                                      </span>
-                                    </div>
-                                    {readinessHint && (
-                                      <div className="mt-1 text-[11px] text-aegis-text-dim">
-                                        {readinessHint}
-                                      </div>
-                                    )}
-                                    {runtime && (
-                                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-aegis-text-muted">
-                                        <span>{t('channelsCenter.configuredState', 'Configured')}: {String(runtime.configured ?? false)}</span>
-                                        <span>{t('channelsCenter.linkedState', 'Linked')}: {String(runtime.linked ?? false)}</span>
-                                        <span>{t('channelsCenter.runningState', 'Running')}: {String(runtime.running ?? false)}</span>
-                                        <span>{t('channelsCenter.connectedState', 'Connected')}: {String(runtime.connected ?? false)}</span>
-                                        {runtime.lastError && <span className="basis-full text-aegis-danger">{runtime.lastError}</span>}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <select
-                                    value={account.agentId ?? ''}
-                                    onChange={(e) => handleBind(group, account, e.target.value)}
-                                    disabled={saving}
-                                    className="w-full rounded-lg border border-[rgb(var(--aegis-overlay)/0.1)] bg-aegis-bg px-3 py-2 text-[12px] text-aegis-text focus:outline-none focus:border-aegis-primary/40"
-                                  >
-                                    <option value="">{t('channelsCenter.defaultAgentRoute', 'Runtime default agent (no override)')}</option>
-                                    {agents.map((agent) => (
-                                      <option key={agent.id} value={agent.id}>
-                                        {agent.name || agent.id}{agent.default ? ` · ${t('channelsCenter.defaultAgent', 'default')}` : ''}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  </div>
-                                  <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-aegis-border pt-2">
-                                    {linkMode !== 'none' && (
-                                      <button onClick={() => handleLinkAccount(catalogEntry, group, account)} disabled={Boolean(accountActionBusy)} className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-aegis-primary/20 bg-aegis-primary/10 text-aegis-primary text-[11px] font-bold disabled:opacity-50">
-                                        {linkMode === 'embedded_qr' ? <QrCode size={12} /> : <Link2 size={12} />}
-                                        {linkMode === 'embedded_qr' ? t('channelsCenter.showQr', 'Show QR') : t('channelsCenter.linkAccount', 'Link account')}
-                                      </button>
-                                    )}
-                                    <button
-                                      onClick={() => setEditingAccount({ mode: 'edit', group, account })}
-                                      disabled={saving}
-                                      className="inline-flex items-center gap-1.5 rounded-lg border border-aegis-border px-2.5 py-2 text-[11px] font-bold text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-50"
-                                    >
-                                      <Pencil size={12} />
-                                      {t('channelsCenter.manageAccount', 'Manage account')}
-                                    </button>
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <button type="button" aria-label={t('channelsCenter.moreAccountActions', 'More account actions')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-aegis-border text-aegis-text-muted hover:bg-aegis-hover hover:text-aegis-text">
-                                          <MoreHorizontal size={13} />
-                                        </button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align="end" className="min-w-40 text-[11px]">
-                                        <DropdownMenuItem onSelect={() => void handleAccountRuntimeAction('channels.start', group, account)} disabled={Boolean(accountActionBusy)} className="justify-start">
-                                          {accountActionBusy === `channels.start:${runtimeBusyPrefix}` ? <LoadingIndicator size={12} /> : <Play size={12} />}{t('channelsCenter.startAccount', 'Start account')}
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem onSelect={() => void handleAccountRuntimeAction('channels.stop', group, account)} disabled={Boolean(accountActionBusy)} className="justify-start">
-                                          {accountActionBusy === `channels.stop:${runtimeBusyPrefix}` ? <LoadingIndicator size={12} /> : <Square size={12} />}{t('channelsCenter.stopAccount', 'Stop account')}
-                                        </DropdownMenuItem>
-                                        {(runtime?.linked || linkMode !== 'none') && <DropdownMenuItem onSelect={() => void handleAccountRuntimeAction('channels.logout', group, account)} disabled={Boolean(accountActionBusy)} className="justify-start text-aegis-warning focus:text-aegis-warning">{accountActionBusy === `channels.logout:${runtimeBusyPrefix}` ? <LoadingIndicator size={12} /> : <LogOut size={12} />}{t('channelsCenter.logoutAccount', 'Log out account')}</DropdownMenuItem>}
-                                        {account.source === 'account' && <DropdownMenuItem onSelect={() => handleDeleteAccount(group, account)} disabled={saving} className="justify-start text-aegis-danger focus:text-aegis-danger"><Trash2 size={12} />{t('common.remove', 'Remove')}</DropdownMenuItem>}
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          <section id="available-channels" className="space-y-3 scroll-mt-4">
-            <h2 className="text-[13px] font-semibold text-aegis-text-secondary">
-              {t('channelsCenter.addChannels', 'Add channels')}
-            </h2>
-            {catalog.source === 'unavailable' ? (
-              <div className="rounded-md border border-aegis-warning/25 bg-aegis-warning/10 px-4 py-3 text-[12px] text-aegis-warning">
-                {t('channelsCenter.catalogUnavailable', 'OpenClaw catalog unavailable')}
-              </div>
-            ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {availableEntries.map((entry) => {
-                const pluginMissing = Boolean(
-                  entry.managedInstall
-                  && catalog.source === 'openclaw-cli'
-                  && !entry.installed,
-                );
-                const installBusy = pluginInstalling === entry.id;
-                return (
-                  <div key={entry.id} className="flex items-center gap-2 rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.018)] p-2">
-                    <button
-                      type="button"
-                      onClick={() => handleCatalogEntry(entry)}
-                      disabled={!config || saving || pluginMissing}
-                      title={pluginMissing ? t('channelsCenter.installPluginFirst', 'Install the official plugin first') : t('channelsCenter.configureChannel', 'Configure channel')}
-                      className="flex min-w-0 flex-1 items-center gap-3 rounded px-1 py-0.5 text-left hover:bg-aegis-primary/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[rgb(var(--aegis-overlay)/0.08)] bg-[rgb(var(--aegis-overlay)/0.04)] text-[10px] font-bold text-aegis-text-muted">
-                        <ChannelRuntimeIcon systemImage={runtimeSnapshot?.channelSystemImages?.[entry.id]} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[13px] font-bold text-aegis-text">
-                          {channelName(t, entry.id, runtimeSnapshot?.channelLabels?.[entry.id])}
-                        </div>
-                        <div className="truncate text-[10px] text-aegis-text-dim">
-                          {configuredChannelIds.has(entry.id)
-                            ? t('channelsCenter.alreadyConfigured', 'Configured')
-                            : pluginMissing
-                            ? `${t('channelsCenter.officialExternalPlugin', 'Official external plugin')} · ${t('channelsCenter.installable', 'Installable')}`
-                            : catalogEntryStateLabel(t, catalog, entry)}
-                        </div>
-                      </div>
-                      {configuredChannelIds.has(entry.id)
-                        ? <Check size={14} className="shrink-0 text-aegis-success" />
-                        : <Plus size={14} className="shrink-0 text-aegis-primary" />}
-                    </button>
-                    {pluginMissing && (
-                      <button
-                        type="button"
-                        onClick={() => void handleInstallManagedPlugin(entry.id)}
-                        disabled={!config || saving || Boolean(pluginInstalling)}
-                        title={t('channelsCenter.installOfficialPlugin', 'Install official plugin')}
-                        aria-label={t('channelsCenter.installOfficialPlugin', 'Install official plugin')}
-                        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-aegis-primary/25 bg-aegis-primary/10 px-2 text-[11px] font-semibold text-aegis-primary transition-colors hover:bg-aegis-primary/16 disabled:cursor-wait disabled:opacity-50"
-                      >
-                        {installBusy ? <LoadingIndicator size={13} /> : <Download size={13} />}
-                        {t('channelsCenter.installOfficialPlugin', 'Install official plugin')}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            )}
-          </section>
-
-        </>
+            onInstallPlugin={(channelId) => { void handleInstallManagedPlugin(channelId); }}
+            onAddAccount={(group) => setEditingAccount({ mode: 'new', group })}
+            onToggle={handleToggle}
+            onProbe={(channelId) => { void loadOfficialState(true, channelId); }}
+            onToggleLogs={(channelId) => { void handleChannelLogs(channelId); }}
+            onCopyRedacted={(group) => { void handleCopyRedacted(group); }}
+            onRemoveChannel={handleRemove}
+            onBind={handleBind}
+            onLink={handleLinkAccount}
+            onEditAccount={(group, account) => setEditingAccount({ mode: 'edit', group, account })}
+            onRuntimeAction={(method, group, account) => { void handleAccountRuntimeAction(method, group, account); }}
+            onDeleteAccount={(group, account) => { void handleDeleteAccount(group, account); }}
+          />
+        </div>
       )}
+
       {editingAccount && (
-        <ChannelAccountModal
+        <ChannelAccountDialog
           key={`${editingAccount.mode}:${editingAccount.group.id}:${editingAccount.account?.id ?? 'new'}`}
           state={editingAccount}
           agents={agents}
           saving={saving}
-          t={t}
           onClose={() => setEditingAccount(null)}
           onSave={(accountId, accountConfig) => { void handleSaveAccount(accountId, accountConfig); }}
           onDelete={(account) => { void handleDeleteAccount(editingAccount.group, account); }}
         />
       )}
+      <ChannelCatalogDialog
+        open={catalogOpen}
+        items={catalogItems}
+        disabled={!config || saving}
+        installingChannelId={pluginInstalling}
+        onClose={() => setCatalogOpen(false)}
+        onSelect={handleCatalogEntry}
+        onInstall={(channelId) => { void handleInstallManagedPlugin(channelId); }}
+      />
       {qrTarget && (
         <ChannelQrLoginDialog
           client={openClawChannelQrLoginClient}
@@ -1346,7 +698,6 @@ export function ChannelsCenterPage() {
           onClose={() => setQrTarget(null)}
           onConnected={() => {
             void loadOfficialState(true, qrTarget.channelId);
-            scheduleGatewayRefresh();
           }}
         />
       )}

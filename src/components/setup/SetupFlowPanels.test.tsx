@@ -24,3 +24,37 @@ test('setup footer renders Back separately from a loading primary action', () =>
   assert.match(markup, /data-setup-footer-primary="true"/);
   assert.match(markup, /Confirming storage location/);
 });
+
+test('精简的运行时步骤可按调用方请求默认展开日志', () => {
+  const markup = renderToStaticMarkup(
+    <SetupShell
+      active={3}
+      title="配置"
+      subtitle="官方向导"
+      logs={[{ source: 'gateway', message: '等待确认', ts: 0, level: 'info' }]}
+      logVisibility="expanded"
+    >
+      <div>确认现有凭据</div>
+    </SetupShell>,
+  );
+
+  assert.match(markup, /Debug Log/);
+  assert.match(markup, /等待确认/);
+});
+
+test('默认展开的日志区域在首条日志到达前保持可见', () => {
+  const markup = renderToStaticMarkup(
+    <SetupShell
+      active={3}
+      title="配置"
+      subtitle="官方向导"
+      logs={[]}
+      logVisibility="expanded"
+    >
+      <div>等待 Runtime 返回步骤</div>
+    </SetupShell>,
+  );
+
+  assert.match(markup, /Debug Log/);
+  assert.match(markup, /No installation or startup action has run yet/);
+});

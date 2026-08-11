@@ -15,6 +15,7 @@ test("官方向导步骤类型均由集中注册表负责渲染", () => {
   ];
 
   assert.deepEqual(Object.keys(WIZARD_STEP_RENDERERS).sort(), expected.sort());
+  assert.equal(isWizardBodyMessageStep("confirm"), true);
   assert.equal(isWizardBodyMessageStep("note"), true);
   assert.equal(isWizardBodyMessageStep("progress"), true);
   assert.equal(isWizardBodyMessageStep("action"), true);

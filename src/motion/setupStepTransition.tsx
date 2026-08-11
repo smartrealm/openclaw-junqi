@@ -54,6 +54,18 @@ export function setupStepScene(step: SetupStep): SetupStep {
   return step === 'gateway-ready' ? 'configure-openclaw' : step;
 }
 
+export function setupStepScrollKey(step: SetupStep, contentIdentity = 'screen'): string {
+  // 视觉场景可以复用动效，但每个真实步骤必须拥有独立的滚动起点。
+  return `${step}:${contentIdentity}`;
+}
+
+export function useSetupStepScrollKey(contentIdentity?: string): string | null {
+  const context = useContext(SetupStepTransitionContext);
+  return context
+    ? setupStepScrollKey(context.step, contentIdentity)
+    : contentIdentity ?? null;
+}
+
 export function setupStepEntryState(
   direction: SetupStepMotionDirection,
   reducedMotion: boolean,

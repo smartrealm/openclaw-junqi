@@ -191,7 +191,6 @@ pub fn run() {
             commands::openclaw_channel::get_openclaw_channel_capabilities,
             commands::openclaw_channel::get_openclaw_channel_status,
             commands::openclaw_channel::get_openclaw_channel_logs,
-            commands::qr::render_local_qr_data_url,
             // Docker
             commands::docker::check_docker,
             commands::docker::pull_openclaw_image,

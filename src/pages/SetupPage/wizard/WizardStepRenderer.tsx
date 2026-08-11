@@ -18,7 +18,8 @@ export const WIZARD_STEP_RENDERERS: Record<OpenClawWizardStepType, WizardStepRen
 };
 
 export function isWizardBodyMessageStep(type: OpenClawWizardStepType): boolean {
-  return type === "note" || type === "progress" || type === "action";
+  // 确认步骤的 message 由复选控件呈现，容器不能再次作为副标题重复显示。
+  return type === "confirm" || type === "note" || type === "progress" || type === "action";
 }
 
 export function WizardStepRenderer(props: WizardStepRendererProps) {

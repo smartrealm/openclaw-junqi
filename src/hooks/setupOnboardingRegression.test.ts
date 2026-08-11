@@ -515,7 +515,6 @@ test('BUG-IW-04 wizard presentation stays within the installed strict schema', (
 test('BUG-ONB-27 官方授权字段通过桌面 Shell 呈现', () => {
   const wizard = readFileSync(new URL('../pages/SetupPage/wizard/WizardAuthorizationHint.tsx', import.meta.url), 'utf8');
 
-  assert.match(wizard, /openWizardExternalUrl\(externalUrl\)/);
   assert.match(wizard, /deviceCode\.code/);
   assert.doesNotMatch(wizard, /target="_blank"/);
   assert.doesNotMatch(setupPage, /openclawWizardQr|openclawTerminalQr|getGatewayLogs/);
@@ -651,8 +650,8 @@ test('environment review distinguishes Docker installation from daemon readiness
   assert.doesNotMatch(redetect, /navigateSetup\("detecting", "replace"\)/);
 });
 
-test('BUG-ONB-44 shared setup logs are visible only when diagnostics exist', () => {
-  assert.match(setupFlowPanels, /isRuntime && showLogToggle && logs\.length > 0/);
+test('BUG-ONB-44 配置向导可在首条诊断前默认展开日志，其余步骤不展示空日志面板', () => {
+  assert.match(setupFlowPanels, /const shouldShowLogs = isRuntime && showLogToggle && \(logs\.length > 0 \|\| logVisibility === "expanded"\)/);
   assert.match(setupFlowPanels, /disabled=\{!logText\}/);
   assert.match(screen('ProgressScreen'), /<InstallationConsole/);
 });

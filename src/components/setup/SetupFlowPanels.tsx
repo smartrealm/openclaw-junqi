@@ -29,7 +29,7 @@ import {
 } from "@/api/tauri-commands";
 import type { SetupLog } from "@/stores/app-store";
 import type { InstallTarget, SetupFlow, StepState } from "@/hooks/useSetupFlow";
-import { SetupStepScene } from "@/motion/setupStepTransition";
+import { SetupStepScene, useSetupStepScrollKey } from "@/motion/setupStepTransition";
 
 const SETUP_STEPS = [
   { id: "environment", titleKey: "setup.steps.environment.title", titleFallback: "Environment", descriptionKey: "setup.steps.environment.description", descriptionFallback: "OpenClaw / Docker" },
@@ -220,6 +220,8 @@ export function SetupShell({
   nextAction,
   wide = false,
   showLogToggle = true,
+  logVisibility = "collapsed",
+  contentIdentity,
 }: {
   active: number;
   activeComplete?: boolean;
@@ -233,11 +235,20 @@ export function SetupShell({
   nextAction?: SetupNextAction;
   wide?: boolean;
   showLogToggle?: boolean;
+  logVisibility?: "collapsed" | "expanded";
+  contentIdentity?: string;
 }) {
   const { t } = useTranslation();
-  const [showLogs, setShowLogs] = useState(false);
+  const [showLogs, setShowLogs] = useState(logVisibility === "expanded");
+  const scrollKey = useSetupStepScrollKey(contentIdentity);
   const isRuntime = active >= 2 && active < 4;
   const showActions = previousAction || secondaryAction || nextAction;
+  // 调用方要求默认展开时，即使首条运行日志尚未到达也保留日志区域，避免界面布局跳动。
+  const shouldShowLogs = isRuntime && showLogToggle && (logs.length > 0 || logVisibility === "expanded");
+
+  useEffect(() => {
+    setShowLogs(logVisibility === "expanded");
+  }, [logVisibility]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-aegis-bg text-aegis-text" dir="ltr">
@@ -246,7 +257,11 @@ export function SetupShell({
         className="h-[32px] shrink-0 chrome-bg border-b border-aegis-border/30"
       />
       <Stepper active={active} activeComplete={activeComplete} />
-      <main className="flex min-h-0 flex-1 flex-col items-center overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-6 sm:py-8">
+      <main
+        key={scrollKey ?? "setup"}
+        data-setup-scroll-key={scrollKey ?? "setup"}
+        className="flex min-h-0 flex-1 flex-col items-center overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-6 sm:py-8"
+      >
         <SetupStepScene>
           <section className={clsx("w-full", wide ? "max-w-5xl" : "max-w-3xl")}>
             <div className="mb-4 text-center sm:mb-6">
@@ -256,7 +271,7 @@ export function SetupShell({
             </div>
             <div className={clsx(wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6")}>
               {children}
-              {isRuntime && showLogToggle && logs.length > 0 && (
+              {shouldShowLogs && (
                 <div className="mt-5 border-t border-aegis-border pt-4">
                   <button
                     type="button"

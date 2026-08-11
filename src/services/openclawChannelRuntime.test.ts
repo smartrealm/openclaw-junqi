@@ -5,6 +5,7 @@ import {
   channelErrorMessage,
   channelLinkMode,
   isOpenClawChannelIdentifier,
+  loadOfficialChannelRuntimeState,
   normalizeOfficialChannelCapability,
   normalizeOfficialChannelCatalog,
   redactChannelSecrets,
@@ -33,15 +34,20 @@ describe('openclawChannelRuntime', () => {
   test('extracts plugin-owned schema and capabilities', () => {
     const capability = normalizeOfficialChannelCapability({ channels: [{
       channel: 'telegram',
-      plugin: { meta: { label: 'Telegram' }, configSchema: { schema: {
-        properties: { botToken: { type: 'string' } }, required: ['botToken'],
-      } } },
+      plugin: {
+        meta: { label: 'Telegram' },
+        configSchema: { schema: {
+          properties: { botToken: { type: 'string' } }, required: ['botToken'],
+        } },
+        gatewayMethods: ['web.login.start'],
+        gatewayMethodDescriptors: [{ name: 'web.login.wait' }],
+      },
       support: { media: true },
-      actions: ['send'], qrLogin: true,
+      actions: ['send'],
     }] });
     assert.equal(capability?.schema.botToken?.type, 'string');
     assert.deepEqual(capability?.required, ['botToken']);
-    assert.equal(capability?.qrLogin, true);
+    assert.deepEqual(capability?.gatewayMethods, ['web.login.start', 'web.login.wait']);
   });
 
   test('discovers delivery channel ids from arbitrary current runtime status shapes', () => {
@@ -54,8 +60,27 @@ describe('openclawChannelRuntime', () => {
     assert.deepEqual(runtimeChannelIds(undefined), []);
   });
 
+  test('渠道状态请求由服务层统一生成官方参数', async () => {
+    const calls: unknown[] = [];
+    const result = await loadOfficialChannelRuntimeState(async (method, params) => {
+      calls.push({ method, params });
+      return { channelAccounts: {} };
+    }, 'telegram', true);
+
+    assert.deepEqual(calls, [{
+      method: 'channels.status',
+      params: { probe: true, timeoutMs: 15000, channel: 'telegram' },
+    }]);
+    assert.deepEqual(result, { channelAccounts: {} });
+  });
+
   test('routes official link flows only from current runtime capabilities', () => {
-    const qrCapability = normalizeOfficialChannelCapability({ channels: [{ channel: 'provider', qrLogin: true }] });
+    const qrCapability = normalizeOfficialChannelCapability({
+      channels: [{
+        channel: 'provider',
+        plugin: { gatewayMethods: ['web.login.start', 'web.login.wait'] },
+      }],
+    });
     const capabilityWithoutQr = normalizeOfficialChannelCapability({ channels: [{ channel: 'openclaw-weixin' }] });
     assert.equal(channelLinkMode(qrCapability, true), 'embedded_qr');
     assert.equal(channelLinkMode(capabilityWithoutQr, true), 'none');

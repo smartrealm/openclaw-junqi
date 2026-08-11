@@ -12,6 +12,7 @@ import {
   parseGatewayCronJobList,
   parseGatewaySessionsUsage,
   refreshSessionArtifacts,
+  retainGatewayDataPolling,
   searchOpenClawMemory,
   refreshOpenClawMemoryDiagnostics,
   refreshToolsCatalog,
@@ -23,6 +24,7 @@ import {
   resolveGatewayConnectionStartedAt,
   startPolling,
   stopPolling,
+  sessionsHaveSameProjection,
   searchOpenClawSessions,
   selectSessionArtifacts,
   useGatewayDataStore,
@@ -76,6 +78,64 @@ test('会话产物缺失时复用稳定空快照', () => {
 
   assert.equal(first, second);
   assert.deepEqual(first, []);
+});
+
+test('会话投影相同不会因 RPC 对象重建而被视为变化', () => {
+  const previous = [{
+    key: 'agent:main:main',
+    label: '主会话',
+    placement: { status: 'active', workers: ['worker-1'] },
+  }];
+  const incoming = [{
+    key: 'agent:main:main',
+    label: '主会话',
+    placement: { status: 'active', workers: ['worker-1'] },
+  }];
+
+  assert.equal(sessionsHaveSameProjection(previous, incoming), true);
+  assert.equal(sessionsHaveSameProjection(previous, [{
+    ...incoming[0],
+    placement: { status: 'idle', workers: ['worker-1'] },
+  }]), false);
+});
+
+test('重型用量轮询仅在页面保留期间启动', async () => {
+  const calls: string[] = [];
+  const gateway = {
+    request: async (method: string, params: Record<string, unknown>) => {
+      calls.push(method);
+      if (method === 'agents.list') {
+        return { defaultId: 'main', mainKey: 'main', scope: 'per-sender', agents: [{ id: 'main' }] };
+      }
+      if (method === 'sessions.list') {
+        return {
+          sessions: [], totalCount: 0, offset: Number(params.offset ?? 0), nextOffset: null, hasMore: false,
+        };
+      }
+      if (method === 'sessions.usage') {
+        return {
+          updatedAt: NOW,
+          startDate: '2026-07-01',
+          endDate: '2026-07-31',
+          sessions: [],
+          totals: METRICS,
+          aggregates: USAGE_AGGREGATES,
+        };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    },
+  };
+
+  stopPolling();
+  startPolling(gateway);
+  const release = retainGatewayDataPolling('usage');
+  try {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.equal(calls.filter((method) => method === 'sessions.usage').length, 1);
+  } finally {
+    release();
+    stopPolling();
+  }
 });
 
 test('sub-agent activity only follows explicit OpenClaw run fields', () => {

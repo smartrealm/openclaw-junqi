@@ -22,7 +22,13 @@ import clsx from 'clsx';
 import { SceneTransition } from '@/components/shared/SceneTransition';
 import { StatusBadge, type LifecycleState } from '@/components/shared/StatusBadge';
 import { useChatStore, type Session } from '@/stores/chatStore';
-import { ensureGroupFresh, refreshAll, useGatewayDataStore, type SessionInfo } from '@/stores/gatewayDataStore';
+import {
+  ensureGroupFresh,
+  refreshAll,
+  retainGatewayDataPolling,
+  useGatewayDataStore,
+  type SessionInfo,
+} from '@/stores/gatewayDataStore';
 import { useAgentWorkspaceStore, type AgentWorkspaceTask } from '@/stores/agentWorkspaceStore';
 import { useSkillsStore } from '@/stores/skillsStore';
 import { agentTaskNeedsAttention } from '@/pages/AgentWorkspace/taskListModel';
@@ -244,11 +250,16 @@ export function ActivityCenterPage() {
   }), [t]);
 
   useEffect(() => {
-    void ensureGroupFresh('sessions');
-    void ensureGroupFresh('agents');
-    void ensureGroupFresh('usage');
     void refreshSkills();
   }, [refreshSkills]);
+
+  useEffect(() => {
+    if (!connected) return;
+    const releaseUsagePolling = retainGatewayDataPolling('usage');
+    void ensureGroupFresh('sessions');
+    void ensureGroupFresh('agents');
+    return releaseUsagePolling;
+  }, [connected]);
 
   const sessionRecords = useMemo(() => mergeActivitySessions({
     usageSessions: sessionsUsage?.sessions,

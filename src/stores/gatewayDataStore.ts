@@ -134,13 +134,9 @@ import { sessionListMutationFence } from '@/utils/sessionListMutationFence';
 // ═══════════════════════════════════════════════════════════
 // Gateway Data Store — Central data layer for all pages
 //
-// DESIGN:
-//   All pages READ from this store — nobody calls gateway directly.
-//   Smart polling fetches at 3 speeds:
-//     Fast  (10s):  sessions.list         (who's running now?)
-//     Mid   (30s):  agents.list + cron    (rarely change)
-//     Slow  (120s): usage.cost + sessions.usage (heavy, slow-changing)
-//
+// 设计约束：
+//   页面只读取此 Store，不直接调用 Gateway。
+//   会话与智能体按固定节奏刷新；费用和历史用量仅由可见页面持有轮询。
 //   官方 Gateway 事件只触发相应权威投影刷新，不创建本地生命周期语义。
 // ═══════════════════════════════════════════════════════════
 
@@ -733,10 +729,10 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
 // Polling Engine — starts/stops with gateway connection
 // ═══════════════════════════════════════════════════════════
 
-// Polling intervals (ms)
-const FAST_INTERVAL  = 10_000;   // 10s — sessions
-const MID_INTERVAL   = 30_000;   // 30s — agents / cron
-const SLOW_INTERVAL  = 120_000;  // 120s — cost / usage
+// 轮询间隔（毫秒）。会话用于实时状态；费用和历史用量需要按页面需求读取。
+const FAST_INTERVAL  = 10_000;
+const MID_INTERVAL   = 30_000;
+const SLOW_INTERVAL  = 120_000;
 
 let fastTimer:  ReturnType<typeof setInterval> | null = null;
 let agentsTimer: ReturnType<typeof setInterval> | null = null;
@@ -747,6 +743,7 @@ let usageTimer: ReturnType<typeof setInterval> | null = null;
 export const GATEWAY_DATA_GROUPS = ['sessions', 'agents', 'cost', 'usage', 'cron'] as const;
 export type GatewayDataGroup = typeof GATEWAY_DATA_GROUPS[number];
 type PollGroup = GatewayDataGroup;
+type DemandPollingGroup = 'cost' | 'usage';
 const DEFAULT_FRESHNESS_MS: Record<PollGroup, number> = {
   sessions: FAST_INTERVAL,
   agents: MID_INTERVAL,
@@ -754,6 +751,15 @@ const DEFAULT_FRESHNESS_MS: Record<PollGroup, number> = {
   cost: SLOW_INTERVAL,
   usage: SLOW_INTERVAL,
 };
+const DEMAND_POLLING_GROUPS: readonly DemandPollingGroup[] = ['cost', 'usage'];
+const demandPollingConsumers: Record<DemandPollingGroup, number> = {
+  cost: 0,
+  usage: 0,
+};
+
+function isDemandPollingGroup(group: PollGroup): group is DemandPollingGroup {
+  return DEMAND_POLLING_GROUPS.includes(group as DemandPollingGroup);
+}
 
 // These are bounded UI read parameters, while the 64-key batch size is the
 // current official sessions.preview handler limit.
@@ -787,6 +793,38 @@ function gatewayErrorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim()
     ? error.message
     : String(error);
+}
+
+function gatewayProjectionEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') {
+    return false;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    return left.every((entry, index) => gatewayProjectionEqual(entry, right[index]));
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  const rightKeys = Object.keys(rightRecord);
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key) => (
+    Object.prototype.hasOwnProperty.call(rightRecord, key)
+      && gatewayProjectionEqual(leftRecord[key], rightRecord[key])
+  ));
+}
+
+/**
+ * Gateway 会话投影来自 JSON RPC，响应对象每次都会重建。
+ * 逐字段比较避免无变化轮询产生完整 JSON 字符串和不必要的状态更新。
+ */
+export function sessionsHaveSameProjection(
+  previous: readonly SessionInfo[],
+  incoming: readonly SessionInfo[],
+): boolean {
+  return previous.length === incoming.length
+    && previous.every((session, index) => gatewayProjectionEqual(session, incoming[index]));
 }
 
 function isAgentInfo(value: unknown): value is AgentInfo {
@@ -1104,8 +1142,8 @@ async function fetchSessions(): Promise<boolean> {
       ? incomingList
       : [...incomingList, ...prev.filter((session) => !incomingKeys.has(session.key))];
 
-    // Skip store update if nothing meaningful changed (avoids unnecessary React re-renders)
-    const same = JSON.stringify(prev) === JSON.stringify(list);
+    // 无变化的权威快照不应触发订阅者重渲染或主线程序列化。
+    const same = sessionsHaveSameProjection(prev, list);
     if (!same) {
       store.setSessions(list);
     } else {
@@ -1268,6 +1306,35 @@ function ensureTimer(group: Exclude<PollGroup, 'sessions'>) {
   }
 }
 
+function clearDemandPollingTimer(group: DemandPollingGroup): void {
+  if (group === 'cost' && costTimer) {
+    clearInterval(costTimer);
+    costTimer = null;
+  }
+  if (group === 'usage' && usageTimer) {
+    clearInterval(usageTimer);
+    usageTimer = null;
+  }
+}
+
+/**
+ * 保持重型数据的页面级轮询。费用和历史用量会遍历 OpenClaw 缓存与转录，
+ * 因此只有存在可见消费者时才允许后台定时读取。
+ */
+export function retainGatewayDataPolling(group: DemandPollingGroup): () => void {
+  demandPollingConsumers[group] += 1;
+  ensureTimer(group);
+  void ensureGroupFresh(group);
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    demandPollingConsumers[group] = Math.max(0, demandPollingConsumers[group] - 1);
+    if (demandPollingConsumers[group] === 0) clearDemandPollingTimer(group);
+  };
+}
+
 async function fetchGroup(group: PollGroup) {
   switch (group) {
     case 'sessions': return fetchSessions();
@@ -1311,6 +1378,11 @@ export function startPolling(gateway: GatewayRequester) {
   // Set up intervals
   fastTimer = setInterval(tickFast, FAST_INTERVAL);
   agentsTimer = setInterval(tickMid, MID_INTERVAL);
+  for (const group of DEMAND_POLLING_GROUPS) {
+    if (demandPollingConsumers[group] === 0) continue;
+    ensureTimer(group);
+    void ensureGroupFresh(group);
+  }
 }
 
 /**
@@ -1371,10 +1443,6 @@ export function stopPolling() {
 export async function refreshAll() {
   if (!gw) return;
   debugLog('datastore', '[DataStore] Manual refresh - all groups');
-  ensureTimer('agents');
-  ensureTimer('cron');
-  ensureTimer('cost');
-  ensureTimer('usage');
   await Promise.allSettled([tickFast(), tickMid(), tickSlow(), fetchCron()]);
 }
 
@@ -1383,7 +1451,7 @@ export async function refreshAll() {
  */
 export async function refreshGroup(group: 'sessions' | 'agents' | 'cost' | 'usage' | 'cron') {
   if (!gw) return;
-  if (group !== 'sessions') ensureTimer(group);
+  if (group !== 'sessions' && !isDemandPollingGroup(group)) ensureTimer(group);
   return fetchGroup(group);
 }
 
@@ -1393,7 +1461,7 @@ export async function refreshGroup(group: 'sessions' | 'agents' | 'cost' | 'usag
  */
 export async function ensureGroupFresh(group: PollGroup, maxAgeMs = DEFAULT_FRESHNESS_MS[group]) {
   if (!gw) return;
-  if (group !== 'sessions') ensureTimer(group);
+  if (group !== 'sessions' && !isDemandPollingGroup(group)) ensureTimer(group);
   const store = useGatewayDataStore.getState();
   if (store.loading[group]) return;
   const last = store.lastFetch[group] ?? 0;

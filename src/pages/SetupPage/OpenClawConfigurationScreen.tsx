@@ -54,10 +54,12 @@ function ConfigurationVerificationScreen({ flow, logs }: { flow: VerificationFlo
   return (
     <SetupShell
       active={flow.presentation.stage}
+      contentIdentity={`verification:${continuation.status}`}
       eyebrow={t("setup.gatewayReadyTitle")}
       title={t("setup.wizard.title")}
       subtitle={t("setup.wizard.subtitle")}
       logs={logs}
+      logVisibility="expanded"
       previousAction={{
         onClick: () => { void flow.goBack(); },
         disabled: checking,
