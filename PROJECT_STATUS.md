@@ -45,11 +45,13 @@
 - `git diff --check` 通过。
 - 本机 Gateway 诊断仍记录过事件循环延迟；修复后尚未进行目标平台长时间帧率与 CPU 对比。
 - 尚未在目标设备使用该第三方 DingTalk 插件完成向导；其英文凭据保留提示需要插件提供方接入 OpenClaw 原生 locale 后验证。
+- 本机 `pnpm tauri build` 已完成 arm64 Rust 编译与 `.app` 生成，但内置 DMG 美化脚本失败；已对应用包执行 ad-hoc 重签名和严格校验，并以 `hdiutil` 创建、校验本地 DMG。
 
 ## 已知问题与未验证边界
 
 - 尚未在真实 macOS、Windows、Linux 安装包上执行长时间窗口帧率、CPU 与内存对比；不能将当前源码验证描述为目标平台性能验收。
 - 历史调用的可估价性取决于 OpenClaw 转录中的 Provider、Model 与运行时定价配置；未定价条目需要在模型供应商配置中补足真实价格后由官方统计重新聚合。
+- 本地 DMG 为 ad-hoc 签名，未进行 Developer ID 签名或 Apple 公证；仅可描述为本机安装验证包。
 
 ## 失败方案
 
