@@ -20,7 +20,12 @@ import { Sparkline } from '@/components/shared/Sparkline';
 import { useChatStore, type Session } from '@/stores/chatStore';
 import { resolveNewSessionAgentId } from '@/utils/sessionLifecycle';
 import { useAppStore } from '@/stores/app-store';
-import { useGatewayDataStore, refreshAll, ensureGroupFresh } from '@/stores/gatewayDataStore';
+import {
+  useGatewayDataStore,
+  refreshAll,
+  ensureGroupFresh,
+  retainGatewayDataPolling,
+} from '@/stores/gatewayDataStore';
 import type { OpenClawCostUsageTotals } from '@/services/gateway/OpenClawUsageClient';
 import { sessionActivityTime, sortSessionsByActivity } from '@/components/Layout/sidebarUtils';
 import clsx from 'clsx';
@@ -177,9 +182,13 @@ export function DashboardPage() {
 
   useEffect(() => {
     if (!connected) return;
-    void ensureGroupFresh('cost');
-    void ensureGroupFresh('usage');
+    const releaseCostPolling = retainGatewayDataPolling('cost');
+    const releaseUsagePolling = retainGatewayDataPolling('usage');
     void ensureGroupFresh('agents');
+    return () => {
+      releaseCostPolling();
+      releaseUsagePolling();
+    };
   }, [connected]);
 
   const uptime = useGatewayUptime(connected, connectionStartedAt);
@@ -774,7 +783,7 @@ export function DashboardPage() {
                     {t('dashboard.costRetry')}
                   </button>
                 </div>
-              ) : (costLoading && !costData) ? (
+              ) : ((costLoading || !costData) && !costError) ? (
                 <div className="absolute inset-0 flex items-center justify-center text-[13px] text-aegis-text-dim">
                   {t('common.loading')}
                 </div>

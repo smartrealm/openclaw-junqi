@@ -4,67 +4,51 @@
 
 ## 当前目标
 
-完成 `3.0.1` 标签发布，并保留可复核的发布链路与验证结果。
+修复仪表盘费用首屏空态和历史用量后台轮询造成的窗口卡顿，同时保持 OpenClaw 官方统计语义。
 
 ## 已完成内容
 
-- 已核对 22 个远端公开告警的直接和传递依赖路径。
-- 直接依赖已升级为 `dompurify 3.4.13`、`pdfjs-dist 6.2.108` 和 `react-router-dom 7.18.2`。
-- 项目锁定的 pnpm 9 通过根 `package.json` 的精确版本选择器，将 OpenClaw 传递依赖收敛到 `@hono/node-server 2.0.10`、`tar 7.5.21` 与 `undici 8.9.0`；其余已报告的传递依赖同样收敛到公告修复版本。
-- PDF.js 6 已移除 `PDFDocumentProxy.destroy`；文件预览改为调用其公开的 `cleanup` 契约，加载任务仍由自身 `destroy` 取消，并新增清理成功和失败的行为回归测试。
-- 已新增依赖安全的文档、规格和实施计划记录。
-- 已确认唯一正式发布入口是 `.github/workflows/tag-release.yml`：推送 `v*` 标签后构建 macOS ARM64、macOS x64 与 Windows x64 安装包，并在同一提交的 `main` CI 成功后创建 GitHub Release。
-- 已确认 `v3.0.0` 的三平台构建均成功，但发布前置 CI 因后续推送取消而失败；本次改为先推送版本提交、确认其 CI 成功，再创建 `v3.0.1` 标签。
-- 已将 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 与 `src-tauri/Cargo.lock` 同步为 `3.0.1`。
-- 已推送 `v3.0.1`，标签发布工作流的 verify、macOS ARM64、macOS x64、Windows x64、publish 与 summary 均成功。
-- GitHub Release `v3.0.1` 已发布，包含两种 macOS DMG、Windows NSIS、更新包签名及 `latest.json`。
+- 已直接核验当前 Gateway 的官方 `usage.cost` 响应：30 天存在 30 个日期桶、17 天有非零费用；Token 与可估价费用是不同信号。
+- 已确认部分历史调用返回 `missingCostEntries`，JunQi 保留“未估价”语义，不以零费用伪造结果。
+- Dashboard 在费用数据尚未返回时显示加载态，不再在 effect 发起请求前错误显示空状态。
+- `cost` 和 `usage` 改为可释放的页面级轮询：Dashboard、活动中心与已打开的智能体设置面板持有读取，最后一个消费者离开后停止对应定时器。
+- 手动刷新仅执行一次官方读取，不再意外启动长期的费用或历史用量后台轮询。
+- 会话列表使用递归投影比较替换完整 `JSON.stringify` 比较；无变化 Gateway 快照不会触发 Zustand 更新和订阅者重渲染。
 
 ## 关键技术决策
 
-- OpenClaw Runtime 保持官方已发布的 `2026.7.1-2`，本次只调整依赖解析，不扩展或替代其协议和能力。
-- 上游使用精确版本声明时，pnpm 9 必须使用带原始版本的覆盖选择器，通用范围覆盖不能保证安全版本被采用。
-- 本机全局 pnpm 11 与项目锁定 pnpm 9 的配置读取位置不同；锁文件生成和安全审计以项目锁定的 pnpm 9 为唯一证据。
-- `release.yml` 是候选构建和证据链工作流，不是 GitHub Release 发布入口；手动运行它不会替代标签发布。
+- OpenClaw 的 `usage.cost` 是仪表盘按日费用与按日 Token 的权威来源；`sessions.usage` 仅用于需要会话或智能体历史聚合的可见页面。
+- 客户端不根据 Token 推算或补写费用。缺少官方模型定价或历史归属信息时保留未知费用。
+- 重型数据轮询由消费者引用计数控制，连接断开时暂停；连接恢复且页面仍持有消费者时恢复读取。
 
 ## 核心文件
 
-- `package.json`
-- `pnpm-lock.yaml`
-- `src/components/FileExplorer/PdfPreview.tsx`
-- `src/components/FileExplorer/pdfDocumentLifecycle.ts`
-- `src/components/FileExplorer/filePreviewResourceRegression.test.ts`
-- `docs/quality/dependency-security-remediation-2026-08-11.md`
-- `specs/quality/2026-08-11-dependency-security-remediation.md`
-- `plans/quality/2026-08-11-dependency-security-remediation.md`
-- `docs/quality/tag-release-validation-2026-08-11.md`
-- `.github/workflows/tag-release.yml`
+- `src/stores/gatewayDataStore.ts`
+- `src/stores/gatewayDataStore.test.ts`
+- `src/pages/Dashboard/index.tsx`
+- `src/pages/ActivityCenter.tsx`
+- `src/pages/AgentHub/AgentSettingsPanel.tsx`
+- `docs/gateway/gateway-lifecycle-unification-validation-2026-08-10.md`
 
 ## 测试与验证
 
-- `npx --yes pnpm@9.15.9 install --frozen-lockfile` 通过。
-- `npx --yes pnpm@9.15.9 audit --json` 返回低、中、高、严重风险均为零。
-- `npx --yes pnpm@9.15.9 lint` 通过：模块边界扫描 922 个文件，版本一致性和 TypeScript 检查通过。
-- `npx --yes pnpm@9.15.9 test` 通过。
-- `npx --yes pnpm@9.15.9 build` 通过。
-- `npx --yes pnpm@9.15.9 collab:test`、`dingtalk:test`、`collab:validate` 和 `dingtalk:validate` 通过。
+- `node --import ./test-setup.ts --import tsx --test src/stores/gatewayDataStore.test.ts src/pages/Dashboard/dashboardInteraction.test.ts` 通过，50 项测试通过。
+- `pnpm lint` 通过：模块边界检查、版本一致性检查和 TypeScript 类型检查通过。
+- `pnpm build` 通过：协作插件、钉钉插件、TypeScript 与 Vite 生产构建通过。
 - `git diff --check` 通过。
-- `cargo check --offline --lib` 通过，并已写入 `Cargo.lock` 的 `3.0.1` crate 版本。
-- `node scripts/check-release-version-consistency.mjs` 通过。
-- `node --test scripts/release-package-size.test.mjs scripts/check-release-version-consistency.test.mjs` 通过。
+- 本机 Gateway 诊断仍记录过事件循环延迟；修复后尚未进行目标平台长时间帧率与 CPU 对比。
 
 ## 已知问题与未验证边界
 
-- 远端 Dependabot 会在提交并推送后异步重新扫描；告警状态须以 GitHub 后续扫描结果为准。
-- 尚未完成本轮 macOS、Windows、Linux 的桌面安装包和真机 PDF 视觉验收。
-- Windows 发布物使用短期内部测试证书，仍不具备公共 CA 信任；受控测试设备之外可能被 Smart App Control 阻止。
+- 尚未在真实 macOS、Windows、Linux 安装包上执行长时间窗口帧率、CPU 与内存对比；不能将当前源码验证描述为目标平台性能验收。
+- 历史调用的可估价性取决于 OpenClaw 转录中的 Provider、Model 与运行时定价配置；未定价条目需要在模型供应商配置中补足真实价格后由官方统计重新聚合。
 
 ## 失败方案
 
-- 将覆盖配置只写入 `pnpm-workspace.yaml`：项目锁定的 pnpm 9 不会据此生成可复现的覆盖锁文件。
-- 只使用通用包名覆盖上游的精确依赖：精确声明会保留旧版本，必须按原始版本选择器覆盖。
-- 保留 PDF.js 5 的 `PDFDocumentProxy.destroy` 调用：PDF.js 6 类型契约不再提供该方法。
+- 将 Token 总量直接显示为费用：会掩盖上游明确返回的未定价条目，违反 OpenClaw 统计语义。
+- 在用户离开 Dashboard 后继续全局请求 `sessions.usage`：该方法会扫描历史会话与转录，当前数据规模下会放大 Gateway 和 WebView 的卡顿风险。
 
 ## 下一步顺序
 
-1. 在目标 macOS 与 Windows 设备安装 `v3.0.1`，验证安装、启动、更新与证书提示。
-2. 等待 GitHub Dependabot 异步重扫并复核公开告警状态。
+1. 在 macOS、Windows 与 Linux 目标设备持续运行 Dashboard 和 Chat，采集修复前后的帧率、CPU、内存与 Gateway 诊断。
+2. 为缺少定价的实际模型补充经供应商确认的价格配置，并复核 OpenClaw 重新聚合后的费用结果。

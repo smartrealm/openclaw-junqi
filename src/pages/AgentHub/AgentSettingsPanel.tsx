@@ -23,7 +23,7 @@ import { gateway } from '@/services/gateway';
 import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { readOpenClawConfigSnapshot } from '@/services/gateway/OpenClawConfigSnapshot';
 import { requireOpenClawConfigPatchAcknowledgement } from '@/services/gateway/OpenClawRuntimeConfigClient';
-import { useGatewayDataStore } from '@/stores/gatewayDataStore';
+import { retainGatewayDataPolling, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { themeHex, themeAlpha } from '@/utils/theme-colors';
 import type { GatewayRuntimeConfig } from '@/types/openclawConfig';
@@ -769,13 +769,15 @@ export function AgentSettingsPanel({
     return () => { clearTimeout(timer); window.removeEventListener('click', handler); };
   }, [modelDropdownOpen]);
 
-  // ── Session stats ──
-  // Merge live sessions (from sessions.list) with historical usage data.
-  // sessions.list only returns ACTIVE sessions — archived sub-agent sessions
-  // (where sessions.json is {}) won't appear. sessionsUsage scans transcript
-  // files and includes historical data, so we use it as a fallback.
+  // 会话统计合并实时会话与 OpenClaw 历史用量。历史用量仅在面板打开期间轮询，
+  // 避免不可见面板持续扫描转录文件。
   const sessionsUsage = useGatewayDataStore((s) => s.sessionsUsage);
   const runningSubAgents = useGatewayDataStore((s) => s.runningSubAgents);
+
+  useEffect(() => {
+    if (!agent) return;
+    return retainGatewayDataPolling('usage');
+  }, [agent?.id]);
 
   // Extract historical sessions for this agent from usage data
   const usageSessions = useMemo(() => {
