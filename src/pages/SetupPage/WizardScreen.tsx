@@ -1,13 +1,14 @@
 // OpenClaw 官方向导步骤的容器层。
 import { useEffect, useRef, useState } from "react";
+import { LoaderCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
-import { SetupShell } from "@/components/setup/SetupFlowPanels";
+import { SetupShell, StatusPanel } from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
 import type { OpenClawWizardStep } from "@/services/openclawWizard";
 import { isWizardBodyMessageStep, WizardStepRenderer } from "./wizard/WizardStepRenderer";
-import { WizardAuthorizationHint } from "./wizard/WizardAuthorizationHint";
+import { resolveWizardAuthorizationUrl, WizardAuthorizationHint } from "./wizard/WizardAuthorizationHint";
 import { wizardValuesEqual } from "./wizard/WizardStepValue";
 
 export { WizardAuthorizationHint } from "./wizard/WizardAuthorizationHint";
@@ -38,7 +39,7 @@ type WizardController = Pick<SetupFlow,
   | "wizardSubmitting"
   | "wizardActivity"
   | "wizardError"
-  | "wizardRecoveryRequired"
+  | "wizardRecoveryMode"
   | "submitWizardStep"
   | "pollWizard"
   | "retryWizard"
@@ -110,10 +111,12 @@ export function WizardScreen({
         previousAction={{ onClick: flow.goBack, disabled: wizard.wizardSubmitting }}
         secondaryAction={secondaryAction}
         nextAction={{
-          label: wizard.wizardRecoveryRequired
+          label: wizard.wizardRecoveryMode === "reclaim"
             ? t("setup.wizard.reclaim", "重新接管向导")
+            : wizard.wizardRecoveryMode === "runtime"
+              ? t("setup.gatewayReadyRetryAction", "重新核验")
             : wizard.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
-          onClick: () => void (wizard.wizardRecoveryRequired ? wizard.reclaimWizard() : wizard.retryWizard()),
+          onClick: () => void (wizard.wizardRecoveryMode === "reclaim" ? wizard.reclaimWizard() : wizard.retryWizard()),
           disabled: wizard.wizardSubmitting && !wizard.wizardError,
           loading: wizard.wizardSubmitting,
           icon: "none",
@@ -132,6 +135,10 @@ export function WizardScreen({
   const blocked = (step.type === "select" || step.type === "multiselect")
     && options.length === 0;
   const messageRenderedInBody = isWizardBodyMessageStep(presentedStep.type);
+  const authorizationPending = wizard.wizardSubmitting && Boolean(
+    presentedStep.deviceCode
+    || resolveWizardAuthorizationUrl(presentedStep),
+  );
   const wizardTitle = presentedStep.title || t(copy.titleKey, copy.titleFallback);
   const wizardSubtitle = messageRenderedInBody
     ? t(copy.subtitleKey, copy.subtitleFallback)
@@ -151,7 +158,7 @@ export function WizardScreen({
       previousAction={{
         label: t("setup.wizard.pauseAndReturn", "暂停并返回"),
         onClick: flow.goBack,
-        disabled: wizard.wizardSubmitting,
+        disabled: false,
       }}
       secondaryAction={secondaryAction}
       nextAction={{
@@ -174,17 +181,32 @@ export function WizardScreen({
     >
       <div className="space-y-4" dir="auto">
         {wizard.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{wizard.wizardError}</div>}
-        <WizardStepRenderer
-          step={presentedStep}
-          value={value}
-          setValue={setValue}
-          t={t}
-        />
-        <WizardAuthorizationHint
-          externalUrl={presentedStep.externalUrl}
-          deviceCode={presentedStep.deviceCode}
-          message={presentedStep.message}
-        />
+        {authorizationPending ? (
+          <StatusPanel
+            icon={<LoaderCircle size={22} className="animate-spin" />}
+            tone="primary"
+            eyebrow={t("setup.wizard.processing", "正在处理…")}
+            title={t("setup.wizard.waitingForAuthorization", "正在等待授权…")}
+            message={t(
+              "setup.wizard.authorizationPollingHint",
+              "OpenClaw 正在等待渠道插件返回授权结果。可以暂停并返回，稍后恢复同一官方会话。",
+            )}
+          />
+        ) : (
+          <>
+            <WizardStepRenderer
+              step={presentedStep}
+              value={value}
+              setValue={setValue}
+              t={t}
+            />
+            <WizardAuthorizationHint
+              externalUrl={presentedStep.externalUrl}
+              deviceCode={presentedStep.deviceCode}
+              message={presentedStep.message}
+            />
+          </>
+        )}
       </div>
     </SetupShell>
   );

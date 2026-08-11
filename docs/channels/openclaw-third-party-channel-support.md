@@ -132,7 +132,7 @@ JunQi 只能根据安装后的插件 capability 决定是否能在应用内呈�
 
 | 渠道 | 扫码语义 | 上游当前输出方式 | JunQi 内嵌边界 |
 | --- | --- | --- | --- |
-| WhatsApp | 链接 WhatsApp Web 设备 | OpenClaw 正式 `web.login.start` 与 `web.login.wait` 可返回 `qrDataUrl` | 目标 Runtime capability 同时声明两个方法时可内嵌，并在扫码后执行 `channels status --probe` |
+| WhatsApp | 链接 WhatsApp Web 设备 | OpenClaw 正式 `web.login.start` 与 `web.login.wait` 可返回 `qrDataUrl`、轮换二维码和 `connected` | 目标 Runtime capability 同时声明两个方法时可内嵌；官方成功回调后独立刷新渠道状态 |
 | Zalo Personal | 链接个人 Zalo 账号 | 渠道 gateway adapter 提供 QR start 与 wait | 仍以 Runtime capability 是否正式暴露对应 Gateway 方法为准 |
 | WeChat | 登录个人微信插件账号 | `channels login` 触发插件二维码 | 文档未保证结构化二维码；不能从终端图形或历史日志重建 |
 | DingTalk | 创建或绑定钉钉机器人并取得凭据 | 插件当前把终端二维码和授权 URL 放入 note 文本 | JunQi 只可将当前步骤中唯一明确的 HTTPS 地址做本地二维码投影；不能从显示成功推断授权完成 |
@@ -198,7 +198,9 @@ OpenClaw 通用模型包括 DM pairing、allowlist、group policy、群组 allow
 - 正式 `externalUrl` 可以本地编码成二维码；当前步骤只有一个明确 HTTPS 地址时，可以作为不改变协议状态的展示派生数据。
 - 渠道 capability 同时声明 `web.login.start` 与 `web.login.wait` 时，渠道中心可以使用内嵌 QR 对话框。
 - 终端 ASCII 二维码、日志片段和渠道名称都不是结构化二维码契约，JunQi 不从这些内容恢复扫码状态。
-- 扫码返回 connected 后仍要以对应账号的 `channels status --probe` 核验；不得使用其他账号或渠道级汇总替代。
+- `web.login.wait` 返回新 `qrDataUrl` 时，JunQi 在同一有界等待窗口中替换二维码并继续监听；返回未连接且没有新二维码时停止自动请求，保留插件消息并允许用户显式继续监听或重新生成。
+- `web.login.start` 或 `web.login.wait` 返回 `connected: true` 时，扫码流程直接进入官方成功终态。随后刷新渠道状态只更新运行观测，不得把传播延迟或探测失败改写成扫码失败。
+- OpenClaw 当前没有通用结构化二维码过期状态。JunQi 不从插件消息、等待时长或本地截止时间推断二维码已过期。
 
 相关实现：
 
@@ -211,6 +213,7 @@ OpenClaw 通用模型包括 DM pairing、allowlist、group policy、群组 allow
 - [`src/pages/ChannelsCenter/ChannelQrLoginDialog.tsx`](../../src/pages/ChannelsCenter/ChannelQrLoginDialog.tsx)
 - [`src/pages/SetupPage/wizard/WizardAuthorizationHint.tsx`](../../src/pages/SetupPage/wizard/WizardAuthorizationHint.tsx)
 - [OpenClaw Wizard 流程](../installation/openclaw-wizard-start-flow.md)
+- [OpenClaw 渠道二维码生命周期审计](../quality/openclaw-channel-qr-lifecycle-audit-2026-08-11.md)
 
 ## 八、禁止推断
 

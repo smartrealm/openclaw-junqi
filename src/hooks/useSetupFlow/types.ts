@@ -40,6 +40,8 @@ export type GatewayReadyContinuation =
   | { status: "checking"; error: null }
   | { status: "failed"; error: string };
 
+export type WizardRecoveryMode = "wizard" | "reclaim" | "runtime" | null;
+
 export interface SetupFlow {
   presentation: OnboardingPresentation;
   progress: number;
@@ -57,7 +59,7 @@ export interface SetupFlow {
   wizardSubmitting: boolean;
   wizardActivity: string | null;
   wizardError: string | null;
-  wizardRecoveryRequired: boolean;
+  wizardRecoveryMode: WizardRecoveryMode;
   needsOnboarding: boolean;
   gatewayReadyContinuation: GatewayReadyContinuation;
   repairing: boolean;

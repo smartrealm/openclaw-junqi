@@ -6,7 +6,7 @@
 
 ## 依据与版本边界
 
-- 最新上游依据为 2026-08-11 核验的 OpenClaw `main`，提交 `df72781ed45fabf626831e8a2a03ad25ee7d0a08`。
+- 最新上游依据为 2026-08-11 核验的 OpenClaw `main`，提交 `241e1accde4e04882a7343b2a8caa8bc94291f22`。
 - 本机相邻 `Openclaw` 工作树停留在 `3075acd549a5c76ad776cd8be5edff8ee6d47b55`，落后上游，本文不以该本机快照替代最新官方契约。
 - OpenClaw 实际安装版本只用于复现兼容差异。JunQi 不按版本号猜测字段，也不把本文记录的提交号写成能力开关。
 - 请求对象使用封闭 schema。目标 Runtime 不接受某个最新字段时，客户端必须保留真实失败，不得静默改发另一套自定义协议。
@@ -134,6 +134,12 @@ sequenceDiagram
 
 每个步骤都有唯一 `id`。`wizard.next.answer.stepId` 必须对应当前待处理步骤；错误或过期的步骤号会得到 `wizard: no pending step`，客户端不得把它当作成功。
 
+### 长选项搜索
+
+OpenClaw 本地 `WizardPrompter` 的 `select` 与 `multiselect` 输入包含 `searchable` 展示提示，模型认证供应商的完整列表会显式传入 `searchable: true`。但当前 Gateway `WizardStep` schema 和 `WizardSessionPrompter` 不传输该字段，远程客户端无法从协议判断某一步是否为供应商搜索步骤。
+
+JunQi 不按步骤标题、步骤编号、供应商或渠道名称猜测业务身份。官方 `select` 或 `multiselect` 返回至少七个选项时，统一提供只作用于当前页面的搜索框，并按官方 `label`、`hint` 和字符串 `value` 筛选。筛选不会改写、排序或补造选项，提交仍使用原始官方 `value`；短列表保持原有直接选择界面。
+
 ### 敏感信息
 
 当 `sensitive` 为 `true` 时，Gateway 在步骤跨越客户端边界前删除 `initialValue`。JunQi 不应把输入值写入日志、状态快照、Markdown 或前端持久存储。
@@ -144,6 +150,8 @@ sequenceDiagram
 - `deviceCode` 是独立结构，包含非空 `code`，并可携带过期分钟数和说明。
 - JunQi 可以把正式 `externalUrl` 本地编码成二维码，但二维码渲染成功不代表授权成功。
 - 插件只在当前 `message` 中提供唯一 HTTPS 地址时，JunQi 只能把原地址作为展示派生数据；不得写回步骤、改变状态或从历史日志猜测地址。
+- 用户提交授权步骤后，`wizard.next` 可以持续等待插件自己的轮询终态。JunQi 此时清除旧步骤的可交互投影并显示等待状态，不继续展示已经提交的二维码。
+- 授权等待的超时、成功、失败与过期由官方 Runner 或插件拥有。JunQi 不设置更短的客户端请求时限，也不并行实现第二套渠道轮询；用户可以显式暂停当前客户端请求，稍后恢复同一官方会话。
 
 ### 进度步骤
 
@@ -274,6 +282,7 @@ JunQi 首次启动只发起完整官方配置：
 ### 界面投影
 
 - `text`、`confirm`、`select`、`multiselect`、`note`、`progress`、`action` 由统一步骤注册表渲染。
+- `select` 与 `multiselect` 的长选项集合复用同一搜索组件；该组件只过滤当前官方选项，不识别或维护本地供应商、模型与渠道目录。
 - 未识别的新步骤类型会明确要求升级 JunQi，不把它降级为任意文本框。
 - 已知字段逐项严格校验；未知新增字段只记录诊断并忽略，不阻断其他已知字段。
 - `progress` 且 `executor: "gateway"` 时自动使用无答案 `wizard.next` 轮询。
@@ -285,12 +294,12 @@ JunQi 首次启动只发起完整官方配置：
 官方结果为 `done` 后，JunQi 仍需：
 
 1. 收敛到官方 Gateway 服务所有者；
-2. 重新读取可能变化的 Gateway token 与连接目标；
-3. 完成认证连接；
+2. 通过全局 Gateway 生命周期协调器重新解析可能变化的连接目标和凭据；
+3. 建立新的认证连接；
 4. 探测用户所选 Gateway；
 5. 探测成功后才进入完成页。
 
-Wizard 完成不等于桌面客户端已经连接到正确 Runtime。上述核验失败时必须停留在错误或恢复状态。
+Wizard 完成不等于桌面客户端已经连接到正确 Runtime。上述核验失败时必须停留在配置页面，并保留“官方终态已确认”的本地派生恢复状态。此后的“重新核验”只重复服务交接、全局重连和所选 Runtime 探测，不调用 `wizard.start`、`wizard.next`，也不恢复或重放已经回收的官方会话。
 
 ## 十、错误分类与恢复动作
 
@@ -300,8 +309,10 @@ Wizard 完成不等于桌面客户端已经连接到正确 Runtime。上述核�
 | `wizard not running` | 会话已经到达终态 | 不重放答案，重新核验配置与 Gateway |
 | `wizard: no pending step` | 客户端步骤与服务端当前步骤不同步 | 使用无答案 `wizard.next` 恢复当前步骤 |
 | Setup 正在进行 | 准入门禁拒绝并发会话 | 保留可重试状态，不创建第二套本地流程 |
-| 请求超时 | 结果未知 | 先恢复同一会话，不自动重放带副作用的答案 |
+| 普通 Wizard 请求超时 | 结果未知 | 先恢复同一会话，不自动重放带副作用的答案 |
+| 授权插件仍在轮询 | 当前 `wizard.next` 尚未返回终态 | 保持等待投影，允许显式暂停；不由客户端超时或并行轮询 |
 | Gateway 身份或连接变化 | 请求来源不再绑定原 Runtime | 重新核验目标和凭据，再尝试恢复官方会话 |
+| 官方 `done` 后 Gateway 核验失败 | 官方配置已终态，本地运行时交接未完成 | 只重新执行运行时交接与身份核验，不重新启动 Wizard |
 | 未识别步骤类型 | JunQi 落后于 Gateway 协议 | 明确提示升级，不猜测控件和提交值 |
 | 终态 `error` | 官方 Runner 失败 | 展示经脱敏的原始诊断，不伪造成功 |
 

@@ -527,7 +527,6 @@ export const openClawModelAuthLogoutClient = new OpenClawModelAuthLogoutClient({
 });
 
 export const openClawChannelQrLoginClient = new OpenClawChannelQrLoginClient({
-  request: (method, params) => connection.request(method, params),
   requestPrivileged: (method, params) => requestPrivileged(method, params),
 });
 

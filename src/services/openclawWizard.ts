@@ -159,7 +159,6 @@ export interface OpenClawWizardRequestOptions {
 }
 
 export const OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS = 30_000;
-export const OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS = 10 * 60_000;
 
 export type OpenClawWizardFailureKind =
   | 'session_lost'
@@ -531,7 +530,9 @@ export class OpenClawWizardClient {
         stepId,
         ...(value !== undefined ? { value } : {}),
       },
-    }, { timeoutMs: OPENCLAW_WIZARD_INTERACTIVE_TIMEOUT_MS }));
+    // 渠道插件可能在该请求内等待官方扫码轮询结束。超时与终态由插件和
+    // Wizard 会话拥有；客户端只允许用户显式暂停，不能用本地时限提前截断。
+    }, { timeoutMs: null }));
     this.assertOperationCurrent(operation);
     if (isTerminalWizardResult(result)) {
       this.setSession(null);

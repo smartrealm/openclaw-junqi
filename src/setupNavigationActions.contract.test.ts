@@ -55,7 +55,8 @@ test("global Back is single-flight and fences automatic forward effects", () => 
 
 test("wizard auto-start runs at most once per configure-page visit", () => {
   assert.match(wizardSession, /if \(setupStep !== "configure-openclaw"\) \{\s*wizardAutoStartRef\.current = false;\s*return;\s*\}/);
-  assert.match(wizardSession, /wizardAutoStartRef\.current = true;\s*void startOfficialOnboarding\(\);/);
+  assert.match(wizardSession, /wizardAutoStartRef\.current = true;/);
+  assert.match(wizardSession, /wizardRecoveryModeRef\.current === "runtime"[\s\S]*?retryOfficialOnboarding\(\)[\s\S]*?startOfficialOnboarding\(\)/);
   assert.doesNotMatch(wizardSession, /startOfficialOnboarding\(\)\.finally\([\s\S]*?wizardAutoStartRef\.current = false/);
 });
 
