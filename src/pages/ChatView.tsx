@@ -201,44 +201,18 @@ interface HistoryMeta {
   source: 'gateway' | 'cache';
 }
 
-// ═══════════════════════════════════════════════════════════
-// Compact Divider — shimmer animated line
-// ═══════════════════════════════════════════════════════════
+// 上游上下文压缩记录的分隔符只说明转录边界，不制造独立的运行状态或循环动效。
 
 function CompactDivider({ timestamp, label }: { timestamp?: string; label: string }) {
   const time = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
   return (
-    <div className="flex items-center gap-0 py-5 px-4 group">
-      {/* Left line with shimmer */}
-      <div className="flex-1 h-px relative overflow-visible">
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-500/30 to-transparent" />
-        <div
-          className="absolute top-[-1px] h-[3px] w-[60%] bg-gradient-to-r from-transparent via-amber-400/50 to-transparent rounded-full"
-          style={{ animation: 'compact-shimmer 4s ease-in-out infinite' }}
-        />
-      </div>
-      {/* Badge */}
-      <div className="flex items-center gap-1.5 px-3.5 py-1 bg-amber-500/[0.06] border border-amber-500/[0.12] rounded-full shrink-0 mx-1 transition-colors group-hover:bg-amber-500/[0.1] group-hover:border-amber-500/[0.2]">
-        <Zap size={10} className="text-amber-500/50" />
-        <span className="text-[9px] font-bold uppercase tracking-[1.5px] text-amber-500/50 group-hover:text-amber-500/70 transition-colors">
-          {label}
-        </span>
-        {time && <span className="text-[9px] text-amber-500/25 font-mono">· {time}</span>}
-      </div>
-      {/* Right line with shimmer */}
-      <div className="flex-1 h-px relative overflow-visible">
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-500/30 to-transparent" />
-        <div
-          className="absolute top-[-1px] h-[3px] w-[60%] bg-gradient-to-r from-transparent via-amber-400/50 to-transparent rounded-full"
-          style={{ animation: 'compact-shimmer 4s ease-in-out infinite 2s', right: 0 }}
-        />
-      </div>
-      <style>{`
-        @keyframes compact-shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(260%); }
-        }
-      `}</style>
+    <div className="flex items-center gap-3 px-4 py-5" role="separator" aria-label={label}>
+      <span className="h-px min-w-0 flex-1 bg-aegis-border/70" aria-hidden="true" />
+      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-aegis-border bg-aegis-surface px-2 py-1 text-[9px] font-medium text-aegis-text-dim">
+        {label}
+        {time && <span className="font-mono tabular-nums text-aegis-text-muted">{time}</span>}
+      </span>
+      <span className="h-px min-w-0 flex-1 bg-aegis-border/70" aria-hidden="true" />
     </div>
   );
 }

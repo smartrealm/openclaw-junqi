@@ -54,18 +54,18 @@ export function ComposerInputSurface({
   const canSteer = isTyping && canSend && !isSending && !disabled;
 
   return (
-    <div className="mx-auto flex w-full max-w-[784px] min-w-0 items-end gap-2 p-3" dir={dir}>
+    <div className="mx-auto flex w-full max-w-[784px] min-w-0 items-end gap-2 px-3 pb-3 pt-2" dir={dir}>
       <div
         className={clsx(
-          'relative flex flex-1 flex-col gap-1 rounded-2xl border border-[rgb(var(--aegis-overlay)/0.06)] bg-aegis-surface px-3 py-2',
-          'transition-[border-color,box-shadow] duration-200 focus-within:border-aegis-primary/30',
-          'focus-within:shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.06),0_0_16px_rgb(var(--aegis-primary)/0.08)]',
+          'relative flex flex-1 flex-col gap-1 rounded-2xl border border-aegis-border bg-aegis-surface px-2.5 py-2 shadow-[0_1px_2px_rgb(var(--aegis-overlay)/0.04)]',
+          'transition-[border-color,box-shadow,background-color] duration-200 focus-within:border-aegis-primary/35',
+          'focus-within:shadow-[0_0_0_3px_rgb(var(--aegis-primary)/0.06),0_6px_20px_rgb(var(--aegis-overlay)/0.06)]',
           !connected && 'opacity-40',
         )}
         onDrop={attachments.drop}
         onDragOver={(event) => event.preventDefault()}
       >
-        <div className="flex min-w-0 w-full items-center gap-2">
+        <div className="flex min-w-0 w-full items-end gap-1.5">
           <ComposerActionMenu
             open={menu.active === 'add'}
             onOpenChange={(open) => menu.setOpen('add', open)}
@@ -108,7 +108,7 @@ export function ComposerInputSurface({
             type="button"
             onClick={suggestions.openMentions}
             disabled={!connected || suggestions.skills.length === 0}
-            className="grid size-[34px] shrink-0 place-items-center rounded-lg bg-[rgb(var(--aegis-overlay)/0.03)] text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.07)] disabled:opacity-30"
+            className="grid size-[34px] shrink-0 place-items-center rounded-lg bg-[rgb(var(--aegis-overlay)/0.03)] text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.07)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60 disabled:opacity-30"
             title={t('input.skills')}
             aria-label={t('input.skills')}
           >
@@ -129,7 +129,7 @@ export function ComposerInputSurface({
             placeholder={historyLoading
               ? t('input.placeholderHistoryLoading')
               : connected ? t('input.placeholderSlash') : t('input.placeholderDisconnected')}
-            className="max-h-[180px] min-w-0 flex-1 resize-none border-none bg-transparent px-1 py-1.5 text-[14px] leading-[1.2] text-aegis-text placeholder:text-aegis-text-muted focus:outline-none focus-visible:shadow-none scrollbar-hidden"
+            className="max-h-[180px] min-w-0 flex-1 resize-none border-none bg-transparent px-1.5 py-2 text-[14px] leading-[1.35] text-aegis-text placeholder:text-aegis-text-muted focus:outline-none focus-visible:shadow-none scrollbar-hidden"
             dir={dir}
           />
 
@@ -178,9 +178,9 @@ export function ComposerInputSurface({
             onClick={() => { void onSend(); }}
             disabled={!canSend || disabled}
             className={clsx(
-              'relative grid size-[34px] shrink-0 place-items-center rounded-lg transition-[background-color,color,box-shadow,transform]',
+              'relative grid size-[34px] shrink-0 place-items-center rounded-lg transition-[background-color,color,box-shadow,transform] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
               canSend
-                ? 'bg-aegis-primary text-white shadow-[0_2px_8px_rgb(var(--aegis-primary)/0.3)] hover:-translate-y-px hover:shadow-[0_4px_16px_rgb(var(--aegis-primary)/0.4)]'
+                ? 'bg-aegis-primary text-[rgb(var(--aegis-btn-primary-text))] shadow-[0_2px_8px_rgb(var(--aegis-primary)/0.3)] hover:-translate-y-px hover:shadow-[0_4px_16px_rgb(var(--aegis-primary)/0.4)]'
                 : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text',
               'disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none',
             )}
@@ -211,7 +211,7 @@ export function ComposerInputSurface({
             <button
               type="button"
               onClick={() => { void onStop(); }}
-              className="grid size-[34px] shrink-0 place-items-center rounded-lg bg-aegis-danger/80 text-aegis-text transition-colors hover:bg-aegis-danger"
+              className="grid size-[34px] shrink-0 place-items-center rounded-lg bg-aegis-danger/80 text-[rgb(var(--aegis-btn-primary-text))] transition-colors hover:bg-aegis-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-danger/60"
               title={t('input.stop')}
               aria-label={t('input.stop')}
             >

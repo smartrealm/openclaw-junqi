@@ -1,6 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// AppLayout — Main layout with TitleBar + NavSidebar + Content
-// + Ambient background glow (from conceptual design)
+// AppLayout：标题栏、导航侧栏与内容区的桌面外壳
 // ═══════════════════════════════════════════════════════════
 
 import { lazy, Suspense, useLayoutEffect, useRef } from 'react';
@@ -53,11 +52,8 @@ function SidebarFallback() {
     : 'var(--aegis-sidebar-expanded)';
   return (
     <aside
-      className="shrink-0 border-r border-aegis-border sidebar-width-anim"
-      style={{
-        width,
-        background: 'linear-gradient(180deg, var(--aegis-surface), var(--aegis-surface-elevated))',
-      }}
+      className="shrink-0 border-r border-aegis-border bg-aegis-surface sidebar-width-anim"
+      style={{ width }}
       aria-hidden="true"
     />
   );
@@ -82,28 +78,23 @@ export function AppLayout() {
   const isAgentWorkspacePage = matchPath('/ai-workspace/*', location.pathname) !== null;
   const usesGlobalSidebar = !isWorkspacePage;
 
-  // Register global keyboard shortcuts
+  // 注册全局键盘快捷键。
   useKeyboardShortcuts();
 
-  // The route viewport persists between tabs. Reset it before paint so the
-  // scrollbar never renders at the previous page's position and then jumps.
+  // 路由视口会跨标签保留，绘制前复位以避免滚动条先显示上一页位置再跳动。
   useLayoutEffect(() => {
     if (routeScrollRef.current) routeScrollRef.current.scrollTop = 0;
   }, [location.pathname]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-aegis-bg relative">
-      {/* ── Ambient Background Glow (from conceptual JSX) ── */}
-      {!isTerminalPage && <div className="ambient-glow-teal" />}
-      {!isTerminalPage && <div className="ambient-glow-purple" />}
-
-      {/* ── Custom window-chrome top bar ── */}
+      {/* 自定义窗口标题栏 */}
       <TopBar
         hideSidebarToggle={isWorkspacePage}
         sidebarTarget={isTerminalPage ? 'terminal' : isAgentWorkspacePage ? 'agent-workspace' : 'app'}
       />
 
-      {/* ── Navigation tabs ── */}
+      {/* 导航标签栏 */}
       {!isWorkspacePage && <TabBar />}
 
       <div className="flex flex-1 min-h-0 relative z-[1]" dir={dir}>
@@ -131,15 +122,15 @@ export function AppLayout() {
           </div>
         </main>
       </div>
-      {/* Pomodoro break overlay — enlarged pet + countdown, only during break phase */}
+      {/* 休息阶段才显示番茄钟覆盖层。 */}
       <LazyPetBreakOverlayHost />
-      {/* Keep workspace utilities available at the bottom-right on every route. */}
+      {/* 非终端路由保留右下角工作区工具。 */}
       {!isTerminalPage && (
         <Suspense fallback={<StatusBarFallback />}>
           <StatusBar />
         </Suspense>
       )}
-      {/* Command Palette overlay */}
+      {/* 命令面板覆盖层 */}
       <LazyCommandPaletteHost />
     </div>
   );

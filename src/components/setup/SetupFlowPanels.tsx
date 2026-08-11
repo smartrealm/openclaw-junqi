@@ -19,6 +19,7 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MouseEventHandler, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { useReducedMotion } from "framer-motion";
 import { save } from "@tauri-apps/plugin-dialog";
 import type { TFunction } from "i18next";
 import clsx from "clsx";
@@ -686,6 +687,7 @@ export function installStepTitle(step: StepState | null, t: TFunction): string |
 
 function InstallationTimeline({ steps }: { steps: StepState[] }) {
   const { t } = useTranslation();
+  const reduceMotion = useReducedMotion() ?? false;
   const visibleSteps = steps.length > 0 ? steps : [{ id: "gateway", label: "Gateway", status: "pending" as const }];
   const viewportRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
@@ -702,9 +704,9 @@ function InstallationTimeline({ steps }: { steps: StepState[] }) {
     if (rowTop >= viewportTop && rowBottom <= viewportBottom) return;
     viewport.scrollTo({
       top: Math.max(0, rowTop - (viewport.clientHeight - row.offsetHeight) / 2),
-      behavior: "smooth",
+      behavior: reduceMotion ? "auto" : "smooth",
     });
-  }, [current?.id, current?.status]);
+  }, [current?.id, current?.status, reduceMotion]);
 
   return (
     <section className="h-[390px] overflow-hidden bg-aegis-elevated">
@@ -728,7 +730,7 @@ function InstallationTimeline({ steps }: { steps: StepState[] }) {
             "relative z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border bg-aegis-elevated",
             s.status === "done" && "border-aegis-success bg-aegis-success/15 text-aegis-success",
             s.status === "running" && "border-aegis-primary bg-aegis-primary/15 text-aegis-primary",
-            s.status === "error" && "border-red-500 bg-red-500/15 text-red-400",
+            s.status === "error" && "border-aegis-danger bg-aegis-danger/15 text-aegis-danger",
             s.status === "skipped" && "border-aegis-border bg-aegis-surface text-aegis-text-muted",
             s.status === "pending" && "border-aegis-border text-aegis-text-dim",
           )}>
@@ -750,7 +752,7 @@ function InstallationTimeline({ steps }: { steps: StepState[] }) {
                 "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold",
                 s.status === "done" && "bg-aegis-success/10 text-aegis-success",
                 s.status === "running" && "bg-aegis-primary/10 text-aegis-primary",
-                s.status === "error" && "bg-red-500/10 text-red-300",
+                s.status === "error" && "bg-aegis-danger/10 text-aegis-danger",
                 s.status === "skipped" && "bg-aegis-surface text-aegis-text-muted",
                 s.status === "pending" && "bg-aegis-surface text-aegis-text-dim",
               )}>
@@ -763,20 +765,20 @@ function InstallationTimeline({ steps }: { steps: StepState[] }) {
                 <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-aegis-surface">
                   {typeof s.progress === "number" ? (
                     <div
-                      className="h-full rounded-full animate-pulse transition-[width] duration-300"
+                      className={clsx(
+                        "h-full rounded-full bg-aegis-primary transition-[width] duration-300",
+                        !reduceMotion && "animate-pulse",
+                      )}
                       style={{
                         width: `${Math.max(2, Math.min(100, s.progress))}%`,
-                        background: 'linear-gradient(90deg, rgb(var(--aegis-primary)), rgb(var(--aegis-success)))',
-                        boxShadow: '0 0 12px rgb(var(--aegis-primary) / 0.72)',
                       }}
                     />
                   ) : (
                     <div
-                      className="h-full w-1/3 animate-pulse rounded-full"
-                      style={{
-                        background: 'linear-gradient(90deg, rgb(var(--aegis-primary)), rgb(var(--aegis-success)))',
-                        boxShadow: '0 0 12px rgb(var(--aegis-primary) / 0.72)',
-                      }}
+                      className={clsx(
+                        "h-full w-1/3 rounded-full bg-aegis-primary",
+                        !reduceMotion && "animate-pulse",
+                      )}
                     />
                   )}
                 </div>
@@ -797,8 +799,8 @@ function InstallationTimeline({ steps }: { steps: StepState[] }) {
 
 function logTone(level: SetupLog["level"]): string {
   switch (level) {
-    case "error": return "text-red-300";
-    case "warn": return "text-amber-300";
+    case "error": return "text-aegis-danger";
+    case "warn": return "text-aegis-warning";
     case "success": return "text-aegis-success";
     default: return "text-aegis-text-secondary";
   }
@@ -985,6 +987,7 @@ export function InstallationConsole({
   setupStep,
 }: InstallationConsoleProps) {
   const { t } = useTranslation();
+  const reduceMotion = useReducedMotion() ?? false;
   const [mobileView, setMobileView] = useState<"steps" | "logs">("steps");
   const current = currentStepOf(flow.steps);
   const completed = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
@@ -1040,12 +1043,12 @@ export function InstallationConsole({
       <div className={clsx(
         "grid gap-3 rounded-xl border p-4",
         "md:grid-cols-[1fr_168px]",
-        isError ? "border-red-500/35 bg-red-500/5" : "border-aegis-primary/30 bg-aegis-primary/5",
+        isError ? "border-aegis-danger/35 bg-aegis-danger/5" : "border-aegis-primary/30 bg-aegis-primary/5",
       )}>
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-aegis-text-muted">
             {isError
-              ? <X size={15} className="text-red-300" />
+              ? <X size={15} className="text-aegis-danger" />
               : <CircleDot size={15} className="text-aegis-primary" />}
             {summaryLabel}
           </div>
@@ -1060,14 +1063,12 @@ export function InstallationConsole({
           <div className="mt-1 text-2xl font-semibold tabular-nums text-aegis-text">{percent}%</div>
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-aegis-surface">
             <div
-              className={clsx("h-full rounded-full transition-all duration-500", !isError && "animate-pulse")}
-              style={{
-                width: `${percent}%`,
-                background: isError
-                  ? 'rgb(248 113 113)'
-                  : 'linear-gradient(90deg, rgb(var(--aegis-primary)), rgb(var(--aegis-success)))',
-                boxShadow: isError ? 'none' : '0 0 14px rgb(var(--aegis-primary) / 0.72)',
-              }}
+              className={clsx(
+                "h-full rounded-full transition-[width] duration-300",
+                isError ? "bg-aegis-danger" : "bg-aegis-primary",
+                !isError && !reduceMotion && "animate-pulse",
+              )}
+              style={{ width: `${percent}%` }}
             />
           </div>
           <div className="mt-2 text-[11px] text-aegis-text-dim">{completed}/{total} {t("setup.installPanel.stepsDone", "个步骤已处理")}</div>

@@ -10,6 +10,8 @@
 - [Gateway 生命周期验证](gateway/gateway-lifecycle-unification-validation-2026-08-10.md)：统一恢复、重启和身份核验的当前证据。
 - [AI 原生交互参考与 JunQi 映射](design/ai-native-interaction-reference.md)：展示交互的可复用原则与 OpenClaw 数据边界。
 - [AI 原生交互示例代码归档](design/ai-native-interaction-examples.md)：用户提供的交互组件结构与关键实现片段。
+- [AI 原生交互全量审查](design/ai-native-interaction-audit-2026-08-11.md)：当前 UI/UX 范围、真实状态边界和问题分级。
+- [AI 原生交互实施计划](../plans/2026-08-11-ai-native-interaction-rollout.md)：按会话、控制面、任务与文件、工作台分批的实施顺序。
 - [钉钉业务工作台术语](business/CONTEXT.md)：DWS、Gateway 和业务投影的边界。
 - [架构决策](adr/)：仍在生效的长期决策。
 - [流程预览](previews/)：安装流程和业务工作台的静态预览。

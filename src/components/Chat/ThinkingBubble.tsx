@@ -1,16 +1,9 @@
-// ═══════════════════════════════════════════════════════════
-// ThinkingBubble — Console-style reasoning/thinking display
-//
-// Two modes:
-//   1. Live streaming — expanded with accent border, auto-scroll
-//   2. Finalized — collapsed inline pill, click to expand
-//
-// Aligned with ToolCallBubble layout (px-14 left margin)
-// ═══════════════════════════════════════════════════════════
+// 上游明确提供的思考内容以流式展开或完成后收起的方式呈现，不生成额外内容。
 
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useReducedMotion } from 'framer-motion';
 import clsx from 'clsx';
 import { AgentActivityIndicator } from '@/components/shared/AgentActivityIndicator';
 
@@ -23,6 +16,7 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(isStreaming);
   const contentRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = useReducedMotion() ?? false;
 
   useEffect(() => {
     if (isStreaming) setExpanded(true);
@@ -42,16 +36,15 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
   const sizeLabel = charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : `${charCount}`;
   const compactSummary = t('thinking.compactSummary', { lines: lineCount, chars: sizeLabel });
 
-    // ── Collapsed pill (finalized) — pl-[46px] aligns with bubble left edge
-  // (renderGroup px-1=4px + pl-46px=46px = avatar(32px)+gap(10px)+mx-1(4px)+px-1(4px))
+  // 收起态与助手消息左边缘对齐，保持工具调用和轨迹卡片的阅读轴一致。
   if (!isStreaming && !expanded) {
     return (
       <div className="pl-[46px] py-[2px] min-w-0">
-        <div
+        <button
+          type="button"
           onClick={() => setExpanded(true)}
-          className="inline-flex items-center gap-2 px-2.5 py-1.5 min-h-[28px] rounded-full cursor-pointer
-            border border-aegis-primary/15 bg-aegis-primary/[0.04]
-            hover:bg-aegis-primary/[0.07] transition-colors"
+          aria-expanded="false"
+          className="inline-flex min-h-[28px] items-center gap-2 rounded-lg border border-aegis-primary/15 bg-aegis-primary/[0.04] px-2.5 py-1.5 text-start transition-colors hover:bg-aegis-primary/[0.07] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
         >
           <span className="w-3 h-3 flex items-center justify-center shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-aegis-primary/55" />
@@ -63,12 +56,12 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
             {compactSummary}
           </span>
           <ChevronRight size={10} className="text-aegis-text-dim/40" />
-        </div>
+        </button>
       </div>
     );
   }
 
-  // ── Expanded / Streaming — pl-[46px] aligns with bubble left edge ──
+  // 展开态与流式状态复用同一容器，避免状态切换时改变消息的水平锚点。
   return (
     <div className="pl-[46px] py-[2px] min-w-0">
       <div
@@ -79,12 +72,14 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
             : 'border border-aegis-primary/12 bg-aegis-primary/[0.02]',
         )}
       >
-        {/* Header row */}
-        <div
+        <button
+          type="button"
           onClick={() => !isStreaming && setExpanded(false)}
+          disabled={isStreaming}
+          aria-expanded={!isStreaming || undefined}
           className={clsx(
-            'flex items-center gap-2 px-2.5 py-1.5 min-h-[28px]',
-            !isStreaming && 'cursor-pointer hover:bg-[rgb(var(--aegis-overlay)/0.02)]',
+            'flex min-h-[32px] w-full items-center gap-2 px-2.5 py-1.5 text-start',
+            !isStreaming && 'cursor-pointer transition-colors hover:bg-aegis-hover/45 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-aegis-primary/60',
           )}
         >
           {isStreaming ? (
@@ -92,6 +87,7 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
               activity="thinking"
               size={20}
               decorative
+              paused={reduceMotion}
               className="-m-1 shrink-0 text-aegis-primary/75"
             />
           ) : (
@@ -119,9 +115,9 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
             <ChevronDown size={10} className="text-aegis-text-dim/30 shrink-0" />
           )}
 
-        </div>
+        </button>
 
-        {/* Content */}
+        {/* 上游提供的内容 */}
         <div className="border-t border-[rgb(var(--aegis-overlay)/0.04)]">
           <div
             ref={contentRef}
@@ -132,7 +128,10 @@ export function ThinkingBubble({ content, isStreaming = false }: ThinkingBubbleP
           >
             {content}
             {isStreaming && (
-              <span className="inline-block w-[2px] h-[12px] bg-aegis-primary/35 ms-0.5 align-text-bottom animate-pulse" />
+              <span className={clsx(
+                'ms-0.5 inline-block h-[12px] w-[2px] align-text-bottom bg-aegis-primary/35',
+                !reduceMotion && 'animate-pulse',
+              )} />
             )}
           </div>
         </div>

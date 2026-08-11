@@ -1,10 +1,4 @@
-// ═══════════════════════════════════════════════════════════
-// ToolCallBubble — Console-style tool execution display
-// Compact, minimal, information-dense — inspired by Control UI
-//
-// Tool icons: @phosphor-icons/react (regular weight, polished)
-// Chrome icons: lucide-react (ChevronDown, ChevronRight)
-// ═══════════════════════════════════════════════════════════
+// 工具调用采用紧凑摘要与按需详情，内容仅来自 OpenClaw 的工具投影。
 
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
@@ -26,7 +20,7 @@ export interface ToolCallInfo {
   outputOriginalLength?: number;
 }
 
-// ── Tool category + style ─────────────────────────────────
+// 工具分类只影响语义化主题色，不改变工具能力或执行状态。
 type ToolCategory = 'search' | 'file' | 'exec' | 'memory' | 'agent' | 'media' | 'misc';
 
 interface ToolPresentation {
@@ -56,12 +50,12 @@ const TOOL_REGISTRY: Record<BuiltInToolName, ToolPresentation> = {
 };
 
 const CATEGORY_COLORS: Record<ToolCategory, string> = {
-  search: 'text-blue-400',
-  file:   'text-emerald-400',
-  exec:   'text-amber-400',
-  memory: 'text-purple-400',
-  agent:  'text-rose-400',
-  media:  'text-cyan-400',
+  search: 'text-aegis-accent',
+  file:   'text-aegis-success',
+  exec:   'text-aegis-warning',
+  memory: 'text-aegis-primary',
+  agent:  'text-aegis-primary',
+  media:  'text-aegis-accent',
   misc:   'text-aegis-text-dim',
 };
 
@@ -109,16 +103,21 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
     <div className="ml-[46px] mr-4 py-[2px]">
       <div
         className={clsx(
-          'w-full max-w-[min(640px,72%)] rounded-lg transition-all duration-150',
-          hasDetails && 'cursor-pointer',
-          expanded && 'bg-[rgb(var(--aegis-overlay)/0.03)]',
-          !expanded && 'hover:bg-[rgb(var(--aegis-overlay)/0.02)]',
+          'w-full max-w-[min(640px,72%)] overflow-hidden rounded-lg border transition-[background-color,border-color,box-shadow] duration-200',
+          expanded ? 'border-aegis-border bg-aegis-hover/25 shadow-[0_2px_10px_rgb(var(--aegis-overlay)/0.04)]' : 'border-transparent hover:border-aegis-border hover:bg-aegis-hover/20',
         )}
-        onClick={() => hasDetails && setExpanded((v) => !v)}
       >
-        {/* ── Inline status row (Control UI style) ── */}
-        <div className="flex max-w-full items-center gap-2 px-0 py-1 min-h-[28px]">
-          {/* Status indicator */}
+        <button
+          type="button"
+          disabled={!hasDetails}
+          aria-expanded={hasDetails ? expanded : undefined}
+          onClick={() => setExpanded((value) => !value)}
+          className={clsx(
+            'flex min-h-[32px] w-full max-w-full items-center gap-2 px-2 text-left transition-colors',
+            hasDetails ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-aegis-primary/60' : 'cursor-default',
+          )}
+        >
+          {/* 上游工具状态 */}
           {tool.status === 'running' ? (
             <LoadingIndicator size={12} className="text-aegis-accent shrink-0" />
           ) : tool.status === 'error' ? (
@@ -127,7 +126,7 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
             </span>
           ) : tool.status === 'verification_required' ? (
             <span className="w-3 h-3 flex items-center justify-center shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              <span className="w-1.5 h-1.5 rounded-full bg-aegis-warning" />
             </span>
           ) : tool.status === 'cancelled' ? (
             <span className="w-3 h-3 flex items-center justify-center shrink-0">
@@ -139,24 +138,24 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
             </span>
           )}
 
-          {/* Tool icon (phosphor regular, consistent weight) */}
+          {/* 工具图标 */}
           <span className={clsx('shrink-0 flex items-center', catColor)}>
             {info.icon}
           </span>
 
-          {/* Tool name */}
+          {/* 工具名称 */}
           <span className={clsx('text-[11px] font-medium shrink-0', catColor)}>
             {toolLabel}
           </span>
 
-          {/* Summary / key param */}
+          {/* 摘要或关键参数 */}
           {summary && (
             <span className="text-[10px] text-aegis-text-dim/60 font-mono truncate min-w-0">
               {summary}
             </span>
           )}
 
-          {/* Duration + expand — 右对齐 */}
+          {/* 时长与展开入口 */}
           <div className="flex items-center gap-1.5 shrink-0 ml-auto">
             {tool.durationMs !== undefined && tool.status !== 'running' && (
               <span className="text-[11px] text-aegis-text-secondary font-mono tabular-nums font-medium px-1.5 py-0.5 rounded bg-[rgb(var(--aegis-overlay)/0.10)]">
@@ -169,11 +168,11 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
                 : <ChevronRight size={10} className="text-aegis-text-dim/30" />
             )}
           </div>
-        </div>
+        </button>
 
-        {/* ── Expanded detail panel ── */}
+        {/* 按需展开的真实输入、输出与错误 */}
         {expanded && hasDetails && (
-          <div className="px-2.5 py-2 space-y-2">
+          <div className="border-t border-aegis-border/70 bg-aegis-hover/20 px-2.5 py-2.5 space-y-2">
             {tool.input && Object.keys(tool.input).length > 0 && (
               <div>
                 <div className="text-[9px] font-medium text-aegis-text-dim/50 uppercase tracking-wider mb-1">

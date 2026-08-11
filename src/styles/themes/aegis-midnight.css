@@ -126,9 +126,9 @@
 
   /* ── 共享层级阴影与遮罩令牌 ── */
   --aegis-shadow-color:   0 0 0;
-  --aegis-shadow-card:    0 1px 2px rgb(var(--aegis-shadow-color) / 0.16);
-  --aegis-shadow-float:   0 6px 20px rgb(var(--aegis-shadow-color) / 0.26);
-  --aegis-shadow-popover: 0 6px 18px rgb(var(--aegis-shadow-color) / 0.32);
+  --aegis-shadow-card:    0 1px 1px rgb(var(--aegis-shadow-color) / 0.10);
+  --aegis-shadow-float:   0 5px 16px rgb(var(--aegis-shadow-color) / 0.20);
+  --aegis-shadow-popover: 0 5px 16px rgb(var(--aegis-shadow-color) / 0.24);
   --aegis-scrim:          rgb(var(--aegis-shadow-color) / 0.38);
 
   /* ── Button (inherited) ── */

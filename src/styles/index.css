@@ -219,9 +219,13 @@
     border-radius: var(--aegis-r-sm);
   }
 
-  /* Global color transitions keep theme surfaces coherent. Components add
-     transform and opacity only where motion explains an interaction. */
-  *, *::before, *::after {
+  /* 仅给可交互控件颜色过渡，避免路由和数据刷新时整页表面滞后。 */
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  [role="button"] {
     transition-property: background-color, border-color, color;
     transition-duration: var(--aegis-duration-normal);
     transition-timing-function: var(--aegis-ease-standard);
@@ -400,10 +404,10 @@
 }
 
 /* ═══════════════════════════════════════════════════════════
-   FUNCTIONAL ANIMATIONS (material only, no decoration)
+   功能性动效：仅用于状态表达，不承担装饰职责
    ═══════════════════════════════════════════════════════════ */
 
-/* Status dot pulse */
+/* 状态点脉冲 */
 @keyframes statusPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -412,20 +416,11 @@
   animation: statusPulse 2s ease-in-out infinite;
 }
 
-/* Shimmer — skeleton placeholder */
+/* 骨架占位的微光 */
 .animate-shimmer {
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
-/* Streaming border — active message bubble */
-@property --border-angle {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
-@keyframes borderRun {
-  to { --border-angle: 360deg; }
-}
 @keyframes aegis-caret {
   0%, 49%   { opacity: 1; }
   50%, 100% { opacity: 0; }
@@ -434,74 +429,6 @@
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
   30%           { transform: translateY(-3px); opacity: 1; }
 }
-.streaming-border {
-  position: relative;
-}
-.streaming-border::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1.5px; /* thicker stroke so the rotating beam is visible */
-  background: conic-gradient(
-    from var(--border-angle),
-    transparent 0%,
-    rgb(var(--aegis-primary) / 0.95) 6%,
-    rgb(var(--aegis-status-running) / 0.95) 12%,
-    transparent 22%,
-    transparent 100%
-  );
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-          mask-composite: exclude;
-  animation: borderRun 2.2s linear infinite;
-  pointer-events: none;
-  z-index: 0;
-}
-/* Soft outer glow so the streaming state reads even at a glance. */
-.streaming-border::after {
-  content: '';
-  position: absolute;
-  inset: -3px;
-  border-radius: inherit;
-  background: radial-gradient(ellipse at center, rgb(var(--aegis-status-running) / 0.18) 0%, transparent 70%);
-  animation: aegis-pulse 1.6s ease-in-out infinite;
-  pointer-events: none;
-  z-index: -1;
-}
-
-/* Thinking bubble — shimmer border while streaming */
-.thinking-shimmer {
-  position: relative;
-  overflow: hidden;
-}
-.thinking-shimmer::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgb(var(--aegis-accent) / 0.15) 30%,
-    rgb(var(--aegis-accent) / 0.3) 50%,
-    rgb(var(--aegis-accent) / 0.15) 70%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  animation: thinking-border-shimmer 2s linear infinite;
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
-@keyframes thinking-border-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
 /* File viewer editor toolbar and Markdown preview */
 .file-viewer-tab {
   display: flex;
@@ -1131,10 +1058,9 @@ html {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* Route scenes use a restrained vertical reveal. Keeping the transform on the
-   inner page prevents the persistent route scrollbar from shifting sideways. */
+/* 路由场景只做克制的纵向显现；将位移施加在页面内层，避免固定滚动条横向跳动。 */
 @keyframes aegis-page-enter {
-  from { opacity: 0; transform: translate3d(0, 7px, 0); }
+  from { opacity: 0; transform: translate3d(0, 4px, 0); }
   to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 

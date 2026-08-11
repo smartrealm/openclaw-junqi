@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useReducedMotion } from 'framer-motion';
 import { selectActiveSessionTyping, useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getDirection } from '@/i18n';
@@ -16,6 +17,7 @@ export function TypingIndicator() {
   const runStartup = useChatStore((s) => s.chatRunStartupBySession[s.activeSessionKey]);
   const gatewayTiming = useChatStore((s) => s.chatSendTimingBySession[s.activeSessionKey]);
   const dir = getDirection(language);
+  const reduceMotion = useReducedMotion() ?? false;
 
   // 起始时间由会话状态持有，组件重挂载时仍能显示真实耗时。
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -47,7 +49,7 @@ export function TypingIndicator() {
   const startupLabel = runStartup ? t(`chat.runStartup.${runStartup.phase}`) : null;
 
   return (
-    <div className="group flex gap-2.5 items-start mx-1 mr-4 mb-2.5 animate-fade-in" dir={dir}>
+    <div className="group flex gap-2.5 items-start mx-1 mr-4 mb-2.5" dir={dir}>
       <AssistantResponseAvatar sessionKey={activeSessionKey} />
 
       <div className="flex flex-col min-w-0" style={{ width: '100%', maxWidth: 'min(640px, 72%)', alignItems: 'flex-start' }}>
@@ -71,7 +73,7 @@ export function TypingIndicator() {
                     ? 'rgb(var(--aegis-primary))'
                     : 'color-mix(in srgb, rgb(var(--aegis-primary)) 62%, rgb(var(--aegis-text)) 18%)',
                   boxShadow: i === 1 ? '0 0 10px rgb(var(--aegis-primary)/0.45)' : 'none',
-                  animation: `typing-dot 1.15s ease-in-out ${i * 0.16}s infinite`,
+                  animation: reduceMotion ? undefined : `typing-dot 1.15s ease-in-out ${i * 0.16}s infinite`,
                 }}
               />
             ))}

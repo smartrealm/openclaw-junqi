@@ -128,7 +128,7 @@ function ApprovalRow({
       : 'text-aegis-primary';
 
   return (
-    <article className="border-t border-aegis-border px-4 py-3 first:border-t-0">
+    <article className="border-t border-aegis-border px-4 py-3 first:border-t-0 transition-colors duration-200 hover:bg-aegis-hover/35">
       <div className="flex min-w-0 items-start gap-3">
         <span className={clsx('mt-0.5 shrink-0', severityClass)}>
           {approval.kind === 'exec' ? <TerminalSquare size={15} /> : <AlertTriangle size={15} />}
@@ -146,7 +146,7 @@ function ApprovalRow({
           {approval.kind === 'exec' && approval.request.warningText && (
             <p className="mt-1 text-[10.5px] leading-5 text-aegis-warning">{approval.request.warningText}</p>
           )}
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-aegis-border/70 pt-2.5">
             {decisions.length === 0 ? (
               <span className="text-[10.5px] text-aegis-text-dim">{t('activity.approvals.noDecisions', 'Gateway did not return decision options.')}</span>
             ) : (

@@ -553,14 +553,14 @@ function stripInlineCodeTicks(md: string): string {
         <motion.div
           key={`${block.id}-bubble`}
           className={clsx(
-          'relative block rounded-xl py-2.5 transition-colors duration-150',
+          'relative block rounded-xl py-2.5 transition-[background-color,border-color,box-shadow] duration-200',
           'pl-4 max-w-full box-border min-w-0 break-words group/bubble',
           'pr-4',
           isEmptyAssistantStreaming
             ? 'bg-transparent shadow-none p-0 pl-0 pr-0 py-0'
             : isUser
-              ? 'bg-aegis-primary/[0.10] border border-aegis-primary/20 shadow-sm'
-              : 'bg-[rgb(var(--aegis-primary)/0.035)] hover:bg-[rgb(var(--aegis-primary)/0.055)] border border-aegis-primary/10 shadow-[inset_1px_0_0_rgb(var(--aegis-primary)/0.12)]',
+              ? 'bg-aegis-primary/[0.10] border border-aegis-primary/20 shadow-[0_1px_2px_rgb(var(--aegis-overlay)/0.05)]'
+              : 'bg-[rgb(var(--aegis-primary)/0.035)] hover:bg-[rgb(var(--aegis-primary)/0.055)] border border-aegis-primary/10 shadow-[inset_1px_0_0_rgb(var(--aegis-primary)/0.12),0_1px_2px_rgb(var(--aegis-overlay)/0.035)]',
           block.isStreaming && !isEmptyAssistantStreaming && 'ring-1 ring-aegis-primary/30',
           )}
           style={{ width: 'auto' }}
@@ -568,7 +568,7 @@ function stripInlineCodeTicks(md: string): string {
 
           {hasBubbleActions && (
             <div
-              className="mb-1.5 flex justify-end"
+              className="mb-1.5 flex justify-end border-b border-aegis-border/55 pb-1.5"
               data-message-bubble-actions
             >
               {messageActions}
@@ -664,7 +664,7 @@ function stripInlineCodeTicks(md: string): string {
               <div
                 className={clsx(
                   'inline-flex items-center gap-1.5 select-none',
-                  'px-3 py-2 rounded-xl border border-aegis-primary/25 bg-[color-mix(in_srgb,rgb(var(--aegis-primary))_14%,rgb(var(--aegis-elevated)))] shadow-[0_0_18px_rgb(var(--aegis-primary)/0.12)]',
+                  'px-3 py-2 rounded-xl border border-aegis-primary/25 bg-[color-mix(in_srgb,rgb(var(--aegis-primary))_14%,rgb(var(--aegis-elevated)))] shadow-[0_4px_16px_rgb(var(--aegis-primary)/0.10)]',
                 )}
                 aria-label={t('chat.assistantPreparing')}
               >

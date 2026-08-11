@@ -1039,14 +1039,11 @@ export function NavSidebar() {
   return (
     <aside
       className={clsx(
-        'shrink-0 flex flex-col overflow-hidden py-3 sidebar-width-anim',
+        'shrink-0 flex flex-col overflow-hidden bg-aegis-surface py-3 sidebar-width-anim',
         isMini ? 'items-center' : 'items-stretch',
         'border-r border-aegis-border',
       )}
-      style={{
-        width: targetWidth,
-        background: 'linear-gradient(180deg, var(--aegis-surface), var(--aegis-surface-elevated))',
-      }}
+      style={{ width: targetWidth }}
       aria-label="侧边导航栏"
     >
       {isMini  ? <MiniView tab={tab} /> : null}

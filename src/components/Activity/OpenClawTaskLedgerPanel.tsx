@@ -189,7 +189,7 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
   };
 
   return (
-    <article className="border-t border-aegis-border first:border-t-0">
+    <article className="border-t border-aegis-border first:border-t-0 transition-colors duration-200 hover:bg-aegis-hover/35">
       <div className="flex min-w-0 items-start gap-3 px-4 py-3">
         <TerminalSquare size={15} className="mt-0.5 shrink-0 text-aegis-primary" aria-hidden="true" />
         <div className="min-w-0 flex-1">
@@ -254,7 +254,7 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
           )}
         </div>
       </div>
-      {expanded && detail && <TaskDetails task={detail} />}
+      {expanded && detail && <div className="border-t border-aegis-border bg-aegis-hover/20"><TaskDetails task={detail} /></div>}
       {expanded && detailErrors[task.id] && <p className="border-t border-aegis-danger/20 bg-aegis-danger/5 px-4 py-2 text-[10.5px] text-aegis-danger" role="alert">{detailErrors[task.id]}</p>}
     </article>
   );

@@ -7,6 +7,7 @@ import type {
 } from './chatResponseTrace';
 import { ChatSidePanel } from './ChatSidePanel';
 import { StatusIcon } from '@/components/shared/StatusIcon';
+import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { ChatResponseTraceNodeCard } from './ChatResponseTraceNodeCard';
 import { formatTraceTimestamp } from './chatResponseTracePresentation';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -122,16 +123,16 @@ export function ChatResponseTracePanel({
                   key={sourceMessageId}
                   type="button"
                   onClick={() => onOpenSourceMessage(sourceMessageId)}
-                  className="rounded-md border border-aegis-border px-2 py-1 text-[10px] text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-aegis-primary"
+                  className="rounded-md border border-aegis-border px-2 py-1 text-[10px] text-aegis-text-muted transition-colors hover:bg-aegis-hover hover:text-aegis-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-aegis-primary"
                 >
                   {t('chat.trace.sourceRecord', { number: index + 1 })}
                 </button>
               ))}
             </dd>
           </dl>
-          <details className="mt-3 text-[9px] text-aegis-text-dim">
-            <summary className="cursor-pointer select-none">{t('chat.trace.technicalDetails')}</summary>
-            <dl className="mt-2 grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-1 font-mono">
+          <details className="mt-3 border-t border-aegis-border/70 pt-2 text-[9px] text-aegis-text-dim">
+            <summary className="cursor-pointer select-none rounded px-1 py-0.5 hover:bg-aegis-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-aegis-primary">{t('chat.trace.technicalDetails')}</summary>
+            <dl className="mt-2 grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md bg-aegis-hover/25 px-2 py-1.5 font-mono">
               <dt>{t('chat.trace.sessionKey')}</dt>
               <dd className="break-all">{trace.sessionKey}</dd>
               <dt>{t('chat.trace.run')}</dt>
@@ -179,7 +180,10 @@ export function ChatResponseTracePanel({
             <p className="mt-2 text-[10px] text-aegis-text-dim">{t('chat.trace.audit.noRun')}</p>
           )}
           {auditState.kind === 'loading' && (
-            <p className="mt-2 text-[10px] text-aegis-text-dim">{t('chat.trace.audit.loading')}</p>
+            <p className="mt-2 inline-flex items-center gap-1.5 text-[10px] text-aegis-text-dim" role="status">
+              <LoadingIndicator size={11} />
+              {t('chat.trace.audit.loading')}
+            </p>
           )}
           {auditState.kind === 'unsupported' && (
             <p className="mt-2 text-[10px] text-aegis-text-dim">{t('chat.trace.audit.unsupported')}</p>

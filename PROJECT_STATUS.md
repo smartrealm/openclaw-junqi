@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-优化 OpenClaw 渠道配置的可视化链路，在不改变上游渠道语义的前提下统一目录、账号、路由、状态核验、扫码和 Gateway 生命周期入口。
+在不改变 OpenClaw、Tauri 和 DWS 权威语义的前提下，按真实用户路径收敛 JunQi Desktop 的交互、动效、信息层级和跨页面视觉一致性。
 
 ## 已完成内容
 
@@ -35,6 +35,15 @@
 - 设置页新增独立的“OpenClaw 运行时语言”：读取官方 `config.get` 快照，保存前重新取最新 `hash`，再以最小 `config.patch` 写入 `env.vars.OPENCLAW_LOCALE`。
 - 运行时语言只提供 OpenClaw 原生支持的英语、简体中文和繁体中文；未知配置保留并显示原值，不猜测映射。
 - JunQi 管理且允许桌面变更的 Runtime 保存后通过统一 Gateway 生命周期入口重启；外部或远端 Runtime 明确提示由其所有者重启，不伪造已应用状态。
+- 已完成 AI 原生交互首轮视觉收敛：Composer、会话消息、工具调用、响应轨迹、原生任务账本和原生审批均保留既有 OpenClaw 调用与状态模型，仅优化输入锚点、消息表面、摘要行、详情层级、来源可读性和决策区反馈。
+- 已完成合并 `main` 后的 AI 原生交互全量审查，覆盖路由入口、应用外壳、主题、会话、安装、渠道、任务、审批、文件预览、终端、Jarvis 语音和业务工作台。
+- 已建立按会话主路径、安装与渠道控制面、任务与文件、终端与工作台、全局收口划分的实施顺序；所有批次只允许投影已有的 OpenClaw、Tauri 或 DWS 状态。
+- 已完成会话主路径首轮实施：输入、工具、上游思考内容、响应轨迹和侧栏详情统一为可聚焦的摘要与详情交互，上下文压缩分隔移除无限渐变动效。
+- 已完成安装进度面板首轮实施：状态和进度条回归 Aegis 语义 token，减少动态效果时停止自动滚动动画和进度脉冲。
+- 已完成公共视觉基线收敛：卡片、浮层和菜单投影降低，常用圆角与过渡时长收紧；颜色过渡仅保留在可交互控件，
+  路由和数据刷新不再触发整页表面滞后。删除了无消费者的流光边框与思考微光全局样式。
+- 应用外壳与导航侧栏移除背景渐变和无消费者的环境光节点，统一使用单一 Aegis surface，避免主题与路由
+  切换时叠加装饰层。
 
 ## 关键技术决策
 
@@ -79,6 +88,20 @@
 - `src/hooks/useOpenClawRuntimeLanguageSetting.ts`
 - `src/components/settings/OpenClawRuntimeLanguagePanel.tsx`
 - `src/types/openclawRuntimeLocale.ts`
+- `src/components/Chat/message-input/ComposerInputSurface.tsx`
+- `src/components/Chat/MessageBubble.tsx`
+- `src/components/Chat/ToolCallBubble.tsx`
+- `src/components/Chat/ChatResponseTraceNodeCard.tsx`
+- `src/components/Activity/OpenClawTaskLedgerPanel.tsx`
+- `src/components/Activity/OpenClawApprovalsPanel.tsx`
+- `src/components/Chat/ThinkingBubble.tsx`
+- `src/components/Chat/TypingIndicator.tsx`
+- `src/components/Chat/ChatSidePanel.tsx`
+- `src/components/Chat/ChatResponseTracePanel.tsx`
+- `src/pages/ChatView.tsx`
+- `src/components/setup/SetupFlowPanels.tsx`
+- `docs/design/ai-native-interaction-audit-2026-08-11.md`
+- `plans/2026-08-11-ai-native-interaction-rollout.md`
 
 ## 测试与验证
 
@@ -104,6 +127,10 @@
 - 尚未在真实远端 Runtime 上验证 `config.patch` 权限与运行时所有者手工重启后的语言生效；界面保留未代管重启的真实状态。
 - 已核验钉钉插件 0.8.24 与 2026-08-11 主线尚未调用 OpenClaw `prompter.openUrl()`，仅把授权地址放入当前 note 正文。JunQi 对其中唯一 HTTPS 地址做不改变内容的本地二维码投影，不把该派生展示写回协议状态。
 - 本机 `pnpm tauri build` 已完成 arm64 Rust 编译、`.app` 与 DMG 生成；命令最终因缺少 updater 发布私钥而失败。已对最新应用包执行 ad-hoc 签名和严格校验，并重新生成、校验 `JunQi Desktop_3.0.1_aarch64_local.dmg`。该制品仅用于本机安装验证。
+- 本轮全量审查已完成源码、路由、主题、共享组件、关键状态来源和既有测试覆盖盘点；`git diff --check` 通过。尚未因审查文档重新执行产品构建或真机视觉回归。
+- 会话定向回归 20 项、安装与渠道定向回归 22 项通过；`pnpm lint` 与 `git diff --check` 通过。完整 `pnpm test` 在会话批次后通过，安装批次后已执行相关定向回归。
+- 公共主题基线调整后，主题桥接、会话、安装与渠道定向回归共 54 项通过，`pnpm lint` 与
+  `git diff --check` 通过；尚未完成桌面亮暗主题真机视觉验收。
 
 ## 已知问题与未验证边界
 
@@ -114,6 +141,7 @@
 - 本地 DMG 为 ad-hoc 签名，未进行 Developer ID 签名或 Apple 公证；仅可描述为本机安装验证包。
 - 本次空白视口、二维码投影与日志收放修复已完成定向自动化与生产构建，尚未在真实 Wizard 页面完成亮色、暗色、窄窗口与扫码真机验收。
 - 飞书当前官方设置面仍只把授权地址交给终端二维码输出；在上游未返回 `externalUrl`、`qrDataUrl` 或其他正式结构化字段前，JunQi 不从日志重建二维码。企业微信等外部插件同样以实际安装插件的正式 Gateway 或 Wizard 返回为准。
+- AI 原生交互计划尚未进入批次二至五。审查识别出普通业务组件中存在零散渐变、内联样式和独立动效，但统计结果不是逐项缺陷结论；每项替换前仍需核对真实消费者与主题例外。
 
 ## 失败方案
 
@@ -122,8 +150,6 @@
 
 ## 下一步顺序
 
-1. 在亮色、暗色和窄窗口下真机核验渠道双栏、目录对话框、账号编辑、键盘焦点与错误状态。
-2. 使用真实 DingTalk、Feishu、WhatsApp 与一个凭据型渠道验证安装、授权、探测、入站、出站和掉线恢复。
-3. 在 macOS、Windows 与 Linux 目标设备持续运行 Dashboard 和 Chat，采集修复前后的帧率、CPU、内存与 Gateway 诊断。
-4. 为缺少定价的实际模型补充经供应商确认的价格配置，并复核 OpenClaw 重新聚合后的费用结果。
-5. 在第三方 DingTalk 插件接入 OpenClaw 本地化后，以 `zh-CN`、`zh-TW` 和 `en` 完成官方 Wizard 真机验证。
+1. 完成安装、Gateway 与渠道控制面的其余视觉收敛，并在对应官方契约与当前 Runtime 上验证。
+2. 实施任务、审批、文件和 Jarvis 的交互收敛，随后处理终端、智能体与业务工作台。
+3. 每批执行定向测试、静态检查和桌面真机视觉验收；最后删除已证明无消费者的旧视觉路径并完成跨平台记录。

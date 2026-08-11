@@ -179,14 +179,14 @@ export function ChatResponseTraceNodeCard({
   })();
 
   return (
-    <li className="rounded-md border border-aegis-border bg-[rgb(var(--aegis-overlay)/0.02)] px-3 py-2.5">
+    <li className="rounded-lg border border-aegis-border bg-aegis-card px-3 py-2.5 shadow-[0_1px_2px_rgb(var(--aegis-overlay)/0.025)] transition-[background-color,border-color,box-shadow] duration-200 hover:border-aegis-border-hover hover:bg-aegis-hover/25">
       <div className="flex min-w-0 items-start gap-2">
         <span className="mt-0.5 shrink-0 text-aegis-text-muted">{nodeIcon(node)}</span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="min-w-0 break-words text-[11px] font-medium text-aegis-text">{label}</span>
             {node.kind === 'tool' && (
-              <span className="text-[9.5px] text-aegis-text-dim">
+            <span className="rounded bg-aegis-hover px-1.5 py-0.5 text-[9.5px] text-aegis-text-dim">
                 {t(`chat.trace.nodeStatus.${node.status}`)}
               </span>
             )}
@@ -197,16 +197,16 @@ export function ChatResponseTraceNodeCard({
             <button
               type="button"
               onClick={onOpenSourceMessage}
-              className="grid size-6 shrink-0 place-items-center rounded-md text-aegis-text-dim transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-aegis-primary"
+              className="grid size-6 shrink-0 place-items-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-aegis-primary"
               title={t('chat.trace.viewSourceRecord')}
               aria-label={t('chat.trace.viewSourceRecord')}
             >
               <PanelRightOpen size={13} />
             </button>
           </div>
-          <details className="mt-1 text-[9px] text-aegis-text-dim">
-            <summary className="cursor-pointer select-none">{t('chat.trace.technicalDetails')}</summary>
-            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono">
+          <details className="mt-2 border-t border-aegis-border/70 pt-1.5 text-[9px] text-aegis-text-dim">
+            <summary className="cursor-pointer select-none rounded px-1 py-0.5 hover:bg-aegis-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-aegis-primary">{t('chat.trace.technicalDetails')}</summary>
+            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 rounded-md bg-aegis-hover/30 px-2 py-1.5 font-mono">
               <span>{t('chat.trace.sourceMessage')}: {node.sourceMessageId}</span>
               <span>{t('chat.trace.sequence')}: {node.sourceSequence ?? t('chat.trace.notProvided')}</span>
               {node.kind === 'tool' && <span>{t('chat.trace.toolCall')}: {node.toolCallId || t('chat.trace.notProvided')}</span>}
