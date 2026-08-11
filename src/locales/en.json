@@ -4317,6 +4317,12 @@
       "terminalQrReady": "A QR code was recognized in Gateway output. Scan it with the corresponding app.",
       "terminalQrWaiting": "Waiting for the plugin to output a QR code…",
       "terminalQrFallback": "After starting QR authorization, JunQi will try to read local Gateway output. If a remote Gateway does not return the QR code, view it in the server terminal or go back and choose manual setup.",
+      "searchOptions": "Search options",
+      "clearSearch": "Clear search",
+      "searchResultCount_one": "{{count}} matching option",
+      "searchResultCount_other": "{{count}} matching options",
+      "noMatchingOptions": "No matching options",
+      "noOptionsAvailable": "OpenClaw did not return any options",
       "openInBrowser": "Open in browser"
     }
   },

@@ -4310,6 +4310,12 @@
       "terminalQrReady": "已从 Gateway 输出中识别二维码，请使用对应应用扫描。",
       "terminalQrWaiting": "正在等待插件输出二维码…",
       "terminalQrFallback": "点击“开始扫码授权”后，JunQi 会尝试读取本机 Gateway 输出。远程 Gateway 若未传回二维码，请在服务器终端查看或返回选择手动配置。",
+      "searchOptions": "搜索当前选项",
+      "clearSearch": "清除搜索",
+      "searchResultCount_one": "找到 {{count}} 个匹配选项",
+      "searchResultCount_other": "找到 {{count}} 个匹配选项",
+      "noMatchingOptions": "没有匹配选项",
+      "noOptionsAvailable": "OpenClaw 没有返回可用选项",
       "openInBrowser": "在浏览器中打开"
     }
   },

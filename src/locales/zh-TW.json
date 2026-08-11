@@ -4279,6 +4279,12 @@
       "terminalQrReady": "已從 Gateway 輸出識別 QR code，請使用對應應用程式掃描。",
       "terminalQrWaiting": "正在等待外掛程式輸出 QR code…",
       "terminalQrFallback": "點擊「開始掃碼授權」後，JunQi 會嘗試讀取本機 Gateway 輸出。遠端 Gateway 若未傳回 QR code，請在伺服器終端查看或返回選擇手動設定。",
+      "searchOptions": "搜索目前選項",
+      "clearSearch": "清除搜索",
+      "searchResultCount_one": "找到 {{count}} 個匹配選項",
+      "searchResultCount_other": "找到 {{count}} 個匹配選項",
+      "noMatchingOptions": "沒有匹配選項",
+      "noOptionsAvailable": "OpenClaw 沒有返回可用選項",
       "openInBrowser": "在瀏覽器中打開"
     }
   },

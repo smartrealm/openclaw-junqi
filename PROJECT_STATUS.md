@@ -4,10 +4,12 @@
 
 ## 当前目标
 
-收敛 OpenClaw Wizard 终态交接与渠道二维码授权生命周期，确保 JunQi 只投影官方步骤、等待、二维码轮换和成功终态，不创建第二套授权语义。
+收敛 OpenClaw 安装向导中的模型供应商与渠道选项展示，确保长列表可搜索，同时仍只提交官方 Wizard 返回的原始选项值。
 
 ## 已完成内容
 
+- 安装向导的 `select` 与 `multiselect` 长选项集合已复用统一搜索组件，可按官方标签、提示和字符串值筛选；供应商、模型和渠道均不依赖名称或步骤编号硬编码。
+- 搜索只改变当前页面可见项，不改写、排序或补造 OpenClaw 选项；原始索引和原始 `value` 保持不变，下一步继续通过官方 `wizard.next` 提交。
 - 官方 Wizard `done` 与 JunQi 后置 Gateway 核验已经拆成两个不可混淆的恢复阶段；终态后的失败只显示“重新核验”，不再调用 `wizard.start`、`wizard.next` 或恢复已回收会话。
 - 官方服务交接后统一通过 Gateway 生命周期协调器重新解析目标和凭据、建立认证连接，再探测所选 Runtime；只有两层核验都成功后才清除 onboarding requirement 并进入 Ready。
 - 授权步骤提交后，旧二维码和旧表单立即替换为等待投影，避免已回答步骤继续表现为可操作；暂停只中止当前客户端请求，恢复时继续同一个官方会话。
@@ -47,6 +49,7 @@
 
 ## 关键技术决策
 
+- OpenClaw 本地提示器支持 `searchable`，但当前 Gateway `WizardStep` 协议没有传输该字段。JunQi 只以选项数量触发展示层搜索，不推断步骤业务身份或扩展协议。
 - 官方 Wizard 终态是不可重放边界。终态后的 Runtime 交接失败不是 Wizard 失败，恢复操作不得重新进入配置会话。
 - Gateway 后置核验必须复用全局生命周期协调器；首次配置不能拥有独立的连接轮询和凭据刷新路径。
 - 授权等待时限和终态属于 OpenClaw Runner 或渠道插件。客户端只投影等待状态并提供显式暂停，不根据本地超时推断失败。
@@ -64,6 +67,9 @@
 
 ## 核心文件
 
+- `src/pages/SetupPage/wizard/WizardOptionSearch.tsx`
+- `src/pages/SetupPage/wizard/WizardSelectStep.tsx`
+- `src/pages/SetupPage/wizard/WizardMultiselectStep.tsx`
 - `src/hooks/useSetupFlow/useWizardSession.ts`
 - `src/hooks/useSetupFlow/types.ts`
 - `src/pages/SetupPage/WizardScreen.tsx`
@@ -109,6 +115,8 @@
 
 ## 测试与验证
 
+- 安装向导长选项搜索、可访问搜索框、空选项状态和页面集成的 18 项定向回归测试通过。
+- `pnpm test`、`pnpm lint`、`pnpm build`、locale JSON 解析与 `pnpm verify:openclaw-docs` 通过；本次没有修改 Rust，未执行 Rust 检查。
 - OpenClaw Wizard、首次配置界面与设置流程定向回归测试通过，97 项测试通过。
 - `pnpm exec tsc --noEmit`、`pnpm test`、`pnpm lint` 与 `pnpm build` 通过。
 - 本次没有修改 Rust；未重复执行 Rust 格式、编译与测试。
@@ -140,6 +148,7 @@
 
 ## 已知问题与未验证边界
 
+- 尚未使用真实 OpenClaw 安装向导，在亮色、暗色和窄窗口下实测供应商完整列表、模型列表与渠道多选列表的搜索和键盘操作。
 - 尚未使用真实 macOS 安装包复测“官方配置完成、服务交接后首次认证连接失败、点击重新核验”的完整链路。
 - Windows 服务交接、Credential Manager 和安装后首次授权仍需 Windows 真机验证。
 - 钉钉扫码轮询、过期与成功终态继续由插件拥有；当前自动化只验证 JunQi 不保留旧二维码、不并行轮询且不重启 Wizard。
@@ -160,7 +169,6 @@
 
 ## 下一步顺序
 
-1. 使用真实 macOS 安装包复测官方 Wizard 终态、服务交接失败和“重新核验”恢复，确认不会再次出现配置步骤。
-2. 在 Windows 真机验证服务交接、Credential Manager、授权等待与终态恢复。
-3. 在亮色、暗色和窄窗口下核验 Wizard 授权与渠道中心扫码对话框的准备、监听、暂停、失败、成功和键盘交互。
-4. 使用真实 DingTalk、Feishu、WhatsApp、Zalo Personal 与一个凭据型渠道验证安装、授权、二维码轮换、探测、入站、出站和掉线恢复。
+1. 使用真实 OpenClaw 安装向导核验模型供应商完整列表与“更多”列表的搜索、选择和返回路径。
+2. 在渠道多选步骤核验搜索后已选值保持、无结果状态和下一步提交值。
+3. 在亮色、暗色、窄窗口和键盘操作下完成安装向导长列表视觉验收。

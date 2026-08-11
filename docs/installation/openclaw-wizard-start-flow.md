@@ -6,7 +6,7 @@
 
 ## 依据与版本边界
 
-- 最新上游依据为 2026-08-11 核验的 OpenClaw `main`，提交 `df72781ed45fabf626831e8a2a03ad25ee7d0a08`。
+- 最新上游依据为 2026-08-11 核验的 OpenClaw `main`，提交 `241e1accde4e04882a7343b2a8caa8bc94291f22`。
 - 本机相邻 `Openclaw` 工作树停留在 `3075acd549a5c76ad776cd8be5edff8ee6d47b55`，落后上游，本文不以该本机快照替代最新官方契约。
 - OpenClaw 实际安装版本只用于复现兼容差异。JunQi 不按版本号猜测字段，也不把本文记录的提交号写成能力开关。
 - 请求对象使用封闭 schema。目标 Runtime 不接受某个最新字段时，客户端必须保留真实失败，不得静默改发另一套自定义协议。
@@ -133,6 +133,12 @@ sequenceDiagram
 | `action` | `executor` | `client` 执行器需要客户端确认；`gateway` 执行器由 Gateway 推进 |
 
 每个步骤都有唯一 `id`。`wizard.next.answer.stepId` 必须对应当前待处理步骤；错误或过期的步骤号会得到 `wizard: no pending step`，客户端不得把它当作成功。
+
+### 长选项搜索
+
+OpenClaw 本地 `WizardPrompter` 的 `select` 与 `multiselect` 输入包含 `searchable` 展示提示，模型认证供应商的完整列表会显式传入 `searchable: true`。但当前 Gateway `WizardStep` schema 和 `WizardSessionPrompter` 不传输该字段，远程客户端无法从协议判断某一步是否为供应商搜索步骤。
+
+JunQi 不按步骤标题、步骤编号、供应商或渠道名称猜测业务身份。官方 `select` 或 `multiselect` 返回至少七个选项时，统一提供只作用于当前页面的搜索框，并按官方 `label`、`hint` 和字符串 `value` 筛选。筛选不会改写、排序或补造选项，提交仍使用原始官方 `value`；短列表保持原有直接选择界面。
 
 ### 敏感信息
 
@@ -276,6 +282,7 @@ JunQi 首次启动只发起完整官方配置：
 ### 界面投影
 
 - `text`、`confirm`、`select`、`multiselect`、`note`、`progress`、`action` 由统一步骤注册表渲染。
+- `select` 与 `multiselect` 的长选项集合复用同一搜索组件；该组件只过滤当前官方选项，不识别或维护本地供应商、模型与渠道目录。
 - 未识别的新步骤类型会明确要求升级 JunQi，不把它降级为任意文本框。
 - 已知字段逐项严格校验；未知新增字段只记录诊断并忽略，不阻断其他已知字段。
 - `progress` 且 `executor: "gateway"` 时自动使用无答案 `wizard.next` 轮询。

@@ -197,6 +197,45 @@ test('正常交互步骤默认收起日志并保留手动展开入口', () => {
   assert.doesNotMatch(html, /运行时日志/);
 });
 
+test('模型供应商或渠道长列表提供通用搜索且保留官方选项', () => {
+  const flow = {
+    presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
+    goBack: async () => undefined,
+  } as unknown as SetupFlow;
+  const options = Array.from({ length: 8 }, (_, index) => ({
+    value: `provider-${index}`,
+    label: `Provider ${index}`,
+    hint: `Official option ${index}`,
+  }));
+  const html = renderToStaticMarkup(
+    <WizardScreen
+      flow={flow}
+      logs={[]}
+      wizard={{
+        wizardStep: {
+          id: 'model-provider',
+          type: 'select',
+          message: 'Model/auth provider',
+          options,
+        },
+        wizardSubmitting: false,
+        wizardActivity: null,
+        wizardError: null,
+        wizardRecoveryMode: null,
+        submitWizardStep: async () => null,
+        pollWizard: async () => null,
+        retryWizard: async () => null,
+        reclaimWizard: async () => null,
+      }}
+    />,
+  );
+
+  assert.match(html, /type="search"/);
+  assert.match(html, /Search options/);
+  assert.match(html, /Provider 0/);
+  assert.match(html, /Provider 7/);
+});
+
 test('交互步骤失败时自动展开日志', () => {
   const flow = {
     presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
