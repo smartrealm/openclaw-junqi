@@ -1,7 +1,7 @@
 // 快捷回复只投影现有消息中的按钮标记，点击后仍由上层发送真实用户消息。
 
 import { useState, useCallback } from 'react';
-import { X, Check } from 'lucide-react';
+import { X } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { ParsedButton } from '@/utils/buttonParser';
@@ -45,7 +45,7 @@ export function QuickReplyBar({ buttons, onSend, onDismiss }: QuickReplyBarProps
 
         <div className="flex flex-wrap gap-2 pe-6">
           {buttons.map((btn, idx) => {
-            const isClicked = clicked === btn.value;
+            const isSelected = clicked === btn.value;
             const isDisabled = clicked !== null;
 
             return (
@@ -53,9 +53,10 @@ export function QuickReplyBar({ buttons, onSend, onDismiss }: QuickReplyBarProps
                 key={idx}
                 onClick={() => handleClick(btn)}
                 disabled={isDisabled}
+                aria-pressed={isSelected}
                 className={clsx(
-                  'rounded-md border px-3 py-1.5 text-[13px] font-medium transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50',
-                  isClicked
+                  'rounded-md border px-3 py-1.5 text-[13px] font-medium transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50',
+                  isSelected
                     ? 'bg-aegis-primary/10 border-aegis-primary/35 text-aegis-primary'
                     : isDisabled
                       ? 'cursor-not-allowed border-aegis-border bg-aegis-surface text-aegis-text-dim opacity-45'
@@ -68,9 +69,6 @@ export function QuickReplyBar({ buttons, onSend, onDismiss }: QuickReplyBarProps
                 )}
               >
                 {btn.text}
-                {isClicked && (
-                  <Check size={11} className="ms-1.5 opacity-60" />
-                )}
               </button>
             );
           })}

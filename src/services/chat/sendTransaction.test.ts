@@ -273,7 +273,7 @@ test('CHAT-02 attachment failures retain the complete payload for lossless retry
   ]);
 });
 
-test('CHAT-10 a destructive session mutation holds new sends in the visible queue', async () => {
+test('CHAT-10 破坏性会话变更只暂存尚未提交的消息', async () => {
   const queued: unknown[] = [];
   let transportCalls = 0;
   let releaseMutation!: () => void;
@@ -302,6 +302,48 @@ test('CHAT-10 a destructive session mutation holds new sends in the visible queu
   assert.equal(queued.length, 1);
   releaseMutation();
   await mutation;
+});
+
+test('会话变更期间的重试标记为尚未提交，不伪装为 Gateway 已排队', async () => {
+  const messages = new Map<string, ChatMessage>([['client-held', {
+    id: 'client-held',
+    role: 'user',
+    content: 'retry after reset',
+    timestamp: new Date(0).toISOString(),
+    status: 'failed',
+  }]]);
+  let releaseMutation!: () => void;
+  const mutation = sessionMutationGate.run(
+    'session-a',
+    () => new Promise<void>((resolve) => { releaseMutation = resolve; }),
+  );
+  const coordinator = new ChatSendCoordinator(
+    { sendMessage: async () => { throw new Error('Gateway must not receive a held message'); } },
+    () => ({
+      addMessage() {},
+      updateMessage(_sessionKey, id, patch) {
+        const current = messages.get(id);
+        if (current) messages.set(id, { ...current, ...patch });
+      },
+      setIsTyping() {},
+      typingBySession: {},
+      enqueueMessage() {},
+    }),
+  );
+
+  try {
+    const result = await coordinator.send({
+      sessionKey: 'session-a',
+      message: 'retry after reset',
+      clientMessageId: 'client-held',
+      optimisticMessage: false,
+    });
+    assert.deepEqual(result, { heldForSessionMutation: true, clientMessageId: 'client-held' });
+    assert.equal(messages.get('client-held')?.status, 'held');
+  } finally {
+    releaseMutation();
+    await mutation;
+  }
 });
 
 test('CHAT-02 queue overflow becomes a visible retryable failure', async () => {

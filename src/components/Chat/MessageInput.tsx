@@ -6,7 +6,7 @@ import { ComposerAttachmentOverlays } from './message-input/ComposerAttachmentOv
 import { ComposerAttachmentTray } from './message-input/ComposerAttachmentTray';
 import { ComposerInputSurface } from './message-input/ComposerInputSurface';
 import { ComposerVoiceRecorder } from './message-input/ComposerVoiceRecorder';
-import { MessageQueuePanel } from './message-input/MessageQueuePanel';
+import { SessionMutationHandoffPanel } from './message-input/SessionMutationHandoffPanel';
 import { useComposerAttachments } from '@/hooks/chat/useComposerAttachments';
 import { useComposerInterruption } from '@/hooks/chat/useComposerInterruption';
 import { useComposerMenu } from './message-input/useComposerMenu';
@@ -31,7 +31,6 @@ export function MessageInput() {
   const isTyping = useChatStore(selectActiveSessionTyping);
   const isSending = useChatStore((state) => Boolean(state.sendingBySession[activeSessionKey]));
   const isLoadingHistory = useChatStore((state) => Boolean(state.loadingHistoryBySession[activeSessionKey]));
-  const pendingCount = useChatStore((state) => state.messageQueue[activeSessionKey]?.length ?? 0);
   const activeSession = useChatStore(
     (state) => state.sessions.find((session) => session.key === activeSessionKey),
   );
@@ -114,7 +113,7 @@ export function MessageInput() {
         onPreview={attachments.setLightbox}
         onRemove={attachments.removeFile}
       />
-      <MessageQueuePanel sessionKey={activeSessionKey} dir={dir} />
+      <SessionMutationHandoffPanel sessionKey={activeSessionKey} dir={dir} />
       {voice.recording ? (
         <ComposerVoiceRecorder
           dir={dir}
@@ -129,7 +128,6 @@ export function MessageInput() {
           connected={connected}
           historyLoading={historyLoading}
           text={text}
-          pendingCount={pendingCount}
           isTyping={isTyping}
           isSending={isSending}
           voiceOutputActive={voice.outputActive}

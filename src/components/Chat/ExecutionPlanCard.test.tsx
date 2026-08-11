@@ -34,6 +34,8 @@ test('running plan renders expanded progress with accessible controls', () => {
   assert.doesNotMatch(html, /ml-\[46px\]/);
   assert.match(html, /Inspect protocol/);
   assert.match(html, /Run tests/);
+  assert.match(html, /data-execution-plan-step-state="running"/);
+  assert.match(html, /data-execution-plan-step-state="pending"/);
 });
 
 test('completed plan defaults to a compact summary', () => {

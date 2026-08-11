@@ -1,7 +1,6 @@
 // 内联按钮严格投影 Gateway 提供的 callback_data；本组件不增加本地决策语义。
 
 import { useState, useCallback } from 'react';
-import { Check } from 'lucide-react';
 import clsx from 'clsx';
 
 interface InlineButton {
@@ -39,7 +38,7 @@ export function InlineButtonBar({ buttons, onCallback }: InlineButtonBarProps) {
         {buttons.map((row, rowIdx) => (
           <div key={rowIdx} className="flex flex-wrap gap-1.5">
             {row.map((btn, btnIdx) => {
-              const isClicked = clicked === btn.callback_data;
+              const isSelected = clicked === btn.callback_data;
               const isDisabled = clicked !== null;
               const styleKey = btn.style || 'default';
 
@@ -48,21 +47,19 @@ export function InlineButtonBar({ buttons, onCallback }: InlineButtonBarProps) {
                   key={`${rowIdx}-${btnIdx}`}
                 onClick={() => handleClick(btn.callback_data)}
                 disabled={isDisabled}
+                aria-pressed={isSelected}
                 className={clsx(
-                  'rounded-md border px-3 py-1.5 text-[12px] font-medium transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)]',
+                  'rounded-md border px-3 py-1.5 text-[12px] font-medium transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none',
                   'active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50',
-                    isClicked
+                    isSelected
                       ? 'bg-aegis-accent/20 border-aegis-accent/40 text-aegis-accent ring-2 ring-aegis-accent/20'
                       : isDisabled
                         ? 'opacity-40 cursor-not-allowed ' + STYLE_CLASSES[styleKey]
                         : STYLE_CLASSES[styleKey]
-                  )}
-                >
-                  {btn.text}
-                  {isClicked && (
-                    <Check size={9} className="ms-1.5 opacity-60" />
-                  )}
-                </button>
+                )}
+              >
+                {btn.text}
+              </button>
               );
             })}
           </div>

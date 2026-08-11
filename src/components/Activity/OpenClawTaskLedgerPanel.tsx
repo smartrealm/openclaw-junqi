@@ -159,6 +159,7 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
   const canCancel = task.status === 'queued' || task.status === 'running';
   const canRecoverDelivery = task.deliveryStatus === 'failed' && task.terminalOutcome === 'blocked';
   const time = formatTimestamp(task.updatedAt ?? task.createdAt);
+  const detailId = `openclaw-task-detail-${task.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 
   const toggleDetail = () => {
     const nextExpanded = !expanded;
@@ -217,6 +218,8 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
             title={expanded ? t('activity.tasks.hideDetails', 'Hide details') : t('activity.tasks.showDetails', 'Show details')}
             aria-label={expanded ? t('activity.tasks.hideDetails', 'Hide details') : t('activity.tasks.showDetails', 'Show details')}
             aria-expanded={expanded}
+            aria-controls={detailId}
+            aria-busy={detailLoadingId === task.id}
           >
             {detailLoadingId === task.id ? <LoaderCircle size={13} className="animate-spin" /> : <ChevronDown size={14} className={clsx('transition-transform duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none', expanded && 'rotate-180')} />}
           </button>
@@ -265,7 +268,7 @@ function TaskRow({ connected, task }: { connected: boolean; task: OpenClawTaskSu
           taskDetailVisibility(expanded, detail !== undefined) === 'expanded' ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
         )}
       >
-        <div className="min-h-0 overflow-hidden">
+        <div id={detailId} className="min-h-0 overflow-hidden">
           {detail && <div className="border-t border-aegis-border bg-aegis-hover/20"><TaskDetails task={detail} /></div>}
         </div>
       </div>
@@ -304,7 +307,7 @@ export function OpenClawTaskLedgerPanel({ connected }: { connected: boolean }) {
           type="button"
           onClick={() => void refresh(connected, true)}
           disabled={!connected || loading}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-aegis-text-dim transition-colors hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-45"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-aegis-text-dim transition-colors motion-reduce:transition-none hover:bg-aegis-hover hover:text-aegis-text disabled:cursor-wait disabled:opacity-45"
           title={t('common.refresh', 'Refresh')}
           aria-label={t('common.refresh', 'Refresh')}
         >

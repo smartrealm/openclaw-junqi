@@ -146,6 +146,26 @@
   仅在真实恢复时保留短暂透明度反馈，数据、路由和恢复判定不变。
 - 渠道中心、Task Ledger、审批、文件预览、Jarvis、终端、智能体中心和仪表盘的当前批次已完成；
   未经真机验收的视觉结果不视为跨平台完成。
+- 2026-08-12 会话交互收口：工具调用现在同时呈现 Gateway 提供的状态文字与状态色，详情采用与原生
+  Task Ledger 一致的展开容器；取消和待核验仍是上游状态，客户端不推断成功。思考摘要从强调色卡片
+  收敛为普通会话信息层，流式状态才保留主色提示。Composer、审批与账本的交互过渡均在系统减少动态
+  效果时立即静止，账本详情加载和审批提交补齐 `aria-busy`、`aria-controls` 等真实进行中语义。
+- 快捷回复和 Gateway 内联按钮不再在本地点击后显示成功对勾；它们只表现为已选择且不可重复提交，
+  不把客户端分发动作误表述为 Gateway 已处理或操作已完成。
+- OpenClaw `update_plan` 的运行中计划继续位于 Composer 上方，终态计划继续保留在 transcript 中；
+  `ExecutionPlanCard` 已收敛为摘要头、纵向步骤轨迹和按需详情三层。步骤连线、状态文字和进度仅来自
+  已解析的 OpenClaw 计划快照，计划修订仍通过现有执行追溯查看。
+- 消息挤压审查已核对 OpenClaw 官方 `chat.send`、队列和 `sessions.abort` 契约：普通 Composer 不传
+  `queueMode`，由 Gateway 的有效会话配置决定 `steer`、`followup`、`collect` 或 `interrupt`；客户端
+  不得自行合并、截断、丢弃或模拟上游队列。当前 `messageQueue` 只在会话删除、重置等破坏性变更的
+  本地交接窗口暂存尚未发送的用户输入，不能当作 Gateway 的已接纳队列，也没有权限编辑或取消上游项。
+  当前 Stop 使用已核验 `runId` 的 `sessions.abort`，只停止该 Run；已被 Gateway 接纳的后续输入按上游
+  队列继续处理。若产品需要“停止并丢弃后续输入”，必须调用官方 key-only `sessions.abort` 且
+  `clearQueued: true`，并以独立、明确的用户操作表达，不能复用现有本地清空按钮。
+- 交接窗口现已从通用“排队”呈现中拆出：仅在本地持有、尚未提交给 OpenClaw 的消息存在时显示
+  `SessionMutationHandoffPanel`，并明确允许编辑或放弃的范围只限这些本地消息。重试消息使用 `held`
+  状态，不再复用 Gateway `queued` 状态；Gateway 已确认接收的 `queued` 状态仍只说明等待其处理，不对
+  当前会话的队列模式、顺序或完成时间作客户端推断。
 
 ## 审查依据
 

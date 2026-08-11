@@ -36,6 +36,7 @@ export type StatusIconValue =
   | "skipped"
   | "error"
   // 会话消息状态
+  | "held"
   | "sent"
   | "queued"
   // 工作台状态
@@ -62,6 +63,7 @@ const STATUS_GLYPH: Record<StatusIconValue, LucideIcon | "spinner"> = {
   review: Hourglass,
 
   pending: Clock,
+  held: Hourglass,
   queued: Clock,
 
   detached: AlertTriangle,

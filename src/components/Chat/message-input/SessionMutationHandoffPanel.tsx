@@ -1,17 +1,22 @@
 import { useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, ListOrdered, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, GitBranch, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
 import type { QueuedChatMessage } from '@/services/chat/types';
 
 const EMPTY_QUEUE: QueuedChatMessage[] = [];
 
-interface MessageQueuePanelProps {
+interface SessionMutationHandoffPanelProps {
   sessionKey: string;
   dir: 'ltr' | 'rtl';
 }
 
-export function MessageQueuePanel({ sessionKey, dir }: MessageQueuePanelProps) {
+/**
+ * 仅呈现尚未提交给 OpenClaw 的会话变更交接消息。
+ *
+ * Gateway 已接纳的 followup、collect 等队列没有对应的稳定列表读取契约，不能混入此处。
+ */
+export function SessionMutationHandoffPanel({ sessionKey, dir }: SessionMutationHandoffPanelProps) {
   const { t } = useTranslation();
   const queue = useChatStore((state) => state.messageQueue[sessionKey] || EMPTY_QUEUE);
   const clearQueue = useChatStore((state) => state.clearQueue);
@@ -54,20 +59,22 @@ export function MessageQueuePanel({ sessionKey, dir }: MessageQueuePanelProps) {
   if (queue.length === 0) return null;
 
   return (
-    <div data-message-queue-placement="composer-above" className="px-3 pt-2" dir={dir}>
+    <div data-session-mutation-handoff-placement="composer-above" className="px-3 pt-2" dir={dir}>
       <div className="mx-auto w-full max-w-[760px] overflow-hidden rounded-xl border border-aegis-border bg-aegis-surface">
         <div className="flex min-h-10 items-center gap-2 px-3">
-          <ListOrdered size={14} className="shrink-0 text-aegis-text-muted" />
+          <GitBranch size={14} className="shrink-0 text-aegis-warning" />
           <button
             type="button"
             onClick={() => setExpanded((value) => !value)}
             className="flex min-w-0 flex-1 items-center gap-1.5 text-start text-[12px] font-medium text-aegis-text transition-colors hover:text-aegis-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
             aria-expanded={expanded}
-            aria-label={t('chat.queueTitle')}
+            aria-label={t('chat.sessionMutationHandoffTitle')}
           >
-            <span className="shrink-0">{t('chat.queueTitle')} · {queue.length}</span>
+            <span className="shrink-0">{t('chat.sessionMutationHandoffTitle')} · {queue.length}</span>
             <span className="min-w-0 flex-1 truncate text-[11px] font-normal text-aegis-text-muted">
-              {expanded ? (waitSeconds !== null ? t('chat.queueWait', { s: waitSeconds }) : '') : queue[0]?.text}
+              {expanded
+                ? (waitSeconds !== null ? t('chat.sessionMutationHandoffWait', { s: waitSeconds }) : '')
+                : t('chat.sessionMutationHandoffDescription')}
             </span>
             {expanded
               ? <ChevronUp size={14} className="ms-auto shrink-0" />
@@ -75,19 +82,21 @@ export function MessageQueuePanel({ sessionKey, dir }: MessageQueuePanelProps) {
           </button>
           {confirmingClear ? (
             <>
-              <span className="max-w-32 truncate text-[11px] text-aegis-text-muted">{t('chat.queueClearConfirm')}</span>
+              <span className="max-w-32 truncate text-[11px] text-aegis-text-muted">{t('chat.sessionMutationHandoffClearConfirm')}</span>
               <button
                 type="button"
                 onClick={() => { clearQueue(sessionKey); setConfirmingClear(false); setExpanded(false); }}
-                className="grid size-6 place-items-center rounded-md text-aegis-danger transition-colors hover:bg-aegis-danger/10"
-                title={t('chat.queueClear')}
+                className="grid size-6 place-items-center rounded-md text-aegis-danger transition-colors hover:bg-aegis-danger/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-danger/60"
+                title={t('chat.sessionMutationHandoffClear')}
+                aria-label={t('chat.sessionMutationHandoffClear')}
               >
                 <Check size={13} />
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmingClear(false)}
-                className="grid size-6 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)]"
+                className="grid size-6 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+                aria-label={t('chat.cancel')}
               >
                 <X size={13} />
               </button>
@@ -96,8 +105,9 @@ export function MessageQueuePanel({ sessionKey, dir }: MessageQueuePanelProps) {
             <button
               type="button"
               onClick={() => setConfirmingClear(true)}
-              className="grid size-6 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-aegis-danger/10 hover:text-aegis-danger"
-              title={t('chat.queueClear')}
+              className="grid size-6 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-aegis-danger/10 hover:text-aegis-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-danger/60"
+              title={t('chat.sessionMutationHandoffClear')}
+              aria-label={t('chat.sessionMutationHandoffClear')}
             >
               <Trash2 size={13} />
             </button>
@@ -126,14 +136,16 @@ export function MessageQueuePanel({ sessionKey, dir }: MessageQueuePanelProps) {
                           setEditingId(null);
                           setEditingText('');
                         }}
-                        className="grid size-6 place-items-center rounded-md border border-aegis-primary/20 bg-aegis-primary/10 text-aegis-primary transition-colors hover:bg-aegis-primary/20"
+                        className="grid size-6 place-items-center rounded-md border border-aegis-primary/20 bg-aegis-primary/10 text-aegis-primary transition-colors hover:bg-aegis-primary/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+                        aria-label={t('chat.sessionMutationHandoffEdit')}
                       >
                         <Check size={11} />
                       </button>
                       <button
                         type="button"
                         onClick={() => { setEditingId(null); setEditingText(''); }}
-                        className="grid size-6 place-items-center rounded-md text-aegis-text-muted transition-colors hover:text-aegis-text-secondary"
+                        className="grid size-6 place-items-center rounded-md text-aegis-text-muted transition-colors hover:text-aegis-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+                        aria-label={t('chat.cancel')}
                       >
                         <X size={11} />
                       </button>
@@ -141,18 +153,20 @@ export function MessageQueuePanel({ sessionKey, dir }: MessageQueuePanelProps) {
                   </div>
                 ) : deletingId === item.id ? (
                   <>
-                    <span className="flex-1 text-[11px] text-aegis-text-muted">{t('chat.queueDeleteConfirm')}</span>
+                    <span className="flex-1 text-[11px] text-aegis-text-muted">{t('chat.sessionMutationHandoffDeleteConfirm')}</span>
                     <button
                       type="button"
                       onClick={() => { removeQueuedMessage(sessionKey, item.id); setDeletingId(null); }}
-                      className="grid size-6 shrink-0 place-items-center rounded-md text-aegis-danger transition-colors hover:bg-aegis-danger/10"
+                      className="grid size-6 shrink-0 place-items-center rounded-md text-aegis-danger transition-colors hover:bg-aegis-danger/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-danger/60"
+                      aria-label={t('chat.sessionMutationHandoffDelete')}
                     >
                       <Check size={13} />
                     </button>
                     <button
                       type="button"
                       onClick={() => setDeletingId(null)}
-                      className="grid size-6 shrink-0 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)]"
+                      className="grid size-6 shrink-0 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+                      aria-label={t('chat.cancel')}
                     >
                       <X size={13} />
                     </button>
@@ -171,8 +185,9 @@ export function MessageQueuePanel({ sessionKey, dir }: MessageQueuePanelProps) {
                       <button
                         type="button"
                         onClick={() => { void retryQueuedMessage(sessionKey, item.id); }}
-                        className="grid size-5 shrink-0 place-items-center rounded-md text-aegis-danger transition-colors hover:bg-aegis-danger/10"
+                        className="grid size-5 shrink-0 place-items-center rounded-md text-aegis-danger transition-colors hover:bg-aegis-danger/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-danger/60"
                         title={t('chat.resend')}
+                        aria-label={t('chat.resend')}
                       >
                         <RefreshCw size={11} />
                       </button>
@@ -180,16 +195,18 @@ export function MessageQueuePanel({ sessionKey, dir }: MessageQueuePanelProps) {
                     <button
                       type="button"
                       onClick={() => { setEditingId(item.id); setEditingText(item.text); }}
-                      className="grid size-5 shrink-0 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text"
-                      title={t('chat.queueEdit')}
+                      className="grid size-5 shrink-0 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
+                      title={t('chat.sessionMutationHandoffEdit')}
+                      aria-label={t('chat.sessionMutationHandoffEdit')}
                     >
                       <Pencil size={11} />
                     </button>
                     <button
                       type="button"
                       onClick={() => setDeletingId(item.id)}
-                      className="grid size-5 shrink-0 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-aegis-danger/10 hover:text-aegis-danger"
-                      title={t('chat.queueDelete')}
+                      className="grid size-5 shrink-0 place-items-center rounded-md text-aegis-text-muted transition-colors hover:bg-aegis-danger/10 hover:text-aegis-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-danger/60"
+                      title={t('chat.sessionMutationHandoffDelete')}
+                      aria-label={t('chat.sessionMutationHandoffDelete')}
                     >
                       <Trash2 size={11} />
                     </button>

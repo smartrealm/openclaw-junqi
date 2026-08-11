@@ -190,7 +190,7 @@ interface MessageBubbleProps {
   onDelete?: () => void;
   onRetry?: () => void;
   onErrorAction?: (action: string) => void;
-  deliveryStatus?: 'pending' | 'sent' | 'queued' | 'failed' | 'cancelled';
+  deliveryStatus?: 'pending' | 'held' | 'sent' | 'queued' | 'failed' | 'cancelled';
   deliveryError?: string;
   outboundAttachments?: Array<{ fileName?: string; mimeType: string }>;
   historyTruncated?: boolean;
@@ -786,6 +786,9 @@ function stripInlineCodeTicks(md: string): string {
               </time>
               {deliveryStatus === 'pending' && (
                 <span className="text-[10px] text-aegis-text-dim">{t('chat.sending')}</span>
+              )}
+              {deliveryStatus === 'held' && (
+                <span className="text-[10px] text-aegis-warning">{t('chat.sessionMutationHandoffMessage')}</span>
               )}
               {deliveryStatus === 'queued' && (
                 <span className="text-[10px] text-aegis-warning">{t('chat.queued')}</span>

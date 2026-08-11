@@ -17,6 +17,7 @@ test('快捷回复提供可访问的关闭操作和减少动态效果安全的�
   assert.match(html, /aria-label="[^"]+"/);
   assert.match(html, /motion-safe:animate-fade-in/);
   assert.match(html, /focus-visible:ring-2/);
+  assert.match(html, /aria-pressed="false"/);
   assert.doesNotMatch(html, /<style>/);
   assert.doesNotMatch(html, /shadow-lg/);
 });
@@ -32,5 +33,6 @@ test('Gateway 内联按钮保留原有按钮文本，并提供一致的键盘焦
   assert.match(html, />确认</);
   assert.match(html, /motion-safe:animate-fade-in/);
   assert.match(html, /focus-visible:ring-2/);
+  assert.match(html, /aria-pressed="false"/);
   assert.doesNotMatch(html, /<style>/);
 });
