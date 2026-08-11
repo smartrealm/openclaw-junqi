@@ -18,6 +18,7 @@
 - 相关审计、规格和实施计划已记录到 `docs/quality`、`specs/quality` 与 `plans/quality`。
 - 删除无桌面消费者的三项 `junqi.collab.session.mutation*` 扩展、专属状态机与 schema 14 数据表；协作插件 schema 升至 15，旧 schema 14 数据库按当前结构校验失败关闭，不做自动迁移或删除。
 - 删除无生产入口的 Workbench Provider claim 前端状态、IPC、Rust command 与 PTY 清理双轨；保留只读的 provider 二进制可用性探测和既有 PTY 生命周期。
+- 已整理外部 AI 原生交互展示的加载、思考、流式、审批、工具、任务、输入、建议、上下文与表格模式；只保留可复用交互原则和 OpenClaw 数据边界，不复制未确认开源的展示代码。
 
 ## 关键技术决策
 
@@ -42,6 +43,8 @@
 - `docs/quality/gateway-native-extension-consistency-audit-2026-08-10.md`
 - `specs/quality/2026-08-10-gateway-audit-protocol-convergence.md`
 - `plans/quality/2026-08-10-gateway-audit-protocol-convergence.md`
+- `docs/design/ai-native-interaction-reference.md`
+- `docs/design/ai-native-interaction-examples.md`
 
 ## 测试与验证
 
