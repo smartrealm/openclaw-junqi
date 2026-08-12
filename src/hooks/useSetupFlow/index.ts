@@ -263,6 +263,7 @@ export function useSetupFlow(
     setPostStorageStep,
     setSetupError,
     setGatewayRunning,
+    resolveOnboardingRequirement: resolveActiveRuntimeOnboardingRequirement,
     navigationLeavingRef: setupNavigationLeavingRef,
   });
 

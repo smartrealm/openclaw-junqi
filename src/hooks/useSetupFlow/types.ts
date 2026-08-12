@@ -40,7 +40,7 @@ export type GatewayReadyContinuation =
   | { status: "checking"; error: null }
   | { status: "failed"; error: string };
 
-export type WizardRecoveryMode = "wizard" | "reclaim" | "runtime" | null;
+export type WizardRecoveryMode = "wizard" | "reclaim" | "runtime" | "session" | "restart" | null;
 
 export interface SetupFlow {
   presentation: OnboardingPresentation;

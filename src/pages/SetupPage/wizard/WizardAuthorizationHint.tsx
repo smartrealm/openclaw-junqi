@@ -84,6 +84,9 @@ export function WizardAuthorizationHint({
                 <ExternalLink size={13} />{t("setup.wizard.openInBrowser")}
               </button>
             </div>
+            <p className="text-xs leading-5 text-aegis-text-secondary">
+              {t("setup.wizard.authorizationContinueHint")}
+            </p>
           </div>
         )}
       </div>

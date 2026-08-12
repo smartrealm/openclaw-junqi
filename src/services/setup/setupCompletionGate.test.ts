@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  reconcileWizardSessionLoss,
   shouldStartOfficialOnboarding,
   validateSetupCompletion,
 } from './setupCompletionGate';
@@ -77,4 +78,44 @@ test('连接或响应异常不能被当作可跳过官方向导', async () => {
     }),
     OpenClawSetupMethodUnavailableError,
   );
+});
+
+test('Wizard 会话丢失后只按官方检测结果恢复完成状态', async () => {
+  const calls: string[] = [];
+  const result = await reconcileWizardSessionLoss({
+    probeGateway: async () => {
+      calls.push('gateway');
+      return true;
+    },
+    requiresOnboarding: async () => {
+      calls.push('detect');
+      return false;
+    },
+  });
+
+  assert.deepEqual(result, { state: 'complete' });
+  assert.deepEqual(calls, ['gateway', 'detect']);
+});
+
+test('官方检测仍要求配置时不得把丢失会话伪装成完成', async () => {
+  const result = await reconcileWizardSessionLoss({
+    probeGateway: async () => true,
+    requiresOnboarding: async () => true,
+  });
+
+  assert.deepEqual(result, { state: 'onboarding-required' });
+});
+
+test('Gateway 不可用时不会继续读取或重放 Wizard', async () => {
+  let configChecked = false;
+  const result = await reconcileWizardSessionLoss({
+    probeGateway: async () => false,
+    requiresOnboarding: async () => {
+      configChecked = true;
+      return false;
+    },
+  });
+
+  assert.deepEqual(result, { state: 'gateway-unavailable' });
+  assert.equal(configChecked, false);
 });

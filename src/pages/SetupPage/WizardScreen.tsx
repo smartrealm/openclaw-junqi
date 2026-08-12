@@ -113,7 +113,9 @@ export function WizardScreen({
         nextAction={{
           label: wizard.wizardRecoveryMode === "reclaim"
             ? t("setup.wizard.reclaim", "重新接管向导")
-            : wizard.wizardRecoveryMode === "runtime"
+            : wizard.wizardRecoveryMode === "restart"
+              ? t("setup.wizard.restartAfterLoss", "重新开始官方向导")
+            : wizard.wizardRecoveryMode === "runtime" || wizard.wizardRecoveryMode === "session"
               ? t("setup.gatewayReadyRetryAction", "重新核验")
             : wizard.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
           onClick: () => void (wizard.wizardRecoveryMode === "reclaim" ? wizard.reclaimWizard() : wizard.retryWizard()),
@@ -135,10 +137,11 @@ export function WizardScreen({
   const blocked = (step.type === "select" || step.type === "multiselect")
     && options.length === 0;
   const messageRenderedInBody = isWizardBodyMessageStep(presentedStep.type);
-  const authorizationPending = wizard.wizardSubmitting && Boolean(
+  const authorizationStep = Boolean(
     presentedStep.deviceCode
     || resolveWizardAuthorizationUrl(presentedStep),
   );
+  const authorizationPending = wizard.wizardSubmitting && authorizationStep;
   const wizardTitle = presentedStep.title || t(copy.titleKey, copy.titleFallback);
   const wizardSubtitle = messageRenderedInBody
     ? t(copy.subtitleKey, copy.subtitleFallback)
@@ -163,9 +166,13 @@ export function WizardScreen({
       secondaryAction={secondaryAction}
       nextAction={{
         label: wizard.wizardError
-          ? t("setup.wizard.retry", "重试")
+          ? wizard.wizardRecoveryMode === "restart"
+            ? t("setup.wizard.restartAfterLoss", "重新开始官方向导")
+            : t("setup.wizard.retry", "重试")
           : autoPollProgress
             ? t("setup.wizard.processing", "正在处理…")
+            : authorizationStep
+              ? t("setup.wizard.authorizationComplete", "我已完成授权，继续")
             : step.type === "action" ? t("setup.wizard.run", "执行") : t("setup.nextStep", "下一步"),
         onClick: () => {
           if (wizard.wizardError) {

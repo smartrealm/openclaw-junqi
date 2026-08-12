@@ -124,16 +124,16 @@ test("BUG-WIN-CANCEL-05 a running install always offers a cancellation path", ()
 });
 
 test("BUG-WFR-05 stale Wizard completion cannot commit official-service handoff UI", () => {
-  const applyResult = flow.slice(
+  const completion = flow.slice(
+    flow.indexOf("const completeWizardRuntime = useCallback"),
     flow.indexOf("const applyWizardResult = useCallback"),
-    flow.indexOf("const recoverAfterGatewayHandoff = useCallback"),
   );
-  assert.match(applyResult, /result: OpenClawWizardResult,\s*operationId: number/);
-  assert.match(applyResult, /const handedOff = await handoffGatewayToOfficialService\(\);\s*assertWizardOperationCurrent\(operationId\)/);
-  assert.match(applyResult, /if \(!handedOff\)/);
-  assert.match(applyResult, /await gatewayLifecycle\.reconnectAfterCurrent\(WIZARD_COMPLETION_RECONNECT_SOURCE\);\s*assertWizardOperationCurrent\(operationId\)/);
-  assert.match(applyResult, /await probeSelectedGateway\(\);\s*assertWizardOperationCurrent\(operationId\)/);
-  assert.doesNotMatch(applyResult, /probeActiveRuntimeModel|modelProbe/);
-  assert.doesNotMatch(applyResult, /await refreshGatewayConnectionTarget\(\)/);
-  assert.match(flow, /applyWizardResult\(completedResult, operationId, \{ handoff: false \}\)/);
+  assert.match(completion, /operationId: number/);
+  assert.match(completion, /const handedOff = await handoffGatewayToOfficialService\(\);[\s\S]*?assertWizardOperationCurrent\(operationId\)/);
+  assert.match(completion, /if \(!handedOff\)/);
+  assert.match(completion, /await gatewayLifecycle\.reconnectAfterCurrent\(WIZARD_COMPLETION_RECONNECT_SOURCE\);\s*assertWizardOperationCurrent\(operationId\)/);
+  assert.match(completion, /await probeSelectedGateway\(\);\s*assertWizardOperationCurrent\(operationId\)/);
+  assert.doesNotMatch(completion, /probeActiveRuntimeModel|modelProbe/);
+  assert.doesNotMatch(completion, /await refreshGatewayConnectionTarget\(\)/);
+  assert.doesNotMatch(completion, /completedWizardResult|status: "done"/);
 });

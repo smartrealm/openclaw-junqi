@@ -76,3 +76,26 @@
 
 - Gateway 管理器、生命周期协调器、连接收敛、Wizard 终态和配置页面定向测试共 95 项通过。
 - macOS 安装包中的真实终态交接仍需重新构建后验证；Windows 与 Linux 系统服务交接仍未真机验证。
+
+## 2026-08-12 安装包 GIF 复验与会话丢失修复
+
+### 复现证据
+
+- 用户提供的 `/Users/wei/Desktop/流程.gif` 记录了一次约 224 秒的真实首次配置：钉钉授权与后续官方步骤正常推进，提交 `Done` 后界面等待约两分钟，随后显示“Gateway 进程已就绪，但 JunQi 未能在限定时间内完成经认证的 Gateway 连接”。
+- 用户点击重试后，界面重新进入 `QuickStart`、模型、搜索、安全和 `Done` 等完整官方流程，没有进入 Dashboard。
+- 代码检查确认，提交期间 Gateway 连接源变化时，JunQi 会尝试恢复旧 `sessionId`；一旦收到 `WIZARD_NOT_FOUND`，旧实现直接调用新的 `wizard.start`。因此本地连接竞态被错误转换成了有持久副作用的完整配置重放。
+- OpenClaw 当前主线在 Wizard handler 中使用 `retainGatewayWorkUntilSettled`，避免配置重载过早清除进程内会话。当前安装版本仍可复现会话先被回收的兼容差异，客户端不能假定一定能收到原 `done` 响应。
+
+### 修复行为
+
+- `WIZARD_NOT_FOUND` 不再自动调用 `wizard.start`，也不再构造或缓存本地 `done` 结果。
+- JunQi 先通过统一 Gateway 生命周期重新建立当前所选 Runtime 的认证连接，再复用既有结构化配置门禁核验是否仍需 onboarding。
+- Gateway 可核验且配置已完成时，进入同一 Runtime 终态交接与 Ready 门禁；Gateway 尚不可核验时只提供“重新核验”。
+- 结构化检测仍明确要求配置时，页面说明原会话已经失效，并提供显式“重新开始官方向导”；返回配置页不会自动触发该操作。
+- 删除 `OpenClawWizardClient.restartAfterSessionLoss()`，避免其他调用方重新引入隐式重放路径。
+
+### 验证结果
+
+- 会话丢失、显式重启、终态交接、页面操作和取消围栏定向测试共 107 项通过。
+- `npm run lint` 通过，包含模块边界、版本一致性和 TypeScript 检查。
+- 修复后的 macOS 安装包与 GIF 同路径真实复验尚未执行；Windows 与 Linux 仍未真机验证。

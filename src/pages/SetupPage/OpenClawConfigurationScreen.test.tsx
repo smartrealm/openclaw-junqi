@@ -106,6 +106,9 @@ test('任意官方向导步骤携带授权地址时都呈现二维码入口', ()
   assert.match(html, /data-wizard-authorization-qr="true"/);
   assert.match(html, /data-qr-display="loading"/);
   assert.match(html, /Open in browser/);
+  assert.match(html, /After scanning or completing authorization in your browser/);
+  assert.match(html, /Authorization complete, continue/);
+  assert.doesNotMatch(html, />Next</);
 });
 
 test('官方提示文本只含一个 HTTPS 地址时呈现该地址的二维码入口', () => {
@@ -142,6 +145,7 @@ test('官方提示文本只含一个 HTTPS 地址时呈现该地址的二维码�
   assert.match(html, /data-wizard-authorization="true"/);
   assert.match(html, /data-wizard-authorization-qr="true"/);
   assert.match(html, /data-qr-display="loading"/);
+  assert.match(html, /Authorization complete, continue/);
 });
 
 test('授权地址投影只接受结构化地址或正文中的一次性授权地址', () => {
@@ -375,6 +379,33 @@ test('官方终态后的失败提供 Gateway 核验操作', () => {
 
   assert.match(html, /Verify again/);
   assert.doesNotMatch(html, /Take over setup/);
+});
+
+test('官方检测仍要求配置时只提供显式重启向导操作', () => {
+  const flow = {
+    presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
+    goBack: async () => undefined,
+  } as unknown as SetupFlow;
+  const html = renderToStaticMarkup(
+    <WizardScreen
+      flow={flow}
+      logs={[]}
+      wizard={{
+        wizardStep: null,
+        wizardSubmitting: false,
+        wizardActivity: null,
+        wizardError: 'The original setup session expired',
+        wizardRecoveryMode: 'restart',
+        submitWizardStep: async () => null,
+        pollWizard: async () => null,
+        retryWizard: async () => null,
+        reclaimWizard: async () => null,
+      }}
+    />,
+  );
+
+  assert.match(html, /Restart official wizard/);
+  assert.doesNotMatch(html, />Retry</);
 });
 
 test('配置核验失败在同一容器呈现真实错误与重试操作', () => {

@@ -596,11 +596,6 @@ export class OpenClawWizardClient {
     return await this.start(this.startOptions);
   }
 
-  async restartAfterSessionLoss(): Promise<OpenClawWizardResult> {
-    this.forgetSession();
-    return await this.start(this.startOptions);
-  }
-
   forgetSession(): void {
     this.setSession(null);
     this.currentStep = null;

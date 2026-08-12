@@ -64,8 +64,8 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
 
 test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway readiness', () => {
   const completion = setupFlow.slice(
-    setupFlow.indexOf('if (result.done || result.status === "done")'),
-    setupFlow.indexOf('const startOfficialOnboarding = useCallback'),
+    setupFlow.indexOf('const completeWizardRuntime = useCallback'),
+    setupFlow.indexOf('const applyWizardResult = useCallback'),
   );
 
   assert.match(completion, /await handoffGatewayToOfficialService\(\)/);
@@ -494,8 +494,8 @@ test('BUG-ONB-18 unused prepare_gateway bridge is no longer part of the command 
 
 test('BUG-ONB-21 Ready follows the native Gateway and configuration gates', () => {
   const completion = setupFlow.slice(
-    setupFlow.indexOf('if (result.done || result.status === "done")'),
-    setupFlow.indexOf('const recoverAfterGatewayHandoff'),
+    setupFlow.indexOf('const completeWizardRuntime = useCallback'),
+    setupFlow.indexOf('const applyWizardResult = useCallback'),
   );
   const readyTransition = setupFlow.slice(
     setupFlow.indexOf('const continueAfterGatewayReady'),
@@ -552,10 +552,10 @@ test('BUG-ONB-42 授权步骤不因文本内容自动推进', () => {
   assert.doesNotMatch(submit, /continueOpenClawWizardQrAuthorization|wizardScanQrUrl/);
 });
 
-test('BUG-ONB-40 official Gateway finalizer refreshes credentials and reconciles its lost wizard session', () => {
+test('BUG-ONB-40 official Gateway finalizer verifies a lost session without replaying the wizard', () => {
   const wizardHook = hookFile('useWizardSession');
   const recovery = wizardHook.slice(
-    wizardHook.indexOf('const recoverLostWizardSession'),
+    wizardHook.indexOf('const reconcileLostWizardSession'),
     wizardHook.indexOf('const recoverAfterGatewayHandoff'),
   );
 
@@ -563,22 +563,24 @@ test('BUG-ONB-40 official Gateway finalizer refreshes credentials and reconciles
   assert.match(setupFlow, /getGatewayDeviceCredentialForUrl\(gatewayWsUrl\)/);
   assert.match(setupFlow, /gatewayManager\.connect\(gatewayWsUrl, token, deviceToken\)/);
   assert.match(setupFlow, /const recoverAfterGatewayHandoff/);
-  assert.match(recovery, /return await client\.restartAfterSessionLoss\(\)/);
-  assert.doesNotMatch(recovery, /resolveActiveRuntimeOnboardingRequirement|status: "done"/);
+  assert.match(recovery, /reconcileWizardSessionLoss/);
+  assert.match(recovery, /resolveOnboardingRequirement/);
+  assert.doesNotMatch(recovery, /\.start\(|restartAfterSessionLoss|status: "done"/);
   assert.match(setupFlow, /error instanceof GatewayPrivilegedSourceChangedError/);
 });
 
-test('BUG-ONB-50 retry recovers an upstream-reaped Wizard session instead of surfacing wizard not found', () => {
+test('BUG-ONB-50 retry verifies an upstream-reaped Wizard session without implicit replay', () => {
   const wizardHook = hookFile('useWizardSession');
   const retry = wizardHook.slice(
     wizardHook.indexOf('const retryOfficialOnboarding'),
     wizardHook.indexOf('const pollOfficialOnboarding'),
   );
 
-  assert.match(retry, /wizardClientRef\.current!\.retry\(\)/);
+  assert.match(retry, /recoveryMode === "session"/);
   assert.match(retry, /isOpenClawWizardSessionLost\(error\)/);
-  assert.match(retry, /recoverLostWizardSession\(wizardClientRef\.current!\)/);
-  assert.match(retry, /recoveryMode === "runtime"[\s\S]*?applyWizardResult\(completedResult, operationId, \{ handoff: false \}\)/);
+  assert.match(retry, /reconcileLostWizardSession\(operationId\)/);
+  assert.doesNotMatch(retry, /restartAfterSessionLoss/);
+  assert.match(retry, /recoveryMode === "runtime"[\s\S]*?completeWizardRuntime\(operationId\)/);
   assert.match(setupFlow, /setWizardRecoveryMode\("runtime"\)/);
 });
 
@@ -590,6 +592,7 @@ test('BUG-WIZ-01 返回配置页后继续 Gateway 终态核验而不重启官方
   );
 
   assert.match(autoStart, /wizardRecoveryModeRef\.current === "runtime"[\s\S]*?retryOfficialOnboarding\(\)/);
+  assert.match(autoStart, /wizardRecoveryModeRef\.current === "restart"\) return/);
   assert.match(autoStart, /void startOfficialOnboarding\(\)/);
 });
 

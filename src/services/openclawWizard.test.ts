@@ -55,33 +55,6 @@ test('wizard client preserves dynamic option values and session lifecycle', asyn
   await assert.rejects(() => client.next('provider', 'again'), /not running/);
 });
 
-test('丢失会话后只以官方 wizard.start 响应恢复，不根据本地配置推断完成', async () => {
-  const calls: string[] = [];
-  let sequence = 0;
-  const client = new OpenClawWizardClient(async (method) => {
-    calls.push(method);
-    sequence += 1;
-    return {
-      sessionId: `session-${sequence}`,
-      done: false,
-      status: 'running',
-      step: {
-        id: `step-${sequence}`,
-        type: 'note',
-        title: `Step ${sequence}`,
-      },
-    };
-  });
-
-  await client.start();
-  const recovered = await client.restartAfterSessionLoss();
-
-  assert.deepEqual(calls, ['wizard.start', 'wizard.start']);
-  assert.equal(recovered.done, false);
-  assert.equal(recovered.status, 'running');
-  assert.equal(recovered.step?.id, 'step-2');
-});
-
 test('首次引导只启动官方完整向导并保留渠道跳过说明', async () => {
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const client = new OpenClawWizardClient(async (method, params) => {
