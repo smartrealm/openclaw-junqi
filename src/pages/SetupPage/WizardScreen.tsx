@@ -1,6 +1,6 @@
 // OpenClaw 官方向导步骤的容器层。
 import { useEffect, useRef, useState } from "react";
-import { LoaderCircle } from "lucide-react";
+import { CircleAlert, LoaderCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
@@ -36,8 +36,6 @@ type WizardController = Pick<SetupFlow,
 export type WizardScreenCopy = {
   titleKey: string;
   titleFallback: string;
-  subtitleKey: string;
-  subtitleFallback: string;
   connectingKey: string;
   connectingFallback: string;
 };
@@ -45,11 +43,27 @@ export type WizardScreenCopy = {
 const DEFAULT_WIZARD_COPY: WizardScreenCopy = {
   titleKey: "setup.wizard.title",
   titleFallback: "配置 OpenClaw",
-  subtitleKey: "setup.wizard.subtitle",
-  subtitleFallback: "按照 OpenClaw 官方流程完成模型、凭据、工作区和 Gateway 配置。",
   connectingKey: "setup.wizard.connecting",
   connectingFallback: "正在连接 OpenClaw 官方配置向导…",
 };
+
+export function wizardPrimaryActionDisabled({
+  submitting,
+  error,
+  automatic = false,
+  blocked = false,
+  canRecover = true,
+}: {
+  submitting: boolean;
+  error: string | null;
+  automatic?: boolean;
+  blocked?: boolean;
+  canRecover?: boolean;
+}): boolean {
+  // 错误恢复会同步接管旧操作，因此不能被尚未提交到 React 的旧 loading 状态永久锁住。
+  if (error) return false;
+  return !canRecover || submitting || automatic || blocked;
+}
 
 export function WizardRestartConfirmation({
   open,
@@ -139,13 +153,19 @@ export function WizardScreen({
   }, [autoPollProgress, step, wizard]);
 
   if (!step) {
+    const failed = Boolean(wizard.wizardError);
+    const canRecover = failed || wizard.wizardRecoveryMode !== null;
     return (
       <>
         <SetupShell
           active={flow.presentation.stage}
-          contentIdentity="wizard-connecting"
-          title={t(copy.titleKey, copy.titleFallback)}
-          subtitle={t(copy.connectingKey, copy.connectingFallback)}
+          contentIdentity={failed ? `wizard-error:${wizard.wizardRecoveryMode ?? "unknown"}` : "wizard-connecting"}
+          title={failed
+            ? t("setup.wizard.needsAttentionTitle", "OpenClaw 配置需要处理")
+            : t(copy.titleKey, copy.titleFallback)}
+          subtitle={failed
+            ? t("setup.wizard.needsAttentionSubtitle", "请核对返回的错误，并使用当前可用的恢复操作。")
+            : t("setup.wizard.officialStepSubtitle", "当前内容由所选 OpenClaw Runtime 提供。")}
           logs={logs}
           logVisibility={wizardLogVisibility(step, wizard.wizardError)}
           previousAction={{ onClick: flow.goBack, disabled: wizard.wizardSubmitting }}
@@ -165,13 +185,31 @@ export function WizardScreen({
               }
               retryOrConfirmRestart();
             },
-            disabled: wizard.wizardSubmitting && !wizard.wizardError,
+            disabled: wizardPrimaryActionDisabled({
+              submitting: wizard.wizardSubmitting,
+              error: wizard.wizardError,
+              canRecover,
+            }),
             loading: wizard.wizardSubmitting,
             icon: "none",
           }}
         >
-          <div className={clsx("rounded-lg border p-4 text-sm leading-6", wizard.wizardError ? "border-red-500/25 bg-red-500/5 text-red-300" : "border-aegis-primary/25 bg-aegis-primary/5 text-aegis-text-secondary")}>
-            {wizard.wizardError || wizard.wizardActivity || t(copy.connectingKey, copy.connectingFallback)}
+          <div className="flex min-h-[260px] items-center" aria-live="polite" aria-busy={!failed}>
+            <StatusPanel
+              icon={failed
+                ? <CircleAlert size={22} />
+                : <LoaderCircle size={22} className="animate-spin motion-reduce:animate-none" />}
+              tone={failed ? "danger" : "primary"}
+              eyebrow={failed
+                ? t("setup.wizard.needsAttentionEyebrow", "向导已暂停")
+                : t("setup.wizard.connectingEyebrow", "正在连接")}
+              title={failed
+                ? t("setup.wizard.stepFailedTitle", "官方向导未能继续")
+                : t(copy.connectingKey, copy.connectingFallback)}
+              message={wizard.wizardError
+                || wizard.wizardActivity
+                || t("setup.wizard.connectingDescription", "正在等待所选 Runtime 返回第一个官方步骤。")}
+            />
           </div>
         </SetupShell>
         {restartConfirmation}
@@ -189,11 +227,25 @@ export function WizardScreen({
     presentedStep.deviceCode
     || resolveWizardAuthorizationUrl(presentedStep),
   );
-  const authorizationPending = wizard.wizardSubmitting && authorizationStep;
-  const wizardTitle = presentedStep.title || t(copy.titleKey, copy.titleFallback);
-  const wizardSubtitle = messageRenderedInBody
-    ? t(copy.subtitleKey, copy.subtitleFallback)
-    : presentedStep.message || t(copy.subtitleKey, copy.subtitleFallback);
+  const waitingForOfficialStep = wizard.wizardSubmitting || autoPollProgress;
+  const wizardTitle = wizard.wizardError
+    ? t("setup.wizard.needsAttentionTitle", "OpenClaw 配置需要处理")
+    : presentedStep.title || t(copy.titleKey, copy.titleFallback);
+  const wizardSubtitle = wizard.wizardError
+    ? t("setup.wizard.needsAttentionSubtitle", "请核对返回的错误，并使用当前可用的恢复操作。")
+    : messageRenderedInBody
+      ? t("setup.wizard.officialStepSubtitle", "当前内容由所选 OpenClaw Runtime 提供。")
+      : presentedStep.message || t("setup.wizard.officialStepSubtitle", "当前内容由所选 OpenClaw Runtime 提供。");
+  const contentLayout = authorizationStep
+    ? "authorization"
+    : presentedStep.type === "select" || presentedStep.type === "multiselect"
+      ? "options"
+      : "compact";
+  const contentState = wizard.wizardError
+    ? "error"
+    : waitingForOfficialStep
+      ? "waiting"
+      : "step";
   const submitCurrentStep = async () => {
     await wizard.submitWizardStep(step.id, value);
   };
@@ -202,7 +254,7 @@ export function WizardScreen({
     <>
       <SetupShell
         active={flow.presentation.stage}
-        contentIdentity={presentedStep.id}
+        contentIdentity={`${presentedStep.id}:${contentState}`}
         title={wizardTitle}
         subtitle={wizardSubtitle}
         logs={logs}
@@ -230,26 +282,54 @@ export function WizardScreen({
             }
             void submitCurrentStep();
           },
-          disabled: wizard.wizardSubmitting || autoPollProgress || (!wizard.wizardError && blocked),
+          disabled: wizardPrimaryActionDisabled({
+            submitting: wizard.wizardSubmitting,
+            error: wizard.wizardError,
+            automatic: autoPollProgress,
+            blocked,
+          }),
           loading: wizard.wizardSubmitting || autoPollProgress,
           icon: wizard.wizardError ? "none" : "next",
         }}
       >
-        <div className="space-y-4" dir="auto">
-          {wizard.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{wizard.wizardError}</div>}
-          {authorizationPending ? (
+        <div
+          data-wizard-content-layout={wizard.wizardError || waitingForOfficialStep ? "compact" : contentLayout}
+          className={clsx(
+            "min-h-[260px] w-full",
+            (wizard.wizardError || waitingForOfficialStep || contentLayout === "compact") && "flex flex-col justify-center",
+          )}
+          dir="auto"
+          aria-live={wizard.wizardError || waitingForOfficialStep ? "polite" : undefined}
+          aria-busy={waitingForOfficialStep}
+        >
+          {wizard.wizardError ? (
             <StatusPanel
-              icon={<LoaderCircle size={22} className="animate-spin" />}
+              icon={<CircleAlert size={22} />}
+              tone="danger"
+              eyebrow={t("setup.wizard.needsAttentionEyebrow", "向导已暂停")}
+              title={t("setup.wizard.stepFailedTitle", "官方向导未能继续")}
+              message={wizard.wizardError}
+            />
+          ) : waitingForOfficialStep ? (
+            <StatusPanel
+              icon={<LoaderCircle size={22} className="animate-spin motion-reduce:animate-none" />}
               tone="primary"
               eyebrow={t("setup.wizard.processing", "正在处理…")}
-              title={t("setup.wizard.waitingForAuthorization", "正在等待授权…")}
-              message={t(
-                "setup.wizard.authorizationPollingHint",
-                "OpenClaw 正在等待渠道插件返回授权结果。可以暂停并返回，稍后恢复同一官方会话。",
-              )}
+              title={authorizationStep
+                ? t("setup.wizard.waitingForAuthorization", "正在等待授权…")
+                : t("setup.wizard.waitingForNextStep", "正在等待下一个官方步骤")}
+              message={wizard.wizardActivity || (authorizationStep
+                ? t(
+                    "setup.wizard.authorizationPollingHint",
+                    "OpenClaw 正在等待渠道插件返回授权结果。可以暂停并返回，稍后恢复同一官方会话。",
+                  )
+                : t(
+                    "setup.wizard.waitingForNextStepDescription",
+                    "OpenClaw 正在处理当前步骤，JunQi 将等待下一个步骤或官方终态。",
+                  ))}
             />
           ) : (
-            <>
+            <div className="space-y-4">
               <WizardStepRenderer
                 step={presentedStep}
                 value={value}
@@ -260,7 +340,7 @@ export function WizardScreen({
                 key={presentedStep.id}
                 step={presentedStep}
               />
-            </>
+            </div>
           )}
         </div>
       </SetupShell>

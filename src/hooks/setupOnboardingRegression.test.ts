@@ -59,7 +59,7 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
   assert.match(detection, /await detectGatewayConfig\(\);\s*if \(cancelled\(\)\) return null/);
   assert.match(detection, /const openclaw = await checkOpenclaw\(\);\s*if \(cancelled\(\)\) return null/);
   assert.doesNotMatch(setupFlow, /window\.aegis\.config\.detect/);
-  assert.match(detection, /const next = await detectEnvironment\(runId\);[\s\S]*?!isRunActive\(runId\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
+  assert.match(detection, /settleInitialEnvironmentDetection\([\s\S]*?detectEnvironment\(runId\)[\s\S]*?checkDocker\(\)[\s\S]*?!isRunActive\(runId\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
 });
 
 test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway readiness', () => {
@@ -68,7 +68,7 @@ test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway r
     setupFlow.indexOf('const applyWizardResult = useCallback'),
   );
 
-  assert.match(completion, /await handoffGatewayToOfficialService\(\)/);
+  assert.match(completion, /await prepareWizardCompletionLifecycle\([\s\S]*?target\.runtime_mode,[\s\S]*?handoffGatewayToOfficialService/);
   assert.match(completion, /gatewayLifecycle\.reconnectAfterCurrent\(WIZARD_COMPLETION_RECONNECT_SOURCE\)/);
   assert.match(completion, /await probeSelectedGateway\(\)/);
   assert.ok(
@@ -234,18 +234,6 @@ test('BUG-ONB-49 wizard recovery avoids destructive status reads and lets author
   assert.match(wizardOperations, /setup\.wizard\.startingSession/);
 });
 
-test('BUG-WFR-03 wizard failures are visible first and change the primary action to Retry', () => {
-  const wizard = screen('WizardScreen');
-  const renderer = readFileSync(new URL('../pages/SetupPage/wizard/WizardStepRenderer.tsx', import.meta.url), 'utf8');
-  const errorPosition = wizard.indexOf('{wizard.wizardError && <div');
-  const firstStepControl = wizard.indexOf('<WizardStepRenderer');
-
-  assert.ok(errorPosition >= 0 && errorPosition < firstStepControl);
-  assert.match(renderer, /WIZARD_STEP_RENDERERS/);
-  assert.match(wizard, /label: wizard\.wizardError[\s\S]*?setup\.wizard\.retry/);
-  assert.match(wizard, /icon: wizard\.wizardError \? "none" : "next"/);
-});
-
 test('BUG-ONB-24 URL-only settings changes preserve endpoint-scoped credentials', () => {
   assert.doesNotMatch(settingsStore, /setItem\(['"]aegis-gateway-token/);
   assert.match(settingsStore, /localStorage\.setItem\('aegis-gateway-url', url\)/);
@@ -259,7 +247,7 @@ test('BUG-ONB-05 runtime selection is explicit and confirmed by one contextual a
   const mode = screen('ModeSelectScreen');
 
   assert.match(mode, /aria-pressed=\{selectedMode === "native"\}[\s\S]*?setSelectedMode\("native"\)/);
-  assert.match(mode, /disabled=\{!dockerAvailable\}[\s\S]*?aria-pressed=\{selectedMode === "docker"\}[\s\S]*?setSelectedMode\("docker"\)/);
+  assert.match(mode, /aria-pressed=\{selectedMode === "docker"\}[\s\S]*?setSelectedMode\("docker"\)/);
   assert.match(mode, /const dockerImageAvailable = flow\.dockerStatus\?\.image_available === true/);
   assert.match(mode, /const selectedModeReady = selectedMode === "native" \? nativeInstalled : dockerImageAvailable/);
   assert.match(mode, /setup\.useRuntimeAndContinue[\s\S]*?setup\.prepareRuntimeAndContinue/);
@@ -310,7 +298,7 @@ test('BUG-ONB-07 wizard body messages are not duplicated as subtitles', () => {
 });
 
 test('BUG-ONB-08 the product summary is not constrained to an awkward narrow line length', () => {
-  const welcome = screen('WelcomeScreen');
+  const welcome = screen('EnvironmentEntryScreen');
   assert.doesNotMatch(welcome, /max-w-\[42ch\]/);
   assert.match(welcome, /min-\[520px\]:whitespace-nowrap/);
 });
@@ -610,7 +598,6 @@ test('BUG-ONB-46 Gateway 执行的进度步骤只由官方会话轮询', () => {
 test('a superseded wizard submit releases its re-entry guard', () => {
   // 向导提交期间允许在错误状态下重试；接管操作必须同步释放旧提交的所有权，
   // 否则旧请求的 finally 不会清理守卫，后续向导操作会永久失去响应。
-  assert.match(setupPage, /disabled: wizard\.wizardSubmitting && !wizard\.wizardError/);
   assert.match(
     setupFlow,
     /const beginWizardOperation = useCallback\(\(\) => \{[\s\S]*?wizardSubmitInFlightRef\.current = false;[\s\S]*?return operationId;/,
@@ -660,7 +647,7 @@ test('wizard recovery actions are synchronous single-flight before React commits
 });
 
 test('environment review distinguishes Docker installation from daemon readiness', () => {
-  const review = screen('EnvironmentReviewScreen');
+  const review = screen('EnvironmentEntryScreen');
   const redetect = hookFile('useSetupEnvironmentReview');
 
   assert.match(review, /const dockerInstalled = flow\.dockerStatus\?\.available === true/);

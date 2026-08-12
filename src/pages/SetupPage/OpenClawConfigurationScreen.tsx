@@ -32,7 +32,7 @@ function ConfigurationVerificationScreen({ flow, logs }: { flow: VerificationFlo
   const checking = continuation.status === "checking";
   const checkpoint = checking
     ? {
-        icon: <LoaderCircle size={22} className="animate-spin" />,
+        icon: <LoaderCircle size={22} className="animate-spin motion-reduce:animate-none" />,
         tone: "primary" as const,
         title: t("setup.gatewayReadyCheckingTitle"),
         message: t("setup.gatewayReadyCheckingDescription"),
@@ -55,7 +55,6 @@ function ConfigurationVerificationScreen({ flow, logs }: { flow: VerificationFlo
     <SetupShell
       active={flow.presentation.stage}
       contentIdentity={`verification:${continuation.status}`}
-      eyebrow={t("setup.gatewayReadyTitle")}
       title={t("setup.wizard.title")}
       subtitle={t("setup.wizard.subtitle")}
       logs={logs}

@@ -50,6 +50,14 @@ const unavailableDockerStatus = (): DockerStatus => ({
   image_available: false,
 });
 
+export async function settleInitialEnvironmentDetection(
+  detectRuntime: () => Promise<PostStorageStep | null>,
+  detectDocker: () => Promise<DockerStatus>,
+): Promise<{ next: PostStorageStep | null; docker: DockerStatus }> {
+  const [next, docker] = await Promise.all([detectRuntime(), detectDocker()]);
+  return { next, docker };
+}
+
 export function useSetupEnvironmentReview({
   setupStep,
   dockerStatus,
@@ -77,6 +85,7 @@ export function useSetupEnvironmentReview({
   const environmentActionStateRef = useRef<EnvironmentReviewActionState>("idle");
   const [environmentActionState, setEnvironmentActionState] = useState<EnvironmentReviewActionState>("idle");
   const dockerDetectingRef = useRef(false);
+  const dockerStatusSettledRef = useRef(dockerStatus !== null);
 
   const updateEnvironmentAction = useCallback((
     event: Parameters<typeof transitionEnvironmentReviewAction>[1],
@@ -152,14 +161,27 @@ export function useSetupEnvironmentReview({
     if (setupStep !== "detecting") return;
     const runId = beginRun();
     void (async () => {
+      dockerDetectingRef.current = true;
+      setCheckingDocker(true);
       report(t("setup.detecting"), 0);
-      const next = await detectEnvironment(runId);
-      if (!next || !isRunActive(runId) || navigationLeavingRef.current) return;
-      setPostStorageStep(next);
-      report(t("setup.runtimeTitle"), 18);
-      navigateSetup("environment-review", "replace");
+      try {
+        const { next, docker } = await settleInitialEnvironmentDetection(
+          () => detectEnvironment(runId),
+          () => checkDocker().catch(unavailableDockerStatus),
+        );
+        if (!next || !isRunActive(runId) || navigationLeavingRef.current) return;
+        dockerStatusSettledRef.current = true;
+        setDockerStatus(docker);
+        setPostStorageStep(next);
+        setCheckingDocker(false);
+        report(t("setup.runtimeTitle"), 18);
+        navigateSetup("environment-review", "replace");
+      } finally {
+        dockerDetectingRef.current = false;
+        setCheckingDocker(false);
+      }
     })();
-  }, [beginRun, detectEnvironment, isRunActive, navigateSetup, navigationLeavingRef, report, setPostStorageStep, setupStep, t]);
+  }, [beginRun, detectEnvironment, isRunActive, navigateSetup, navigationLeavingRef, report, setCheckingDocker, setDockerStatus, setPostStorageStep, setupStep, t]);
 
   useLayoutEffect(() => {
     updateEnvironmentAction({ type: "step-entered" });
@@ -191,6 +213,7 @@ export function useSetupEnvironmentReview({
         checkDocker().catch(unavailableDockerStatus),
       ]);
       if (!next || !isRunActive(runId)) return;
+      dockerStatusSettledRef.current = true;
       setDockerStatus(docker);
       setPostStorageStep(next);
       report(t("setup.runtimeTitle"), 18);
@@ -202,13 +225,18 @@ export function useSetupEnvironmentReview({
   }, [beginRun, detectEnvironment, finishEnvironmentAction, isRunActive, navigationLeavingRef, report, setCheckingDocker, setDockerStatus, setPostStorageStep, setupStep, t, updateEnvironmentAction]);
 
   useEffect(() => {
-    if (setupStep === "welcome" || dockerStatus || dockerDetectingRef.current) return;
+    if (setupStep !== "environment-review"
+      || dockerStatusSettledRef.current
+      || dockerStatus
+      || dockerDetectingRef.current) return;
     void (async () => {
       dockerDetectingRef.current = true;
       setCheckingDocker(true);
       try {
+        dockerStatusSettledRef.current = true;
         setDockerStatus(await checkDocker());
       } catch {
+        dockerStatusSettledRef.current = true;
         setDockerStatus(unavailableDockerStatus());
       } finally {
         dockerDetectingRef.current = false;

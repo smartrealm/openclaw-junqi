@@ -30,7 +30,12 @@ import {
 } from "@/api/tauri-commands";
 import type { SetupLog } from "@/stores/app-store";
 import type { InstallTarget, SetupFlow, StepState } from "@/hooks/useSetupFlow";
-import { SetupStepScene, useSetupStepScrollKey } from "@/motion/setupStepTransition";
+import { SetupContentScene, SetupStepScene, useSetupStepScrollKey } from "@/motion/setupStepTransition";
+
+const useClientLayoutEffect = typeof document !== "undefined"
+  && typeof document.createElement === "function"
+  ? useLayoutEffect
+  : useEffect;
 
 const SETUP_STEPS = [
   { id: "environment", titleKey: "setup.steps.environment.title", titleFallback: "Environment", descriptionKey: "setup.steps.environment.description", descriptionFallback: "OpenClaw / Docker" },
@@ -211,7 +216,6 @@ function LogPanel({ logs }: { logs: SetupLog[] }) {
 export function SetupShell({
   active,
   activeComplete = false,
-  eyebrow,
   title,
   subtitle,
   children,
@@ -223,11 +227,10 @@ export function SetupShell({
   showLogToggle = true,
   logVisibility = "collapsed",
   contentIdentity,
-  contentSizing = "natural",
+  contentOverflow = "auto",
 }: {
   active: number;
   activeComplete?: boolean;
-  eyebrow?: string;
   title: string;
   subtitle: string;
   children: ReactNode;
@@ -239,20 +242,26 @@ export function SetupShell({
   showLogToggle?: boolean;
   logVisibility?: "collapsed" | "expanded";
   contentIdentity?: string;
-  contentSizing?: "natural" | "runtime";
+  contentOverflow?: "auto" | "visible";
 }) {
   const { t } = useTranslation();
   const [showLogs, setShowLogs] = useState(logVisibility === "expanded");
+  const contentViewportRef = useRef<HTMLDivElement>(null);
   const scrollKey = useSetupStepScrollKey(contentIdentity);
   const isRuntime = active >= 2 && active < 4;
   const showActions = previousAction || secondaryAction || nextAction;
-  const hasStableRuntimeViewport = contentSizing === "runtime";
+  const hasContentTransition = contentIdentity !== undefined;
   // 调用方要求默认展开时，即使首条运行日志尚未到达也保留日志区域，避免界面布局跳动。
   const shouldShowLogs = isRuntime && showLogToggle && (logs.length > 0 || logVisibility === "expanded");
 
   useEffect(() => {
     setShowLogs(logVisibility === "expanded");
   }, [logVisibility]);
+
+  useClientLayoutEffect(() => {
+    // 步骤变化时在首次绘制前复位滚动，不通过 React key 重建主体和异步状态组件。
+    if (contentViewportRef.current) contentViewportRef.current.scrollTop = 0;
+  }, [scrollKey]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-aegis-bg text-aegis-text" dir="ltr">
@@ -262,39 +271,48 @@ export function SetupShell({
       />
       <Stepper active={active} activeComplete={activeComplete} />
       <main
-        key={scrollKey ?? "setup"}
         data-setup-scroll-key={scrollKey ?? "setup"}
-        className="flex min-h-0 flex-1 flex-col items-center overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-6 sm:py-8"
+        className="flex min-h-0 flex-1 flex-col items-center overflow-x-hidden overflow-y-hidden px-3 py-4 sm:px-6 sm:py-6"
       >
-        <SetupStepScene className={hasStableRuntimeViewport ? "min-h-0 flex-1" : undefined}>
+        <SetupStepScene className="min-h-0 flex-1">
           <section className={clsx(
-            "w-full",
+            "flex h-full min-h-0 w-full flex-col",
             wide ? "max-w-5xl" : "max-w-3xl",
-            // 运行时探测会持续更新日志与状态文案。内容区只占用窗口扣除步骤条和底栏后的剩余空间，
-            // 让更新在卡片内部收敛，避免反复推动外层布局或在窄窗口中触发页面滚动。
-            hasStableRuntimeViewport && "flex h-full min-h-0 flex-col",
           )}>
-            <div className="mb-4 text-center sm:mb-6">
-              {eyebrow && <div className="mb-2 text-xs font-semibold text-aegis-primary" dir="auto">{eyebrow}</div>}
-              <h1 className="text-2xl font-semibold tracking-normal text-aegis-text sm:text-[30px]" dir="auto">{title}</h1>
-              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
+            <div className="mb-4 flex h-[96px] shrink-0 flex-col items-center text-center sm:mb-5">
+              <h1 className="line-clamp-1 text-2xl font-semibold tracking-normal text-aegis-text sm:text-[30px]" dir="auto">{title}</h1>
+              <p className="mx-auto mt-2 line-clamp-2 min-h-12 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
             </div>
             <div
-              data-setup-content-sizing={contentSizing}
+              data-setup-content-layout="stable"
               className={clsx(
                 wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6",
-                hasStableRuntimeViewport && "flex min-h-0 flex-1 flex-col overflow-hidden",
+                "flex min-h-0 flex-1 flex-col overflow-hidden",
               )}
             >
-              <div className={hasStableRuntimeViewport ? "min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]" : undefined}>
-                {children}
+              <div
+                ref={contentViewportRef}
+                data-setup-content-viewport="stable"
+                data-setup-content-overflow={contentOverflow}
+                className={clsx(
+                  "min-h-0 flex-1 overscroll-contain",
+                  contentOverflow === "auto"
+                    ? "overflow-y-auto pr-1 [scrollbar-gutter:stable]"
+                    : "overflow-y-visible",
+                )}
+              >
+                {hasContentTransition ? (
+                  <SetupContentScene identity={scrollKey ?? "wizard"}>
+                    {children}
+                  </SetupContentScene>
+                ) : children}
               </div>
               {shouldShowLogs && (
-                <div className="mt-5 border-t border-aegis-border pt-4">
+                <div className="mt-4 max-h-[48%] shrink-0 overflow-y-auto border-t border-aegis-border pt-4">
                   <button
                     type="button"
                     onClick={() => setShowLogs((v) => !v)}
-                    className="inline-flex items-center gap-2 rounded-lg border border-aegis-border px-3 py-2 text-xs font-medium text-aegis-text-secondary transition-[background-color,border-color,color,transform] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-surface active:scale-[0.98]"
+                    className="inline-flex items-center gap-2 rounded-lg border border-aegis-border px-3 py-2 text-xs font-medium text-aegis-text-secondary transition-[background-color,border-color,color,transform] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-surface active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45"
                   >
                     {showLogs ? <EyeOff size={14} /> : <Eye size={14} />}
                     {showLogs ? t("setup.hideLogs") : t("setup.viewLogs")}
@@ -315,7 +333,7 @@ export function SetupShell({
                 type="button"
                 onClick={previousAction.onClick}
                 disabled={previousAction.disabled}
-                className="inline-flex min-w-[112px] items-center justify-center gap-1.5 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[15px] font-bold text-aegis-text transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] shadow-sm hover:bg-aegis-surface active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex min-w-[112px] items-center justify-center gap-1.5 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[15px] font-bold text-aegis-text transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] shadow-sm hover:bg-aegis-surface active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45 disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <ChevronLeft size={15} />
                 {previousAction.label ?? t("setup.previousStep")}
@@ -328,9 +346,9 @@ export function SetupShell({
                   type="button"
                   onClick={secondaryAction.onClick}
                   disabled={secondaryAction.disabled || secondaryAction.loading}
-                  className="inline-flex min-w-[112px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[14px] font-bold text-aegis-text-secondary transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-surface active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+                  className="inline-flex min-w-[112px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-border bg-aegis-elevated px-4 py-2.5 text-[14px] font-bold text-aegis-text-secondary transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-surface active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
                 >
-                  {secondaryAction.loading && <RefreshCw size={14} className="animate-spin" />}
+                  {secondaryAction.loading && <RefreshCw size={14} className="animate-spin motion-reduce:animate-none" />}
                   {secondaryAction.label}
                 </button>
               )}
@@ -340,9 +358,9 @@ export function SetupShell({
                 type="button"
                 onClick={nextAction.onClick}
                 disabled={nextAction.disabled || nextAction.loading}
-                className="inline-flex w-full min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-primary bg-aegis-primary px-4 py-2.5 text-[15px] font-bold text-[var(--aegis-btn-primary-text)] transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] shadow-sm hover:bg-aegis-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
+                className="inline-flex w-full min-w-[122px] items-center justify-center gap-2 rounded-lg border-2 border-aegis-primary bg-aegis-primary px-4 py-2.5 text-[15px] font-bold text-[var(--aegis-btn-primary-text)] transition-[background-color,border-color,color,transform,opacity] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] shadow-sm hover:bg-aegis-primary-hover active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/55 disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"
               >
-                {nextAction.loading && <RefreshCw size={15} className="animate-spin" />}
+                {nextAction.loading && <RefreshCw size={15} className="animate-spin motion-reduce:animate-none" />}
                 {nextAction.label}
                 {!nextAction.loading && nextAction.icon !== "none" && <ChevronRight size={15} />}
               </button>
@@ -667,7 +685,7 @@ function stepStatusText(status: StepState["status"], t: ReturnType<typeof useTra
 function stepStatusIcon(status: StepState["status"]) {
   if (status === "done") return <CheckCircle2 size={16} strokeWidth={2.4} />;
   if (status === "skipped") return <Minus size={15} strokeWidth={2.4} />;
-  if (status === "running") return <RefreshCw size={15} className="animate-spin" />;
+  if (status === "running") return <RefreshCw size={15} className="animate-spin motion-reduce:animate-none" />;
   if (status === "error") return <X size={15} strokeWidth={2.5} />;
   return <Circle size={14} />;
 }

@@ -14,8 +14,8 @@ export function GitMissingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupL
   return (
     <SetupShell
       active={flow.presentation.stage}
-      title={t("setup.gitRequired")}
-      subtitle={description}
+      title={t("setup.steps.runtime.title")}
+      subtitle={t("setup.steps.runtime.description")}
       logs={logs}
       previousAction={{ onClick: () => flow.goBack() }}
       nextAction={{ label: t("setup.gitRetry"), onClick: () => flow.retryGit(), icon: "none" }}

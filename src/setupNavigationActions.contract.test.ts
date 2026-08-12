@@ -7,7 +7,7 @@ const setupFlow = read("./hooks/useSetupFlow/index.ts");
 const wizardSession = read("./hooks/useSetupFlow/useWizardSession.ts");
 const environmentReview = read("./hooks/useSetupFlow/useSetupEnvironmentReview.ts");
 const pluginRecovery = read("./hooks/useSetupFlow/usePluginRecovery.ts");
-const welcome = read("./pages/SetupPage/WelcomeScreen.tsx");
+const welcome = read("./pages/SetupPage/EnvironmentEntryScreen.tsx");
 const mode = read("./pages/SetupPage/ModeSelectScreen.tsx");
 const storageGate = read("./components/setup/StorageSetupGate.tsx");
 
@@ -29,7 +29,7 @@ test("storage Back, configure, and advance actions exclude one another synchrono
 test("environment detection Back invalidates the probe before it can auto-advance", () => {
   assert.match(environmentReview, /if \(setupStep !== "detecting"\) return;[\s\S]*?const runId = beginRun\(\)/);
   assert.match(environmentReview, /const cancelled = \(\) => !isRunActive\(runId\) \|\| navigationLeavingRef\.current/);
-  assert.match(environmentReview, /const next = await detectEnvironment\(runId\);[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
+  assert.match(environmentReview, /settleInitialEnvironmentDetection\([\s\S]*?detectEnvironment\(runId\)[\s\S]*?checkDocker\(\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
   assert.match(environmentReview, /const continueAfterEnvironmentReview[\s\S]*?navigateSetup\("storage", "push"\)/);
   assert.doesNotMatch(environmentReview, /navigateSetup\("detecting", "replace"\)/);
   assert.match(setupFlow, /const performGoBack[\s\S]*?invalidateActiveRun\(\);[\s\S]*?const backPolicy = setupBackPolicy\(setupStep\);[\s\S]*?if \(backPolicy === "cancel-run"\)[\s\S]*?goBackSetup\("welcome"\)[\s\S]*?return;/);

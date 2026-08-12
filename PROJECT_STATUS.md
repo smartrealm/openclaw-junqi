@@ -8,6 +8,11 @@
 
 渠道绑定加固已落地：首次配置继续使用完整官方 setup Wizard，渠道中心的新增与重新配置使用隔离的官方 `wizard.start { flow: "channels", channel }`。二维码只在官方终态返回真实账号且目标渠道是唯一 Web Login provider 时出现；旧 Runtime 明确拒绝新 flow 时只提供官方终端交接。下一阶段是在新版 OpenClaw Runtime 和真实钉钉账号上复验完整扫码与重绑流程。
 
+首次设置页面已按完整 JunQi 链路统一，而非只处理官方 Wizard：欢迎、环境检测、数据位置、运行方式、依赖安装、Gateway 启动、OpenClaw 配置和完成页共用固定标题区、内部滚动主体与固定操作区。安装与 Wizard 继续使用各自真实状态机；页面只统一几何边界、状态反馈、键盘焦点和 140 至 180 毫秒的轻量过渡，不增加假步骤、假进度或伪完成。
+
+环境检测的数据闪动已按真实异步链路修复：检测态与结果态复用同一个页面组件、视觉场景和三项能力卡
+骨架，OpenClaw、Gateway 与 Docker 全部收敛后一次性发布结果；稳定滚动容器不再通过步骤 key 重建。
+
 ## 已完成内容
 
 - `v3.1.0` 已从提交 `e17676dd5cf2b58207f5f720fdb3412d639a99f3` 发布，远端 CI 与三平台 Release 均成功。
@@ -34,6 +39,16 @@
 - 渠道 capability 现保留全部账号行并支持精确选择；同渠道插件 schema 或 Gateway 方法冲突时失败关闭。就绪投影会优先处理 running、connected、lastError 和 probe 的显式失败，证据不足保持 unknown。
 - 官方渠道表单会读取 `config.schema` 的 uiHints；联合 primitive 使用普通输入，敏感字段使用密码输入，SecretRef 仍保留结构化输入。无效或未应用的 JSON 草稿会阻止外层保存。
 - 授权交互显示渠道和账号身份，终端字符输出默认折叠，复制与浏览器打开失败内联呈现；外部地址只允许 HTTP 或 HTTPS 协议。
+- 全部首次设置页面默认使用稳定窗口自适应主体，`contentIdentity` 只重置内部滚动并触发内容级过渡，不再作为 `main` 的 React key 重建整页；系统减少动态效果时立即完成。
+- 存储读取、恢复、应用和就绪状态已统一到共享状态面板。应用期间旧表单退出交互，真实迁移事件驱动进度；已就绪状态提供继续与显式更改位置。
+- Git、Node.js 与 Gateway 前置页面使用运行时阶段标题，具体活动或错误只在主体出现一次；运行方式提交期间所有选项和重新检测操作均被同一单飞门禁锁定。
+- 官方 Wizard 的标题与 message 去重，短提示、长列表和二维码在同一稳定内容区内切换；任意提交都会先替换旧交互为真实等待面板，`Done` note 仍等待后续 `done: true` 官方终态。
+- 错误状态会替换旧 Wizard 控件和二维码；现有 session、runtime、reclaim 与 terminal-unknown 恢复围栏保持不变。
+- 共享底部操作、日志开关、欢迎页语言主题按钮和运行方式选项已补充明确的键盘焦点反馈。
+- 环境检测阶段只显示固定状态面板和三项能力卡 loading，不再逐项暴露中间数据。首次检测等待
+  OpenClaw、Gateway 与 Docker 全部返回后再进入复核；Docker 探测失败仍投影真实不可用结果。
+- `detecting` 与 `environment-review` 现在共享同一视觉场景和组件实例；主体滚动通过稳定引用在绘制前
+  复位，不再以 React key 重建滚动容器及其异步子树。
 
 ## 关键技术决策
 
@@ -63,6 +78,12 @@
 - `src/hooks/useSetupFlow/useWizardSession.ts`
 - `src/services/setup/setupCompletionGate.ts`
 - `src/pages/SetupPage/WizardScreen.tsx`
+- `src/components/setup/SetupFlowPanels.tsx`
+- `src/components/setup/StorageSetupGate.tsx`
+- `src/motion/setupStepTransition.tsx`
+- `docs/quality/junqi-first-run-presentation-audit-2026-08-12.md`
+- `specs/2026-08-12-junqi-first-run-presentation-stability.md`
+- `plans/2026-08-12-junqi-first-run-presentation-stability.md`
 - `docs/quality/openclaw-wizard-terminal-handoff-audit-2026-08-11.md`
 - `specs/2026-08-12-openclaw-wizard-terminal-unknown-hardening.md`
 - `plans/2026-08-12-openclaw-wizard-terminal-unknown-hardening.md`
@@ -88,8 +109,22 @@
 - 本轮 `npm run lint` 通过，模块边界检查覆盖 895 个文件，版本一致性和 TypeScript 检查通过。项目锁定的 pnpm 启动器因 npm registry 签名校验失败而拒绝运行，因此本轮改用等价 npm 脚本和直接 Node 测试入口。
 - 全量 `npm test` 中 238 项脚本测试有 237 项直接通过，唯一失败是沙箱禁止在 `127.0.0.1` 监听；该测试在允许本地临时监听后 5 个子项全部通过。使用任务专用 npm 缓存后，协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建通过。
 - 本次终态未知加固先以失败回归测试复现，修复后 Wizard、终态门禁、页面操作、二次确认和业务引导定向测试 78 项通过；`npm run lint`、使用任务专用 npm 缓存的 `npm run build` 均通过。全量脚本测试仍为 237 项直接通过，唯一受沙箱监听限制的测试在允许本地临时监听后 5 个子项全部通过。
-- 已从提交 `45ac471b9d16` 重新生成 macOS ARM64 安装包。镜像通过 `hdiutil verify`，SHA-256 为 `79115d1e2463fb416c1fdffe04dd4f6e006223477e5a739d45a7b2131f03ddc7`，大小为 8,312,030 字节；镜像内应用版本为 3.1.0，Bundle ID 为 `com.junqi.junqidesktop`，可执行文件为 ARM64。
+- 已从提交 `585876e6e299` 重新生成 macOS ARM64 安装包。镜像通过 `hdiutil verify`，SHA-256 为 `6f69dff41222ab8c41a050d880e9f5e1bd28050334d7dca4f38db7a467a56837`，大小为 8,316,405 字节；镜像内应用版本为 3.1.0，Bundle ID 为 `com.junqi.junqidesktop`，可执行文件为 ARM64。
 - 本次渠道绑定加固定向测试 58 项通过；`npm run lint`、完整 `npm test` 和使用任务专用 npm 缓存的 `npm run build` 通过。应用内浏览器因无法访问主机回环地址，未完成亮色、暗色和窄窗口真实视觉检查；未将该项描述为通过。
+- 本次首次设置页面定向回归 34 项通过，覆盖稳定主体、内部滚动、内容过渡、存储加载、运行方式单飞、正文去重、通用提交等待、`Done` 终态等待、错误替换与恢复操作。
+- `npm run lint` 通过，模块边界检查覆盖 895 个文件，版本一致性与 TypeScript 检查通过。
+- 完整 `npm test` 的前端链路通过；脚本测试 238 项中 237 项在沙箱内直接通过，唯一回环监听测试在受控权限下 5 个子项全部通过。
+- 使用任务专用 npm 缓存的 `npm run build` 通过，协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建完成。
+- 浏览器辅助验收覆盖 1497×820、720×680、亮色、暗色和键盘焦点。欢迎、环境复核、存储错误态在 GIF 尺寸下的标题、主体和底部操作区坐标一致；窄窗口只滚动主体，主要操作保持可见。
+- macOS Tauri 开发版已真实启动并进入环境复核页，Native 可用、Docker 运行中，稳定骨架正常。当前宿主没有 macOS 辅助功能权限，因此未自动点击后续桌面步骤。
+- 环境检测闪动修复先由三项失败回归复现，修复后环境状态、场景身份和稳定主体定向测试共 17 项通过；
+  `npm run lint` 通过，模块边界检查覆盖 894 个文件，版本一致性与 TypeScript 检查通过。
+- 修正旧导航契约测试后，完整 `npm test` 通过：前端 2676 项、脚本 238 项均无失败；`npm run build`
+  通过，协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建完成。
+- macOS Tauri 开发版已通过当前进程可用的 CoreGraphics 事件从欢迎页进入环境检测，并以约 40 毫秒
+  间隔连续抓取 160 帧。检测骨架到复核结果之间未出现空白帧、主体横移或 Docker 晚到后的二次布局变化。
+- 桌面回退复验发现常驻欢迎组件保留了前进单飞锁；已将锁复位绑定到欢迎阶段重新进入，并增加
+  “下一步、上一步、再下一步”状态转换回归，避免第二次前进无响应。
 
 ## 已知问题
 
@@ -99,15 +134,17 @@
 - 本地 DMG 仅使用 ad-hoc 签名，未进行 Apple Developer ID 签名和公证，不是正式发布制品；Windows 与 Linux 本次未构建。
 - Windows Scheduled Task 与 Linux systemd user service 的过期恢复快照场景尚未完成目标平台真机验证。
 - Wizard 二维码和授权推进生命周期已通过静态渲染回归测试，尚未完成钉钉真实扫码后的整套步骤切换真机复验。
-- 当前 macOS 安装包基于提交 `45ac471b9d16`，包含已被本次审计否定的旧终态恢复逻辑，不包含“终态未知”和伪 RPC 删除加固；不得用于宣称原 GIF 问题已修复。
+- 当前 macOS 安装包已包含“终态未知”、伪 RPC 删除和渠道绑定加固，但钉钉真实扫码后的授权轮询、终态交接和 Dashboard 进入仍待真机复验。
 - 当前安装的 OpenClaw `2026.7.1-2` 未包含上游主线的 Wizard 请求期 Gateway 工作保留修复；其余正式发布版本是否已包含该修复尚未核验。
 - 当前安装的 OpenClaw `2026.7.1-2` 会结构化拒绝 `flow: "channels"`，因此本机只能验证旧 Runtime 终端交接，不能验证新版桌面 Channels Wizard 的真实运行。
 - 真实钉钉、WhatsApp 及其他 Web Login provider 的扫码、二维码轮换、授权过期和消息收发闭环仍待真机验收。
 - 渠道 Wizard、账号表单和二维码对话框的暗色主题、窄窗口、键盘焦点以及 Windows、Linux 外部浏览器与剪贴板权限仍待目标平台视觉和交互验收。
+- macOS 桌面开发版的完整后续点击路径仍待辅助功能权限；系统减少动态效果、Windows 与 Linux 首次设置全链路仍待目标平台真机验收。
 
 ## 下一步顺序
 
 1. 在包含最新 Channels Wizard 的 OpenClaw Runtime 上验证渠道新增、重新配置、关闭后恢复和终态账号返回。
 2. 使用真实钉钉账号完成插件扫码、授权轮询、连接探测和消息收发闭环，并复验 WhatsApp 唯一 Web Login provider 围栏。
-3. 完成亮色、暗色、窄窗口、键盘焦点以及 Windows、Linux 外部浏览器和剪贴板权限验证。
-4. 经用户确认后决定是否基于当前工作树重新构建 macOS ARM64 安装包；未经明确要求不提交、推送或发布。
+3. 为当前 Codex 或 ChatGPT 宿主授予 macOS 辅助功能权限后，自动点击并录制 JunQi Desktop 的存储、安装、Gateway、官方 Wizard 与完成页全链路。
+4. 完成系统减少动态效果以及 Windows、Linux 首次设置、外部浏览器和剪贴板权限验证。
+5. 经用户确认后决定是否基于当前工作树重新构建 macOS ARM64 安装包；未经明确要求不提交、推送或发布。

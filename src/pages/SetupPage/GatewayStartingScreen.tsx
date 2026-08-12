@@ -13,8 +13,8 @@ export function GatewayStartingScreen({ flow, logs }: { flow: SetupFlow; logs: S
   return (
     <SetupShell
       active={flow.presentation.stage}
-      title={t('setup.startingGateway')}
-      subtitle={t('setup.gatewayStartingHint')}
+      title={t('setup.steps.runtime.title')}
+      subtitle={t('setup.steps.runtime.description')}
       logs={logs}
       previousAction={{
         label: t('setup.cancelInstall'),
@@ -24,7 +24,7 @@ export function GatewayStartingScreen({ flow, logs }: { flow: SetupFlow; logs: S
     >
       <div className="grid gap-4">
         <StatusPanel
-          icon={<LoaderCircle size={22} className="animate-spin" />}
+          icon={<LoaderCircle size={22} className="animate-spin motion-reduce:animate-none" />}
           eyebrow={t('setup.steps.runtime.title')}
           title={t('setup.startingGateway')}
           message={flow.statusMessage || t('setup.gatewayStartingHint')}

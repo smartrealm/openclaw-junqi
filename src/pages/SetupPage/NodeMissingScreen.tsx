@@ -12,8 +12,8 @@ export function NodeMissingScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
   return (
     <SetupShell
       active={flow.presentation.stage}
-      title={t("setup.nodeRequired")}
-      subtitle={message}
+      title={t("setup.steps.runtime.title")}
+      subtitle={t("setup.steps.runtime.description")}
       logs={logs}
       previousAction={{ onClick: () => flow.goBack() }}
       nextAction={{ label: t("setup.nodeRetry"), onClick: () => flow.retryNode(), icon: "none" }}
@@ -22,7 +22,7 @@ export function NodeMissingScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
         <StatusPanel
           icon={<Package size={22} />}
           tone="danger"
-        eyebrow={t("setup.steps.runtime.title")}
+          eyebrow={t("setup.steps.runtime.title")}
           title={t("setup.nodeRequired")}
           message={message}
         />

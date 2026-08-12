@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { setupStepEntryState, setupStepMotionDirection, setupStepMotionMode, setupStepScene, setupStepScrollKey } from './setupStepTransition';
+import { setupContentEntryState, setupStepEntryState, setupStepMotionDirection, setupStepMotionMode, setupStepScene, setupStepScrollKey } from './setupStepTransition';
 
 test('setup step transition moves forward from left to right and back from right to left', () => {
   assert.equal(setupStepMotionDirection('welcome', 'environment-review'), -1);
@@ -17,6 +17,16 @@ test('setup step transition keeps the initial scene stationary', () => {
 test('Gateway 配置核验与官方向导共享一个视觉场景', () => {
   assert.equal(setupStepScene('gateway-ready'), 'configure-openclaw');
   assert.equal(setupStepScene('configure-openclaw'), 'configure-openclaw');
+});
+
+test('欢迎、环境探测与结果复核共享一个常驻视觉场景', () => {
+  assert.equal(setupStepScene('welcome'), 'environment-review');
+  assert.equal(setupStepScene('detecting'), 'environment-review');
+  assert.equal(setupStepScene('environment-review'), 'environment-review');
+});
+
+test('共享视觉场景的环境探测与结果复核仍使用独立滚动位置', () => {
+  assert.notEqual(setupStepScrollKey('detecting'), setupStepScrollKey('environment-review'));
 });
 
 test('共享视觉场景的配置核验与官方向导仍使用独立滚动位置', () => {
@@ -47,4 +57,9 @@ test('运行时状态不位移动画，避免探测进度交接时闪动', () =>
   assert.equal(setupStepMotionMode('gateway-ready'), 'ambient');
   assert.equal(setupStepMotionMode('failure'), 'ambient');
   assert.deepEqual(setupStepEntryState(1, false, 'ambient'), { opacity: 1, x: 0, y: 0 });
+});
+
+test('同一向导场景只使用轻量内容过渡且尊重减少动态效果', () => {
+  assert.deepEqual(setupContentEntryState(false), { opacity: 0.96, y: 4 });
+  assert.deepEqual(setupContentEntryState(true), { opacity: 1, y: 0 });
 });

@@ -31,7 +31,10 @@ import {
 import { cacheGatewayTarget } from "./helpers";
 import type { StepStatus, WizardRecoveryMode } from "./types";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
-import { reconcileWizardSessionLoss } from "@/services/setup/setupCompletionGate";
+import {
+  prepareWizardCompletionLifecycle,
+  reconcileWizardSessionLoss,
+} from "@/services/setup/setupCompletionGate";
 import { getGatewayDeviceCredentialForUrl } from "@/services/gateway/credentialProvider";
 
 const WIZARD_COMPLETION_RECONNECT_SOURCE = "wizard-completion";
@@ -255,11 +258,21 @@ export function useWizardSession({
     setWizardRecoveryMode("runtime");
     try {
       if (!wizardHandoffCompletedRef.current) {
-        // 交接成功事实独立于渲染操作是否仍有效；先记录结果，再阻止过期操作提交界面。
-        const handedOff = await handoffGatewayToOfficialService();
-        if (handedOff) wizardHandoffCompletedRef.current = true;
+        const target = await detectGatewayConfig();
+        wizardSessionScopeRef.current = {
+          runtimeMode: target.runtime_mode,
+          gatewayWsUrl: target.ws_url,
+        };
+        const lifecycle = await prepareWizardCompletionLifecycle(
+          target.runtime_mode,
+          handoffGatewayToOfficialService,
+        );
+        // Native 交接成功事实独立于渲染操作是否仍有效；Docker 保留现有容器所有权。
+        if (lifecycle.ready && lifecycle.owner === "official-native-service") {
+          wizardHandoffCompletedRef.current = true;
+        }
         assertWizardOperationCurrent(operationId);
-        if (!handedOff) {
+        if (!lifecycle.ready) {
           throw new Error(t(
             "setup.wizard.handoffNotReady",
             "OpenClaw 配置已完成，但切换运行方式后无法验证所选 Gateway。请修复并重试。",

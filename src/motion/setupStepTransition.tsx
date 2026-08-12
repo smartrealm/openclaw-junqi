@@ -50,8 +50,11 @@ export function setupStepMotionDirection(
 }
 
 export function setupStepScene(step: SetupStep): SetupStep {
-  // Gateway 就绪检查与官方配置向导属于同一用户可见阶段，状态交接时只替换内容。
-  return step === 'gateway-ready' ? 'configure-openclaw' : step;
+  // 同一用户可见阶段内的运行状态只替换内容，不能重新挂载整块页面。
+  if (step === 'welcome') return 'environment-review';
+  if (step === 'detecting') return 'environment-review';
+  if (step === 'gateway-ready') return 'configure-openclaw';
+  return step;
 }
 
 export function setupStepScrollKey(step: SetupStep, contentIdentity = 'screen'): string {
@@ -81,6 +84,15 @@ export function setupStepEntryState(
     x: direction * 12,
     y: 0,
   };
+}
+
+export function setupContentEntryState(
+  reducedMotion: boolean,
+): { opacity: number; y: number } {
+  // 同一官方向导场景内只做轻量内容过渡，外层标题、滚动容器和操作区保持原位。
+  return reducedMotion
+    ? { opacity: 1, y: 0 }
+    : { opacity: 0.96, y: 4 };
 }
 
 export function SetupStepTransition({
@@ -137,6 +149,46 @@ export function SetupStepScene({ children, className }: { children: ReactNode; c
       }}
       className={sceneClassName}
       data-setup-scene-motion={mode}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+export function SetupContentScene({
+  identity,
+  children,
+  className,
+}: {
+  identity: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  const context = useContext(SetupStepTransitionContext);
+  const reducedMotion = context?.reducedMotion ?? true;
+  const contentClassName = ['min-h-full w-full', className]
+    .filter(Boolean)
+    .join(' ');
+
+  if (!context) {
+    return (
+      <div className={contentClassName} data-setup-content-motion={identity}>
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <motion.div
+      key={identity}
+      initial={setupContentEntryState(reducedMotion)}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{
+        duration: reducedMotion ? 0 : 0.14,
+        ease: [0.22, 1, 0.36, 1],
+      }}
+      className={contentClassName}
+      data-setup-content-motion={identity}
     >
       {children}
     </motion.div>

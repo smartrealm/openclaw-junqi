@@ -44,9 +44,9 @@ export function LanguageThemeControls() {
   ];
 
   return (
-    <div className="space-y-6" dir="ltr">
+    <div className="space-y-4" dir="ltr">
       <section>
-        <div className="mb-3 flex items-end justify-between gap-3">
+        <div className="mb-2 flex items-end justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold text-aegis-text">
               <Globe2 size={16} />
@@ -62,7 +62,7 @@ export function LanguageThemeControls() {
               type="button"
               onClick={() => setLang(item.value)}
               className={clsx(
-                "relative flex min-h-[58px] flex-col items-start justify-center rounded-lg border px-3 py-2 text-left transition-colors",
+                "relative flex min-h-[52px] flex-col items-start justify-center rounded-lg border px-3 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45",
                 language === item.value
                   ? "border-aegis-primary bg-aegis-primary/10 text-aegis-primary"
                   : "border-aegis-border text-aegis-text-secondary hover:bg-aegis-surface",
@@ -76,7 +76,7 @@ export function LanguageThemeControls() {
         </div>
       </section>
       <section>
-        <div className="mb-3 flex items-end justify-between gap-3">
+        <div className="mb-2 flex items-end justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold text-aegis-text">
               <Palette size={16} />
@@ -92,14 +92,14 @@ export function LanguageThemeControls() {
               type="button"
               onClick={(event) => setThemeWithTransition(item.value, event.currentTarget)}
               className={clsx(
-                "group relative min-h-[92px] rounded-lg border p-2 text-left transition-colors",
+                "group relative min-h-[78px] rounded-lg border p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45",
                 theme === item.value
                   ? "border-aegis-primary bg-aegis-primary/10 text-aegis-primary"
                   : "border-aegis-border text-aegis-text-secondary hover:bg-aegis-surface",
               )}
             >
-              <span className="block h-9 rounded-md border border-white/10" style={{ background: item.preview }} />
-              <span className="mt-2 flex items-center gap-1.5 text-xs font-semibold" dir="auto">
+              <span className="block h-7 rounded-md border border-white/10" style={{ background: item.preview }} />
+              <span className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold" dir="auto">
                 {item.icon}
                 {item.label}
               </span>
@@ -115,4 +115,3 @@ export function LanguageThemeControls() {
     </div>
   );
 }
-

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Check, ChevronDown, Cpu, Database, FolderOpen, GitBranch, HardDrive, LoaderCircle, Package, Terminal } from 'lucide-react';
+import { Check, CheckCircle2, ChevronDown, CircleAlert, Cpu, Database, FolderOpen, GitBranch, HardDrive, LoaderCircle, Package, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { SetupShell } from '@/components/setup/SetupFlowPanels';
+import { SetupShell, StatusPanel } from '@/components/setup/SetupFlowPanels';
 import { initialStorageCompletion, type StorageCompletion } from '@/components/setup/storageSetupModel';
 import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
 import { useAppStore, type SetupLog, type StorageSetupDraft } from '@/stores/app-store';
@@ -434,14 +434,19 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
     return (
       <SetupShell
         active={activeStage}
+        contentIdentity="storage:loading"
         title={t('storage.title', '选择 OpenClaw 数据位置')}
         subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
         logs={logs}
         previousAction={{ onClick: handleBack }}
         nextAction={{ label: t('storage.loading', '正在读取存储信息…'), disabled: true, loading: true, icon: 'none' }}
       >
-        <div className="flex min-h-[220px] items-center justify-center">
-          <LoaderCircle className="animate-spin text-aegis-primary" size={26} />
+        <div className="flex min-h-[260px] items-center" aria-busy="true" aria-live="polite">
+          <StatusPanel
+            icon={<LoaderCircle className="animate-spin motion-reduce:animate-none" size={22} />}
+            title={t('storage.loading', '正在读取存储信息…')}
+            message={t('storage.loadingHint', '正在读取当前 OpenClaw 数据、工作区和运行时位置。')}
+          />
         </div>
       </SetupShell>
     );
@@ -451,16 +456,21 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
     return (
       <SetupShell
         active={activeStage}
-        title={t('storage.loadFailed', '无法读取存储配置')}
+        contentIdentity="storage:load-error"
+        title={t('storage.title', '选择 OpenClaw 数据位置')}
         subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
         logs={logs}
         previousAction={{ onClick: handleBack }}
         nextAction={{ label: t('common.retry', '重试'), onClick: () => void loadStorageStatus(), icon: 'none' }}
       >
-        <section className="border-y border-aegis-border py-7">
-          <h1 className="text-lg font-semibold">{t('storage.loadFailed', '无法读取存储配置')}</h1>
-          <p className="mt-3 break-all border-l-2 border-aegis-danger pl-3 text-sm text-aegis-danger">{error}</p>
-        </section>
+        <div className="flex min-h-[260px] items-center">
+          <StatusPanel
+            icon={<CircleAlert size={22} />}
+            tone="danger"
+            title={t('storage.loadFailed', '无法读取存储配置')}
+            message={error || t('storage.unknownError', '发生未知的存储错误')}
+          />
+        </div>
       </SetupShell>
     );
   }
@@ -469,7 +479,8 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
     return (
       <SetupShell
         active={activeStage}
-        title={t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')}
+        contentIdentity="storage:runtime-recovery"
+        title={t('storage.title', '选择 OpenClaw 数据位置')}
         subtitle={t('storage.runtimeRecoverySubtitle', 'OpenClaw 的先前运行时和 Gateway 服务需要先恢复，完成后才能继续更改数据位置。')}
         logs={logs}
         previousAction={{ onClick: handleBack, disabled: recoveringRuntime }}
@@ -483,12 +494,90 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
           icon: 'none',
         }}
       >
-        <section className="border-y border-aegis-border py-7">
-          <h1 className="text-lg font-semibold">{t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')}</h1>
-          <p className="mt-3 break-all border-l-2 border-aegis-danger pl-3 text-sm text-aegis-danger">
-            {error ?? status.runtimeReconfigurationRecoveryError}
-          </p>
-        </section>
+        <div className="flex min-h-[260px] items-center" aria-busy={recoveringRuntime} aria-live="polite">
+          <StatusPanel
+            icon={recoveringRuntime
+              ? <LoaderCircle size={22} className="animate-spin motion-reduce:animate-none" />
+              : <CircleAlert size={22} />}
+            tone={recoveringRuntime ? "warning" : "danger"}
+            title={t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')}
+            message={error ?? status.runtimeReconfigurationRecoveryError}
+          />
+        </div>
+      </SetupShell>
+    );
+  }
+
+  if (applying) {
+    const progressValue = Math.max(0, Math.min(1, progress?.progress ?? 0));
+    const progressPercent = Math.round(progressValue * 100);
+    return (
+      <SetupShell
+        active={activeStage}
+        contentIdentity="storage:applying"
+        title={t('storage.title', '选择 OpenClaw 数据位置')}
+        subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
+        logs={logs}
+        previousAction={{ onClick: handleBack, disabled: true }}
+        nextAction={{
+          label: progress?.message || t('storage.preparing', '正在准备新存储位置…'),
+          disabled: true,
+          loading: true,
+          icon: 'none',
+        }}
+      >
+        <div className="flex min-h-[260px] items-center" aria-busy="true" aria-live="polite">
+          <StatusPanel
+            icon={<LoaderCircle size={22} className="animate-spin motion-reduce:animate-none" />}
+            title={progress?.message || t('storage.preparing', '正在准备新存储位置…')}
+            message={t('storage.applyingHint', '正在保存所选位置并完成必要的数据与运行时交接，请不要关闭应用。')}
+            footer={(
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-4 text-xs text-aegis-text-muted">
+                  <span>{t('storage.progress', '处理进度')}</span>
+                  <span className="tabular-nums">{progressPercent}%</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-aegis-surface">
+                  <div
+                    className="h-full rounded-full bg-aegis-primary transition-[width] duration-300 motion-reduce:transition-none"
+                    style={{ width: `${Math.max(3, progressValue * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          />
+        </div>
+      </SetupShell>
+    );
+  }
+
+  if (completion) {
+    return (
+      <SetupShell
+        active={activeStage}
+        contentIdentity="storage:complete"
+        title={t('storage.title', '选择 OpenClaw 数据位置')}
+        subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
+        logs={logs}
+        previousAction={{ onClick: handleBack }}
+        secondaryAction={{
+          label: t('storage.changeLocation', '更改位置'),
+          onClick: () => setCompletion(null),
+        }}
+        nextAction={{
+          label: t('setup.nextStep', '下一步'),
+          onClick: advanceAfterStorage,
+          icon: 'next',
+        }}
+      >
+        <div className="flex min-h-[260px] items-center">
+          <StatusPanel
+            icon={<CheckCircle2 size={22} />}
+            tone="success"
+            title={t('storage.readyTitle', '数据位置已就绪')}
+            message={t('storage.saved', '存储位置已保存，请点击下一步继续。')}
+          />
+        </div>
       </SetupShell>
     );
   }
@@ -511,23 +600,19 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
   return (
     <SetupShell
       active={activeStage}
+      contentIdentity="storage:form"
       title={t('storage.title', '选择 OpenClaw 数据位置')}
       subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
       logs={logs}
       previousAction={{ onClick: handleBack, disabled: applying }}
       nextAction={{
-        label: applying ? progress?.message || t('storage.preparing', '正在准备新存储位置…') : actionLabel,
-        onClick: completion ? advanceAfterStorage : () => void applyStorage(),
-        disabled: applying || !layoutComplete,
-        loading: applying,
+        label: actionLabel,
+        onClick: () => void applyStorage(),
+        disabled: !layoutComplete,
+        loading: false,
         icon: 'none',
       }}
     >
-      {completion && (
-        <p className="border-l-2 border-aegis-success py-2 pl-3 text-sm text-aegis-success" role="status">
-          {t('storage.saved', '存储位置已保存，请点击下一步继续。')}
-        </p>
-      )}
       <section className="border-y border-aegis-border py-6">
         <div className="grid gap-3 sm:grid-cols-2">
           <button
@@ -771,18 +856,6 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
             </div>
           )}
         </div>
-
-        {progress && applying && (
-          <div className="mt-6">
-            <div className="mb-2 flex items-center justify-between gap-4 text-xs text-aegis-text-muted">
-              <span>{progress.message}</span>
-              <span>{Math.round(progress.progress * 100)}%</span>
-            </div>
-            <div className="h-1 overflow-hidden bg-aegis-surface">
-              <div className="h-full bg-aegis-primary transition-[width] duration-300" style={{ width: `${Math.max(3, progress.progress * 100)}%` }} />
-            </div>
-          </div>
-        )}
 
         {error && <p className="mt-5 break-all border-l-2 border-aegis-danger pl-3 text-sm text-aegis-danger">{error}</p>}
 

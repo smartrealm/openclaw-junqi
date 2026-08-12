@@ -4,7 +4,7 @@ import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { SetupFlow } from '@/hooks/useSetupFlow';
 import { OpenClawConfigurationScreen } from './OpenClawConfigurationScreen';
-import { WizardRestartConfirmation, WizardScreen } from './WizardScreen';
+import { wizardPrimaryActionDisabled, WizardRestartConfirmation, WizardScreen } from './WizardScreen';
 import { resolveWizardAuthorizationUrl } from './wizard/WizardAuthorizationHint';
 
 type VerificationFlow = Pick<
@@ -352,6 +352,166 @@ test('授权步骤提交后用等待状态替换旧二维码', () => {
   assert.match(html, /Pause and return/);
   assert.doesNotMatch(html, /data-wizard-authorization-qr/);
   assert.doesNotMatch(html, /Open in browser/);
+});
+
+test('普通官方步骤提交后也用稳定等待状态替换旧交互', () => {
+  const flow = {
+    presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
+    goBack: async () => undefined,
+  } as unknown as SetupFlow;
+  const html = renderToStaticMarkup(
+    <WizardScreen
+      flow={flow}
+      logs={[]}
+      wizard={{
+        wizardStep: {
+          id: 'quickstart-note',
+          type: 'note',
+          title: 'QuickStart',
+          message: 'Gateway port: 18789',
+          executor: 'client',
+        },
+        wizardSubmitting: true,
+        wizardActivity: 'OpenClaw is applying the current answer',
+        wizardError: null,
+        wizardRecoveryMode: null,
+        submitWizardStep: async () => null,
+        pollWizard: async () => null,
+        retryWizard: async () => null,
+        reclaimWizard: async () => null,
+      }}
+    />,
+  );
+
+  assert.match(html, /Waiting for the next official step/);
+  assert.match(html, /OpenClaw is applying the current answer/);
+  assert.doesNotMatch(html, /Gateway port: 18789/);
+  assert.match(html, /data-setup-content-layout="stable"/);
+});
+
+test('Done 提示提交后等待官方终态而不伪装为完成页', () => {
+  const flow = {
+    presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
+    goBack: async () => undefined,
+  } as unknown as SetupFlow;
+  const html = renderToStaticMarkup(
+    <WizardScreen
+      flow={flow}
+      logs={[]}
+      wizard={{
+        wizardStep: {
+          id: 'official-outro',
+          type: 'note',
+          title: 'Done',
+          message: 'Run openclaw status for details.',
+          executor: 'client',
+        },
+        wizardSubmitting: true,
+        wizardActivity: null,
+        wizardError: null,
+        wizardRecoveryMode: null,
+        submitWizardStep: async () => null,
+        pollWizard: async () => null,
+        retryWizard: async () => null,
+        reclaimWizard: async () => null,
+      }}
+    />,
+  );
+
+  assert.match(html, /Waiting for the next official step/);
+  assert.match(html, /next step or terminal result/);
+  assert.doesNotMatch(html, /Run openclaw status for details/);
+});
+
+test('官方短提示只呈现一次正文并使用稳定紧凑布局', () => {
+  const flow = {
+    presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
+    goBack: async () => undefined,
+  } as unknown as SetupFlow;
+  const message = 'Keep existing Gateway settings';
+  const html = renderToStaticMarkup(
+    <WizardScreen
+      flow={flow}
+      logs={[]}
+      wizard={{
+        wizardStep: {
+          id: 'quickstart-note',
+          type: 'note',
+          title: 'QuickStart',
+          message,
+          executor: 'client',
+        },
+        wizardSubmitting: false,
+        wizardActivity: null,
+        wizardError: null,
+        wizardRecoveryMode: null,
+        submitWizardStep: async () => null,
+        pollWizard: async () => null,
+        retryWizard: async () => null,
+        reclaimWizard: async () => null,
+      }}
+    />,
+  );
+
+  assert.equal(html.split(message).length - 1, 1);
+  assert.match(html, /data-wizard-content-layout="compact"/);
+  assert.match(html, /This content comes from the selected OpenClaw Runtime/);
+  assert.doesNotMatch(html, /Complete model, credential, workspace, and Gateway setup/);
+});
+
+test('步骤失败时错误状态替换旧步骤内容', () => {
+  const flow = {
+    presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
+    goBack: async () => undefined,
+  } as unknown as SetupFlow;
+  const html = renderToStaticMarkup(
+    <WizardScreen
+      flow={flow}
+      logs={[]}
+      wizard={{
+        wizardStep: {
+          id: 'stale-confirm',
+          type: 'confirm',
+          title: 'Channel setup',
+          message: 'Stale confirmation must be hidden',
+          executor: 'client',
+        },
+        wizardSubmitting: false,
+        wizardActivity: null,
+        wizardError: 'The official step could not continue',
+        wizardRecoveryMode: null,
+        submitWizardStep: async () => null,
+        pollWizard: async () => null,
+        retryWizard: async () => null,
+        reclaimWizard: async () => null,
+      }}
+    />,
+  );
+
+  assert.match(html, /OpenClaw setup needs attention/);
+  assert.match(html, /The official step could not continue/);
+  assert.doesNotMatch(html, /Stale confirmation must be hidden/);
+});
+
+test('错误恢复不会被旧提交状态锁住，正常等待仍禁止重复操作', () => {
+  assert.equal(wizardPrimaryActionDisabled({
+    submitting: true,
+    error: 'Official step failed',
+  }), false);
+  assert.equal(wizardPrimaryActionDisabled({
+    submitting: true,
+    error: null,
+  }), true);
+  assert.equal(wizardPrimaryActionDisabled({
+    submitting: false,
+    error: null,
+    automatic: true,
+  }), true);
+  assert.equal(wizardPrimaryActionDisabled({
+    submitting: false,
+    error: null,
+    canRecover: false,
+  }), true);
 });
 
 test('官方终态后的失败提供 Gateway 核验操作', () => {

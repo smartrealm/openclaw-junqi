@@ -8,6 +8,10 @@ import { SetupShell } from "@/components/setup/SetupFlowPanels";
 import clsx from "clsx";
 import { type InstallMode } from "@/stores/setup-navigation";
 
+export function runtimeOptionDisabled(submitting: boolean, available = true): boolean {
+  return submitting || !available;
+}
+
 export function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
   const [selectedMode, setSelectedMode] = useState<InstallMode>(flow.installMode);
@@ -81,10 +85,11 @@ export function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupL
       <div className="grid gap-4 md:grid-cols-2">
         <button
           type="button"
+          disabled={runtimeOptionDisabled(submitting)}
           aria-pressed={selectedMode === "native"}
           onClick={() => setSelectedMode("native")}
           className={clsx(
-            "group flex min-h-[168px] flex-col rounded-lg border p-5 text-left transition-colors",
+            "group flex min-h-[168px] flex-col rounded-lg border p-5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45 disabled:cursor-wait disabled:opacity-60",
             selectedMode === "native"
               ? "border-aegis-primary bg-aegis-primary/8 ring-1 ring-aegis-primary/25"
               : "border-aegis-border bg-aegis-surface/50 hover:border-aegis-primary hover:bg-aegis-primary/5",
@@ -124,7 +129,7 @@ export function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupL
         >
           <button
             type="button"
-            disabled={!dockerAvailable}
+            disabled={runtimeOptionDisabled(submitting, Boolean(dockerAvailable))}
             aria-pressed={selectedMode === "docker"}
             onClick={() => setSelectedMode("docker")}
             className="flex flex-1 flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 disabled:cursor-not-allowed"
@@ -142,15 +147,16 @@ export function ModeSelectScreen({ flow, logs }: { flow: SetupFlow; logs: SetupL
             </div>
             <p className="text-sm leading-6 text-aegis-text-muted">{t("setup.modeDockerDesc")}</p>
             <div className={clsx("mt-auto flex items-center gap-2 pt-4 text-xs", dockerImageAvailable ? "text-aegis-success" : dockerAvailable ? "text-aegis-text-dim" : "text-aegis-danger")}>
-              {flow.checkingDocker ? <RefreshCw size={13} className="animate-spin" /> : dockerAvailable ? <Check size={13} /> : <X size={13} />}
+              {flow.checkingDocker ? <RefreshCw size={13} className="animate-spin motion-reduce:animate-none" /> : dockerAvailable ? <Check size={13} /> : <X size={13} />}
               <span>{dockerStatusText}</span>
             </div>
           </button>
           {!dockerAvailable && !flow.checkingDocker && (
             <button
               type="button"
+              disabled={runtimeOptionDisabled(submitting)}
               onClick={() => void flow.detectDocker()}
-              className="mt-3 inline-flex items-center gap-1.5 self-start rounded-md border border-aegis-border px-2.5 py-1.5 text-[11px] text-aegis-text-secondary hover:bg-aegis-surface"
+              className="mt-3 inline-flex items-center gap-1.5 self-start rounded-md border border-aegis-border px-2.5 py-1.5 text-[11px] text-aegis-text-secondary hover:bg-aegis-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/45 disabled:cursor-wait disabled:opacity-60"
             >
               <RefreshCw size={12} />
               {t("setup.recheckDocker")}

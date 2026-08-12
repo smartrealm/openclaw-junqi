@@ -248,12 +248,13 @@
       </svg>
     </div>
     <div class="cards">
+      <div class="card"><p class="card-kicker">FULL FIRST-RUN PRESENTATION</p><h3>JunQi 安装与官方 Wizard 共用稳定页面骨架</h3><ul><li>欢迎、环境检测、数据位置、运行方式、依赖安装、Gateway 启动、OpenClaw 配置和完成页均占用同一窗口剩余高度；标题区与底部操作区保持固定，长内容和日志仅在主体内部滚动</li><li>主体不再按步骤 React key 整体卸载；跨页面场景使用 140 至 180 毫秒的轻量入场，运行状态保持原位，同一 Wizard 或存储状态只替换内容，系统减少动态效果时立即完成</li><li>环境探测与结果复核复用同一个场景和三项能力卡骨架；OpenClaw、Gateway 与 Docker 探针全部收敛后一次性发布真实结果，避免 Docker 晚到造成二次跳动</li><li>存储读取、恢复、应用和就绪使用统一状态面板；应用期间旧表单退出交互，进度只来自真实迁移事件，完成后提供继续与显式更改位置</li><li>Git、Node.js 和 Gateway 前置条件以“运行时”阶段标题承载，具体活动或错误只在主体状态卡出现一次，避免标题与正文重复</li><li>安装、探测和 Gateway 生命周期语义不变；统一的是几何边界、状态反馈和切换节奏，不增加假步骤、假进度或乐观成功</li></ul></div>
       <div class="card"><p class="card-kicker">UNIFIED CONFIGURATION STAGE</p><h3>Gateway 就绪后原地核验 OpenClaw 配置</h3><ul><li>运行时步骤完成后，顶部直接激活“配置 OpenClaw”；Gateway 就绪仅作为该页面中的真实检查结果</li><li>用户点击核验配置后，加载、真实错误或官方 Wizard 步骤在同一页面替换，不自动跳转或重放操作</li><li>配置核验与官方 Wizard 虽共享视觉场景，但切换后会重置主体滚动位置，不能因上一状态的日志滚动而出现空白视口</li><li>配置核验和向导连接默认展开日志，正常交互步骤默认收起，步骤失败时自动展开</li><li>首次配置只启动默认 <code>wizard.start</code>；模型、凭据、工作区和可选消息渠道均在同一个官方向导会话中呈现</li><li>官方 <code>select</code> 与 <code>multiselect</code> 返回长选项集合时显示通用搜索；只过滤当前官方标签、提示和字符串值，不按供应商或渠道名称硬编码步骤</li><li>任意步骤返回结构化 <code>externalUrl</code> 时由共享组件生成本地二维码、浏览器入口与复制操作；第三方步骤只在正文存在唯一 HTTPS 地址时原样投影二维码，不读取历史日志或推断授权状态</li><li>授权步骤提交后，旧二维码立即替换为等待投影；插件拥有扫码轮询与超时，JunQi 只允许暂停并恢复同一官方会话</li><li>渠道插件正式返回 <code>qrDataUrl</code> 时直接显示官方 PNG；未提供结构化地址或图片的终端二维码不会被客户端猜测重建</li><li>官方终态只执行一次服务交接；后续 Gateway 失败只显示“重新核验”，等待已有生命周期结束后独立重连和核验身份，不再重复交接、重启或启动 Wizard</li><li>官方跳过渠道时，JunQi 在当前会话的结构化说明步骤中展示 Gateway 返回的原因；不会额外创建渠道步骤或静默跳过</li></ul></div>
     </div>
   </section>
 
   <section id="workspace">
-    <div class="section-head"><span class="number">FIG. 04</span><h2>Ready 到工作台的交接</h2><p class="section-note">设置页提交 verified-gateway-handoff，使工作台复用已验证连接；Setup 步骤切换使用 200ms 的当前页入场过渡，上一步与下一步方向相反，旧步骤页在状态提交后立即卸载；Ready 页的运行偏好先并行读取，未完成时保持同尺寸骨架，避免一行一行闪跳。首次进入前复核身份、Gateway 与官方 setupComplete，不重复执行模型测试。</p></div>
+    <div class="section-head"><span class="number">FIG. 04</span><h2>Ready 到工作台的交接</h2><p class="section-note">设置页提交 verified-gateway-handoff，使工作台复用已验证连接；首次设置场景使用 140 至 180 毫秒的当前页轻量入场，运行状态保持原位，同一场景只替换主体内容，旧步骤状态在提交后立即退出交互；Ready 页的运行偏好先并行读取，未完成时保持同尺寸骨架，避免一行一行闪跳。首次进入前复核身份、Gateway 与官方 setupComplete，不重复执行模型测试。</p></div>
     <div class="diagram">
       <svg viewBox="0 0 1120 500" role="img" aria-label="进入工作台流程">
         <defs><marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4f5d75"/></marker><marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#eb6c36"/></marker><marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2e5aa8"/></marker></defs>

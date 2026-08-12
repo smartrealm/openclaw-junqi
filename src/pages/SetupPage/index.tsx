@@ -10,9 +10,7 @@ import { useSetupFlow } from "@/hooks/useSetupFlow";
 import type { StepState } from "@/hooks/useSetupFlow";
 import type { DockerStatus } from "@/api/tauri-commands";
 import { StorageSetupStep } from "@/components/setup/StorageSetupGate";
-import { WelcomeScreen } from "./WelcomeScreen";
-import { DetectingScreen } from "./DetectingScreen";
-import { EnvironmentReviewScreen } from "./EnvironmentReviewScreen";
+import { EnvironmentEntryScreen } from "./EnvironmentEntryScreen";
 import { GatewayStartingScreen } from "./GatewayStartingScreen";
 import { ModeSelectScreen } from "./ModeSelectScreen";
 import { ProgressScreen } from "./ProgressScreen";
@@ -80,9 +78,9 @@ export function SetupPage() {
   const sharedLogs = useMemo(() => logs, [logs]);
   const screen = (() => {
     switch (setupStep) {
-      case "welcome": return <WelcomeScreen flow={flow} logs={sharedLogs} />;
-      case "detecting": return <DetectingScreen flow={flow} logs={sharedLogs} />;
-      case "environment-review": return <EnvironmentReviewScreen flow={flow} logs={sharedLogs} />;
+      case "welcome": return <EnvironmentEntryScreen flow={flow} logs={sharedLogs} phase="welcome" />;
+      case "detecting": return <EnvironmentEntryScreen flow={flow} logs={sharedLogs} phase="detecting" />;
+      case "environment-review": return <EnvironmentEntryScreen flow={flow} logs={sharedLogs} phase="review" />;
       case "storage": return <StorageSetupStep activeStage={flow.presentation.stage} logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={flow.goBack} forceConfigure={flow.forceStorageSelection} />;
       case "gateway-stopped": return <GatewayStartingScreen flow={flow} logs={sharedLogs} />;
       case "choosing-mode": return <ModeSelectScreen flow={flow} logs={sharedLogs} />;
@@ -96,7 +94,7 @@ export function SetupPage() {
       case "configure-openclaw": return <OpenClawConfigurationScreen flow={flow} logs={sharedLogs} phase="wizard" />;
       case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;
       case "node-missing": return <NodeMissingScreen flow={flow} logs={sharedLogs} />;
-      default: return <DetectingScreen flow={flow} logs={sharedLogs} />;
+      default: return <EnvironmentEntryScreen flow={flow} logs={sharedLogs} phase="detecting" />;
     }
   })();
 

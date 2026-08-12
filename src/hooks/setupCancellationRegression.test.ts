@@ -129,8 +129,8 @@ test("BUG-WFR-05 stale Wizard completion cannot commit official-service handoff 
     flow.indexOf("const applyWizardResult = useCallback"),
   );
   assert.match(completion, /operationId: number/);
-  assert.match(completion, /const handedOff = await handoffGatewayToOfficialService\(\);[\s\S]*?assertWizardOperationCurrent\(operationId\)/);
-  assert.match(completion, /if \(!handedOff\)/);
+  assert.match(completion, /await prepareWizardCompletionLifecycle\([\s\S]*?handoffGatewayToOfficialService[\s\S]*?assertWizardOperationCurrent\(operationId\)/);
+  assert.match(completion, /if \(!lifecycle\.ready\)/);
   assert.match(completion, /await gatewayLifecycle\.reconnectAfterCurrent\(WIZARD_COMPLETION_RECONNECT_SOURCE\);\s*assertWizardOperationCurrent\(operationId\)/);
   assert.match(completion, /await probeSelectedGateway\(\);\s*assertWizardOperationCurrent\(operationId\)/);
   assert.doesNotMatch(completion, /probeActiveRuntimeModel|modelProbe/);
