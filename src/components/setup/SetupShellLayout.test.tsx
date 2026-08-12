@@ -20,19 +20,19 @@ test('setup shell keeps navigation actions reachable below overflowing step cont
   );
 
   assert.match(html, /<main[^>]*overflow-x-hidden/);
-  assert.match(html, /<main[^>]*overflow-y-hidden/);
+  assert.match(html, /<main[^>]*overflow-y-auto/);
   assert.match(html, /grid-cols-5/);
   assert.doesNotMatch(html, /overflow-x-auto/);
   assert.match(html, /data-setup-step-current-complete="true"/);
-  assert.match(html, /class="flex w-full min-w-0 max-w-full justify-center overflow-x-clip min-h-0 flex-1"/);
-  assert.match(html, /<section[^>]*class="flex h-full min-h-0 w-full flex-col max-w-3xl"/);
+  assert.match(html, /class="flex w-full min-w-0 max-w-full justify-center overflow-x-clip min-h-full flex-none"/);
+  assert.match(html, /<section[^>]*class="flex min-h-full w-full flex-col max-w-3xl"/);
   assert.doesNotMatch(html, /<section[^>]*class="[^"]*my-auto/);
   assert.match(html, /<footer[^>]*shrink-0/);
   assert.match(html, /data-setup-footer-primary[^>]*focus-visible:ring-2/);
   assert.match(html, />Continue</);
 });
 
-test('全部首次设置页面共享稳定的窗口自适应内容区域', () => {
+test('全部首次设置页面由主内容区统一承担纵向滚动', () => {
   const html = renderToStaticMarkup(
     <SetupShell
       active={0}
@@ -46,11 +46,12 @@ test('全部首次设置页面共享稳定的窗口自适应内容区域', () =>
   );
 
   assert.match(html, /data-setup-content-layout="stable"/);
-  assert.match(html, /min-h-0 flex-1/);
-  assert.match(html, /flex h-full min-h-0 w-full flex-col/);
-  assert.match(html, /overflow-hidden/);
-  assert.match(html, /overscroll-contain overflow-y-auto/);
-  assert.match(html, /\[scrollbar-gutter:stable\]/);
+  assert.match(html, /min-h-full flex-none/);
+  assert.match(html, /flex min-h-full w-full flex-col/);
+  assert.match(html, /<main[^>]*overflow-y-auto[^>]*overscroll-contain/);
+  assert.match(html, /data-setup-content-viewport="stable"/);
+  assert.doesNotMatch(html, /data-setup-content-viewport="stable"[^>]*overflow-y-auto/);
+  assert.doesNotMatch(html, /\[scrollbar-gutter:stable\]/);
 });
 
 test('官方向导在稳定主体内切换内容而不重建页面滚动容器', () => {
@@ -70,7 +71,7 @@ test('官方向导在稳定主体内切换内容而不重建页面滚动容器',
   assert.match(html, /data-setup-content-layout="stable"/);
   assert.match(html, /data-setup-content-motion="quickstart-note"/);
   assert.match(html, /<main[^>]*data-setup-scroll-key="quickstart-note"/);
-  assert.match(html, /<main[^>]*overflow-y-hidden/);
+  assert.match(html, /<main[^>]*overflow-y-auto/);
   assert.match(html, /data-setup-content-viewport="stable"/);
 });
 
@@ -81,14 +82,30 @@ test('首屏在桌面默认高度完整展示且不创建卡片内部滚动条',
       title="欢迎使用 JunQi Desktop"
       subtitle="选择语言和主题"
       logs={[]}
-      contentOverflow="visible"
       nextAction={{ label: '下一步' }}
     >
       <div>语言与主题</div>
     </SetupShell>,
   );
 
-  assert.match(html, /data-setup-content-overflow="visible"/);
-  assert.match(html, /overflow-y-visible/);
-  assert.doesNotMatch(html, /data-setup-content-overflow="visible"[^>]*overflow-y-auto/);
+  assert.match(html, /data-setup-content-viewport="stable"/);
+  assert.doesNotMatch(html, /data-setup-content-viewport="stable"[^>]*overflow-y-auto/);
+  assert.doesNotMatch(html, /\[scrollbar-gutter:stable\]/);
+});
+
+test('短内容步骤卡片按内容自适应而不强制占满主内容区', () => {
+  const html = renderToStaticMarkup(
+    <SetupShell
+      active={3}
+      title="OpenClaw 配置"
+      subtitle="官方步骤"
+      logs={[]}
+      nextAction={{ label: '下一步' }}
+    >
+      <div>短内容</div>
+    </SetupShell>,
+  );
+
+  assert.match(html, /data-setup-content-layout="stable"/);
+  assert.doesNotMatch(html, /data-setup-content-layout="stable"[^>]*flex-1/);
 });

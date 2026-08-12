@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { initialStorageCompletion } from './storageSetupModel';
+import { initialStorageCompletion, initialStorageLocationsVisibility } from './storageSetupModel';
 
 const configured = {
   configured: true,
@@ -20,4 +20,10 @@ test('forced storage recovery cannot continue without submitting a new layout', 
 
 test('an in-progress storage draft must be explicitly submitted', () => {
   assert.equal(initialStorageCompletion(configured, true, false), null);
+});
+
+test('安装位置首次进入时默认展开并保留会话内的显式折叠选择', () => {
+  assert.equal(initialStorageLocationsVisibility(), true);
+  assert.equal(initialStorageLocationsVisibility(true), true);
+  assert.equal(initialStorageLocationsVisibility(false), false);
 });

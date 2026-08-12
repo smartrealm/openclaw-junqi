@@ -5,7 +5,11 @@ import { Check, CheckCircle2, ChevronDown, CircleAlert, Cpu, Database, FolderOpe
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell, StatusPanel } from '@/components/setup/SetupFlowPanels';
-import { initialStorageCompletion, type StorageCompletion } from '@/components/setup/storageSetupModel';
+import {
+  initialStorageCompletion,
+  initialStorageLocationsVisibility,
+  type StorageCompletion,
+} from '@/components/setup/storageSetupModel';
 import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
 import { useAppStore, type SetupLog, type StorageSetupDraft } from '@/stores/app-store';
 import type { SetupFlow } from '@/hooks/useSetupFlow';
@@ -156,7 +160,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
   const [gitRuntimeDir, setGitRuntimeDir] = useState('');
   const [customGitRuntime, setCustomGitRuntime] = useState(false);
   const [terminalIntegration, setTerminalIntegration] = useState(false);
-  const [showLocations, setShowLocations] = useState(false);
+  const [showLocations, setShowLocations] = useState(() => initialStorageLocationsVisibility());
   const [migrateExisting, setMigrateExisting] = useState(true);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
@@ -190,7 +194,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
       setCustomGitRuntime(result.customGitRuntimeSupported && (draft?.customGitRuntime ?? Boolean(result.gitRuntimeDir)));
       setTerminalIntegration(draft?.terminalIntegration ?? result.terminalIntegration);
       setMigrateExisting(draft?.migrateExisting ?? (forceConfigure || (!result.configured && result.legacyExists)));
-      setShowLocations(draft?.showLocations ?? false);
+      setShowLocations(initialStorageLocationsVisibility(draft?.showLocations));
     } catch (cause) {
       const message = errorMessage(cause, t('storage.unknownError', 'Unexpected storage error'));
       appendSetupLog({

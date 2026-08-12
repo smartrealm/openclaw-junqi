@@ -227,7 +227,6 @@ export function SetupShell({
   showLogToggle = true,
   logVisibility = "collapsed",
   contentIdentity,
-  contentOverflow = "auto",
 }: {
   active: number;
   activeComplete?: boolean;
@@ -242,11 +241,10 @@ export function SetupShell({
   showLogToggle?: boolean;
   logVisibility?: "collapsed" | "expanded";
   contentIdentity?: string;
-  contentOverflow?: "auto" | "visible";
 }) {
   const { t } = useTranslation();
   const [showLogs, setShowLogs] = useState(logVisibility === "expanded");
-  const contentViewportRef = useRef<HTMLDivElement>(null);
+  const contentViewportRef = useRef<HTMLElement>(null);
   const scrollKey = useSetupStepScrollKey(contentIdentity);
   const isRuntime = active >= 2 && active < 4;
   const showActions = previousAction || secondaryAction || nextAction;
@@ -271,35 +269,34 @@ export function SetupShell({
       />
       <Stepper active={active} activeComplete={activeComplete} />
       <main
+        ref={contentViewportRef}
         data-setup-scroll-key={scrollKey ?? "setup"}
-        className="flex min-h-0 flex-1 flex-col items-center overflow-x-hidden overflow-y-hidden px-3 py-4 sm:px-6 sm:py-6"
+        className="flex min-h-0 flex-1 flex-col items-center overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-6 sm:py-6"
       >
-        <SetupStepScene className="min-h-0 flex-1">
+        <SetupStepScene className="min-h-full flex-none">
           <section className={clsx(
-            "flex h-full min-h-0 w-full flex-col",
+            "flex min-h-full w-full flex-col",
             wide ? "max-w-5xl" : "max-w-3xl",
           )}>
-            <div className="mb-4 flex h-[96px] shrink-0 flex-col items-center text-center sm:mb-5">
+            <div className={clsx(
+              "mb-4 flex h-[96px] shrink-0 flex-col items-center text-center sm:mb-5",
+              subtitle ? "" : "justify-center",
+            )}>
               <h1 className="line-clamp-1 text-2xl font-semibold tracking-normal text-aegis-text sm:text-[30px]" dir="auto">{title}</h1>
-              <p className="mx-auto mt-2 line-clamp-2 min-h-12 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
+              {subtitle && (
+                <p className="mx-auto mt-2 line-clamp-2 min-h-12 max-w-xl text-sm leading-6 text-aegis-text-muted" dir="auto">{subtitle}</p>
+              )}
             </div>
             <div
               data-setup-content-layout="stable"
               className={clsx(
                 wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6",
-                "flex min-h-0 flex-1 flex-col overflow-hidden",
+                "flex flex-col",
               )}
             >
               <div
-                ref={contentViewportRef}
                 data-setup-content-viewport="stable"
-                data-setup-content-overflow={contentOverflow}
-                className={clsx(
-                  "min-h-0 flex-1 overscroll-contain",
-                  contentOverflow === "auto"
-                    ? "overflow-y-auto pr-1 [scrollbar-gutter:stable]"
-                    : "overflow-y-visible",
-                )}
+                className="w-full"
               >
                 {hasContentTransition ? (
                   <SetupContentScene identity={scrollKey ?? "wizard"}>
@@ -308,7 +305,7 @@ export function SetupShell({
                 ) : children}
               </div>
               {shouldShowLogs && (
-                <div className="mt-4 max-h-[48%] shrink-0 overflow-y-auto border-t border-aegis-border pt-4">
+                <div className="mt-4 shrink-0 border-t border-aegis-border pt-4">
                   <button
                     type="button"
                     onClick={() => setShowLogs((v) => !v)}

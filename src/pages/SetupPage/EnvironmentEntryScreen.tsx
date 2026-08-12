@@ -67,7 +67,6 @@ export function EnvironmentEntryScreen({
       title={welcome ? t("setup.title") : t("setup.runtimeTitle")}
       subtitle={welcome ? t("setup.welcomeSubtitle") : t("setup.runtimeSubtitle")}
       logs={logs}
-      contentOverflow={welcome ? "visible" : "auto"}
       previousAction={welcome ? undefined : {
         onClick: flow.goBack,
         disabled: detecting ? false : actionsDisabled,

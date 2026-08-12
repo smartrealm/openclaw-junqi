@@ -354,7 +354,7 @@ test('授权步骤提交后用等待状态替换旧二维码', () => {
   assert.doesNotMatch(html, /Open in browser/);
 });
 
-test('普通官方步骤提交后也用稳定等待状态替换旧交互', () => {
+test('普通官方步骤提交时保留官方内容并锁定重复交互', () => {
   const flow = {
     presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
     goBack: async () => undefined,
@@ -383,13 +383,15 @@ test('普通官方步骤提交后也用稳定等待状态替换旧交互', () =>
     />,
   );
 
-  assert.match(html, /Waiting for the next official step/);
-  assert.match(html, /OpenClaw is applying the current answer/);
-  assert.doesNotMatch(html, /Gateway port: 18789/);
+  assert.match(html, /Gateway port: 18789/);
+  assert.match(html, /aria-busy="true"/);
+  assert.match(html, /<fieldset[^>]*disabled=""/);
+  assert.doesNotMatch(html, /Waiting for the next official step/);
+  assert.doesNotMatch(html, /OpenClaw is applying the current answer/);
   assert.match(html, /data-setup-content-layout="stable"/);
 });
 
-test('Done 提示提交后等待官方终态而不伪装为完成页', () => {
+test('Done 提示提交时保留官方原文但不进入 JunQi 完成页', () => {
   const flow = {
     presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
     goBack: async () => undefined,
@@ -418,9 +420,10 @@ test('Done 提示提交后等待官方终态而不伪装为完成页', () => {
     />,
   );
 
-  assert.match(html, /Waiting for the next official step/);
-  assert.match(html, /next step or terminal result/);
-  assert.doesNotMatch(html, /Run openclaw status for details/);
+  assert.match(html, /Run openclaw status for details/);
+  assert.match(html, /aria-busy="true"/);
+  assert.doesNotMatch(html, /Waiting for the next official step/);
+  assert.doesNotMatch(html, /进入仪表盘/);
 });
 
 test('官方短提示只呈现一次正文并使用稳定紧凑布局', () => {
@@ -455,7 +458,7 @@ test('官方短提示只呈现一次正文并使用稳定紧凑布局', () => {
 
   assert.equal(html.split(message).length - 1, 1);
   assert.match(html, /data-wizard-content-layout="compact"/);
-  assert.match(html, /This content comes from the selected OpenClaw Runtime/);
+  assert.doesNotMatch(html, /This content comes from the selected OpenClaw Runtime/);
   assert.doesNotMatch(html, /Complete model, credential, workspace, and Gateway setup/);
 });
 

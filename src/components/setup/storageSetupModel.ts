@@ -20,3 +20,7 @@ export function initialStorageCompletion(
     openclawRelocationRequired: status.openclawRelocationRequired,
   };
 }
+
+export function initialStorageLocationsVisibility(savedVisibility?: boolean): boolean {
+  return savedVisibility ?? true;
+}

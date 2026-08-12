@@ -228,13 +228,14 @@ export function WizardScreen({
     || resolveWizardAuthorizationUrl(presentedStep),
   );
   const waitingForOfficialStep = wizard.wizardSubmitting || autoPollProgress;
+  const replaceStepWithWaiting = autoPollProgress || (authorizationStep && wizard.wizardSubmitting);
   const wizardTitle = wizard.wizardError
     ? t("setup.wizard.needsAttentionTitle", "OpenClaw 配置需要处理")
     : presentedStep.title || t(copy.titleKey, copy.titleFallback);
   const wizardSubtitle = wizard.wizardError
     ? t("setup.wizard.needsAttentionSubtitle", "请核对返回的错误，并使用当前可用的恢复操作。")
     : messageRenderedInBody
-      ? t("setup.wizard.officialStepSubtitle", "当前内容由所选 OpenClaw Runtime 提供。")
+      ? ""
       : presentedStep.message || t("setup.wizard.officialStepSubtitle", "当前内容由所选 OpenClaw Runtime 提供。");
   const contentLayout = authorizationStep
     ? "authorization"
@@ -243,7 +244,7 @@ export function WizardScreen({
       : "compact";
   const contentState = wizard.wizardError
     ? "error"
-    : waitingForOfficialStep
+    : replaceStepWithWaiting
       ? "waiting"
       : "step";
   const submitCurrentStep = async () => {
@@ -293,13 +294,13 @@ export function WizardScreen({
         }}
       >
         <div
-          data-wizard-content-layout={wizard.wizardError || waitingForOfficialStep ? "compact" : contentLayout}
+          data-wizard-content-layout={wizard.wizardError || replaceStepWithWaiting ? "compact" : contentLayout}
           className={clsx(
-            "min-h-[260px] w-full",
-            (wizard.wizardError || waitingForOfficialStep || contentLayout === "compact") && "flex flex-col justify-center",
+            "w-full",
+            (wizard.wizardError || replaceStepWithWaiting || contentLayout === "compact") && "flex flex-col",
           )}
           dir="auto"
-          aria-live={wizard.wizardError || waitingForOfficialStep ? "polite" : undefined}
+          aria-live={wizard.wizardError || replaceStepWithWaiting ? "polite" : undefined}
           aria-busy={waitingForOfficialStep}
         >
           {wizard.wizardError ? (
@@ -310,7 +311,7 @@ export function WizardScreen({
               title={t("setup.wizard.stepFailedTitle", "官方向导未能继续")}
               message={wizard.wizardError}
             />
-          ) : waitingForOfficialStep ? (
+          ) : replaceStepWithWaiting ? (
             <StatusPanel
               icon={<LoaderCircle size={22} className="animate-spin motion-reduce:animate-none" />}
               tone="primary"
@@ -329,18 +330,20 @@ export function WizardScreen({
                   ))}
             />
           ) : (
-            <div className="space-y-4">
-              <WizardStepRenderer
-                step={presentedStep}
-                value={value}
-                setValue={setValue}
-                t={t}
-              />
-              <WizardAuthorizationHint
-                key={presentedStep.id}
-                step={presentedStep}
-              />
-            </div>
+            <fieldset disabled={wizard.wizardSubmitting} className="min-w-0 border-0 p-0 disabled:opacity-70">
+              <div className="space-y-4">
+                <WizardStepRenderer
+                  step={presentedStep}
+                  value={value}
+                  setValue={setValue}
+                  t={t}
+                />
+                <WizardAuthorizationHint
+                  key={presentedStep.id}
+                  step={presentedStep}
+                />
+              </div>
+            </fieldset>
           )}
         </div>
       </SetupShell>
