@@ -44,6 +44,14 @@
 
 目标：界面分别呈现准备二维码、正在监听、等待已暂停、已连接和失败。等待已暂停时提供“继续等待”和“生成新二维码”；两者分别调用 `web.login.wait` 与 `web.login.start`。官方等待请求进行期间不并发发起新的开始请求。
 
+### BUG-QR-05：Wizard 后续步骤被普通链接误判为授权二维码
+
+位置：`src/pages/SetupPage/wizard/WizardAuthorizationHint.tsx`
+
+当前行为：旧实现会把任意当前 Wizard step 正文中唯一的 HTTPS 地址投影为二维码。授权完成后的说明步骤只要包含一个文档链接，界面就会继续显示二维码，看起来像上一授权步骤没有结束。
+
+目标：结构化 `externalUrl` 只绑定其所属官方步骤；旧插件 note fallback 只接受唯一、带非空 `user_code` 的 HTTPS 一次性授权地址。步骤标识变化、提交等待、终态、取消或失败后不保留上一二维码，也不把普通说明链接当成授权入口。
+
 ## 实施结果
 
 - 删除二维码会话专用的 `channels.status` 验证器和客户端状态方法。官方 `connected: true` 直接进入成功状态，父级随后刷新渠道快照，刷新结果不回滚扫码终态。
@@ -51,6 +59,7 @@
 - 开始结果按官方 `message`、可选 `qrDataUrl` 和可选 `connected` 校验；等待结果按必需 `message`、必需 `connected` 和可选 `qrDataUrl` 校验。错误形状不再静默变成等待。
 - 对话框复用共享 Radix Dialog、`QrCodeDisplay` 和 `LoadingIndicator`，补齐准备、监听、暂停、成功和错误状态，以及继续监听与重新生成操作。
 - 对话框关闭和组件重建使用代际围栏隔离旧请求结果；官方等待期间拒绝并发开始请求。OpenClaw 没有取消方法，因此 JunQi 不发送伪造的取消 RPC。
+- Wizard 授权二维码只从当前步骤的结构化 `externalUrl` 或带 `user_code` 的一次性授权地址派生；后续说明步骤的普通 HTTPS 链接不再生成二维码。
 
 ## 自动化验证
 

@@ -201,9 +201,8 @@ export function WizardScreen({
               t={t}
             />
             <WizardAuthorizationHint
-              externalUrl={presentedStep.externalUrl}
-              deviceCode={presentedStep.deviceCode}
-              message={presentedStep.message}
+              key={presentedStep.id}
+              step={presentedStep}
             />
           </>
         )}

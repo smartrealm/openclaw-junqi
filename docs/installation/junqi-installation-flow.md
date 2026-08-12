@@ -9,8 +9,8 @@ JunQi 是 OpenClaw Gateway 的 Tauri 桌面客户端。安装流程只负责桌�
 3. JunQi 启动或复用 Gateway，并在认证连接与 Runtime Identity 均完成核验后继续。端口可达或进程启动不等于交接成功。
 4. JunQi 调用官方 `openclaw.setup.detect`。官方判断需要配置时，在同一会话呈现官方 Wizard；官方不支持该方法时才进入同一 Gateway 的官方 Wizard，不以本地标记跳过。
 5. Wizard 的模型、凭据、工作区、渠道及可跳过步骤均按其结构化步骤呈现。确认步骤的提示只在其确认控件中显示一次；配置核验与向导连接阶段默认展开日志，正常交互步骤默认收起，步骤失败时自动展开，用户始终可以手动切换。步骤切换必须复位主体滚动位置，不能让上一状态的滚动偏移把下一状态移出视口。
-6. 官方 Wizard step 返回 `externalUrl` 时，JunQi 在任意步骤类型下通过共享前端组件本地生成二维码，并提供可点击授权入口和复制操作。第三方插件尚未接入 `openUrl()`、但在当前结构化 step 的 `message` 中只返回一个明确 HTTPS 地址时，JunQi 可将该地址原样投影为二维码；不读取历史日志、不改写地址，也不据此推断授权状态。存在零个或多个地址时保持原始提示，不猜测目标。`deviceCode` 继续按官方字段并列呈现，二维码生成失败时保留链接与手工流程。
-7. 完成后进入 Dashboard。后续连接异常由统一 Gateway 生命周期协调器处理，不能把旧连接、文本日志或本地缓存当作成功。
+6. 官方 Wizard step 返回 `externalUrl` 时，JunQi 在该步骤存活期间通过共享前端组件本地生成二维码，并提供浏览器打开和复制操作。第三方插件尚未接入 `openUrl()`、但在当前结构化 step 的 `message` 中返回唯一、带非空 `user_code` 的 HTTPS 一次性授权地址时，JunQi 可将该地址原样投影为二维码；普通文档链接不生成二维码。步骤标识变化、提交等待、官方终态、取消或失败后立即销毁该投影，不读取历史日志、不改写地址，也不据此推断授权状态。`deviceCode` 继续按官方字段并列呈现，二维码生成失败时保留链接与手工流程。
+7. 官方 Wizard 返回终态后，JunQi 只执行一次系统服务交接，并等待属于该交接的新 WebSocket `hello-ok` 和 Runtime Identity。交接失败后的“重新核验”只重新读取当前目标与凭据并建立认证连接，不重复启动 Wizard、服务交接或 Gateway 重启。全部核验成功后才进入 Dashboard；旧连接、端口健康、文本日志或本地缓存均不能单独作为成功。
 
 ## 当前验证与边界
 
@@ -20,14 +20,14 @@ Gateway 启动环境使用 Gateway 配置中 `env.vars.OPENCLAW_LOCALE` 的值�
 
 Wizard 步骤文本属于 Runtime 或插件所有。接入 OpenClaw `createSetupTranslator` 的插件会随 `OPENCLAW_LOCALE` 使用官方英语、简体中文或繁体中文文案；没有接入该接口、将文案静态写为单一语言的第三方插件仍返回原文。JunQi 忠实呈现这些结构化文本，不以客户端字符串匹配、翻译表或猜测性 fallback 改写插件结果。
 
-钉钉官方插件 0.8.24 及其 2026-08-11 主线仍在插件进程中调用 `qrcode-terminal`，终端二维码生成失败时只把授权 URL 写入 `prompter.note()` 正文，没有调用 OpenClaw 已提供的 `prompter.openUrl()`。因此该步骤不会产生结构化 `externalUrl`。JunQi 不补造该协议字段，仅对当前 step 正文中唯一、可验证的 HTTPS 地址生成本地二维码，并继续显示插件原文。长期正确边界仍在钉钉插件：取得 `verificationUriComplete` 后调用 `prompter.openUrl()`，由 OpenClaw 把地址绑定到结构化步骤。
+钉钉官方插件 0.8.24 及其 2026-08-11 主线仍在插件进程中调用 `qrcode-terminal`，终端二维码生成失败时只把授权 URL 写入 `prompter.note()` 正文，没有调用 OpenClaw 已提供的 `prompter.openUrl()`。因此该步骤不会产生结构化 `externalUrl`。JunQi 不补造该协议字段，仅对当前 step 正文中唯一、带非空 `user_code` 的 HTTPS 一次性授权地址生成本地二维码，并继续显示插件原文。进入下一步骤后不再从普通 HTTPS 链接恢复二维码。长期正确边界仍在钉钉插件：取得 `verificationUriComplete` 后调用 `prompter.openUrl()`，由 OpenClaw 把地址绑定到结构化步骤。
 
 ### 渠道扫码边界
 
 | 渠道形态 | OpenClaw 当前正式输出 | JunQi 呈现 |
 | --- | --- | --- |
 | Wizard 返回 `externalUrl` | 结构化授权地址 | 本地二维码、复制地址、浏览器打开 |
-| 钉钉当前授权 note | 当前 step 正文中的唯一 HTTPS 授权地址 | 保留原文并原样生成本地二维码 |
+| 钉钉当前授权 note | 当前 step 正文中唯一、带非空 `user_code` 的 HTTPS 一次性授权地址 | 保留原文并原样生成本地二维码；离开当前步骤后销毁 |
 | 声明 `web.login.start` 与 `web.login.wait` 的渠道插件 | `qrDataUrl`、`message`、`connected` | 显示官方 PNG 二维码，在单次官方等待窗口内监听轮换与终态；等待结束后由用户继续监听或重新生成 |
 | 飞书当前扫码创建应用流程 | 插件内部直接向终端输出二维码，Wizard step 不携带二维码地址 | 保留官方原始步骤；上游未提供结构化载荷前不抓取终端画面或伪造地址 |
 | 企业微信外部插件 | 由当前已安装插件版本定义的配置字段与连接方式 | 按当前插件的正式 schema 和 Wizard step 呈现，不从渠道名称推断扫码入口 |

@@ -129,9 +129,11 @@ test("BUG-WFR-05 stale Wizard completion cannot commit official-service handoff 
     flow.indexOf("const recoverAfterGatewayHandoff = useCallback"),
   );
   assert.match(applyResult, /result: OpenClawWizardResult,\s*operationId: number/);
-  assert.match(applyResult, /await handoffGatewayToOfficialService\(\);\s*assertWizardOperationCurrent\(operationId\)/);
-  assert.match(applyResult, /await gatewayLifecycle\.reconnect\(WIZARD_COMPLETION_RECONNECT_SOURCE\);\s*assertWizardOperationCurrent\(operationId\)/);
+  assert.match(applyResult, /const handedOff = await handoffGatewayToOfficialService\(\);\s*assertWizardOperationCurrent\(operationId\)/);
+  assert.match(applyResult, /if \(!handedOff\)/);
+  assert.match(applyResult, /await gatewayLifecycle\.reconnectAfterCurrent\(WIZARD_COMPLETION_RECONNECT_SOURCE\);\s*assertWizardOperationCurrent\(operationId\)/);
   assert.match(applyResult, /await probeSelectedGateway\(\);\s*assertWizardOperationCurrent\(operationId\)/);
   assert.doesNotMatch(applyResult, /probeActiveRuntimeModel|modelProbe/);
   assert.doesNotMatch(applyResult, /await refreshGatewayConnectionTarget\(\)/);
+  assert.match(flow, /applyWizardResult\(completedResult, operationId, \{ handoff: false \}\)/);
 });

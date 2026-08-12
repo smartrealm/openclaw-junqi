@@ -1582,6 +1582,21 @@ fn previous_gateway_from_pending(pending: paths::PendingGatewayRecovery) -> Prev
     }
 }
 
+fn merge_reverified_gateway_service(
+    mut pending: paths::PendingGatewayRecovery,
+    observed: SelectedGatewayService,
+    runtime: Option<&crate::commands::system::NativeOpenclawRuntime>,
+) -> paths::PendingGatewayRecovery {
+    pending.selected_service_installed |= observed.installed;
+    pending.selected_service_was_running |= observed.running;
+    pending.selected_runtime_was_running |= observed.running;
+    if pending.native_service_launch.is_none() && observed.installed {
+        pending.native_service_launch = runtime
+            .map(crate::commands::system::NativeOpenclawRuntime::gateway_service_launch_contract);
+    }
+    pending
+}
+
 fn selected_runtime_restored_by_service(
     previous: PreviousGateway,
     service_restore_succeeded: bool,
@@ -2271,71 +2286,93 @@ fn restore_workspace_if_still_owned(
     Ok(true)
 }
 
-/// Restore a persisted runtime-location transaction through its durable
-/// phases. The phase marker remains until both the previous layout and its
-/// Gateway/service ownership are healthy again, so a Windows Scheduled Task
-/// can never be left pointing at a candidate Node/npm location after a crash.
+/// 按持久化阶段恢复运行时位置事务。只有旧布局及其 Gateway 服务所有权均
+/// 恢复健康后才清除阶段标记，避免异常退出后平台服务继续指向候选位置。
 async fn recover_pending_runtime_reconfiguration(
     app: &AppHandle,
     state: &State<'_, GatewayProcess>,
 ) -> Result<bool, String> {
-    let Some((candidate, pending)) = paths::preflight_runtime_reconfiguration_recovery()? else {
+    let Some((candidate, mut pending)) = paths::preflight_runtime_reconfiguration_recovery()?
+    else {
         return Ok(false);
     };
     let previous_layout = pending.previous_layout();
 
     if !pending.previous_layout_is_restored() {
-        let gateway_recovery = pending.gateway_recovery();
-        let (service_runtime, service_state_dir, service_config_path, selected_service_running) =
-            if gateway_recovery.selected_service_was_running {
-                let contract = gateway_recovery.native_service_launch().ok_or_else(|| {
-                "The pending runtime reconfiguration predates service launch recovery; retry from the previous JunQi version or restore the selected Gateway service before continuing"
+        let snapshot = pending.gateway_recovery();
+        let service_runtime = match snapshot.native_service_launch() {
+            Some(contract) => Some(
+                crate::commands::system::native_openclaw_runtime_from_gateway_service_launch_contract(
+                    contract,
+                )?,
+            ),
+            None => match candidate
+                .npm_prefix
+                .as_deref()
+                .and_then(crate::commands::system::resolve_openclaw_binary_in_npm_prefix)
+                .or(crate::commands::system::resolve_openclaw_binary_async().await)
+            {
+                Some(binary) => Some(
+                    crate::commands::system::compatible_native_openclaw_runtime(binary).await?,
+                ),
+                None => None,
+            },
+        };
+        let observed_service = match service_runtime.as_ref() {
+            Some(runtime) => {
+                let identity =
+                    crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
+                        &previous_layout.state_dir,
+                        &previous_layout.config_path,
+                        runtime,
+                    );
+                let inspection = crate::commands::gateway_service::inspect_gateway_service_state(
+                    runtime, &identity, None,
+                )
+                .await?;
+                if inspection.installed
+                    && !crate::commands::gateway_service::belongs_to_selected_state(
+                        inspection.ownership,
+                    )
+                {
+                    return Err(
+                        "The installed Gateway service belongs to another or unverifiable runtime; recovery did not stop it"
+                            .to_string(),
+                    );
+                }
+                let installed = inspection.installed
+                    && crate::commands::gateway_service::belongs_to_selected_state(
+                        inspection.ownership,
+                    );
+                SelectedGatewayService {
+                    installed,
+                    running: installed
+                        && (inspection.running
+                            || crate::commands::gateway::gateway_matches_config(
+                                snapshot.port,
+                                &previous_layout.config_path,
+                            )
+                            .await),
+                }
+            }
+            None => SelectedGatewayService::default(),
+        };
+        let gateway_recovery =
+            merge_reverified_gateway_service(snapshot, observed_service, service_runtime.as_ref());
+        pending = paths::reconcile_runtime_reconfiguration_gateway(gateway_recovery.clone())?
+            .ok_or_else(|| {
+                "The pending runtime reconfiguration disappeared before Gateway facts could be reconciled"
                     .to_string()
             })?;
-                let runtime = crate::commands::system::native_openclaw_runtime_from_gateway_service_launch_contract(contract)?;
-                (
-                    Some(runtime),
-                    previous_layout.state_dir.as_path(),
-                    previous_layout.config_path.as_path(),
-                    true,
-                )
-            } else {
-                let candidate_binary =
-                    crate::commands::system::resolve_openclaw_binary_async().await;
-                let candidate_service = match candidate_binary.as_deref() {
-                    Some(binary) => {
-                        selected_gateway_service(
-                            Some(binary),
-                            &candidate.state_dir,
-                            &candidate.config_path,
-                            candidate.runtime_mode,
-                            state,
-                            &candidate,
-                            false,
-                        )
-                        .await?
-                    }
-                    None => SelectedGatewayService::default(),
-                };
-                let runtime = match (candidate_binary, candidate_service.installed) {
-                    (Some(binary), true) => Some(
-                        crate::commands::system::compatible_native_openclaw_runtime(binary).await?,
-                    ),
-                    _ => None,
-                };
-                (
-                    runtime,
-                    candidate.state_dir.as_path(),
-                    candidate.config_path.as_path(),
-                    candidate_service.installed,
-                )
-            };
+        let should_stop_service = observed_service.running
+            || (gateway_recovery.selected_service_was_running
+                && gateway_recovery.selected_service_installed);
         stop_all_locked_with_service_runtime(
             state,
             service_runtime.as_ref(),
-            service_state_dir,
-            service_config_path,
-            selected_service_running,
+            &previous_layout.state_dir,
+            &previous_layout.config_path,
+            should_stop_service,
         )
         .await
         .map_err(|error| {
@@ -3214,6 +3251,94 @@ pub async fn configure_storage(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_native_runtime(root: &Path) -> crate::commands::system::NativeOpenclawRuntime {
+        use crate::commands::system::{NodeStatus, RuntimeToolSource};
+
+        let node = root.join("node");
+        let entry = root
+            .join("lib")
+            .join("node_modules")
+            .join("openclaw")
+            .join("dist")
+            .join("index.js");
+        std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
+        std::fs::write(&node, "").unwrap();
+        std::fs::write(&entry, "").unwrap();
+        std::fs::write(
+            entry
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("package.json"),
+            r#"{"name":"openclaw","version":"2026.7.1"}"#,
+        )
+        .unwrap();
+        crate::commands::system::native_openclaw_runtime(
+            entry,
+            &NodeStatus {
+                available: true,
+                version: Some("v24.18.0".into()),
+                path: Some(node.to_string_lossy().to_string()),
+                source: Some(RuntimeToolSource::System),
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn stale_gateway_snapshot_adopts_a_reverified_running_service() {
+        let root = storage_test_root("reverified-running-service");
+        let runtime = test_native_runtime(&root);
+        let pending = paths::PendingGatewayRecovery {
+            selected_runtime: OpenClawRuntimeMode::Native,
+            port: 18_789,
+            selected_runtime_was_running: true,
+            selected_service_installed: false,
+            selected_service_was_running: false,
+            native_service_launch: None,
+        };
+
+        let reconciled = merge_reverified_gateway_service(
+            pending,
+            SelectedGatewayService {
+                installed: true,
+                running: true,
+            },
+            Some(&runtime),
+        );
+
+        assert!(reconciled.selected_service_installed);
+        assert!(reconciled.selected_service_was_running);
+        assert!(reconciled.selected_runtime_was_running);
+        assert!(reconciled.native_service_launch().is_some());
+    }
+
+    #[test]
+    fn absent_current_service_does_not_erase_the_persisted_restore_contract() {
+        let root = storage_test_root("persisted-service-contract");
+        let runtime = test_native_runtime(&root);
+        let contract = runtime.gateway_service_launch_contract();
+        let pending = paths::PendingGatewayRecovery {
+            selected_runtime: OpenClawRuntimeMode::Native,
+            port: 18_789,
+            selected_runtime_was_running: true,
+            selected_service_installed: true,
+            selected_service_was_running: true,
+            native_service_launch: Some(contract.clone()),
+        };
+
+        let reconciled = merge_reverified_gateway_service(
+            pending,
+            SelectedGatewayService::default(),
+            Some(&runtime),
+        );
+
+        assert!(reconciled.selected_service_installed);
+        assert!(reconciled.selected_service_was_running);
+        assert_eq!(reconciled.native_service_launch(), Some(&contract));
+    }
 
     #[test]
     fn missing_native_runtime_resumes_only_a_proven_quiescent_half_install() {

@@ -82,3 +82,33 @@ test('统一停止入口提交所选运行时停止结果并收敛连接状态',
     manager.destroy();
   }
 });
+
+test('首次配置阶段未初始化管理器时仍能主动重连', async () => {
+  let connects = 0;
+  const manager = new GatewayConnectionManager({
+    connect: async () => { connects += 1; },
+    start: async () => ({ success: true }),
+    startDocker: async () => ({ success: true }),
+  }, {
+    observe: async () => ({
+      running: true,
+      processAlive: true,
+      ready: true,
+      retrying: false,
+      error: null,
+      logs: { stdout: '', stderr: '' },
+    }),
+    subscribe: () => () => {},
+    ensure: async () => ({ healthy: true }),
+    restart: async () => ({ success: true }),
+    stop: async () => ({ success: true }),
+  });
+  try {
+    manager.reconnect();
+    await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
+
+    assert.equal(connects, 1);
+  } finally {
+    manager.destroy();
+  }
+});

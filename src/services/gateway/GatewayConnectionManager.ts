@@ -151,6 +151,7 @@ export class GatewayConnectionManager {
 
   /** 重置状态机并立即探测，主动建立新连接。 */
   reconnect(): void {
+    this.activateForDirectRecovery();
     this.beginRecovery('RESET');
   }
 
@@ -164,13 +165,9 @@ export class GatewayConnectionManager {
 
   private requestSetupStart(event: 'START_REQUESTED' | 'DOCKER_START_REQUESTED'): Promise<GatewayStartResult> {
     if (this.pendingStart) return this.pendingStart.promise;
-    if (!this.lifecycleEpoch.isActive()) {
-      this.lifecycleEpoch.activate();
-      this.dispatch({ type: 'INITIALIZE' });
-    }
-    // Keep the active status subscription generation intact. Setup starts are
-    // already single-flight above; invalidating here would make that listener
-    // discard the status emitted by the start it is meant to observe.
+    this.activateForDirectRecovery();
+    // 启动请求已经由 pendingStart 串行化，此处保留当前状态订阅代次，避免丢弃
+    // 该启动操作随后产生的运行时状态。
     const generation = this.lifecycleEpoch.capture();
     let resolve!: (result: GatewayStartResult) => void;
     let reject!: (error: Error) => void;
@@ -369,6 +366,14 @@ export class GatewayConnectionManager {
 
   private isCurrent(generation: number): boolean {
     return this.lifecycleEpoch.isCurrent(generation);
+  }
+
+  private activateForDirectRecovery(): void {
+    // 首次配置阶段尚未挂载 App 的常驻 Gateway 生命周期；显式恢复仍要能执行
+    // 一次进程探测和连接，不能因管理器未初始化而静默丢弃事件。
+    if (this.lifecycleEpoch.isActive()) return;
+    this.lifecycleEpoch.activate();
+    this.dispatch({ type: 'INITIALIZE' });
   }
 
   private beginRecovery(event: 'RESET' | 'RETRY'): void {

@@ -120,7 +120,7 @@ test('官方提示文本只含一个 HTTPS 地址时呈现该地址的二维码�
       title: 'DingTalk authorization',
       message: [
         'QR rendering failed in current terminal.',
-        'Authorization URL: https://provider.example/authorize?code=test',
+        'Authorization URL: https://provider.example/authorize?user_code=test',
         'Continue with URL authorization.',
       ].join('\n'),
       executor: 'client' as const,
@@ -144,7 +144,7 @@ test('官方提示文本只含一个 HTTPS 地址时呈现该地址的二维码�
   assert.match(html, /data-qr-display="loading"/);
 });
 
-test('授权地址投影只接受结构化地址或正文中的唯一 HTTPS 地址', () => {
+test('授权地址投影只接受结构化地址或正文中的一次性授权地址', () => {
   assert.equal(resolveWizardAuthorizationUrl({
     externalUrl: 'https://provider.example/structured',
     message: 'Authorization URL: https://provider.example/note',
@@ -159,7 +159,43 @@ test('授权地址投影只接受结构化地址或正文中的唯一 HTTPS 地�
   assert.equal(resolveWizardAuthorizationUrl({
     message: 'Choose https://provider.example/one or https://provider.example/two',
   }), undefined);
+  assert.equal(resolveWizardAuthorizationUrl({
+    message: 'Next steps: https://provider.example/documentation',
+  }), undefined);
   assert.equal(resolveWizardAuthorizationUrl({ message: 'No authorization URL' }), undefined);
+});
+
+test('后续说明步骤不会继承上一授权步骤的二维码', () => {
+  const flow = {
+    presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
+    goBack: async () => undefined,
+  } as unknown as SetupFlow;
+  const html = renderToStaticMarkup(
+    <WizardScreen
+      flow={flow}
+      logs={[]}
+      wizard={{
+        wizardStep: {
+          id: 'channel-configuration-complete',
+          type: 'note',
+          title: 'Channel configured',
+          message: 'Read the next steps at https://provider.example/documentation',
+          executor: 'client',
+        },
+        wizardSubmitting: false,
+        wizardActivity: null,
+        wizardError: null,
+        wizardRecoveryMode: null,
+        submitWizardStep: async () => null,
+        pollWizard: async () => null,
+        retryWizard: async () => null,
+        reclaimWizard: async () => null,
+      }}
+    />,
+  );
+
+  assert.doesNotMatch(html, /data-wizard-authorization/);
+  assert.doesNotMatch(html, /data-wizard-authorization-qr/);
 });
 
 test('正常交互步骤默认收起日志并保留手动展开入口', () => {
@@ -293,7 +329,7 @@ test('授权步骤提交后用等待状态替换旧二维码', () => {
           id: 'dingtalk-authorization',
           type: 'note',
           title: 'DingTalk authorization',
-          message: 'Authorization URL: https://provider.example/authorize',
+          message: 'Authorization URL: https://provider.example/authorize?user_code=test',
           executor: 'client',
         },
         wizardSubmitting: true,

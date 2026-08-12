@@ -1418,6 +1418,13 @@ fn openclaw_binary_in_npm_prefix(prefix: &Path) -> Option<PathBuf> {
         .find(|candidate| is_valid_openclaw_candidate(candidate))
 }
 
+/// 仅从持久化事务指定的 npm 前缀解析 OpenClaw。运行时位置恢复期间，
+/// 常规发现会因迁移标记而主动停止；恢复流程仍需使用这个精确位置核验
+/// 已安装的官方服务，不能退回 PATH 或其他 npm 安装。
+pub(crate) fn resolve_openclaw_binary_in_npm_prefix(prefix: &Path) -> Option<PathBuf> {
+    openclaw_binary_in_npm_prefix(prefix)
+}
+
 /// Resolve sources whose location is explicitly selected by the user or by
 /// JunQi. A missing package in one of these locations is a hard stop: falling
 /// through to a stale npm installation would violate that selection.

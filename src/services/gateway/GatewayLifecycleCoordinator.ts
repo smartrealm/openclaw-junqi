@@ -108,6 +108,18 @@ export class GatewayLifecycleCoordinator {
     return this.request({ action: 'reconnect', source });
   }
 
+  async reconnectAfterCurrent(source: string): Promise<GatewayLifecycleResult> {
+    // Wizard 终态交接必须取得一次属于自己的新连接结果，不能复用正在结束的重启
+    // 或恢复请求，否则上一个请求的来源和终态会被误当作本次核验结果。
+    while (this.active) {
+      const active = this.active;
+      await active;
+      const pendingUpgrade = this.pendingUpgradeResult;
+      if (pendingUpgrade) await pendingUpgrade;
+    }
+    return this.request({ action: 'reconnect', source });
+  }
+
   recover(source: string, diagnostic?: string): Promise<GatewayLifecycleResult> {
     return this.request({ action: 'recover', source, diagnostic });
   }

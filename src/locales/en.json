@@ -4146,6 +4146,7 @@
       "startingSession": "Starting the official OpenClaw setup wizard…",
       "connectingAction": "Connecting",
       "connectionTimeout": "The Gateway process is ready, but JunQi could not complete an authenticated Gateway connection in time.",
+      "connectionSuperseded": "Gateway connection verification was replaced by another runtime operation. Wait for it to finish, then verify again.",
       "handoffNotReady": "OpenClaw setup completed, but the selected Gateway could not be verified after the runtime handoff. Repair it and try again.",
       "missingCompletionState": "OpenClaw setup completed, but the local recovery state is no longer available. Verify the selected runtime again.",
       "failed": "The OpenClaw setup wizard failed.",

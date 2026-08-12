@@ -137,6 +137,26 @@ test('a stronger restart requested during recovery is queued instead of being dr
   assert.deepEqual(calls, ['ensure', 'restart']);
 });
 
+test('post-handoff reconnect waits for an existing lifecycle and returns its own result', async () => {
+  const pending = deferred<GatewayRestartResult>();
+  const calls: string[] = [];
+  const lifecycle = coordinator({
+    restart: () => { calls.push('restart'); return pending.promise; },
+    reconnect: () => { calls.push('reconnect'); },
+  });
+
+  const restart = lifecycle.restart('wizard-reclaim');
+  const reconnect = lifecycle.reconnectAfterCurrent('wizard-completion');
+  pending.resolve({ success: true });
+
+  assert.equal((await restart).action, 'restart');
+  const result = await reconnect;
+  assert.equal(result.success, true);
+  assert.equal(result.action, 'reconnect');
+  assert.equal(result.source, 'wizard-completion');
+  assert.deepEqual(calls, ['restart', 'reconnect']);
+});
+
 test('an unexpected active failure is normalized and a queued restart still runs', async () => {
   const pending = deferred<GatewayRestartResult>();
   const calls: string[] = [];

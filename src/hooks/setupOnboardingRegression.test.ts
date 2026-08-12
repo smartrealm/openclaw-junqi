@@ -69,7 +69,7 @@ test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway r
   );
 
   assert.match(completion, /await handoffGatewayToOfficialService\(\)/);
-  assert.match(completion, /gatewayLifecycle\.reconnect\(WIZARD_COMPLETION_RECONNECT_SOURCE\)/);
+  assert.match(completion, /gatewayLifecycle\.reconnectAfterCurrent\(WIZARD_COMPLETION_RECONNECT_SOURCE\)/);
   assert.match(completion, /await probeSelectedGateway\(\)/);
   assert.ok(
     completion.indexOf('await probeSelectedGateway()')
@@ -578,7 +578,7 @@ test('BUG-ONB-50 retry recovers an upstream-reaped Wizard session instead of sur
   assert.match(retry, /wizardClientRef\.current!\.retry\(\)/);
   assert.match(retry, /isOpenClawWizardSessionLost\(error\)/);
   assert.match(retry, /recoverLostWizardSession\(wizardClientRef\.current!\)/);
-  assert.match(retry, /recoveryMode === "runtime"[\s\S]*?applyWizardResult\(completedResult, operationId\)/);
+  assert.match(retry, /recoveryMode === "runtime"[\s\S]*?applyWizardResult\(completedResult, operationId, \{ handoff: false \}\)/);
   assert.match(setupFlow, /setWizardRecoveryMode\("runtime"\)/);
 });
 

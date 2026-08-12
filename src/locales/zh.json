@@ -4139,6 +4139,7 @@
       "startingSession": "正在启动 OpenClaw 官方配置向导…",
       "connectingAction": "正在连接",
       "connectionTimeout": "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成经认证的 Gateway 连接。",
+      "connectionSuperseded": "Gateway 连接核验被另一项运行时操作替代，请等待该操作完成后重新核验。",
       "handoffNotReady": "OpenClaw 配置已完成，但切换运行方式后无法验证所选 Gateway。请修复并重试。",
       "missingCompletionState": "OpenClaw 配置已经完成，但本地恢复状态已失效。请重新核验当前运行时。",
       "failed": "OpenClaw 配置向导执行失败。",

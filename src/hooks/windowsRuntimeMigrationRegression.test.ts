@@ -206,15 +206,26 @@ test('BUG-WRM-10 incomplete runtime recovery blocks storage edits and offers a r
   assert.match(storagePanel, /runtimeRecoveryRetry/);
 });
 
-test('BUG-WRM-11 recovery uses the prior verified service launch when the candidate npm runtime is incomplete', () => {
+test('BUG-WRM-11 recovery revalidates and persists the official service before releasing its port', () => {
   const recovery = storage.slice(
     storage.indexOf('async fn recover_pending_runtime_reconfiguration'),
     storage.indexOf('async fn recover_runtime_reconfiguration_after_failure'),
   );
   assert.match(paths, /struct NativeGatewayServiceLaunchContract/);
-  assert.match(recovery, /gateway_recovery\.native_service_launch\(\)/);
+  assert.match(recovery, /snapshot\.native_service_launch\(\)/);
   assert.match(recovery, /native_openclaw_runtime_from_gateway_service_launch_contract/);
+  assert.match(recovery, /resolve_openclaw_binary_in_npm_prefix/);
+  assert.match(recovery, /inspect_gateway_service_state/);
+  assert.match(recovery, /reconcile_runtime_reconfiguration_gateway/);
   assert.match(recovery, /stop_all_locked_with_service_runtime/);
+  assert.ok(
+    recovery.indexOf('reconcile_runtime_reconfiguration_gateway')
+      < recovery.indexOf('stop_all_locked_with_service_runtime'),
+  );
+  assert.ok(
+    recovery.indexOf('stop_all_locked_with_service_runtime')
+      < recovery.indexOf('wait_for_port_free'),
+  );
   assert.doesNotMatch(recovery, /stop_all_locked\(\n\s*state,\n\s*candidate_binary/);
 });
 

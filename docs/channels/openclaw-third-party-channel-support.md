@@ -135,7 +135,7 @@ JunQi 只能根据安装后的插件 capability 决定是否能在应用内呈�
 | WhatsApp | 链接 WhatsApp Web 设备 | OpenClaw 正式 `web.login.start` 与 `web.login.wait` 可返回 `qrDataUrl`、轮换二维码和 `connected` | 目标 Runtime capability 同时声明两个方法时可内嵌；官方成功回调后独立刷新渠道状态 |
 | Zalo Personal | 链接个人 Zalo 账号 | 渠道 gateway adapter 提供 QR start 与 wait | 仍以 Runtime capability 是否正式暴露对应 Gateway 方法为准 |
 | WeChat | 登录个人微信插件账号 | `channels login` 触发插件二维码 | 文档未保证结构化二维码；不能从终端图形或历史日志重建 |
-| DingTalk | 创建或绑定钉钉机器人并取得凭据 | 插件当前把终端二维码和授权 URL 放入 note 文本 | JunQi 只可将当前步骤中唯一明确的 HTTPS 地址做本地二维码投影；不能从显示成功推断授权完成 |
+| DingTalk | 创建或绑定钉钉机器人并取得凭据 | 插件当前把终端二维码和授权 URL 放入 note 文本 | JunQi 只可将当前步骤中唯一、带非空 `user_code` 的 HTTPS 一次性授权地址做本地二维码投影；离开该步骤立即销毁，不能从显示成功推断授权完成 |
 | Feishu | 扫码创建机器人并限制 DM 到扫码用户 | 上游 setup 直接调用终端 QR 输出 | 当前没有通用结构化 QR 字段，JunQi 不能凭渠道名伪造 |
 | QQ Bot | 扫码绑定 QQ Bot 应用凭据 | 腾讯 connector 内部 `qrConnect` | 当前没有通用结构化 QR 字段，JunQi 不能把普通 QQ 登录当成 Bot 绑定 |
 | Zalo ClawBot | 通过 Zalo Mini App 绑定所有者机器人 | 外部插件在终端渲染二维码 | 只能忠实呈现插件正式返回；令牌过期后必须由插件重新生成 |
@@ -195,7 +195,7 @@ OpenClaw 通用模型包括 DM pairing、allowlist、group policy、群组 allow
 ### 7.3 Wizard 与二维码
 
 - 完整首次配置继续使用 OpenClaw 官方 `wizard.start` setup 流程，渠道步骤由当前插件动态提供。
-- 正式 `externalUrl` 可以本地编码成二维码；当前步骤只有一个明确 HTTPS 地址时，可以作为不改变协议状态的展示派生数据。
+- 正式 `externalUrl` 可以在所属步骤存活期间本地编码成二维码；旧插件 note 只有在当前步骤返回唯一、带非空 `user_code` 的 HTTPS 一次性授权地址时才允许投影。普通文档链接不得生成二维码，步骤标识变化、提交等待、终态、取消或失败后立即销毁投影。
 - 渠道 capability 同时声明 `web.login.start` 与 `web.login.wait` 时，渠道中心可以使用内嵌 QR 对话框。
 - 终端 ASCII 二维码、日志片段和渠道名称都不是结构化二维码契约，JunQi 不从这些内容恢复扫码状态。
 - `web.login.wait` 返回新 `qrDataUrl` 时，JunQi 在同一有界等待窗口中替换二维码并继续监听；返回未连接且没有新二维码时停止自动请求，保留插件消息并允许用户显式继续监听或重新生成。

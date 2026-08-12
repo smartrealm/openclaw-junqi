@@ -222,6 +222,7 @@ export function useWizardSession({
   const applyWizardResult = useCallback(async (
     result: OpenClawWizardResult,
     operationId: number,
+    options: { handoff?: boolean } = {},
   ): Promise<OpenClawWizardResult> => {
     assertWizardOperationCurrent(operationId);
     if (result.error || result.status === "error") {
@@ -254,16 +255,30 @@ export function useWizardSession({
       completedWizardResultRef.current = result;
       setWizardStep(null);
       setWizardRecoveryMode("runtime");
-      // 官方会话已经终态，即使下方运行时交接失败也不能重放已接受的凭据；恢复只能重新
-      // 核验 Gateway 所有权与所选配置身份。
-      // 官方向导可能默认安装平台服务，宣布完成前必须收敛所有权，避免前台子进程与系统服务
-      // 争用同一端口。
+      const shouldHandoff = options.handoff !== false;
+      // 官方会话已经终态，后续失败只能核验运行时，不能重放已接受的凭据。
       try {
-        await handoffGatewayToOfficialService();
-        assertWizardOperationCurrent(operationId);
-        const reconnected = await gatewayLifecycle.reconnect(WIZARD_COMPLETION_RECONNECT_SOURCE);
+        if (shouldHandoff) {
+          // 官方向导可能安装平台服务。首次消费终态时收敛托管所有权，恢复操作不得
+          // 再次重复交接或重启已经就绪的服务。
+          const handedOff = await handoffGatewayToOfficialService();
+          assertWizardOperationCurrent(operationId);
+          if (!handedOff) {
+            throw new Error(t(
+              "setup.wizard.handoffNotReady",
+              "OpenClaw 配置已完成，但切换运行方式后无法验证所选 Gateway。请修复并重试。",
+            ));
+          }
+        }
+        const reconnected = await gatewayLifecycle.reconnectAfterCurrent(WIZARD_COMPLETION_RECONNECT_SOURCE);
         assertWizardOperationCurrent(operationId);
         if (!reconnected.success) {
+          if (reconnected.superseded) {
+            throw new Error(t(
+              "setup.wizard.connectionSuperseded",
+              "Gateway 连接核验被另一项运行时操作替代，请等待该操作完成后重新核验。",
+            ));
+          }
           throw new Error(reconnected.error || t(
             "setup.wizard.connectionTimeout",
             "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成经认证的 Gateway 连接。",
@@ -493,7 +508,7 @@ export function useWizardSession({
             "OpenClaw 配置已经完成，但本地恢复状态已失效。请重新核验当前运行时。",
           ));
         }
-        return await applyWizardResult(completedResult, operationId);
+        return await applyWizardResult(completedResult, operationId, { handoff: false });
       }
       await waitForGatewayConnection(operationId);
       let result: OpenClawWizardResult;

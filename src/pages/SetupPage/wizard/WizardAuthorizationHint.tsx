@@ -5,6 +5,15 @@ import type { OpenClawWizardStep } from "@/services/openclawWizard";
 
 const HTTPS_URL_PATTERN = /https:\/\/[^\s<>"'`]+/giu;
 
+function isOneTimeAuthorizationUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && Boolean(url.searchParams.get("user_code")?.trim());
+  } catch {
+    return false;
+  }
+}
+
 export function resolveWizardAuthorizationUrl({
   externalUrl,
   message,
@@ -12,14 +21,10 @@ export function resolveWizardAuthorizationUrl({
   if (externalUrl) return externalUrl;
   if (!message) return undefined;
 
+  // 旧渠道插件可能只在当前 note 中返回一次性设备授权地址。仅投影带
+  // `user_code` 的 HTTPS 地址，避免把后续说明页中的普通链接继续渲染为二维码。
   const candidates = Array.from(new Set(message.match(HTTPS_URL_PATTERN) ?? []))
-    .filter((candidate) => {
-      try {
-        return new URL(candidate).protocol === "https:";
-      } catch {
-        return false;
-      }
-    });
+    .filter(isOneTimeAuthorizationUrl);
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
@@ -34,11 +39,12 @@ async function openWizardExternalUrl(value?: string): Promise<void> {
 }
 
 export function WizardAuthorizationHint({
-  externalUrl,
-  deviceCode,
-  message,
-}: Pick<OpenClawWizardStep, "externalUrl" | "deviceCode" | "message">) {
+  step,
+}: {
+  step: Pick<OpenClawWizardStep, "externalUrl" | "deviceCode" | "message">;
+}) {
   const { t } = useTranslation();
+  const { externalUrl, deviceCode, message } = step;
   const authorizationUrl = resolveWizardAuthorizationUrl({ externalUrl, message });
 
   if (!authorizationUrl && !deviceCode) return null;

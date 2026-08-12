@@ -1702,6 +1702,28 @@ pub(crate) fn preflight_runtime_reconfiguration_recovery(
     Ok(Some((layout, pending)))
 }
 
+/// 在停止当前服务前持久化重新核验后的 Gateway 事实。恢复过程可能在停止
+/// 服务后再次异常退出，因此不能只在内存中修正过期快照，否则下次启动将
+/// 无法判断是否需要恢复原来的官方服务。
+pub(crate) fn reconcile_runtime_reconfiguration_gateway(
+    gateway: PendingGatewayRecovery,
+) -> Result<Option<PendingRuntimeReconfiguration>, String> {
+    let Some((mut layout, mut pending)) = preflight_runtime_reconfiguration_recovery()? else {
+        return Ok(None);
+    };
+    if pending.previous_layout_is_restored() {
+        return Err(
+            "The previous runtime layout is already restored; Gateway facts can no longer be changed"
+                .to_string(),
+        );
+    }
+    pending.gateway = gateway;
+    pending.recovery_error = None;
+    layout.pending_runtime_reconfiguration = Some(pending.clone());
+    save_storage_bootstrap(&layout)?;
+    Ok(Some(pending))
+}
+
 /// Persist the previous runtime layout but retain the memento until its
 /// Gateway service and terminal integration have also been restored.
 pub(crate) fn stage_runtime_reconfiguration_previous_layout(
