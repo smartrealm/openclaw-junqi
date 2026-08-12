@@ -249,7 +249,9 @@ OpenClaw 没有独立 `wizard.pause` RPC。JunQi 的“暂停并返回”只停�
 
 ### Gateway 重启后的会话丢失
 
-Wizard 会话存在于 Gateway 进程内。Gateway 重启后，原 `sessionId` 可能得到 `WIZARD_NOT_FOUND`。JunQi 先清除该运行时范围内的旧标识，通过统一生命周期恢复当前所选 Gateway 的认证连接，再使用既有结构化配置门禁核验结果；不得重放旧答案，也不得根据本地缓存伪造完成状态。只有结构化检测仍明确要求配置时，页面才提供由用户显式触发的全新官方 Wizard；页面恢复和普通重试不得自动调用 `wizard.start`。
+Wizard 会话存在于 Gateway 进程内。Gateway 重启后，原 `sessionId` 可能得到 `WIZARD_NOT_FOUND`。JunQi 先清除该运行时范围内的旧标识，通过统一生命周期恢复当前所选 Gateway 的认证连接，并确认原会话确实不可恢复。此时官方协议没有提供跨进程终态查询，JunQi 必须保留“终态未知”，不得重放旧答案，也不得根据配置文件、健康状态、页面标题或本地缓存伪造完成或失败。页面恢复不会自动调用 `wizard.start`；用户显式重新开始前必须通过可取消的确认对话框了解可能重复持久写入的风险。
+
+最新 OpenClaw 主线在 `wizard.start` 创建会话后调用 `retainGatewayWorkUntilSettled`，保持 Gateway 工作准入直到 Runner 收敛，避免配置 reload 清除进程内会话。当前安装运行时是否包含该修复必须按实际官方源码或可复现行为核验，不能用版本字符串猜测。
 
 ## 九、JunQi 当前实现
 
@@ -257,7 +259,7 @@ Wizard 会话存在于 Gateway 进程内。Gateway 重启后，原 `sessionId` �
 
 1. 用户已经明确选择 Native 或 Docker Runtime。
 2. JunQi 已核验 Gateway 目标、凭据和 Runtime Identity。
-3. `openclaw.setup.detect` 决定是否需要进入官方配置。
+3. 首次配置默认由官方 Wizard 判断既有配置和可跳过步骤；JunQi 不维护平行的 setup 检测 RPC。
 4. Wizard RPC 使用经授权的 `operator.admin` 临时管理连接。
 
 ### 当前首次配置请求
@@ -271,14 +273,14 @@ JunQi 首次启动只发起完整官方配置：
 }
 ```
 
-当前首次配置不发送 `flow: "channels"`。完整 `setup` 本身已经包含官方渠道步骤，而且部分旧 Runtime 会按封闭 schema 拒绝后来新增的 `flow` 字段。独立渠道流程只有在 JunQi 增加明确入口并依据目标 Runtime 正式契约验证后才能接入。
+当前首次配置不发送 `flow: "channels"`。完整 `setup` 本身已经包含官方渠道步骤。工作台渠道中心的新增和重新配置入口使用独立的 `wizard.start { flow: "channels", channel }`；setup 与每个渠道的会话存储相互隔离。部分旧 Runtime 会按封闭 schema 拒绝后来新增的 `flow` 字段，只有收到结构化 `INVALID_REQUEST` 时才显示官方终端渠道配置交接，不以版本号推断能力。
 
 ### 会话所有权
 
 - JunQi 只持久化不透明 `sessionId`，不保存答案、凭据或步骤副作用。
 - 存储键绑定 `runtimeMode` 与规范化 Gateway WebSocket URL；Native、Docker 和不同 Gateway 目标之间不能复用会话。
 - 重新进入页面时优先使用无答案 `wizard.next` 恢复。
-- 开始新的完整流程前，若当前范围仍有会话，客户端先请求官方取消；会话已经丢失时清除旧标识并核验当前 Gateway 与配置结果，不隐式启动新流程。
+- 开始新的完整流程前，若当前范围仍有会话，客户端先请求官方取消；会话已经丢失时清除旧标识并保留终态未知，不隐式启动新流程。
 
 ### 界面投影
 
@@ -306,8 +308,8 @@ Wizard 完成不等于桌面客户端已经连接到正确 Runtime。上述核�
 
 | 现象 | 官方含义 | JunQi 动作 |
 | --- | --- | --- |
-| `wizard not found` 或 `WIZARD_NOT_FOUND` | 进程内会话不存在或已回收 | 清除当前 Runtime 的旧标识，重新启动官方流程 |
-| `wizard not running` | 会话已经到达终态 | 不重放答案，重新核验配置与 Gateway |
+| `wizard not found` 或 `WIZARD_NOT_FOUND` | 进程内会话不存在或已回收，旧 Runner 终态不可查询 | 清除当前 Runtime 的旧标识并保留终态未知；只允许用户知情后显式新建流程 |
+| `wizard not running` | 会话不再接受答案，但该错误本身不携带终态结果 | 不重放答案；尝试无答案恢复，无法恢复时保留终态未知 |
 | `wizard: no pending step` | 客户端步骤与服务端当前步骤不同步 | 使用无答案 `wizard.next` 恢复当前步骤 |
 | Setup 正在进行 | 准入门禁拒绝并发会话 | 保留可重试状态，不创建第二套本地流程 |
 | 普通 Wizard 请求超时 | 结果未知 | 先恢复同一会话，不自动重放带副作用的答案 |
@@ -326,6 +328,7 @@ Wizard 完成不等于桌面客户端已经连接到正确 Runtime。上述核�
 - 不在本地重放已经提交的凭据或写操作。
 - 不把 `sessionId` 跨 Runtime、跨 Gateway 地址复用。
 - 不因当前安装版本缺少最新字段就静默切换到另一套本地向导。
+- 不创建 `openclaw.setup.detect`、`openclaw.setup.verify` 等未被官方 Gateway 注册的完成检测协议。
 - 不把 `preparedModelRef`、`accounts` 或二维码显示解释为实际模型、渠道已经可用；仍需官方激活或状态核验。
 
 ## 十二、官方源码依据
@@ -345,6 +348,5 @@ Wizard 完成不等于桌面客户端已经连接到正确 Runtime。上述核�
 - [`src/pages/SetupPage/WizardScreen.tsx`](../../src/pages/SetupPage/WizardScreen.tsx)
 - [`src/pages/SetupPage/wizard/WizardStepRenderer.tsx`](../../src/pages/SetupPage/wizard/WizardStepRenderer.tsx)
 - [`src/pages/SetupPage/wizard/WizardAuthorizationHint.tsx`](../../src/pages/SetupPage/wizard/WizardAuthorizationHint.tsx)
-- [`src/services/gateway/OpenClawSetupClient.ts`](../../src/services/gateway/OpenClawSetupClient.ts)
 
 第三方平台、插件归属、授权方式和扫码能力见 [OpenClaw 第三方渠道支持](../channels/openclaw-third-party-channel-support.md)。

@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import {
   buildChannelSetupCommand,
   channelErrorMessage,
-  channelLinkMode,
   isOpenClawChannelIdentifier,
   loadOfficialChannelRuntimeState,
   normalizeOfficialChannelCapability,
+  normalizeOfficialChannelCapabilities,
+  selectOfficialChannelCapability,
   normalizeOfficialChannelCatalog,
   redactChannelSecrets,
   runtimeChannelIds,
@@ -74,18 +75,18 @@ describe('openclawChannelRuntime', () => {
     assert.deepEqual(result, { channelAccounts: {} });
   });
 
-  test('routes official link flows only from current runtime capabilities', () => {
-    const qrCapability = normalizeOfficialChannelCapability({
-      channels: [{
-        channel: 'provider',
-        plugin: { gatewayMethods: ['web.login.start', 'web.login.wait'] },
-      }],
-    });
-    const capabilityWithoutQr = normalizeOfficialChannelCapability({ channels: [{ channel: 'openclaw-weixin' }] });
-    assert.equal(channelLinkMode(qrCapability, true), 'embedded_qr');
-    assert.equal(channelLinkMode(capabilityWithoutQr, true), 'none');
-    assert.equal(channelLinkMode(null, true), 'none');
-    assert.equal(channelLinkMode(null, false), 'terminal_setup');
+  test('保留所有账号能力并按账号精确选择', () => {
+    const capabilities = normalizeOfficialChannelCapabilities({ channels: [
+      { channel: 'provider', accountId: 'one', configured: false },
+      { channel: 'provider', accountId: 'two', configured: true },
+    ] });
+    assert.equal(capabilities.length, 2);
+    assert.equal(selectOfficialChannelCapability(capabilities, 'provider', 'two')?.configured, true);
+    assert.equal(selectOfficialChannelCapability(capabilities, 'provider', 'missing')?.accountId, 'one');
+    assert.equal(selectOfficialChannelCapability([
+      capabilities[0],
+      { ...capabilities[1], gatewayMethods: ['web.login.start'] },
+    ], 'provider', 'two'), null);
   });
 
   test('builds safe cross-platform CLI commands and rejects flag injection', () => {

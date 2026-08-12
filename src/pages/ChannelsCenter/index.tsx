@@ -28,12 +28,12 @@ import {
   buildChannelSetupCommand,
   channelAccountStatus,
   channelErrorMessage,
-  channelLinkMode,
   installManagedExternalChannelPlugin,
   loadOfficialChannelCapability,
   loadOfficialChannelCatalog,
   loadOfficialChannelLogs,
   loadOfficialChannelRuntimeState,
+  resolveUniqueWebLoginProvider,
   redactChannelSecrets,
   runtimeChannelIds,
   type ChannelsRuntimeSnapshot,
@@ -42,12 +42,13 @@ import {
   type OfficialChannelCapability,
 } from '@/services/openclawChannelRuntime';
 import { ChannelQrLoginDialog } from './ChannelQrLoginDialog';
+import { ChannelSetupWizardDialog } from './ChannelSetupWizardDialog';
+import type { OpenClawWizardConfiguredAccount } from '@/services/openclawWizard';
 import { ChannelAccountDialog } from './ChannelAccountDialog';
 import { ChannelCatalogDialog, type ChannelCatalogItem } from './ChannelCatalogDialog';
 import { ChannelDetailPanel } from './ChannelDetailPanel';
 import { ChannelListPanel, type ChannelReadinessFilter } from './ChannelListPanel';
 import {
-  nextChannelAccountId,
   type ChannelGroupWithName,
   type EditingAccountState,
 } from './channelCenterTypes';
@@ -117,7 +118,8 @@ export function ChannelsCenterPage() {
   const [channelLogPayloads, setChannelLogPayloads] = useState<Record<string, unknown>>({});
   const [channelLogsBusy, setChannelLogsBusy] = useState('');
   const [pluginInstalling, setPluginInstalling] = useState('');
-  const [qrTarget, setQrTarget] = useState<{ channelId: string; accountId: string } | null>(null);
+  const [qrTarget, setQrTarget] = useState<{ channelId: string; channelLabel: string; accountId: string } | null>(null);
+  const [wizardTarget, setWizardTarget] = useState<{ channelId: string; channelLabel: string } | null>(null);
   const [capabilityByChannel, setCapabilityByChannel] = useState<Record<string, OfficialChannelCapability | null>>({});
   const savingRef = useRef(false);
 
@@ -307,16 +309,11 @@ export function ChannelsCenterPage() {
   };
 
   const handleLinkAccount = (
-    entry: OfficialChannelCatalogEntry | undefined,
+    _entry: OfficialChannelCatalogEntry | undefined,
     group: ChannelGroupWithName,
-    account: ChannelAccountBinding,
+    _account: ChannelAccountBinding,
   ) => {
-    const mode = channelLinkMode(capabilityByChannel[group.id], entry?.installed === true);
-    if (mode === 'embedded_qr') {
-      setQrTarget({ channelId: group.id, accountId: account.id });
-      return;
-    }
-    openChannelTerminal(buildChannelSetupCommand(group.id, account.id));
+    setWizardTarget({ channelId: group.id, channelLabel: group.name });
   };
 
   const handleAccountRuntimeAction = async (
@@ -431,58 +428,49 @@ export function ChannelsCenterPage() {
     );
   };
 
-  const handleAdd = async (entry: OfficialChannelCatalogEntry) => {
-    // 已安装渠道不一定要走终端命令——catalog 声明支持扫码绑定时,与
-    // handleLinkAccount 一样把首次关联也交给 ChannelQrLoginDialog。未安装
-    // 渠道的安装语义由 `openclaw channels add` 承担,终端仍是合适场景。
-    if (entry.installed) {
-      let capability = capabilityByChannel[entry.id];
-      if (capability === undefined) {
-        capability = await loadOfficialChannelCapability(entry.id)
-          .catch(() => null);
-        setCapabilityByChannel((current) => ({ ...current, [entry.id]: capability ?? null }));
-      }
-      if (channelLinkMode(capability ?? null, true) === 'embedded_qr') {
-        const accountId = nextChannelAccountId(entry.id, groups);
-        setQrTarget({ channelId: entry.id, accountId });
-        return;
-      }
-    }
-    if (entry.managedInstall && entry.installed && config) {
-      // 用户明确保存前不把草稿写入实时配置；字段完全来自已安装插件 schema，
-      // JunQi 不定义任何渠道专属凭据。
-      const draftConfig: GatewayRuntimeConfig = {
-        ...config,
-        channels: {
-          ...(config.channels ?? {}),
-          // 非通用默认值由插件拥有，草稿只保留跨渠道稳定的启用字段。
-          [entry.id]: { enabled: true },
-        },
-      };
-      const draftGroup = buildChannelGroups(draftConfig).find((group) => group.id === entry.id);
-      if (draftGroup) {
-        setEditingAccount({
-          mode: 'new',
-          group: {
-            ...draftGroup,
-            name: channelName(t, entry.id, runtimeSnapshot?.channelLabels?.[entry.id]),
-          },
-          draftConfig,
-        });
-        return;
-      }
-    }
-    openChannelTerminal(buildChannelSetupCommand(entry.id));
+  const handleAdd = (entry: OfficialChannelCatalogEntry) => {
+    setWizardTarget({
+      channelId: entry.id,
+      channelLabel: channelName(t, entry.id, runtimeSnapshot?.channelLabels?.[entry.id]),
+    });
   };
 
   const handleCatalogEntry = (entry: OfficialChannelCatalogEntry) => {
     setCatalogOpen(false);
     const configured = groups.find((group) => group.id === entry.id);
     if (!configured) {
-      void handleAdd(entry);
+      handleAdd(entry);
       return;
     }
-    setExpanded(entry.id);
+    handleAdd(entry);
+  };
+
+  const handleWizardComplete = async (accounts: OpenClawWizardConfiguredAccount[]) => {
+    if (!wizardTarget) return;
+    const completedTarget = wizardTarget;
+    setWizardTarget(null);
+    try {
+      const [nextCatalog] = await Promise.all([
+        loadOfficialChannelCatalog(true),
+        load(),
+        loadOfficialState(true),
+      ]);
+      const provider = await resolveUniqueWebLoginProvider(nextCatalog);
+      const matchingAccounts = accounts.filter((account) => account.channel === completedTarget.channelId);
+      if (provider === completedTarget.channelId && matchingAccounts.length === 1) {
+        setQrTarget({
+          channelId: completedTarget.channelId,
+          channelLabel: completedTarget.channelLabel,
+          accountId: matchingAccounts[0].accountId,
+        });
+      }
+    } catch (reason: unknown) {
+      showAlert(
+        t('channelsCenter.channelRefreshFailed', 'Channel setup completed, but the updated Runtime state could not be loaded.'),
+        channelErrorMessage(reason),
+        'warning',
+      );
+    }
   };
 
   const handleInstallManagedPlugin = async (channelId: string) => {
@@ -694,10 +682,25 @@ export function ChannelsCenterPage() {
         <ChannelQrLoginDialog
           client={openClawChannelQrLoginClient}
           channelId={qrTarget.channelId}
+          channelLabel={qrTarget.channelLabel}
           accountId={qrTarget.accountId}
           onClose={() => setQrTarget(null)}
           onConnected={() => {
             void loadOfficialState(true, qrTarget.channelId);
+          }}
+        />
+      )}
+      {wizardTarget && (
+        <ChannelSetupWizardDialog
+          key={wizardTarget.channelId}
+          channelId={wizardTarget.channelId}
+          channelLabel={wizardTarget.channelLabel}
+          onClose={() => setWizardTarget(null)}
+          onComplete={(accounts) => { void handleWizardComplete(accounts); }}
+          onTerminalFallback={() => {
+            const target = wizardTarget;
+            setWizardTarget(null);
+            openChannelTerminal(buildChannelSetupCommand(target.channelId));
           }}
         />
       )}

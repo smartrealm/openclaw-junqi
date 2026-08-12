@@ -20,12 +20,14 @@ import {
 export function ChannelQrLoginDialog({
   client,
   channelId,
+  channelLabel,
   accountId,
   onClose,
   onConnected,
 }: {
   client: ChannelQrLoginGateway;
   channelId: string;
+  channelLabel: string;
   accountId?: string;
   onClose: () => void;
   onConnected: () => void;
@@ -80,8 +82,9 @@ export function ChannelQrLoginDialog({
             <QrCode size={16} />
             {t('channelsCenter.scanQr', 'Scan QR code')}
           </DialogTitle>
-          <DialogDescription className="mt-1 text-[10.5px] leading-4 text-aegis-text-muted">
-            {t('channelsCenter.scanQrHint', 'Scan the code in the channel app. OpenClaw owns the authorization result and account connection.')}
+          <DialogDescription className="mt-1 space-y-0.5 text-[10.5px] leading-4 text-aegis-text-muted">
+            <span className="block font-mono text-aegis-text-secondary">{channelLabel} · {accountId || 'default'}</span>
+            <span className="block">{t('channelsCenter.scanQrHint', 'Scan the code in the channel app. OpenClaw owns the authorization result and account connection.')}</span>
           </DialogDescription>
         </DialogHeader>
 

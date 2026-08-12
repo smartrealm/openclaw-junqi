@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Copy, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { QrCodeDisplay } from "@/components/shared/QrCodeDisplay";
@@ -30,12 +31,12 @@ export function resolveWizardAuthorizationUrl({
 
 async function openWizardExternalUrl(value?: string): Promise<void> {
   if (!value) return;
-  try {
-    const { open } = await import("@tauri-apps/plugin-shell");
-    await open(value);
-  } catch {
-    // 授权地址由 Gateway 提供；桌面 Shell 不可用时不能伪造已打开或已授权状态。
+  const parsed = new URL(value);
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("OpenClaw returned an unsupported authorization URL protocol.");
   }
+  const { open } = await import("@tauri-apps/plugin-shell");
+  await open(value);
 }
 
 export function WizardAuthorizationHint({
@@ -44,6 +45,7 @@ export function WizardAuthorizationHint({
   step: Pick<OpenClawWizardStep, "externalUrl" | "deviceCode" | "message">;
 }) {
   const { t } = useTranslation();
+  const [actionError, setActionError] = useState("");
   const { externalUrl, deviceCode, message } = step;
   const authorizationUrl = resolveWizardAuthorizationUrl({ externalUrl, message });
 
@@ -71,15 +73,25 @@ export function WizardAuthorizationHint({
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                onClick={() => void navigator.clipboard.writeText(authorizationUrl).catch(() => undefined)}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-aegis-primary hover:underline"
+                onClick={() => {
+                  setActionError("");
+                  void navigator.clipboard.writeText(authorizationUrl).catch((reason: unknown) => {
+                    setActionError(reason instanceof Error ? reason.message : String(reason));
+                  });
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-aegis-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35"
               >
                 <Copy size={13} />{t("common.copy")}
               </button>
               <button
                 type="button"
-                onClick={() => void openWizardExternalUrl(authorizationUrl)}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-aegis-primary hover:underline"
+                onClick={() => {
+                  setActionError("");
+                  void openWizardExternalUrl(authorizationUrl).catch((reason: unknown) => {
+                    setActionError(reason instanceof Error ? reason.message : String(reason));
+                  });
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-aegis-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35"
               >
                 <ExternalLink size={13} />{t("setup.wizard.openInBrowser")}
               </button>
@@ -87,6 +99,7 @@ export function WizardAuthorizationHint({
             <p className="text-xs leading-5 text-aegis-text-secondary">
               {t("setup.wizard.authorizationContinueHint")}
             </p>
+            {actionError && <p role="alert" className="text-xs leading-5 text-aegis-danger">{actionError}</p>}
           </div>
         )}
       </div>

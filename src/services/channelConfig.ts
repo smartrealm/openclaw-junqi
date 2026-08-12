@@ -45,6 +45,10 @@ export interface ChannelAccountRuntimeState {
   enabled?: boolean | null;
   configured?: boolean | null;
   linked?: boolean | null;
+  running?: boolean | null;
+  connected?: boolean | null;
+  lastError?: string | null;
+  probe?: unknown;
 }
 
 export interface ChannelConfigRepository {
@@ -167,6 +171,27 @@ export function assessChannelAccountReadiness(
   if (runtime.configured === false || runtime.linked === false) {
     messages.push('missing_credentials');
     return { state: 'missing_credentials', missingFields: [], messages };
+  }
+
+  if (typeof runtime.lastError === 'string' && runtime.lastError.trim()) {
+    messages.push('runtime_error');
+    return { state: 'unknown', missingFields: [], messages };
+  }
+  if (runtime.running === false) {
+    messages.push('stopped');
+    return { state: 'unknown', missingFields: [], messages };
+  }
+  if (runtime.connected === false) {
+    messages.push('disconnected');
+    return { state: 'unknown', missingFields: [], messages };
+  }
+  if (isRecord(runtime.probe) && (runtime.probe.ok === false || runtime.probe.error)) {
+    messages.push('probe_failed');
+    return { state: 'unknown', missingFields: [], messages };
+  }
+  if (runtime.configured !== true && runtime.linked !== true) {
+    messages.push('unknown');
+    return { state: 'unknown', missingFields: [], messages };
   }
 
   // 根级 binding 只是覆盖项；没有显式绑定时由 OpenClaw 默认智能体接管，

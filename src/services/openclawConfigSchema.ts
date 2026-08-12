@@ -93,7 +93,7 @@ export interface LoadOpenClawConfigSchemaOptions {
   force?: boolean;
 }
 
-interface OpenClawConfigSchemaResponse {
+export interface OpenClawConfigSchemaResponse {
   schema: Record<string, unknown>;
   uiHints: Record<string, unknown>;
   version: string;
@@ -102,7 +102,7 @@ interface OpenClawConfigSchemaResponse {
 
 interface ConfigSchemaCacheEntry {
   connectionId: string;
-  promise: Promise<Record<string, unknown>>;
+  promise: Promise<OpenClawConfigSchemaResponse>;
 }
 
 export class OpenClawConfigSchemaUnavailableError extends Error {
@@ -151,6 +151,10 @@ export class OpenClawConfigSchemaClient {
   constructor(private readonly dependencies: OpenClawConfigSchemaClientDependencies) {}
 
   load(options: LoadOpenClawConfigSchemaOptions = {}): Promise<Record<string, unknown>> {
+    return this.loadDocument(options).then((response) => response.schema);
+  }
+
+  loadDocument(options: LoadOpenClawConfigSchemaOptions = {}): Promise<OpenClawConfigSchemaResponse> {
     const connectionId = this.dependencies.captureConnectionId();
     if (!connectionId || !this.dependencies.isConnectionCurrent(connectionId)) {
       return Promise.reject(new OpenClawConfigSchemaUnavailableError(
@@ -170,14 +174,14 @@ export class OpenClawConfigSchemaClient {
     return promise;
   }
 
-  private async request(connectionId: string): Promise<Record<string, unknown>> {
+  private async request(connectionId: string): Promise<OpenClawConfigSchemaResponse> {
     const response = await this.dependencies.callPrivileged('config.schema', {});
     if (!this.dependencies.isConnectionCurrent(connectionId)) {
       throw new OpenClawConfigSchemaUnavailableError(
         'Gateway connection changed while reading config.schema',
       );
     }
-    return parseOpenClawConfigSchemaResponse(response).schema;
+    return parseOpenClawConfigSchemaResponse(response);
   }
 }
 
@@ -191,6 +195,12 @@ export function loadOpenClawConfigSchema(
   options: LoadOpenClawConfigSchemaOptions = {},
 ): Promise<Record<string, unknown>> {
   return configSchemaClient.load(options);
+}
+
+export function loadOpenClawConfigSchemaDocument(
+  options: LoadOpenClawConfigSchemaOptions = {},
+): Promise<OpenClawConfigSchemaResponse> {
+  return configSchemaClient.loadDocument(options);
 }
 
 export function schemaStringOptions(schema: OpenClawFieldSchema): string[] {

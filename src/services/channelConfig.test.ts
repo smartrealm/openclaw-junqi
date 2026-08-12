@@ -352,6 +352,37 @@ describe('channelConfig', () => {
     );
   });
 
+  test('显式运行失败不能被配置完成状态掩盖', () => {
+    const account = {
+      id: 'default',
+      label: 'Default',
+      enabled: true,
+      source: 'channel' as const,
+      config: {},
+    };
+    assert.equal(
+      assessChannelAccountReadiness('provider', account, {
+        configured: true,
+        running: false,
+      }).state,
+      'unknown',
+    );
+    assert.equal(
+      assessChannelAccountReadiness('provider', account, {
+        configured: true,
+        lastError: 'connection failed',
+      }).state,
+      'unknown',
+    );
+    assert.equal(
+      assessChannelAccountReadiness('provider', account, {
+        configured: true,
+        probe: { ok: false },
+      }).state,
+      'unknown',
+    );
+  });
+
   test('BUG-CRA-07 binding options include OpenClaw implicit main and selected default agents', () => {
     assert.deepEqual(getChannelAgentOptions(cfg({ agents: { defaults: {} } })), [
       { id: 'main', name: 'main', isDefault: true },

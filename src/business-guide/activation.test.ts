@@ -6,8 +6,6 @@ const verifiedFacts: BusinessGuideActivationFacts = {
   setupComplete: true,
   connected: true,
   identityVerified: true,
-  configurationVerified: true,
-  modelVerified: true,
 };
 
 test('business guide activates only when every current-runtime fact is verified', () => {

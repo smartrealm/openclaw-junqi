@@ -4,7 +4,9 @@
 
 ## 当前目标
 
-用户提供的首次配置 GIF 已证明当前安装包在 Wizard 终态会话丢失后会重跑完整官方向导。源码已改为先核验当前 Gateway 与结构化配置结果，下一阶段是完成全量自动化并重新构建安装包复验同一路径。
+用户提供的首次配置 GIF 已证明当前安装包会在 Wizard 最终提交导致 Gateway 重载、进程内会话丢失后重跑完整官方向导。源码已加固为只接受当前官方 `wizard.next` 的结构化完成响应；会话丢失时保留“终态未知”，不自动重放，也不再调用 OpenClaw 未定义的配置检测 RPC。下一阶段是重新构建安装包，并在包含上游会话保留修复的 OpenClaw Runtime 上复验同一路径。
+
+渠道绑定加固已落地：首次配置继续使用完整官方 setup Wizard，渠道中心的新增与重新配置使用隔离的官方 `wizard.start { flow: "channels", channel }`。二维码只在官方终态返回真实账号且目标渠道是唯一 Web Login provider 时出现；旧 Runtime 明确拒绝新 flow 时只提供官方终端交接。下一阶段是在新版 OpenClaw Runtime 和真实钉钉账号上复验完整扫码与重绑流程。
 
 ## 已完成内容
 
@@ -24,8 +26,14 @@
 - 已核对钉钉连接器 0.8.24 与主线源码：插件只在用户提交当前官方授权提示后继续确认，并在后续官方提示提交后启动授权结果轮询。JunQi 现在明确提示扫码或浏览器授权后继续，主要操作使用“我已完成授权，继续”；提交期间销毁二维码并等待插件返回，不从扫码表象推断成功。
 - 已基于当前工作树重新生成 macOS ARM64 安装包 `src-tauri/target/release/bundle/dmg/JunQi Desktop_3.1.0_aarch64.dmg`，其中包含本次授权推进修复。
 - 已逐帧核对 `/Users/wei/Desktop/流程.gif`：钉钉授权和官方步骤可完成，但提交 `Done` 后认证连接超时；用户重试会重新进入 `QuickStart` 及完整配置流程。根因是 Gateway 连接源变化后旧 Wizard `sessionId` 被回收，客户端把 `WIZARD_NOT_FOUND` 自动转换为新的 `wizard.start`。
-- Wizard 会话丢失后不再自动启动、恢复或重放官方流程。客户端先通过统一生命周期恢复所选 Gateway，再复用结构化配置门禁核验结果；配置已完成时继续终态交接，Gateway 不可核验时只允许重新核验，检测仍要求配置时只提供用户显式确认的“重新开始官方向导”。
+- Wizard 会话丢失后不再自动启动、恢复或重放官方流程。客户端先通过统一生命周期恢复所选 Gateway；服务重新可达只能证明 Gateway 健康，仍将旧 Wizard 结果标记为“终态未知”。只有用户通过可取消的二次确认理解可能重复写入的风险并显式操作后，才会创建新的官方 Wizard。
+- 已删除 OpenClaw 官方协议和最新源码均未定义的 `openclaw.setup.detect`、`openclaw.setup.verify` 客户端及其业务引导调用，未知方法不再被映射成“仍需配置”或“模型已核验”。首次配置默认进入官方 Wizard，只有本次页面生命周期内取得的官方终态可以清除引导门禁。
 - 已删除无消费者的 `restartAfterSessionLoss()` 和终态 `done` 内存缓存，避免后续调用方重新引入隐式重放或本地伪完成路径。
+- 渠道中心新增与重新配置已统一接入官方 Channels Wizard；setup、channels 以及不同渠道的 sessionId 按 Runtime、Gateway 和渠道隔离，关闭对话框只暂停客户端等待，不伪造取消或完成。
+- 已删除按任意选中渠道泛化全局 Web Login 的旧入口。后续内嵌二维码要求 Wizard 返回唯一真实账号，并核验当前安装目录中只有该渠道完整声明 `web.login.start` 与 `web.login.wait`。
+- 渠道 capability 现保留全部账号行并支持精确选择；同渠道插件 schema 或 Gateway 方法冲突时失败关闭。就绪投影会优先处理 running、connected、lastError 和 probe 的显式失败，证据不足保持 unknown。
+- 官方渠道表单会读取 `config.schema` 的 uiHints；联合 primitive 使用普通输入，敏感字段使用密码输入，SecretRef 仍保留结构化输入。无效或未应用的 JSON 草稿会阻止外层保存。
+- 授权交互显示渠道和账号身份，终端字符输出默认折叠，复制与浏览器打开失败内联呈现；外部地址只允许 HTTP 或 HTTPS 协议。
 
 ## 关键技术决策
 
@@ -37,7 +45,8 @@
 - 渠道二维码是当前官方步骤或扫码方法返回值的派生展示，不是授权完成事实。完成状态只取自 OpenClaw 或插件的结构化终态。
 - Wizard 授权页不具备独立扫码状态源。JunQi 只负责提交当前官方步骤并显示请求等待态，不跳过插件确认、不并行调用渠道接口，也不根据窗口焦点或时间推断授权结果。
 - Gateway 进程和端口健康只表示服务可达；首次配置完成还必须取得属于本次交接的新 `hello-ok` 和已核验 Runtime Identity。
-- Wizard `sessionId` 是 Gateway 进程内状态，不是持久完成凭据。会话丢失后的完成判断只能重新经过当前 Runtime 的 Gateway 与结构化配置门禁；自动重跑有副作用的官方向导不属于恢复。
+- Wizard `sessionId` 是 Gateway 进程内状态，不是持久完成凭据。会话丢失后，Gateway 可达、配置文件存在和客户端旧步骤都不能证明旧 Runner 已完成、失败或回滚；自动重跑有副作用的官方向导不属于恢复。
+- 当前安装的 OpenClaw `2026.7.1-2` 尚未包含上游主线的 `retainGatewayWorkUntilSettled` 防护。JunQi 负责准确保留未知终态和阻止自动重放；最终根治仍要求 Runtime 在 Wizard 请求结束前阻止 Gateway 重载销毁进程内会话。
 
 ## 核心文件
 
@@ -55,6 +64,8 @@
 - `src/services/setup/setupCompletionGate.ts`
 - `src/pages/SetupPage/WizardScreen.tsx`
 - `docs/quality/openclaw-wizard-terminal-handoff-audit-2026-08-11.md`
+- `specs/2026-08-12-openclaw-wizard-terminal-unknown-hardening.md`
+- `plans/2026-08-12-openclaw-wizard-terminal-unknown-hardening.md`
 
 ## 测试与验证
 
@@ -76,6 +87,9 @@
 - 会话丢失修复先以失败回归复现；修复后终态交接、会话核验、页面操作、取消围栏和 Wizard 服务定向测试 107 项通过。
 - 本轮 `npm run lint` 通过，模块边界检查覆盖 895 个文件，版本一致性和 TypeScript 检查通过。项目锁定的 pnpm 启动器因 npm registry 签名校验失败而拒绝运行，因此本轮改用等价 npm 脚本和直接 Node 测试入口。
 - 全量 `npm test` 中 238 项脚本测试有 237 项直接通过，唯一失败是沙箱禁止在 `127.0.0.1` 监听；该测试在允许本地临时监听后 5 个子项全部通过。使用任务专用 npm 缓存后，协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建通过。
+- 本次终态未知加固先以失败回归测试复现，修复后 Wizard、终态门禁、页面操作、二次确认和业务引导定向测试 78 项通过；`npm run lint`、使用任务专用 npm 缓存的 `npm run build` 均通过。全量脚本测试仍为 237 项直接通过，唯一受沙箱监听限制的测试在允许本地临时监听后 5 个子项全部通过。
+- 已从提交 `45ac471b9d16` 重新生成 macOS ARM64 安装包。镜像通过 `hdiutil verify`，SHA-256 为 `79115d1e2463fb416c1fdffe04dd4f6e006223477e5a739d45a7b2131f03ddc7`，大小为 8,312,030 字节；镜像内应用版本为 3.1.0，Bundle ID 为 `com.junqi.junqidesktop`，可执行文件为 ARM64。
+- 本次渠道绑定加固定向测试 58 项通过；`npm run lint`、完整 `npm test` 和使用任务专用 npm 缓存的 `npm run build` 通过。应用内浏览器因无法访问主机回环地址，未完成亮色、暗色和窄窗口真实视觉检查；未将该项描述为通过。
 
 ## 已知问题
 
@@ -85,10 +99,15 @@
 - 本地 DMG 仅使用 ad-hoc 签名，未进行 Apple Developer ID 签名和公证，不是正式发布制品；Windows 与 Linux 本次未构建。
 - Windows Scheduled Task 与 Linux systemd user service 的过期恢复快照场景尚未完成目标平台真机验证。
 - Wizard 二维码和授权推进生命周期已通过静态渲染回归测试，尚未完成钉钉真实扫码后的整套步骤切换真机复验。
-- 当前 macOS 安装包已经通过 GIF 复验确认仍包含 Wizard 会话丢失后重跑完整流程的问题；源码修复尚未重新打包和真机复验，不能把现有 DMG 视为已修复制品。
+- 当前 macOS 安装包基于提交 `45ac471b9d16`，包含已被本次审计否定的旧终态恢复逻辑，不包含“终态未知”和伪 RPC 删除加固；不得用于宣称原 GIF 问题已修复。
+- 当前安装的 OpenClaw `2026.7.1-2` 未包含上游主线的 Wizard 请求期 Gateway 工作保留修复；其余正式发布版本是否已包含该修复尚未核验。
+- 当前安装的 OpenClaw `2026.7.1-2` 会结构化拒绝 `flow: "channels"`，因此本机只能验证旧 Runtime 终端交接，不能验证新版桌面 Channels Wizard 的真实运行。
+- 真实钉钉、WhatsApp 及其他 Web Login provider 的扫码、二维码轮换、授权过期和消息收发闭环仍待真机验收。
+- 渠道 Wizard、账号表单和二维码对话框的暗色主题、窄窗口、键盘焦点以及 Windows、Linux 外部浏览器与剪贴板权限仍待目标平台视觉和交互验收。
 
 ## 下一步顺序
 
-1. 重新生成 macOS ARM64 本地安装包，按 GIF 同一路径完成钉钉授权、`Done` 终态、会话丢失恢复和 Dashboard 进入验收。
-2. 在 Windows 与 Linux 真机验证运行时恢复服务的所有权核验和恢复结果。
-3. 经用户明确授权后提交、推送或发布当前变更。
+1. 在包含最新 Channels Wizard 的 OpenClaw Runtime 上验证渠道新增、重新配置、关闭后恢复和终态账号返回。
+2. 使用真实钉钉账号完成插件扫码、授权轮询、连接探测和消息收发闭环，并复验 WhatsApp 唯一 Web Login provider 围栏。
+3. 完成亮色、暗色、窄窗口、键盘焦点以及 Windows、Linux 外部浏览器和剪贴板权限验证。
+4. 经用户确认后决定是否基于当前工作树重新构建 macOS ARM64 安装包；未经明确要求不提交、推送或发布。

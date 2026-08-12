@@ -5,27 +5,14 @@ import { useTranslation } from "react-i18next";
 import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
 import { SetupShell, StatusPanel } from "@/components/setup/SetupFlowPanels";
+import { AlertDialog } from "@/components/shared/AlertDialog";
 import clsx from "clsx";
 import type { OpenClawWizardStep } from "@/services/openclawWizard";
 import { isWizardBodyMessageStep, WizardStepRenderer } from "./wizard/WizardStepRenderer";
 import { resolveWizardAuthorizationUrl, WizardAuthorizationHint } from "./wizard/WizardAuthorizationHint";
-import { wizardValuesEqual } from "./wizard/WizardStepValue";
+import { wizardInitialValue } from "./wizard/WizardStepValue";
 
 export { WizardAuthorizationHint } from "./wizard/WizardAuthorizationHint";
-
-export function wizardInitialValue(step: OpenClawWizardStep): unknown {
-  if (step.type === "confirm") return Boolean(step.initialValue);
-  if (step.type === "multiselect") return Array.isArray(step.initialValue) ? step.initialValue : [];
-  if (step.type === "select") {
-    const options = Array.isArray(step.options) ? step.options : [];
-    return options.some((option) => wizardValuesEqual(option.value, step.initialValue))
-      ? step.initialValue
-      : options[0]?.value;
-  }
-  if (step.type === "text") return typeof step.initialValue === "string" ? step.initialValue : "";
-  if (step.type === "action") return true;
-  return undefined;
-}
 
 export function wizardLogVisibility(
   step: OpenClawWizardStep | null,
@@ -64,6 +51,33 @@ const DEFAULT_WIZARD_COPY: WizardScreenCopy = {
   connectingFallback: "正在连接 OpenClaw 官方配置向导…",
 };
 
+export function WizardRestartConfirmation({
+  open,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const { t } = useTranslation();
+  return (
+    <AlertDialog
+      open={open}
+      onClose={onClose}
+      title={t("setup.wizard.restartConfirmationTitle", "确认重新开始官方向导")}
+      message={t(
+        "setup.wizard.restartConfirmationMessage",
+        "OpenClaw 没有返回上一次会话的最终结果。重新开始会创建新的官方 Wizard，并可能重复执行已经写入的配置。仅在确认需要重新配置时继续。",
+      )}
+      variant="warning"
+      cancelLabel={t("common.cancel", "取消")}
+      confirmLabel={t("setup.wizard.restartConfirmationAction", "确认并重新开始")}
+      onConfirm={onConfirm}
+    />
+  );
+}
+
 export function WizardScreen({
   flow,
   logs,
@@ -80,12 +94,37 @@ export function WizardScreen({
   const { t } = useTranslation();
   const step = wizard.wizardStep;
   const [value, setValue] = useState<unknown>(() => step ? wizardInitialValue(step) : undefined);
+  const [restartConfirmationOpen, setRestartConfirmationOpen] = useState(false);
   const autoPolledProgressStepRef = useRef<string | null>(null);
   const autoPollProgress = step?.type === "progress" && step.executor === "gateway";
 
   useEffect(() => {
     setValue(step ? wizardInitialValue(step) : undefined);
   }, [step?.id]);
+
+  useEffect(() => {
+    if (wizard.wizardRecoveryMode !== "terminal-unknown") {
+      setRestartConfirmationOpen(false);
+    }
+  }, [wizard.wizardRecoveryMode]);
+
+  const retryOrConfirmRestart = () => {
+    if (wizard.wizardRecoveryMode === "terminal-unknown") {
+      setRestartConfirmationOpen(true);
+      return;
+    }
+    void wizard.retryWizard();
+  };
+
+  const restartConfirmation = (
+    <WizardRestartConfirmation
+      open={restartConfirmationOpen}
+      onClose={() => setRestartConfirmationOpen(false)}
+      onConfirm={async () => {
+        await wizard.retryWizard();
+      }}
+    />
+  );
 
   useEffect(() => {
     if (
@@ -101,33 +140,42 @@ export function WizardScreen({
 
   if (!step) {
     return (
-      <SetupShell
-        active={flow.presentation.stage}
-        contentIdentity="wizard-connecting"
-        title={t(copy.titleKey, copy.titleFallback)}
-        subtitle={t(copy.connectingKey, copy.connectingFallback)}
-        logs={logs}
-        logVisibility={wizardLogVisibility(step, wizard.wizardError)}
-        previousAction={{ onClick: flow.goBack, disabled: wizard.wizardSubmitting }}
-        secondaryAction={secondaryAction}
-        nextAction={{
-          label: wizard.wizardRecoveryMode === "reclaim"
-            ? t("setup.wizard.reclaim", "重新接管向导")
-            : wizard.wizardRecoveryMode === "restart"
-              ? t("setup.wizard.restartAfterLoss", "重新开始官方向导")
-            : wizard.wizardRecoveryMode === "runtime" || wizard.wizardRecoveryMode === "session"
-              ? t("setup.gatewayReadyRetryAction", "重新核验")
-            : wizard.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
-          onClick: () => void (wizard.wizardRecoveryMode === "reclaim" ? wizard.reclaimWizard() : wizard.retryWizard()),
-          disabled: wizard.wizardSubmitting && !wizard.wizardError,
-          loading: wizard.wizardSubmitting,
-          icon: "none",
-        }}
-      >
-        <div className={clsx("rounded-lg border p-4 text-sm leading-6", wizard.wizardError ? "border-red-500/25 bg-red-500/5 text-red-300" : "border-aegis-primary/25 bg-aegis-primary/5 text-aegis-text-secondary")}>
-          {wizard.wizardError || wizard.wizardActivity || t(copy.connectingKey, copy.connectingFallback)}
-        </div>
-      </SetupShell>
+      <>
+        <SetupShell
+          active={flow.presentation.stage}
+          contentIdentity="wizard-connecting"
+          title={t(copy.titleKey, copy.titleFallback)}
+          subtitle={t(copy.connectingKey, copy.connectingFallback)}
+          logs={logs}
+          logVisibility={wizardLogVisibility(step, wizard.wizardError)}
+          previousAction={{ onClick: flow.goBack, disabled: wizard.wizardSubmitting }}
+          secondaryAction={secondaryAction}
+          nextAction={{
+            label: wizard.wizardRecoveryMode === "reclaim"
+              ? t("setup.wizard.reclaim", "重新接管向导")
+              : wizard.wizardRecoveryMode === "terminal-unknown"
+                ? t("setup.wizard.restartAfterLoss", "重新开始官方向导")
+              : wizard.wizardRecoveryMode === "runtime" || wizard.wizardRecoveryMode === "session"
+                ? t("setup.gatewayReadyRetryAction", "重新核验")
+              : wizard.wizardError ? t("setup.wizard.retry", "重试") : t("setup.wizard.connectingAction", "正在连接"),
+            onClick: () => {
+              if (wizard.wizardRecoveryMode === "reclaim") {
+                void wizard.reclaimWizard();
+                return;
+              }
+              retryOrConfirmRestart();
+            },
+            disabled: wizard.wizardSubmitting && !wizard.wizardError,
+            loading: wizard.wizardSubmitting,
+            icon: "none",
+          }}
+        >
+          <div className={clsx("rounded-lg border p-4 text-sm leading-6", wizard.wizardError ? "border-red-500/25 bg-red-500/5 text-red-300" : "border-aegis-primary/25 bg-aegis-primary/5 text-aegis-text-secondary")}>
+            {wizard.wizardError || wizard.wizardActivity || t(copy.connectingKey, copy.connectingFallback)}
+          </div>
+        </SetupShell>
+        {restartConfirmation}
+      </>
     );
   }
 
@@ -151,70 +199,73 @@ export function WizardScreen({
   };
 
   return (
-    <SetupShell
-      active={flow.presentation.stage}
-      contentIdentity={presentedStep.id}
-      title={wizardTitle}
-      subtitle={wizardSubtitle}
-      logs={logs}
-      logVisibility={wizardLogVisibility(step, wizard.wizardError)}
-      previousAction={{
-        label: t("setup.wizard.pauseAndReturn", "暂停并返回"),
-        onClick: flow.goBack,
-        disabled: false,
-      }}
-      secondaryAction={secondaryAction}
-      nextAction={{
-        label: wizard.wizardError
-          ? wizard.wizardRecoveryMode === "restart"
-            ? t("setup.wizard.restartAfterLoss", "重新开始官方向导")
-            : t("setup.wizard.retry", "重试")
-          : autoPollProgress
-            ? t("setup.wizard.processing", "正在处理…")
-            : authorizationStep
-              ? t("setup.wizard.authorizationComplete", "我已完成授权，继续")
-            : step.type === "action" ? t("setup.wizard.run", "执行") : t("setup.nextStep", "下一步"),
-        onClick: () => {
-          if (wizard.wizardError) {
-            void wizard.retryWizard();
-            return;
-          }
-          void submitCurrentStep();
-        },
-        disabled: wizard.wizardSubmitting || autoPollProgress || (!wizard.wizardError && blocked),
-        loading: wizard.wizardSubmitting || autoPollProgress,
-        icon: wizard.wizardError ? "none" : "next",
-      }}
-    >
-      <div className="space-y-4" dir="auto">
-        {wizard.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{wizard.wizardError}</div>}
-        {authorizationPending ? (
-          <StatusPanel
-            icon={<LoaderCircle size={22} className="animate-spin" />}
-            tone="primary"
-            eyebrow={t("setup.wizard.processing", "正在处理…")}
-            title={t("setup.wizard.waitingForAuthorization", "正在等待授权…")}
-            message={t(
-              "setup.wizard.authorizationPollingHint",
-              "OpenClaw 正在等待渠道插件返回授权结果。可以暂停并返回，稍后恢复同一官方会话。",
-            )}
-          />
-        ) : (
-          <>
-            <WizardStepRenderer
-              step={presentedStep}
-              value={value}
-              setValue={setValue}
-              t={t}
+    <>
+      <SetupShell
+        active={flow.presentation.stage}
+        contentIdentity={presentedStep.id}
+        title={wizardTitle}
+        subtitle={wizardSubtitle}
+        logs={logs}
+        logVisibility={wizardLogVisibility(step, wizard.wizardError)}
+        previousAction={{
+          label: t("setup.wizard.pauseAndReturn", "暂停并返回"),
+          onClick: flow.goBack,
+          disabled: false,
+        }}
+        secondaryAction={secondaryAction}
+        nextAction={{
+          label: wizard.wizardError
+            ? wizard.wizardRecoveryMode === "terminal-unknown"
+              ? t("setup.wizard.restartAfterLoss", "重新开始官方向导")
+              : t("setup.wizard.retry", "重试")
+            : autoPollProgress
+              ? t("setup.wizard.processing", "正在处理…")
+              : authorizationStep
+                ? t("setup.wizard.authorizationComplete", "我已完成授权，继续")
+              : step.type === "action" ? t("setup.wizard.run", "执行") : t("setup.nextStep", "下一步"),
+          onClick: () => {
+            if (wizard.wizardError) {
+              retryOrConfirmRestart();
+              return;
+            }
+            void submitCurrentStep();
+          },
+          disabled: wizard.wizardSubmitting || autoPollProgress || (!wizard.wizardError && blocked),
+          loading: wizard.wizardSubmitting || autoPollProgress,
+          icon: wizard.wizardError ? "none" : "next",
+        }}
+      >
+        <div className="space-y-4" dir="auto">
+          {wizard.wizardError && <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-4 text-sm leading-6 text-red-300">{wizard.wizardError}</div>}
+          {authorizationPending ? (
+            <StatusPanel
+              icon={<LoaderCircle size={22} className="animate-spin" />}
+              tone="primary"
+              eyebrow={t("setup.wizard.processing", "正在处理…")}
+              title={t("setup.wizard.waitingForAuthorization", "正在等待授权…")}
+              message={t(
+                "setup.wizard.authorizationPollingHint",
+                "OpenClaw 正在等待渠道插件返回授权结果。可以暂停并返回，稍后恢复同一官方会话。",
+              )}
             />
-            <WizardAuthorizationHint
-              key={presentedStep.id}
-              step={presentedStep}
-            />
-          </>
-        )}
-      </div>
-    </SetupShell>
+          ) : (
+            <>
+              <WizardStepRenderer
+                step={presentedStep}
+                value={value}
+                setValue={setValue}
+                t={t}
+              />
+              <WizardAuthorizationHint
+                key={presentedStep.id}
+                step={presentedStep}
+              />
+            </>
+          )}
+        </div>
+      </SetupShell>
+      {restartConfirmation}
+    </>
   );
 }
 

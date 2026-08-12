@@ -2,15 +2,11 @@ export interface BusinessGuideActivationFacts {
   setupComplete: boolean;
   connected: boolean;
   identityVerified: boolean;
-  configurationVerified: boolean;
-  modelVerified: boolean;
 }
 
-/** The guide is visible only while all selected-runtime facts are current. */
+/** 只有所选运行时的本地完成标记、连接和身份事实同时成立时才展示业务引导。 */
 export function isBusinessGuideActive(facts: BusinessGuideActivationFacts): boolean {
   return facts.setupComplete
     && facts.connected
-    && facts.identityVerified
-    && facts.configurationVerified
-    && facts.modelVerified;
+    && facts.identityVerified;
 }

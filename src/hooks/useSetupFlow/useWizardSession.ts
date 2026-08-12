@@ -1,4 +1,4 @@
-// 官方 OpenClaw 向导会话只投影 Gateway 持有的步骤和终态；会话丢失后改由官方检测核验结果。
+// 官方 OpenClaw 向导会话只投影 Gateway 持有的步骤和终态；会话丢失后保留未知结果。
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import type { SetupStep } from "@/stores/setup-navigation";
@@ -47,7 +47,6 @@ export interface WizardSessionPorts {
   setPostStorageStep: (step: PostStorageStep) => void;
   setSetupError: (error: string | null) => void;
   setGatewayRunning: (running: boolean) => void;
-  resolveOnboardingRequirement: () => Promise<boolean>;
   navigationLeavingRef: RefObject<boolean>;
 }
 
@@ -58,10 +57,10 @@ class OpenClawWizardGatewayConnectionTimeoutError extends Error {
   }
 }
 
-class OpenClawWizardRestartRequiredError extends Error {
+class OpenClawWizardTerminalUnknownError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "OpenClawWizardRestartRequiredError";
+    this.name = "OpenClawWizardTerminalUnknownError";
   }
 }
 
@@ -82,7 +81,6 @@ export function useWizardSession({
   setPostStorageStep,
   setSetupError,
   setGatewayRunning,
-  resolveOnboardingRequirement,
   navigationLeavingRef,
 }: WizardSessionPorts) {
   const { t } = useTranslation();
@@ -124,7 +122,7 @@ export function useWizardSession({
       return diagnostic;
     }
     if (
-      error instanceof OpenClawWizardRestartRequiredError
+      error instanceof OpenClawWizardTerminalUnknownError
       || error instanceof OpenClawWizardRecoveryVerificationError
     ) {
       return diagnostic;
@@ -155,7 +153,7 @@ export function useWizardSession({
     error: unknown,
     fallback: WizardRecoveryMode = "wizard",
   ): WizardRecoveryMode => {
-    if (error instanceof OpenClawWizardRestartRequiredError) return "restart";
+    if (error instanceof OpenClawWizardTerminalUnknownError) return "terminal-unknown";
     if (error instanceof OpenClawWizardRecoveryVerificationError) return "session";
     if (classifyOpenClawWizardFailure(error) === "already_running") return "reclaim";
     return fallback;
@@ -366,7 +364,7 @@ export function useWizardSession({
     try {
       showWizardActivity(t(
         "setup.wizard.sessionRecoveryChecking",
-        "配置会话已断开，正在通过当前 Gateway 核验官方配置结果…",
+        "配置会话已断开，正在重新连接当前 Gateway 并恢复原会话…",
       ));
       const reconnected = await gatewayLifecycle.reconnectAfterCurrent(WIZARD_SESSION_RECOVERY_RECONNECT_SOURCE);
       assertWizardOperationCurrent(operationId);
@@ -378,18 +376,12 @@ export function useWizardSession({
       }
       const reconciliation = await reconcileWizardSessionLoss({
         probeGateway: () => probeSelectedGateway().catch(() => false),
-        requiresOnboarding: resolveOnboardingRequirement,
       });
       assertWizardOperationCurrent(operationId);
-      if (reconciliation.state === "complete") {
-        setWizardRecoveryMode("runtime");
-        await completeWizardRuntime(operationId);
-        return null;
-      }
-      if (reconciliation.state === "onboarding-required") {
-        throw new OpenClawWizardRestartRequiredError(t(
-          "setup.wizard.sessionRecoveryIncomplete",
-          "原 OpenClaw 配置会话已失效，官方检测仍要求继续配置。为避免重复写入，请确认后重新开始官方向导。",
+      if (reconciliation.state === "terminal-unknown") {
+        throw new OpenClawWizardTerminalUnknownError(t(
+          "setup.wizard.sessionTerminalUnknown",
+          "原 OpenClaw 配置会话在返回最终结果前已失效，当前无法核验它是完成还是失败。JunQi 不会自动重放；重新开始可能再次执行配置写入，请确认后继续。",
         ));
       }
       throw new Error(t(
@@ -399,14 +391,14 @@ export function useWizardSession({
     } catch (error) {
       if (
         error instanceof OpenClawWizardOperationSupersededError
-        || error instanceof OpenClawWizardRestartRequiredError
+        || error instanceof OpenClawWizardTerminalUnknownError
         || error instanceof OpenClawWizardRecoveryVerificationError
       ) throw error;
       throw new OpenClawWizardRecoveryVerificationError(sanitizeSetupDiagnostic(
         error instanceof Error ? error.message : error,
       ));
     }
-  }, [assertWizardOperationCurrent, completeWizardRuntime, resolveOnboardingRequirement, setWizardRecoveryMode, showWizardActivity, t]);
+  }, [assertWizardOperationCurrent, setWizardRecoveryMode, showWizardActivity, t]);
 
   const recoverAfterGatewayHandoff = useCallback(async (
     operationId: number,
@@ -576,7 +568,7 @@ export function useWizardSession({
       if (recoveryMode === "session") {
         return await reconcileLostWizardSession(operationId);
       }
-      if (recoveryMode === "restart") {
+      if (recoveryMode === "terminal-unknown") {
         await waitForGatewayConnection(operationId);
         wizardClientRef.current!.forgetSession();
         wizardHandoffCompletedRef.current = false;
@@ -664,7 +656,7 @@ export function useWizardSession({
       void retryOfficialOnboarding();
       return;
     }
-    if (wizardRecoveryModeRef.current === "restart") return;
+    if (wizardRecoveryModeRef.current === "terminal-unknown") return;
     void startOfficialOnboarding();
   }, [setupStep, retryOfficialOnboarding, startOfficialOnboarding, wizardError, wizardStep, wizardSubmitting]);
 

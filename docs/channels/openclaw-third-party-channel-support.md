@@ -195,8 +195,10 @@ OpenClaw 通用模型包括 DM pairing、allowlist、group policy、群组 allow
 ### 7.3 Wizard 与二维码
 
 - 完整首次配置继续使用 OpenClaw 官方 `wizard.start` setup 流程，渠道步骤由当前插件动态提供。
+- 渠道中心的新增和重新配置统一启动官方 `wizard.start { flow: "channels", channel }`。终态只消费官方返回的真实 `accounts`；旧 Runtime 明确拒绝该请求时才提供官方终端流程交接。
 - 正式 `externalUrl` 可以在所属步骤存活期间本地编码成二维码；旧插件 note 只有在当前步骤返回唯一、带非空 `user_code` 的 HTTPS 一次性授权地址时才允许投影。普通文档链接不得生成二维码，步骤标识变化、提交等待、终态、取消或失败后立即销毁投影。
-- 渠道 capability 同时声明 `web.login.start` 与 `web.login.wait` 时，渠道中心可以使用内嵌 QR 对话框。
+- `web.login.start` 与 `web.login.wait` 是不接收 channel 参数的全局方法。只有目标渠道是当前安装目录中唯一完整声明两个方法的 provider，且目标账号来自本次官方 Channels Wizard 终态时，渠道中心才可以使用内嵌 QR 对话框。
+- 授权 note 的插件原始输出保持可访问，但含授权地址时默认折叠，避免终端字符二维码与本地图形二维码重复占据界面。复制和打开浏览器失败必须内联显示。
 - 终端 ASCII 二维码、日志片段和渠道名称都不是结构化二维码契约，JunQi 不从这些内容恢复扫码状态。
 - `web.login.wait` 返回新 `qrDataUrl` 时，JunQi 在同一有界等待窗口中替换二维码并继续监听；返回未连接且没有新二维码时停止自动请求，保留插件消息并允许用户显式继续监听或重新生成。
 - `web.login.start` 或 `web.login.wait` 返回 `connected: true` 时，扫码流程直接进入官方成功终态。随后刷新渠道状态只更新运行观测，不得把传播延迟或探测失败改写成扫码失败。

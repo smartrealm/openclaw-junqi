@@ -57,6 +57,8 @@ export interface OpenClawWizardStartResult extends OpenClawWizardResult {
 
 export interface OpenClawWizardStartOptions {
   workspace?: string;
+  flow?: 'setup' | 'channels';
+  channel?: string;
 }
 
 function isWizardOption(value: unknown): value is OpenClawWizardOption {
@@ -201,6 +203,7 @@ export interface OpenClawWizardSessionScope {
 
 export const OPENCLAW_WIZARD_SESSION_STORAGE_KEYS = {
   setup: 'junqi.openclaw-wizard-session',
+  channels: 'junqi.openclaw-channels-wizard-session',
 } as const;
 
 function wizardSessionScopeKey(scope: OpenClawWizardSessionScope): string | null {
@@ -490,19 +493,32 @@ export class OpenClawWizardClient {
       await this.cancel();
     }
     const workspace = options.workspace?.trim() || undefined;
+    const channel = options.channel?.trim() || undefined;
+    if (options.flow === 'channels' && !channel) {
+      throw new Error('OpenClaw channels wizard requires a channel.');
+    }
+    if (options.flow !== 'channels' && channel) {
+      throw new Error('OpenClaw wizard channel is only valid for the channels flow.');
+    }
     this.startOptions = {
       ...(workspace ? { workspace } : {}),
+      ...(options.flow ? { flow: options.flow } : {}),
+      ...(channel ? { channel } : {}),
     };
     this.currentStep = null;
     this.failedStep = null;
     this.failedSessionId = null;
-    // 首次配置只启动官方完整向导。渠道选择或跳过均由该会话返回的步骤说明，
-    // 客户端不能追加未被当前运行时证明可用的 flow 参数。
+    // setup 与 channels 都使用 OpenClaw 正式 Wizard 协议。调用方必须使用不同的
+    // 会话存储范围，避免主界面渠道配置接管首次启动中的官方会话。
     const result = assertWizardStartResult(await this.callGateway(
       'wizard.start',
       {
-        mode: 'local' as const,
-        ...(this.startOptions.workspace ? { workspace: this.startOptions.workspace } : {}),
+        ...(this.startOptions.flow === 'channels'
+          ? { flow: 'channels' as const, channel: this.startOptions.channel }
+          : {
+              mode: 'local' as const,
+              ...(this.startOptions.workspace ? { workspace: this.startOptions.workspace } : {}),
+            }),
       },
       { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
     ));

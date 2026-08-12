@@ -75,12 +75,13 @@ export function ChannelAccountDialog({
   const [values, setValues] = useState<Record<string, unknown>>(() => (
     channelAccountEditorValues(state.account)
   ));
+  const [schemaValid, setSchemaValid] = useState(false);
 
   const trimmedAccountId = accountId.trim();
   const accountIdValid = isOpenClawChannelIdentifier(trimmedAccountId);
   const duplicateAccountId = state.mode === 'new'
     && state.group.accounts.some((account) => account.id === trimmedAccountId);
-  const canSave = accountIdValid && !duplicateAccountId && !saving;
+  const canSave = accountIdValid && !duplicateAccountId && schemaValid && !saving;
 
   const setField = (key: string, value: unknown) => {
     setValues((current) => ({ ...current, [key]: value }));
@@ -168,6 +169,7 @@ export function ChannelAccountDialog({
             initiallyOpen
             disabled={saving}
             onChange={setValues}
+            onValidationChange={setSchemaValid}
           />
         </div>
 

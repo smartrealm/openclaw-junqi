@@ -57,7 +57,7 @@ test("wizard auto-start runs at most once per configure-page visit", () => {
   assert.match(wizardSession, /if \(setupStep !== "configure-openclaw"\) \{\s*wizardAutoStartRef\.current = false;\s*return;\s*\}/);
   assert.match(wizardSession, /wizardAutoStartRef\.current = true;/);
   assert.match(wizardSession, /wizardRecoveryModeRef\.current === "runtime"[\s\S]*?retryOfficialOnboarding\(\)[\s\S]*?startOfficialOnboarding\(\)/);
-  assert.match(wizardSession, /wizardRecoveryModeRef\.current === "restart"\) return/);
+  assert.match(wizardSession, /wizardRecoveryModeRef\.current === "terminal-unknown"\) return/);
   assert.doesNotMatch(wizardSession, /startOfficialOnboarding\(\)\.finally\([\s\S]*?wizardAutoStartRef\.current = false/);
 });
 

@@ -82,7 +82,6 @@ export interface ChannelsRuntimeSnapshot {
   configuredChannels?: string[];
 }
 
-export type ChannelLinkMode = 'embedded_qr' | 'terminal_setup' | 'none';
 const CLI_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 type JsonObject = Record<string, unknown>;
 
@@ -151,16 +150,15 @@ export async function loadOfficialChannelCatalog(_force = false): Promise<Offici
   return normalizeOfficialChannelCatalog(await getOpenclawChannelCatalog());
 }
 
-function firstCapabilityRow(payload: unknown): JsonObject | undefined {
+function capabilityRows(payload: unknown): JsonObject[] {
   const root = asJsonObject(payload);
   const rows = root?.channels;
-  return Array.isArray(rows) && rows[0] && typeof rows[0] === 'object'
-    ? asJsonObject(rows[0])
-    : undefined;
+  return Array.isArray(rows)
+    ? rows.map(asJsonObject).filter((row): row is JsonObject => Boolean(row))
+    : [];
 }
 
-export function normalizeOfficialChannelCapability(payload: unknown): OfficialChannelCapability | null {
-  const row = firstCapabilityRow(payload);
+function normalizeCapabilityRow(row: JsonObject): OfficialChannelCapability | null {
   if (!row || typeof row.channel !== 'string') return null;
   const plugin = asJsonObject(row.plugin);
   const meta = asJsonObject(plugin?.meta);
@@ -196,6 +194,35 @@ export function normalizeOfficialChannelCapability(payload: unknown): OfficialCh
   };
 }
 
+export function normalizeOfficialChannelCapabilities(payload: unknown): OfficialChannelCapability[] {
+  return capabilityRows(payload)
+    .map(normalizeCapabilityRow)
+    .filter((row): row is OfficialChannelCapability => row !== null);
+}
+
+export function normalizeOfficialChannelCapability(payload: unknown): OfficialChannelCapability | null {
+  return normalizeOfficialChannelCapabilities(payload)[0] ?? null;
+}
+
+export function selectOfficialChannelCapability(
+  capabilities: OfficialChannelCapability[],
+  channelId: string,
+  accountId?: string,
+): OfficialChannelCapability | null {
+  const channelRows = capabilities.filter((row) => row.channel === channelId);
+  const pluginContracts = new Set(channelRows.map((row) => JSON.stringify({
+    schema: row.schema,
+    required: row.required,
+    gatewayMethods: [...row.gatewayMethods].sort(),
+  })));
+  if (pluginContracts.size > 1) return null;
+  if (accountId) {
+    const accountRow = channelRows.find((row) => row.accountId === accountId);
+    if (accountRow) return accountRow;
+  }
+  return channelRows[0] ?? null;
+}
+
 export function loadOfficialChannelCapability(
   channelId: string,
   _force = false,
@@ -205,6 +232,27 @@ export function loadOfficialChannelCapability(
   // 不保留覆盖整个渲染进程生命周期的 JunQi 缓存。
   return getOpenclawChannelCapabilities(channel)
     .then(normalizeOfficialChannelCapability);
+}
+
+export function loadOfficialChannelCapabilities(channelId: string): Promise<OfficialChannelCapability[]> {
+  const channel = assertChannelCliIdentifier(channelId, 'Channel ID');
+  return getOpenclawChannelCapabilities(channel)
+    .then(normalizeOfficialChannelCapabilities);
+}
+
+export async function resolveUniqueWebLoginProvider(
+  catalog: OfficialChannelCatalog,
+): Promise<string | null> {
+  const installed = catalog.entries.filter((entry) => entry.installed);
+  const capabilities = await Promise.all(installed.map(async (entry) => ({
+    channelId: entry.id,
+    rows: await loadOfficialChannelCapabilities(entry.id).catch(() => []),
+  })));
+  const providers = capabilities.filter(({ rows }) => rows.length > 0 && rows.every((row) => (
+    row.gatewayMethods.includes('web.login.start')
+    && row.gatewayMethods.includes('web.login.wait')
+  )));
+  return providers.length === 1 ? providers[0].channelId : null;
 }
 
 export function loadOfficialChannelStatus(channel?: string, probe = false): Promise<unknown> {
@@ -237,18 +285,6 @@ export async function loadOfficialChannelRuntimeState(
 
 export function loadOfficialChannelLogs(channel?: string, lines = 200): Promise<unknown> {
   return getOpenclawChannelLogs(channel, lines);
-}
-
-export function channelLinkMode(
-  capability: OfficialChannelCapability | null | undefined,
-  installed: boolean,
-): ChannelLinkMode {
-  if (!installed) return 'terminal_setup';
-  if (
-    capability?.gatewayMethods.includes('web.login.start')
-    && capability.gatewayMethods.includes('web.login.wait')
-  ) return 'embedded_qr';
-  return 'none';
 }
 
 export function buildChannelSetupCommand(channelId: string, accountId?: string): string {

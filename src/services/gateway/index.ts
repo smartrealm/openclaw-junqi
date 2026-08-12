@@ -106,9 +106,6 @@ import { OpenClawModelAuthStatusClient } from './OpenClawModelAuthStatusClient';
 import { OpenClawModelAuthLogoutClient } from './OpenClawModelAuthLogoutClient';
 import { OpenClawChannelQrLoginClient } from './OpenClawChannelQrLoginClient';
 import { OpenClawModelProbeClient } from './OpenClawModelProbeClient';
-import { OpenClawSetupClient } from './OpenClawSetupClient';
-
-export { OpenClawSetupMethodUnavailableError } from './OpenClawSetupClient';
 import { OpenClawRuntimeConfigClient } from './OpenClawRuntimeConfigClient';
 import { OpenClawProviderUsageClient } from './OpenClawProviderUsageClient';
 import { OpenClawAgentIdentityClient } from './OpenClawAgentIdentityClient';
@@ -531,9 +528,6 @@ export const openClawChannelQrLoginClient = new OpenClawChannelQrLoginClient({
 });
 
 export const openClawModelProbeClient = new OpenClawModelProbeClient({
-  requestPrivileged: (method, params) => requestPrivileged(method, params),
-});
-export const openClawSetupClient = new OpenClawSetupClient({
   requestPrivileged: (method, params) => requestPrivileged(method, params),
 });
 export const openClawRuntimeConfigClient = new OpenClawRuntimeConfigClient({

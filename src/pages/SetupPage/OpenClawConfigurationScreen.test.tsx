@@ -4,7 +4,7 @@ import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { SetupFlow } from '@/hooks/useSetupFlow';
 import { OpenClawConfigurationScreen } from './OpenClawConfigurationScreen';
-import { WizardScreen } from './WizardScreen';
+import { WizardRestartConfirmation, WizardScreen } from './WizardScreen';
 import { resolveWizardAuthorizationUrl } from './wizard/WizardAuthorizationHint';
 
 type VerificationFlow = Pick<
@@ -381,7 +381,7 @@ test('官方终态后的失败提供 Gateway 核验操作', () => {
   assert.doesNotMatch(html, /Take over setup/);
 });
 
-test('官方检测仍要求配置时只提供显式重启向导操作', () => {
+test('终态未知时只提供知情后的显式重启向导操作', () => {
   const flow = {
     presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
     goBack: async () => undefined,
@@ -394,8 +394,8 @@ test('官方检测仍要求配置时只提供显式重启向导操作', () => {
         wizardStep: null,
         wizardSubmitting: false,
         wizardActivity: null,
-        wizardError: 'The original setup session expired',
-        wizardRecoveryMode: 'restart',
+        wizardError: 'The original setup session ended before OpenClaw returned its final result',
+        wizardRecoveryMode: 'terminal-unknown',
         submitWizardStep: async () => null,
         pollWizard: async () => null,
         retryWizard: async () => null,
@@ -406,6 +406,22 @@ test('官方检测仍要求配置时只提供显式重启向导操作', () => {
 
   assert.match(html, /Restart official wizard/);
   assert.doesNotMatch(html, />Retry</);
+});
+
+test('重新开始官方向导前展示重复写入风险和取消操作', () => {
+  const html = renderToStaticMarkup(
+    <WizardRestartConfirmation
+      open
+      onClose={() => undefined}
+      onConfirm={() => undefined}
+    />,
+  );
+
+  assert.match(html, /Restart the official wizard/);
+  assert.match(html, /may repeat configuration writes/);
+  assert.match(html, /Confirm and restart/);
+  assert.match(html, />Cancel</);
+  assert.match(html, /role="alertdialog"/);
 });
 
 test('配置核验失败在同一容器呈现真实错误与重试操作', () => {

@@ -132,7 +132,7 @@ test('BUG-ONB-34 a failed cached installation validation blocks Gateway recovery
   assert.match(healthGate, /navigateSetup\(['"]detecting['"], ['"]replace['"]\)/);
 });
 
-test('BUG-ONB-37 dashboard completion revalidates Gateway and config before committing the setup marker', () => {
+test('BUG-ONB-37 dashboard completion revalidates Gateway and the current terminal gate before committing the setup marker', () => {
   const entry = setupFlow.slice(
     setupFlow.indexOf('const enterDashboard = useCallback'),
     setupFlow.indexOf('const detectDocker = useCallback'),
@@ -243,7 +243,6 @@ test('BUG-WFR-03 wizard failures are visible first and change the primary action
   assert.ok(errorPosition >= 0 && errorPosition < firstStepControl);
   assert.match(renderer, /WIZARD_STEP_RENDERERS/);
   assert.match(wizard, /label: wizard\.wizardError[\s\S]*?setup\.wizard\.retry/);
-  assert.match(wizard, /if \(wizard\.wizardError\) \{[\s\S]*?wizard\.retryWizard\(\)/);
   assert.match(wizard, /icon: wizard\.wizardError \? "none" : "next"/);
 });
 
@@ -492,7 +491,7 @@ test('BUG-ONB-18 unused prepare_gateway bridge is no longer part of the command 
   assert.doesNotMatch(setupCommand, /prepare_gateway/);
 });
 
-test('BUG-ONB-21 Ready follows the native Gateway and configuration gates', () => {
+test('BUG-ONB-21 Ready follows the native Gateway and current official terminal gates', () => {
   const completion = setupFlow.slice(
     setupFlow.indexOf('const completeWizardRuntime = useCallback'),
     setupFlow.indexOf('const applyWizardResult = useCallback'),
@@ -552,7 +551,7 @@ test('BUG-ONB-42 授权步骤不因文本内容自动推进', () => {
   assert.doesNotMatch(submit, /continueOpenClawWizardQrAuthorization|wizardScanQrUrl/);
 });
 
-test('BUG-ONB-40 official Gateway finalizer verifies a lost session without replaying the wizard', () => {
+test('BUG-ONB-40 lost Wizard sessions retain an unknown terminal state without replay', () => {
   const wizardHook = hookFile('useWizardSession');
   const recovery = wizardHook.slice(
     wizardHook.indexOf('const reconcileLostWizardSession'),
@@ -564,12 +563,12 @@ test('BUG-ONB-40 official Gateway finalizer verifies a lost session without repl
   assert.match(setupFlow, /gatewayManager\.connect\(gatewayWsUrl, token, deviceToken\)/);
   assert.match(setupFlow, /const recoverAfterGatewayHandoff/);
   assert.match(recovery, /reconcileWizardSessionLoss/);
-  assert.match(recovery, /resolveOnboardingRequirement/);
-  assert.doesNotMatch(recovery, /\.start\(|restartAfterSessionLoss|status: "done"/);
+  assert.match(recovery, /terminal-unknown/);
+  assert.doesNotMatch(recovery, /resolveOnboardingRequirement|\.start\(|restartAfterSessionLoss|status: "done"/);
   assert.match(setupFlow, /error instanceof GatewayPrivilegedSourceChangedError/);
 });
 
-test('BUG-ONB-50 retry verifies an upstream-reaped Wizard session without implicit replay', () => {
+test('BUG-ONB-50 retry does not infer completion for an upstream-reaped Wizard session', () => {
   const wizardHook = hookFile('useWizardSession');
   const retry = wizardHook.slice(
     wizardHook.indexOf('const retryOfficialOnboarding'),
@@ -577,6 +576,7 @@ test('BUG-ONB-50 retry verifies an upstream-reaped Wizard session without implic
   );
 
   assert.match(retry, /recoveryMode === "session"/);
+  assert.match(retry, /recoveryMode === "terminal-unknown"/);
   assert.match(retry, /isOpenClawWizardSessionLost\(error\)/);
   assert.match(retry, /reconcileLostWizardSession\(operationId\)/);
   assert.doesNotMatch(retry, /restartAfterSessionLoss/);
@@ -592,7 +592,7 @@ test('BUG-WIZ-01 返回配置页后继续 Gateway 终态核验而不重启官方
   );
 
   assert.match(autoStart, /wizardRecoveryModeRef\.current === "runtime"[\s\S]*?retryOfficialOnboarding\(\)/);
-  assert.match(autoStart, /wizardRecoveryModeRef\.current === "restart"\) return/);
+  assert.match(autoStart, /wizardRecoveryModeRef\.current === "terminal-unknown"\) return/);
   assert.match(autoStart, /void startOfficialOnboarding\(\)/);
 });
 

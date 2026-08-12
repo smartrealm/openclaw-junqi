@@ -77,7 +77,7 @@
 - Gateway 管理器、生命周期协调器、连接收敛、Wizard 终态和配置页面定向测试共 95 项通过。
 - macOS 安装包中的真实终态交接仍需重新构建后验证；Windows 与 Linux 系统服务交接仍未真机验证。
 
-## 2026-08-12 安装包 GIF 复验与会话丢失修复
+## 2026-08-12 安装包 GIF 复验与阶段性修复
 
 ### 复现证据
 
@@ -86,16 +86,37 @@
 - 代码检查确认，提交期间 Gateway 连接源变化时，JunQi 会尝试恢复旧 `sessionId`；一旦收到 `WIZARD_NOT_FOUND`，旧实现直接调用新的 `wizard.start`。因此本地连接竞态被错误转换成了有持久副作用的完整配置重放。
 - OpenClaw 当前主线在 Wizard handler 中使用 `retainGatewayWorkUntilSettled`，避免配置重载过早清除进程内会话。当前安装版本仍可复现会话先被回收的兼容差异，客户端不能假定一定能收到原 `done` 响应。
 
-### 修复行为
+### 阶段性行为
 
 - `WIZARD_NOT_FOUND` 不再自动调用 `wizard.start`，也不再构造或缓存本地 `done` 结果。
-- JunQi 先通过统一 Gateway 生命周期重新建立当前所选 Runtime 的认证连接，再复用既有结构化配置门禁核验是否仍需 onboarding。
-- Gateway 可核验且配置已完成时，进入同一 Runtime 终态交接与 Ready 门禁；Gateway 尚不可核验时只提供“重新核验”。
-- 结构化检测仍明确要求配置时，页面说明原会话已经失效，并提供显式“重新开始官方向导”；返回配置页不会自动触发该操作。
+- 该阶段曾在恢复所选 Runtime 的认证连接后调用项目自定义配置检测，并据此尝试区分完成与仍需 onboarding。
+- 后续协议复核确认该检测方法未被 OpenClaw 注册，因此这部分行为已由下节的终态未知模型取代，不能作为当前实现依据。
 - 删除 `OpenClawWizardClient.restartAfterSessionLoss()`，避免其他调用方重新引入隐式重放路径。
 
-### 验证结果
+### 当时验证结果
 
 - 会话丢失、显式重启、终态交接、页面操作和取消围栏定向测试共 107 项通过。
 - `npm run lint` 通过，包含模块边界、版本一致性和 TypeScript 检查。
 - 修复后的 macOS 安装包与 GIF 同路径真实复验尚未执行；Windows 与 Linux 仍未真机验证。
+
+## 2026-08-12 协议复核与终态未知加固
+
+### 复核结论
+
+- 新 GIF 共约 137 秒。官方渠道步骤已经推进到 `Done`，但确认该步骤的 `wizard.next` 没有取得 `done` 终态；Gateway 连接源变化后，原进程内 `sessionId` 已不存在。
+- `Done` 是 `WizardSessionPrompter.outro` 产生的普通 `note`。Runner 只有在该步骤被确认并完成后续逻辑后才进入 `done`，因此标题、配置文件、端口健康和连接恢复均不能替代终态响应。
+- 最新 OpenClaw 主线通过 `retainGatewayWorkUntilSettled` 保持 Gateway 工作准入，官方注释明确说明配置 reload 可能清除进程内 Wizard 会话。本机安装的 OpenClaw `2026.7.1-2` 没有该保护，只作为本次兼容差异的复现证据。
+- `openclaw.setup.detect` 与 `openclaw.setup.verify` 不在当前安装版或最新官方 Gateway 方法注册表中。上一轮把 `unknown method` 转换成“官方检测仍要求继续配置”，属于错误的协议推断。
+
+### 修正目标
+
+- 删除两个未注册 RPC 及其专属客户端、测试和文档。
+- 首次配置默认进入官方 Wizard。同一次流程只有官方终态可以清除 onboarding requirement。
+- 会话丢失后只保留终态未知，不从配置、健康、文本或本地旧步骤推断成功或仍需配置。
+- 终态未知不会自动重放。用户显式重新开始时，界面通过可取消的二次确认说明可能重复执行持久配置步骤。
+- 使用包含官方工作准入修复的 OpenClaw 运行时是避免该竞态的根治条件；JunQi 不复制上游 Session 状态机。
+
+### 未验证边界
+
+- 当前正式发布版 OpenClaw 是否已经包含主线工作准入修复，需要在打包和真机复验时按实际源码重新核对，不能以版本字符串推断。
+- 旧运行时丢失进程内会话后不存在官方恢复终态的协议，JunQi 只能保留未知状态。

@@ -86,6 +86,29 @@ test('首次引导只启动官方完整向导并保留渠道跳过说明', async
   });
 });
 
+test('渠道配置使用官方 channels flow 并保留真实完成账号', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const client = new OpenClawWizardClient(async (method, params) => {
+    calls.push({ method, params });
+    return {
+      sessionId: 'channels-session-1',
+      done: true,
+      status: 'done',
+      channels: ['dingtalk-connector'],
+      accounts: [{ channel: 'dingtalk-connector', accountId: 'work' }],
+    };
+  });
+
+  const result = await client.start({ flow: 'channels', channel: 'dingtalk-connector' });
+
+  assert.deepEqual(calls, [{
+    method: 'wizard.start',
+    params: { flow: 'channels', channel: 'dingtalk-connector' },
+  }]);
+  assert.deepEqual(result.accounts, [{ channel: 'dingtalk-connector', accountId: 'work' }]);
+  await assert.rejects(() => client.start({ flow: 'channels' }), /requires a channel/);
+});
+
 test('wizard client lets the official plugin own interactive authorization timeout', async () => {
   const calls: Array<{ method: string; options?: { timeoutMs?: number | null } }> = [];
   const client = new OpenClawWizardClient(async (method, _params, options) => {

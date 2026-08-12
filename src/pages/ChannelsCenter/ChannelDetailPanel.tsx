@@ -10,7 +10,6 @@ import {
   Pencil,
   Play,
   Plus,
-  QrCode,
   ShieldCheck,
   Square,
   TerminalSquare,
@@ -22,7 +21,6 @@ import type { AgentConfig } from '@/types/openclawConfig';
 import type { ChannelAccountBinding, ChannelAccountReadiness } from '@/services/channelConfig';
 import {
   channelAccountStatus,
-  channelLinkMode,
   type ChannelsRuntimeSnapshot,
   type OfficialChannelCatalog,
   type OfficialChannelCatalogEntry,
@@ -229,7 +227,6 @@ export function ChannelDetailPanel({
             : readiness.state === 'unknown'
               ? t('channelsCenter.runtimeStatusUnavailable', 'Runtime status unavailable; JunQi will not guess channel requirements.')
               : t(`channelsCenter.readinessHint.${readiness.state}`, '');
-          const linkMode = channelLinkMode(capability, catalogEntry?.installed === true);
           const runtimeBusyPrefix = `${group.id}:${account.id}`;
 
           return (
@@ -266,12 +263,10 @@ export function ChannelDetailPanel({
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5 border-t border-aegis-border bg-aegis-bg/35 px-3 py-2">
-                {linkMode !== 'none' && (
-                  <button type="button" onClick={() => onLink(catalogEntry, group, account)} disabled={Boolean(accountActionBusy)} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-aegis-primary/20 px-2 text-[10px] font-semibold text-aegis-primary hover:bg-aegis-primary/5 disabled:opacity-50">
-                    {linkMode === 'embedded_qr' ? <QrCode size={11} /> : <Link2 size={11} />}
-                    {linkMode === 'embedded_qr' ? t('channelsCenter.showQr', 'Show QR') : t('channelsCenter.linkAccount', 'Link account')}
-                  </button>
-                )}
+                <button type="button" onClick={() => onLink(catalogEntry, group, account)} disabled={Boolean(accountActionBusy)} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-aegis-primary/20 px-2 text-[10px] font-semibold text-aegis-primary hover:bg-aegis-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35 disabled:opacity-50">
+                  <Link2 size={11} />
+                  {t('channelsCenter.configureChannel', 'Configure channel')}
+                </button>
                 <button type="button" onClick={() => onEditAccount(group, account)} disabled={saving} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-aegis-border px-2 text-[10px] font-semibold text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text disabled:opacity-50">
                   <Pencil size={11} />
                   {t('channelsCenter.manageAccount', 'Manage account')}
@@ -291,7 +286,7 @@ export function ChannelDetailPanel({
                       {accountActionBusy === `channels.stop:${runtimeBusyPrefix}` ? <LoadingIndicator size={11} /> : <Square size={11} />}
                       {t('channelsCenter.stopAccount', 'Stop account')}
                     </DropdownMenuItem>
-                    {(runtime?.linked || linkMode !== 'none') && (
+                    {runtime?.linked && (
                       <DropdownMenuItem onSelect={() => onRuntimeAction('channels.logout', group, account)} disabled={Boolean(accountActionBusy)} className="justify-start text-aegis-warning focus:text-aegis-warning">
                         {accountActionBusy === `channels.logout:${runtimeBusyPrefix}` ? <LoadingIndicator size={11} /> : <LogOut size={11} />}
                         {t('channelsCenter.logoutAccount', 'Log out account')}

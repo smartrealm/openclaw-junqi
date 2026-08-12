@@ -22,11 +22,9 @@ import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition"
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
 import {
   gateway,
-  openClawSetupClient,
 } from "@/services/gateway";
 import { executeRuntimeSelectionTransaction } from "@/services/setup/runtimeSelectionTransaction";
 import {
-  shouldStartOfficialOnboarding,
   validateSetupCompletion,
 } from "@/services/setup/setupCompletionGate";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
@@ -192,7 +190,9 @@ export function useSetupFlow(
   }, [isRunActive, t]);
 
   const resolveActiveRuntimeOnboardingRequirement = useCallback(async (): Promise<boolean> => {
-    return await shouldStartOfficialOnboarding(() => openClawSetupClient.detect());
+    // 首次配置默认交给官方 Wizard。同一次页面生命周期只有官方终态可以清除此门禁，
+    // Gateway 健康、配置文件存在或客户端缓存都不能替代 Wizard 完成事实。
+    return needsOnboardingRef.current;
   }, []);
   // 检测阶段依赖此探针；保持引用稳定，避免检测 effect 因渲染而重复启动。
   const isGatewayConnected = useCallback(() => gateway.getStatus().connected, []);
@@ -263,7 +263,6 @@ export function useSetupFlow(
     setPostStorageStep,
     setSetupError,
     setGatewayRunning,
-    resolveOnboardingRequirement: resolveActiveRuntimeOnboardingRequirement,
     navigationLeavingRef: setupNavigationLeavingRef,
   });
 

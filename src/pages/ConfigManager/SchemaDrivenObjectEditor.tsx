@@ -68,6 +68,7 @@ export function SchemaDrivenObjectEditor({
   disabled = false,
   initiallyOpen = false,
   onChange,
+  onValidationChange,
 }: {
   title: string;
   fields: Record<string, OpenClawFieldSchema>;
@@ -77,19 +78,34 @@ export function SchemaDrivenObjectEditor({
   disabled?: boolean;
   initiallyOpen?: boolean;
   onChange: (value: Record<string, any>) => void;
+  onValidationChange?: (valid: boolean) => void;
 }) {
   const { t } = useTranslation();
   const excluded = useMemo(() => new Set(exclude), [exclude.join('\0')]);
   const sensitive = useMemo(() => new Set(sensitiveFields), [sensitiveFields.join('\0')]);
   const editable = useMemo(() => Object.entries(fields).filter(([name]) => !excluded.has(name)), [excluded, fields]);
-  const primitives = editable.filter(([, schema]) => ['string', 'number', 'integer', 'boolean'].includes(schemaValueKind(schema)));
-  const structured = editable.filter(([, schema]) => !['string', 'number', 'integer', 'boolean'].includes(schemaValueKind(schema)));
+  const primitives = useMemo(
+    () => editable.filter(([, schema]) => ['string', 'number', 'integer', 'boolean'].includes(schemaValueKind(schema))),
+    [editable],
+  );
+  const structured = useMemo(
+    () => editable.filter(([, schema]) => !['string', 'number', 'integer', 'boolean'].includes(schemaValueKind(schema))),
+    [editable],
+  );
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setDrafts(Object.fromEntries(structured.map(([name]) => [name, JSON.stringify(value[name] ?? {}, null, 2)])));
+    setErrors({});
   }, [fields, value]);
+
+  useEffect(() => {
+    const valid = structured.every(([name]) => (
+      !errors[name] && drafts[name] === JSON.stringify(value[name] ?? {}, null, 2)
+    ));
+    onValidationChange?.(valid);
+  }, [drafts, errors, onValidationChange, structured, value]);
 
   return (
     <details open={initiallyOpen || undefined} className="group border-t border-aegis-border pt-3">
@@ -117,7 +133,10 @@ export function SchemaDrivenObjectEditor({
                 }
               }} className="inline-flex items-center gap-1 rounded border border-aegis-border px-2 py-1 text-xs text-aegis-text-secondary hover:text-aegis-text disabled:opacity-50"><Save size={11} /> {t('config.apply', 'Apply')}</button>
             </div>
-            <textarea value={drafts[name] ?? '{}'} disabled={disabled} spellCheck={false} onChange={(event) => setDrafts((current) => ({ ...current, [name]: event.target.value }))} className={clsx('min-h-28 w-full resize-y rounded-md border bg-aegis-surface p-2.5 font-mono text-xs leading-relaxed text-aegis-text outline-none', errors[name] ? 'border-red-400/60' : 'border-aegis-border focus:border-aegis-primary')} />
+            <textarea value={drafts[name] ?? '{}'} disabled={disabled} spellCheck={false} onChange={(event) => {
+              setDrafts((current) => ({ ...current, [name]: event.target.value }));
+              setErrors((current) => ({ ...current, [name]: '' }));
+            }} className={clsx('min-h-28 w-full resize-y rounded-md border bg-aegis-surface p-2.5 font-mono text-xs leading-relaxed text-aegis-text outline-none', errors[name] ? 'border-aegis-danger/60' : 'border-aegis-border focus:border-aegis-primary')} />
             {errors[name] && <p className="mt-1 text-[11px] text-red-400">{errors[name]}</p>}
           </div>
         ))}
