@@ -599,8 +599,50 @@ test('官方短提示只呈现一次正文并使用稳定紧凑布局', () => {
 
   assert.equal(html.split(message).length - 1, 1);
   assert.match(html, /data-wizard-content-layout="compact"/);
+  assert.match(html, /data-wizard-official-summary="note"/);
+  assert.match(html, /OpenClaw notice/);
+  assert.match(html, /Content returned by the current OpenClaw Runtime/);
   assert.doesNotMatch(html, /This content comes from the selected OpenClaw Runtime/);
   assert.doesNotMatch(html, /Complete model, credential, workspace, and Gateway setup/);
+});
+
+test('官方操作和进度步骤使用对应状态摘要且不改写上游正文', () => {
+  const flow = {
+    presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
+    goBack: async () => undefined,
+  } as unknown as SetupFlow;
+  const renderStep = (type: 'action' | 'progress', message: string) => renderToStaticMarkup(
+    <WizardScreen
+      flow={flow}
+      logs={[]}
+      wizard={{
+        wizardStep: {
+          id: `official-${type}`,
+          type,
+          message,
+          executor: 'client',
+        },
+        wizardSubmitting: false,
+        wizardActivity: null,
+        wizardError: null,
+        wizardRecoveryMode: null,
+        submitWizardStep: async () => null,
+        pollWizard: async () => null,
+        retryWizard: async () => null,
+        reclaimWizard: async () => null,
+      }}
+    />,
+  );
+
+  const actionHtml = renderStep('action', 'Run the official operation');
+  assert.match(actionHtml, /data-wizard-official-summary="action"/);
+  assert.match(actionHtml, /Official action ready/);
+  assert.equal(actionHtml.split('Run the official operation').length - 1, 1);
+
+  const progressHtml = renderStep('progress', 'Waiting for the official result');
+  assert.match(progressHtml, /data-wizard-official-summary="progress"/);
+  assert.match(progressHtml, /Running the official step/);
+  assert.equal(progressHtml.split('Waiting for the official result').length - 1, 1);
 });
 
 test('步骤失败时错误状态替换旧步骤内容', () => {

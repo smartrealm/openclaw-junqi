@@ -63,7 +63,7 @@ export function GuidedSetupScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
       secondaryAction={{
         label: t("setup.guided.classicAction"),
         onClick: flow.openClassicSetup,
-        disabled: controller.busy,
+        disabled: controller.busy || flow.wizardSubmitting,
       }}
       nextAction={step ? {
         label: authorizationStep

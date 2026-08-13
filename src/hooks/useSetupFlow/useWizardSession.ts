@@ -1,5 +1,5 @@
 // 官方 OpenClaw 向导会话只投影 Gateway 持有的步骤和终态；会话丢失后保留未知结果。
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SetupStep } from "@/stores/setup-navigation";
 import type { PostStorageStep, SetupLog } from "@/stores/app-store";
@@ -40,7 +40,6 @@ const WIZARD_COMPLETION_RECONNECT_SOURCE = "wizard-completion";
 const WIZARD_SESSION_RECOVERY_RECONNECT_SOURCE = "wizard-session-recovery";
 
 export interface WizardSessionPorts {
-  enabled: boolean;
   setupStep: SetupStep;
   report: (message: string, nextProgress?: number) => void;
   patchStep: (id: string, status: StepStatus, detail?: string) => void;
@@ -50,7 +49,6 @@ export interface WizardSessionPorts {
   setPostStorageStep: (step: PostStorageStep) => void;
   setSetupError: (error: string | null) => void;
   setGatewayRunning: (running: boolean) => void;
-  navigationLeavingRef: RefObject<boolean>;
 }
 
 class OpenClawWizardGatewayConnectionTimeoutError extends Error {
@@ -75,7 +73,6 @@ class OpenClawWizardRecoveryVerificationError extends Error {
 }
 
 export function useWizardSession({
-  enabled,
   setupStep,
   report,
   patchStep,
@@ -85,7 +82,6 @@ export function useWizardSession({
   setPostStorageStep,
   setSetupError,
   setGatewayRunning,
-  navigationLeavingRef,
 }: WizardSessionPorts) {
   const { t } = useTranslation();
   const [wizardStep, setWizardStep] = useState<OpenClawWizardStep | null>(null);
@@ -312,6 +308,7 @@ export function useWizardSession({
   const applyWizardResult = useCallback(async (
     result: OpenClawWizardResult,
     operationId: number,
+    navigateOnStep = true,
   ): Promise<OpenClawWizardResult> => {
     assertWizardOperationCurrent(operationId);
     if (result.error || result.status === "error") {
@@ -341,7 +338,7 @@ export function useWizardSession({
     }
     setWizardStep(result.step);
     report(result.step.title || result.step.message || t("setup.wizard.title", "配置 OpenClaw"), 82);
-    replaceSetupStep("configure-openclaw");
+    if (navigateOnStep) replaceSetupStep("configure-openclaw");
     return result;
   }, [appendSetupLog, assertWizardOperationCurrent, completeWizardRuntime, report, replaceSetupStep, setWizardRecoveryMode, t]);
 
@@ -410,7 +407,10 @@ export function useWizardSession({
     }
   }, [assertWizardOperationCurrent, reconcileLostWizardSession, t]);
 
-  const startOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
+  const startOfficialOnboarding = useCallback(async (
+    surfaceFailureOnConfigurationPage = true,
+    navigateOnStep = true,
+  ): Promise<OpenClawWizardResult | null> => {
     const operationId = beginWizardOperation();
     setWizardError(null);
     setWizardRecoveryMode(null);
@@ -434,7 +434,7 @@ export function useWizardSession({
         result = await client.start();
       }
       assertWizardOperationCurrent(operationId);
-      return await applyWizardResult(result, operationId);
+      return await applyWizardResult(result, operationId, navigateOnStep);
     } catch (error) {
       if (error instanceof OpenClawWizardOperationSupersededError) return null;
       const message = wizardFailureMessage(error);
@@ -442,7 +442,11 @@ export function useWizardSession({
       setWizardActivity(null);
       setWizardError(message);
       setSetupError(message);
-      replaceSetupStep("configure-openclaw");
+      if (surfaceFailureOnConfigurationPage) {
+        replaceSetupStep("configure-openclaw");
+      } else {
+        throw new Error(message);
+      }
       return null;
     } finally {
       if (wizardOperationRef.current === operationId) setWizardSubmitting(false);
@@ -630,23 +634,6 @@ export function useWizardSession({
     }
   }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, setWizardRecoveryMode, waitForGatewayConnection, wizardFailureMessage, wizardRecoveryModeForFailure]);
 
-  const wizardAutoStartRef = useRef(false);
-  useEffect(() => {
-    if (!enabled || setupStep !== "configure-openclaw") {
-      wizardAutoStartRef.current = false;
-      return;
-    }
-    if (navigationLeavingRef.current || wizardStep || wizardSubmitting || wizardError) return;
-    if (wizardAutoStartRef.current) return;
-    wizardAutoStartRef.current = true;
-    if (wizardRecoveryModeRef.current === "runtime" || wizardRecoveryModeRef.current === "session") {
-      void retryOfficialOnboarding();
-      return;
-    }
-    if (wizardRecoveryModeRef.current === "terminal-unknown") return;
-    void startOfficialOnboarding();
-  }, [enabled, setupStep, retryOfficialOnboarding, startOfficialOnboarding, wizardError, wizardStep, wizardSubmitting]);
-
   return {
     wizardStep,
     wizardSubmitting,
@@ -657,6 +644,7 @@ export function useWizardSession({
     pollWizard: pollOfficialOnboarding,
     retryWizard: retryOfficialOnboarding,
     reclaimWizard: reclaimOfficialOnboarding,
+    prepareWizard: () => startOfficialOnboarding(false, setupStep !== "configure-openclaw"),
     invalidateWizardOperations,
     setWizardStep,
     setWizardError,

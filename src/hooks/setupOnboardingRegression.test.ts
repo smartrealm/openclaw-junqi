@@ -108,7 +108,7 @@ test('BUG-ONB-37 dashboard completion revalidates Gateway and the current termin
   assert.doesNotMatch(entry, /probeModel|probeActiveRuntimeModel/);
   assert.ok(entry.indexOf('validateSetupCompletion') < entry.indexOf('setSetupComplete(true)'));
   assert.match(entry, /replaceSetupStep\("gateway-stopped"\)/);
-  assert.match(entry, /replaceSetupStep\("configure-openclaw"\)/);
+  assert.match(entry, /await prepareOpenClawConfiguration\(\)/);
   assert.match(entry, /dashboardEntryInFlightRef\.current/);
 });
 
@@ -345,6 +345,10 @@ test('BUG-ONB-28 a verified setup Gateway hands off without replaying cold boot'
 
 test('BUG-ONB-29 Gateway 核验原地更新运行时执行页，完成后才进入官方配置', () => {
   const progressScreen = screen('ProgressScreen');
+  const continuation = setupFlow.slice(
+    setupFlow.indexOf('const continueAfterGatewayReady'),
+    setupFlow.indexOf('// Gateway startup is an installation transition'),
+  );
 
   assert.match(setupPage, /case "gateway-ready": return <ProgressScreen/);
   assert.match(setupPage, /case "configure-openclaw": return <OpenClawConfigurationScreen/);
@@ -352,6 +356,8 @@ test('BUG-ONB-29 Gateway 核验原地更新运行时执行页，完成后才进�
   assert.match(progressScreen, /setup\.gatewayReadyCheckAction/);
   assert.match(progressScreen, /setup\.gatewayReadyRetryAction/);
   assert.match(progressScreen, /<InstallationConsole/);
+  assert.match(setupFlow, /const prepareOpenClawConfiguration[\s\S]*?await guidedSetup\.prepareDetection\(capability\.detection\)[\s\S]*?navigateSetup\("configure-openclaw", "push"\)[\s\S]*?await prepareWizard\(\)/);
+  assert.match(continuation, /await prepareOpenClawConfiguration\(\)/);
 });
 
 test('BUG-ONB-30 verified Gateway handoff cannot start cold recovery', () => {
@@ -536,16 +542,11 @@ test('BUG-ONB-50 retry does not infer completion for an upstream-reaped Wizard s
   assert.match(setupFlow, /setWizardRecoveryMode\("runtime"\)/);
 });
 
-test('BUG-WIZ-01 返回配置页后继续 Gateway 终态核验而不重启官方向导', () => {
+test('BUG-WIZ-01 配置页挂载不自动启动或重放官方向导', () => {
   const wizardHook = hookFile('useWizardSession');
-  const autoStart = wizardHook.slice(
-    wizardHook.indexOf('const wizardAutoStartRef'),
-    wizardHook.indexOf('return {', wizardHook.indexOf('const wizardAutoStartRef')),
-  );
 
-  assert.match(autoStart, /wizardRecoveryModeRef\.current === "runtime"[\s\S]*?retryOfficialOnboarding\(\)/);
-  assert.match(autoStart, /wizardRecoveryModeRef\.current === "terminal-unknown"\) return/);
-  assert.match(autoStart, /void startOfficialOnboarding\(\)/);
+  assert.match(wizardHook, /prepareWizard: \(\) => startOfficialOnboarding\(false, setupStep !== "configure-openclaw"\)/);
+  assert.doesNotMatch(wizardHook, /wizardAutoStartRef/);
 });
 
 test('BUG-ONB-46 Gateway 执行的进度步骤只由官方会话轮询', () => {

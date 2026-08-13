@@ -81,7 +81,7 @@ export interface SetupFlow {
   pollWizard: () => Promise<OpenClawWizardResult | null>;
   retryWizard: () => Promise<OpenClawWizardResult | null>;
   reclaimWizard: () => Promise<OpenClawWizardResult | null>;
-  openClassicSetup: () => void;
+  openClassicSetup: () => Promise<void>;
   runNativeSetup: () => Promise<boolean>;
   runDockerSetup: () => Promise<boolean>;
   retrySetup: () => Promise<boolean>;

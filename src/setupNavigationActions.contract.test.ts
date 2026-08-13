@@ -42,15 +42,12 @@ test("global Back is single-flight and fences automatic forward effects", () => 
   assert.match(setupFlow, /if \(setupNavigationLeavingRef\.current \|\| autoStartedGatewayRef\.current\) return/);
   assert.match(setupFlow, /const performGoBack[\s\S]*?setupNavigationLeavingRef\.current = true;[\s\S]*?rollbackRuntimeReconfiguration\(\)/);
   assert.match(setupFlow, /const goBack[\s\S]*?setupBackInFlightRef\.current[\s\S]*?isPluginRecoveryInFlight\(\)[\s\S]*?isWizardOperationInFlight\(\)[\s\S]*?await performGoBack\(\)/);
-  assert.match(wizardSession, /if \(navigationLeavingRef\.current \|\| wizardStep \|\| wizardSubmitting \|\| wizardError\) return;[\s\S]*?startOfficialOnboarding/);
+  assert.doesNotMatch(wizardSession, /wizardAutoStartRef/);
 });
 
-test("wizard auto-start runs at most once per configure-page visit", () => {
-  assert.match(wizardSession, /if \(!enabled \|\| setupStep !== "configure-openclaw"\) \{\s*wizardAutoStartRef\.current = false;\s*return;\s*\}/);
-  assert.match(wizardSession, /wizardAutoStartRef\.current = true;/);
-  assert.match(wizardSession, /wizardRecoveryModeRef\.current === "runtime"[\s\S]*?retryOfficialOnboarding\(\)[\s\S]*?startOfficialOnboarding\(\)/);
-  assert.match(wizardSession, /wizardRecoveryModeRef\.current === "terminal-unknown"\) return/);
-  assert.doesNotMatch(wizardSession, /startOfficialOnboarding\(\)\.finally\([\s\S]*?wizardAutoStartRef\.current = false/);
+test("wizard preparation is explicit and configure-page mount has no protocol side effect", () => {
+  assert.match(wizardSession, /prepareWizard: \(\) => startOfficialOnboarding\(false, setupStep !== "configure-openclaw"\)/);
+  assert.doesNotMatch(wizardSession, /wizardAutoStartRef/);
 });
 
 test("wizard Next is single-flight and page Back does not replay protocol answers", () => {

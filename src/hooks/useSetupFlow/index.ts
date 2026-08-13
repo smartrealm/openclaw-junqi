@@ -28,7 +28,10 @@ import {
 } from "@/services/setup/setupCompletionGate";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import { performOpenClawSetupHandoff } from "@/services/setup/openClawSetupHandoff";
-import { resolveOpenClawSetupCapability } from "@/services/setup/openClawSetupCapability";
+import {
+  resolveOpenClawSetupCapability,
+  type OpenClawSetupCapability,
+} from "@/services/setup/openClawSetupCapability";
 import { createOnboardingPresentationMachine } from "@/services/setup/onboardingPresentation";
 import { OpenClawGuidedSetupClient } from "@/services/gateway/OpenClawGuidedSetupClient";
 import { isCurrentSetupOperationProgress } from "@/hooks/setupProgressEvents";
@@ -113,6 +116,7 @@ export function useSetupFlow(
   const reinstallRequestedRef = useRef(false);
   const relocationRequestedRef = useRef(false);
   const needsOnboardingRef = useRef(needsOnboarding);
+  const activeSetupCapabilityRef = useRef<OpenClawSetupCapability | null>(null);
   needsOnboardingRef.current = needsOnboarding;
   const updateOnboardingRequirement = useCallback((required: boolean) => {
     needsOnboardingRef.current = required;
@@ -198,6 +202,7 @@ export function useSetupFlow(
       requestPrivileged: (method, params) => gateway.callPrivileged(method, params),
     });
     const capability = await resolveOpenClawSetupCapability(() => client.detect());
+    activeSetupCapabilityRef.current = capability;
     setConfigurationMode(capability.mode);
     // 稳定版 Classic Wizard 没有全局只读完成探针。该模式只沿用当前流程中
     // 已由官方 Wizard 终态更新的需求状态，不从 Gateway 健康或配置文本猜测。
@@ -264,13 +269,13 @@ export function useSetupFlow(
     pollWizard,
     retryWizard,
     reclaimWizard,
+    prepareWizard,
     invalidateWizardOperations,
     setWizardStep,
     setWizardError,
     setWizardSubmitting,
     isWizardOperationInFlight,
   } = useWizardSession({
-    enabled: configurationMode === "classic",
     setupStep,
     report,
     patchStep,
@@ -280,7 +285,6 @@ export function useSetupFlow(
     setPostStorageStep,
     setSetupError,
     setGatewayRunning,
-    navigationLeavingRef: setupNavigationLeavingRef,
   });
 
   const completeGuidedSetup = useCallback(async () => {
@@ -326,6 +330,24 @@ export function useSetupFlow(
     onComplete: completeGuidedSetup,
     onUnsupported: switchToClassicConfiguration,
   });
+
+  const prepareOpenClawConfiguration = useCallback(async () => {
+    const capability = activeSetupCapabilityRef.current;
+    if (!capability) {
+      throw new Error(t(
+        "setup.gatewayReadyCapabilityMissing",
+        "OpenClaw 配置能力尚未完成核验，请重试。",
+      ));
+    }
+    if (capability.mode === "guided") {
+      await guidedSetup.prepareDetection(capability.detection);
+      if (!capability.detection.setupComplete) {
+        navigateSetup("configure-openclaw", "push");
+      }
+      return;
+    }
+    await prepareWizard();
+  }, [guidedSetup, navigateSetup, prepareWizard, t]);
 
   // ── Actions ──
   const startGatewayAction = useCallback(async (
@@ -405,11 +427,10 @@ export function useSetupFlow(
         requiresOnboarding: resolveActiveRuntimeOnboardingRequirement,
       });
 
-      setGatewayReadyContinuation({ status: "idle", error: null });
       if (!completion.ready) {
         if (completion.reason === "onboarding-required") {
-          // 配置页面独占官方向导的启动权；此处只决定去向，避免一次点击创建竞争的向导会话。
-          navigateSetup("configure-openclaw", "push");
+          await prepareOpenClawConfiguration();
+          setGatewayReadyContinuation({ status: "idle", error: null });
           return;
         }
         const message = t("setup.dashboardEntryGatewayUnavailable");
@@ -420,6 +441,7 @@ export function useSetupFlow(
         return;
       }
 
+      setGatewayReadyContinuation({ status: "idle", error: null });
       report(t("setup.ready"), 100);
       navigateSetup("ready", "push");
     } catch (error) {
@@ -435,10 +457,33 @@ export function useSetupFlow(
     } finally {
       gatewayReadyContinuationInFlightRef.current = false;
     }
-  }, [appendSetupLog, gatewayRunning, navigateSetup, report, resolveActiveRuntimeOnboardingRequirement, setSetupError, startGatewayAction, t]);
+  }, [appendSetupLog, gatewayRunning, navigateSetup, prepareOpenClawConfiguration, report, resolveActiveRuntimeOnboardingRequirement, setSetupError, startGatewayAction, t]);
 
-  // Storage, runtime selection, and the official OpenClaw wizard stay
-  // interactive; only the Gateway start above continues on its own.
+  const openClassicSetup = useCallback(async () => {
+    if (gatewayReadyContinuationInFlightRef.current || isWizardOperationInFlight()) return;
+    gatewayReadyContinuationInFlightRef.current = true;
+    setGatewayReadyContinuation({ status: "checking", error: null });
+    setSetupError(null);
+    try {
+      await prepareWizard();
+      setConfigurationMode("classic");
+      setGatewayReadyContinuation({ status: "idle", error: null });
+    } catch (error) {
+      const detail = sanitizeSetupDiagnostic(error instanceof Error ? error.message : error);
+      const message = t("setup.gatewayReadyContinueFailed", {
+        error: detail,
+        defaultValue: "配置核验未完成：{{error}}",
+      });
+      setConfigurationMode("classic");
+      setGatewayReadyContinuation({ status: "failed", error: message });
+      setSetupError(message);
+      report(message);
+    } finally {
+      gatewayReadyContinuationInFlightRef.current = false;
+    }
+  }, [isWizardOperationInFlight, prepareWizard, report, setSetupError, t]);
+
+  // 存储位置与运行方式由用户决定；只有 Gateway 启动按已确认的运行方式自动推进。
   const autoStartedGatewayRef = useRef(false);
   useEffect(() => {
     if (setupStep !== AUTO_ADVANCE_GATEWAY_STEP) {
@@ -892,15 +937,7 @@ export function useSetupFlow(
       }
       if (!completion.ready && completion.reason === "onboarding-required") {
         updateOnboardingRequirement(true);
-        const message = t(
-          "setup.dashboardEntryOnboardingRequired",
-          "当前运行时配置仍需完成 OpenClaw 设置。",
-        );
-        setDashboardEntryError(message);
-        setSetupError(message);
-        appendSetupLog({ source: "setup", step: "wizard", message, level: "warn" });
-        report(message);
-        replaceSetupStep("configure-openclaw");
+        await prepareOpenClawConfiguration();
         return;
       }
       setSetupError(null);
@@ -911,11 +948,21 @@ export function useSetupFlow(
         window.location.hash = '/';
         setSetupComplete(true);
       }, origin);
+    } catch (error) {
+      const detail = sanitizeSetupDiagnostic(error instanceof Error ? error.message : error);
+      const message = t("setup.gatewayReadyContinueFailed", {
+        error: detail,
+        defaultValue: "配置核验未完成：{{error}}",
+      });
+      setDashboardEntryError(message);
+      setSetupError(message);
+      appendSetupLog({ source: "setup", step: "wizard", message, level: "error" });
+      report(message);
     } finally {
       dashboardEntryInFlightRef.current = false;
       setEnteringDashboard(false);
     }
-  }, [appendSetupLog, invalidateActiveRun, replaceSetupStep, report, resolveActiveRuntimeOnboardingRequirement, setGatewayRunning, setSetupComplete, setSetupError, setWorkspaceStartupMode, t, updateOnboardingRequirement]);
+  }, [appendSetupLog, invalidateActiveRun, prepareOpenClawConfiguration, replaceSetupStep, report, resolveActiveRuntimeOnboardingRequirement, setGatewayRunning, setSetupComplete, setSetupError, setWorkspaceStartupMode, t, updateOnboardingRequirement]);
 
   const detectDocker = useCallback(async () => {
     if (dockerDetectingRef.current) return;
@@ -996,7 +1043,7 @@ export function useSetupFlow(
     pollWizard,
     retryWizard,
     reclaimWizard,
-    openClassicSetup: () => setConfigurationMode("classic"),
+    openClassicSetup,
     runNativeSetup,
     runDockerSetup,
     retrySetup,

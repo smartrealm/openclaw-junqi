@@ -39,6 +39,7 @@ export interface GuidedSetupController {
   wizardStep: OpenClawWizardStep | null;
   busy: boolean;
   error: string | null;
+  prepareDetection: (detection: GuidedSetupDetection) => Promise<void>;
   activateCandidate: (candidate: GuidedSetupCandidate) => Promise<void>;
   activateManual: (authChoice: string, apiKey: string) => Promise<void>;
   startProviderAuth: (authChoice: string) => Promise<void>;
@@ -89,6 +90,7 @@ export function useGuidedSetupSession({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const operationRef = useRef(0);
+  const preparedRef = useRef(false);
   const providerPrepareRef = useRef<string | null>(null);
   const chatSessionIdRef = useRef<string | null>(null);
   const guidedClientRef = useRef<OpenClawGuidedSetupClient | null>(null);
@@ -227,6 +229,28 @@ export function useGuidedSetupSession({
     }
   }, [beginOperation, continueFromDetection, onUnsupported, t]);
 
+  const prepareDetection = useCallback(async (result: GuidedSetupDetection) => {
+    const operation = beginOperation();
+    preparedRef.current = true;
+    setPhase("detecting");
+    setActivation(null);
+    setActiveCandidate(null);
+    setChat(null);
+    setWizardStep(null);
+    try {
+      await continueFromDetection(result, operation);
+    } catch (cause) {
+      if (operation === operationRef.current) {
+        const message = operationError(cause, t);
+        setError(message);
+        setPhase("error");
+        throw new Error(message);
+      }
+    } finally {
+      if (operation === operationRef.current) setBusy(false);
+    }
+  }, [beginOperation, continueFromDetection, t]);
+
   const applyProviderWizardResult = useCallback(async (
     result: OpenClawWizardResult,
     operation: number,
@@ -296,11 +320,16 @@ export function useGuidedSetupSession({
   useEffect(() => {
     if (!enabled) {
       operationRef.current += 1;
+      preparedRef.current = false;
       return;
     }
-    void loadDetection();
+    if (!preparedRef.current) {
+      preparedRef.current = true;
+      void loadDetection();
+    }
     return () => {
       operationRef.current += 1;
+      preparedRef.current = false;
       gateway.cancelActivePrivilegedRequest();
       wizardClientRef.current?.invalidatePendingOperations();
       void wizardClientRef.current?.cancel().catch(() => undefined);
@@ -316,6 +345,7 @@ export function useGuidedSetupSession({
     wizardStep,
     busy,
     error,
+    prepareDetection,
     activateCandidate: async (candidate) => activate({
       kind: candidate.kind,
       modelRef: candidate.modelRef,

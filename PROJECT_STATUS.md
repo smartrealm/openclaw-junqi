@@ -29,6 +29,8 @@
 - 数据位置提交不再切换到独立进度页面，也不再展示客户端自造百分比；原表单保持挂载并锁定交互，主操作显示真实忙碌状态。
 - 安装日志由共享页面骨架统一控制：普通步骤默认收起；依赖安装在宽窗口左右并列执行步骤与执行记录，窄窗口才使用用户控制的切换。
 - Gateway 认证连接与运行时身份完成后原地更新运行时执行摘要；`gateway-ready` 只保留内部核验状态，不再生成独立“运行时已就绪”页面。配置核验仍由用户显式触发，真实失败在同一摘要和主操作中呈现。
+- 配置核验现在先在运行时页面内完成协议协商：Guided 取得候选确认或选择状态，Classic 取得首个官方 Wizard 步骤后才进入配置页；配置页不再先展示客户端连接占位卡后自动切换。
+- Classic 普通提示、操作与进度步骤统一使用紧凑官方摘要，明确状态层级并保留上游标题和正文。官方 `outro` 仍按正式 `note` 等待确认，只有后续结构化 `done` 才触发完成交接。
 - 官方配置终态后的 Gateway 重连显式绑定当前所选 Runtime，重新解析当前端点和凭据，不再沿用历史手动连接目标。
 
 ## 关键技术决策
@@ -54,6 +56,7 @@
 - `src/pages/SetupPage/GuidedInferenceSelectionPanel.tsx`
 - `src/services/setup/openClawSetupAdmission.ts`
 - `src/pages/SetupPage/OpenClawConfigurationScreen.tsx`
+- `src/pages/SetupPage/wizard/WizardNoticeStep.tsx`
 - `src/components/setup/SetupFlowPanels.tsx`
 - `src/components/setup/StorageSetupGate.tsx`
 - `src/i18n/resources.ts`
@@ -66,7 +69,7 @@
 
 ## 测试与验证
 
-- 完整前端与脚本测试已通过；本轮安装呈现定向回归 90 项通过，覆盖宽窗口双栏、窄窗口切换、Gateway 摘要原地核验、候选梯子、路径确认、配置占用分类、检测详情呈现和两类取消。
+- 完整前端与脚本测试已通过；本轮新增安装呈现定向回归 77 项通过，覆盖配置页进入门禁、官方提示、操作与进度摘要、上游正文单次呈现、Gateway 摘要原地核验、候选梯子和取消边界。
 - 测试输出包含既有 Node 注册接口弃用警告和服务端渲染 Tooltip 警告，没有失败项。
 - 本轮没有修改 Rust；既有 Rust 635 项通过、1 项忽略的结果未在本轮重跑。
 - `pnpm lint`、`pnpm build` 与 `pnpm verify:openclaw-docs` 已通过；`git diff --check` 在最终差异扫描中执行。
