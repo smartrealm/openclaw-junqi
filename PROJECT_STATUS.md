@@ -53,16 +53,18 @@
 - 完整前端测试 2709 项和脚本测试 238 项通过；测试输出包含既有 Node 注册接口弃用警告，没有失败项。
 - 本轮没有修改 Rust；既有 Rust 635 项通过、1 项忽略的结果未在本轮重跑。
 - `pnpm lint`、`pnpm build`、`pnpm verify:openclaw-docs` 与 `git diff --check` 通过。
-- 本轮安装流程与 Gateway 接管修复已纳入当前提交；尚未生成包含本轮修复的安装包。生产前端构建通过，此前本地 DMG 不能用于验收本轮行为。
+- 本轮安装流程与 Gateway 接管修复已提交为 `1b0e4016`。本机已生成包含该提交的 macOS ARM64 DMG，并通过磁盘映像完整性与可执行文件架构核验；该制品仅为本地安装验收包。
+- 本地验收包位于 `src-tauri/target/release/bundle/dmg/JunQi Desktop_3.1.0_aarch64.dmg`，SHA-256 为 `cd3a1836aa2cd71e8dfe9567a1f6b65084150142b97a06efb520cedde62327c7`；`hdiutil verify` 通过。
 
 ## 已知问题与未验证边界
 
-- 当前数据位置显式确认与 Gateway 连接代次修复尚未生成新的安装包，也未完成连续页面真机验收；此前安装包仍包含旧行为。
+- 当前数据位置显式确认与 Gateway 连接代次修复尚未完成连续页面真机验收；新安装包已经生成，仍需实际安装后核验页面推进和旧连接隔离。
 - 真实 provider 登录、真实 completion、官方 onboarding chat、钉钉授权和 Classic daemon 选择尚未在当前 macOS 安装包中完成端到端验证。
 - Windows、Linux、Docker、系统服务、凭据库和外部浏览器行为尚未在目标平台真机验证。
 - 当前本机稳定 OpenClaw `2026.7.1-2` 已复现 Classic 协议和 Guided unknown-method；最新版 Guided 真实 provider 流程仍需独立 Runtime 验证。
 - 暗色主题、窄窗口、键盘焦点和减少动态效果尚未完成本轮真机视觉验收。
 - 当前构建仍有既有 pnpm 配置迁移警告，但不影响本轮检查与生产构建结果。
+- 本地 DMG 为 ARM64、ad-hoc 签名且未经 Apple 公证，不是正式发布制品；Intel macOS 以及其他目标平台未由该包覆盖。
 
 ## 下一步顺序
 
