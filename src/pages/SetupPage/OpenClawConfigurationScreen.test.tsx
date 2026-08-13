@@ -603,6 +603,12 @@ test('官方短提示只呈现一次正文并使用稳定紧凑布局', () => {
   assert.match(html, /data-wizard-summary-tone="notice"/);
   assert.match(html, /border-l-aegis-primary\/55/);
   assert.match(html, /bg-aegis-primary-surface/);
+  assert.match(html, /data-wizard-summary-message="true"[^>]*text-aegis-text-secondary/);
+  assert.match(html, /data-wizard-summary-source="true"/);
+  assert.match(
+    html,
+    /<svg(?=[^>]*data-wizard-summary-source-icon="true")(?=[^>]*class="[^"]*text-aegis-primary)[^>]*>/,
+  );
   assert.match(html, /OpenClaw notice/);
   assert.match(html, /Content returned by the current OpenClaw Runtime/);
   assert.doesNotMatch(html, /This content comes from the selected OpenClaw Runtime/);

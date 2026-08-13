@@ -58,11 +58,23 @@ function OfficialStepSummary({
           <h2 id={`wizard-summary-${step.id}`} className="mt-1 text-base font-semibold text-aegis-text" dir="auto">
             {presentation.title}
           </h2>
-          <p className="mt-2 max-w-[68ch] whitespace-pre-wrap break-words text-sm leading-6 text-aegis-text-muted" dir="auto">
+          <p
+            data-wizard-summary-message="true"
+            className="mt-2 max-w-[68ch] whitespace-pre-wrap break-words text-[15px] leading-7 text-aegis-text-secondary"
+            dir="auto"
+          >
             {step.message || presentation.fallback}
           </p>
-          <div className="mt-4 flex items-center gap-2 border-t border-aegis-border/70 pt-3 text-xs text-aegis-text-dim">
-            <CircleDot size={13} aria-hidden="true" />
+          <div
+            data-wizard-summary-source="true"
+            className="mt-4 flex items-center gap-2 border-t border-aegis-border/70 pt-3 text-xs text-aegis-text-muted"
+          >
+            <CircleDot
+              data-wizard-summary-source-icon="true"
+              size={13}
+              className={presentation.eyebrowClass}
+              aria-hidden="true"
+            />
             <span>{t("setup.wizard.officialSource", "内容由当前 OpenClaw Runtime 返回")}</span>
           </div>
         </div>
