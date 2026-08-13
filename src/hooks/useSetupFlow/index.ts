@@ -19,6 +19,7 @@ import {
   type OpenclawStatus,
 } from "@/api/tauri-commands";
 import { enterWorkspaceWithTransition } from "@/motion/workspaceEntryTransition";
+import { captureCurrentAttestedGatewayConnectionId, gatewayLifecycle, isAttestedGatewayConnectionCurrent } from "@/runtime/gatewayLifecycle";
 import { gatewayManager } from "@/services/gateway/GatewayConnectionManager";
 import {
   gateway,
@@ -28,12 +29,15 @@ import {
   validateSetupCompletion,
 } from "@/services/setup/setupCompletionGate";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
+import { performOpenClawSetupHandoff } from "@/services/setup/openClawSetupHandoff";
 import { createOnboardingPresentationMachine } from "@/services/setup/onboardingPresentation";
+import { OpenClawGuidedSetupClient } from "@/services/gateway/OpenClawGuidedSetupClient";
 import { isCurrentSetupOperationProgress } from "@/hooks/setupProgressEvents";
 
 
 import { usePluginRecovery } from "./usePluginRecovery";
 import { useWizardSession } from "./useWizardSession";
+import { useGuidedSetupSession } from "./useGuidedSetupSession";
 import { useSetupOperationCoordinator } from "./useSetupOperationCoordinator";
 import { useSetupProgressEvents } from "./useSetupProgressEvents";
 import { useSetupEnvironmentReview } from "./useSetupEnvironmentReview";
@@ -87,6 +91,7 @@ export function useSetupFlow(
   const [installTarget, setInstallTarget] = useState<InstallTarget | null>(null);
   const [openclawStatus, setOpenclawStatus] = useState<OpenclawStatus | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
+  const [configurationMode, setConfigurationMode] = useState<"guided" | "classic">("guided");
   const [enteringDashboard, setEnteringDashboard] = useState(false);
   const [dashboardEntryError, setDashboardEntryError] = useState<string | null>(null);
   const dashboardEntryInFlightRef = useRef(false);
@@ -190,10 +195,15 @@ export function useSetupFlow(
   }, [isRunActive, t]);
 
   const resolveActiveRuntimeOnboardingRequirement = useCallback(async (): Promise<boolean> => {
-    // 首次配置默认交给官方 Wizard。同一次页面生命周期只有官方终态可以清除此门禁，
-    // Gateway 健康、配置文件存在或客户端缓存都不能替代 Wizard 完成事实。
-    return needsOnboardingRef.current;
-  }, []);
+    // Gateway 健康或本地页面终态都不能证明模型配置完成；每次门禁核验都读取
+    // OpenClaw 官方探测结果，避免安装完成后因进程内标记丢失而重新进入配置。
+    const result = await new OpenClawGuidedSetupClient({
+      requestPrivileged: (method, params) => gateway.callPrivileged(method, params),
+    }).detect();
+    const required = !result.setupComplete;
+    updateOnboardingRequirement(required);
+    return required;
+  }, [updateOnboardingRequirement]);
   // 检测阶段依赖此探针；保持引用稳定，避免检测 effect 因渲染而重复启动。
   const isGatewayConnected = useCallback(() => gateway.getStatus().connected, []);
 
@@ -254,6 +264,7 @@ export function useSetupFlow(
     setWizardSubmitting,
     isWizardOperationInFlight,
   } = useWizardSession({
+    enabled: configurationMode === "classic",
     setupStep,
     report,
     patchStep,
@@ -265,6 +276,47 @@ export function useSetupFlow(
     setGatewayRunning,
     navigationLeavingRef: setupNavigationLeavingRef,
   });
+
+  const completeGuidedSetup = useCallback(async () => {
+    const client = new OpenClawGuidedSetupClient({
+      requestPrivileged: (method, params) => gateway.callPrivileged(method, params),
+    });
+    const handoff = await performOpenClawSetupHandoff({
+      captureAttestedConnectionId: captureCurrentAttestedGatewayConnectionId,
+      isAttestedConnectionCurrent: isAttestedGatewayConnectionCurrent,
+      reconnect: async () => {
+        const result = await gatewayLifecycle.reconnectAfterCurrent("guided-setup-completion");
+        return {
+          success: result.success && !result.superseded,
+          ...(result.error ? { diagnostic: result.error } : {}),
+        };
+      },
+      probeSelectedGateway: () => probeSelectedGateway().catch(() => false),
+      detectSetup: () => client.detect(),
+      verifyModel: () => client.verify(),
+    });
+    if (!handoff.ready) {
+      throw new Error(handoff.diagnostic || t(
+        `setup.handoff.${handoff.reason}`,
+        "OpenClaw 配置已结束，但 JunQi 尚未完成运行时交接。请核验当前连接后重试。",
+      ));
+    }
+    setSetupError(null);
+    setGatewayRunning(true);
+    updateOnboardingRequirement(false);
+    setPostStorageStep("ready");
+    report(t("setup.ready"), 100);
+    replaceSetupStep("ready");
+  }, [replaceSetupStep, report, setGatewayRunning, setPostStorageStep, setSetupError, t, updateOnboardingRequirement]);
+
+  const guidedSetup = useGuidedSetupSession({
+    enabled: setupStep === "configure-openclaw" && configurationMode === "guided",
+    onComplete: completeGuidedSetup,
+  });
+
+  useEffect(() => {
+    if (setupStep !== "configure-openclaw") setConfigurationMode("guided");
+  }, [setupStep]);
 
   // ── Actions ──
   const startGatewayAction = useCallback(async (
@@ -918,6 +970,8 @@ export function useSetupFlow(
     wizardActivity,
     wizardError,
     wizardRecoveryMode,
+    configurationMode,
+    guidedSetup,
     needsOnboarding,
     gatewayReadyContinuation,
     repairing,
@@ -937,6 +991,7 @@ export function useSetupFlow(
     pollWizard,
     retryWizard,
     reclaimWizard,
+    openClassicSetup: () => setConfigurationMode("classic"),
     runNativeSetup,
     runDockerSetup,
     retrySetup,

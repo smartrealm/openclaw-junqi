@@ -4,6 +4,7 @@ import type { DockerStatus, OpenclawStatus } from "@/api/tauri-commands";
 import type { BrokenGatewayPlugin } from "@/services/gateway/pluginRecovery";
 import type { OpenClawWizardResult, OpenClawWizardStep } from "@/services/openclawWizard";
 import type { OnboardingPresentation } from "@/services/setup/onboardingPresentation";
+import type { GuidedSetupController } from "./useGuidedSetupSession";
 
 export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
 
@@ -60,6 +61,8 @@ export interface SetupFlow {
   wizardActivity: string | null;
   wizardError: string | null;
   wizardRecoveryMode: WizardRecoveryMode;
+  configurationMode: "guided" | "classic";
+  guidedSetup: GuidedSetupController;
   needsOnboarding: boolean;
   gatewayReadyContinuation: GatewayReadyContinuation;
   repairing: boolean;
@@ -78,6 +81,7 @@ export interface SetupFlow {
   pollWizard: () => Promise<OpenClawWizardResult | null>;
   retryWizard: () => Promise<OpenClawWizardResult | null>;
   reclaimWizard: () => Promise<OpenClawWizardResult | null>;
+  openClassicSetup: () => void;
   runNativeSetup: () => Promise<boolean>;
   runDockerSetup: () => Promise<boolean>;
   retrySetup: () => Promise<boolean>;

@@ -4,6 +4,9 @@
 
 ## 当前入口
 
+- [OpenClaw 原生安装对齐审计](quality/openclaw-native-installation-alignment-audit-2026-08-12.md)：最新版默认 guided inference、正式 setup RPC、经典 Wizard、npm 安装与 JunQi 当前差异。
+- [OpenClaw 原生安装对齐规格](../specs/2026-08-12-openclaw-native-installation-alignment.md)：默认安装状态机、完成门禁、安全边界与验收条件。
+- [OpenClaw 原生安装对齐计划](../plans/2026-08-12-openclaw-native-installation-alignment.md)：P0、P1 修复顺序、旧路径删除和跨平台验证安排。
 - [安装与首次启动流程](installation/junqi-installation-flow.md)：JunQi 的桌面职责、官方 Wizard 交接与未验证平台边界。
 - [OpenClaw Wizard 流程](installation/openclaw-wizard-start-flow.md)：`wizard.start`、步骤循环、取消恢复、完整配置与渠道流程的官方契约及 JunQi 适配边界。
 - [OpenClaw Wizard 终态交接审计](quality/openclaw-wizard-terminal-handoff-audit-2026-08-11.md)：官方终态、Gateway 后置核验、重试边界与授权等待投影的缺陷和验证记录。

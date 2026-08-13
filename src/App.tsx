@@ -73,6 +73,8 @@ import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
 import { approveSelectedGatewayDevice } from '@/api/tauri-commands';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
+import { OpenClawGuidedSetupClient } from '@/services/gateway/OpenClawGuidedSetupClient';
+import { shouldBlockWorkspaceEntry } from '@/services/setup/setupEntryGate';
 import { JarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
 import { projectOpenClawSessionForChat } from '@/utils/openClawSessionProjection';
 import {
@@ -180,6 +182,9 @@ export default function App() {
   const [cachedSetupValidationPending, setCachedSetupValidationPending] = useState(
     () => setupComplete === true && hasTauriEventBridge(),
   );
+  const [officialSetupValidationPending, setOfficialSetupValidationPending] = useState(
+    () => setupComplete === true && hasTauriEventBridge(),
+  );
   const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
   const [workspaceStartupFailed, setWorkspaceStartupFailed] = useState(false);
   const workspaceBootstrapReadinessRef = useRef(createWorkspaceBootstrapReadiness());
@@ -209,8 +214,7 @@ export default function App() {
     if (officialMainSessionKey) setDefaultMainSessionKey(officialMainSessionKey);
   }, [officialMainSessionKey, setDefaultMainSessionKey]);
 
-  // The local marker is only a cache. Validate the durable installation before
-  // entering the workspace, but leave process readiness to cold-start recovery.
+  // 本地标记只是缓存。进入工作台前先核验持久安装，进程就绪仍由冷启动恢复负责。
   useEffect(() => {
     if (!cachedSetupValidationPending || setupComplete !== true) return;
     let cancelled = false;
@@ -240,6 +244,40 @@ export default function App() {
       cancelled = true;
     };
   }, [cachedSetupValidationPending, setupComplete]);
+
+  // 本地完成标记只决定是否尝试恢复；进入工作台前仍由当前 OpenClaw Runtime 确认配置终态。
+  useEffect(() => {
+    if (setupComplete !== true || !hasTauriEventBridge()) {
+      setOfficialSetupValidationPending(false);
+      return;
+    }
+    if (cachedSetupValidationPending || !connected) return;
+    let cancelled = false;
+    setOfficialSetupValidationPending(true);
+    const client = new OpenClawGuidedSetupClient({
+      requestPrivileged: (method, params) => gateway.callPrivileged(method, params),
+    });
+    void client.detect()
+      .then((result) => {
+        if (cancelled) return;
+        if (!result.setupComplete) {
+          const store = useAppStore.getState();
+          store.setSetupComplete(null);
+          store.navigateSetup('configure-openclaw', 'replace');
+          return;
+        }
+        setOfficialSetupValidationPending(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        const store = useAppStore.getState();
+        store.setSetupComplete(null);
+        store.navigateSetup('configure-openclaw', 'replace');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cachedSetupValidationPending, connected, setupComplete]);
 
   useEffect(() => {
     if (setupComplete !== true) {
@@ -1001,7 +1039,11 @@ export default function App() {
     void gatewayLifecycle.reconnect('gateway-error-screen-recovered');
   }, []);
 
-  if (setupComplete === true && cachedSetupValidationPending) {
+  if (shouldBlockWorkspaceEntry({
+    setupComplete,
+    installationValidationPending: cachedSetupValidationPending,
+    officialSetupValidationPending,
+  })) {
     return (
       <>
         <ThemeRuntime />

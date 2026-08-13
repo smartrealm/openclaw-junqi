@@ -4,6 +4,7 @@ import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
 import { SetupShell, StatusPanel } from "@/components/setup/SetupFlowPanels";
 import { WizardScreen } from "./WizardScreen";
+import { GuidedSetupScreen } from "./GuidedSetupScreen";
 
 type VerificationFlow = Pick<
   SetupFlow,
@@ -21,7 +22,11 @@ export function OpenClawConfigurationScreen({
   logs,
   phase,
 }: OpenClawConfigurationScreenProps) {
-  if (phase === "wizard") return <WizardScreen flow={flow} logs={logs} />;
+  if (phase === "wizard") {
+    return flow.configurationMode === "classic"
+      ? <WizardScreen flow={flow} logs={logs} />
+      : <GuidedSetupScreen flow={flow} logs={logs} />;
+  }
 
   return <ConfigurationVerificationScreen flow={flow} logs={logs} />;
 }

@@ -62,35 +62,24 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
   assert.match(detection, /settleInitialEnvironmentDetection\([\s\S]*?detectEnvironment\(runId\)[\s\S]*?checkDocker\(\)[\s\S]*?!isRunActive\(runId\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
 });
 
-test('BUG-ONB-16 wizard completion requires authenticated post-handoff Gateway readiness', () => {
+test('BUG-ONB-16 wizard completion requires authenticated Gateway readiness and official setup detection', () => {
   const completion = setupFlow.slice(
     setupFlow.indexOf('const completeWizardRuntime = useCallback'),
     setupFlow.indexOf('const applyWizardResult = useCallback'),
   );
 
-  assert.match(completion, /await prepareWizardCompletionLifecycle\([\s\S]*?target\.runtime_mode,[\s\S]*?handoffGatewayToOfficialService/);
-  assert.match(completion, /gatewayLifecycle\.reconnectAfterCurrent\(WIZARD_COMPLETION_RECONNECT_SOURCE\)/);
-  assert.match(completion, /await probeSelectedGateway\(\)/);
-  assert.ok(
-    completion.indexOf('await probeSelectedGateway()')
-      < completion.indexOf('updateOnboardingRequirement(false)'),
-    '只有所选 Gateway 探测成功后才能清除首次配置要求',
-  );
+  assert.match(completion, /performOpenClawSetupHandoff\(\{/);
+  assert.match(completion, /reconnectAfterCurrent\(WIZARD_COMPLETION_RECONNECT_SOURCE\)/);
+  assert.match(completion, /probeSelectedGateway/);
+  assert.match(completion, /detectSetup: \(\) => client\.detect\(\)/);
+  assert.match(completion, /verifyModel: \(\) => client\.verify\(\)/);
 });
 
-test('BUG-ONB-34 cached setup validates installation before Gateway recovery', () => {
-  const validation = app.slice(
-    app.indexOf('// The local marker is only a cache.'),
-    app.indexOf('useEffect(() => {', app.indexOf('}, [cachedSetupValidationPending, setupComplete]);') + 1),
-  );
-
-  assert.match(validation, /validateCachedSetupInstallation\(\)/);
-  assert.doesNotMatch(validation, /probe_selected_gateway/);
+test('BUG-ONB-34 cached setup defers cold recovery until durable installation validation settles', () => {
   assert.ok(
     (app.match(/if \(cachedSetupValidationPending\) return;/g) ?? []).length >= 2,
     'cold recovery and Gateway callback registration must wait for cached setup validation',
   );
-  assert.match(app, /setupComplete === true && cachedSetupValidationPending/);
 });
 
 test('BUG-ONB-32 official wizard RPCs use an admin connection and retain failure diagnostics', () => {
@@ -118,18 +107,6 @@ test('BUG-ONB-33 setup renders the official pairing approval surface', () => {
   assert.match(setupBranch, /pairingIssue/);
   assert.match(setupBranch, /<PairingScreen/);
   assert.match(setupBranch, /onPaired=\{handlePairingComplete\}/);
-});
-
-test('BUG-ONB-34 a failed cached installation validation blocks Gateway recovery', () => {
-  const healthGate = app.slice(
-    app.indexOf('// The local marker is only a cache.'),
-    app.indexOf("useEffect(() => {\n    const updateRoutePath"),
-  );
-
-  assert.match(healthGate, /validateCachedSetupInstallation\(\)/);
-  assert.doesNotMatch(healthGate, /invoke<boolean>\(['"]probe_selected_gateway['"]/);
-  assert.match(healthGate, /setSetupComplete\(null\)/);
-  assert.match(healthGate, /navigateSetup\(['"]detecting['"], ['"]replace['"]\)/);
 });
 
 test('BUG-ONB-37 dashboard completion revalidates Gateway and the current terminal gate before committing the setup marker', () => {
@@ -217,8 +194,8 @@ test('BUG-ONB-49 wizard recovery avoids destructive status reads and lets author
     wizardOperations.indexOf('const wizardFailureMessage'),
   );
   const resume = wizardClient.slice(
-    wizardClient.indexOf('async resume()'),
-    wizardClient.indexOf('async back()'),
+    wizardClient.indexOf('async resume('),
+    wizardClient.indexOf('async retry('),
   );
   const next = wizardClient.slice(
     wizardClient.indexOf('async next('),

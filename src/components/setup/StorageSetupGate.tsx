@@ -134,6 +134,33 @@ function LocationRow({ icon, label, value, onChoose, disabled }: LocationRowProp
   );
 }
 
+function StorageFormSkeleton() {
+  return (
+    <section
+      data-testid="storage-form-skeleton"
+      className="border-y border-aegis-border py-6"
+      aria-busy="true"
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        {[0, 1].map((index) => (
+          <div key={index} className="min-h-[116px] rounded-lg border border-aegis-border p-4">
+            <div className="h-4 w-32 rounded bg-aegis-surface" />
+            <div className="mt-4 h-3 w-3/4 rounded bg-aegis-surface" />
+          </div>
+        ))}
+      </div>
+      <div className="mt-5 border-t border-aegis-border pt-4">
+        <div className="h-4 w-24 rounded bg-aegis-surface" />
+        <div className="mt-3 space-y-3 border-y border-aegis-border py-4">
+          {[0, 1, 2].map((index) => (
+            <div key={index} className="h-8 rounded bg-aegis-surface/70" />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConfigure = false }: StorageSetupStepProps) {
   const { t } = useTranslation();
   const storageDraft = useAppStore((state) => state.storageDraft);
@@ -438,20 +465,14 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
     return (
       <SetupShell
         active={activeStage}
-        contentIdentity="storage:loading"
+        contentIdentity="storage:form"
         title={t('storage.title', '选择 OpenClaw 数据位置')}
         subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
         logs={logs}
         previousAction={{ onClick: handleBack }}
-        nextAction={{ label: t('storage.loading', '正在读取存储信息…'), disabled: true, loading: true, icon: 'none' }}
+        nextAction={{ label: t('setup.nextStep', '下一步'), disabled: true, icon: 'next' }}
       >
-        <div className="flex min-h-[260px] items-center" aria-busy="true" aria-live="polite">
-          <StatusPanel
-            icon={<LoaderCircle className="animate-spin motion-reduce:animate-none" size={22} />}
-            title={t('storage.loading', '正在读取存储信息…')}
-            message={t('storage.loadingHint', '正在读取当前 OpenClaw 数据、工作区和运行时位置。')}
-          />
-        </div>
+        <StorageFormSkeleton />
       </SetupShell>
     );
   }

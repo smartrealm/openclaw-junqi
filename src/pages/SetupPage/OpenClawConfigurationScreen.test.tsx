@@ -38,6 +38,125 @@ function renderVerificationState(
   );
 }
 
+function createGuidedFlow(): SetupFlow {
+  return {
+    presentation: { state: 'configure-openclaw', stage: 3, kind: 'official-wizard' },
+    configurationMode: 'guided',
+    guidedSetup: {
+      phase: 'selecting',
+      detection: {
+        candidates: [{
+          kind: 'codex-cli',
+          brandId: 'test-provider',
+          label: 'Codex CLI',
+          detail: 'Detected by OpenClaw',
+          modelRef: 'openai/codex',
+          recommended: true,
+        }],
+        manualProviders: [],
+        workspace: '/workspace',
+        setupComplete: false,
+      },
+      activation: null,
+      chat: null,
+      wizardStep: null,
+      busy: false,
+      error: null,
+      activateCandidate: async () => undefined,
+      activateManual: async () => undefined,
+      startProviderAuth: async () => undefined,
+      startProviderPrepare: async () => undefined,
+      submitProviderWizard: async () => undefined,
+      submitChat: async () => undefined,
+      finishChat: async () => undefined,
+      retry: async () => undefined,
+    },
+    goBack: async () => undefined,
+    openClassicSetup: () => undefined,
+  } as unknown as SetupFlow;
+}
+
+function createGuidedAuthorizationFlow(busy: boolean): SetupFlow {
+  const flow = createGuidedFlow();
+  return {
+    ...flow,
+    guidedSetup: {
+      ...flow.guidedSetup,
+      phase: 'provider-wizard',
+      busy,
+      wizardStep: {
+        id: 'provider-auth',
+        type: 'confirm',
+        title: 'Authorize provider',
+        message: 'Continue with provider authorization?',
+        externalUrl: 'https://provider.example/authorize?user_code=ABCD',
+      },
+    },
+  };
+}
+
+test('首次配置默认呈现 OpenClaw Guided 探测结果，Classic 仅作为显式入口', () => {
+  const html = renderToStaticMarkup(
+    <OpenClawConfigurationScreen flow={createGuidedFlow()} logs={[]} phase="wizard" />,
+  );
+
+  assert.match(html, /Detected options/);
+  assert.match(html, /Codex CLI/);
+  assert.match(html, /Recommended/);
+  assert.match(html, /Detailed setup/);
+  assert.doesNotMatch(html, /Waiting for the next official step/);
+});
+
+test('用户显式选择 Classic 后才呈现官方详细向导', () => {
+  const flow = {
+    ...createGuidedFlow(),
+    configurationMode: 'classic' as const,
+    wizardStep: null,
+    wizardSubmitting: false,
+    wizardActivity: null,
+    wizardError: null,
+    wizardRecoveryMode: null,
+    submitWizardStep: async () => null,
+    pollWizard: async () => null,
+    retryWizard: async () => null,
+    reclaimWizard: async () => null,
+  } as unknown as SetupFlow;
+  const html = renderToStaticMarkup(
+    <OpenClawConfigurationScreen flow={flow} logs={[]} phase="wizard" />,
+  );
+
+  assert.match(html, /Connecting to the official OpenClaw setup wizard/);
+  assert.doesNotMatch(html, /Detected inference options/);
+});
+
+test('Guided 供应商授权复用官方步骤二维码呈现', () => {
+  const html = renderToStaticMarkup(
+    <OpenClawConfigurationScreen
+      flow={createGuidedAuthorizationFlow(false)}
+      logs={[]}
+      phase="wizard"
+    />,
+  );
+
+  assert.match(html, /data-wizard-authorization="true"/);
+  assert.match(html, /data-wizard-authorization-qr="true"/);
+  assert.match(html, /Authorization complete, continue/);
+});
+
+test('Guided 授权提交后立即销毁旧二维码并等待官方终态', () => {
+  const html = renderToStaticMarkup(
+    <OpenClawConfigurationScreen
+      flow={createGuidedAuthorizationFlow(true)}
+      logs={[]}
+      phase="wizard"
+    />,
+  );
+
+  assert.match(html, /Waiting for the provider flow/);
+  assert.doesNotMatch(html, /data-wizard-authorization="true"/);
+  assert.doesNotMatch(html, /data-wizard-authorization-qr="true"/);
+});
+
 test('Gateway 就绪在配置阶段显示显式核验操作', () => {
   const html = renderVerificationState({ status: 'idle', error: null });
 

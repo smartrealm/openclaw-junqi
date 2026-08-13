@@ -256,6 +256,7 @@ export function WizardScreen({
       <SetupShell
         active={flow.presentation.stage}
         contentIdentity={`${presentedStep.id}:${contentState}`}
+        contentMotion={contentState === "step" ? "forward" : "ambient"}
         title={wizardTitle}
         subtitle={wizardSubtitle}
         logs={logs}

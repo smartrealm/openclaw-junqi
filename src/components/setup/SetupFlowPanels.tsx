@@ -30,7 +30,7 @@ import {
 } from "@/api/tauri-commands";
 import type { SetupLog } from "@/stores/app-store";
 import type { InstallTarget, SetupFlow, StepState } from "@/hooks/useSetupFlow";
-import { SetupContentScene, SetupStepScene, useSetupStepScrollKey } from "@/motion/setupStepTransition";
+import { SetupContentScene, SetupStepScene, useSetupStepScrollKey, type SetupContentMotion } from "@/motion/setupStepTransition";
 
 const useClientLayoutEffect = typeof document !== "undefined"
   && typeof document.createElement === "function"
@@ -227,6 +227,7 @@ export function SetupShell({
   showLogToggle = true,
   logVisibility = "collapsed",
   contentIdentity,
+  contentMotion = "ambient",
 }: {
   active: number;
   activeComplete?: boolean;
@@ -241,6 +242,7 @@ export function SetupShell({
   showLogToggle?: boolean;
   logVisibility?: "collapsed" | "expanded";
   contentIdentity?: string;
+  contentMotion?: SetupContentMotion;
 }) {
   const { t } = useTranslation();
   const [showLogs, setShowLogs] = useState(logVisibility === "expanded");
@@ -299,7 +301,7 @@ export function SetupShell({
                 className="w-full"
               >
                 {hasContentTransition ? (
-                  <SetupContentScene identity={scrollKey ?? "wizard"}>
+                  <SetupContentScene identity={scrollKey ?? "wizard"} motion={contentMotion}>
                     {children}
                   </SetupContentScene>
                 ) : children}

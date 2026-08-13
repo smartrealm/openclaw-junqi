@@ -1,4 +1,5 @@
 import { debugWarn } from '@/utils/debugLog';
+import { wizardRuntimeScopeKey } from '@/services/setup/wizardRuntimeScope';
 
 export type OpenClawWizardStepType =
   | 'note'
@@ -156,6 +157,16 @@ function normalizeWizardStep(value: unknown): WizardStepParse {
   return { ok: true, step: step as unknown as OpenClawWizardStep };
 }
 
+export function parseOpenClawWizardStep(value: unknown): OpenClawWizardStep {
+  const parsed = normalizeWizardStep(value);
+  if (!parsed.ok) {
+    throw new Error(parsed.reason === 'unsupported-type'
+      ? `This JunQi build does not support the OpenClaw onboarding step \`${parsed.id}\` of type \`${parsed.type}\`. Update JunQi Desktop to continue setup.`
+      : 'OpenClaw returned an invalid wizard step.');
+  }
+  return parsed.step;
+}
+
 export interface OpenClawWizardRequestOptions {
   timeoutMs?: number | null;
 }
@@ -207,15 +218,7 @@ export const OPENCLAW_WIZARD_SESSION_STORAGE_KEYS = {
 } as const;
 
 function wizardSessionScopeKey(scope: OpenClawWizardSessionScope): string | null {
-  try {
-    const url = new URL(scope.gatewayWsUrl.trim());
-    if ((url.protocol !== 'ws:' && url.protocol !== 'wss:') || !url.hostname || url.username || url.password) {
-      return null;
-    }
-    return `${scope.runtimeMode}:${url.toString()}`;
-  } catch {
-    return null;
-  }
+  return wizardRuntimeScopeKey(scope.runtimeMode, scope.gatewayWsUrl);
 }
 
 /**
@@ -288,6 +291,7 @@ function assertWizardResultFields(
   value: unknown,
   allowedKeys: readonly string[],
   context: string,
+  allowRunningWithoutStep = false,
 ): OpenClawWizardResult {
   if (!value || typeof value !== 'object') {
     throw new Error(`OpenClaw returned an invalid ${context}.`);
@@ -334,6 +338,9 @@ function assertWizardResultFields(
   // They are valid official Wizard outcomes and must reach the recovery
   // state machine instead of being misclassified as malformed Gateway data.
   if (!isTerminalWizardResult(value as OpenClawWizardResult)) {
+    if (allowRunningWithoutStep && result.status === 'running' && result.step === undefined) {
+      return response;
+    }
     const parsed = normalizeWizardStep(result.step);
     if (!parsed.ok) {
       // Naming the cause matters: reporting an unsupported step as "missing"
@@ -347,7 +354,7 @@ function assertWizardResultFields(
   return response;
 }
 
-function assertWizardStartResult(value: unknown): OpenClawWizardStartResult {
+export function parseOpenClawWizardStartResult(value: unknown): OpenClawWizardStartResult {
   const result = assertWizardResultFields(
     value,
     ['sessionId', 'done', 'step', 'status', 'error', 'channels', 'accounts', 'preparedModelRef'],
@@ -356,6 +363,21 @@ function assertWizardStartResult(value: unknown): OpenClawWizardStartResult {
   const sessionId = (value as Record<string, unknown>).sessionId;
   if (typeof sessionId !== 'string' || !sessionId.trim()) {
     throw new Error('OpenClaw wizard start response has an invalid `sessionId`.');
+  }
+  return { ...result, sessionId: sessionId.trim() };
+}
+
+/** 供应商拥有授权与准备会话；首个结构化步骤发布前允许保持运行态。 */
+export function parseOpenClawHostedWizardStartResult(value: unknown): OpenClawWizardStartResult {
+  const result = assertWizardResultFields(
+    value,
+    ['sessionId', 'done', 'step', 'status', 'error', 'channels', 'accounts', 'preparedModelRef'],
+    'hosted wizard start response',
+    true,
+  );
+  const sessionId = (value as Record<string, unknown>).sessionId;
+  if (typeof sessionId !== 'string' || !sessionId.trim()) {
+    throw new Error('OpenClaw hosted wizard start response has an invalid `sessionId`.');
   }
   return { ...result, sessionId: sessionId.trim() };
 }
@@ -510,7 +532,7 @@ export class OpenClawWizardClient {
     this.failedSessionId = null;
     // setup 与 channels 都使用 OpenClaw 正式 Wizard 协议。调用方必须使用不同的
     // 会话存储范围，避免主界面渠道配置接管首次启动中的官方会话。
-    const result = assertWizardStartResult(await this.callGateway(
+    const result = parseOpenClawWizardStartResult(await this.callGateway(
       'wizard.start',
       {
         ...(this.startOptions.flow === 'channels'
@@ -531,6 +553,25 @@ export class OpenClawWizardClient {
     this.currentStep = failed || rejected || !terminal ? result.step ?? null : null;
     this.failedStep = failed || rejected ? result.step ?? null : null;
     this.failedSessionId = failed || rejected ? returnedSessionId : null;
+    return result;
+  }
+
+  adoptStartedSession(result: OpenClawWizardStartResult): OpenClawWizardStartResult {
+    this.synchronizeStoredSession();
+    if (this.sessionId) {
+      throw new Error('OpenClaw wizard session is already running.');
+    }
+    this.startOptions = {};
+    this.currentStep = null;
+    this.failedStep = null;
+    this.failedSessionId = null;
+    const terminal = isTerminalWizardResult(result);
+    const failed = result.status === 'error';
+    const rejected = Boolean(result.error) && !terminal;
+    this.setSession(terminal ? null : result.sessionId);
+    this.currentStep = failed || rejected || !terminal ? result.step ?? null : null;
+    this.failedStep = failed || rejected ? result.step ?? null : null;
+    this.failedSessionId = failed || rejected ? result.sessionId : null;
     return result;
   }
 
@@ -574,7 +615,7 @@ export class OpenClawWizardClient {
    * 无答案的 `wizard.next` 是官方会话恢复请求。`wizard.status` 读取后会清理会话，
    * 不能用于恢复，否则紧随其后的请求必然找不到原会话。
    */
-  async resume(): Promise<OpenClawWizardResult> {
+  async resume(options: OpenClawWizardRequestOptions = {}): Promise<OpenClawWizardResult> {
     this.synchronizeStoredSession();
     const operation = this.captureOperation();
     if (!this.sessionId) throw new Error('OpenClaw wizard session is not running.');
@@ -582,7 +623,11 @@ export class OpenClawWizardClient {
     const resumedStep = this.currentStep;
     const result = assertWizardNextResult(await this.callGateway('wizard.next', {
       sessionId: resumedSessionId,
-    }, { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS }));
+    }, {
+      timeoutMs: options.timeoutMs === undefined
+        ? OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS
+        : options.timeoutMs,
+    }));
     this.assertOperationCurrent(operation);
     if (isTerminalWizardResult(result)) {
       this.setSession(null);

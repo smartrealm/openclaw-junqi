@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { setupContentEntryState, setupStepEntryState, setupStepMotionDirection, setupStepMotionMode, setupStepScene, setupStepScrollKey } from './setupStepTransition';
+import { setupContentEntryState, setupContentExitState, setupContentMotionDirection, setupStepEntryState, setupStepMotionDirection, setupStepMotionMode, setupStepScene, setupStepScrollKey } from './setupStepTransition';
 
 test('setup step transition moves forward from left to right and back from right to left', () => {
   assert.equal(setupStepMotionDirection('welcome', 'environment-review'), -1);
@@ -59,7 +59,16 @@ test('运行时状态不位移动画，避免探测进度交接时闪动', () =>
   assert.deepEqual(setupStepEntryState(1, false, 'ambient'), { opacity: 1, x: 0, y: 0 });
 });
 
-test('同一向导场景只使用轻量内容过渡且尊重减少动态效果', () => {
-  assert.deepEqual(setupContentEntryState(false), { opacity: 0.96, y: 4 });
-  assert.deepEqual(setupContentEntryState(true), { opacity: 1, y: 0 });
+test('同一向导场景按用户导航方向切换内容', () => {
+  assert.equal(setupContentMotionDirection('forward'), -1);
+  assert.equal(setupContentMotionDirection('backward'), 1);
+  assert.equal(setupContentMotionDirection('ambient'), 0);
+  assert.deepEqual(setupContentEntryState(-1, false), { opacity: 0.97, x: -14 });
+  assert.deepEqual(setupContentExitState(-1, false), { opacity: 0.97, x: 10 });
+});
+
+test('后台状态和减少动态效果不产生内容位移', () => {
+  assert.deepEqual(setupContentEntryState(0, false), { opacity: 1, x: 0 });
+  assert.deepEqual(setupContentEntryState(-1, true), { opacity: 1, x: 0 });
+  assert.deepEqual(setupContentExitState(-1, true), { opacity: 1, x: 0 });
 });

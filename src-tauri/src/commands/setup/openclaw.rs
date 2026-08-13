@@ -1303,6 +1303,7 @@ pub(super) async fn npm_install_with_fallback(
         .unwrap_or(0);
     std::fs::create_dir_all(global_prefix).ok();
     let package_spec = target.package_spec();
+    let npm_major = npm_major_version(npm).await?;
     let sources = target.sources().to_vec();
     let mut last_err = String::new();
     let total_regs = sources.len();
@@ -1424,10 +1425,11 @@ pub(super) async fn npm_install_with_fallback(
             "--no-fund",
             "--no-audit",
         ]);
+        if npm_requires_explicit_openclaw_script_permission(npm_major) {
+            cmd.arg("--allow-scripts=openclaw");
+        }
         if force {
-            // An explicit reinstall must not be short-circuited by npm's
-            // existing-package metadata. Keep the current payload in place
-            // until npm has successfully replaced it.
+            // 显式重装不能被 npm 的既有包元数据短路；新包核验成功前保留当前运行时。
             cmd.arg("--force");
         }
         cmd.arg(&package_spec)
@@ -1940,6 +1942,37 @@ pub(super) async fn npm_install_with_fallback(
     ))
 }
 
+async fn npm_major_version(
+    npm: &crate::commands::system::NpmExecutionContext,
+) -> Result<u64, String> {
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        npm.command().arg("--version").output(),
+    )
+    .await
+    .map_err(|_| "Timed out while checking npm version before installing OpenClaw".to_string())?
+    .map_err(|error| format!("Failed to check npm version before installing OpenClaw: {error}"))?;
+    if !output.status.success() {
+        return Err("npm version check failed before installing OpenClaw".to_string());
+    }
+    let version = String::from_utf8_lossy(&output.stdout);
+    version
+        .trim()
+        .split('.')
+        .next()
+        .and_then(|part| part.parse::<u64>().ok())
+        .ok_or_else(|| {
+            format!(
+                "npm returned an invalid version before installing OpenClaw: {}",
+                version.trim()
+            )
+        })
+}
+
+fn npm_requires_explicit_openclaw_script_permission(npm_major: u64) -> bool {
+    npm_major >= 12
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1955,6 +1988,13 @@ mod tests {
         ));
         std::fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[test]
+    fn npm_twelve_requires_openclaw_install_script_permission() {
+        assert!(!npm_requires_explicit_openclaw_script_permission(11));
+        assert!(npm_requires_explicit_openclaw_script_permission(12));
+        assert!(npm_requires_explicit_openclaw_script_permission(13));
     }
 
     fn write_windows_openclaw(prefix: &Path, version: &str) {

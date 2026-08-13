@@ -1,0 +1,81 @@
+# OpenClaw 原生安装对齐实施计划
+
+状态：核心代码已实现，进入全量验证与真机验收
+
+## 原则
+
+- 先修 P0 与 P1，不同时增加新业务功能。
+- 默认路径对齐最新 OpenClaw guided inference；classic 只保留为明确高级入口。
+- 删除被替代的旧完成凭据判断和错误文档，不增加兼容 fallback。
+- 每个阶段先写可失败回归，再实现，再运行定向验证。
+
+## 第一阶段：接入正式 guided setup 协议
+
+1. 在服务层定义并严格校验 `openclaw.setup.detect`、`auth.start`、`prepare.start`、`activate`、`verify` 与 `openclaw.chat` 的正式 envelope。
+2. 全部请求复用 `gateway.callPrivileged()`，保留 `operator.admin`、runtime identity 和 Gateway 地址作用域。
+3. 新建单一 guided onboarding controller，负责检测、认证或准备、激活、验证和 chat session；页面只消费状态，不直接调用 Gateway。
+4. 把首次设置默认入口从 `OpenClawWizardClient.start()` 切换到 guided controller。
+5. 方法缺失时显示 OpenClaw 更新要求，不回退到 classic。
+
+定向测试：协议解析、权限失败、方法缺失、检测完成、检测未完成、激活失败、激活成功、验证失败、断线未知、chat exit、chat open-agent。
+
+## 第二阶段：收敛完成门禁
+
+1. 将 `resolveActiveRuntimeOnboardingRequirement()` 改为读取当前 Gateway 的 `setup.detect`，不再由页面内 Wizard attestation 决定默认 onboarding。
+2. 保留本地安装健康检查，但只让它判断包、image 和存储事务，不判断模型配置。
+3. fresh activation 必须通过 `setup.verify`；已配置冷启动按官方 `setupComplete` 跳过。
+4. 删除被替代的 `wizardCompletionAttestation` 默认路径及其专属测试；classic session 需要的进程内防重放状态留在 classic controller 内部，不扩散为全局完成事实。
+5. 明确 classify：未授权、方法不存在、Gateway 不可达、配置未完成、验证失败和结果未知。
+6. 交接优先复用当前已核验连接；仅在连接失效时通过统一生命周期重连，并用连接标识围栏 Runtime 探测、配置检测和模型验证。
+
+定向测试：marker 存在但模型未配置、marker 存在但 Gateway 未授权、fresh activation 断线、配置完成重复启动、组件重建不重复执行副作用。
+
+## 第三阶段：修复 npm 安装完整性
+
+1. 在 Rust npm 命令构造中加入与官方一致的 `--allow-scripts=openclaw`。
+2. 增加命令参数单元测试，覆盖普通安装、强制重装和备用源。
+3. 根据官方 bundled plugin 安装产物扩展 staging contract 验证，避免 npm 成功退出但 postinstall 缺失。
+4. 核对 npm 11、npm 12 和目标 Node.js engines；记录实际验证版本，不用版本号作为 OpenClaw 能力开关。
+
+定向测试：命令构造、脚本被阻止的失败样本、完整 staging、缺失 bundled plugin、事务回滚。
+
+## 第四阶段：分离 guided 与 classic 生命周期
+
+1. 默认设置 UI 只呈现 guided inference。
+2. 增加简短的“详细配置”次级入口，显式启动 classic setup Wizard。
+3. classic start options 补齐正式参数映射，不再丢失 `workspace` 与 daemon 选择语义。
+4. 根据官方选择核验生命周期：要求 daemon 时执行官方服务交接；明确不安装时保持前台所有者并标记后台常驻未启用。
+5. 渠道中心继续使用现有 channels Wizard，不与首次 guided provider 设置混合。
+6. 官方步骤正文复用共享稳定内容槽；用户导航使用方向过渡，后台状态只淡入，并尊重系统减少动态效果。
+
+定向测试：guided 默认、classic 显式、install-daemon、no-daemon、channels 隔离、取消、session 丢失与未知终态。
+
+## 第五阶段：删除旧路径并同步文档
+
+1. 删除声称 `openclaw.setup.*` 不存在的旧审计结论、规格、计划和测试。
+2. 更新安装流程、Wizard 流程、首次启动 HTML 预览和文档索引。
+3. 更新 PROJECT_STATUS，只保留当前目标、实际验证和未验证边界。
+4. 全局检查无引用服务、旧 i18n key、旧完成状态和仅为 classic 默认路径存在的包装层。
+
+## 验证顺序
+
+1. 最小 TypeScript 协议和 controller 测试。
+2. Setup 页面和导航回归。
+3. Rust 安装命令与 staging contract 测试。
+4. `pnpm lint`。
+5. `pnpm test`。
+6. `pnpm test:rust`。
+7. `pnpm build`。
+8. `pnpm verify:openclaw-docs`。
+9. `git diff --check`。
+10. macOS Native 真机：全新安装、已有有效配置、无效凭据、guided、classic 两种 daemon 选择。
+11. Docker 真机：全新安装、已有配置、容器停止恢复。
+12. Windows 与 Linux：安装脚本、系统服务、权限、窄窗口和键盘流程。
+
+## 当前进度
+
+- 第一阶段已完成：正式 guided setup 协议、候选激活、供应商 Wizard 与 onboarding chat 已接入。
+- 第二阶段已完成：冷启动官方探测和 Guided、Classic 共用的同连接交接门禁已实现。
+- 第三阶段已完成代码部分：npm 12 脚本授权与官方 postinstall inventory 校验已接入 Rust 安装验证。
+- 第四阶段已完成代码部分：Guided 默认、Classic 显式，二维码随当前官方步骤销毁，官方步骤在稳定内容槽内按导航方向切换。
+- 第五阶段进行中：全量静态检查、构建、文档收敛和目标平台真机验收。

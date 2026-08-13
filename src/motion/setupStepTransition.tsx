@@ -1,4 +1,4 @@
-import { motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { createContext, useContext, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { SetupStep } from '@/stores/setup-navigation';
 import type { OnboardingPresentationKind } from '@/services/setup/onboardingPresentation';
@@ -24,6 +24,19 @@ const SETUP_STEP_INDEX: Record<SetupStep, number> = {
 
 export type SetupStepMotionDirection = -1 | 0 | 1;
 export type SetupStepMotionMode = 'directional' | 'ambient';
+export type SetupContentMotion = 'forward' | 'backward' | 'ambient';
+
+const SETUP_CONTENT_VARIANTS = {
+  initial: (direction: SetupStepMotionDirection) => ({
+    opacity: 0.97,
+    x: direction * 14,
+  }),
+  current: { opacity: 1, x: 0 },
+  exit: (direction: SetupStepMotionDirection) => ({
+    opacity: 0.97,
+    x: direction * -10,
+  }),
+};
 
 interface SetupStepTransitionContextValue {
   readonly direction: SetupStepMotionDirection;
@@ -87,12 +100,27 @@ export function setupStepEntryState(
 }
 
 export function setupContentEntryState(
+  direction: SetupStepMotionDirection,
   reducedMotion: boolean,
-): { opacity: number; y: number } {
-  // 同一官方向导场景内只做轻量内容过渡，外层标题、滚动容器和操作区保持原位。
-  return reducedMotion
-    ? { opacity: 1, y: 0 }
-    : { opacity: 0.96, y: 4 };
+): { opacity: number; x: number } {
+  if (reducedMotion || direction === 0) return { opacity: 1, x: 0 };
+  return { opacity: 0.97, x: direction * 14 };
+}
+
+export function setupContentExitState(
+  direction: SetupStepMotionDirection,
+  reducedMotion: boolean,
+): { opacity: number; x: number } {
+  if (reducedMotion || direction === 0) return { opacity: 1, x: 0 };
+  return { opacity: 0.97, x: direction * -10 };
+}
+
+export function setupContentMotionDirection(
+  motion: SetupContentMotion,
+): SetupStepMotionDirection {
+  if (motion === 'forward') return -1;
+  if (motion === 'backward') return 1;
+  return 0;
 }
 
 export function SetupStepTransition({
@@ -157,15 +185,18 @@ export function SetupStepScene({ children, className }: { children: ReactNode; c
 
 export function SetupContentScene({
   identity,
+  motion: contentMotion = 'ambient',
   children,
   className,
 }: {
   identity: string;
+  motion?: SetupContentMotion;
   children: ReactNode;
   className?: string;
 }) {
   const context = useContext(SetupStepTransitionContext);
   const reducedMotion = context?.reducedMotion ?? true;
+  const direction = setupContentMotionDirection(contentMotion);
   const contentClassName = ['min-h-full w-full', className]
     .filter(Boolean)
     .join(' ');
@@ -179,18 +210,26 @@ export function SetupContentScene({
   }
 
   return (
-    <motion.div
-      key={identity}
-      initial={setupContentEntryState(reducedMotion)}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{
-        duration: reducedMotion ? 0 : 0.14,
-        ease: [0.22, 1, 0.36, 1],
-      }}
-      className={contentClassName}
-      data-setup-content-motion={identity}
-    >
-      {children}
-    </motion.div>
+    <div className="grid min-h-full w-full overflow-x-clip">
+      <AnimatePresence initial={false} mode="popLayout" custom={direction}>
+        <motion.div
+          key={identity}
+          custom={direction}
+          variants={reducedMotion ? undefined : SETUP_CONTENT_VARIANTS}
+          initial={reducedMotion ? false : "initial"}
+          animate={reducedMotion ? { opacity: 1, x: 0 } : "current"}
+          exit={reducedMotion ? { opacity: 1, x: 0 } : "exit"}
+          transition={{
+            duration: reducedMotion ? 0 : direction === 0 ? 0.12 : 0.18,
+            ease: [0.22, 1, 0.36, 1],
+          }}
+          className={`${contentClassName} [grid-area:1/1]`}
+          data-setup-content-motion={identity}
+          data-setup-content-direction={direction}
+        >
+          {children}
+        </motion.div>
+      </AnimatePresence>
+    </div>
   );
 }

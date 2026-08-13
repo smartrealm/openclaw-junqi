@@ -33,3 +33,20 @@ export const gatewayLifecycle = createGatewayLifecycleCoordinator(
   },
   verifySelectedGatewayIdentity,
 );
+
+/** 当前主连接只有同时通过连接围栏和运行时身份核验时才可用于配置交接。 */
+export function captureCurrentAttestedGatewayConnectionId(): string | null {
+  const connectionId = gateway.captureConnectionId();
+  const identity = getCurrentRuntimeIdentity();
+  return (
+    connectionId
+    && gateway.isConnectionCurrent(connectionId)
+    && identity?.verified
+    && identity.connectionId === connectionId
+  ) ? connectionId : null;
+}
+
+/** 确认交接期间仍是开始时绑定的同一条已核验连接。 */
+export function isAttestedGatewayConnectionCurrent(connectionId: string): boolean {
+  return captureCurrentAttestedGatewayConnectionId() === connectionId;
+}
