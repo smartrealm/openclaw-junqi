@@ -248,6 +248,12 @@ export function useWizardSession({
     ));
   }, [assertWizardOperationCurrent, refreshGatewayConnectionTarget, refreshWizardSessionScope, t]);
 
+  const startManagedWizardSession = useCallback(() => {
+    // JunQi 已在运行时阶段安装并启动 Gateway。官方 Wizard 仅负责配置，
+    // 否则 QuickStart 可能重启承载该进程内 Wizard 会话的 Gateway，使终态无法回收。
+    return wizardClientRef.current!.start({ installDaemon: false });
+  }, []);
+
   const completeWizardRuntime = useCallback(async (operationId: number): Promise<boolean> => {
     assertWizardOperationCurrent(operationId);
     setWizardStep(null);
@@ -431,7 +437,7 @@ export function useWizardSession({
         }
       } else {
         showWizardActivity(t("setup.wizard.startingSession", "正在启动 OpenClaw 官方配置向导…"));
-        result = await client.start();
+        result = await startManagedWizardSession();
       }
       assertWizardOperationCurrent(operationId);
       return await applyWizardResult(result, operationId, navigateOnStep);
@@ -451,7 +457,7 @@ export function useWizardSession({
     } finally {
       if (wizardOperationRef.current === operationId) setWizardSubmitting(false);
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, reconcileLostWizardSession, replaceSetupStep, report, setPostStorageStep, setSetupError, setWizardRecoveryMode, showWizardActivity, t, updateOnboardingRequirement, waitForGatewayConnection, wizardFailureMessage, wizardRecoveryModeForFailure]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, reconcileLostWizardSession, replaceSetupStep, report, setPostStorageStep, setSetupError, setWizardRecoveryMode, showWizardActivity, startManagedWizardSession, t, updateOnboardingRequirement, waitForGatewayConnection, wizardFailureMessage, wizardRecoveryModeForFailure]);
 
   const resumeOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     const operationId = beginWizardOperation();
@@ -564,7 +570,7 @@ export function useWizardSession({
       if (recoveryMode === "terminal-unknown") {
         await waitForGatewayConnection(operationId);
         wizardClientRef.current!.forgetSession();
-        const restarted = await wizardClientRef.current!.start();
+        const restarted = await startManagedWizardSession();
         assertWizardOperationCurrent(operationId);
         return await applyWizardResult(restarted, operationId);
       }
@@ -592,7 +598,7 @@ export function useWizardSession({
         setWizardSubmitting(false);
       }
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, completeWizardRuntime, reconcileLostWizardSession, replaceSetupStep, setSetupError, setWizardRecoveryMode, waitForGatewayConnection, wizardFailureMessage, wizardRecoveryModeForFailure]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, completeWizardRuntime, reconcileLostWizardSession, replaceSetupStep, setSetupError, setWizardRecoveryMode, startManagedWizardSession, waitForGatewayConnection, wizardFailureMessage, wizardRecoveryModeForFailure]);
 
   const pollOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     if (wizardNavigationInFlightRef.current || wizardRecoveryInFlightRef.current) return null;
@@ -615,7 +621,7 @@ export function useWizardSession({
         throw new Error(restarted.error || "OpenClaw Gateway restart failed.");
       }
       await waitForGatewayConnection(operationId);
-      const result = await wizardClientRef.current!.start();
+      const result = await startManagedWizardSession();
       assertWizardOperationCurrent(operationId);
       return await applyWizardResult(result, operationId);
     } catch (error) {
@@ -632,7 +638,7 @@ export function useWizardSession({
         setWizardSubmitting(false);
       }
     }
-  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, setWizardRecoveryMode, waitForGatewayConnection, wizardFailureMessage, wizardRecoveryModeForFailure]);
+  }, [applyWizardResult, assertWizardOperationCurrent, beginWizardOperation, replaceSetupStep, setSetupError, setWizardRecoveryMode, startManagedWizardSession, waitForGatewayConnection, wizardFailureMessage, wizardRecoveryModeForFailure]);
 
   return {
     wizardStep,

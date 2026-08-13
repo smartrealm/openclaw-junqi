@@ -13,7 +13,10 @@ function OfficialStepSummary({
         eyebrow: t("setup.wizard.officialProgress", "OpenClaw 正在处理"),
         title: t("setup.wizard.officialProgressTitle", "正在执行官方步骤"),
         fallback: t("setup.wizard.officialProgressFallback", "OpenClaw 正在处理当前步骤，请稍候。"),
-        tone: "text-aegis-primary border-aegis-primary/20 bg-aegis-primary/5",
+        tone: "progress",
+        panelClass: "border-aegis-border border-l-aegis-primary/55 bg-aegis-surface",
+        accentClass: "border-aegis-primary/20 bg-aegis-primary-surface text-aegis-primary",
+        eyebrowClass: "text-aegis-primary",
       }
     : step.type === "action"
       ? {
@@ -21,28 +24,35 @@ function OfficialStepSummary({
           eyebrow: t("setup.wizard.officialAction", "等待执行"),
           title: t("setup.wizard.officialActionTitle", "官方操作已准备"),
           fallback: t("setup.wizard.officialActionFallback", "选择下方操作后，OpenClaw 将执行当前步骤。"),
-          tone: "text-aegis-primary border-aegis-primary/20 bg-aegis-primary/5",
+          tone: "action",
+          panelClass: "border-aegis-border border-l-aegis-warning/55 bg-aegis-surface",
+          accentClass: "border-aegis-warning/20 bg-aegis-warning-surface text-aegis-warning",
+          eyebrowClass: "text-aegis-warning",
         }
       : {
           icon: <Info size={20} />,
           eyebrow: t("setup.wizard.officialNotice", "OpenClaw 提示"),
           title: t("setup.wizard.officialNoticeTitle", "请确认官方提示"),
           fallback: t("setup.wizard.officialNoticeFallback", "OpenClaw 已返回当前步骤，确认后可继续。"),
-          tone: "text-aegis-text-secondary border-aegis-border bg-aegis-surface",
+          tone: "notice",
+          panelClass: "border-aegis-border border-l-aegis-primary/55 bg-aegis-surface",
+          accentClass: "border-aegis-primary/20 bg-aegis-primary-surface text-aegis-primary",
+          eyebrowClass: "text-aegis-primary",
         };
 
   return (
     <section
       data-wizard-official-summary={step.type}
-      className={clsx("rounded-xl border p-5", presentation.tone)}
+      data-wizard-summary-tone={presentation.tone}
+      className={clsx("rounded-xl border border-l-2 p-5", presentation.panelClass)}
       aria-labelledby={`wizard-summary-${step.id}`}
     >
       <div className="grid gap-4 sm:grid-cols-[44px_minmax(0,1fr)] sm:items-start">
-        <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-current/15 bg-current/5">
+        <div className={clsx("flex h-11 w-11 items-center justify-center rounded-lg border", presentation.accentClass)}>
           {presentation.icon}
         </div>
         <div className="min-w-0">
-          <div className="text-[11px] font-semibold tracking-[0.12em] opacity-75" dir="auto">
+          <div className={clsx("text-[11px] font-semibold tracking-[0.12em]", presentation.eyebrowClass)} dir="auto">
             {presentation.eyebrow}
           </div>
           <h2 id={`wizard-summary-${step.id}`} className="mt-1 text-base font-semibold text-aegis-text" dir="auto">

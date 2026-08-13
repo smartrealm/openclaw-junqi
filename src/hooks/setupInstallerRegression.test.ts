@@ -67,7 +67,7 @@ test('step transitions populate the shared activity log even when no installer p
 });
 
 test('BUG-INSTALL-LOG-12 execution records follow live output without stealing manual history review', () => {
-  assert.match(setupFlowPanels, /useLayoutEffect\(\(\) => \{/);
+  assert.match(setupFlowPanels, /useClientLayoutEffect\(\(\) => \{/);
   assert.match(setupFlowPanels, /window\.requestAnimationFrame\(scrollToLatest\)/);
   assert.match(setupFlowPanels, /if \(followRef\.current\) viewport\.scrollTop = viewport\.scrollHeight/);
   assert.match(setupFlowPanels, /followRef\.current = node\.scrollHeight - node\.scrollTop - node\.clientHeight < 48/);

@@ -72,11 +72,11 @@ test('首次引导只启动官方完整向导并保留渠道跳过说明', async
     };
   });
 
-  const result = await client.start();
+  const result = await client.start({ installDaemon: false });
 
   assert.deepEqual(calls, [{
     method: 'wizard.start',
-    params: { mode: 'local' },
+    params: { mode: 'local', installDaemon: false },
   }]);
   assert.deepEqual(result.step, {
     id: 'channels-skipped',

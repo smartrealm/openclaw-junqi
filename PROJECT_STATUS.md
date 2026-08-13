@@ -32,6 +32,9 @@
 - 配置核验现在先在运行时页面内完成协议协商：Guided 取得候选确认或选择状态，Classic 取得首个官方 Wizard 步骤后才进入配置页；配置页不再先展示客户端连接占位卡后自动切换。
 - Classic 普通提示、操作与进度步骤统一使用紧凑官方摘要，明确状态层级并保留上游标题和正文。官方 `outro` 仍按正式 `note` 等待确认，只有后续结构化 `done` 才触发完成交接。
 - 官方配置终态后的 Gateway 重连显式绑定当前所选 Runtime，重新解析当前端点和凭据，不再沿用历史手动连接目标。
+- 首次设置的 Classic Wizard 显式提交官方 `installDaemon: false`。Gateway 已由运行时阶段统一安装并启动，配置向导不会再通过 daemon 收尾重启承载其进程内 session 的 Gateway；真实 session 丢失仍保持未知终态，不自动重放配置写入。
+- 配置正文的前进与后退过渡改为串行退出和进入，旧、新官方步骤不会在同一内容槽叠放；方向语义和减少动态效果行为保持不变。
+- 官方提示、待执行操作和处理中状态继续复用单一紧凑摘要，通过现有主色与警告色 token 的细引导线、图标底和眉题色增加层级；官方正文和来源说明保持中性。
 
 ## 关键技术决策
 
@@ -61,6 +64,7 @@
 - `src/components/setup/StorageSetupGate.tsx`
 - `src/i18n/resources.ts`
 - `src/motion/setupStepTransition.tsx`
+- `src/services/openclawWizard.ts`
 - `src/App.tsx`
 - `src-tauri/src/commands/setup/openclaw.rs`
 - `docs/quality/openclaw-native-installation-alignment-audit-2026-08-12.md`
@@ -69,7 +73,7 @@
 
 ## 测试与验证
 
-- 完整前端与脚本测试已通过；本轮新增安装呈现定向回归 77 项通过，覆盖配置页进入门禁、官方提示、操作与进度摘要、上游正文单次呈现、Gateway 摘要原地核验、候选梯子和取消边界。
+- 本轮 Wizard daemon 门禁、内容切换和官方短步骤视觉定向回归 111 项通过；完整前端与脚本测试、lint 和生产构建已通过。
 - 测试输出包含既有 Node 注册接口弃用警告和服务端渲染 Tooltip 警告，没有失败项。
 - 本轮没有修改 Rust；既有 Rust 635 项通过、1 项忽略的结果未在本轮重跑。
 - `pnpm lint`、`pnpm build` 与 `pnpm verify:openclaw-docs` 已通过；`git diff --check` 在最终差异扫描中执行。
@@ -83,6 +87,7 @@
 - Windows、Linux、Docker、系统服务、凭据库和外部浏览器行为尚未在目标平台真机验证。
 - 当前本机稳定 OpenClaw `2026.7.1-2` 已复现 Classic 协议和 Guided unknown-method；最新版 Guided 真实 provider 流程仍需独立 Runtime 验证。
 - 暗色主题、窄窗口、键盘焦点和减少动态效果尚未完成本轮真机视觉验收。
+- Classic Wizard 的真实 daemon 收尾、配置步骤前后切换和终态回收尚未在本轮安装包中完成连续真机复验。
 - 当前构建仍有既有 pnpm 配置迁移警告，但不影响本轮检查与生产构建结果。
 - 本地 DMG 为 ARM64、ad-hoc 签名且未经 Apple 公证，不是正式发布制品；Intel macOS 以及其他目标平台未由该包覆盖。
 

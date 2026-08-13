@@ -47,6 +47,7 @@ test("global Back is single-flight and fences automatic forward effects", () => 
 
 test("wizard preparation is explicit and configure-page mount has no protocol side effect", () => {
   assert.match(wizardSession, /prepareWizard: \(\) => startOfficialOnboarding\(false, setupStep !== "configure-openclaw"\)/);
+  assert.match(wizardSession, /startManagedWizardSession[\s\S]*?installDaemon: false/);
   assert.doesNotMatch(wizardSession, /wizardAutoStartRef/);
 });
 

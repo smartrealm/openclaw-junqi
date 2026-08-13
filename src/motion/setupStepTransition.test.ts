@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { setupContentEntryState, setupContentExitState, setupContentMotionDirection, setupStepEntryState, setupStepMotionDirection, setupStepMotionMode, setupStepScene, setupStepScrollKey } from './setupStepTransition';
+import { SETUP_CONTENT_PRESENCE_MODE, setupContentEntryState, setupContentExitState, setupContentMotionDirection, setupStepEntryState, setupStepMotionDirection, setupStepMotionMode, setupStepScene, setupStepScrollKey } from './setupStepTransition';
 
 test('setup step transition moves forward from left to right and back from right to left', () => {
   assert.equal(setupStepMotionDirection('welcome', 'environment-review'), -1);
@@ -59,6 +59,7 @@ test('运行时状态不位移动画，避免探测进度交接时闪动', () =>
 });
 
 test('同一向导场景按用户导航方向切换内容', () => {
+  assert.equal(SETUP_CONTENT_PRESENCE_MODE, 'wait');
   assert.equal(setupContentMotionDirection('forward'), -1);
   assert.equal(setupContentMotionDirection('backward'), 1);
   assert.equal(setupContentMotionDirection('ambient'), 0);

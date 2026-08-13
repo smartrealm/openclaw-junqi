@@ -25,6 +25,7 @@ const SETUP_STEP_INDEX: Record<SetupStep, number> = {
 export type SetupStepMotionDirection = -1 | 0 | 1;
 export type SetupStepMotionMode = 'directional' | 'ambient';
 export type SetupContentMotion = 'forward' | 'backward' | 'ambient';
+export const SETUP_CONTENT_PRESENCE_MODE = 'wait' as const;
 
 const SETUP_CONTENT_VARIANTS = {
   initial: (direction: SetupStepMotionDirection) => ({
@@ -214,7 +215,7 @@ export function SetupContentScene({
 
   return (
     <div className="grid w-full overflow-x-clip">
-      <AnimatePresence initial={false} mode="popLayout" custom={direction}>
+      <AnimatePresence initial={false} mode={SETUP_CONTENT_PRESENCE_MODE} custom={direction}>
         <motion.div
           key={identity}
           custom={direction}

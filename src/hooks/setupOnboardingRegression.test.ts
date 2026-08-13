@@ -546,6 +546,7 @@ test('BUG-WIZ-01 配置页挂载不自动启动或重放官方向导', () => {
   const wizardHook = hookFile('useWizardSession');
 
   assert.match(wizardHook, /prepareWizard: \(\) => startOfficialOnboarding\(false, setupStep !== "configure-openclaw"\)/);
+  assert.match(wizardHook, /startManagedWizardSession[\s\S]*?installDaemon: false/);
   assert.doesNotMatch(wizardHook, /wizardAutoStartRef/);
 });
 

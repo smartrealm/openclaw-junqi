@@ -59,6 +59,7 @@ export interface OpenClawWizardStartResult extends OpenClawWizardResult {
 
 export interface OpenClawWizardStartOptions {
   workspace?: string;
+  installDaemon?: boolean;
   flow?: 'setup' | 'channels';
   channel?: string;
 }
@@ -188,9 +189,8 @@ type GatewayCaller = (
 ) => Promise<unknown>;
 
 /**
- * The official Gateway owns wizard state, while the desktop owns the view.
- * Keep only the opaque session id locally so a renderer or application restart
- * can resume the same official step. The id contains no credentials.
+ * 官方 Gateway 持有 Wizard 状态，桌面端只持有视图。本地仅保存不透明会话号，
+ * 以便渲染进程或应用重启后恢复同一官方步骤；会话号不包含凭据。
  */
 export interface OpenClawWizardLegacySessionStore {
   load(): string | null;
@@ -524,6 +524,9 @@ export class OpenClawWizardClient {
     }
     this.startOptions = {
       ...(workspace ? { workspace } : {}),
+      ...(typeof options.installDaemon === 'boolean'
+        ? { installDaemon: options.installDaemon }
+        : {}),
       ...(options.flow ? { flow: options.flow } : {}),
       ...(channel ? { channel } : {}),
     };
@@ -540,6 +543,9 @@ export class OpenClawWizardClient {
           : {
               mode: 'local' as const,
               ...(this.startOptions.workspace ? { workspace: this.startOptions.workspace } : {}),
+              ...(typeof this.startOptions.installDaemon === 'boolean'
+                ? { installDaemon: this.startOptions.installDaemon }
+                : {}),
             }),
       },
       { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
