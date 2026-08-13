@@ -25,38 +25,37 @@ test('setup footer renders Back separately from a loading primary action', () =>
   assert.match(markup, /Confirming storage location/);
 });
 
-test('精简的运行时步骤可按调用方请求默认展开日志', () => {
+test('运行时日志默认收起并可由用户主动展开', () => {
   const markup = renderToStaticMarkup(
     <SetupShell
       active={3}
       title="配置"
       subtitle="官方向导"
       logs={[{ source: 'gateway', message: '等待确认', ts: 0, level: 'info' }]}
-      logVisibility="expanded"
     >
       <div>确认现有凭据</div>
     </SetupShell>,
   );
 
-  assert.match(markup, /Debug Log/);
-  assert.match(markup, /等待确认/);
+  assert.match(markup, /View logs/);
+  assert.doesNotMatch(markup, /Debug Log/);
+  assert.doesNotMatch(markup, /等待确认/);
 });
 
-test('默认展开的日志区域在首条日志到达前保持可见', () => {
+test('没有日志时不展示空日志区域', () => {
   const markup = renderToStaticMarkup(
     <SetupShell
       active={3}
       title="配置"
       subtitle="官方向导"
       logs={[]}
-      logVisibility="expanded"
     >
       <div>等待 Runtime 返回步骤</div>
     </SetupShell>,
   );
 
-  assert.match(markup, /Debug Log/);
-  assert.match(markup, /No installation or startup action has run yet/);
+  assert.doesNotMatch(markup, /View logs/);
+  assert.doesNotMatch(markup, /Debug Log/);
 });
 
 test('安装进度使用主题状态色区分运行和失败', () => {
@@ -85,4 +84,22 @@ test('安装进度使用主题状态色区分运行和失败', () => {
   assert.match(runningMarkup, /animate-pulse/);
   assert.match(failedMarkup, /bg-aegis-danger/);
   assert.doesNotMatch(runningMarkup + failedMarkup, /linear-gradient|box-shadow/);
+});
+
+test('依赖安装日志默认收起且失败不会自动展开', () => {
+  const markup = renderToStaticMarkup(
+    <InstallationConsole
+      flow={{
+        installTarget: null,
+        steps: [{ id: 'gateway', label: 'Gateway', status: 'error' }],
+      }}
+      logs={[{ source: 'gateway', message: '连接诊断详情', ts: 0, level: 'error' }]}
+      setupStep="error"
+    />,
+  );
+
+  assert.match(markup, /aria-pressed="true"/);
+  assert.match(markup, /aria-pressed="false"/);
+  assert.doesNotMatch(markup, /data-setup-installation-log/);
+  assert.doesNotMatch(markup, /连接诊断详情/);
 });

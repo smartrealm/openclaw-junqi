@@ -261,7 +261,7 @@ export function useWizardSession({
         captureAttestedConnectionId: captureCurrentAttestedGatewayConnectionId,
         isAttestedConnectionCurrent: isAttestedGatewayConnectionCurrent,
         reconnect: async () => {
-          const result = await gatewayLifecycle.reconnectAfterCurrent(WIZARD_COMPLETION_RECONNECT_SOURCE);
+          const result = await gatewayLifecycle.reconnectSelectedRuntimeAfterCurrent(WIZARD_COMPLETION_RECONNECT_SOURCE);
           return {
             success: result.success && !result.superseded,
             ...(result.error ? { diagnostic: result.error } : {}),
@@ -356,7 +356,7 @@ export function useWizardSession({
         "setup.wizard.sessionRecoveryChecking",
         "配置会话已断开，正在重新连接当前 Gateway 并恢复原会话…",
       ));
-      const reconnected = await gatewayLifecycle.reconnectAfterCurrent(WIZARD_SESSION_RECOVERY_RECONNECT_SOURCE);
+      const reconnected = await gatewayLifecycle.reconnectSelectedRuntimeAfterCurrent(WIZARD_SESSION_RECOVERY_RECONNECT_SOURCE);
       assertWizardOperationCurrent(operationId);
       if (!reconnected.success) {
         throw new Error(reconnected.error || t(
@@ -393,7 +393,7 @@ export function useWizardSession({
   const recoverAfterGatewayHandoff = useCallback(async (
     operationId: number,
   ): Promise<OpenClawWizardResult | null> => {
-    const reconnected = await gatewayLifecycle.reconnectAfterCurrent(WIZARD_SESSION_RECOVERY_RECONNECT_SOURCE);
+    const reconnected = await gatewayLifecycle.reconnectSelectedRuntimeAfterCurrent(WIZARD_SESSION_RECOVERY_RECONNECT_SOURCE);
     assertWizardOperationCurrent(operationId);
     if (!reconnected.success) {
       throw new OpenClawWizardRecoveryVerificationError(reconnected.error || t(

@@ -53,11 +53,15 @@ function createGuidedFlow(): SetupFlow {
           modelRef: 'openai/codex',
           recommended: true,
         }],
+        unavailableCandidates: [],
         manualProviders: [],
+        authOptions: [],
+        recommendedInstalls: [],
         workspace: '/workspace',
         setupComplete: false,
       },
       activation: null,
+      activeCandidate: null,
       chat: null,
       wizardStep: null,
       busy: false,
@@ -67,7 +71,11 @@ function createGuidedFlow(): SetupFlow {
       startProviderAuth: async () => undefined,
       startProviderPrepare: async () => undefined,
       submitProviderWizard: async () => undefined,
+      cancelProviderWizard: async () => undefined,
       submitChat: async () => undefined,
+      cancelChatWizard: async () => undefined,
+      confirmDetectedRoute: async () => undefined,
+      chooseOtherRoute: () => undefined,
       finishChat: async () => undefined,
       retry: async () => undefined,
     },
@@ -141,6 +149,71 @@ test('Guided 供应商授权复用官方步骤二维码呈现', () => {
   assert.match(html, /data-wizard-authorization="true"/);
   assert.match(html, /data-wizard-authorization-qr="true"/);
   assert.match(html, /Authorization complete, continue/);
+  assert.match(html, /Cancel current operation/);
+});
+
+test('Guided 自动激活后先确认当前有效路径', () => {
+  const flow = createGuidedFlow();
+  const candidate = flow.guidedSetup.detection!.candidates[0];
+  const confirmationFlow = {
+    ...flow,
+    guidedSetup: {
+      ...flow.guidedSetup,
+      phase: 'confirming' as const,
+      activeCandidate: candidate,
+      activation: { ok: true as const, modelRef: candidate.modelRef },
+    },
+  };
+  const html = renderToStaticMarkup(
+    <OpenClawConfigurationScreen flow={confirmationFlow} logs={[]} phase="wizard" />,
+  );
+
+  assert.match(html, /Use Codex CLI/);
+  assert.match(html, /View other options/);
+  assert.doesNotMatch(html, /Tell OpenClaw what to configure next/);
+});
+
+test('Guided 呈现官方不可用原因、修复入口和推荐安装', () => {
+  const flow = createGuidedFlow();
+  const unavailableFlow = {
+    ...flow,
+    guidedSetup: {
+      ...flow.guidedSetup,
+      detection: {
+        ...flow.guidedSetup.detection!,
+        candidates: [],
+        unavailableCandidates: [{
+          id: 'provider-cli',
+          label: 'Provider CLI',
+          detail: 'Installed but signed out',
+          reason: 'Authentication is required',
+          authOptionId: 'provider-oauth',
+        }],
+        authOptions: [{
+          id: 'provider-oauth',
+          label: 'Sign in',
+          kind: 'oauth' as const,
+          featured: true,
+        }],
+        recommendedInstalls: [{
+          id: 'recommended-cli',
+          label: 'Recommended CLI',
+          hint: 'Install the official client',
+          website: 'https://example.com/install',
+          icon: 'https://example.com/icon.svg',
+        }],
+      },
+    },
+  };
+  const html = renderToStaticMarkup(
+    <OpenClawConfigurationScreen flow={unavailableFlow} logs={[]} phase="wizard" />,
+  );
+
+  assert.match(html, /Currently unavailable/);
+  assert.match(html, /Authentication is required/);
+  assert.match(html, /Sign in/);
+  assert.match(html, /Recommended installs/);
+  assert.match(html, /Recommended CLI/);
 });
 
 test('Guided 授权提交后立即销毁旧二维码并等待官方终态', () => {
@@ -153,6 +226,7 @@ test('Guided 授权提交后立即销毁旧二维码并等待官方终态', () =
   );
 
   assert.match(html, /Waiting for the provider flow/);
+  assert.match(html, /Cancel current operation/);
   assert.doesNotMatch(html, /data-wizard-authorization="true"/);
   assert.doesNotMatch(html, /data-wizard-authorization-qr="true"/);
 });
@@ -163,12 +237,12 @@ test('Gateway 就绪在配置阶段显示显式核验操作', () => {
   assert.match(html, /Configure OpenClaw/);
   assert.match(html, /Gateway connection and runtime identity verified/);
   assert.match(html, /Verify configuration/);
-  assert.match(html, /Debug Log/);
-  assert.match(html, /No installation or startup action has run yet/);
+  assert.doesNotMatch(html, /Debug Log/);
+  assert.doesNotMatch(html, /No installation or startup action has run yet/);
   assert.doesNotMatch(html, /Verifying configuration/);
 });
 
-test('等待官方向导步骤时仍默认展开日志', () => {
+test('等待官方向导步骤时不展示空日志区域', () => {
   const flow = {
     presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
     goBack: async () => undefined,
@@ -189,8 +263,8 @@ test('等待官方向导步骤时仍默认展开日志', () => {
     <WizardScreen flow={flow} logs={[]} wizard={wizard} />,
   );
 
-  assert.match(html, /Debug Log/);
-  assert.match(html, /No installation or startup action has run yet/);
+  assert.doesNotMatch(html, /Debug Log/);
+  assert.doesNotMatch(html, /No installation or startup action has run yet/);
 });
 
 test('任意官方向导步骤携带授权地址时都呈现二维码入口', () => {
@@ -395,7 +469,7 @@ test('模型供应商或渠道长列表提供通用搜索且保留官方选项',
   assert.match(html, /Provider 7/);
 });
 
-test('交互步骤失败时自动展开日志', () => {
+test('交互步骤失败时仍由用户主动展开日志', () => {
   const flow = {
     presentation: { state: 'configure-openclaw', stage: 3, kind: 'wizard' },
     goBack: async () => undefined,
@@ -426,8 +500,8 @@ test('交互步骤失败时自动展开日志', () => {
     />,
   );
 
-  assert.match(html, /Hide logs/);
-  assert.match(html, /运行时日志/);
+  assert.match(html, /View logs/);
+  assert.doesNotMatch(html, /运行时日志/);
 });
 
 test('配置核验中的同一容器锁定重复操作', () => {

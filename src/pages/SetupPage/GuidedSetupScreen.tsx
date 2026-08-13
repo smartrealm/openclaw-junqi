@@ -4,9 +4,8 @@ import { useTranslation } from "react-i18next";
 import clsx from "clsx";
 import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
-import type { GuidedSetupCandidate } from "@/services/gateway/OpenClawGuidedSetupClient";
-import { ProviderIcon } from "@/components/shared/provider-identity";
 import { SetupShell, StatusPanel } from "@/components/setup/SetupFlowPanels";
+import { GuidedInferenceSelectionPanel } from "./GuidedInferenceSelectionPanel";
 import { WizardStepRenderer } from "./wizard/WizardStepRenderer";
 import { wizardInitialValue } from "./wizard/WizardStepValue";
 import {
@@ -43,6 +42,14 @@ export function GuidedSetupScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
     }
     void controller.submitChat(undefined, { stepId: step.id, value: stepValue });
   };
+  const cancelStep = () => {
+    if (!step) return;
+    if (controller.phase === "provider-wizard") {
+      void controller.cancelProviderWizard();
+      return;
+    }
+    void controller.cancelChatWizard(step.id);
+  };
 
   return (
     <SetupShell
@@ -52,7 +59,6 @@ export function GuidedSetupScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
       title={t("setup.guided.title")}
       subtitle={t("setup.guided.subtitle")}
       logs={logs}
-      logVisibility={controller.error ? "expanded" : "collapsed"}
       previousAction={{ onClick: flow.goBack, disabled: controller.busy }}
       secondaryAction={{
         label: t("setup.guided.classicAction"),
@@ -75,7 +81,7 @@ export function GuidedSetupScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
       } : undefined}
     >
       {waiting ? (
-        <div className="flex min-h-[260px] items-center" aria-live="polite" aria-busy="true">
+        <div className="flex min-h-[260px] flex-col justify-center gap-4" aria-live="polite" aria-busy="true">
           <StatusPanel
             icon={<LoaderCircle size={22} className="animate-spin motion-reduce:animate-none" />}
             tone="primary"
@@ -89,6 +95,15 @@ export function GuidedSetupScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
                   : t("setup.guided.waitingForProvider")}
             message={t("setup.guided.progressDescription")}
           />
+          {controller.phase === "provider-wizard" ? (
+            <button
+              type="button"
+              onClick={() => { void controller.cancelProviderWizard(); }}
+              className="self-start text-sm text-aegis-text-secondary underline-offset-4 hover:text-aegis-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary"
+            >
+              {t("setup.guided.cancelStep")}
+            </button>
+          ) : null}
         </div>
       ) : controller.phase === "error" ? (
         <StatusPanel
@@ -103,6 +118,13 @@ export function GuidedSetupScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
           <div className="space-y-4">
             <WizardStepRenderer step={step} value={stepValue} setValue={setStepValue} t={t} />
             <WizardAuthorizationHint key={step.id} step={step} />
+            <button
+              type="button"
+              onClick={cancelStep}
+              className="text-sm text-aegis-text-secondary underline-offset-4 hover:text-aegis-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary"
+            >
+              {t("setup.guided.cancelStep")}
+            </button>
           </div>
         </fieldset>
       ) : controller.phase === "chat" && controller.chat ? (
@@ -112,8 +134,8 @@ export function GuidedSetupScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
           setInput={setChatInput}
         />
       ) : (
-        <InferenceSelectionPanel
-          flow={flow}
+        <GuidedInferenceSelectionPanel
+          controller={controller}
           manualProvider={manualProvider}
           setManualProvider={setManualProvider}
           manualKey={manualKey}
@@ -121,136 +143,6 @@ export function GuidedSetupScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
         />
       )}
     </SetupShell>
-  );
-}
-
-function InferenceSelectionPanel({
-  flow,
-  manualProvider,
-  setManualProvider,
-  manualKey,
-  setManualKey,
-}: {
-  flow: SetupFlow;
-  manualProvider: string;
-  setManualProvider: (value: string) => void;
-  manualKey: string;
-  setManualKey: (value: string) => void;
-}) {
-  const { t } = useTranslation();
-  const controller = flow.guidedSetup;
-  const detection = controller.detection;
-  if (!detection) return null;
-  const chooseCandidate = (candidate: GuidedSetupCandidate) => {
-    void controller.activateCandidate(candidate);
-  };
-  const provider = manualProvider || detection.manualProviders[0]?.id || "";
-
-  return (
-    <div className="space-y-5">
-      <section aria-labelledby="guided-detected-models">
-        <h2 id="guided-detected-models" className="text-sm font-bold text-aegis-text">
-          {t("setup.guided.detectedOptions")}
-        </h2>
-        <div className="mt-3 grid gap-2 md:grid-cols-2">
-          {detection.candidates.map((candidate) => (
-            <button
-              key={`${candidate.kind}:${candidate.modelRef}`}
-              type="button"
-              onClick={() => chooseCandidate(candidate)}
-              disabled={controller.busy}
-              className="flex min-w-0 items-start gap-3 rounded-lg border border-aegis-border bg-aegis-surface px-4 py-3 text-left transition-colors hover:border-aegis-primary/45 hover:bg-aegis-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary disabled:opacity-60"
-            >
-              <ProviderIcon providerId={candidate.brandId || candidate.modelRef.split("/")[0] || candidate.kind} size={20} />
-              <span className="min-w-0">
-                <span className="flex items-center gap-2 text-sm font-semibold text-aegis-text">
-                  {candidate.label}
-                  {candidate.recommended ? (
-                    <span className="rounded-full bg-aegis-primary/10 px-2 py-0.5 text-[10px] text-aegis-primary">
-                      {t("setup.guided.recommended")}
-                    </span>
-                  ) : null}
-                </span>
-                <span className="mt-1 block text-xs leading-5 text-aegis-text-secondary">{candidate.detail}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {(detection.authOptions?.length || detection.prepareOptions?.length) ? (
-        <section aria-labelledby="guided-provider-options">
-          <h2 id="guided-provider-options" className="text-sm font-bold text-aegis-text">
-            {t("setup.guided.providerOptions")}
-          </h2>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {detection.authOptions?.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => { void controller.startProviderAuth(option.id); }}
-                disabled={controller.busy}
-                className="rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2 text-sm text-aegis-text hover:border-aegis-primary/45 hover:bg-aegis-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary disabled:opacity-60"
-              >
-                {option.label}
-              </button>
-            ))}
-            {detection.prepareOptions?.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => { void controller.startProviderPrepare(option.id); }}
-                disabled={controller.busy}
-                className="rounded-lg border border-aegis-border bg-aegis-surface px-3 py-2 text-sm text-aegis-text hover:border-aegis-primary/45 hover:bg-aegis-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary disabled:opacity-60"
-              >
-                {option.actionLabel || option.label}
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {detection.manualProviders.length ? (
-        <section aria-labelledby="guided-manual-provider" className="border-t border-aegis-border pt-5">
-          <h2 id="guided-manual-provider" className="text-sm font-bold text-aegis-text">
-            {t("setup.guided.manualProvider")}
-          </h2>
-          <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto]">
-            <select
-              aria-label={t("setup.guided.providerLabel")}
-              value={provider}
-              onChange={(event) => setManualProvider(event.target.value)}
-              className="h-10 rounded-lg border border-aegis-border bg-aegis-surface px-3 text-sm text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary"
-            >
-              {detection.manualProviders.map((option) => (
-                <option key={option.id} value={option.id}>{option.label}</option>
-              ))}
-            </select>
-            <input
-              type="password"
-              aria-label={t("setup.guided.credentialLabel")}
-              value={manualKey}
-              onChange={(event) => setManualKey(event.target.value)}
-              placeholder={t("setup.guided.credentialPlaceholder")}
-              className="h-10 rounded-lg border border-aegis-border bg-aegis-surface px-3 text-sm text-aegis-text placeholder:text-aegis-text-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const credential = manualKey;
-                setManualKey("");
-                void controller.activateManual(provider, credential);
-              }}
-              disabled={controller.busy || !provider || !manualKey.trim()}
-              className="h-10 rounded-lg bg-aegis-primary px-4 text-sm font-semibold text-[rgb(var(--aegis-on-primary))] hover:bg-aegis-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {t("setup.guided.verifyCredential")}
-            </button>
-          </div>
-        </section>
-      ) : null}
-      {controller.error ? <p role="alert" className="text-sm text-aegis-danger">{controller.error}</p> : null}
-    </div>
   );
 }
 
@@ -335,7 +227,7 @@ function GuidedChatPanel({
             type="button"
             onClick={submit}
             disabled={controller.busy || !input.trim()}
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-aegis-primary px-4 text-sm font-semibold text-white hover:bg-aegis-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary disabled:opacity-50"
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-aegis-primary px-4 text-sm font-semibold text-[rgb(var(--aegis-on-primary))] hover:bg-aegis-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary disabled:opacity-50"
           >
             <ShieldCheck size={16} />
             {t("setup.guided.send")}

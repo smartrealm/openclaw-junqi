@@ -338,14 +338,6 @@ test('visual setup commits keep the synchronous step reference current', () => {
   assert.doesNotMatch(setupFlow, /stepsRef\.current = next;[\s\S]*?setSteps\(next\)/);
 });
 
-test('mobile installation console switches between steps and logs', () => {
-  assert.match(setupFlowPanels, /useState<"steps" \| "logs">\("steps"\)/);
-  assert.match(setupFlowPanels, /setup\.installPanel\.timeline/);
-  assert.match(setupFlowPanels, /setup\.installPanel\.activity/);
-  assert.match(setupFlowPanels, /mobileView !== "steps" && "hidden lg:block"/);
-  assert.match(setupFlowPanels, /mobileView !== "logs" && "hidden lg:block"/);
-});
-
 test('installation steps and activity log use aligned fixed-height viewports', () => {
   assert.equal((setupFlowPanels.match(/h-\[390px\]/g) ?? []).length, 2);
   assert.equal((setupFlowPanels.match(/h-\[342px\]/g) ?? []).length, 2);

@@ -278,6 +278,42 @@ test('普通重连继续使用显式保存的 Gateway 地址解析规则', async
   }
 });
 
+test('官方配置交接重连重新解析当前所选运行时', async () => {
+  const targetScopes: Array<string | undefined> = [];
+  const manager = new GatewayConnectionManager({
+    connect: async (_onHttpUrl, _isCurrent, options) => {
+      targetScopes.push(options?.targetRequest?.targetScope);
+    },
+    start: async () => ({ success: true }),
+    startDocker: async () => ({ success: true }),
+  }, {
+    observe: async () => ({
+      running: true,
+      processAlive: true,
+      ready: true,
+      retrying: false,
+      error: null,
+      logs: { stdout: '', stderr: '' },
+    }),
+    subscribe: () => () => {},
+    ensure: async () => ({ healthy: true }),
+    restart: async () => ({ success: true }),
+    stop: async () => ({ success: true }),
+  }, {
+    connect: () => undefined,
+    reconnectWithToken: () => undefined,
+    disconnect: () => undefined,
+  });
+  try {
+    manager.reconnectSelectedRuntime();
+    await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
+
+    assert.deepEqual(targetScopes, ['selected-runtime']);
+  } finally {
+    manager.destroy();
+  }
+});
+
 test('连接目标解析失败由统一状态机提交错误且不产生未处理拒绝', async () => {
   const snapshots: GatewayStateSnapshot[] = [];
   const manager = new GatewayConnectionManager({

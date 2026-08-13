@@ -291,7 +291,7 @@ export function useSetupFlow(
       captureAttestedConnectionId: captureCurrentAttestedGatewayConnectionId,
       isAttestedConnectionCurrent: isAttestedGatewayConnectionCurrent,
       reconnect: async () => {
-        const result = await gatewayLifecycle.reconnectAfterCurrent("guided-setup-completion");
+        const result = await gatewayLifecycle.reconnectSelectedRuntimeAfterCurrent("guided-setup-completion");
         return {
           success: result.success && !result.superseded,
           ...(result.error ? { diagnostic: result.error } : {}),

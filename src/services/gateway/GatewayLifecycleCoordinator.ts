@@ -11,6 +11,7 @@ export interface GatewayLifecycleRequest {
   action: GatewayLifecycleAction;
   source: string;
   diagnostic?: string;
+  selectedRuntime?: boolean;
 }
 
 export interface GatewayEnsureResult {
@@ -53,6 +54,7 @@ interface GatewayLifecycleManager {
   restart: () => Promise<GatewayRestartResult>;
   stop: () => Promise<GatewayRestartResult>;
   reconnect: () => void;
+  reconnectSelectedRuntime: () => void;
 }
 
 interface GatewayLifecycleConnectionSettlement {
@@ -108,7 +110,7 @@ export class GatewayLifecycleCoordinator {
     return this.request({ action: 'reconnect', source });
   }
 
-  async reconnectAfterCurrent(source: string): Promise<GatewayLifecycleResult> {
+  async reconnectSelectedRuntimeAfterCurrent(source: string): Promise<GatewayLifecycleResult> {
     // Wizard 终态交接必须取得一次属于自己的新连接结果，不能复用正在结束的重启
     // 或恢复请求，否则上一个请求的来源和终态会被误当作本次核验结果。
     while (this.active) {
@@ -117,7 +119,7 @@ export class GatewayLifecycleCoordinator {
       const pendingUpgrade = this.pendingUpgradeResult;
       if (pendingUpgrade) await pendingUpgrade;
     }
-    return this.request({ action: 'reconnect', source });
+    return this.request({ action: 'reconnect', source, selectedRuntime: true });
   }
 
   recover(source: string, diagnostic?: string): Promise<GatewayLifecycleResult> {
@@ -222,7 +224,8 @@ export class GatewayLifecycleCoordinator {
     }
     if (request.action === 'reconnect') {
       this.emit(request, 'Reconnecting to OpenClaw Gateway…', 0.1, 'gateway.progress.reconnect');
-      this.dependencies.manager.reconnect();
+      if (request.selectedRuntime) this.dependencies.manager.reconnectSelectedRuntime();
+      else this.dependencies.manager.reconnect();
       return this.waitForConnection(request, previousConnectionId);
     }
 

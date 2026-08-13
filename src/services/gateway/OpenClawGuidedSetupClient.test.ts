@@ -106,6 +106,21 @@ test('guided setup detection preserves provider-owned structured options', () =>
     () => parseGuidedSetupDetection({ ...detection, candidates: [{ ...detection.candidates[0], kind: 'invented' }] }),
     OpenClawGuidedSetupResponseError,
   );
+  assert.throws(
+    () => parseGuidedSetupDetection({ ...detection, unavailableCandidates: undefined }),
+    OpenClawGuidedSetupResponseError,
+  );
+  assert.throws(
+    () => parseGuidedSetupDetection({ ...detection, recommendedInstalls: undefined }),
+    OpenClawGuidedSetupResponseError,
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(
+      parseGuidedSetupDetection({ ...detection, codexAppServerDetected: true }),
+      'codexAppServerDetected',
+    ),
+    false,
+  );
 });
 
 test('guided setup client classifies an official method missing on an old runtime', async () => {
@@ -142,4 +157,20 @@ test('guided setup client starts provider-owned auth and prepare wizard sessions
     'openclaw.setup.auth.start',
     'openclaw.setup.prepare.start',
   ]);
+});
+
+test('guided setup chat forwards the official embedded wizard cancellation', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const client = new OpenClawGuidedSetupClient({
+    requestPrivileged: async (method, params) => {
+      calls.push({ method, params });
+      return { sessionId: 'chat-1', reply: 'Cancelled', action: 'none' };
+    },
+  });
+
+  await client.chat({ sessionId: 'chat-1', wizardCancel: { stepId: 'provider-auth' } });
+  assert.deepEqual(calls, [{
+    method: 'openclaw.chat',
+    params: { sessionId: 'chat-1', wizardCancel: { stepId: 'provider-auth' } },
+  }]);
 });

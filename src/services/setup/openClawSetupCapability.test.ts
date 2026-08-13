@@ -7,9 +7,11 @@ const detection: GuidedSetupDetection = {
   setupComplete: false,
   workspace: "/workspace",
   candidates: [],
+  unavailableCandidates: [],
   manualProviders: [],
   authOptions: [],
   prepareOptions: [],
+  recommendedInstalls: [],
 };
 
 function unavailable(availability: "unsupported" | "connection-unavailable") {

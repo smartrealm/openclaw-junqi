@@ -27,11 +27,13 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 6. Guided 的 `setupComplete` 为真时，进入正常工作台，不重复 onboarding；Classic 则以当前官方 Wizard 会话的 `done` 作为终态证明。
 7. Guided 的 `setupComplete` 为假时，呈现官方候选、不可用候选、认证方式和准备方式；Classic 忠实呈现官方步骤。
 8. 需要认证或准备时，分别调用 `openclaw.setup.auth.start` 或 `openclaw.setup.prepare.start`，只投影结构化结果。
-9. 用户确认候选后调用 `openclaw.setup.activate`。只有上游返回成功并且 `openclaw.setup.verify` 通过，才能认为推理配置成立。
-10. 推理成立后，用独立 session 调用 `openclaw.chat`，首个请求携带 `welcomeVariant: "onboarding"`。
-11. JunQi 按官方 reply、action、sensitive 和 agentDraft 呈现对话，不补造步骤或终态。
-12. OpenClaw 返回退出或打开智能体动作后，JunQi 通过统一交接门禁复用当前已核验连接；连接失效时才重连。随后绑定同一连接核验所选 Runtime、`setup.detect` 与 `setup.verify`，再进入 Ready。
-13. 用户从 Ready 进入工作台时再次核验 Gateway 与当前配置，随后一次性提交本地完成标记并切换页面。
+9. 自动候选按官方顺序尝试，但必须跳过 `credentials === false` 的候选；已有默认模型候选激活失败后立即停止自动尝试，不得静默替换为其他模型。
+10. 自动候选激活成功后，呈现官方“使用当前路径”或“查看其他选项”确认。激活结果已经由 OpenClaw 持久化；用户选择其他选项时在当前有效路径上打开完整选择器，不能伪装成尚未写入。
+11. 用户明确选择其他候选或手动凭据时调用 `openclaw.setup.activate`。只有上游返回成功并且 `openclaw.setup.verify` 通过，才能认为推理配置成立。
+12. 推理成立后，用独立 session 调用 `openclaw.chat`，首个请求携带 `welcomeVariant: "onboarding"`。
+13. JunQi 按官方 reply、action、sensitive 和 agentDraft 呈现对话，不补造步骤或终态。
+14. OpenClaw 返回退出或打开智能体动作后，JunQi 通过统一交接门禁复用当前已核验连接；连接失效时才重连。随后绑定同一连接核验所选 Runtime、`setup.detect` 与 `setup.verify`，再进入 Ready。
+15. 用户从 Ready 进入工作台时再次核验 Gateway 与当前配置，随后一次性提交本地完成标记并切换页面。
 
 ## 明确的高级路径
 
@@ -42,6 +44,8 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 - 如果用户选择安装 daemon，Native 完成条件继续要求系统服务交接成功；服务切换使原连接失效时，必须重新建立并核验认证连接。
 - 数据位置读取完成后必须停留在可编辑表单，由用户点击“下一步”确认；提交成功后直接进入运行时阶段，不得自动越过该页面，也不得插入“数据位置已就绪”二次确认页。
 - 数据位置读取路径不得调用阶段完成回调；只有用户触发且 `configure_storage` 成功后可以生成 `StorageCompletion`。
+- 数据位置提交期间必须保留同一表单和内容标识，只锁定表单并在主操作上呈现真实忙碌状态；不得用客户端自造百分比或独立进度卡替换页面正文。
+- 安装流程中的调试日志和依赖安装执行记录默认收起。只有用户主动选择日志入口后才展示正文，步骤切换、失败、等待和短内容均不得自动展开日志。
 - 首次设置启动 Gateway 时必须建立新的连接代次；任意旧连接的 connected 状态、同端口可达和历史手动地址均不能作为所选 Runtime 已连接的证据。
 - 显式启动命令未返回终态前，进程状态订阅不得触发首次连接；启动成功后只允许一次限定为所选 Runtime 的连接动作。
 - 普通设置页的显式 Gateway 地址不属于首次设置目标解析，不能因首次设置收紧而被删除或忽略。
@@ -67,6 +71,7 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 - 所有 `openclaw.setup.*` 和 `openclaw.chat` 请求使用现有 privileged Gateway 通道。
 - API key 和 token 只存在于当前受控请求边界，不写入日志、Markdown、测试快照或前端持久存储。
 - 认证和准备操作必须支持取消；结果未知时不得自动重放。
+- Provider Wizard 通过官方 `wizard.cancel` 取消；onboarding chat 内嵌 Wizard 通过官方 `wizardCancel` 取消。取消失败必须保留在当前操作附近，不能只在组件卸载时静默清理。
 - `openclaw.setup.activate` 超时或断线时保持待核验，重新调用前先执行 detect 或 verify。
 
 ## UI 契约
@@ -74,6 +79,8 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 - 复用现有 SetupShell、共享状态面板、按钮、输入、错误和日志组件，以及 Aegis 语义 token。
 - 默认只展示 guided inference；“详细配置”是次级入口，不与默认主操作并列争夺注意力。
 - provider、认证方式、等待、成功、失败、取消、过期和未知状态全部来自结构化响应。
+- `unavailableCandidates` 的原因和正式修复入口、`recommendedInstalls` 的安装建议必须按官方检测结果呈现；不存在正式入口时只展示不可用原因。
+- setup admission busy 必须按官方 `UNAVAILABLE`、固定错误文案和 `retryable: true` 组合识别；Classic 进入 reclaim，Guided 显示可重试的占用提示。
 - 不展示技术占位语句，不在短步骤中强制固定高度或额外滚动条。
 - 共享页面骨架可以占满窗口，但步骤卡片和正文切换容器必须按真实内容高度布局；只有日志和官方长选项可以在明确边界内局部滚动。
 - 国际化资源不得让同一解析路径同时指向对象与字符串等不同类型；资源加载和测试必须拒绝该冲突，业务组件只读取稳定的字符串叶子。
@@ -85,11 +92,18 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 
 - 已配置数据位置的读取完成后仍停留在数据位置表单，且不会调用阶段完成回调。
 - 用户点击“下一步”并取得 `configure_storage` 成功响应后只推进一次；失败、重复点击和返回竞争不能推进。
+- 数据位置提交前后保持同一表单内容标识，不出现独立的客户端进度步骤。
+- 所有安装步骤首次呈现时日志均为收起状态；依赖安装失败也不能自动切换到执行记录，只有用户触发日志入口后才显示日志正文。
 - 首次设置已有旧连接时，启动所选 Runtime 必须先断开旧连接，随后以 `selected-runtime` 目标范围重新解析正式配置；读取失败不能使用历史手工地址或默认端点，只有新连接的 Runtime Identity 已核验时才能进入配置能力协商。
 - 端点状态先于启动命令完成到达时不能提前连接；启动失败必须进入统一错误态，启动成功只能产生一次 `selected-runtime` 连接动作。
 - 官方 `done` 和其他短步骤不会被通用容器强制撑满窗口，也不会产生空白局部滚动区。
 - 英语、简体中文和繁体中文资源均不存在扁平键与嵌套路径的类型冲突；数据位置提交进度读取明确的字符串叶子。
 - 新安装默认不会调用 `wizard.start`，而是依次使用正式 setup RPC 和 onboarding chat。
+- 自动候选不会尝试 `credentials === false` 的项；已有默认模型候选失败后不会继续激活后续候选。
+- 自动候选成功后必须先显示当前已激活路径的使用或改选确认，不能直接进入 onboarding chat。
+- 无可用候选时可以看到官方不可用原因、可用认证或手动凭据入口以及推荐安装建议。
+- Provider Wizard 和 chat 内嵌 Wizard 都有可访问的显式取消入口，并调用各自的官方取消协议。
+- 官方 setup admission busy 可以分别进入 Classic reclaim 和 Guided 可重试错误，不会退化为 unknown。
 - 已配置 Gateway 的 `setupComplete: true` 会跳过 onboarding。
 - fresh activation 未取得真实 completion 时不能进入工作台。
 - npm 12 安装不会阻止 OpenClaw lifecycle script。

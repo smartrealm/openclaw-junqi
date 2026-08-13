@@ -7,6 +7,7 @@ import clsx from 'clsx';
 import { SetupShell, StatusPanel } from '@/components/setup/SetupFlowPanels';
 import {
   initialStorageLocationsVisibility,
+  storageSubmissionPresentation,
   type StorageCompletion,
 } from '@/components/setup/storageSetupModel';
 import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
@@ -189,7 +190,6 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [recoveringRuntime, setRecoveringRuntime] = useState(false);
-  const [progress, setProgress] = useState<MigrationProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadStorageStatus = useCallback(async () => {
@@ -252,10 +252,6 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
       if (cancelled) return;
       const payload = event.payload;
       const message = payload.key ? t(payload.key, payload.message) : payload.message;
-      setProgress({
-        ...payload,
-        message,
-      });
       appendSetupLog({
         source: 'setup',
         step: 'storage',
@@ -321,12 +317,6 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
     applyInFlightRef.current = true;
     setApplying(true);
     setError(null);
-    setProgress({
-      message: usingSourceLocation
-        ? t('storage.activating', '正在确认存储位置…')
-        : t('storage.preparing', '正在准备新存储位置…'),
-      progress: 0.02,
-    });
     try {
       const shouldMigrateSelectedState = !usingSourceLocation
         && migrateExisting
@@ -511,51 +501,13 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
     );
   }
 
-  if (applying) {
-    const progressValue = Math.max(0, Math.min(1, progress?.progress ?? 0));
-    const progressPercent = Math.round(progressValue * 100);
-    return (
-      <SetupShell
-        active={activeStage}
-        contentIdentity="storage:applying"
-        title={t('storage.title', '选择 OpenClaw 数据位置')}
-        subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
-        logs={logs}
-        previousAction={{ onClick: handleBack, disabled: true }}
-        nextAction={{
-          label: progress?.message || t('storage.preparing', '正在准备新存储位置…'),
-          disabled: true,
-          loading: true,
-          icon: 'none',
-        }}
-      >
-        <div className="flex min-h-[260px] items-center" aria-busy="true" aria-live="polite">
-          <StatusPanel
-            icon={<LoaderCircle size={22} className="animate-spin motion-reduce:animate-none" />}
-            title={progress?.message || t('storage.preparing', '正在准备新存储位置…')}
-            message={t('storage.applyingHint', '正在保存所选位置并完成必要的数据与运行时交接，请不要关闭应用。')}
-            footer={(
-              <div>
-                <div className="mb-2 flex items-center justify-between gap-4 text-xs text-aegis-text-muted">
-                  <span>{t('storage.progress.label', '处理进度')}</span>
-                  <span className="tabular-nums">{progressPercent}%</span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-aegis-surface">
-                  <div
-                    className="h-full rounded-full bg-aegis-primary transition-[width] duration-300 motion-reduce:transition-none"
-                    style={{ width: `${Math.max(3, progressValue * 100)}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          />
-        </div>
-      </SetupShell>
-    );
-  }
-
   // 数据位置读取只填充表单；只有用户点击下一步且原生存储事务成功后才推进阶段。
-  const actionLabel = t('setup.nextStep', '下一步');
+  const submission = storageSubmissionPresentation(applying, usingSourceLocation);
+  const actionLabel = submission.action === 'confirm-current'
+    ? t('storage.activating', '正在确认存储位置…')
+    : submission.action === 'prepare-new'
+      ? t('storage.preparing', '正在准备新存储位置…')
+      : t('setup.nextStep', '下一步');
   const dataLayoutLocked = !usingSourceLocation
     && hasMigratableSource(status, forceConfigure)
     && migrateExisting;
@@ -572,20 +524,24 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
   return (
     <SetupShell
       active={activeStage}
-      contentIdentity="storage:form"
+      contentIdentity={submission.contentIdentity}
       title={t('storage.title', '选择 OpenClaw 数据位置')}
       subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
       logs={logs}
-      previousAction={{ onClick: handleBack, disabled: applying }}
+      previousAction={{ onClick: handleBack, disabled: submission.locked }}
       nextAction={{
         label: actionLabel,
         onClick: () => void applyStorage(),
-        disabled: !layoutComplete,
-        loading: false,
+        disabled: submission.locked || !layoutComplete,
+        loading: submission.loading,
         icon: 'none',
       }}
     >
-      <section className="border-y border-aegis-border py-6">
+      <fieldset
+        disabled={submission.locked}
+        aria-busy={submission.loading}
+        className="m-0 min-w-0 border-x-0 border-y border-aegis-border px-0 py-6"
+      >
         <div className="grid gap-3 sm:grid-cols-2">
           <button
             type="button"
@@ -831,7 +787,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
 
         {error && <p className="mt-5 break-all border-l-2 border-aegis-danger pl-3 text-sm text-aegis-danger">{error}</p>}
 
-      </section>
+      </fieldset>
     </SetupShell>
   );
 }

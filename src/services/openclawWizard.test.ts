@@ -530,7 +530,17 @@ test('recognizes only recoverable wizard session loss errors', () => {
   assert.equal(isOpenClawWizardSessionLost(new Error('Wizard not running')), true);
   assert.equal(isOpenClawWizardSessionLost(new Error('OpenClaw wizard session is not running.')), true);
   assert.equal(isOpenClawWizardSessionLost(new Error('provider authentication failed')), false);
-  assert.equal(classifyOpenClawWizardFailure(new Error('wizard already running')), 'already_running');
+  assert.equal(classifyOpenClawWizardFailure({
+    message: 'OpenClaw setup is already in progress; try again when it finishes.',
+    code: 'UNAVAILABLE',
+    details: { retryable: true },
+  }), 'already_running');
+  assert.equal(classifyOpenClawWizardFailure({
+    message: 'OpenClaw setup is already in progress; try again when it finishes.',
+    code: 'UNAVAILABLE',
+    details: { retryable: false },
+  }), 'unknown');
+  assert.equal(classifyOpenClawWizardFailure(new Error('wizard already running')), 'unknown');
   assert.equal(classifyOpenClawWizardFailure(new Error('Request timeout (120000ms)')), 'request_timeout');
   assert.equal(classifyOpenClawWizardFailure({
     message: 'invalid request',

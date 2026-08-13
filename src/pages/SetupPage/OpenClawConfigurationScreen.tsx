@@ -63,7 +63,6 @@ function ConfigurationVerificationScreen({ flow, logs }: { flow: VerificationFlo
       title={t("setup.wizard.title")}
       subtitle={t("setup.wizard.subtitle")}
       logs={logs}
-      logVisibility="expanded"
       previousAction={{
         onClick: () => { void flow.goBack(); },
         disabled: checking,

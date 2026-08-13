@@ -7,19 +7,11 @@ import type { SetupFlow } from "@/hooks/useSetupFlow";
 import { SetupShell, StatusPanel } from "@/components/setup/SetupFlowPanels";
 import { AlertDialog } from "@/components/shared/AlertDialog";
 import clsx from "clsx";
-import type { OpenClawWizardStep } from "@/services/openclawWizard";
 import { isWizardBodyMessageStep, WizardStepRenderer } from "./wizard/WizardStepRenderer";
 import { resolveWizardAuthorizationUrl, WizardAuthorizationHint } from "./wizard/WizardAuthorizationHint";
 import { wizardInitialValue } from "./wizard/WizardStepValue";
 
 export { WizardAuthorizationHint } from "./wizard/WizardAuthorizationHint";
-
-export function wizardLogVisibility(
-  step: OpenClawWizardStep | null,
-  error: string | null,
-): "collapsed" | "expanded" {
-  return !step || error ? "expanded" : "collapsed";
-}
 
 type WizardController = Pick<SetupFlow,
   | "wizardStep"
@@ -167,7 +159,6 @@ export function WizardScreen({
             ? t("setup.wizard.needsAttentionSubtitle", "请核对返回的错误，并使用当前可用的恢复操作。")
             : t("setup.wizard.officialStepSubtitle", "当前内容由所选 OpenClaw Runtime 提供。")}
           logs={logs}
-          logVisibility={wizardLogVisibility(step, wizard.wizardError)}
           previousAction={{ onClick: flow.goBack, disabled: wizard.wizardSubmitting }}
           secondaryAction={secondaryAction}
           nextAction={{
@@ -260,7 +251,6 @@ export function WizardScreen({
         title={wizardTitle}
         subtitle={wizardSubtitle}
         logs={logs}
-        logVisibility={wizardLogVisibility(step, wizard.wizardError)}
         previousAction={{
           label: t("setup.wizard.pauseAndReturn", "暂停并返回"),
           onClick: flow.goBack,

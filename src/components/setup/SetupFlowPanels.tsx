@@ -225,7 +225,6 @@ export function SetupShell({
   nextAction,
   wide = false,
   showLogToggle = true,
-  logVisibility = "collapsed",
   contentIdentity,
   contentMotion = "ambient",
 }: {
@@ -240,23 +239,18 @@ export function SetupShell({
   nextAction?: SetupNextAction;
   wide?: boolean;
   showLogToggle?: boolean;
-  logVisibility?: "collapsed" | "expanded";
   contentIdentity?: string;
   contentMotion?: SetupContentMotion;
 }) {
   const { t } = useTranslation();
-  const [showLogs, setShowLogs] = useState(logVisibility === "expanded");
+  const [showLogs, setShowLogs] = useState(false);
   const contentViewportRef = useRef<HTMLElement>(null);
   const scrollKey = useSetupStepScrollKey(contentIdentity);
   const isRuntime = active >= 2 && active < 4;
   const showActions = previousAction || secondaryAction || nextAction;
   const hasContentTransition = contentIdentity !== undefined;
-  // 调用方要求默认展开时，即使首条运行日志尚未到达也保留日志区域，避免界面布局跳动。
-  const shouldShowLogs = isRuntime && showLogToggle && (logs.length > 0 || logVisibility === "expanded");
-
-  useEffect(() => {
-    setShowLogs(logVisibility === "expanded");
-  }, [logVisibility]);
+  // 日志入口只在已有诊断时出现，所有步骤均由用户主动展开。
+  const shouldShowLogs = isRuntime && showLogToggle && logs.length > 0;
 
   useClientLayoutEffect(() => {
     // 步骤变化时在首次绘制前复位滚动，不通过 React key 重建主体和异步状态组件。
@@ -1023,15 +1017,12 @@ export function InstallationConsole({
 }: InstallationConsoleProps) {
   const { t } = useTranslation();
   const reduceMotion = useReducedMotion() ?? false;
-  const [mobileView, setMobileView] = useState<"steps" | "logs">("steps");
+  const [detailsView, setDetailsView] = useState<"steps" | "logs">("steps");
   const current = currentStepOf(flow.steps);
   const completed = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || 1;
   const percent = installationCompletionPercent(flow.steps);
   const isError = setupStep === "error";
-  useEffect(() => {
-    if (isError) setMobileView("logs");
-  }, [isError]);
   const currentMeta = current ? STEP_META[current.id] : null;
   const currentTitle = installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
   const currentDescription = currentMeta
@@ -1043,15 +1034,16 @@ export function InstallationConsole({
 
   const activityPanel = (
     <div id="setup-installation-details" className="overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated">
-      <div className="flex gap-1 border-b border-aegis-border p-2 lg:hidden">
+      <div className="flex gap-1 border-b border-aegis-border p-2">
         {(["steps", "logs"] as const).map((view) => (
           <button
             key={view}
             type="button"
-            onClick={() => setMobileView(view)}
+            onClick={() => setDetailsView(view)}
+            aria-pressed={detailsView === view}
             className={clsx(
-              "flex-1 rounded-md px-3 py-2 text-xs font-semibold transition-colors",
-              mobileView === view
+              "rounded-md px-3 py-2 text-xs font-semibold transition-colors",
+              detailsView === view
                 ? "bg-aegis-surface text-aegis-text"
                 : "text-aegis-text-dim hover:text-aegis-text-secondary",
             )}
@@ -1062,13 +1054,14 @@ export function InstallationConsole({
           </button>
         ))}
       </div>
-      <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)]">
-        <div className={clsx(mobileView !== "steps" && "hidden lg:block")}>
+      <div>
+        {detailsView === "steps" ? (
           <InstallationTimeline steps={flow.steps} />
-        </div>
-        <div className={clsx(mobileView !== "logs" && "hidden lg:block")}>
-          <InstallLiveLog logs={logs} />
-        </div>
+        ) : (
+          <div data-setup-installation-log>
+            <InstallLiveLog logs={logs} />
+          </div>
+        )}
       </div>
     </div>
   );

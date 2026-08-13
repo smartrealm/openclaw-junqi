@@ -18,9 +18,11 @@ import {
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import { activateFirstWorkingGuidedCandidate } from "@/services/setup/guidedSetupCandidateLadder";
 import { isGuidedSetupUnsupported } from "@/services/setup/openClawSetupCapability";
+import { isOpenClawSetupAdmissionBusy } from "@/services/setup/openClawSetupAdmission";
 
 export type GuidedSetupPhase =
   | "detecting"
+  | "confirming"
   | "selecting"
   | "activating"
   | "provider-wizard"
@@ -32,6 +34,7 @@ export interface GuidedSetupController {
   phase: GuidedSetupPhase;
   detection: GuidedSetupDetection | null;
   activation: GuidedSetupActivation | null;
+  activeCandidate: GuidedSetupCandidate | null;
   chat: GuidedSetupChatResult | null;
   wizardStep: OpenClawWizardStep | null;
   busy: boolean;
@@ -41,7 +44,11 @@ export interface GuidedSetupController {
   startProviderAuth: (authChoice: string) => Promise<void>;
   startProviderPrepare: (authChoice: string) => Promise<void>;
   submitProviderWizard: (stepId: string, value?: unknown) => Promise<void>;
+  cancelProviderWizard: () => Promise<void>;
   submitChat: (message?: string, wizardAnswer?: { stepId: string; value?: unknown }) => Promise<void>;
+  cancelChatWizard: (stepId: string) => Promise<void>;
+  confirmDetectedRoute: () => Promise<void>;
+  chooseOtherRoute: () => void;
   finishChat: () => Promise<void>;
   retry: () => Promise<void>;
 }
@@ -61,6 +68,9 @@ function operationError(error: unknown, t: (key: string, fallback: string) => st
   if (error instanceof OpenClawGuidedSetupResponseError) {
     return t("setup.guided.invalidResponse", "OpenClaw 返回了无法识别的官方配置响应，请核对 Runtime 版本后重试。");
   }
+  if (isOpenClawSetupAdmissionBusy(error)) {
+    return t("setup.guided.alreadyRunning", "另一个 OpenClaw 配置会话仍在运行，请完成或取消后重试。");
+  }
   return sanitizeSetupDiagnostic(error instanceof Error ? error.message : error);
 }
 
@@ -73,6 +83,7 @@ export function useGuidedSetupSession({
   const [phase, setPhase] = useState<GuidedSetupPhase>("detecting");
   const [detection, setDetection] = useState<GuidedSetupDetection | null>(null);
   const [activation, setActivation] = useState<GuidedSetupActivation | null>(null);
+  const [activeCandidate, setActiveCandidate] = useState<GuidedSetupCandidate | null>(null);
   const [chat, setChat] = useState<GuidedSetupChatResult | null>(null);
   const [wizardStep, setWizardStep] = useState<OpenClawWizardStep | null>(null);
   const [busy, setBusy] = useState(false);
@@ -156,13 +167,14 @@ export function useGuidedSetupSession({
     assertCurrent(operation);
     if (ladder.activated) {
       setActivation(ladder.result);
-      await startOnboardingChat(operation);
+      setActiveCandidate(ladder.candidate);
+      setPhase("confirming");
       return;
     }
     setActivation(ladder.lastResult);
     setPhase("selecting");
     if (ladder.lastResult) setError(ladder.lastResult.error);
-  }, [assertCurrent, completeHandoff, startOnboardingChat]);
+  }, [assertCurrent, completeHandoff]);
 
   const activate = useCallback(async (
     params: Parameters<OpenClawGuidedSetupClient["activate"]>[0],
@@ -170,6 +182,7 @@ export function useGuidedSetupSession({
     const operation = beginOperation();
     setPhase("activating");
     setActivation(null);
+    setActiveCandidate(null);
     try {
       const result = await guidedClientRef.current!.activate(params);
       assertCurrent(operation);
@@ -194,6 +207,7 @@ export function useGuidedSetupSession({
     const operation = beginOperation();
     setPhase("detecting");
     setActivation(null);
+    setActiveCandidate(null);
     setChat(null);
     setWizardStep(null);
     try {
@@ -288,6 +302,7 @@ export function useGuidedSetupSession({
     return () => {
       operationRef.current += 1;
       gateway.cancelActivePrivilegedRequest();
+      wizardClientRef.current?.invalidatePendingOperations();
       void wizardClientRef.current?.cancel().catch(() => undefined);
     };
   }, [enabled, loadDetection]);
@@ -296,6 +311,7 @@ export function useGuidedSetupSession({
     phase,
     detection,
     activation,
+    activeCandidate,
     chat,
     wizardStep,
     busy,
@@ -329,6 +345,34 @@ export function useGuidedSetupSession({
         if (operation === operationRef.current) setBusy(false);
       }
     },
+    cancelProviderWizard: async () => {
+      const operation = beginOperation();
+      try {
+        wizardClientRef.current!.invalidatePendingOperations();
+        gateway.cancelActivePrivilegedRequest();
+        await wizardClientRef.current!.cancel();
+        assertCurrent(operation);
+        setWizardStep(null);
+        providerPrepareRef.current = null;
+        const result = await guidedClientRef.current!.detect();
+        assertCurrent(operation);
+        setDetection(result);
+        setActivation(null);
+        setActiveCandidate(null);
+        if (result.setupComplete) {
+          await completeHandoff(operation);
+        } else {
+          setPhase("selecting");
+        }
+      } catch (cause) {
+        if (operation === operationRef.current) {
+          setError(operationError(cause, t));
+          setPhase("error");
+        }
+      } finally {
+        if (operation === operationRef.current) setBusy(false);
+      }
+    },
     submitChat: async (message, wizardAnswer) => {
       const sessionId = chatSessionIdRef.current;
       if (!sessionId) return;
@@ -347,6 +391,43 @@ export function useGuidedSetupSession({
       } finally {
         if (operation === operationRef.current) setBusy(false);
       }
+    },
+    cancelChatWizard: async (stepId) => {
+      const sessionId = chatSessionIdRef.current;
+      if (!sessionId) return;
+      const operation = beginOperation();
+      try {
+        await applyChatResult(await guidedClientRef.current!.chat({
+          sessionId,
+          wizardCancel: { stepId },
+        }), operation);
+      } catch (cause) {
+        if (operation === operationRef.current) {
+          setError(operationError(cause, t));
+          setPhase("error");
+        }
+      } finally {
+        if (operation === operationRef.current) setBusy(false);
+      }
+    },
+    confirmDetectedRoute: async () => {
+      if (!activeCandidate || !activation?.ok) return;
+      const operation = beginOperation();
+      try {
+        await startOnboardingChat(operation);
+      } catch (cause) {
+        if (operation === operationRef.current) {
+          setError(operationError(cause, t));
+          setPhase("error");
+        }
+      } finally {
+        if (operation === operationRef.current) setBusy(false);
+      }
+    },
+    chooseOtherRoute: () => {
+      if (!activeCandidate || !activation?.ok || busy) return;
+      setError(null);
+      setPhase("selecting");
     },
     finishChat: async () => {
       const operation = beginOperation();

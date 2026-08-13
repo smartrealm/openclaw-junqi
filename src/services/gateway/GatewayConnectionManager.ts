@@ -177,6 +177,12 @@ export class GatewayConnectionManager {
     this.beginRecovery('RESET');
   }
 
+  /** 首次配置交接时重新读取当前所选运行时的端点和凭据。 */
+  reconnectSelectedRuntime(): void {
+    this.activateForDirectRecovery();
+    this.beginRecovery('RESET', true);
+  }
+
   startForSetup(): Promise<GatewayStartResult> {
     return this.requestSetupStart('START_REQUESTED');
   }
@@ -424,8 +430,9 @@ export class GatewayConnectionManager {
     this.dispatch({ type: 'INITIALIZE' });
   }
 
-  private beginRecovery(event: 'RESET' | 'RETRY'): void {
+  private beginRecovery(event: 'RESET' | 'RETRY', selectedRuntime = false): void {
     this.invalidateLifecycle('A newer Gateway recovery was requested');
+    this.useSelectedRuntimeForNextConnection = selectedRuntime;
     this.dispatch({ type: event });
     this.connectionTransport.disconnect();
     this.probe();

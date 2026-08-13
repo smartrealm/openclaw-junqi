@@ -1,5 +1,6 @@
 import { debugWarn } from '@/utils/debugLog';
 import { wizardRuntimeScopeKey } from '@/services/setup/wizardRuntimeScope';
+import { isOpenClawSetupAdmissionBusy } from '@/services/setup/openClawSetupAdmission';
 
 export type OpenClawWizardStepType =
   | 'note'
@@ -172,7 +173,6 @@ export interface OpenClawWizardRequestOptions {
 }
 
 export const OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS = 30_000;
-
 export type OpenClawWizardFailureKind =
   | 'session_lost'
   | 'step_desynchronized'
@@ -706,9 +706,13 @@ export class OpenClawWizardClient {
 
 export function classifyOpenClawWizardFailure(error: unknown): OpenClawWizardFailureKind {
   if (error instanceof OpenClawWizardCancelledError) return 'cancelled';
-  const message = error instanceof Error ? error.message : String(error);
-  const normalized = message.toLowerCase();
   const record = error && typeof error === 'object' ? error as Record<string, unknown> : null;
+  const message = error instanceof Error
+    ? error.message
+    : typeof record?.message === 'string'
+      ? record.message
+      : String(error);
+  const normalized = message.toLowerCase();
   const details = record?.details && typeof record.details === 'object'
     ? record.details as Record<string, unknown>
     : null;
@@ -720,7 +724,7 @@ export function classifyOpenClawWizardFailure(error: unknown): OpenClawWizardFai
     return 'session_lost';
   }
   if (normalized.includes('wizard: no pending step') || code === 'WIZARD_NO_PENDING_STEP') return 'step_desynchronized';
-  if (normalized.includes('wizard already running') || code === 'WIZARD_ALREADY_RUNNING') return 'already_running';
+  if (isOpenClawSetupAdmissionBusy(error)) return 'already_running';
   if (normalized.includes('request timeout')) return 'request_timeout';
   return 'unknown';
 }

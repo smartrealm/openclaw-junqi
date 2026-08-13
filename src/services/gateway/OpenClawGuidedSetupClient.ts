@@ -107,13 +107,12 @@ export interface GuidedSetupRecommendedInstall {
 
 export interface GuidedSetupDetection {
   candidates: GuidedSetupCandidate[];
-  unavailableCandidates?: GuidedSetupUnavailableCandidate[];
+  unavailableCandidates: GuidedSetupUnavailableCandidate[];
   manualProviders: GuidedSetupManualProvider[];
-  authOptions?: GuidedSetupAuthOption[];
+  authOptions: GuidedSetupAuthOption[];
   prepareOptions?: GuidedSetupPrepareOption[];
-  recommendedInstalls?: GuidedSetupRecommendedInstall[];
+  recommendedInstalls: GuidedSetupRecommendedInstall[];
   workspace: string;
-  codexAppServerDetected?: boolean;
   configuredModel?: string;
   setupComplete: boolean;
 }
@@ -331,30 +330,26 @@ export function parseGuidedSetupDetection(value: unknown): GuidedSetupDetection 
     throw new OpenClawGuidedSetupResponseError(OPENCLAW_GUIDED_SETUP_METHODS.detect);
   }
   const candidates = parseArray(source.candidates, parseCandidate);
-  const unavailableCandidates = parseArray(source.unavailableCandidates, parseUnavailableCandidate, true);
+  const unavailableCandidates = parseArray(source.unavailableCandidates, parseUnavailableCandidate);
   const manualProviders = parseArray(source.manualProviders, parseManualProvider);
-  const authOptions = parseArray(source.authOptions, parseAuthOption, true);
+  const authOptions = parseArray(source.authOptions, parseAuthOption);
   const prepareOptions = parseArray(source.prepareOptions, parsePrepareOption, true);
-  const recommendedInstalls = parseArray(source.recommendedInstalls, parseRecommendedInstall, true);
+  const recommendedInstalls = parseArray(source.recommendedInstalls, parseRecommendedInstall);
   const workspace = text(source.workspace);
   const configuredModel = optionalText(source.configuredModel);
-  if (!candidates || unavailableCandidates === null || !manualProviders || authOptions === null
-    || prepareOptions === null || recommendedInstalls === null || !workspace
-    || configuredModel === null
-    || (source.codexAppServerDetected !== undefined && typeof source.codexAppServerDetected !== 'boolean')) {
+  if (!candidates || !unavailableCandidates || !manualProviders || !authOptions
+    || prepareOptions === null || !recommendedInstalls || !workspace
+    || configuredModel === null) {
     throw new OpenClawGuidedSetupResponseError(OPENCLAW_GUIDED_SETUP_METHODS.detect);
   }
   return {
     candidates,
-    ...(unavailableCandidates !== undefined ? { unavailableCandidates } : {}),
+    unavailableCandidates,
     manualProviders,
-    ...(authOptions !== undefined ? { authOptions } : {}),
+    authOptions,
     ...(prepareOptions !== undefined ? { prepareOptions } : {}),
-    ...(recommendedInstalls !== undefined ? { recommendedInstalls } : {}),
+    recommendedInstalls,
     workspace,
-    ...(typeof source.codexAppServerDetected === 'boolean'
-      ? { codexAppServerDetected: source.codexAppServerDetected }
-      : {}),
     ...(configuredModel !== undefined ? { configuredModel } : {}),
     setupComplete: source.setupComplete,
   };

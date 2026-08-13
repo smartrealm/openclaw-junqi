@@ -14,6 +14,8 @@ JunQi 当前安装器能够安装官方 OpenClaw npm 包、维持用户选择的
 
 本次已重新抓取并核对 OpenClaw 官方仓库主线提交 `812bbd88844769b9abf0ab8b586ada80380aa0f5`，同时保留当前本机稳定发行的复现记录。主线定义 Guided 协议和经典 Wizard；当前本机 Runtime 只注册 `wizard.start/next/status/cancel`。JunQi 依据当前 Runtime 对正式请求的结构化响应协商模式，不使用版本号作为能力开关。
 
+2026-08-13 再次审查时，官方 `main` 已前进到 `1d45930162ca3d1922e193b649c72b17192f1305`。下文“最新主线复审”以该提交为当前依据；前述提交只保留为首次实施时的历史基线，不能继续证明当前实现已经对齐。
+
 - [Onboarding overview](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/docs/start/onboarding-overview.md)
 - [Install guide](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/docs/install/index.md)
 - [Guided onboarding implementation](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/src/commands/onboard-guided.ts)
@@ -112,6 +114,77 @@ npm install -g openclaw@latest --allow-scripts openclaw
 | INS-10 | P0 | 连接与配置操作必须绑定当前所选 Runtime 和当前认证连接 | 首次设置启动前断开旧连接；连接目标忽略历史手动地址；`connected` 不再替代 Runtime Identity 核验 | 代码已修复，真机待验证 |
 | INS-11 | P1 | 官方短步骤应忠实呈现真实内容，不由客户端制造固定高度 | 删除通用步骤场景和正文切换容器的强制满高；页面主内容区继续拥有纵向滚动 | 代码已修复，真机待验证 |
 | INS-12 | P1 | 客户端国际化叶子必须保持稳定类型 | 删除 `storage.progress` 的对象与扁平字符串冲突，并在资源加载与测试中拒绝同路径类型冲突 | 代码已修复 |
+| INS-13 | P1 | 数据位置提交不是独立安装步骤 | 保留同一表单和内容标识，只锁定交互并在主操作显示忙碌状态，删除客户端自造百分比投影 | 代码已修复，真机待验证 |
+| INS-14 | P1 | 安装日志默认收起且只有一个控制入口 | 由共享 `SetupShell` 持有普通步骤日志状态；依赖安装默认显示时间线，只有用户主动切换才挂载执行记录，错误不自动展开 | 代码已修复，真机待验证 |
+| INS-15 | P0 | 官方配置终态后的连接必须重新绑定所选 Runtime | 生命周期请求显式选择 `selected-runtime`，重新解析当前端点与凭据后再建立认证连接 | 代码已修复，真机待验证 |
+
+## 最新主线复审
+
+### INS-16：自动候选未跳过明确无凭据项
+
+严重度：P1。
+
+官方 `onboard-guided.ts` 只自动尝试 `credentials !== false` 的候选。JunQi 的 `activateFirstWorkingGuidedCandidate` 遍历全部候选，明确登出的 CLI 也会进入真实激活，造成可预测的授权失败和额外等待。
+
+状态：已修复。自动梯子在调用激活前过滤 `credentials === false`，并有行为回归证明该候选不会产生请求。
+
+### INS-17：已有默认模型失败后仍继续替换候选
+
+严重度：P1。
+
+官方在 `existing-model` 探测失败后立即停止自动梯子，并把选择权交给手动阶段，避免工作区外探针的假阴性静默替换已有默认模型。JunQi 当前会继续尝试后续候选；现有测试还明确断言第一个 `existing-model` 失败后应激活第二个模型，因此测试固化了与上游相反的行为。
+
+状态：已修复。`existing-model` 激活失败后立即结束自动梯子，后续候选只保留给用户明确选择。
+
+### INS-18：自动激活后缺少路径确认
+
+严重度：P1。
+
+官方当前行为是先持久化已验证路径，再显示“使用此路径”或“查看其他选项”；选择其他选项会在已生效路径之上打开完整选择器。JunQi 成功激活后直接启动 onboarding chat，没有该确认步骤。
+
+现有规格第 9 条要求“用户确认候选后调用 activate”，比官方当前行为更严格，并与当前实现和上游顺序都不一致。实施前必须先决定采用官方“激活后确认并可改选”的顺序，还是修订为有正式依据的更严格桌面确认边界；不得继续保留文档与代码互相矛盾的状态。
+
+状态：已修复。规格已按官方“先激活并持久化，再确认使用或改选”的顺序统一；JunQi 在启动 onboarding chat 前呈现当前有效路径确认，改选页面继续明确显示已生效路径。
+
+### INS-19：setup admission busy 分类无法命中
+
+严重度：P1。
+
+官方当前返回 `UNAVAILABLE`、固定文案 `OpenClaw setup is already in progress; try again when it finishes.`，并在 details 中只提供 `retryable: true`。JunQi 仅识别 `wizard already running` 或不存在于当前上游的 `WIZARD_ALREADY_RUNNING`。因此 Classic 的 reclaim 恢复模式不会被选择，Guided 的 `operationError` 也没有 busy 映射，两条路径都会退化为通用错误。
+
+状态：已修复。单一判定器按官方 `UNAVAILABLE`、精确文案与 `retryable: true` 组合分类；Classic 进入 reclaim，Guided 显示可重试占用错误。旧的猜测性文案与错误码匹配已删除。
+
+### INS-20：不可用候选与官方安装建议未呈现
+
+严重度：P2。
+
+JunQi 已严格解析 `unavailableCandidates` 和 `recommendedInstalls`，但 Guided 页面没有消费它们。不可用候选携带的 `authOptionId`、`manualProviderId`、原因和修复入口因此不可见；无候选环境也看不到官方推荐安装项。官方 guided CLI 会展示这两组信息。
+
+状态：已修复。Guided 选择页面呈现不可用原因，仅在上游返回有效 `authOptionId` 或 `manualProviderId` 时提供对应修复动作；无候选时呈现官方推荐安装项及系统外部打开入口。
+
+### INS-21：检测字段消费边界不清
+
+严重度：P2。
+
+`configuredModel` 在最新版官方检测结果中仍存在，并同时派生 `setupComplete`；官方 guided CLI 没有把该字段单独渲染成一块 UI。JunQi 不直接展示它本身不构成与官方 UI 的确定差异，但当前代码也没有记录它在完成态、诊断和确认界面中的消费边界。
+
+`codexAppServerDetected` 已不在最新版官方 `SetupInferenceDetection` 中，JunQi 仍解析但没有消费者。该字段不能继续被描述为当前上游要求展示的信息；应在修复阶段完成全局引用核对后删除遗留类型和解析分支，而不是为它补造 UI。
+
+状态：已修复。`codexAppServerDetected` 类型和解析已删除，附带输入不会投影为客户端字段；`configuredModel` 保留为检测契约字段，不增加上游未定义的独立展示。
+
+### INS-22：Guided 取消能力没有完整 UI 闭环
+
+严重度：P2。
+
+`openclaw.chat` 正式支持 `wizardCancel`，JunQi 参数类型也已定义，但 controller 和页面没有暴露 chat 内嵌 Wizard 的取消操作。Provider 授权使用的 `OpenClawWizardClient.cancel()` 只在 Guided controller 离开或卸载时尽力调用，页面没有显式取消入口，也不呈现取消失败。现有规格已要求认证和准备操作支持取消。
+
+状态：已修复。Provider Wizard 的显式取消调用 `wizard.cancel`，并先废弃仍在等待的状态请求；chat 内嵌 Wizard 的显式取消发送 `wizardCancel`。两条失败路径都回到操作附近的真实错误状态。
+
+### 本轮验证顺序
+
+1. 候选梯子、严格协议解析、配置占用、两类取消与 Guided 页面状态定向回归 63 项通过。
+2. 完整前端测试 2719 项、脚本测试 238 项、lint、生产构建和官方文档链接验证通过；最终差异检查在交付前执行。
+3. 最新版 Guided 真实 provider、浏览器授权和取消仍需使用支持当前协议的 Runtime 做真机验证；当前自动化不代替该验证。
 
 ## 根因
 
@@ -126,6 +199,9 @@ npm install -g openclaw@latest --allow-scripts openclaw
 7. 显式启动命令与进程状态订阅曾同时驱动首次连接；端点就绪事件如果先于启动命令终态到达，会提前消耗所选 Runtime 的连接策略。当前实现把启动命令终态固定为首次连接的唯一触发点，订阅在该窗口内只更新诊断日志。
 8. 稳定向导骨架曾错误等同于固定内容高度，使官方 `done` 等短步骤被空白卡片撑满窗口；稳定边界应属于页面骨架和滚动所有权，而不是步骤正文高度。
 9. `storage.progress` 曾同时作为嵌套对象和扁平字符串存在。i18next 按路径解析时返回对象，错误文本因此进入用户界面。资源契约此前只检查键是否存在，没有检查同路径类型冲突。
+10. 数据位置提交曾被建模为新的页面内容标识，并显示由客户端计时生成的百分比。该状态既不是 OpenClaw 官方步骤，也不能证明原生迁移进度，造成用户看到额外步骤和页面闪变。
+11. 日志展开策略曾由每个设置页面分别传入，依赖安装页还在宽窗口默认挂载执行记录并在失败时自动切换，导致同一安装流程出现多套日志行为。
+12. 官方 Wizard 可能在完成时写入或轮换 Gateway 连接配置。交接后的普通重连会继续使用历史手动目标或旧凭据，因此进程健康仍可能无法建立新的认证连接。
 
 ## 不应修改的既有边界
 
@@ -138,4 +214,4 @@ npm install -g openclaw@latest --allow-scripts openclaw
 
 ## 验证边界
 
-本轮已完成官方源码、协议 schema、handler、权限描述符、JunQi TypeScript/Rust 调用图和 npm 命令的静态核对。数据位置确认与 Gateway 连接代次的新增定向回归已通过；完整验证结果以本轮结束时的 `PROJECT_STATUS.md` 为准。Windows、Linux、Docker、真实 provider 登录、真实 completion、官方对话式配置和 classic daemon 选择仍需目标环境验证。
+本轮已完成官方源码、协议 schema、handler、权限描述符、JunQi TypeScript/Rust 调用图和 npm 命令的静态核对。数据位置确认、提交内容稳定性、日志默认收起和 Gateway 所选 Runtime 重连的新增回归已通过；完整验证结果以本轮结束时的 `PROJECT_STATUS.md` 为准。Windows、Linux、Docker、真实 provider 登录、真实 completion、官方对话式配置和 classic daemon 选择仍需目标环境验证。

@@ -12,16 +12,18 @@ export type GuidedSetupCandidateLadderResult =
   | { activated: true; candidate: GuidedSetupCandidate; result: Extract<GuidedSetupActivation, { ok: true }> }
   | { activated: false; lastResult: Extract<GuidedSetupActivation, { ok: false }> | null };
 
-/** 按 OpenClaw 返回的推荐顺序逐项实测；只有官方激活成功才停止。 */
+/** 按 OpenClaw 官方自动候选规则尝试，避免替换已有但暂时无法核验的默认模型。 */
 export async function activateFirstWorkingGuidedCandidate(
   detection: GuidedSetupDetection,
   activator: GuidedSetupCandidateActivator,
 ): Promise<GuidedSetupCandidateLadderResult> {
   let lastResult: Extract<GuidedSetupActivation, { ok: false }> | null = null;
   for (const candidate of detection.candidates) {
+    if (candidate.credentials === false) continue;
     const result = await activator.activateCandidate(candidate);
     if (result.ok) return { activated: true, candidate, result };
     lastResult = result;
+    if (candidate.kind === "existing-model") break;
   }
   return { activated: false, lastResult };
 }

@@ -21,6 +21,7 @@ function coordinator(overrides: {
   restart?: () => Promise<GatewayRestartResult>;
   stop?: () => Promise<GatewayRestartResult>;
   reconnect?: () => void;
+  reconnectSelectedRuntime?: () => void;
   captureConnectionId?: () => string | null;
   waitForConnection?: (previousConnectionId: string | null) => Promise<string>;
   wait?: (delayMs: number) => Promise<boolean>;
@@ -32,6 +33,7 @@ function coordinator(overrides: {
       restart: overrides.restart ?? (async () => ({ success: true })),
       stop: overrides.stop ?? (async () => ({ success: true })),
       reconnect: overrides.reconnect ?? (() => undefined),
+      reconnectSelectedRuntime: overrides.reconnectSelectedRuntime ?? (() => undefined),
     },
     connection: {
       captureConnectionId: overrides.captureConnectionId ?? (() => 'old-connection'),
@@ -142,11 +144,11 @@ test('post-handoff reconnect waits for an existing lifecycle and returns its own
   const calls: string[] = [];
   const lifecycle = coordinator({
     restart: () => { calls.push('restart'); return pending.promise; },
-    reconnect: () => { calls.push('reconnect'); },
+    reconnectSelectedRuntime: () => { calls.push('reconnect-selected-runtime'); },
   });
 
   const restart = lifecycle.restart('wizard-reclaim');
-  const reconnect = lifecycle.reconnectAfterCurrent('wizard-completion');
+  const reconnect = lifecycle.reconnectSelectedRuntimeAfterCurrent('wizard-completion');
   pending.resolve({ success: true });
 
   assert.equal((await restart).action, 'restart');
@@ -154,7 +156,7 @@ test('post-handoff reconnect waits for an existing lifecycle and returns its own
   assert.equal(result.success, true);
   assert.equal(result.action, 'reconnect');
   assert.equal(result.source, 'wizard-completion');
-  assert.deepEqual(calls, ['restart', 'reconnect']);
+  assert.deepEqual(calls, ['restart', 'reconnect-selected-runtime']);
 });
 
 test('an unexpected active failure is normalized and a queued restart still runs', async () => {

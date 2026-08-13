@@ -6,7 +6,7 @@ import { activateFirstWorkingGuidedCandidate } from "./guidedSetupCandidateLadde
 const detection: GuidedSetupDetection = {
   candidates: [
     {
-      kind: "existing-model",
+      kind: "codex-cli",
       label: "First",
       detail: "First candidate",
       modelRef: "first/model",
@@ -20,7 +20,10 @@ const detection: GuidedSetupDetection = {
       recommended: false,
     },
   ],
+  unavailableCandidates: [],
   manualProviders: [],
+  authOptions: [],
+  recommendedInstalls: [],
   workspace: "/workspace",
   setupComplete: false,
 };
@@ -39,6 +42,47 @@ test("guided setup activates candidates in the OpenClaw response order", async (
   assert.deepEqual(calls, ["first/model", "second/model"]);
   assert.equal(result.activated, true);
   if (result.activated) assert.equal(result.candidate.modelRef, "second/model");
+});
+
+test("guided setup skips candidates whose credentials are explicitly unavailable", async () => {
+  const calls: string[] = [];
+  const result = await activateFirstWorkingGuidedCandidate({
+    ...detection,
+    candidates: [
+      { ...detection.candidates[0], credentials: false },
+      detection.candidates[1],
+    ],
+  }, {
+    activateCandidate: async (candidate) => {
+      calls.push(candidate.modelRef);
+      return { ok: true, modelRef: candidate.modelRef };
+    },
+  });
+
+  assert.deepEqual(calls, ["second/model"]);
+  assert.equal(result.activated, true);
+});
+
+test("guided setup stops after an existing model fails verification", async () => {
+  const calls: string[] = [];
+  const result = await activateFirstWorkingGuidedCandidate({
+    ...detection,
+    candidates: [
+      { ...detection.candidates[0], kind: "existing-model" },
+      detection.candidates[1],
+    ],
+  }, {
+    activateCandidate: async (candidate) => {
+      calls.push(candidate.modelRef);
+      return { ok: false, status: "auth", error: "unavailable" };
+    },
+  });
+
+  assert.deepEqual(calls, ["first/model"]);
+  assert.deepEqual(result, {
+    activated: false,
+    lastResult: { ok: false, status: "auth", error: "unavailable" },
+  });
 });
 
 test("guided setup preserves the last official failure after exhausting candidates", async () => {
