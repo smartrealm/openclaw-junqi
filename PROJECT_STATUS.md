@@ -21,6 +21,8 @@
 - 删除数据位置读取后的重复完成页和错误的自动推进路径；读取完成后始终停留在表单，用户点击“下一步”并提交成功后才进入运行时阶段。
 - 首次设置启动前关闭旧 Gateway 连接，只从当前所选 Runtime 解析连接目标；历史手动地址、默认端点和旧 connected 状态不能再作为安装流程成功证据。
 - 显式启动命令完成前，进程状态订阅只更新诊断日志；启动成功后只触发一次所选 Runtime 连接，启动或目标解析失败进入统一可见错误态。
+- 首次设置共享骨架不再把步骤正文强制撑满窗口；官方 `done`、短说明和紧凑状态按真实内容高度布局，页面主内容区继续统一承担纵向滚动。
+- 数据位置进度改用明确的字符串叶子；英语、简体中文和繁体中文资源在加载与测试阶段拒绝同路径对象与字符串类型冲突。
 
 ## 关键技术决策
 
@@ -41,6 +43,10 @@
 - `src/hooks/useSetupFlow/index.ts`
 - `src/pages/SetupPage/GuidedSetupScreen.tsx`
 - `src/pages/SetupPage/OpenClawConfigurationScreen.tsx`
+- `src/components/setup/SetupFlowPanels.tsx`
+- `src/components/setup/StorageSetupGate.tsx`
+- `src/i18n/resources.ts`
+- `src/motion/setupStepTransition.tsx`
 - `src/App.tsx`
 - `src-tauri/src/commands/setup/openclaw.rs`
 - `docs/quality/openclaw-native-installation-alignment-audit-2026-08-12.md`
@@ -49,16 +55,15 @@
 
 ## 测试与验证
 
-- 本轮数据位置与 Gateway 连接代次定向回归 37 项通过；测试覆盖读取不推进、用户提交边界、旧连接断开、所选 Runtime 目标解析、手动地址隔离、启动与状态订阅竞态、连接失败错误态和身份门禁。
-- 完整前端测试 2709 项和脚本测试 238 项通过；测试输出包含既有 Node 注册接口弃用警告，没有失败项。
+- 本轮短步骤布局与国际化资源定向回归 34 项通过；覆盖官方 `done` 紧凑布局、内容切换容器高度、数据位置表单骨架、三种语言资源以及同路径类型冲突检查。
+- 完整前端与脚本测试通过；测试输出包含既有 Node 注册接口弃用警告和服务端渲染 Tooltip 警告，没有失败项。
 - 本轮没有修改 Rust；既有 Rust 635 项通过、1 项忽略的结果未在本轮重跑。
 - `pnpm lint`、`pnpm build`、`pnpm verify:openclaw-docs` 与 `git diff --check` 通过。
-- 本轮安装流程与 Gateway 接管修复已提交为 `1b0e4016`。本机已生成包含该提交的 macOS ARM64 DMG，并通过磁盘映像完整性与可执行文件架构核验；该制品仅为本地安装验收包。
-- 本地验收包位于 `src-tauri/target/release/bundle/dmg/JunQi Desktop_3.1.0_aarch64.dmg`，SHA-256 为 `cd3a1836aa2cd71e8dfe9567a1f6b65084150142b97a06efb520cedde62327c7`；`hdiutil verify` 通过。
+- 本轮短步骤布局与国际化修复尚未提交，也未重新生成安装包；现有 macOS ARM64 DMG 不包含本轮修复，不能作为本轮视觉验收依据。
 
 ## 已知问题与未验证边界
 
-- 当前数据位置显式确认与 Gateway 连接代次修复尚未完成连续页面真机验收；新安装包已经生成，仍需实际安装后核验页面推进和旧连接隔离。
+- 当前数据位置显式确认、Gateway 连接代次、短步骤内容高度和国际化资源修复尚未完成连续页面真机验收。
 - 真实 provider 登录、真实 completion、官方 onboarding chat、钉钉授权和 Classic daemon 选择尚未在当前 macOS 安装包中完成端到端验证。
 - Windows、Linux、Docker、系统服务、凭据库和外部浏览器行为尚未在目标平台真机验证。
 - 当前本机稳定 OpenClaw `2026.7.1-2` 已复现 Classic 协议和 Guided unknown-method；最新版 Guided 真实 provider 流程仍需独立 Runtime 验证。
@@ -68,8 +73,9 @@
 
 ## 下一步顺序
 
-1. 用本机桌面流程确认数据位置页面不会自动跳过，并验证旧连接存在时仍建立所选 Runtime 的新身份连接。
-2. 在最新版 OpenClaw Runtime 上真机验证 Guided、真实模型、供应商授权与工作台交接。
-3. 分别验证 macOS、Windows、Linux 和 Docker。
-4. 完成暗色、窄窗口、键盘焦点和减少动态效果视觉验收。
-5. 未经明确要求不提交、打包、推送、打 tag 或发布。
+1. 重新生成本机安装包后验证官方 `done` 等短步骤按真实内容高度呈现，且数据位置进度不再显示国际化类型错误。
+2. 用本机桌面流程确认数据位置页面不会自动跳过，并验证旧连接存在时仍建立所选 Runtime 的新身份连接。
+3. 在最新版 OpenClaw Runtime 上真机验证 Guided、真实模型、供应商授权与工作台交接。
+4. 分别验证 macOS、Windows、Linux 和 Docker。
+5. 完成暗色、窄窗口、键盘焦点和减少动态效果视觉验收。
+6. 未经明确要求不提交、打包、推送、打 tag 或发布。

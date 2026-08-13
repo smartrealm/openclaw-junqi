@@ -275,9 +275,9 @@ export function SetupShell({
         data-setup-scroll-key={scrollKey ?? "setup"}
         className="flex min-h-0 flex-1 flex-col items-center overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 sm:px-6 sm:py-6"
       >
-        <SetupStepScene className="min-h-full flex-none">
+        <SetupStepScene className="flex-none">
           <section className={clsx(
-            "flex min-h-full w-full flex-col",
+            "flex w-full flex-col",
             wide ? "max-w-5xl" : "max-w-3xl",
           )}>
             <div className={clsx(
@@ -291,6 +291,7 @@ export function SetupShell({
             </div>
             <div
               data-setup-content-layout="stable"
+              data-setup-content-sizing="content"
               className={clsx(
                 wide ? "" : "rounded-xl border border-aegis-border bg-aegis-elevated p-4 shadow-sm sm:p-6",
                 "flex flex-col",

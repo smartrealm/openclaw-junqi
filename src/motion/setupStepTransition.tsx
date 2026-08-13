@@ -197,7 +197,7 @@ export function SetupContentScene({
   const context = useContext(SetupStepTransitionContext);
   const reducedMotion = context?.reducedMotion ?? true;
   const direction = setupContentMotionDirection(contentMotion);
-  const contentClassName = ['min-h-full w-full', className]
+  const contentClassName = ['w-full', className]
     .filter(Boolean)
     .join(' ');
 
@@ -210,7 +210,7 @@ export function SetupContentScene({
   }
 
   return (
-    <div className="grid min-h-full w-full overflow-x-clip">
+    <div className="grid w-full overflow-x-clip">
       <AnimatePresence initial={false} mode="popLayout" custom={direction}>
         <motion.div
           key={identity}

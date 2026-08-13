@@ -3870,6 +3870,7 @@
     "terminalIntegrationHint": "仅在要从系统终端直接运行 OpenClaw 时启用；JunQi 内置终端和 Gateway 不依赖它。会创建独立启动器并更新用户 PATH。启动器：{{path}}",
     "migrationLayoutLocked": "迁移会保持现有工作区与内部运行时的相对布局；Node.js、Git 和 npm 位置可以重新选择。",
     "progress": {
+      "label": "处理进度",
       "stoppingGateway": "正在停止旧 Gateway…",
       "copying": "正在复制 OpenClaw 数据…",
       "preparingFresh": "正在准备全新的 OpenClaw 环境…",
@@ -5066,7 +5067,6 @@
   "storage.save": "保存位置",
   "storage.loadingHint": "正在读取当前 OpenClaw 数据、工作区和运行时位置。",
   "storage.applyingHint": "正在保存所选位置并完成必要的数据与运行时交接，请不要关闭应用。",
-  "storage.progress": "处理进度",
   "storage.logSaving": "正在保存 OpenClaw 数据位置…",
   "storage.logSaved": "OpenClaw 数据位置已保存",
   "storage.logFailed": "存储位置未保存：{{message}}",

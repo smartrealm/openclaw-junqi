@@ -3877,6 +3877,7 @@
     "terminalIntegrationHint": "Enable only to run OpenClaw directly from a system terminal. JunQi's built-in terminal and Gateway do not require it. A dedicated launcher updates the user PATH. Launcher: {{path}}",
     "migrationLayoutLocked": "Migration preserves the workspace and internal runtime layout; Node.js, Git, and npm locations can be selected independently.",
     "progress": {
+      "label": "Progress",
       "stoppingGateway": "Stopping the previous Gateway…",
       "copying": "Copying OpenClaw data…",
       "preparingFresh": "Preparing a new OpenClaw environment…",
@@ -5043,7 +5044,6 @@
   "storage.save": "Save location",
   "storage.loadingHint": "Reading the current OpenClaw data, workspace, and runtime locations.",
   "storage.applyingHint": "Saving the selected locations and completing any required data and runtime handoff. Do not close the app.",
-  "storage.progress": "Progress",
   "storage.logSaving": "Saving the OpenClaw data location…",
   "storage.logSaved": "OpenClaw data location saved",
   "storage.logFailed": "Storage location was not saved: {{message}}",

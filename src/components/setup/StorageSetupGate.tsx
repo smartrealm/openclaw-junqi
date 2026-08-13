@@ -537,7 +537,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
             footer={(
               <div>
                 <div className="mb-2 flex items-center justify-between gap-4 text-xs text-aegis-text-muted">
-                  <span>{t('storage.progress', '处理进度')}</span>
+                  <span>{t('storage.progress.label', '处理进度')}</span>
                   <span className="tabular-nums">{progressPercent}%</span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-aegis-surface">
