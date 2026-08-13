@@ -8,12 +8,16 @@ test('accepts an existing valid config snapshot with its conflict hash', () => {
     valid: true,
     hash: 'config-hash',
     path: '/runtime/openclaw.json',
+    configRevisionHash: 'resolved-config-hash',
+    appliedConfigHash: 'resolved-config-hash',
     config: { agents: { list: [{ id: 'research' }] } },
   });
 
   assert.equal(snapshot.exists, true);
   assert.equal(snapshot.hash, 'config-hash');
   assert.equal(snapshot.path, '/runtime/openclaw.json');
+  assert.equal(snapshot.configRevisionHash, 'resolved-config-hash');
+  assert.equal(snapshot.appliedConfigHash, 'resolved-config-hash');
   assert.deepEqual(snapshot.config.agents?.list, [{ id: 'research' }]);
 });
 

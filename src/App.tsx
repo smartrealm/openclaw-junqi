@@ -41,10 +41,6 @@ import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
 import {
-  resolveGatewayConnectionTarget,
-  storeGatewayConnectionDeviceCredential,
-} from '@/services/gateway/GatewayConnectionTargetResolver';
-import {
   loadGatewayProcessLogs,
 } from '@/services/gateway/gatewayProcessObservation';
 import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
@@ -142,7 +138,7 @@ export default function App() {
   } = useChatStore();
   const officialMainSessionKey = useGatewayDataStore((state) => state.mainSessionKey);
 
-  // ── Auto-Pairing State ──
+  // 自动配对状态。
   const [pairingIssue, setPairingIssue] = useState<GatewayAuthorizationIssue | null>(null);
   const pairingTriggeredRef = useRef(false);
   const deferredModelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1004,12 +1000,11 @@ export default function App() {
   }, [addBootRecoveryLog, cachedSetupValidationPending, cancelGatewayMigrationRetry, loadAgentScopedModels, loadAvailableModels, restartGatewayFromBoot, setWorkspaceStartupMode, setupComplete, startInitialWorkspaceLoad, surfaceVerifiedGatewayHandoffFailure]);
 
 
-  // ── Pairing Handlers ──
+  // 配对操作统一通过 Gateway 编排边界执行。
   const handlePairingComplete = useCallback(async (token: string) => {
     debugLog('gateway', '[App] [pairing] Pairing complete - reconnecting with new token');
-    const target = await resolveGatewayConnectionTarget();
-    await storeGatewayConnectionDeviceCredential(target.wsUrl, token);
-    // 配对完成后以新的凭据重新连接。
+    // 手工输入的是共享 token，只在当前进程用于重连；设备凭据必须由 OpenClaw
+    // 握手签发并按设备凭据边界持久化，不能把两类 secret 混存。
     gatewayManager.reconnectWithToken(token);
     setPairingIssue(null);
     pairingTriggeredRef.current = false;
@@ -1017,9 +1012,8 @@ export default function App() {
 
   const handlePairingApprove = useCallback(async (requestId: string) => {
     await approveSelectedGatewayDevice(requestId);
-    // The selected OpenClaw runtime has confirmed the exact request. Wake the
-    // existing privileged operation immediately instead of making the user
-    // wait for its next scheduled authorization probe.
+    // 所选 OpenClaw 运行时已经确认准确请求，立即唤醒原特权操作，
+    // 不再等待下一次定时授权探测。
     gateway.retryPrivilegedAuthorizationNow();
   }, []);
 
@@ -1027,8 +1021,7 @@ export default function App() {
     debugLog('gateway', '[App] Pairing cancelled by user');
     setPairingIssue(null);
     pairingTriggeredRef.current = false;
-    // Stop gateway pairing retry loop — user chose to dismiss
-    gateway.stopPairingRetry();
+    gatewayManager.cancelPairing();
     gateway.cancelPrivilegedAuthorizationRetry();
     gateway.cancelApprovalAuthorizationRetry();
   }, []);

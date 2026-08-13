@@ -1,5 +1,7 @@
 # OpenClaw Wizard 终态交接审计
 
+更新时间：2026-08-14
+
 ## 范围与依据
 
 本次审计覆盖首次配置中的 `wizard.next`、授权步骤投影、官方终态、Gateway 服务交接、认证连接核验和失败重试。协议依据为 OpenClaw 官方 `WizardSession`、Gateway Wizard handler 和钉钉官方连接器设备授权实现；当前安装版本只用于复现，不作为能力开关。
@@ -142,3 +144,44 @@
 
 - 该历史路径的定向测试曾通过，现已由原生安装对齐测试取代。
 - 应用进程内组件重建路径尚待 macOS 安装包真机验证。
+
+## 2026-08-14 活动配置与认证连接接管审计
+
+### 官方源码依据
+
+- 基准为 OpenClaw `origin/main` 提交 `b3d5265f58522bab67e06168d436b3b328cbae60`。相对前一基线的新增提交只涉及 Docker 安全加固，下列 Wizard、配置应用、重载与认证轮换契约没有变化。
+- `WizardSessionPrompter.outro` 产生的 `Done` 仍是 `done: false` 的普通 note；Runner 返回后下一次 `wizard.next` 才提供 `done: true` 终态。
+- Wizard 写入 `gateway.auth`、端口或 bind 后需要 Runtime 重载。Hosted Wizard 会保留活动工作，正常重启可延后至 Runner 收敛之后，最长活动工作等待为五分钟。
+- `config.get.configRevisionHash` 与 `appliedConfigHash` 相等是活动 Runtime 已采用磁盘修订的正式证据。`config.get.hash` 只属于写入冲突控制，不能证明活动修订。
+- 认证配置轮换可能在实际进程重启前关闭旧共享认证连接，因此向导前仍健康的 socket 和旧 token 都不能作为完成证据。
+
+### 根因
+
+- 旧交接只检查连接和健康探测，没有核对活动配置修订，可能在 OpenClaw 官方重启尚未发出前把旧连接误报为 Ready。
+- 旧交接在较短窗口后显式重启 Gateway，可能与 OpenClaw 已排队的官方重启竞态，造成双重重启、会话丢失或认证连接反复切换。
+- 连接收敛层没有把 Runtime Identity 核验失败绑定到当前连接代次，用户只能看到通用 60 秒超时；进程观察的瞬时错误又可能过早终止仍会成功的 WebSocket 认证。
+- Guided 供应商 Wizard 曾把 `status: done` 单独视为终态，可能跳过仍需确认的官方步骤。
+- 手工输入的 Gateway shared token 曾写入设备凭据持久层，混淆两类 secret 的所有权和生命周期。
+
+### 当前实现
+
+- Guided、Classic 与渠道 Wizard 都只接受 `done === true` 的终态；非终态步骤继续呈现，不从标题或 status 猜测完成。
+- 交接重新解析当前所选 Runtime 的端点与凭据，在同一已核验连接上要求非空 `configRevisionHash === appliedConfigHash`。
+- 官方重载等待、连接轮换、最多一次补偿重启、模型核验和最终二次修订核验共享一个六分钟绝对截止时间。普通等待超时不主动重启；只有正式配置 `gateway.reload.mode: off` 或官方健康响应 `configReload.hotReloadStatus: disabled` 明确重载关闭时才通过唯一生命周期协调器补发一次重启。
+- 生命周期屏障携带真实重启尝试代次。代次只在协调器调用原生 `manager.restart()` 前递增，恢复动作内部重启、结果未知的重启和两次屏障之间快速完成的重启都会禁止同一交接事务再次补偿。
+- Runtime Identity 核验失败立即返回当前连接的具体诊断；连接尝试终态失败和重试耗尽才结束收敛，进程观察瞬时错误只保留为待定诊断。
+- 进入 Ready 前再次在同一连接围栏读取活动配置修订；只有连接标识和已核验修订都未改变才可完成，修订漂移时回到同一事务重新核验。
+- WebSocket 只有在仍处于打开状态且 Runtime Identity 核验完成后才发布连接可用；核验等待期间连接关闭或换代会作废待定身份，迟到结果不能残留为已核验 Runtime。
+- Gateway Manager 只管理连接轮次，Connection 独占 WebSocket 尝试、退避与耗尽。进程健康观察不会重置退避或并发发起连接；显式同目标连接先断开再重建，不能因底层无操作而停在探测状态。
+- 新的 `connect` 响应被接受后立即清除旧配对等待，后续协议或身份失败进入有界普通重试，不能无限按配对间隔轮询。普通配对取消通过 Manager 统一收敛活动握手与 timer gap，且只有用户显式恢复才开启新轮次。
+- 管理写请求使用临时特权连接时，在握手完成后、发送 RPC 前再次核对主连接标识、端点和凭据；来源换代后只允许拒绝，不能事后报告失败却已经发送副作用。
+- shared token 只用于当前进程重连，设备凭据只接受 OpenClaw 握手签发并存入设备凭据边界。
+
+### 验证边界
+
+- 定向连接安全、生命周期、配置应用和 Wizard 回归已通过。
+- 完整 `pnpm lint` 已通过，包含模块边界、版本一致性和 TypeScript 类型检查。
+- 完整 `pnpm test` 已通过，共覆盖 2790 项前端测试和 238 项脚本测试。
+- `pnpm build` 与 `pnpm verify:openclaw-docs` 已通过；生产构建同时验证了协作插件和钉钉业务插件产物。
+- 本机安装的 OpenClaw `2026.7.1-2` 缺少活动配置修订字段，只能复现“证据不可用”分支，不能验证新版成功接管链路。
+- 最新 OpenClaw、macOS 安装包、Windows 和 Linux 上的真实 token 轮换、官方延迟重启与新认证连接仍需真机端到端验证。

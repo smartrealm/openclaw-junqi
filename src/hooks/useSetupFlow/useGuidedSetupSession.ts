@@ -11,6 +11,8 @@ import {
   type GuidedSetupDetection,
 } from "@/services/gateway/OpenClawGuidedSetupClient";
 import {
+  isOpenClawWizardTerminalResult,
+  OpenClawWizardCancelledError,
   OpenClawWizardClient,
   type OpenClawWizardResult,
   type OpenClawWizardStep,
@@ -58,6 +60,30 @@ interface GuidedSetupSessionPorts {
   enabled: boolean;
   onComplete: () => Promise<void>;
   onUnsupported: () => void;
+}
+
+export type GuidedProviderWizardDisposition =
+  | { kind: "continue"; step: OpenClawWizardStep }
+  | { kind: "resume" }
+  | { kind: "complete" }
+  | { kind: "cancelled" }
+  | { kind: "error"; error?: string };
+
+/**
+ * Hosted Wizard 的 status 是会话状态快照，只有 done=true 才是终态。
+ * 合法的中间步骤可同时携带 status=done，不能据此跳过用户确认。
+ */
+export function classifyGuidedProviderWizardResult(
+  result: OpenClawWizardResult,
+): GuidedProviderWizardDisposition {
+  const terminal = isOpenClawWizardTerminalResult(result);
+  if (result.error || (terminal && result.status === "error")) {
+    return { kind: "error", ...(result.error ? { error: result.error } : {}) };
+  }
+  if (terminal && result.status === "cancelled") return { kind: "cancelled" };
+  if (terminal && result.status === "done") return { kind: "complete" };
+  if (result.step) return { kind: "continue", step: result.step };
+  return { kind: "resume" };
 }
 
 function operationError(error: unknown, t: (key: string, fallback: string) => string): string {
@@ -258,17 +284,21 @@ export function useGuidedSetupSession({
     let current = result;
     while (true) {
       assertCurrent(operation);
-      if (current.error || current.status === "error") {
-        throw new Error(current.error || t("setup.wizard.failed", "OpenClaw 配置向导执行失败。"));
-      }
-      if (!current.done && current.status !== "done") {
-        if (!current.step) {
+      const disposition = classifyGuidedProviderWizardResult(current);
+      switch (disposition.kind) {
+        case "error":
+          throw new Error(disposition.error || t("setup.wizard.failed", "OpenClaw 配置向导执行失败。"));
+        case "cancelled":
+          throw new OpenClawWizardCancelledError();
+        case "resume":
           current = await wizardClientRef.current!.resume({ timeoutMs: null });
           continue;
-        }
-        setWizardStep(current.step);
-        setPhase("provider-wizard");
-        return;
+        case "continue":
+          setWizardStep(disposition.step);
+          setPhase("provider-wizard");
+          return;
+        case "complete":
+          break;
       }
       break;
     }

@@ -516,14 +516,23 @@ test('BUG-ONB-40 lost Wizard sessions retain an unknown terminal state without r
     wizardHook.indexOf('const recoverAfterGatewayHandoff'),
   );
 
-  assert.match(setupFlow, /getGatewayToken\(\)\.catch\(\(\) => target\.token/);
-  assert.match(setupFlow, /getGatewayDeviceCredentialForUrl\(gatewayWsUrl\)/);
-  assert.match(setupFlow, /gatewayManager\.connect\(gatewayWsUrl, token, deviceToken\)/);
-  assert.match(setupFlow, /const recoverAfterGatewayHandoff/);
+  assert.match(
+    wizardHook,
+    /resolveGatewayConnectionTarget\(\{\s*targetScope:\s*"selected-runtime",?\s*\}\)/s,
+  );
+  assert.match(
+    wizardHook,
+    /gatewayManager\.connect\(\s*connectionTarget\.wsUrl,\s*connectionTarget\.token,\s*connectionTarget\.deviceToken,\s*\)/s,
+  );
+  assert.doesNotMatch(
+    wizardHook,
+    /getGatewayToken\(\)\.catch|getGatewayDeviceCredentialForUrl|target\.token/,
+  );
+  assert.match(wizardHook, /const recoverAfterGatewayHandoff/);
   assert.match(recovery, /reconcileWizardSessionLoss/);
   assert.match(recovery, /terminal-unknown/);
   assert.doesNotMatch(recovery, /resolveOnboardingRequirement|\.start\(|restartAfterSessionLoss|status: "done"/);
-  assert.match(setupFlow, /error instanceof GatewayPrivilegedSourceChangedError/);
+  assert.match(wizardHook, /error instanceof GatewayPrivilegedSourceChangedError/);
 });
 
 test('BUG-ONB-50 retry does not infer completion for an upstream-reaped Wizard session', () => {

@@ -24,6 +24,23 @@ function failedGatewayCall(
 }
 
 describe('GatewayConnection request identity', () => {
+  it('replays an exhausted retry state to a late convergence subscriber', () => {
+    const connection = new GatewayConnection();
+    const transport = connection as unknown as {
+      emitRetryState: (phase: 'exhausted', extra: { error: string }) => void;
+    };
+    transport.emitRetryState('exhausted', { error: 'selected runtime credential unavailable' });
+
+    let diagnostic = '';
+    const unsubscribe = connection.subscribeRetryState((state) => {
+      if (state.phase === 'exhausted') diagnostic = state.error ?? '';
+    });
+
+    assert.equal(diagnostic, 'selected runtime credential unavailable');
+    assert.equal(connection.getRetryState().phase, 'exhausted');
+    unsubscribe();
+  });
+
   it('prefers the native desktop platform and never guesses an unknown host is Windows', async () => {
     assert.equal(platformFromNativeOs('darwin'), 'macos');
     assert.equal(platformFromNativeOs('windows'), 'windows');

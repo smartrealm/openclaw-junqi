@@ -16,6 +16,10 @@ export interface TransitionResult {
   actions: GatewayAction[];
 }
 
+interface GatewayTransitionOptions {
+  allowConnect?: boolean;
+}
+
 interface TransitionRule {
   from: GatewayState;
   event: string;
@@ -67,7 +71,10 @@ export class GatewayStateMachine {
   }
 
   /** 处理事件；没有显式规则时保持当前状态。 */
-  transition(event: GatewayEvent): TransitionResult {
+  transition(event: GatewayEvent, options: GatewayTransitionOptions = {}): TransitionResult {
+    if (event.type === 'WS_OPEN') {
+      return this.apply(this.state, event.type, GatewayState.CONNECTED, []);
+    }
     if (event.type === 'INITIALIZE' || event.type === 'RECOVERY_REQUESTED') {
       return this.apply(this.state, event.type, GatewayState.DETECTING, []);
     }
@@ -104,15 +111,21 @@ export class GatewayStateMachine {
       if (this.state === GatewayState.CONNECTED || this.state === GatewayState.CONNECTING) {
         return { state: this.state, actions: ['NONE'] };
       }
-      if (endpointReady) {
+      if (endpointReady && options.allowConnect !== false) {
         return this.apply(this.state, 'STATUS_RECEIVED', GatewayState.CONNECTING, ['CONNECT']);
       }
+      return { state: this.state, actions: ['NONE'] };
     }
 
     // 查找不依赖事件载荷的静态规则。
     const rule = RULES.find(r => r.from === this.state && r.event === event.type);
     if (!rule) return { state: this.state, actions: ['NONE'] };
     return this.apply(rule.from, rule.event, rule.to, rule.actions);
+  }
+
+  /** Connection 自己持有退避轮次时只同步状态，不创建新的连接副作用。 */
+  markConnectionRetrying(): TransitionResult {
+    return this.apply(this.state, 'CONNECTION_RETRYING', GatewayState.CONNECTING, []);
   }
 
   private apply(_from: GatewayState, _event: string, to: GatewayState, actions: GatewayAction[]): TransitionResult {
@@ -133,6 +146,7 @@ export class GatewayStateMachine {
       error,
       retrying,
       selectedGatewayReady,
+      connectionAttemptError: null,
     };
   }
 }

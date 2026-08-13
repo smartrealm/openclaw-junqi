@@ -138,7 +138,9 @@ export async function resolveGatewayConnectionTarget(
   const token = request.useTokenOverride
     ? (request.tokenOverride?.trim() ?? '')
     : sameSelectedRuntime
-      ? await dependencies.getToken().catch(() => configured?.token ?? '')
+      ? request.targetScope === 'selected-runtime'
+        ? await dependencies.getToken()
+        : await dependencies.getToken().catch(() => configured?.token ?? '')
       : '';
   // OpenClaw 共享 Gateway token 已能完成设备签名握手。此时提前读取独立设备 token
   // 既不会改变握手参数，也会在 macOS 首次启动时额外触发 Keychain 授权。

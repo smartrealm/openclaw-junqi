@@ -4,9 +4,11 @@ import type { GatewayHelloObservation, RuntimeIdentity } from '@/types/gatewayRu
 import {
   bindCollaborationRuntimeIdentity,
   buildGatewayHelloObservation,
+  getCurrentRuntimeIdentityFailure,
   getCurrentRuntimeIdentity,
   invalidateGatewayRuntimeIdentity,
   observeGatewayHello,
+  subscribeRuntimeIdentityFailure,
 } from './runtimeIdentity';
 
 function identity(connectionId: string): RuntimeIdentity {
@@ -105,4 +107,40 @@ test('durable collaboration identity binds only to the active hello connection',
   assert.equal(bound?.runtimeId, 'instance-1');
   assert.equal(getCurrentRuntimeIdentity()?.runtimeId, 'instance-1');
   await invalidateGatewayRuntimeIdentity('conn-bound', async () => true);
+});
+
+test('current connection attestation failure is published with its connection fence', async () => {
+  const failures: Array<string | null> = [];
+  const unsubscribe = subscribeRuntimeIdentityFailure((failure) => {
+    failures.push(failure ? `${failure.connectionId}:${failure.diagnostic}` : null);
+  });
+
+  await assert.rejects(
+    observeGatewayHello(observation('conn-failed'), async () => {
+      throw new Error('selected runtime path mismatch');
+    }),
+    /selected runtime path mismatch/,
+  );
+
+  assert.deepEqual(getCurrentRuntimeIdentityFailure(), {
+    connectionId: 'conn-failed',
+    diagnostic: 'selected runtime path mismatch',
+  });
+  assert.equal(failures.at(-1), 'conn-failed:selected runtime path mismatch');
+  unsubscribe();
+  await invalidateGatewayRuntimeIdentity('conn-failed', async () => true);
+});
+
+test('a stale attestation failure cannot replace a newer verified connection', async () => {
+  let rejectOld!: (reason?: unknown) => void;
+  const oldPromise = new Promise<RuntimeIdentity>((_resolve, reject) => { rejectOld = reject; });
+  const pendingOld = observeGatewayHello(observation('conn-stale'), async () => oldPromise);
+
+  await observeGatewayHello(observation('conn-current'), async () => identity('conn-current'));
+  rejectOld(new Error('stale failure'));
+  await assert.rejects(pendingOld, /stale failure/);
+
+  assert.equal(getCurrentRuntimeIdentityFailure(), null);
+  assert.equal(getCurrentRuntimeIdentity()?.connectionId, 'conn-current');
+  await invalidateGatewayRuntimeIdentity('conn-current', async () => true);
 });

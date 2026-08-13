@@ -98,6 +98,23 @@ test('首次设置目标范围忽略同一请求携带的手工地址', async ()
   assert.equal(target.token, 'selected-runtime-token');
 });
 
+test('首次设置无法重读所选 Runtime 凭据时拒绝复用旧值或设备凭据', async () => {
+  let deviceCredentialReads = 0;
+  await assert.rejects(
+    resolveGatewayConnectionTarget({
+      targetScope: 'selected-runtime',
+    }, dependencies({
+      getToken: async () => { throw new Error('selected runtime credential unavailable'); },
+      getDeviceCredential: async () => {
+        deviceCredentialReads += 1;
+        return { runtimeKey: 'endpoint', token: 'device-token', persistence: 'system', migrated: false };
+      },
+    })),
+    /selected runtime credential unavailable/,
+  );
+  assert.equal(deviceCredentialReads, 0);
+});
+
 test('an explicit token is request-scoped and bypasses stored device credentials', async () => {
   let credentialLookups = 0;
   const target = await resolveGatewayConnectionTarget({

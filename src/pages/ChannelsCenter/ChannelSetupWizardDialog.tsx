@@ -6,6 +6,7 @@ import { gateway } from '@/services/gateway';
 import { GatewayRpcError } from '@/services/gateway/Connection';
 import {
   createScopedOpenClawWizardSessionStore,
+  isOpenClawWizardTerminalResult,
   OPENCLAW_WIZARD_SESSION_STORAGE_KEYS,
   OpenClawWizardClient,
   type OpenClawWizardConfiguredAccount,
@@ -25,9 +26,9 @@ function isUnsupportedChannelsWizard(error: unknown): boolean {
     && /(wizard\.start|flow|channel|unknown\s+(field|key)|unrecognized|invalid\s+params)/i.test(error.message);
 }
 
-function terminalResultError(result: OpenClawWizardResult): string | null {
-  if (result.status === 'error' || result.error) {
-    return result.error?.trim() || 'OpenClaw channels wizard failed.';
+function terminalResultError(result: OpenClawWizardResult, fallback: string): string | null {
+  if (result.error || (isOpenClawWizardTerminalResult(result) && result.status === 'error')) {
+    return result.error?.trim() || fallback;
   }
   return null;
 }
@@ -66,13 +67,16 @@ export function ChannelSetupWizardDialog({
   const [unsupported, setUnsupported] = useState(false);
 
   const applyResult = (result: OpenClawWizardResult) => {
-    const resultError = terminalResultError(result);
+    const resultError = terminalResultError(result, t(
+      'channelsCenter.wizardFailed',
+      'OpenClaw 渠道配置向导执行失败。',
+    ));
     if (resultError) {
       setError(resultError);
       setStep(result.step ?? null);
       return;
     }
-    if (result.done || result.status === 'done') {
+    if (isOpenClawWizardTerminalResult(result) && result.status === 'done') {
       onComplete(result.accounts ?? []);
       return;
     }

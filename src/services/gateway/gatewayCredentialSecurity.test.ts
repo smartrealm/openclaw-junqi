@@ -168,7 +168,48 @@ function sourceConnection() {
   };
 }
 
-function createMemoryGatewayConnection(options: GatewayConnectionOptions = {}) {
+function createRuntimeIdentity(connectionId: string): RuntimeIdentity {
+  return {
+    runtimeId: null,
+    targetFingerprint: `target-${connectionId}`,
+    connectionId,
+    endpoint: 'ws://127.0.0.1:18789',
+    gatewayVersion: '2026.7.1',
+    protocol: 4,
+    stateDir: '/tmp/openclaw',
+    configPath: '/tmp/openclaw/openclaw.json',
+    localStateDir: '/tmp/openclaw',
+    localConfigPath: '/tmp/openclaw/openclaw.json',
+    deploymentKind: 'managed_child',
+    ownership: 'junqi_managed',
+    persistence: 'desktop_bound',
+    installTarget: 'native_cli',
+    endpointAttestation: 'matched',
+    pathAttestation: 'matched',
+    desktopMutationAllowed: true,
+    desktopExitContinuity: false,
+    verified: true,
+    issues: [],
+    authMode: 'token',
+    methods: [],
+    events: [],
+    negotiatedRole: 'operator',
+    negotiatedScopes: ['operator.admin'],
+    supervisorLifecycle: 'running',
+    supervisorPort: 18789,
+    observedAtMs: 100,
+  };
+}
+
+function createMemoryGatewayConnection(
+  options: GatewayConnectionOptions = {},
+  dependencies: {
+    attestRuntimeIdentity?: (observation: ReturnType<typeof buildGatewayHelloObservation>) => Promise<RuntimeIdentity | null>;
+    invalidateRuntimeIdentity?: (connectionId: string) => Promise<boolean>;
+    connectTimeoutMs?: number;
+    pairingRetryMs?: number;
+  } = {},
+) {
   return new GatewayConnection(options, {
     resolvePlatform: async () => 'linux',
     signDeviceChallenge: async (params) => ({
@@ -178,6 +219,16 @@ function createMemoryGatewayConnection(options: GatewayConnectionOptions = {}) {
       signedAt: params.signedAt,
       nonce: params.nonce,
     }),
+    attestRuntimeIdentity: dependencies.attestRuntimeIdentity
+      ?? (async (observation) => ({
+        connectionId: observation.connectionId,
+        verified: true,
+      } as RuntimeIdentity)),
+    ...(dependencies.invalidateRuntimeIdentity
+      ? { invalidateRuntimeIdentity: dependencies.invalidateRuntimeIdentity }
+      : {}),
+    ...(dependencies.connectTimeoutMs ? { connectTimeoutMs: dependencies.connectTimeoutMs } : {}),
+    ...(dependencies.pairingRetryMs !== undefined ? { pairingRetryMs: dependencies.pairingRetryMs } : {}),
   });
 }
 
@@ -531,6 +582,331 @@ describe('Gateway credential security regression gates', () => {
     await waitForSocketRequest(socket, 'connect');
     assert.equal(connection.getCapabilityEvidence('audit.list')?.state, 'advertised');
     assert.equal(connection.getCapabilityEvidence('tools.catalog'), null);
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('does not publish a connected workspace before runtime identity attestation completes', async () => {
+    resetSockets();
+    let resolveIdentity!: (identity: RuntimeIdentity) => void;
+    const pendingIdentity = new Promise<RuntimeIdentity>((resolve) => {
+      resolveIdentity = resolve;
+    });
+    const statuses: boolean[] = [];
+    const connection = createMemoryGatewayConnection({}, {
+      attestRuntimeIdentity: () => pendingIdentity,
+    });
+    connection.setCallbacks({
+      onMessage: () => {},
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onStatusChange: (status) => { statuses.push(status.connected); },
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') acceptHandshake(socket, message, 'attested-connection');
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    await turn();
+
+    assert.equal(connection.isConnected(), false);
+    assert.equal(connection.getPendingRuntimeIdentityConnectionId(), 'attested-connection');
+    assert.equal(statuses.includes(true), false);
+
+    resolveIdentity({ connectionId: 'attested-connection', verified: true } as RuntimeIdentity);
+    await turn();
+    assert.equal(connection.isConnected(), true);
+    assert.equal(statuses.at(-1), true);
+    assert.equal(connection.getPendingRuntimeIdentityConnectionId(), null);
+    assert.equal(connection.getRuntimeIdentityHandshakeFailure(), null);
+
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('运行时身份核验失败在 socket 关闭后仍可供连接收敛回放', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection({}, {
+      attestRuntimeIdentity: async (observation) => ({
+        ...(createRuntimeIdentity(observation.connectionId)),
+        connectionId: observation.connectionId,
+        verified: false,
+        issues: ['runtime_path_mismatch'],
+      }),
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') acceptHandshake(socket, message, 'replayable-failure');
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    await turn();
+
+    assert.deepEqual(connection.getRuntimeIdentityHandshakeFailure(), {
+      connectionId: 'replayable-failure',
+      diagnostic: 'runtime_path_mismatch',
+    });
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('失效等待中的身份并拒绝正在关闭 socket 的迟到核验结果', async () => {
+    resetSockets();
+    let resolveIdentity!: (identity: RuntimeIdentity) => void;
+    const invalidated: string[] = [];
+    const pendingIdentity = new Promise<RuntimeIdentity>((resolve) => {
+      resolveIdentity = resolve;
+    });
+    const statuses: boolean[] = [];
+    const connection = createMemoryGatewayConnection({}, {
+      attestRuntimeIdentity: () => pendingIdentity,
+      invalidateRuntimeIdentity: async (connectionId) => {
+        invalidated.push(connectionId);
+        return true;
+      },
+    });
+    connection.setCallbacks({
+      onMessage: () => {},
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onStatusChange: (status) => { statuses.push(status.connected); },
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') acceptHandshake(socket, message, 'closing-connection');
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    await turn();
+
+    socket.readyState = MemoryWebSocket.CLOSING;
+    resolveIdentity({ connectionId: 'closing-connection', verified: true } as RuntimeIdentity);
+    await turn();
+
+    assert.equal(connection.isConnected(), false);
+    assert.equal(connection.getAttestedConnectionId(), null);
+    assert.equal(statuses.includes(true), false);
+    assert.deepEqual(invalidated, ['closing-connection']);
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('新的 connect 响应会清理旧配对状态并恢复有界普通重试', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection({}, {
+      attestRuntimeIdentity: async () => null,
+      connectTimeoutMs: 100,
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const pairingSocket = MemoryWebSocket.instances[0];
+    pairingSocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      pairingSocket.receive({
+        type: 'res',
+        id: message.id,
+        ok: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'pairing required',
+          details: { code: 'PAIRING_REQUIRED', requestId: 'pairing-reset' },
+        },
+      });
+    };
+    challenge(pairingSocket);
+    await waitForSocketRequest(pairingSocket, 'connect');
+    await turn();
+
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const acceptedSocket = MemoryWebSocket.instances[1];
+    acceptedSocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      acceptHandshake(acceptedSocket, message, 'invalid-identity');
+    };
+    challenge(acceptedSocket);
+    await waitForSocketRequest(acceptedSocket, 'connect');
+    await turn();
+
+    assert.deepEqual(acceptedSocket.closeCalls, [{
+      code: 4001,
+      reason: 'Gateway runtime identity attestation failed',
+    }]);
+    assert.equal(connection.getRetryState().phase, 'backoff');
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('取消普通配对会失效已发起的配对握手并忽略迟到拒绝', async () => {
+    resetSockets();
+    const authorizationIssues: GatewayAuthorizationIssue[] = [];
+    const connection = createMemoryGatewayConnection({}, { pairingRetryMs: 0 });
+    connection.setCallbacks({
+      onMessage: () => {},
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onStatusChange: () => {},
+      onAuthorizationIssue: (issue) => { authorizationIssues.push(issue); },
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const firstSocket = MemoryWebSocket.instances[0];
+    firstSocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      firstSocket.receive({
+        type: 'res',
+        id: message.id,
+        ok: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'pairing required',
+          details: { code: 'PAIRING_REQUIRED', requestId: 'initial-pairing' },
+        },
+      });
+    };
+    challenge(firstSocket);
+    await waitForSocketRequest(firstSocket, 'connect');
+    await waitForSocketCount(2);
+
+    const pendingPairingSocket = MemoryWebSocket.instances[1];
+    challenge(pendingPairingSocket);
+    const pendingHandshake = await waitForSocketRequest(pendingPairingSocket, 'connect');
+    const issueCountAtCancel = authorizationIssues.length;
+
+    connection.stopPairingRetry();
+    assert.equal(pendingPairingSocket.readyState, MemoryWebSocket.CLOSED);
+    assert.equal(connection.getRetryState().phase, 'idle');
+    assert.deepEqual(connection.getStatus(), { connected: false, connecting: false });
+
+    pendingPairingSocket.receive({
+      type: 'res',
+      id: pendingHandshake.id,
+      ok: false,
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'pairing required',
+        details: { code: 'PAIRING_REQUIRED', requestId: 'late-pairing' },
+      },
+    });
+    await wait(20);
+
+    assert.equal(MemoryWebSocket.instances.length, 2);
+    assert.equal(authorizationIssues.length, issueCountAtCancel);
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('配对 socket 已关闭且重试计时器仍等待时取消会发布 idle', async () => {
+    resetSockets();
+    const retryStates: string[] = [];
+    const connection = createMemoryGatewayConnection({}, { pairingRetryMs: 60_000 });
+    connection.subscribeRetryState((state) => { retryStates.push(state.phase); });
+    connection.setCallbacks({
+      onMessage: () => {},
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onStatusChange: () => {},
+      onAuthorizationIssue: () => {},
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      socket.receive({
+        type: 'res',
+        id: message.id,
+        ok: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'pairing required',
+          details: { code: 'PAIRING_REQUIRED', requestId: 'timer-gap-pairing' },
+        },
+      });
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    await wait(20);
+
+    assert.equal(socket.readyState, MemoryWebSocket.CLOSED);
+    assert.notEqual(connection.getRetryState().phase, 'idle');
+
+    connection.stopPairingRetry();
+    assert.equal(connection.getRetryState().phase, 'idle');
+    assert.equal(retryStates.at(-1), 'idle');
+    assert.deepEqual(connection.getStatus(), { connected: false, connecting: false });
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('配对拒绝与 close 之间取消时不会启动配对轮询', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection({}, { pairingRetryMs: 0 });
+    connection.setCallbacks({
+      onMessage: () => {},
+      onStreamChunk: () => {},
+      onStreamEnd: () => {},
+      onStatusChange: () => {},
+      onAuthorizationIssue: (issue) => {
+        if (issue.kind === 'pairing_required') connection.stopPairingRetry();
+      },
+    });
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      socket.receive({
+        type: 'res',
+        id: message.id,
+        ok: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'pairing required',
+          details: { code: 'PAIRING_REQUIRED', requestId: 'cancel-before-close' },
+        },
+      });
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    await wait(20);
+
+    assert.equal(socket.readyState, MemoryWebSocket.CLOSED);
+    assert.equal(MemoryWebSocket.instances.length, 1);
+    assert.equal(connection.getRetryState().phase, 'idle');
+    assert.deepEqual(connection.getStatus(), { connected: false, connecting: false });
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('配对取消不会破坏后续普通断线的有界重试', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection();
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(socket, message, 'normal-reconnect');
+      }
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    await turn();
+
+    connection.stopPairingRetry();
+    assert.equal(connection.isConnected(), true);
+    socket.close(4000, 'network interruption');
+    await turn();
+
+    assert.equal(connection.getRetryState().phase, 'backoff');
+    assert.deepEqual(connection.getStatus(), { connected: false, connecting: true });
     connection.disconnect();
     stopPolling();
     await turn();
@@ -906,6 +1282,118 @@ describe('Gateway credential security regression gates', () => {
     await assert.rejects(resultPromise, /verified Gateway connection changed/);
     assert.equal(MemoryWebSocket.instances.length, 1, 'a stale source must not open a retry socket');
     assert.deepEqual(pairingSocket.sent.map((message) => message.method), ['connect']);
+  });
+
+  it('主连接在特权握手期间换代时不会发送有副作用的 RPC', async () => {
+    resetSockets();
+    let connectionId = 'daily-connection';
+    const source = {
+      ...sourceConnection(),
+      getAttestedConnectionId: () => connectionId,
+    };
+    const requestPrivileged = createPrivilegedRequester(
+      source,
+      (connectionOptions) => createMemoryGatewayConnection(connectionOptions),
+      { pairingRetryMs: 0, pairingTimeoutMs: 1_000 },
+    );
+    const resultPromise = requestPrivileged('agents.create', { id: 'worker' });
+    await waitForSocketCount(1);
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      connectionId = 'replacement-connection';
+      acceptHandshake(socket, message, 'privileged-stale', ['operator.admin']);
+    };
+    challenge(socket);
+
+    await assert.rejects(resultPromise, /verified Gateway connection changed/);
+    assert.deepEqual(socket.sent.map((message) => message.method), ['connect']);
+    assert.equal(socket.readyState, MemoryWebSocket.CLOSED);
+  });
+
+  it('主 socket 进入 CLOSING 后会在特权写入前触发 source fence', async () => {
+    resetSockets();
+    const dailyConnection = createMemoryGatewayConnection();
+    dailyConnection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const dailySocket = MemoryWebSocket.instances[0];
+    dailySocket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(dailySocket, message, 'daily-connection', ['operator.admin']);
+      }
+    };
+    challenge(dailySocket);
+    await waitForSocketRequest(dailySocket, 'connect');
+    await turn();
+    assert.equal(dailyConnection.isConnected(), true);
+
+    const requestPrivileged = createPrivilegedRequester(
+      dailyConnection,
+      (connectionOptions) => createMemoryGatewayConnection(connectionOptions),
+      { pairingRetryMs: 0, pairingTimeoutMs: 1_000 },
+    );
+    const resultPromise = requestPrivileged('agents.create', { id: 'worker' });
+    await waitForSocketCount(2);
+    const transientSocket = MemoryWebSocket.instances[1];
+    transientSocket.onSend = (message) => {
+      if (message.method === 'connect') {
+        dailySocket.readyState = MemoryWebSocket.CLOSING;
+        acceptHandshake(transientSocket, message, 'privileged-connection', ['operator.admin']);
+        return;
+      }
+      transientSocket.receive({
+        type: 'res',
+        id: message.id,
+        ok: true,
+        payload: { id: 'unexpected-write' },
+      });
+    };
+    challenge(transientSocket);
+
+    await assert.rejects(resultPromise, /verified Gateway connection changed/);
+    assert.equal(dailyConnection.isConnected(), false);
+    assert.deepEqual(transientSocket.sent.map((message) => message.method), ['connect']);
+    assert.equal(transientSocket.readyState, MemoryWebSocket.CLOSED);
+
+    dailyConnection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('围栏请求发出后主 socket 关闭中时拒绝迟到响应', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection();
+    connection.connect('ws://127.0.0.1:18789', 'daily-token');
+    const socket = MemoryWebSocket.instances[0];
+    let pendingRequest: WireRequest | null = null;
+    socket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(socket, message, 'fenced-connection', ['operator.read']);
+        return;
+      }
+      pendingRequest = message;
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    await turn();
+
+    const request = connection.requestFenced(
+      'config.get',
+      {},
+      'fenced-connection',
+    );
+    await waitForSocketRequest(socket, 'config.get');
+    socket.readyState = MemoryWebSocket.CLOSING;
+    socket.receive({
+      type: 'res',
+      id: pendingRequest!.id,
+      ok: true,
+      payload: { exists: true },
+    });
+
+    await assert.rejects(request, /Gateway connection changed/);
+    connection.disconnect();
+    stopPolling();
+    await turn();
   });
 
   it('cancels an active privileged pairing retry without dispatching the RPC', async () => {

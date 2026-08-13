@@ -267,12 +267,8 @@ function isScopedWizardSessionStore(
 }
 
 /**
- * Additive protocol changes must not break onboarding.
- *
- * This used to throw on any field outside the allowlist, so a single new key in
- * a gateway response made first-run setup impossible. Unknown keys are now
- * ignored - every field JunQi acts on is still validated individually below,
- * which is where misinterpretation could actually occur.
+ * 协议新增字段不得中断首次启动。JunQi 只校验实际使用的字段，并记录尚未消费的字段，
+ * 避免把上游的增量扩展错误识别为无效响应。
  */
 function warnOnUnknownWizardKeys(
   result: Record<string, unknown>,
@@ -282,8 +278,7 @@ function warnOnUnknownWizardKeys(
   const allowed = new Set(allowedKeys);
   const unknown = Object.keys(result).filter((key) => !allowed.has(key));
   if (unknown.length === 0) return;
-  // Surfaced for diagnosis only: a newer gateway is expected to carry fields
-  // this build does not read yet.
+  // 仅用于诊断；新版 Gateway 可以携带当前客户端尚未读取的增量字段。
   debugWarn('gateway', `${context} carries fields this build ignores:`, unknown.join(', '));
 }
 
@@ -334,17 +329,14 @@ function assertWizardResultFields(
     ...(Array.isArray(result.accounts) ? { accounts: result.accounts.filter(isWizardConfiguredAccount) } : {}),
     ...(typeof result.preparedModelRef === 'string' ? { preparedModelRef: result.preparedModelRef } : {}),
   };
-  // Terminal error/cancel responses intentionally do not carry a next step.
-  // They are valid official Wizard outcomes and must reach the recovery
-  // state machine instead of being misclassified as malformed Gateway data.
-  if (!isTerminalWizardResult(value as OpenClawWizardResult)) {
+  // 官方错误或取消终态不会携带下一步，必须交给恢复状态机处理。
+  if (!isOpenClawWizardTerminalResult(value as OpenClawWizardResult)) {
     if (allowRunningWithoutStep && result.status === 'running' && result.step === undefined) {
       return response;
     }
     const parsed = normalizeWizardStep(result.step);
     if (!parsed.ok) {
-      // Naming the cause matters: reporting an unsupported step as "missing"
-      // sends the user after the Gateway when the fix is upgrading JunQi.
+      // 区分不支持与缺失，避免把客户端能力不足误报为 Gateway 数据损坏。
       throw new Error(parsed.reason === 'unsupported-type'
         ? `This JunQi build does not support the OpenClaw onboarding step \`${parsed.id}\` of type \`${parsed.type}\`. Update JunQi Desktop to continue setup.`
         : 'OpenClaw wizard response is missing the next step.');
@@ -390,11 +382,11 @@ function assertWizardNextResult(value: unknown): OpenClawWizardResult {
   );
 }
 
-function isTerminalWizardResult(result: OpenClawWizardResult): boolean {
+export function isOpenClawWizardTerminalResult(result: OpenClawWizardResult): boolean {
   return result.done
-    || result.status === 'done'
-    || result.status === 'cancelled'
-    || result.status === 'error';
+    && (result.status === 'done'
+      || result.status === 'cancelled'
+      || result.status === 'error');
 }
 
 export class OpenClawWizardCancelledError extends Error {
@@ -552,7 +544,7 @@ export class OpenClawWizardClient {
     ));
     this.assertOperationCurrent(operation);
     const returnedSessionId = result.sessionId;
-    const terminal = isTerminalWizardResult(result);
+    const terminal = isOpenClawWizardTerminalResult(result);
     const failed = result.status === 'error';
     const rejected = Boolean(result.error) && !terminal;
     this.setSession(terminal ? null : returnedSessionId);
@@ -571,7 +563,7 @@ export class OpenClawWizardClient {
     this.currentStep = null;
     this.failedStep = null;
     this.failedSessionId = null;
-    const terminal = isTerminalWizardResult(result);
+    const terminal = isOpenClawWizardTerminalResult(result);
     const failed = result.status === 'error';
     const rejected = Boolean(result.error) && !terminal;
     this.setSession(terminal ? null : result.sessionId);
@@ -597,7 +589,7 @@ export class OpenClawWizardClient {
     // Wizard 会话拥有；客户端只允许用户显式暂停，不能用本地时限提前截断。
     }, { timeoutMs: null }));
     this.assertOperationCurrent(operation);
-    if (isTerminalWizardResult(result)) {
+    if (isOpenClawWizardTerminalResult(result)) {
       this.setSession(null);
       const failed = result.status === 'error';
       const failedStep = result.step ?? submittedStep;
@@ -605,7 +597,7 @@ export class OpenClawWizardClient {
       this.failedStep = failed ? failedStep : null;
       this.failedSessionId = failed ? submittedSessionId : null;
     } else if (result.error) {
-      // Payload errors reject the answer but leave the official session active.
+      // 答案校验失败不会结束官方会话，保留当前步骤供用户修正。
       this.currentStep = result.step ?? submittedStep;
       this.failedStep = submittedStep ?? result.step ?? null;
       this.failedSessionId = submittedSessionId;
@@ -635,7 +627,7 @@ export class OpenClawWizardClient {
         : options.timeoutMs,
     }));
     this.assertOperationCurrent(operation);
-    if (isTerminalWizardResult(result)) {
+    if (isOpenClawWizardTerminalResult(result)) {
       this.setSession(null);
       const failed = result.status === 'error';
       const failedStep = result.step ?? resumedStep;

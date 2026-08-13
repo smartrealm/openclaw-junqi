@@ -27,13 +27,16 @@ import {
   validateSetupCompletion,
 } from "@/services/setup/setupCompletionGate";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
-import { performOpenClawSetupHandoff } from "@/services/setup/openClawSetupHandoff";
+import {
+  performOpenClawSetupHandoff,
+} from "@/services/setup/openClawSetupHandoff";
 import {
   resolveOpenClawSetupCapability,
   type OpenClawSetupCapability,
 } from "@/services/setup/openClawSetupCapability";
 import { createOnboardingPresentationMachine } from "@/services/setup/onboardingPresentation";
 import { OpenClawGuidedSetupClient } from "@/services/gateway/OpenClawGuidedSetupClient";
+import { readOpenClawConfigApplicationEvidence } from "@/services/gateway/OpenClawConfigApplicationClient";
 import { isCurrentSetupOperationProgress } from "@/hooks/setupProgressEvents";
 
 
@@ -292,23 +295,51 @@ export function useSetupFlow(
       requestPrivileged: (method, params) => gateway.callPrivileged(method, params),
     });
     const handoff = await performOpenClawSetupHandoff({
+      waitForLifecycleIdle: (boundary) => gatewayLifecycle.waitForIdle(boundary),
+      isLifecycleReceiptCurrent: (receipt) => gatewayLifecycle.isIdleReceiptCurrent(receipt),
       captureAttestedConnectionId: captureCurrentAttestedGatewayConnectionId,
       isAttestedConnectionCurrent: isAttestedGatewayConnectionCurrent,
-      reconnect: async () => {
-        const result = await gatewayLifecycle.reconnectSelectedRuntimeAfterCurrent("guided-setup-completion");
+      reconnectSelectedRuntime: async (boundary) => {
+        const result = await gatewayLifecycle.reconnectSelectedRuntimeAfterCurrent(
+          "guided-setup-completion",
+          boundary,
+        );
         return {
           success: result.success && !result.superseded,
+          ...(result.connectionId ? { connectionId: result.connectionId } : {}),
+          ...(result.error ? { diagnostic: result.error } : {}),
+        };
+      },
+      restartSelectedRuntime: async (boundary, configRevisionHash) => {
+        const result = await gatewayLifecycle.restartAfterCurrent(
+          "guided-setup-reload-disabled",
+          "OpenClaw configuration reload is disabled",
+          boundary,
+          configRevisionHash,
+        );
+        return {
+          success: result.success && !result.superseded,
+          ...(result.connectionId ? { connectionId: result.connectionId } : {}),
           ...(result.error ? { diagnostic: result.error } : {}),
         };
       },
       probeSelectedGateway: () => probeSelectedGateway().catch(() => false),
+      readConfigApplication: readOpenClawConfigApplicationEvidence,
     }, {
       kind: "guided",
       detectSetup: () => client.detect(),
       verifyModel: () => client.verify(),
     });
     if (!handoff.ready) {
-      throw new Error(handoff.diagnostic || t(
+      if (handoff.diagnostic) {
+        appendSetupLog({
+          source: "setup",
+          step: "gateway",
+          message: sanitizeSetupDiagnostic(handoff.diagnostic),
+          level: "error",
+        });
+      }
+      throw new Error(t(
         `setup.handoff.${handoff.reason}`,
         "OpenClaw 配置已结束，但 JunQi 尚未完成运行时交接。请核验当前连接后重试。",
       ));
@@ -319,7 +350,7 @@ export function useSetupFlow(
     setPostStorageStep("ready");
     report(t("setup.ready"), 100);
     replaceSetupStep("ready");
-  }, [replaceSetupStep, report, setGatewayRunning, setPostStorageStep, setSetupError, t, updateOnboardingRequirement]);
+  }, [appendSetupLog, replaceSetupStep, report, setGatewayRunning, setPostStorageStep, setSetupError, t, updateOnboardingRequirement]);
 
   const switchToClassicConfiguration = useCallback(() => {
     setConfigurationMode("classic");

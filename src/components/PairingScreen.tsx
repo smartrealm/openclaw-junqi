@@ -12,9 +12,8 @@ interface PairingScreenProps {
 }
 
 /**
- * OpenClaw creates and owns the pending device request. JunQi can execute the
- * official approval command for the selected local runtime only after the user
- * confirms; manual CLI and token entry remain recovery paths.
+ * 待批准设备请求由 OpenClaw 创建并持有。只有用户确认后，JunQi 才能对所选
+ * 本地运行时执行官方批准命令；手工命令和共享 token 输入仅作为恢复入口。
  */
 export function PairingScreen({ issue, onApprove, onPaired, onCancel }: PairingScreenProps) {
   const { t, i18n } = useTranslation();

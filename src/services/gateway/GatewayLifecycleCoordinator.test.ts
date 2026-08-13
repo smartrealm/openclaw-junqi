@@ -23,9 +23,15 @@ function coordinator(overrides: {
   reconnect?: () => void;
   reconnectSelectedRuntime?: () => void;
   captureConnectionId?: () => string | null;
-  waitForConnection?: (previousConnectionId: string | null) => Promise<string>;
+  isConnectionCurrent?: (connectionId: string) => boolean;
+  waitForConnection?: (
+    previousConnectionId: string | null,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ) => Promise<string>;
   wait?: (delayMs: number) => Promise<boolean>;
-  verifySelectedIdentity?: () => Promise<boolean>;
+  verifySelectedIdentity?: (expectedConnectionId: string) => Promise<boolean>;
+  finishDirectRecovery?: () => void;
 } = {}) {
   return new GatewayLifecycleCoordinator({
     manager: {
@@ -34,9 +40,11 @@ function coordinator(overrides: {
       stop: overrides.stop ?? (async () => ({ success: true })),
       reconnect: overrides.reconnect ?? (() => undefined),
       reconnectSelectedRuntime: overrides.reconnectSelectedRuntime ?? (() => undefined),
+      finishDirectRecovery: overrides.finishDirectRecovery ?? (() => undefined),
     },
     connection: {
       captureConnectionId: overrides.captureConnectionId ?? (() => 'old-connection'),
+      isConnectionCurrent: overrides.isConnectionCurrent ?? ((connectionId) => connectionId === 'new-connection'),
       waitForConnection: overrides.waitForConnection ?? (async () => 'new-connection'),
     },
     migrationRetry: {
@@ -46,6 +54,7 @@ function coordinator(overrides: {
     ...(overrides.verifySelectedIdentity
       ? { verifySelectedIdentity: overrides.verifySelectedIdentity }
       : {}),
+    captureRuntimeScope: () => 'selected-runtime',
   });
 }
 
@@ -88,6 +97,60 @@ test('restart success is withheld until a new attested connection settles', asyn
   const result = await restart;
   assert.equal(result.success, true);
   assert.equal(result.connectionId, 'new-connection');
+});
+
+test('restart verifies the selected runtime only after the new connection settles', async () => {
+  const events: string[] = [];
+  const lifecycle = coordinator({
+    restart: async () => {
+      events.push('restart');
+      return { success: true };
+    },
+    reconnectSelectedRuntime: () => {
+      events.push('reconnect-selected-runtime');
+    },
+    waitForConnection: async () => {
+      events.push('connection');
+      return 'new-connection';
+    },
+    verifySelectedIdentity: async (connectionId) => {
+      events.push(`identity:${connectionId}`);
+      return true;
+    },
+  });
+
+  assert.equal((await lifecycle.restart('setup')).success, true);
+  assert.deepEqual(events, [
+    'restart',
+    'reconnect-selected-runtime',
+    'connection',
+    'identity:new-connection',
+  ]);
+});
+
+test('restart fails when the connection changes while selected runtime identity is probed', async () => {
+  let currentConnectionId = 'new-connection';
+  const lifecycle = coordinator({
+    isConnectionCurrent: (connectionId) => connectionId === currentConnectionId,
+    verifySelectedIdentity: async () => {
+      currentConnectionId = 'replacement-connection';
+      return true;
+    },
+  });
+
+  const result = await lifecycle.restart('setup');
+  assert.equal(result.success, false);
+  assert.match(result.error ?? '', /does not match the selected runtime/);
+});
+
+test('lifecycle transaction releases setup-only runtime observation after settlement', async () => {
+  let releases = 0;
+  const lifecycle = coordinator({
+    finishDirectRecovery: () => { releases += 1; },
+  });
+
+  assert.equal((await lifecycle.reconnect('setup')).success, true);
+  assert.equal(releases, 1);
 });
 
 test('connection settlement failure makes the unified lifecycle fail', async () => {
@@ -156,7 +219,308 @@ test('post-handoff reconnect waits for an existing lifecycle and returns its own
   assert.equal(result.success, true);
   assert.equal(result.action, 'reconnect');
   assert.equal(result.source, 'wizard-completion');
-  assert.deepEqual(calls, ['restart', 'reconnect-selected-runtime']);
+  assert.deepEqual(calls, [
+    'restart',
+    'reconnect-selected-runtime',
+    'reconnect-selected-runtime',
+  ]);
+});
+
+test('post-handoff reconnect forwards the remaining absolute deadline budget', async () => {
+  const timeouts: Array<number | undefined> = [];
+  const lifecycle = coordinator({
+    waitForConnection: async (_previousConnectionId, timeoutMs) => {
+      timeouts.push(timeoutMs);
+      return 'new-connection';
+    },
+  });
+
+  const controller = new AbortController();
+  const result = await lifecycle.reconnectSelectedRuntimeAfterCurrent('wizard-completion', {
+    deadline: Date.now() + 360_000,
+    signal: controller.signal,
+  });
+  assert.equal(result.success, true);
+  assert.equal(timeouts.length, 1);
+  assert.ok((timeouts[0] ?? 0) > 350_000 && (timeouts[0] ?? 0) <= 360_000);
+});
+
+test('post-handoff reconnect includes an existing lifecycle in its timeout budget', async () => {
+  const pending = deferred<GatewayRestartResult>();
+  const lifecycle = coordinator({ restart: () => pending.promise });
+
+  const restart = lifecycle.restart('existing-restart');
+  const controller = new AbortController();
+  const reconnect = await lifecycle.reconnectSelectedRuntimeAfterCurrent('wizard-completion', {
+    deadline: Date.now() + 5,
+    signal: controller.signal,
+  });
+
+  assert.equal(reconnect.success, false);
+  assert.match(reconnect.error ?? '', /setup handoff deadline/);
+  pending.resolve({ success: true });
+  await restart;
+});
+
+test('setup handoff restart forwards the remaining absolute deadline budget', async () => {
+  const timeouts: Array<number | undefined> = [];
+  const lifecycle = coordinator({
+    waitForConnection: async (_previousConnectionId, timeoutMs) => {
+      timeouts.push(timeoutMs);
+      return 'new-connection';
+    },
+  });
+
+  const controller = new AbortController();
+  const result = await lifecycle.restartAfterCurrent('wizard-reload-disabled', undefined, {
+    deadline: Date.now() + 360_000,
+    signal: controller.signal,
+  }, 'revision-budget');
+  assert.equal(result.success, true);
+  assert.equal(timeouts.length, 1);
+  assert.ok((timeouts[0] ?? 0) > 350_000 && (timeouts[0] ?? 0) <= 360_000);
+});
+
+test('setup handoff restart waits within the same budget before starting a destructive operation', async () => {
+  const pending = deferred<GatewayRestartResult>();
+  let restartCalls = 0;
+  const lifecycle = coordinator({
+    ensureRunning: () => new Promise<GatewayEnsureResult>(() => {}),
+    restart: () => {
+      restartCalls += 1;
+      return pending.promise;
+    },
+  });
+
+  void lifecycle.recover('existing-recovery');
+  const controller = new AbortController();
+  const result = await lifecycle.restartAfterCurrent(
+    'wizard-reload-disabled',
+    'reload disabled',
+    { deadline: Date.now() + 5, signal: controller.signal },
+    'revision-wait',
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(restartCalls, 0);
+});
+
+test('setup handoff migration wait cannot start restart after its absolute deadline', async () => {
+  const future = new Date(Date.now() + 60_000).toISOString();
+  let restartCalls = 0;
+  const controller = new AbortController();
+  const lifecycle = coordinator({
+    wait: async (delayMs) => {
+      assert.ok(delayMs <= 5);
+      await new Promise<void>((resolve) => globalThis.setTimeout(resolve, delayMs));
+      return true;
+    },
+    restart: async () => {
+      restartCalls += 1;
+      return { success: true };
+    },
+  });
+
+  const result = await lifecycle.restartAfterCurrent(
+    'wizard-reload-disabled',
+    `startup migrations are already running; retry after ${future}`,
+    { deadline: Date.now() + 5, signal: controller.signal },
+    'revision-migration',
+  );
+
+  assert.equal(result.success, false);
+  assert.match(result.error ?? '', /setup handoff deadline/);
+  assert.equal(restartCalls, 0);
+});
+
+test('setup handoff deadline does not cancel an in-flight native restart and suppresses its reconnect', async () => {
+  const pendingRestart = deferred<GatewayRestartResult>();
+  const controller = new AbortController();
+  let reconnects = 0;
+  let connectionWaits = 0;
+  const lifecycle = coordinator({
+    restart: () => pendingRestart.promise,
+    reconnectSelectedRuntime: () => { reconnects += 1; },
+    waitForConnection: async () => {
+      connectionWaits += 1;
+      return 'new-connection';
+    },
+  });
+
+  const resultPromise = lifecycle.restartAfterCurrent(
+    'wizard-reload-disabled',
+    'reload disabled',
+    { deadline: Date.now() + 60_000, signal: controller.signal },
+    'revision-abort',
+  );
+  await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
+  controller.abort();
+
+  let settled = false;
+  void resultPromise.finally(() => { settled = true; });
+  await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
+  assert.equal(settled, false);
+  assert.equal(lifecycle.running, true);
+
+  pendingRestart.resolve({ success: true });
+
+  const result = await resultPromise;
+  assert.equal(result.success, false);
+  assert.equal(reconnects, 0);
+  assert.equal(connectionWaits, 0);
+  assert.equal(lifecycle.running, false);
+});
+
+test('handoff idle barrier waits for the active native operation to settle', async () => {
+  const pendingRestart = deferred<GatewayRestartResult>();
+  const lifecycle = coordinator({ restart: () => pendingRestart.promise });
+  const restart = lifecycle.restart('existing-restart');
+  const controller = new AbortController();
+  const idle = lifecycle.waitForIdle({
+    deadline: Date.now() + 60_000,
+    signal: controller.signal,
+  });
+
+  let settled = false;
+  void idle.finally(() => { settled = true; });
+  await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
+  assert.equal(settled, false);
+
+  pendingRestart.resolve({ success: true });
+  assert.deepEqual(await idle, {
+    generation: 1,
+    restartAttemptGeneration: 1,
+    observedRestart: true,
+  });
+  assert.equal((await restart).success, true);
+});
+
+test('handoff idle receipt is invalidated when a lifecycle starts after the barrier', async () => {
+  const pendingRestart = deferred<GatewayRestartResult>();
+  const lifecycle = coordinator({ restart: () => pendingRestart.promise });
+  const controller = new AbortController();
+  const receipt = await lifecycle.waitForIdle({
+    deadline: Date.now() + 60_000,
+    signal: controller.signal,
+  });
+  assert.ok(receipt);
+  assert.equal(lifecycle.isIdleReceiptCurrent(receipt!), true);
+
+  const restart = lifecycle.restart('concurrent-restart');
+  assert.equal(lifecycle.isIdleReceiptCurrent(receipt!), false);
+  pendingRestart.resolve({ success: true });
+  await restart;
+});
+
+test('handoff idle barrier records a restart performed inside recovery', async () => {
+  const ensured = deferred<GatewayEnsureResult>();
+  const restarted = deferred<GatewayRestartResult>();
+  const lifecycle = coordinator({
+    ensureRunning: () => ensured.promise,
+    restart: () => restarted.promise,
+  });
+  const recovery = lifecycle.recover('dashboard');
+  const controller = new AbortController();
+  const idle = lifecycle.waitForIdle({
+    deadline: Date.now() + 60_000,
+    signal: controller.signal,
+  });
+
+  ensured.resolve({ healthy: false, error: 'not ready' });
+  await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
+  restarted.resolve({ success: true });
+
+  assert.deepEqual(await idle, {
+    generation: 1,
+    restartAttemptGeneration: 1,
+    observedRestart: true,
+  });
+  assert.equal((await recovery).success, true);
+});
+
+test('completed historical restart is present in the receipt without being observed by a new barrier', async () => {
+  const lifecycle = coordinator();
+  assert.equal((await lifecycle.restart('settings')).success, true);
+
+  const controller = new AbortController();
+  assert.deepEqual(await lifecycle.waitForIdle({
+    deadline: Date.now() + 60_000,
+    signal: controller.signal,
+  }), {
+    generation: 1,
+    restartAttemptGeneration: 1,
+    observedRestart: false,
+  });
+});
+
+test('failed native restart still advances the real restart attempt generation', async () => {
+  const lifecycle = coordinator({
+    restart: async () => ({ success: false, error: 'restart rejected' }),
+  });
+  assert.equal((await lifecycle.restart('settings')).success, false);
+
+  const controller = new AbortController();
+  const receipt = await lifecycle.waitForIdle({
+    deadline: Date.now() + 60_000,
+    signal: controller.signal,
+  });
+  assert.equal(receipt?.restartAttemptGeneration, 1);
+  assert.equal(receipt?.observedRestart, false);
+});
+
+test('setup handoff compensation issues at most one process restart command', async () => {
+  const future = new Date(Date.now() + 60_000).toISOString();
+  let restartCalls = 0;
+  const controller = new AbortController();
+  const lifecycle = coordinator({
+    wait: async () => true,
+    restart: async () => {
+      restartCalls += 1;
+      return {
+        success: false,
+        error: `startup migrations are already running; retry after ${future}`,
+      };
+    },
+  });
+
+  const result = await lifecycle.restartAfterCurrent(
+    'wizard-reload-disabled',
+    'reload disabled',
+    { deadline: Date.now() + 60_000, signal: controller.signal },
+    'revision-once',
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(restartCalls, 1);
+});
+
+test('setup handoff does not replay compensation for the same runtime revision', async () => {
+  let restartCalls = 0;
+  const lifecycle = coordinator({
+    restart: async () => {
+      restartCalls += 1;
+      return { success: true };
+    },
+  });
+  const firstController = new AbortController();
+  const first = await lifecycle.restartAfterCurrent(
+    'wizard-reload-disabled',
+    'reload disabled',
+    { deadline: Date.now() + 60_000, signal: firstController.signal },
+    'same-revision',
+  );
+  assert.equal(first.success, true);
+
+  const secondController = new AbortController();
+  const second = await lifecycle.restartAfterCurrent(
+    'wizard-reload-disabled',
+    'reload disabled',
+    { deadline: Date.now() + 60_000, signal: secondController.signal },
+    'same-revision',
+  );
+  assert.equal(second.success, false);
+  assert.match(second.error ?? '', /already attempted/);
+  assert.equal(restartCalls, 1);
 });
 
 test('an unexpected active failure is normalized and a queued restart still runs', async () => {

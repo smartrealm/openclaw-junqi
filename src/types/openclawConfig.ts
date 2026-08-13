@@ -226,6 +226,9 @@ export interface GatewayConfig {
   bind?: string;
   bindCustom?: string;
   mode?: string;
+  reload?: {
+    mode?: 'off' | 'restart' | 'hot' | 'hybrid';
+  };
   auth?: GatewayAuth;
   controlUi?: GatewayControlUi;
   tailscale?: GatewayTailscale;

@@ -9,6 +9,11 @@ import type {
 } from '@/types/gatewayRuntime';
 
 type IdentityListener = (identity: RuntimeIdentity | null) => void;
+export interface RuntimeIdentityAttestationFailure {
+  connectionId: string;
+  diagnostic: string;
+}
+type IdentityFailureListener = (failure: RuntimeIdentityAttestationFailure | null) => void;
 type IdentityResolver = (observation: GatewayHelloObservation) => Promise<RuntimeIdentity>;
 type IdentityClearer = (params: ClearRuntimeIdentityParams) => Promise<boolean>;
 
@@ -17,9 +22,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 let currentIdentity: RuntimeIdentity | null = null;
+let currentFailure: RuntimeIdentityAttestationFailure | null = null;
 let activeConnectionId: string | null = null;
 let observationGeneration = 0;
 const listeners = new Set<IdentityListener>();
+const failureListeners = new Set<IdentityFailureListener>();
 
 const stringValue = (value: unknown): string => typeof value === 'string' ? value : '';
 const nullableString = (value: unknown): string | null => {
@@ -30,7 +37,7 @@ const stringArray = (value: unknown): string[] => Array.isArray(value)
   ? value.filter((entry): entry is string => typeof entry === 'string')
   : [];
 
-/** Convert a hello-ok payload into the only shape accepted by Tauri attestation. */
+/** 将 hello-ok 投影为 Tauri 运行时身份核验接受的唯一结构。 */
 export function buildGatewayHelloObservation(
   endpoint: string,
   response: unknown,
@@ -65,7 +72,11 @@ export function getCurrentRuntimeIdentity(): RuntimeIdentity | null {
   return currentIdentity;
 }
 
-/** Bind the durable plugin identity only to the socket that supplied it. */
+export function getCurrentRuntimeIdentityFailure(): RuntimeIdentityAttestationFailure | null {
+  return currentFailure;
+}
+
+/** 只允许为提供身份依据的当前连接绑定持久插件身份。 */
 export function bindCollaborationRuntimeIdentity(
   collaborationInstanceId: string,
   expectedConnectionId: string,
@@ -92,14 +103,30 @@ export function subscribeRuntimeIdentity(listener: IdentityListener): () => void
   return () => listeners.delete(listener);
 }
 
+export function subscribeRuntimeIdentityFailure(listener: IdentityFailureListener): () => void {
+  failureListeners.add(listener);
+  listener(currentFailure);
+  return () => failureListeners.delete(listener);
+}
+
 function publish(identity: RuntimeIdentity | null): void {
   currentIdentity = identity;
   listeners.forEach((listener) => listener(identity));
 }
 
+function publishFailure(failure: RuntimeIdentityAttestationFailure | null): void {
+  currentFailure = failure;
+  failureListeners.forEach((listener) => listener(failure));
+}
+
+function failureDiagnostic(error: unknown): string {
+  const diagnostic = error instanceof Error ? error.message : String(error);
+  return diagnostic.trim() || 'Gateway runtime identity attestation failed';
+}
+
 /**
- * Resolve and cache one hello observation. The generation guard prevents a slow
- * response from an old socket from replacing the identity of a newer socket.
+ * 解析并缓存一条 hello 观测。代次围栏会阻止旧连接的迟到结果覆盖新连接身份，
+ * 同时把当前连接的核验失败作为结构化终态交给生命周期协调器。
  */
 export async function observeGatewayHello(
   observation: GatewayHelloObservation,
@@ -107,7 +134,23 @@ export async function observeGatewayHello(
 ): Promise<RuntimeIdentity | null> {
   const generation = ++observationGeneration;
   activeConnectionId = observation.connectionId;
-  const identity = await resolver(observation);
+  publish(null);
+  publishFailure(null);
+  let identity: RuntimeIdentity;
+  try {
+    identity = await resolver(observation);
+  } catch (error) {
+    if (
+      generation === observationGeneration
+      && activeConnectionId === observation.connectionId
+    ) {
+      publishFailure({
+        connectionId: observation.connectionId,
+        diagnostic: failureDiagnostic(error),
+      });
+    }
+    throw error;
+  }
   if (
     generation !== observationGeneration
     || activeConnectionId !== observation.connectionId
@@ -115,11 +158,12 @@ export async function observeGatewayHello(
   ) {
     return null;
   }
+  publishFailure(null);
   publish(identity);
   return identity;
 }
 
-/** Invalidate only the socket that closed; an old close cannot clear a new one. */
+/** 只失效已关闭的连接；旧连接的关闭事件不能清理新连接身份。 */
 export async function invalidateGatewayRuntimeIdentity(
   connectionId: string,
   clearer: IdentityClearer = clearGatewayRuntimeIdentityCommand,
@@ -129,6 +173,7 @@ export async function invalidateGatewayRuntimeIdentity(
     observationGeneration += 1;
     activeConnectionId = null;
     publish(null);
+    publishFailure(null);
   }
   return clearer({ connectionId });
 }

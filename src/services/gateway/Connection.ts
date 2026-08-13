@@ -163,13 +163,15 @@ export async function resolveGatewayClientPlatform(
 }
 
 export function isCurrentGatewayHandshake(
-  currentSocket: unknown,
-  expectedSocket: unknown,
+  currentSocket: WebSocket | null,
+  expectedSocket: WebSocket | null,
   connecting: boolean,
   currentHandshakeId: string | null,
   expectedHandshakeId: string,
 ): boolean {
   return currentSocket === expectedSocket
+    && expectedSocket !== null
+    && expectedSocket.readyState === WebSocket.OPEN
     && connecting
     && currentHandshakeId === expectedHandshakeId;
 }
@@ -270,7 +272,10 @@ interface PendingRequest {
 interface GatewayConnectionDependencies {
   resolvePlatform: () => Promise<GatewayClientPlatform>;
   signDeviceChallenge: typeof signGatewayDeviceChallenge;
+  attestRuntimeIdentity: (observation: GatewayHelloObservation) => Promise<RuntimeIdentity | null>;
+  invalidateRuntimeIdentity: (connectionId: string) => Promise<boolean>;
   connectTimeoutMs: number;
+  pairingRetryMs: number;
 }
 
 /** JSON object parameters accepted by an OpenClaw RPC request. */
@@ -393,15 +398,27 @@ export class GatewayConnection {
   private attemptTimer: ReturnType<typeof setTimeout> | null = null;
   private handshakeRequestId: string | null = null;
   private runtimeIdentityConnectionId: string | null = null;
+  private pendingRuntimeIdentityConnectionId: string | null = null;
+  private runtimeIdentityHandshakeFailure: {
+    connectionId: string;
+    diagnostic: string;
+  } | null = null;
+  private readonly runtimeIdentityFailureListeners = new Set<(
+    failure: { connectionId: string; diagnostic: string } | null,
+  ) => void>();
   private helloPolicy: GatewayConnectionPolicy | null = null;
   private helloObservation: GatewayHelloObservation | null = null;
   private readonly helloListeners = new Set<(observation: GatewayHelloObservation | null) => void>();
+  private readonly retryStateListeners = new Set<(state: GatewayRetryState) => void>();
+  private retryState: GatewayRetryState;
   private readonly capabilityRegistry = new GatewayCapabilityRegistry();
 
   // 配对等待采用固定间隔，不进入普通指数退避。
   private pairingRequired = false;
   private pairingRetryTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly PAIRING_RETRY_MS = 5_000;
+  private pairingGeneration = 0;
+  private pairingAttempt: { generation: number; socket: WebSocket } | null = null;
+  private readonly pairingRetryMs: number;
 
   // 设备身份挑战事实只属于当前活动 socket。
   private challengeNonce: string | null = null;
@@ -435,6 +452,8 @@ export class GatewayConnection {
   private readonly persistDeviceCredential: (gatewayUrl: string, token: string) => Promise<unknown>;
   private readonly resolvePlatform: () => Promise<GatewayClientPlatform>;
   private readonly signDeviceChallenge: typeof signGatewayDeviceChallenge;
+  private readonly attestRuntimeIdentity: GatewayConnectionDependencies['attestRuntimeIdentity'];
+  private readonly invalidateRuntimeIdentity: GatewayConnectionDependencies['invalidateRuntimeIdentity'];
   private readonly connectTimeoutMs: number;
 
   // ChatHandler 注入的非响应事件回调。
@@ -450,7 +469,16 @@ export class GatewayConnection {
     this.persistDeviceCredential = options.persistDeviceCredential ?? storeGatewayConnectionDeviceCredential;
     this.resolvePlatform = dependencies.resolvePlatform ?? resolveGatewayClientPlatform;
     this.signDeviceChallenge = dependencies.signDeviceChallenge ?? signGatewayDeviceChallenge;
+    this.attestRuntimeIdentity = dependencies.attestRuntimeIdentity ?? observeGatewayHello;
+    this.invalidateRuntimeIdentity = dependencies.invalidateRuntimeIdentity
+      ?? invalidateGatewayRuntimeIdentity;
     this.connectTimeoutMs = dependencies.connectTimeoutMs ?? GATEWAY_CONNECT_TIMEOUT_MS;
+    this.pairingRetryMs = dependencies.pairingRetryMs ?? 5_000;
+    this.retryState = {
+      phase: 'idle',
+      attempt: 0,
+      maxAttempts: this.retryPolicy.maxAttempts,
+    };
     // 消息处理器由连接实例持有且保持不变，因此只在构造阶段注册一次。
     this.initMessageRouter();
   }
@@ -501,12 +529,29 @@ export class GatewayConnection {
 
   /** WebSocket 已建立且握手成功时返回 true。 */
   isConnected(): boolean {
-    return this.connected;
+    return this.connected && this.ws?.readyState === WebSocket.OPEN;
   }
 
   /** requestFenced 使用的已认证 socket 身份。 */
   getAttestedConnectionId(): string | null {
     return this.runtimeIdentityConnectionId;
+  }
+
+  /** 仅暴露当前活动握手正在核验的连接标识，供失败收敛使用。 */
+  getPendingRuntimeIdentityConnectionId(): string | null {
+    return this.pendingRuntimeIdentityConnectionId;
+  }
+
+  /** 返回当前显式连接轮次中可回放的身份核验终态失败。 */
+  getRuntimeIdentityHandshakeFailure(): { connectionId: string; diagnostic: string } | null {
+    return this.runtimeIdentityHandshakeFailure;
+  }
+
+  subscribeRuntimeIdentityHandshakeFailure(
+    listener: (failure: { connectionId: string; diagnostic: string } | null) => void,
+  ): () => void {
+    this.runtimeIdentityFailureListeners.add(listener);
+    return () => this.runtimeIdentityFailureListeners.delete(listener);
   }
 
   /** 当前认证 socket 的 hello 事实；连接失效时同步清除。 */
@@ -522,6 +567,13 @@ export class GatewayConnection {
   subscribeHello(listener: (observation: GatewayHelloObservation | null) => void): () => void {
     this.helloListeners.add(listener);
     return () => this.helloListeners.delete(listener);
+  }
+
+  /** 订阅传输层重试事实，供统一连接收敛层提前报告权威失败。 */
+  subscribeRetryState(listener: (state: GatewayRetryState) => void): () => void {
+    this.retryStateListeners.add(listener);
+    listener(this.retryState);
+    return () => this.retryStateListeners.delete(listener);
   }
 
   /** 返回当前认证 socket 的能力证据；hello 方法列表只能作为保守发现信息。 */
@@ -572,6 +624,7 @@ export class GatewayConnection {
       ));
     }
     this.target = nextTarget;
+    if (resetReconnectAttempts) this.publishRuntimeIdentityHandshakeFailure(null);
     resetReconnectAttempts ? this.retryPolicy.begin() : this.retryPolicy.beginRetry();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -616,6 +669,7 @@ export class GatewayConnection {
     ws.onclose = (event) => {
       if (this.ws !== ws) return;
       debugLog('gateway', '[GW] Closed:', event.code, event.reason);
+      if (this.pairingAttempt?.socket === ws) this.pairingAttempt = null;
       this.stopHeartbeat();
       this.clearAttemptTimers();
       this.connected = false;
@@ -658,7 +712,7 @@ export class GatewayConnection {
 
   private clearTransport(error: GatewayTransportLifecycleError): void {
     this.stopHeartbeat();
-    this.stopPairingRetry();
+    this.invalidatePairingWait();
     this.clearAttemptTimers();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -677,6 +731,7 @@ export class GatewayConnection {
     this.connecting = false;
     if (!this.transient) this.publishHello(null);
     if (!this.transient) this.invalidateObservedRuntimeIdentity();
+    if (!this.transient) this.publishRuntimeIdentityHandshakeFailure(null);
   }
 
   private scheduleReconnect() {
@@ -729,12 +784,15 @@ export class GatewayConnection {
     phase: GatewayRetryState['phase'],
     extra: Partial<GatewayRetryState> = {},
   ) {
-    this.callbacks?.onRetryState?.({
+    const state: GatewayRetryState = {
       phase,
       attempt: extra.attempt ?? this.retryPolicy.attempt,
       maxAttempts: this.retryPolicy.maxAttempts,
       ...extra,
-    });
+    };
+    this.retryState = state;
+    this.callbacks?.onRetryState?.(state);
+    this.retryStateListeners.forEach((listener) => listener(state));
   }
 
   private rejectAllPending(error: GatewayTransportLifecycleError) {
@@ -780,7 +838,9 @@ export class GatewayConnection {
     this.registerCallback(
       id,
       {
-      resolve: (response: unknown) => {
+      resolve: async (response: unknown) => {
+        // connect RPC 已被 Gateway 接受后，旧配对状态不再适用于本次握手后续阶段。
+        this.completePairingAttempt(handshakeSocket);
         const responseRecord = isRecord(response) ? response : null;
         if (responseRecord?.type === 'hello-ok' && !isGatewayOperatorProtocol(responseRecord.protocol)) {
           const receivedProtocol = typeof responseRecord.protocol === 'number'
@@ -798,22 +858,66 @@ export class GatewayConnection {
           this.failHandshake(handshakeSocket, 'Gateway handshake returned an invalid hello-ok');
           return;
         }
-        debugLog('gateway', '[GW] Connected');
         if (!this.transient) {
           const helloObservation = buildGatewayHelloObservation(this.url, hello.payload);
-          this.runtimeIdentityConnectionId = helloObservation.connectionId || null;
-          this.publishHello(helloObservation);
-          this.callbacks?.onHello?.(helloObservation);
-          void observeGatewayHello(helloObservation)
-            .then((identity) => {
-              if (this.ws === handshakeSocket && identity) {
-                this.callbacks?.onRuntimeIdentity?.(identity);
-              }
-            })
-            .catch((error) => {
-              debugWarn('gateway', '[GW] Runtime identity attestation failed:', error);
-          });
+          this.pendingRuntimeIdentityConnectionId = helloObservation.connectionId;
+          try {
+            const identity = await this.attestRuntimeIdentity(helloObservation);
+            if (!isCurrentGatewayHandshake(
+              this.ws,
+              handshakeSocket,
+              this.connecting,
+              this.handshakeRequestId,
+              id,
+            )) {
+              this.invalidateRuntimeIdentityConnection(helloObservation.connectionId);
+              return;
+            }
+            if (!identity || identity.connectionId !== helloObservation.connectionId || !identity.verified) {
+              const issues = identity?.issues?.filter((issue) => issue.trim()).join(', ');
+              this.publishRuntimeIdentityHandshakeFailure({
+                connectionId: helloObservation.connectionId,
+                diagnostic: issues || 'Gateway runtime identity attestation did not verify the current connection',
+              });
+              this.failHandshake(
+                handshakeSocket,
+                'Gateway runtime identity attestation did not verify the current connection',
+                'Gateway runtime identity attestation failed',
+              );
+              return;
+            }
+            this.pendingRuntimeIdentityConnectionId = null;
+            this.runtimeIdentityConnectionId = helloObservation.connectionId;
+            this.publishRuntimeIdentityHandshakeFailure(null);
+            this.publishHello(helloObservation);
+            this.callbacks?.onHello?.(helloObservation);
+            this.callbacks?.onRuntimeIdentity?.(identity);
+          } catch (error) {
+            if (!isCurrentGatewayHandshake(
+              this.ws,
+              handshakeSocket,
+              this.connecting,
+              this.handshakeRequestId,
+              id,
+            )) {
+              this.invalidateRuntimeIdentityConnection(helloObservation.connectionId);
+              return;
+            }
+            const diagnostic = error instanceof Error ? error.message : String(error);
+            debugWarn('gateway', '[GW] Runtime identity attestation failed:', diagnostic);
+            this.publishRuntimeIdentityHandshakeFailure({
+              connectionId: helloObservation.connectionId,
+              diagnostic,
+            });
+            this.failHandshake(
+              handshakeSocket,
+              `Gateway runtime identity attestation failed: ${diagnostic}`,
+              'Gateway runtime identity attestation failed',
+            );
+            return;
+          }
         }
+        debugLog('gateway', '[GW] Connected');
         if (!this.transient && hello.authDeviceToken) {
           const previousDeviceToken = this.deviceToken.trim();
           this.target = this.target.withDeviceToken(hello.authDeviceToken);
@@ -828,11 +932,6 @@ export class GatewayConnection {
         this.connecting = false;
         this.lastError = null;
         this.clearAttemptTimers();
-        this.pairingRequired = false;
-        if (this.pairingRetryTimer) {
-          clearTimeout(this.pairingRetryTimer);
-          this.pairingRetryTimer = null;
-        }
         this.startHeartbeat(hello.policy);
         this.emitRetryState('connected');
         this.emitStatus();
@@ -845,6 +944,8 @@ export class GatewayConnection {
         }
       },
       reject: (err: unknown) => {
+        // 旧 socket 被取消或替换后，其本地拒绝不得重新激活配对状态。
+        if (this.ws !== handshakeSocket) return;
         const errStr = String(err);
         debugError('gateway', '[GW] Handshake rejected:', errStr);
         this.connecting = false;
@@ -962,7 +1063,7 @@ export class GatewayConnection {
     params: GatewayRequestParams = {},
     options?: GatewayRequestOptions,
   ): Promise<T> {
-    if (!this.ws || !this.connected) {
+    if (!this.isConnected()) {
       this.capabilityRegistry.recordFailure(method, new GatewayDisconnectedError());
       throw new GatewayTransportLifecycleError('Gateway is not connected');
     }
@@ -1024,6 +1125,7 @@ export class GatewayConnection {
       const id = this.nextId();
       const verifyFence = () => this.ws === socket
         && this.connected
+        && socket.readyState === WebSocket.OPEN
         && this.runtimeIdentityConnectionId === expected;
       const rejectFenced = (error: unknown) => {
         if (!verifyFence()) {
@@ -1163,7 +1265,16 @@ export class GatewayConnection {
           const authorizationIssue = classifyGatewayAuthorizationError(error);
           if (authorizationIssue) {
             debugWarn('gateway', '[GW] Authorization issue detected:', authorizationIssue.code);
-            if (authorizationIssue.kind === 'pairing_required') this.pairingRequired = true;
+            if (authorizationIssue.kind === 'pairing_required') {
+              this.pairingRequired = true;
+              // 配对响应到达后、关闭事件到达前仍归当前配对代次所有，取消必须能截断该窗口。
+              if (msg.id === this.handshakeRequestId && this.ws && !this.connected) {
+                this.pairingAttempt = {
+                  generation: this.pairingGeneration,
+                  socket: this.ws,
+                };
+              }
+            }
             this.emitAuthorizationIssue(authorizationIssue);
           }
           pending.reject(error);
@@ -1186,14 +1297,46 @@ export class GatewayConnection {
     this.callbacks?.onAuthorizationIssue?.(issue);
   }
 
-  private invalidateObservedRuntimeIdentity() {
-    const connectionId = this.runtimeIdentityConnectionId;
-    this.runtimeIdentityConnectionId = null;
-    if (!connectionId) return;
+  private invalidateRuntimeIdentityConnection(connectionId: string): void {
+    const wasTracked = this.runtimeIdentityConnectionId === connectionId
+      || this.pendingRuntimeIdentityConnectionId === connectionId;
+    if (!wasTracked) return;
+    if (this.runtimeIdentityConnectionId === connectionId) {
+      this.runtimeIdentityConnectionId = null;
+    }
+    if (this.pendingRuntimeIdentityConnectionId === connectionId) {
+      this.pendingRuntimeIdentityConnectionId = null;
+    }
     this.callbacks?.onRuntimeIdentity?.(null);
-    void invalidateGatewayRuntimeIdentity(connectionId).catch((error) => {
+    void this.invalidateRuntimeIdentity(connectionId).catch((error) => {
       debugWarn('gateway', '[GW] Failed to invalidate runtime identity:', error);
     });
+  }
+
+  private invalidateObservedRuntimeIdentity() {
+    const connectionIds = new Set([
+      this.runtimeIdentityConnectionId,
+      this.pendingRuntimeIdentityConnectionId,
+    ].filter((connectionId): connectionId is string => Boolean(connectionId)));
+    this.runtimeIdentityConnectionId = null;
+    this.pendingRuntimeIdentityConnectionId = null;
+    if (connectionIds.size > 0) this.callbacks?.onRuntimeIdentity?.(null);
+    connectionIds.forEach((connectionId) => {
+      void this.invalidateRuntimeIdentity(connectionId).catch((error) => {
+        debugWarn('gateway', '[GW] Failed to invalidate runtime identity:', error);
+      });
+    });
+  }
+
+  private publishRuntimeIdentityHandshakeFailure(
+    failure: { connectionId: string; diagnostic: string } | null,
+  ): void {
+    if (
+      this.runtimeIdentityHandshakeFailure?.connectionId === failure?.connectionId
+      && this.runtimeIdentityHandshakeFailure?.diagnostic === failure?.diagnostic
+    ) return;
+    this.runtimeIdentityHandshakeFailure = failure;
+    this.runtimeIdentityFailureListeners.forEach((listener) => listener(failure));
   }
 
   // ══════════════════════════════════════════════════════
@@ -1205,19 +1348,24 @@ export class GatewayConnection {
       this.lastError = extra.error;
     }
     this.callbacks?.onStatusChange({
-      connected: this.connected,
+      connected: this.isConnected(),
       connecting: this.isTryingToConnect(),
       ...extra,
     });
   }
 
   getStatus() {
-    return { connected: this.connected, connecting: this.isTryingToConnect() };
+    return { connected: this.isConnected(), connecting: this.isTryingToConnect() };
   }
 
-  /** Returns the last connection error message, useful for diagnostics. */
+  /** 返回最近一次连接错误，仅用于失败诊断。 */
   getLastError(): string | null {
     return this.lastError;
+  }
+
+  /** 返回当前传输层重试事实，供迟到的连接收敛订阅恢复终态。 */
+  getRetryState(): GatewayRetryState {
+    return { ...this.retryState };
   }
 
   // ══════════════════════════════════════════════════════
@@ -1226,20 +1374,69 @@ export class GatewayConnection {
 
   private schedulePairingRetry() {
     if (this.pairingRetryTimer) clearTimeout(this.pairingRetryTimer);
-    this.pairingRetryTimer = setTimeout(() => {
-      if (this.pairingRequired && !this.connected && !this.connecting) {
-        debugLog('gateway', '[GW] Pairing retry...');
-        this.connect(this.url, this.token, this.deviceToken);
+    const generation = this.pairingGeneration;
+    const timer = setTimeout(() => {
+      if (this.pairingRetryTimer === timer) this.pairingRetryTimer = null;
+      if (
+        generation !== this.pairingGeneration
+        || !this.pairingRequired
+        || this.connected
+        || this.connecting
+      ) return;
+      debugLog('gateway', '[GW] Pairing retry...');
+      const previousSocket = this.ws;
+      this.connect(this.url, this.token, this.deviceToken);
+      if (
+        generation === this.pairingGeneration
+        && this.ws
+        && this.ws !== previousSocket
+        && this.connecting
+      ) {
+        this.pairingAttempt = { generation, socket: this.ws };
       }
-    }, this.PAIRING_RETRY_MS);
+    }, this.pairingRetryMs);
+    this.pairingRetryTimer = timer;
   }
 
-  /** Stop pairing retry loop (called from cancel or disconnect) */
-  stopPairingRetry() {
+  private clearPairingWait(): void {
     this.pairingRequired = false;
     if (this.pairingRetryTimer) {
       clearTimeout(this.pairingRetryTimer);
       this.pairingRetryTimer = null;
+    }
+  }
+
+  private invalidatePairingWait(): void {
+    this.pairingGeneration += 1;
+    this.clearPairingWait();
+    this.pairingAttempt = null;
+  }
+
+  private completePairingAttempt(socket: WebSocket | null): void {
+    this.clearPairingWait();
+    if (socket && this.pairingAttempt?.socket === socket) this.pairingAttempt = null;
+  }
+
+  /** 取消普通连接的配对等待，并终止已发起但尚未返回的配对握手。 */
+  stopPairingRetry() {
+    const cancelledGeneration = this.pairingGeneration;
+    const ownedAttempt = this.pairingAttempt?.generation === cancelledGeneration
+      ? this.pairingAttempt
+      : null;
+    const pairingWasActive = this.pairingRequired
+      || this.pairingRetryTimer !== null
+      || ownedAttempt !== null;
+    this.invalidatePairingWait();
+    if (
+      ownedAttempt
+      && this.ws === ownedAttempt.socket
+      && !this.connected
+    ) {
+      this.clearTransport(new GatewayTransportLifecycleError('Gateway pairing cancelled'));
+    }
+    if (pairingWasActive) {
+      this.emitRetryState('idle');
+      this.emitStatus();
     }
   }
 

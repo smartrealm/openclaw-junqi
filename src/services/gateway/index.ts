@@ -855,7 +855,12 @@ export function createPrivilegedRequester(
           }
           if (!status.connected) return;
           requestStarted = true;
-          onConnected();
+          try {
+            onConnected();
+          } catch (error) {
+            finish({ kind: 'failure', error: errorValue(error) });
+            return;
+          }
           void transient.request(method, params, { timeoutMs })
             .then((value) => finish({ kind: 'success', value: value as T }))
             .catch((error) => finish({ kind: 'failure', error: errorValue(error) }));
@@ -931,7 +936,7 @@ export function createPrivilegedRequester(
           attemptTimeoutMs,
           (cancel) => { cancelActivePairingRetry = cancel; },
           () => {
-            if (!sourceIsCurrent()) return;
+            assertSourceCurrent();
             if (!pairingObserved || pairingResolvedEmitted) return;
             pairingResolvedEmitted = true;
             emitPrivilegedAuthorizationResolved();
@@ -1272,6 +1277,7 @@ export const gateway = {
   acquireGatewayApprovalEvents() { return acquireGatewayApprovalEvents(); },
   getStatus() { return connection.getStatus(); },
   getLastError() { return connection.getLastError(); },
+  getRetryState() { return connection.getRetryState(); },
   getHelloObservation() { return connection.getHelloObservation(); },
   getAttachmentPolicy(): GatewayAttachmentPolicy | null { return connection.getAttachmentPolicy(); },
   getCapabilitySnapshot(): GatewayCapabilitySnapshot { return connection.getCapabilitySnapshot(); },
@@ -1284,7 +1290,21 @@ export const gateway = {
   subscribeHello(listener: (observation: GatewayHelloObservation | null) => void) {
     return connection.subscribeHello(listener);
   },
+  subscribeRetryState(listener: Parameters<GatewayConnection['subscribeRetryState']>[0]) {
+    return connection.subscribeRetryState(listener);
+  },
   captureConnectionId() { return connection.getAttestedConnectionId(); },
+  capturePendingRuntimeIdentityConnectionId() {
+    return connection.getPendingRuntimeIdentityConnectionId();
+  },
+  getRuntimeIdentityHandshakeFailure() {
+    return connection.getRuntimeIdentityHandshakeFailure();
+  },
+  subscribeRuntimeIdentityHandshakeFailure(
+    listener: Parameters<GatewayConnection['subscribeRuntimeIdentityHandshakeFailure']>[0],
+  ) {
+    return connection.subscribeRuntimeIdentityHandshakeFailure(listener);
+  },
   isConnectionCurrent(connectionId: string) {
     return connection.isConnected() && connection.getAttestedConnectionId() === connectionId;
   },

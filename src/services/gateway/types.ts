@@ -80,4 +80,6 @@ export interface GatewayStateSnapshot {
   retrying: boolean;
   /** 所选状态与配置对应的端点已通过认证健康探测。 */
   selectedGatewayReady: boolean;
+  /** 仅当前连接尝试自身的终态错误可中止收敛；进程观察错误只是诊断。 */
+  connectionAttemptError: string | null;
 }

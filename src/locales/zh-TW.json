@@ -2758,6 +2758,7 @@
     "scanQr": "掃描二維碼",
     "scanQrHint": "請使用對應渠道應用程式掃碼。授權結果和帳號連線由 OpenClaw 負責。",
     "configureChannel": "設定渠道",
+    "wizardFailed": "OpenClaw 渠道設定精靈執行失敗。",
     "wizardMissingStep": "OpenClaw 沒有返回下一步渠道設定步驟。",
     "channelsWizardUnsupported": "目前 OpenClaw Runtime 不支援桌面渠道設定精靈。",
     "channelsWizardUnsupportedHint": "請繼續使用官方終端渠道設定流程，或更新目前所選 OpenClaw Runtime。",
@@ -3924,8 +3925,10 @@
       "send": "傳送"
     },
     "handoff": {
-      "connection-unavailable": "OpenClaw 設定已結束，但 JunQi 尚未取得新的認證連線。請恢復 Gateway 連線後重試。",
+      "connection-unavailable": "OpenClaw 設定已結束，但 JunQi 尚未取得目前所選執行環境的有效認證連線。請恢復 Gateway 連線後重試。",
       "gateway-unavailable": "OpenClaw 設定已結束，但目前所選 Gateway 無法核驗。請檢查執行環境後重試。",
+      "configuration-application-unavailable": "目前 Gateway 無法提供作用中設定修訂證據，JunQi 無法確認新設定已經生效。請更新 OpenClaw 後重試。",
+      "configuration-application-timeout": "OpenClaw 設定已寫入，但 Gateway 未在限定時間內套用該修訂。請查看日誌並重試。",
       "setup-incomplete": "OpenClaw 官方探測仍未確認設定完成。請返回設定並處理未完成步驟。",
       "model-unverified": "OpenClaw 設定已儲存，但真實模型呼叫尚未通過。請核對供應商憑據後重試。"
     },
@@ -4166,6 +4169,7 @@
       "inspectingSession": "正在檢查現有的 OpenClaw 配置會話…",
       "startingSession": "正在啟動 OpenClaw 官方配置嚮導…",
       "connectingAction": "正在連接",
+      "selectedRuntimeTargetUnavailable": "所選 OpenClaw Runtime 未提供可連線的 Gateway 位址。",
       "connectionTimeout": "Gateway 程序已就緒，但 JunQi 未能在限定時間內完成認證連線與運行時身分核驗。",
       "connectionSuperseded": "Gateway 連線核驗被另一項執行環境操作取代，請等待該操作完成後重新核驗。",
       "handoffNotReady": "OpenClaw 配置已完成，但切換運行方式後無法驗證所選 Gateway。請修復並重試。",

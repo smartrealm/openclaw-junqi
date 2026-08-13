@@ -1,15 +1,23 @@
 # OpenClaw `wizard.start` 流程与 JunQi 适配边界
 
-更新时间：2026-08-11
+更新时间：2026-08-14
 
 本文整理 OpenClaw Gateway 交互式 Wizard 的正式协议、服务端会话状态机、完整配置流程和 JunQi 当前适配方式。它是实现与排障依据，不是客户端自定义向导规范。
 
 ## 依据与版本边界
 
-- 最新上游依据为 2026-08-11 核验的 OpenClaw `main`，提交 `241e1accde4e04882a7343b2a8caa8bc94291f22`。
-- 本机相邻 `Openclaw` 工作树停留在 `3075acd549a5c76ad776cd8be5edff8ee6d47b55`，落后上游，本文不以该本机快照替代最新官方契约。
+- 最新上游依据为 2026-08-14 核验的 OpenClaw `main`，提交 `b3d5265f58522bab67e06168d436b3b328cbae60`。
+- 本机相邻 `Openclaw` 工作树已抓取该上游提交。本文仍只把提交号作为审计证据，不把本地工作树或提交号写成客户端能力开关。
 - OpenClaw 实际安装版本只用于复现兼容差异。JunQi 不按版本号猜测字段，也不把本文记录的提交号写成能力开关。
 - 请求对象使用封闭 schema。目标 Runtime 不接受某个最新字段时，客户端必须保留真实失败，不得静默改发另一套自定义协议。
+
+本轮接管契约直接核对以下官方实现：
+
+- `src/wizard/session.ts`：结构化步骤、`Done` note 与真正终态的顺序；
+- `src/gateway/server-methods/wizard.ts`：Hosted Wizard 会话、准入与 Runner 收敛；
+- `src/gateway/config-get-response.ts` 与 `src/gateway/applied-config-hash-publisher.ts`：磁盘修订和活动配置修订；
+- `src/gateway/server-methods/health.ts`：官方配置重载状态；
+- `src/gateway/server-reload-restart.ts` 与 `src/gateway/server-reload-managed.ts`：活动工作延迟、重启和认证代次轮换。
 
 ## 一、总体调用链
 
@@ -294,14 +302,20 @@ JunQi 首次启动只发起完整官方配置：
 
 ### 终态处理
 
-官方结果为 `done` 后，JunQi 仍需：
+官方结果只有在 `done === true` 时才是终态；`status: "done"` 仍可能与需要确认的普通步骤同时出现。取得真实终态后，JunQi 仍需：
 
-1. 捕获当前已核验 Gateway 连接及其 Runtime 身份；
-2. 只有该连接已经失效时，才通过全局 Gateway 生命周期协调器重新解析目标和凭据并重连；
-3. 在同一连接标识围栏内探测用户所选 Gateway；
-4. Classic 使用当前 Wizard 返回的官方 `done` 作为配置终态，不调用该 Runtime 未提供的 Guided 专属方法；
-5. Guided 终态才继续调用官方 `openclaw.setup.detect` 与 `openclaw.setup.verify`；
-6. 对应模式的门禁通过后才进入完成页。
+1. 从当前所选 Runtime 的正式配置边界重新解析端点与凭据；读取失败时停止交接，不复用向导前的内存凭据；
+2. 捕获当前已核验 Gateway 连接及其 Runtime 身份；连接失效时通过全局 Gateway 生命周期协调器重连，并等待新的已认证连接；
+3. 在同一连接标识围栏中调用 `config.get`，要求非空 `configRevisionHash` 与 `appliedConfigHash` 相等，证明磁盘修订已经由活动 Runtime 采用；
+4. 配置修订尚未收敛时，在一个共享的有界事务内等待 OpenClaw 自身的配置重载与连接轮换。普通超时只保留待核验，不主动重启；只有结构化 `gateway.reload.mode: "off"` 或官方 `health.configReload.hotReloadStatus: "disabled"` 才可经统一生命周期入口补发一次重启；
+5. 在同一连接围栏内探测用户所选 Gateway；Classic 使用当前 Wizard 返回的官方终态，Guided 再调用 `openclaw.setup.detect` 与 `openclaw.setup.verify`；
+6. 进入完成页前再次在同一连接上读取 `config.get`。修订漂移时回到同一事务继续收敛和核验，不能提交旧连接的成功状态。
+
+生命周期屏障同时返回任意生命周期代次与真实重启尝试代次。重启尝试代次只在统一协调器即将调用原生 `manager.restart()` 时递增，不能从外层动作名称或命令结果推断。若本事务已经等待过恢复内部重启，或两次屏障之间发生过快速重启，交接只重新建立认证连接并核验配置，不允许再补发一次重启。
+
+连接层只有一个退避所有者：Gateway Manager 管理连接轮次，Connection 管理 WebSocket 尝试、退避与耗尽。进程健康观察不能在 Connection 已经尝试或退避时并发创建第二轮连接。显式同目标连接先关闭旧传输再建立新轮；普通配对取消统一经 Manager 收敛活动握手和等待定时器，取消本身不触发自动重连。
+
+当前 Gateway 缺少配置修订字段时，JunQi 无法证明新配置已经应用，必须明确要求更新 OpenClaw。端口健康、旧 WebSocket 仍在线、重启命令返回成功和 `config.get.hash` 均不能替代活动配置修订证据。
 
 Wizard 完成不等于桌面客户端已经连接到正确 Runtime。上述核验失败时必须停留在配置页面，并保留“官方终态已确认”的本地派生恢复状态。此后的“重新核验”只重复连接围栏、所选 Runtime、配置终态和真实模型核验；当前连接失效时才重连。该恢复不调用 `wizard.start`、`wizard.next`，也不恢复或重放已经回收的官方会话。
 
@@ -317,6 +331,11 @@ Wizard 完成不等于桌面客户端已经连接到正确 Runtime。上述核�
 | 授权插件仍在轮询 | 当前 `wizard.next` 尚未返回终态 | 保持等待投影，允许显式暂停；不由客户端超时或并行轮询 |
 | Gateway 身份或连接变化 | 请求来源不再绑定原 Runtime | 重新核验目标和凭据，再尝试恢复官方会话 |
 | 官方 `done` 后 Gateway 核验失败 | 官方配置已终态，本地运行时交接未完成 | 只重新执行运行时交接与身份核验，不重新启动 Wizard |
+| `configRevisionHash` 与 `appliedConfigHash` 不相等 | 配置文件修订尚未由活动 Runtime 采用 | 等待官方重载与新认证连接；普通超时不主动重启 |
+| 缺少活动配置修订字段 | 当前 Gateway 无法证明活动配置版本 | 明确要求更新 OpenClaw，不使用健康探测或版本号 fallback |
+| 当前连接的 Runtime Identity 核验失败 | 连接到了错误 Runtime，或当前身份与所选 Runtime 不一致 | 立即保留具体核验诊断，不等待通用连接收敛超时 |
+| Runtime Identity 核验期间连接关闭或换代 | 核验结果不再属于活动 socket | 作废待定身份并按当前所选 Runtime 恢复，迟到结果不得发布连接可用 |
+| 特权临时连接握手期间主连接换代 | 管理请求来源围栏已经失效 | 在发送 RPC 前拒绝请求，不得把写操作发送给旧目标 |
 | 未识别步骤类型 | JunQi 落后于 Gateway 协议 | 明确提示升级，不猜测控件和提交值 |
 | 终态 `error` | 官方 Runner 失败 | 展示经脱敏的原始诊断，不伪造成功 |
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   classifyOpenClawWizardFailure,
+  isOpenClawWizardTerminalResult,
   isOpenClawWizardSessionLost,
   isOpenClawWizardStepDesynchronized,
   OpenClawWizardCancelledError,
@@ -287,7 +288,7 @@ test('wizard client preserves resume context when the official session terminate
         step: { id: 'provider-auth', type: 'action' },
       };
     }
-    return { done: false, status: 'error' };
+    return { done: true, status: 'error' };
   });
 
   await client.start();
@@ -379,7 +380,7 @@ test('wizard client treats cancelled as a terminal session that can restart clea
       starts += 1;
       return { sessionId: `session-${starts}`, done: false, status: 'running', step: { id: 'confirm', type: 'confirm' } };
     }
-    return { done: false, status: 'cancelled' };
+    return { done: true, status: 'cancelled' };
   });
 
   await client.start();
@@ -391,6 +392,42 @@ test('wizard client treats cancelled as a terminal session that can restart clea
   assert.equal(classifyOpenClawWizardFailure(new OpenClawWizardCancelledError()), 'cancelled');
   await client.retry();
   assert.equal(client.activeSessionId, 'session-2');
+});
+
+test('带 done 状态的进度步骤仍保留官方会话', async () => {
+  const client = new OpenClawWizardClient(async (method) => {
+    if (method === 'wizard.start') {
+      return {
+        sessionId: 'session-progress',
+        done: false,
+        status: 'running',
+        step: { id: 'confirm-done', type: 'confirm' },
+      };
+    }
+    return {
+      done: false,
+      status: 'done',
+      step: { id: 'final-progress', type: 'note', message: 'Done' },
+    };
+  });
+
+  await client.start();
+  const progress = await client.next('confirm-done', true);
+
+  assert.equal(progress.done, false);
+  assert.equal(progress.step?.id, 'final-progress');
+  assert.equal(client.activeSessionId, 'session-progress');
+});
+
+test('只有 done 为真时官方状态才构成 Wizard 终态', () => {
+  assert.equal(isOpenClawWizardTerminalResult({
+    done: false,
+    status: 'done',
+    step: { id: 'final-note', type: 'note' },
+  }), false);
+  assert.equal(isOpenClawWizardTerminalResult({ done: true, status: 'done' }), true);
+  assert.equal(isOpenClawWizardTerminalResult({ done: true, status: 'cancelled' }), true);
+  assert.equal(isOpenClawWizardTerminalResult({ done: true, status: 'error' }), true);
 });
 
 test('wizard client preserves Gateway option identity from the installed schema', async () => {

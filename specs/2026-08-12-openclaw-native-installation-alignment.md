@@ -1,6 +1,6 @@
 # OpenClaw 原生安装对齐目标规格
 
-状态：代码已实现，自动化验证进行中
+状态：代码与自动化验证已完成，真机接管待验证
 
 ## 目标
 
@@ -32,8 +32,10 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 11. 用户明确选择其他候选或手动凭据时调用 `openclaw.setup.activate`。只有上游返回成功并且 `openclaw.setup.verify` 通过，才能认为推理配置成立。
 12. 推理成立后，用独立 session 调用 `openclaw.chat`，首个请求携带 `welcomeVariant: "onboarding"`。
 13. JunQi 按官方 reply、action、sensitive 和 agentDraft 呈现对话，不补造步骤或终态。
-14. OpenClaw 返回退出或打开智能体动作后，JunQi 通过统一交接门禁复用当前已核验连接；连接失效时才重连。随后绑定同一连接核验所选 Runtime、`setup.detect` 与 `setup.verify`，再进入 Ready。
+14. OpenClaw 返回退出或打开智能体动作后，JunQi 通过统一交接门禁重新读取所选 Runtime 的端点与凭据，并要求当前认证连接上的 `configRevisionHash` 与 `appliedConfigHash` 非空且相等。修订尚未应用时只等待官方重载；普通超时不重启，只有正式配置或官方健康响应结构化证明重载关闭时才最多补发一次统一生命周期重启。随后绑定同一连接核验所选 Runtime、`setup.detect` 与 `setup.verify`，进入 Ready 前再次核对同一活动配置修订。
 15. 用户从 Ready 进入工作台时再次核验 Gateway 与当前配置，随后一次性提交本地完成标记并切换页面。
+
+交接事务必须取得生命周期屏障凭据，其中包含任意生命周期代次和真实重启尝试代次。重启尝试只在统一协调器调用原生重启前计数；事务已观察到任何真实重启后只能重新核验，不得再次补偿。Gateway Manager 只拥有连接轮次，Connection 独占 WebSocket 退避与耗尽；健康观察、配对取消和显式同目标连接都不得创建第二个重试所有者。
 
 ## 明确的高级路径
 
@@ -111,6 +113,13 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 - 无可用候选时可以看到官方不可用原因、可用认证或手动凭据入口以及推荐安装建议。
 - Provider Wizard 和 chat 内嵌 Wizard 都有可访问的显式取消入口，并调用各自的官方取消协议。
 - 官方 setup admission busy 可以分别进入 Classic reclaim 和 Guided 可重试错误，不会退化为 unknown。
+- Wizard 的 `status: done` 不能单独构成终态；携带结构化步骤且 `done: false` 时必须继续呈现该步骤。
+- Gateway 接管必须在同一连接围栏内证明 `configRevisionHash === appliedConfigHash`；缺字段、字段为空或修订不相等均不能进入 Ready。
+- 官方重载等待、连接重建、最多一次补偿重启和最终二次核验共享同一个绝对截止时间；不能让多轮操作各自重新取得完整等待预算。
+- 普通等待超时不得触发显式重启；只有 `gateway.reload.mode: off` 或官方 `health.configReload.hotReloadStatus: disabled` 时允许经唯一生命周期入口补发一次重启。
+- Runtime Identity 核验失败应立即显示具体诊断，进程观察的瞬时错误只能作为等待诊断，不能提前终止仍可能成功的认证连接。
+- 连接可用必须晚于同一打开 socket 的 Runtime Identity 核验；连接关闭或换代必须作废待定身份，迟到核验结果不能进入工作区。
+- 特权管理请求在临时连接握手完成后、RPC 发送前必须复核主连接标识、端点和凭据；来源改变时不得发送写请求。
 - 已配置 Gateway 的 `setupComplete: true` 会跳过 onboarding。
 - fresh activation 未取得真实 completion 时不能进入工作台。
 - npm 12 安装不会阻止 OpenClaw lifecycle script。
