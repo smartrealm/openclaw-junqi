@@ -3,7 +3,6 @@ import type { SetupStep } from '@/types/setupNavigation';
 export type OnboardingPresentationKind =
   | 'decision'
   | 'operation'
-  | 'gateway-ready'
   | 'official-wizard'
   | 'failure'
   | 'complete';
@@ -31,8 +30,8 @@ const PRESENTATION_STATES = {
   'node-missing': { state: 'node-missing', stage: 2, kind: 'decision' },
   'install-node': { state: 'install-node', stage: 2, kind: 'operation' },
   'install-openclaw': { state: 'install-openclaw', stage: 2, kind: 'operation' },
-  // Gateway 已就绪后立即进入配置阶段的统一容器；底层状态仍保留运行时事实。
-  'gateway-ready': { state: 'gateway-ready', stage: 3, kind: 'gateway-ready' },
+  // Gateway 核验完成只更新运行时执行页，不额外制造配置前置页面。
+  'gateway-ready': { state: 'gateway-ready', stage: 2, kind: 'operation' },
   'configure-openclaw': { state: 'configure-openclaw', stage: 3, kind: 'official-wizard' },
   ready: { state: 'ready', stage: 4, kind: 'complete' },
   error: { state: 'error', stage: 2, kind: 'failure' },

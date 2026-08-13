@@ -89,9 +89,9 @@ export function SetupPage() {
       case "install-git":
       case "install-node":
       case "install-openclaw": return <ProgressScreen flow={flow} logs={sharedLogs} />;
-      case "gateway-ready": return <OpenClawConfigurationScreen flow={flow} logs={sharedLogs} phase="verification" />;
+      case "gateway-ready": return <ProgressScreen flow={flow} logs={sharedLogs} />;
       case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
-      case "configure-openclaw": return <OpenClawConfigurationScreen flow={flow} logs={sharedLogs} phase="wizard" />;
+      case "configure-openclaw": return <OpenClawConfigurationScreen flow={flow} logs={sharedLogs} />;
       case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;
       case "node-missing": return <NodeMissingScreen flow={flow} logs={sharedLogs} />;
       default: return <EnvironmentEntryScreen flow={flow} logs={sharedLogs} phase="detecting" />;

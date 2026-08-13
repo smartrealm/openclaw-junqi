@@ -697,9 +697,7 @@ function installationCompletionPercent(steps: StepState[]): number {
   const completed = steps.reduce((total, step) => {
     if (step.status === "done" || step.status === "skipped") return total + 1;
     if (step.status !== "running") return total;
-    // A running step may report byte/process progress. It contributes only its
-    // completed fraction and cannot make the overall workflow read as complete
-    // until the step itself has settled.
+    // 运行中的步骤只按真实进度计入总进度，未进入终态前不能显示为全部完成。
     const fraction = typeof step.progress === "number"
       ? Math.max(0, Math.min(99, step.progress)) / 100
       : 0;
@@ -851,7 +849,7 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
   const [directoryError, setDirectoryError] = useState(false);
   const [exportingBundle, setExportingBundle] = useState(false);
   const [bundleExportState, setBundleExportState] = useState<"idle" | "success" | "error">("idle");
-  useLayoutEffect(() => {
+  useClientLayoutEffect(() => {
     if (!followRef.current) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -860,8 +858,7 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
       if (followRef.current) viewport.scrollTop = viewport.scrollHeight;
     };
     scrollToLatest();
-    // Wrapped process output can change height after the DOM commit. Follow it
-    // on the next frame while preserving a user's deliberate scroll position.
+    // 进程输出换行后高度可能变化；下一帧继续跟随，同时保留用户主动滚动的位置。
     const frame = window.requestAnimationFrame(scrollToLatest);
     return () => window.cancelAnimationFrame(frame);
   }, [logs]);
@@ -936,7 +933,7 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
             className={clsx(
               "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-aegis-surface disabled:opacity-40",
               bundleExportState === "error"
-                ? "text-red-300"
+                ? "text-aegis-danger"
                 : bundleExportState === "success"
                   ? "text-aegis-success"
                   : "text-aegis-text-secondary",
@@ -954,7 +951,7 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
             aria-label={t("setup.installPanel.openLogs", "打开完整日志目录")}
             className={clsx(
               "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-aegis-surface disabled:opacity-40",
-              directoryError ? "text-red-300" : "text-aegis-text-secondary",
+              directoryError ? "text-aegis-danger" : "text-aegis-text-secondary",
             )}
           >
             <FolderOpen size={13} />
@@ -1005,7 +1002,7 @@ function InstallLiveLog({ logs }: { logs: SetupLog[] }) {
 }
 
 type InstallationConsoleProps = {
-  flow: Pick<SetupFlow, "steps" | "installTarget">;
+  flow: Pick<SetupFlow, "steps" | "installTarget" | "gatewayReadyContinuation">;
   logs: SetupLog[];
   setupStep: string;
 };
@@ -1017,33 +1014,55 @@ export function InstallationConsole({
 }: InstallationConsoleProps) {
   const { t } = useTranslation();
   const reduceMotion = useReducedMotion() ?? false;
-  const [detailsView, setDetailsView] = useState<"steps" | "logs">("steps");
+  const [mobileView, setMobileView] = useState<"steps" | "logs">("steps");
   const current = currentStepOf(flow.steps);
   const completed = flow.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
   const total = flow.steps.length || 1;
   const percent = installationCompletionPercent(flow.steps);
   const isError = setupStep === "error";
+  const isGatewayReady = setupStep === "gateway-ready";
+  const isCheckingConfiguration = isGatewayReady && flow.gatewayReadyContinuation.status === "checking";
+  const isConfigurationCheckFailed = isGatewayReady && flow.gatewayReadyContinuation.status === "failed";
   const currentMeta = current ? STEP_META[current.id] : null;
-  const currentTitle = installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
-  const currentDescription = currentMeta
-    ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
-    : t("setup.subtitle");
+  const currentTitle = isCheckingConfiguration
+    ? t("setup.gatewayReadyCheckingTitle", "正在核验 OpenClaw 配置")
+    : isConfigurationCheckFailed
+      ? t("setup.gatewayReadyContinueFailedTitle", "配置核验未完成")
+      : isGatewayReady
+        ? t("setup.gatewayConnected", "Gateway 连接与运行时身份已核验")
+        : installStepTitle(current, t) ?? t("setup.preparingGateway", "正在准备 Gateway...");
+  const currentDescription = isConfigurationCheckFailed
+    ? flow.gatewayReadyContinuation.error ?? t("setup.gatewayReadyContinueFailedTitle", "配置核验未完成")
+    : isCheckingConfiguration
+      ? t("setup.gatewayReadyCheckingDescription", "正在核验当前配置。完成后会原地呈现官方配置步骤或真实错误。")
+      : isGatewayReady
+        ? t("setup.gatewayReadySubtitle", "运行时检查已完成。请核验 OpenClaw 配置后继续。")
+        : currentMeta
+          ? t(currentMeta.descriptionKey, currentMeta.descriptionFallback)
+          : t("setup.subtitle");
   const summaryLabel = isError
     ? t("setup.error", "安装遇到问题")
-    : t("setup.installPanel.current", "当前执行");
+    : isGatewayReady
+      ? t("setup.gatewayReadyTitle", "运行时已就绪")
+      : t("setup.installPanel.current", "当前执行");
+  const summaryTone = isError || isConfigurationCheckFailed
+    ? "danger"
+    : isGatewayReady && !isCheckingConfiguration
+      ? "success"
+      : "primary";
 
   const activityPanel = (
     <div id="setup-installation-details" className="overflow-hidden rounded-xl border border-aegis-border bg-aegis-elevated">
-      <div className="flex gap-1 border-b border-aegis-border p-2">
+      <div className="flex gap-1 border-b border-aegis-border p-2 lg:hidden">
         {(["steps", "logs"] as const).map((view) => (
           <button
             key={view}
             type="button"
-            onClick={() => setDetailsView(view)}
-            aria-pressed={detailsView === view}
+            onClick={() => setMobileView(view)}
+            aria-pressed={mobileView === view}
             className={clsx(
               "rounded-md px-3 py-2 text-xs font-semibold transition-colors",
-              detailsView === view
+              mobileView === view
                 ? "bg-aegis-surface text-aegis-text"
                 : "text-aegis-text-dim hover:text-aegis-text-secondary",
             )}
@@ -1054,14 +1073,16 @@ export function InstallationConsole({
           </button>
         ))}
       </div>
-      <div>
-        {detailsView === "steps" ? (
+      <div className="lg:grid lg:grid-cols-[minmax(0,0.9fr)_minmax(390px,1.1fr)]">
+        <div className={clsx(mobileView !== "steps" && "hidden", "lg:block")}>
           <InstallationTimeline steps={flow.steps} />
-        ) : (
-          <div data-setup-installation-log>
-            <InstallLiveLog logs={logs} />
-          </div>
-        )}
+        </div>
+        <div
+          data-setup-installation-log
+          className={clsx(mobileView !== "logs" && "hidden", "lg:block")}
+        >
+          <InstallLiveLog logs={logs} />
+        </div>
       </div>
     </div>
   );
@@ -1071,13 +1092,17 @@ export function InstallationConsole({
       <div className={clsx(
         "grid gap-3 rounded-xl border p-4",
         "md:grid-cols-[1fr_168px]",
-        isError ? "border-aegis-danger/35 bg-aegis-danger/5" : "border-aegis-primary/30 bg-aegis-primary/5",
+        summaryTone === "danger" && "border-aegis-danger/35 bg-aegis-danger/5",
+        summaryTone === "success" && "border-aegis-success/35 bg-aegis-success/5",
+        summaryTone === "primary" && "border-aegis-primary/30 bg-aegis-primary/5",
       )}>
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-aegis-text-muted">
-            {isError
+            {summaryTone === "danger"
               ? <X size={15} className="text-aegis-danger" />
-              : <CircleDot size={15} className="text-aegis-primary" />}
+              : summaryTone === "success"
+                ? <Check size={15} className="text-aegis-success" />
+                : <CircleDot size={15} className="text-aegis-primary" />}
             {summaryLabel}
           </div>
           <div className="text-lg font-semibold text-aegis-text" dir="auto">{currentTitle}</div>
@@ -1093,8 +1118,10 @@ export function InstallationConsole({
             <div
               className={clsx(
                 "h-full rounded-full transition-[width] duration-300",
-                isError ? "bg-aegis-danger" : "bg-aegis-primary",
-                !isError && !reduceMotion && "animate-pulse",
+                summaryTone === "danger" && "bg-aegis-danger",
+                summaryTone === "success" && "bg-aegis-success",
+                summaryTone === "primary" && "bg-aegis-primary",
+                summaryTone === "primary" && !reduceMotion && "animate-pulse",
               )}
               style={{ width: `${percent}%` }}
             />

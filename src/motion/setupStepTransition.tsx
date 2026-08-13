@@ -66,7 +66,10 @@ export function setupStepScene(step: SetupStep): SetupStep {
   // 同一用户可见阶段内的运行状态只替换内容，不能重新挂载整块页面。
   if (step === 'welcome') return 'environment-review';
   if (step === 'detecting') return 'environment-review';
-  if (step === 'gateway-ready') return 'configure-openclaw';
+  if (step === 'install-git') return 'checking';
+  if (step === 'install-node') return 'checking';
+  if (step === 'install-openclaw') return 'checking';
+  if (step === 'gateway-ready') return 'checking';
   return step;
 }
 

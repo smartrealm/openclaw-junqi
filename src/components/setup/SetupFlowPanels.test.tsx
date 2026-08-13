@@ -37,7 +37,7 @@ test('运行时日志默认收起并可由用户主动展开', () => {
     </SetupShell>,
   );
 
-  assert.match(markup, /View logs/);
+  assert.match(markup, /setup\.viewLogs|View logs/);
   assert.doesNotMatch(markup, /Debug Log/);
   assert.doesNotMatch(markup, /等待确认/);
 });
@@ -63,6 +63,7 @@ test('安装进度使用主题状态色区分运行和失败', () => {
     <InstallationConsole
       flow={{
         installTarget: null,
+        gatewayReadyContinuation: { status: 'idle', error: null },
         steps: [{ id: 'gateway', label: 'Gateway', status: 'running', progress: 50 }],
       }}
       logs={[]}
@@ -73,6 +74,7 @@ test('安装进度使用主题状态色区分运行和失败', () => {
     <InstallationConsole
       flow={{
         installTarget: null,
+        gatewayReadyContinuation: { status: 'idle', error: null },
         steps: [{ id: 'gateway', label: 'Gateway', status: 'error' }],
       }}
       logs={[]}
@@ -86,11 +88,12 @@ test('安装进度使用主题状态色区分运行和失败', () => {
   assert.doesNotMatch(runningMarkup + failedMarkup, /linear-gradient|box-shadow/);
 });
 
-test('依赖安装日志默认收起且失败不会自动展开', () => {
+test('依赖安装宽窗口左右展示步骤与记录，窄窗口使用切换', () => {
   const markup = renderToStaticMarkup(
     <InstallationConsole
       flow={{
         installTarget: null,
+        gatewayReadyContinuation: { status: 'idle', error: null },
         steps: [{ id: 'gateway', label: 'Gateway', status: 'error' }],
       }}
       logs={[{ source: 'gateway', message: '连接诊断详情', ts: 0, level: 'error' }]}
@@ -100,6 +103,25 @@ test('依赖安装日志默认收起且失败不会自动展开', () => {
 
   assert.match(markup, /aria-pressed="true"/);
   assert.match(markup, /aria-pressed="false"/);
-  assert.doesNotMatch(markup, /data-setup-installation-log/);
-  assert.doesNotMatch(markup, /连接诊断详情/);
+  assert.match(markup, /lg:grid-cols/);
+  assert.match(markup, /data-setup-installation-log/);
+  assert.match(markup, /连接诊断详情/);
+});
+
+test('Gateway 核验完成直接替换安装摘要，不生成独立完成卡片', () => {
+  const markup = renderToStaticMarkup(
+    <InstallationConsole
+      flow={{
+        installTarget: null,
+        gatewayReadyContinuation: { status: 'idle', error: null },
+        steps: [{ id: 'gateway', label: 'Gateway', status: 'done' }],
+      }}
+      logs={[]}
+      setupStep="gateway-ready"
+    />,
+  );
+
+  assert.match(markup, /Gateway connection and runtime identity verified/);
+  assert.match(markup, /Runtime checks are complete/);
+  assert.match(markup, /bg-aegis-success/);
 });

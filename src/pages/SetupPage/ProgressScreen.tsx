@@ -12,6 +12,8 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
   const { t } = useTranslation();
   const { setupStep, setupError } = useAppStore();
   const isInstalling = setupBackPolicy(setupStep) === "cancel-install";
+  const isGatewayReady = setupStep === "gateway-ready";
+  const gatewayContinuation = flow.gatewayReadyContinuation;
   const currentInstallStep = currentStepOf(flow.steps);
   const diagnosticLogs = logs
     .slice(-500)
@@ -40,6 +42,9 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
       } : isInstalling ? {
         label: t("setup.cancelInstall", "取消安装"),
         onClick: () => { void flow.cancelSetupRun(); },
+      } : isGatewayReady ? {
+        onClick: () => { void flow.goBack(); },
+        disabled: gatewayContinuation.status === "checking",
       } : undefined}
       secondaryAction={canRepairGateway ? {
         label: t("setup.retryDirectly", "直接重试"),
@@ -67,6 +72,18 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
               }
           : setupStep === "error"
             ? { label: t("setup.retry"), onClick: () => { void flow.retrySetup(); }, icon: "none" }
+            : isGatewayReady
+              ? {
+                  label: gatewayContinuation.status === "checking"
+                    ? t("setup.gatewayReadyCheckingAction", "正在核验配置…")
+                    : gatewayContinuation.status === "failed"
+                      ? t("setup.gatewayReadyRetryAction", "重新核验")
+                      : t("setup.gatewayReadyCheckAction", "核验配置"),
+                  onClick: () => { void flow.continueAfterGatewayReady(); },
+                  disabled: gatewayContinuation.status === "checking",
+                  loading: gatewayContinuation.status === "checking",
+                  icon: "none",
+                }
             : { label: runningStepLabel, disabled: true, loading: true, icon: "none" }
       }
     >

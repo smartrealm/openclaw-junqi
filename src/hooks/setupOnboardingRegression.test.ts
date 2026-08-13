@@ -343,15 +343,15 @@ test('BUG-ONB-28 a verified setup Gateway hands off without replaying cold boot'
   assert.match(gatewayClient, /refreshConnectionStatus\(\) \{ connection\.emitStatus\(\); \}/);
 });
 
-test('BUG-ONB-29 Gateway 核验与官方配置向导共享同一配置呈现容器', () => {
-  const configurationScreen = screen('OpenClawConfigurationScreen');
+test('BUG-ONB-29 Gateway 核验原地更新运行时执行页，完成后才进入官方配置', () => {
+  const progressScreen = screen('ProgressScreen');
 
-  assert.match(setupPage, /case "gateway-ready": return <OpenClawConfigurationScreen/);
+  assert.match(setupPage, /case "gateway-ready": return <ProgressScreen/);
   assert.match(setupPage, /case "configure-openclaw": return <OpenClawConfigurationScreen/);
-  assert.match(configurationScreen, /<WizardScreen flow=\{flow\} logs=\{logs\} \/>/);
-  assert.match(configurationScreen, /void flow\.continueAfterGatewayReady\(\)/);
-  assert.match(configurationScreen, /setup\.gatewayReadyCheckAction/);
-  assert.match(configurationScreen, /setup\.gatewayReadyRetryAction/);
+  assert.match(progressScreen, /void flow\.continueAfterGatewayReady\(\)/);
+  assert.match(progressScreen, /setup\.gatewayReadyCheckAction/);
+  assert.match(progressScreen, /setup\.gatewayReadyRetryAction/);
+  assert.match(progressScreen, /<InstallationConsole/);
 });
 
 test('BUG-ONB-30 verified Gateway handoff cannot start cold recovery', () => {

@@ -14,8 +14,8 @@ test('setup step transition keeps the initial scene stationary', () => {
   assert.equal(setupStepMotionDirection('ready', 'ready'), 0);
 });
 
-test('Gateway 配置核验与官方向导共享一个视觉场景', () => {
-  assert.equal(setupStepScene('gateway-ready'), 'configure-openclaw');
+test('Gateway 配置核验与运行时安装共享一个视觉场景', () => {
+  assert.equal(setupStepScene('gateway-ready'), 'checking');
   assert.equal(setupStepScene('configure-openclaw'), 'configure-openclaw');
 });
 
@@ -54,7 +54,6 @@ test('运行时状态不位移动画，避免探测进度交接时闪动', () =>
   assert.equal(setupStepMotionMode('decision'), 'directional');
   assert.equal(setupStepMotionMode('official-wizard'), 'directional');
   assert.equal(setupStepMotionMode('operation'), 'ambient');
-  assert.equal(setupStepMotionMode('gateway-ready'), 'ambient');
   assert.equal(setupStepMotionMode('failure'), 'ambient');
   assert.deepEqual(setupStepEntryState(1, false, 'ambient'), { opacity: 1, x: 0, y: 0 });
 });

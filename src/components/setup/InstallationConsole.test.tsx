@@ -15,6 +15,7 @@ test('安装控制台持续呈现当前执行和安装详情', () => {
           { id: 'gateway', label: 'Gateway', status: 'done' },
         ],
         installTarget: null,
+        gatewayReadyContinuation: { status: 'idle', error: null },
       }}
       logs={[]}
       setupStep="checking"

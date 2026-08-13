@@ -7,37 +7,6 @@ import { OpenClawConfigurationScreen } from './OpenClawConfigurationScreen';
 import { wizardPrimaryActionDisabled, WizardRestartConfirmation, WizardScreen } from './WizardScreen';
 import { resolveWizardAuthorizationUrl } from './wizard/WizardAuthorizationHint';
 
-type VerificationFlow = Pick<
-  SetupFlow,
-  | 'presentation'
-  | 'gatewayReadyContinuation'
-  | 'goBack'
-  | 'continueAfterGatewayReady'
->;
-
-function createVerificationFlow(
-  gatewayReadyContinuation: SetupFlow['gatewayReadyContinuation'],
-): VerificationFlow {
-  return {
-    presentation: { state: 'gateway-ready', stage: 3, kind: 'gateway-ready' },
-    gatewayReadyContinuation,
-    goBack: async () => undefined,
-    continueAfterGatewayReady: async () => undefined,
-  };
-}
-
-function renderVerificationState(
-  gatewayReadyContinuation: SetupFlow['gatewayReadyContinuation'],
-): string {
-  return renderToStaticMarkup(
-    <OpenClawConfigurationScreen
-      flow={createVerificationFlow(gatewayReadyContinuation)}
-      logs={[]}
-      phase="verification"
-    />,
-  );
-}
-
 function createGuidedFlow(): SetupFlow {
   return {
     presentation: { state: 'configure-openclaw', stage: 3, kind: 'official-wizard' },
@@ -105,7 +74,7 @@ function createGuidedAuthorizationFlow(busy: boolean): SetupFlow {
 
 test('首次配置默认呈现 OpenClaw Guided 探测结果，Classic 仅作为显式入口', () => {
   const html = renderToStaticMarkup(
-    <OpenClawConfigurationScreen flow={createGuidedFlow()} logs={[]} phase="wizard" />,
+    <OpenClawConfigurationScreen flow={createGuidedFlow()} logs={[]} />,
   );
 
   assert.match(html, /Detected options/);
@@ -130,7 +99,7 @@ test('用户显式选择 Classic 后才呈现官方详细向导', () => {
     reclaimWizard: async () => null,
   } as unknown as SetupFlow;
   const html = renderToStaticMarkup(
-    <OpenClawConfigurationScreen flow={flow} logs={[]} phase="wizard" />,
+    <OpenClawConfigurationScreen flow={flow} logs={[]} />,
   );
 
   assert.match(html, /Connecting to the official OpenClaw setup wizard/);
@@ -142,7 +111,6 @@ test('Guided 供应商授权复用官方步骤二维码呈现', () => {
     <OpenClawConfigurationScreen
       flow={createGuidedAuthorizationFlow(false)}
       logs={[]}
-      phase="wizard"
     />,
   );
 
@@ -165,7 +133,7 @@ test('Guided 自动激活后先确认当前有效路径', () => {
     },
   };
   const html = renderToStaticMarkup(
-    <OpenClawConfigurationScreen flow={confirmationFlow} logs={[]} phase="wizard" />,
+    <OpenClawConfigurationScreen flow={confirmationFlow} logs={[]} />,
   );
 
   assert.match(html, /Use Codex CLI/);
@@ -206,7 +174,7 @@ test('Guided 呈现官方不可用原因、修复入口和推荐安装', () => {
     },
   };
   const html = renderToStaticMarkup(
-    <OpenClawConfigurationScreen flow={unavailableFlow} logs={[]} phase="wizard" />,
+    <OpenClawConfigurationScreen flow={unavailableFlow} logs={[]} />,
   );
 
   assert.match(html, /Currently unavailable/);
@@ -221,7 +189,6 @@ test('Guided 授权提交后立即销毁旧二维码并等待官方终态', () =
     <OpenClawConfigurationScreen
       flow={createGuidedAuthorizationFlow(true)}
       logs={[]}
-      phase="wizard"
     />,
   );
 
@@ -229,17 +196,6 @@ test('Guided 授权提交后立即销毁旧二维码并等待官方终态', () =
   assert.match(html, /Cancel current operation/);
   assert.doesNotMatch(html, /data-wizard-authorization="true"/);
   assert.doesNotMatch(html, /data-wizard-authorization-qr="true"/);
-});
-
-test('Gateway 就绪在配置阶段显示显式核验操作', () => {
-  const html = renderVerificationState({ status: 'idle', error: null });
-
-  assert.match(html, /Configure OpenClaw/);
-  assert.match(html, /Gateway connection and runtime identity verified/);
-  assert.match(html, /Verify configuration/);
-  assert.doesNotMatch(html, /Debug Log/);
-  assert.doesNotMatch(html, /No installation or startup action has run yet/);
-  assert.doesNotMatch(html, /Verifying configuration/);
 });
 
 test('等待官方向导步骤时不展示空日志区域', () => {
@@ -502,14 +458,6 @@ test('交互步骤失败时仍由用户主动展开日志', () => {
 
   assert.match(html, /View logs/);
   assert.doesNotMatch(html, /运行时日志/);
-});
-
-test('配置核验中的同一容器锁定重复操作', () => {
-  const html = renderVerificationState({ status: 'checking', error: null });
-
-  assert.match(html, /Verifying OpenClaw configuration/);
-  assert.match(html, /Verifying configuration/);
-  assert.match(html, /disabled=""/);
 });
 
 test('授权步骤提交后用等待状态替换旧二维码', () => {
@@ -778,12 +726,4 @@ test('重新开始官方向导前展示重复写入风险和取消操作', () =>
   assert.match(html, /Confirm and restart/);
   assert.match(html, />Cancel</);
   assert.match(html, /role="alertdialog"/);
-});
-
-test('配置核验失败在同一容器呈现真实错误与重试操作', () => {
-  const html = renderVerificationState({ status: 'failed', error: '模型凭据未验证' });
-
-  assert.match(html, /Configuration verification incomplete/);
-  assert.match(html, /模型凭据未验证/);
-  assert.match(html, /Verify again/);
 });
