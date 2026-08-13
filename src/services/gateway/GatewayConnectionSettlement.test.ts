@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { RuntimeIdentity } from '@/types/gatewayRuntime';
 import {
+  currentAttestedConnectionId,
   GatewayConnectionSettlementTimeoutError,
   waitForGatewayConnectionSettlement,
   type GatewayConnectionSettlementSource,
@@ -61,4 +62,16 @@ test('统一连接门禁不会把旧连接当作重启完成', async () => {
     }),
     (error: unknown) => error instanceof GatewayConnectionSettlementTimeoutError,
   );
+});
+
+test('当前连接只有通过连接围栏和运行时身份核验后才可继续安装', () => {
+  const fixture = sourceFixture();
+
+  assert.equal(currentAttestedConnectionId(fixture.source), 'old');
+  fixture.publish('new', identity('old'));
+  assert.equal(currentAttestedConnectionId(fixture.source), null);
+  fixture.publish('new', identity('new', false));
+  assert.equal(currentAttestedConnectionId(fixture.source), null);
+  fixture.publish('new', identity('new'));
+  assert.equal(currentAttestedConnectionId(fixture.source), 'new');
 });

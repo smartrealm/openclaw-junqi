@@ -18,15 +18,15 @@ export class GatewayConnectionSettlementTimeoutError extends Error {
   }
 }
 
-function settledConnectionId(
+export function currentAttestedConnectionId(
   source: GatewayConnectionSettlementSource,
-  previousConnectionId: string | null,
+  excludedConnectionId: string | null = null,
 ): string | null {
   const connectionId = source.captureConnectionId();
   const identity = source.getRuntimeIdentity();
   if (
     !connectionId
-    || connectionId === previousConnectionId
+    || connectionId === excludedConnectionId
     || !source.isConnectionCurrent(connectionId)
     || !identity?.verified
     || identity.connectionId !== connectionId
@@ -60,7 +60,7 @@ export function waitForGatewayConnectionSettlement({
       resolve(connectionId);
     };
     const inspect = () => {
-      const connectionId = settledConnectionId(source, previousConnectionId);
+      const connectionId = currentAttestedConnectionId(source, previousConnectionId);
       if (connectionId) finish(connectionId);
     };
     const timer = globalThis.setTimeout(() => {

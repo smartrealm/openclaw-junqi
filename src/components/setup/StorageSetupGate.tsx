@@ -7,7 +7,6 @@ import clsx from 'clsx';
 import { SetupShell, StatusPanel } from '@/components/setup/SetupFlowPanels';
 import {
   initialStorageLocationsVisibility,
-  storageAutoAdvanceCompletion,
   type StorageCompletion,
 } from '@/components/setup/storageSetupModel';
 import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
@@ -168,9 +167,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
   const appendSetupLog = useAppStore((state) => state.appendSetupLog);
   const checkedRef = useRef(false);
   const mountedRef = useRef(false);
-  const initialCompletionHandledRef = useRef(false);
   const applyInFlightRef = useRef(false);
-  const advanceInFlightRef = useRef(false);
   const backInFlightRef = useRef(false);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
@@ -320,7 +317,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
 
   const applyStorage = useCallback(async () => {
     // React 不会同步提交 applying；首次 await 前先锁定原生存储事务，避免重复迁移。
-    if (!status || !targetDir || applyInFlightRef.current || advanceInFlightRef.current || backInFlightRef.current) return;
+    if (!status || !targetDir || applyInFlightRef.current || backInFlightRef.current) return;
     applyInFlightRef.current = true;
     setApplying(true);
     setError(null);
@@ -387,14 +384,6 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
     }
   }, [appendSetupLog, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, forceConfigure, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingSourceLocation, workspaceDir]);
 
-  useEffect(() => {
-    if (initialCompletionHandledRef.current) return;
-    const initialCompletion = storageAutoAdvanceCompletion(status, Boolean(storageDraft), forceConfigure);
-    if (!initialCompletion) return;
-    initialCompletionHandledRef.current = true;
-    onReadyRef.current(initialCompletion);
-  }, [forceConfigure, status, storageDraft]);
-
   const rememberDraft = useCallback(() => {
     const draft: StorageSetupDraft = {
       targetDir,
@@ -416,7 +405,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
   }, [customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, showLocations, targetDir, terminalIntegration, workspaceDir]);
 
   const handleBack = useCallback(async () => {
-    if (backInFlightRef.current || applyInFlightRef.current || advanceInFlightRef.current || recoveringRuntime) return;
+    if (backInFlightRef.current || applyInFlightRef.current || recoveringRuntime) return;
     backInFlightRef.current = true;
     try {
       if (status) rememberDraft();
@@ -565,7 +554,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
     );
   }
 
-  // 选择位置即引导状态转换，持久化随下一阶段提交，不单独暴露保存动作。
+  // 数据位置读取只填充表单；只有用户点击下一步且原生存储事务成功后才推进阶段。
   const actionLabel = t('setup.nextStep', '下一步');
   const dataLayoutLocked = !usingSourceLocation
     && hasMigratableSource(status, forceConfigure)

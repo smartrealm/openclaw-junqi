@@ -9,7 +9,6 @@ const environmentReview = read("./hooks/useSetupFlow/useSetupEnvironmentReview.t
 const pluginRecovery = read("./hooks/useSetupFlow/usePluginRecovery.ts");
 const welcome = read("./pages/SetupPage/EnvironmentEntryScreen.tsx");
 const mode = read("./pages/SetupPage/ModeSelectScreen.tsx");
-const storageGate = read("./components/setup/StorageSetupGate.tsx");
 
 test("welcome and runtime selection Next actions are single-flight", () => {
   assert.match(welcome, /const navigationInFlightRef = useRef\(false\)/);
@@ -17,13 +16,6 @@ test("welcome and runtime selection Next actions are single-flight", () => {
   assert.match(setupFlow, /const selectMode[\s\S]*?runtimeSelectionInFlightRef\.current[\s\S]*?await performRuntimeSelection\(mode\)/);
   assert.match(mode, /previousAction=\{\{ onClick: flow\.goBack, disabled: submitting \}\}/);
   assert.match(mode, /disabled: submitting \|\| \(selectedMode === "docker" && !dockerAvailable\)/);
-});
-
-test("storage Back, configure, and advance actions exclude one another synchronously", () => {
-  for (const ref of ["applyInFlightRef", "advanceInFlightRef", "backInFlightRef"]) {
-    assert.match(storageGate, new RegExp(`const ${ref} = useRef\\(false\\)`));
-  }
-  assert.match(storageGate, /applyInFlightRef\.current \|\| advanceInFlightRef\.current \|\| backInFlightRef\.current/);
 });
 
 test("environment detection Back invalidates the probe before it can auto-advance", () => {

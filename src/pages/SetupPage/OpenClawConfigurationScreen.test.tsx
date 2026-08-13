@@ -161,7 +161,7 @@ test('Gateway 就绪在配置阶段显示显式核验操作', () => {
   const html = renderVerificationState({ status: 'idle', error: null });
 
   assert.match(html, /Configure OpenClaw/);
-  assert.match(html, /Gateway is ready/);
+  assert.match(html, /Gateway connection and runtime identity verified/);
   assert.match(html, /Verify configuration/);
   assert.match(html, /Debug Log/);
   assert.match(html, /No installation or startup action has run yet/);

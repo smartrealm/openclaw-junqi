@@ -1,6 +1,6 @@
 /**
- * Invalidates asynchronous work created by an older lifecycle run.
- * A token is valid only while the owner is active and no reset occurred.
+ * 使旧生命周期创建的异步任务失效。
+ * 只有所有者仍活跃且期间没有重置时，代次令牌才有效。
  */
 export class LifecycleEpoch {
   private value = 0;

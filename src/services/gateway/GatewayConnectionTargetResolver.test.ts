@@ -76,6 +76,28 @@ test('manual endpoint never inherits the selected runtime bootstrap token', asyn
   assert.equal(target.httpUrl, 'https://remote.example.test/gateway');
 });
 
+test('首次设置无法读取所选 Runtime 配置时拒绝猜测连接目标', async () => {
+  await assert.rejects(
+    resolveGatewayConnectionTarget({
+      targetScope: 'selected-runtime',
+    }, dependencies({
+      detectConfig: async () => { throw new Error('selected runtime config unavailable'); },
+      getSavedUrl: () => 'wss://saved.example.test/gateway',
+    })),
+    /selected runtime config unavailable/,
+  );
+});
+
+test('首次设置目标范围忽略同一请求携带的手工地址', async () => {
+  const target = await resolveGatewayConnectionTarget({
+    targetScope: 'selected-runtime',
+    preferredUrl: 'wss://manual.example.test/gateway',
+  }, dependencies());
+
+  assert.equal(target.wsUrl, 'ws://127.0.0.1:18789');
+  assert.equal(target.token, 'selected-runtime-token');
+});
+
 test('an explicit token is request-scoped and bypasses stored device credentials', async () => {
   let credentialLookups = 0;
   const target = await resolveGatewayConnectionTarget({

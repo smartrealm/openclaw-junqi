@@ -19,18 +19,19 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 
 ## 目标状态机
 
-1. JunQi 完成桌面环境和用户选择的运行时检查。
-2. 缺少 OpenClaw 时，安装官方最新版包或官方 Docker image。
-3. JunQi 启动或连接所选 Gateway，并完成身份与 `operator.admin` 权限核验。
-4. 调用 `openclaw.setup.detect` 协商当前 Runtime 的正式配置能力；只有结构化 unknown-method 才切换到官方 `wizard.start/next/status/cancel`。
-5. Guided 的 `setupComplete` 为真时，进入正常工作台，不重复 onboarding；Classic 则以当前官方 Wizard 会话的 `done` 作为终态证明。
-6. Guided 的 `setupComplete` 为假时，呈现官方候选、不可用候选、认证方式和准备方式；Classic 忠实呈现官方步骤。
-7. 需要认证或准备时，分别调用 `openclaw.setup.auth.start` 或 `openclaw.setup.prepare.start`，只投影结构化结果。
-8. 用户确认候选后调用 `openclaw.setup.activate`。只有上游返回成功并且 `openclaw.setup.verify` 通过，才能认为推理配置成立。
-9. 推理成立后，用独立 session 调用 `openclaw.chat`，首个请求携带 `welcomeVariant: "onboarding"`。
-10. JunQi 按官方 reply、action、sensitive 和 agentDraft 呈现对话，不补造步骤或终态。
-11. OpenClaw 返回退出或打开智能体动作后，JunQi 通过统一交接门禁复用当前已核验连接；连接失效时才重连。随后绑定同一连接核验所选 Runtime、`setup.detect` 与 `setup.verify`，再进入 Ready。
-12. 用户从 Ready 进入工作台时再次核验 Gateway 与当前配置，随后一次性提交本地完成标记并切换页面。
+1. JunQi 完成桌面环境检查后进入数据位置页面。读取只填充最终表单，不能推进步骤。
+2. 用户明确点击“下一步”后提交 `configure_storage`；只有成功响应可以进入运行时，失败必须留在当前页面。
+3. JunQi 检查用户选择的运行时；缺少 OpenClaw 时安装官方最新版包或官方 Docker image。
+4. JunQi 断开此前连接并启动所选 Gateway；连接动作重新解析所选 Runtime 的正式目标，不读取历史手动地址，目标解析失败时不能猜测默认端点。只有新连接的 `hello-ok`、连接围栏和 Runtime Identity 核验全部收敛后才继续，并按官方请求需要完成 `operator.admin` 权限核验。
+5. 调用 `openclaw.setup.detect` 协商当前 Runtime 的正式配置能力；只有结构化 unknown-method 才切换到官方 `wizard.start/next/status/cancel`。
+6. Guided 的 `setupComplete` 为真时，进入正常工作台，不重复 onboarding；Classic 则以当前官方 Wizard 会话的 `done` 作为终态证明。
+7. Guided 的 `setupComplete` 为假时，呈现官方候选、不可用候选、认证方式和准备方式；Classic 忠实呈现官方步骤。
+8. 需要认证或准备时，分别调用 `openclaw.setup.auth.start` 或 `openclaw.setup.prepare.start`，只投影结构化结果。
+9. 用户确认候选后调用 `openclaw.setup.activate`。只有上游返回成功并且 `openclaw.setup.verify` 通过，才能认为推理配置成立。
+10. 推理成立后，用独立 session 调用 `openclaw.chat`，首个请求携带 `welcomeVariant: "onboarding"`。
+11. JunQi 按官方 reply、action、sensitive 和 agentDraft 呈现对话，不补造步骤或终态。
+12. OpenClaw 返回退出或打开智能体动作后，JunQi 通过统一交接门禁复用当前已核验连接；连接失效时才重连。随后绑定同一连接核验所选 Runtime、`setup.detect` 与 `setup.verify`，再进入 Ready。
+13. 用户从 Ready 进入工作台时再次核验 Gateway 与当前配置，随后一次性提交本地完成标记并切换页面。
 
 ## 明确的高级路径
 
@@ -39,7 +40,11 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 - classic 的 workspace、daemon 和 remote 选择由官方步骤或正式 start 参数拥有。
 - 如果用户明确选择不安装 daemon，JunQi 不得强制把官方服务交接作为完成条件；此时必须保持当前前台 Gateway 的真实所有权，并明确后台常驻不可用。
 - 如果用户选择安装 daemon，Native 完成条件继续要求系统服务交接成功；服务切换使原连接失效时，必须重新建立并核验认证连接。
-- 已有数据位置且没有待提交草稿时，读取完成后直接进入运行时阶段；不得插入只用于重复确认的“数据位置已就绪”页面。
+- 数据位置读取完成后必须停留在可编辑表单，由用户点击“下一步”确认；提交成功后直接进入运行时阶段，不得自动越过该页面，也不得插入“数据位置已就绪”二次确认页。
+- 数据位置读取路径不得调用阶段完成回调；只有用户触发且 `configure_storage` 成功后可以生成 `StorageCompletion`。
+- 首次设置启动 Gateway 时必须建立新的连接代次；任意旧连接的 connected 状态、同端口可达和历史手动地址均不能作为所选 Runtime 已连接的证据。
+- 显式启动命令未返回终态前，进程状态订阅不得触发首次连接；启动成功后只允许一次限定为所选 Runtime 的连接动作。
+- 普通设置页的显式 Gateway 地址不属于首次设置目标解析，不能因首次设置收紧而被删除或忽略。
 
 ## 安装契约
 
@@ -76,6 +81,10 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 
 ## 验收条件
 
+- 已配置数据位置的读取完成后仍停留在数据位置表单，且不会调用阶段完成回调。
+- 用户点击“下一步”并取得 `configure_storage` 成功响应后只推进一次；失败、重复点击和返回竞争不能推进。
+- 首次设置已有旧连接时，启动所选 Runtime 必须先断开旧连接，随后以 `selected-runtime` 目标范围重新解析正式配置；读取失败不能使用历史手工地址或默认端点，只有新连接的 Runtime Identity 已核验时才能进入配置能力协商。
+- 端点状态先于启动命令完成到达时不能提前连接；启动失败必须进入统一错误态，启动成功只能产生一次 `selected-runtime` 连接动作。
 - 新安装默认不会调用 `wizard.start`，而是依次使用正式 setup RPC 和 onboarding chat。
 - 已配置 Gateway 的 `setupComplete: true` 会跳过 onboarding。
 - fresh activation 未取得真实 completion 时不能进入工作台。

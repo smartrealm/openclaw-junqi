@@ -18,12 +18,15 @@
 - 二维码只由当前官方结构化步骤或当前步骤中的唯一一次性授权地址派生；提交、步骤变化、失败、取消或终态后立即销毁。
 - npm 12 安装命令加入官方要求的 `--allow-scripts=openclaw`；安装晋升继续核验官方 postinstall inventory 和 JavaScript 入口。
 - 删除已被当前原生安装规格取代的旧首次设置与 Classic 完成凭据规格、计划以及相应旧实现。
-- 删除已有数据位置读取后的重复完成页；无草稿且无需恢复时直接进入运行时阶段，需要修改或恢复时仍停留在数据位置表单。
+- 删除数据位置读取后的重复完成页和错误的自动推进路径；读取完成后始终停留在表单，用户点击“下一步”并提交成功后才进入运行时阶段。
+- 首次设置启动前关闭旧 Gateway 连接，只从当前所选 Runtime 解析连接目标；历史手动地址、默认端点和旧 connected 状态不能再作为安装流程成功证据。
+- 显式启动命令完成前，进程状态订阅只更新诊断日志；启动成功后只触发一次所选 Runtime 连接，启动或目标解析失败进入统一可见错误态。
 
 ## 关键技术决策
 
 - OpenClaw 拥有模型、凭据、工作区、渠道、Wizard、onboarding chat 和完成状态；JunQi 只呈现协议并执行桌面交接门禁。
 - Gateway 端口健康、进程存在、本地标记和二维码状态均不能证明配置完成。
+- 首次设置的连接完成事实固定为同一条当前连接通过 `hello-ok` 围栏和 Runtime Identity 核验；普通设置页的手动 Gateway 地址规则不受该边界影响。
 - Guided 与 Classic 不并行；只有明确 unknown-method 才从 Guided 能力探测切换到官方 Classic，不能因断线或权限失败切换。
 - 交接顺序固定为认证连接围栏与所选 Runtime 核验；Guided 随后执行 `setup.detect` 和 `setup.verify`，Classic 消费官方 Wizard `done`。只有连接失效才重连，未知结果不自动重放有副作用的配置操作。
 - 冷启动已经配置的 Runtime 按官方 `setupComplete` 跳过 onboarding；fresh activation 和配置终态交接必须执行真实模型核验。
@@ -46,14 +49,15 @@
 
 ## 测试与验证
 
-- 本轮配置能力协商、Classic 与 Guided 交接、数据位置直接推进等定向测试：66 项通过。
-- 完整前端测试 2702 项与脚本测试通过。
+- 本轮数据位置与 Gateway 连接代次定向回归 37 项通过；测试覆盖读取不推进、用户提交边界、旧连接断开、所选 Runtime 目标解析、手动地址隔离、启动与状态订阅竞态、连接失败错误态和身份门禁。
+- 完整前端测试 2709 项和脚本测试 238 项通过；测试输出包含既有 Node 注册接口弃用警告，没有失败项。
 - 本轮没有修改 Rust；既有 Rust 635 项通过、1 项忽略的结果未在本轮重跑。
 - `pnpm lint`、`pnpm build`、`pnpm verify:openclaw-docs` 与 `git diff --check` 通过。
-- 代码已提交为 `76af04f9`。本机已生成并通过 `hdiutil verify` 校验的 macOS ARM64 DMG；由于本机没有 Tauri updater 发布私钥，updater 签名阶段按预期失败，该 DMG 仅用于本地安装验证，不是正式签名或公证制品。
+- 本轮安装流程与 Gateway 接管修复已纳入当前提交；尚未生成包含本轮修复的安装包。生产前端构建通过，此前本地 DMG 不能用于验收本轮行为。
 
 ## 已知问题与未验证边界
 
+- 当前数据位置显式确认与 Gateway 连接代次修复尚未生成新的安装包，也未完成连续页面真机验收；此前安装包仍包含旧行为。
 - 真实 provider 登录、真实 completion、官方 onboarding chat、钉钉授权和 Classic daemon 选择尚未在当前 macOS 安装包中完成端到端验证。
 - Windows、Linux、Docker、系统服务、凭据库和外部浏览器行为尚未在目标平台真机验证。
 - 当前本机稳定 OpenClaw `2026.7.1-2` 已复现 Classic 协议和 Guided unknown-method；最新版 Guided 真实 provider 流程仍需独立 Runtime 验证。
@@ -62,7 +66,8 @@
 
 ## 下一步顺序
 
-1. 在最新版 OpenClaw Runtime 上真机验证 Guided、真实模型、供应商授权与工作台交接。
-2. 分别验证 macOS、Windows、Linux 和 Docker。
-3. 完成暗色、窄窗口、键盘焦点和减少动态效果视觉验收。
-4. 未经明确要求不提交、打包、推送、打 tag 或发布。
+1. 用本机桌面流程确认数据位置页面不会自动跳过，并验证旧连接存在时仍建立所选 Runtime 的新身份连接。
+2. 在最新版 OpenClaw Runtime 上真机验证 Guided、真实模型、供应商授权与工作台交接。
+3. 分别验证 macOS、Windows、Linux 和 Docker。
+4. 完成暗色、窄窗口、键盘焦点和减少动态效果视觉验收。
+5. 未经明确要求不提交、打包、推送、打 tag 或发布。

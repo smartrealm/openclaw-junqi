@@ -24,8 +24,8 @@ export interface GatewayProcessRuntimeStatus extends GatewayProcessObservation {
 }
 
 /**
- * Reads the selected runtime's process and authenticated endpoint as separate
- * facts. A process can be alive while its Gateway is still warming up.
+ * 分别读取所选运行时的进程状态与认证端点状态。
+ * 进程存活时 Gateway 仍可能处于预热阶段。
  */
 export async function observeSelectedGatewayProcess(): Promise<GatewayProcessObservation> {
   try {
@@ -45,7 +45,7 @@ export async function observeSelectedGatewayProcess(): Promise<GatewayProcessObs
   }
 }
 
-/** Logs are process diagnostics and never determine the selected runtime state. */
+/** 日志只用于进程诊断，不能决定所选运行时状态。 */
 export async function loadGatewayProcessLogs(limit: number): Promise<LogEntry[]> {
   try {
     return await getGatewayLogs(limit);
@@ -63,7 +63,7 @@ export async function readGatewayProcessRuntimeStatus(): Promise<GatewayProcessR
   };
 }
 
-/** Serial polling avoids stale status commits while an authenticated probe is in flight. */
+/** 串行轮询避免认证探测尚未结束时提交过期状态。 */
 export function subscribeGatewayProcessRuntime(
   listener: (status: GatewayProcessRuntimeStatus) => void,
   intervalMs = 2_000,

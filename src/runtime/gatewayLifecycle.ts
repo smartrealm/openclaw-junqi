@@ -1,7 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { createGatewayLifecycleCoordinator } from '@/services/gateway/GatewayLifecycleCoordinator';
-import { waitForGatewayConnectionSettlement } from '@/services/gateway/GatewayConnectionSettlement';
+import {
+  currentAttestedConnectionId,
+  waitForGatewayConnectionSettlement,
+} from '@/services/gateway/GatewayConnectionSettlement';
 import { gateway } from '@/services/gateway';
 import {
   getCurrentRuntimeIdentity,
@@ -36,14 +39,12 @@ export const gatewayLifecycle = createGatewayLifecycleCoordinator(
 
 /** 当前主连接只有同时通过连接围栏和运行时身份核验时才可用于配置交接。 */
 export function captureCurrentAttestedGatewayConnectionId(): string | null {
-  const connectionId = gateway.captureConnectionId();
-  const identity = getCurrentRuntimeIdentity();
-  return (
-    connectionId
-    && gateway.isConnectionCurrent(connectionId)
-    && identity?.verified
-    && identity.connectionId === connectionId
-  ) ? connectionId : null;
+  return currentAttestedConnectionId({
+    captureConnectionId: () => gateway.captureConnectionId(),
+    isConnectionCurrent: (connectionId) => gateway.isConnectionCurrent(connectionId),
+    getRuntimeIdentity: getCurrentRuntimeIdentity,
+    subscribeRuntimeIdentity,
+  });
 }
 
 /** 确认交接期间仍是开始时绑定的同一条已核验连接。 */

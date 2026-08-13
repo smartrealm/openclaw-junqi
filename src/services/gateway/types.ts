@@ -1,6 +1,4 @@
-// ═══════════════════════════════════════════════════════════
-// Gateway connection types — state, events, status
-// ═══════════════════════════════════════════════════════════
+// Gateway 连接领域类型：状态、事件与快照。
 
 export type {
   GatewayHelloObservation,
@@ -13,16 +11,16 @@ export type {
   RuntimePersistence,
 } from '@/types/gatewayRuntime';
 
-/** Finite states for the gateway connection lifecycle. */
+/** Gateway 连接生命周期的有限状态。 */
 export enum GatewayState {
-  DETECTING = 'detecting',     // Probing if gateway is running
-  STARTING = 'starting',       // Starting gateway process
-  CONNECTING = 'connecting',   // WebSocket connecting
-  CONNECTED = 'connected',     // WebSocket established
-  ERROR = 'error',             // Fatal error, needs retry
+  DETECTING = 'detecting',     // 正在探测 Gateway
+  STARTING = 'starting',       // 正在启动 Gateway 进程
+  CONNECTING = 'connecting',   // 正在建立 WebSocket 连接
+  CONNECTED = 'connected',     // WebSocket 已连接
+  ERROR = 'error',             // 发生需要用户重试的错误
 }
 
-/** Events that drive state transitions. */
+/** 驱动状态转换的事件。 */
 export type GatewayEvent =
   | { type: 'INITIALIZE' }
   | { type: 'RECOVERY_REQUESTED' }
@@ -35,6 +33,7 @@ export type GatewayEvent =
       logs?: { stdout: string; stderr: string };
     }
   | { type: 'START_SUCCESS' }
+  | { type: 'CONNECT_FAILED'; error: string }
   | { type: 'SELECTED_GATEWAY_READY' }
   | { type: 'START_FAILED'; error: string }
   | { type: 'START_REQUESTED' }
@@ -44,7 +43,7 @@ export type GatewayEvent =
   | { type: 'RETRY' }
   | { type: 'RESET' };
 
-/** External gateway process status (from Rust gateway_status command). */
+/** Rust Gateway 进程观测返回的外部状态。 */
 export interface GatewayProcessStatus {
   running: boolean;
   processAlive?: boolean;
@@ -61,17 +60,17 @@ export interface GatewayStartResult {
   token?: string | null;
 }
 
-/** Connection target resolved from config. */
+/** 从当前配置解析出的连接目标。 */
 export interface ConnectionTarget {
   wsUrl: string;
-  /** Explicit/shared token read from the selected OpenClaw configuration. */
+  /** 从所选 OpenClaw 配置读取的显式共享令牌。 */
   token: string;
-  /** Paired-device token loaded from the operating-system credential vault. */
+  /** 从操作系统凭据库读取的已配对设备令牌。 */
   deviceToken: string;
   httpUrl: string;
 }
 
-/** State snapshot emitted to UI listeners. */
+/** 发送给界面订阅者的状态快照。 */
 export interface GatewayStateSnapshot {
   state: GatewayState;
   connecting: boolean;
@@ -79,6 +78,6 @@ export interface GatewayStateSnapshot {
   error: string | null;
   logs?: { stdout: string; stderr: string };
   retrying: boolean;
-  /** The selected state/config pair has an authenticated, healthy endpoint. */
+  /** 所选状态与配置对应的端点已通过认证健康探测。 */
   selectedGatewayReady: boolean;
 }

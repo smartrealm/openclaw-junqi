@@ -237,18 +237,18 @@ export function useWizardSession({
   }, [refreshWizardSessionScope]);
 
   const waitForGatewayConnection = useCallback(async (operationId: number, timeoutMs = 20_000) => {
-    if (!gateway.getStatus().connected) await refreshGatewayConnectionTarget();
+    if (!captureCurrentAttestedGatewayConnectionId()) await refreshGatewayConnectionTarget();
     else await refreshWizardSessionScope();
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       assertWizardOperationCurrent(operationId);
-      if (gateway.getStatus().connected) return;
+      if (captureCurrentAttestedGatewayConnectionId()) return;
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     assertWizardOperationCurrent(operationId);
     throw new OpenClawWizardGatewayConnectionTimeoutError(t(
       "setup.wizard.connectionTimeout",
-      "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成经认证的 Gateway 连接。",
+      "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成认证连接与运行时身份核验。",
     ));
   }, [assertWizardOperationCurrent, refreshGatewayConnectionTarget, refreshWizardSessionScope, t]);
 
@@ -361,7 +361,7 @@ export function useWizardSession({
       if (!reconnected.success) {
         throw new Error(reconnected.error || t(
           "setup.wizard.connectionTimeout",
-          "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成经认证的 Gateway 连接。",
+          "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成认证连接与运行时身份核验。",
         ));
       }
       const reconciliation = await reconcileWizardSessionLoss({
@@ -398,7 +398,7 @@ export function useWizardSession({
     if (!reconnected.success) {
       throw new OpenClawWizardRecoveryVerificationError(reconnected.error || t(
         "setup.wizard.connectionTimeout",
-        "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成经认证的 Gateway 连接。",
+        "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成认证连接与运行时身份核验。",
       ));
     }
     const client = wizardClientRef.current!;

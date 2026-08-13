@@ -12,17 +12,18 @@ JunQi 当前安装器能够安装官方 OpenClaw npm 包、维持用户选择的
 
 ## 权威基线
 
-本次同时核对 OpenClaw 官方仓库主线提交 `fb9a62e9956883c1b0aed5fa742d6e527cb9e86d` 与 npm 稳定发行 `2026.7.1-2`。主线定义 Guided 协议；稳定发行只注册 `wizard.start/next/status/cancel`。JunQi 依据当前 Runtime 对正式请求的结构化响应协商模式，不使用版本号作为能力开关。
+本次已重新抓取并核对 OpenClaw 官方仓库主线提交 `812bbd88844769b9abf0ab8b586ada80380aa0f5`，同时保留当前本机稳定发行的复现记录。主线定义 Guided 协议和经典 Wizard；当前本机 Runtime 只注册 `wizard.start/next/status/cancel`。JunQi 依据当前 Runtime 对正式请求的结构化响应协商模式，不使用版本号作为能力开关。
 
-- [Onboarding overview](https://github.com/openclaw/openclaw/blob/fb9a62e9956883c1b0aed5fa742d6e527cb9e86d/docs/start/onboarding-overview.md)
-- [Install guide](https://github.com/openclaw/openclaw/blob/fb9a62e9956883c1b0aed5fa742d6e527cb9e86d/docs/install/index.md)
-- [Guided onboarding implementation](https://github.com/openclaw/openclaw/blob/fb9a62e9956883c1b0aed5fa742d6e527cb9e86d/src/commands/onboard-guided.ts)
-- [Remote Gateway onboarding adapter](https://github.com/openclaw/openclaw/blob/fb9a62e9956883c1b0aed5fa742d6e527cb9e86d/src/commands/onboard-remote-gateway.ts)
-- [System agent Gateway handlers](https://github.com/openclaw/openclaw/blob/fb9a62e9956883c1b0aed5fa742d6e527cb9e86d/src/gateway/server-methods/system-agent.ts)
-- [Gateway method descriptors](https://github.com/openclaw/openclaw/blob/fb9a62e9956883c1b0aed5fa742d6e527cb9e86d/src/gateway/methods/core-descriptors.ts)
-- [Wizard protocol schema](https://github.com/openclaw/openclaw/blob/fb9a62e9956883c1b0aed5fa742d6e527cb9e86d/packages/gateway-protocol/src/schema/wizard.ts)
-- [OpenClaw setup protocol schema](https://github.com/openclaw/openclaw/blob/fb9a62e9956883c1b0aed5fa742d6e527cb9e86d/packages/gateway-protocol/src/schema/openclaw.ts)
-- [Official npm update command builder](https://github.com/openclaw/openclaw/blob/fb9a62e9956883c1b0aed5fa742d6e527cb9e86d/src/infra/update-global.ts)
+- [Onboarding overview](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/docs/start/onboarding-overview.md)
+- [Install guide](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/docs/install/index.md)
+- [Guided onboarding implementation](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/src/commands/onboard-guided.ts)
+- [Remote Gateway onboarding adapter](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/src/commands/onboard-remote-gateway.ts)
+- [System agent Gateway handlers](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/src/gateway/server-methods/system-agent.ts)
+- [Gateway method descriptors](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/src/gateway/methods/core-descriptors.ts)
+- [Wizard handler](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/src/gateway/server-methods/wizard.ts)
+- [Wizard protocol schema](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/packages/gateway-protocol/src/schema/wizard.ts)
+- [OpenClaw setup protocol schema](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/packages/gateway-protocol/src/schema/openclaw.ts)
+- [Official npm update command builder](https://github.com/openclaw/openclaw/blob/812bbd88844769b9abf0ab8b586ada80380aa0f5/src/infra/update-global.ts)
 
 ## OpenClaw 当前原生流程
 
@@ -87,9 +88,11 @@ npm install -g openclaw@latest --allow-scripts openclaw
 6. 两条路径的终态统一复用当前已核验连接；连接失效时才重连。Guided 继续核验 `setup.detect` 与 `setup.verify`，Classic 使用当前官方 Wizard 的 `done`。
 7. Ready 进入工作台时再次核验，成功后才写入 JunQi 完成标记。
 
+所选 Runtime 的 Gateway 启动属于新的连接代次：启动前主动断开旧 socket，连接动作忽略历史手动地址并重新读取所选 Runtime 的正式目标。读取正式目标失败时进入统一错误态，不回落到默认端点。只有新连接的 `hello-ok`、当前连接围栏和 Runtime Identity 核验全部收敛后，首次设置才可进入配置能力协商。普通设置页的显式连接地址仍保留原行为，不受该首次设置边界影响。
+
 配置步骤正文使用共享稳定内容槽。用户提交后取得新的官方步骤时从左向右短距离切换；返回外层阶段时由全局步骤场景从右向左切换。检测、等待、错误和 Gateway 交接属于后台状态，只做透明度过渡，不用方向动效伪造用户导航。步骤器、标题、日志和底部操作不会随正文重新挂载。
 
-数据位置步骤不再为已有有效配置插入独立完成页。没有待提交草稿且不处于强制恢复时，读取完成后直接复用保存成功的阶段转换；需要修改位置或恢复事务时仍保留完整表单与错误门禁。
+数据位置步骤读取完成后始终停留在完整表单，由用户明确点击“下一步”。提交成功后直接进入运行时阶段，不再插入独立完成页；已有配置、位置修改与恢复事务共享相同的用户确认边界和错误门禁。读取路径不再拥有任何阶段完成调用，避免再次把已有配置误解释为用户确认。
 
 ## 差异矩阵
 
@@ -103,6 +106,8 @@ npm install -g openclaw@latest --allow-scripts openclaw
 | INS-06 | P2 | CLI 原生支持 local、remote、Native、WSL2 与详细 classic 模式 | JunQi 仍只声明 Native 与 Docker 本地运行方式，不暗示完整覆盖 | 产品边界，未扩展 |
 | INS-07 | P2 | Guided 与 Classic 都是官方配置路径 | 按真实 RPC 能力协商；支持 Guided 时详细配置仍是次级入口 | 代码已修复 |
 | INS-08 | P1 | 官方激活、验证和 onboarding chat 可在同一已认证连接内完成 | 不再强制制造新连接；失效时才重连，并以连接标识围栏整个接管过程 | 代码已修复 |
+| INS-09 | P0 | 客户端自有数据位置必须由用户确认后才能提交和推进 | 删除读取完成后的自动推进；只有 `configure_storage` 成功事件可以进入运行时 | 代码已修复，真机待验证 |
+| INS-10 | P0 | 连接与配置操作必须绑定当前所选 Runtime 和当前认证连接 | 首次设置启动前断开旧连接；连接目标忽略历史手动地址；`connected` 不再替代 Runtime Identity 核验 | 代码已修复，真机待验证 |
 
 ## 根因
 
@@ -112,6 +117,9 @@ npm install -g openclaw@latest --allow-scripts openclaw
 2. 后续加固围绕经典 Wizard 的 session 丢失、二维码和服务交接持续演进。
 3. 上游后来把 guided inference 和 system agent RPC 正式合入主线，但 JunQi 没有重新执行最新版契约审计。
 4. 本地安装版本被用于否定上游最新能力，违背了“本地版本只用于复现兼容差异”的项目规则。
+5. 后续删除“数据位置已就绪”重复页时，没有先固定用户确认状态机，而是把“页面读取完成”和“用户提交完成”合并为同一推进事件；实现、测试和流程预览一度共同固化了错误行为。
+6. Gateway 启动动作曾在任意旧连接处于 connected 或 connecting 时直接返回，安装等待也只检查布尔连接状态；这使同端口、切换 Runtime 或历史手动地址场景可以把旧 socket 错当成本次启动和身份核验的结果。
+7. 显式启动命令与进程状态订阅曾同时驱动首次连接；端点就绪事件如果先于启动命令终态到达，会提前消耗所选 Runtime 的连接策略。当前实现把启动命令终态固定为首次连接的唯一触发点，订阅在该窗口内只更新诊断日志。
 
 ## 不应修改的既有边界
 
@@ -124,4 +132,4 @@ npm install -g openclaw@latest --allow-scripts openclaw
 
 ## 验证边界
 
-本轮已完成官方源码、协议 schema、handler、权限描述符、JunQi TypeScript/Rust 调用图和 npm 命令的静态核对。前端 2700 项、脚本 238 项、Rust 635 项通过；lint、Rust format/check、生产构建和官方文档链接校验通过。Windows、Linux、Docker、真实 provider 登录、真实 completion、官方对话式配置和 classic daemon 选择仍需目标环境验证。
+本轮已完成官方源码、协议 schema、handler、权限描述符、JunQi TypeScript/Rust 调用图和 npm 命令的静态核对。数据位置确认与 Gateway 连接代次的新增定向回归已通过；完整验证结果以本轮结束时的 `PROJECT_STATUS.md` 为准。Windows、Linux、Docker、真实 provider 登录、真实 completion、官方对话式配置和 classic daemon 选择仍需目标环境验证。

@@ -2,7 +2,12 @@
 
 import { gateway } from './index';
 import { GatewayStateMachine, type GatewayAction } from './GatewayStateMachine';
-import { executeConnect, executeDockerStart, executeStart } from './GatewayActionExecutor';
+import {
+  executeConnect,
+  executeDockerStart,
+  executeStart,
+  type GatewayConnectActionOptions,
+} from './GatewayActionExecutor';
 import { LifecycleEpoch } from './LifecycleEpoch';
 import {
   ensureSelectedGatewayRuntime,
@@ -25,7 +30,11 @@ import type {
 type StateListener = (snapshot: GatewayStateSnapshot) => void;
 
 interface GatewayActionExecutorPort {
-  connect: typeof executeConnect;
+  connect(
+    onHttpUrl: (url: string) => void,
+    isCurrent?: () => boolean,
+    options?: GatewayConnectActionOptions,
+  ): Promise<void>;
   start: typeof executeStart;
   startDocker: typeof executeDockerStart;
 }
@@ -36,6 +45,12 @@ interface GatewayProcessRuntimePort {
   ensure: () => Promise<GatewayEnsureResult>;
   restart: () => Promise<GatewayRestartResult>;
   stop: () => Promise<GatewayRestartResult>;
+}
+
+interface GatewayConnectionTransportPort {
+  connect(url: string, token: string, deviceToken?: string): void;
+  reconnectWithToken(token: string): void;
+  disconnect(): void;
 }
 
 const defaultGatewayActionExecutor: GatewayActionExecutorPort = {
@@ -49,6 +64,11 @@ const defaultGatewayProcessRuntime: GatewayProcessRuntimePort = {
   ensure: ensureSelectedGatewayRuntime,
   restart: restartSelectedGatewayRuntime,
   stop: stopSelectedGatewayRuntime,
+};
+const defaultGatewayConnectionTransport: GatewayConnectionTransportPort = {
+  connect: (url, token, deviceToken) => gateway.connect(url, token, deviceToken),
+  reconnectWithToken: (token) => gateway.reconnectWithToken(token),
+  disconnect: () => gateway.disconnect(),
 };
 
 export class GatewayConnectionManager {
@@ -65,11 +85,13 @@ export class GatewayConnectionManager {
     reject: (error: Error) => void;
     generation: number;
   } | null = null;
+  private useSelectedRuntimeForNextConnection = false;
   private readonly lifecycleEpoch = new LifecycleEpoch();
 
   constructor(
     private readonly actionExecutor: GatewayActionExecutorPort = defaultGatewayActionExecutor,
     private readonly processRuntime: GatewayProcessRuntimePort = defaultGatewayProcessRuntime,
+    private readonly connectionTransport: GatewayConnectionTransportPort = defaultGatewayConnectionTransport,
   ) {}
 
   /** 订阅状态变化并返回取消函数。 */
@@ -166,6 +188,9 @@ export class GatewayConnectionManager {
   private requestSetupStart(event: 'START_REQUESTED' | 'DOCKER_START_REQUESTED'): Promise<GatewayStartResult> {
     if (this.pendingStart) return this.pendingStart.promise;
     this.activateForDirectRecovery();
+    // 首次设置必须从所选运行时建立新的认证连接，旧连接不能作为本次启动成功证据。
+    this.connectionTransport.disconnect();
+    this.useSelectedRuntimeForNextConnection = true;
     // 启动请求已经由 pendingStart 串行化，此处保留当前状态订阅代次，避免丢弃
     // 该启动操作随后产生的运行时状态。
     const generation = this.lifecycleEpoch.capture();
@@ -246,7 +271,7 @@ export class GatewayConnectionManager {
       });
       return result;
     }
-    gateway.disconnect();
+    this.connectionTransport.disconnect();
     this.dispatch({
       type: 'STATUS_RECEIVED',
       processAlive: false,
@@ -260,13 +285,13 @@ export class GatewayConnectionManager {
   reconnectWithToken(token: string): void {
     this.invalidateLifecycle('Gateway credentials changed');
     this.dispatch({ type: 'RESET' });
-    gateway.reconnectWithToken(token);
+    this.connectionTransport.reconnectWithToken(token);
   }
 
   connect(url: string, token: string, deviceToken = ''): void {
     this.invalidateLifecycle('Gateway connection target changed');
     this.dispatch({ type: 'RESET' });
-    gateway.connect(url, token, deviceToken);
+    this.connectionTransport.connect(url, token, deviceToken);
   }
 
   /** 卸载时清理状态订阅与连接。 */
@@ -276,12 +301,19 @@ export class GatewayConnectionManager {
     this.statusUnsub = undefined;
     this.rejectPendingStart('Gateway manager was destroyed');
     this.listeners.clear();
-    gateway.disconnect();
+    this.connectionTransport.disconnect();
   }
 
   // Gateway 连接事实与动作意图统一提交到该状态机入口。
   private dispatch(event: GatewayEvent): void {
     if (!this.lifecycleEpoch.isActive()) return;
+    if (event.type === 'STATUS_RECEIVED' && this.pendingStart) {
+      // 显式启动尚未返回时，状态订阅只补充诊断日志；启动结果才有权触发首次连接。
+      // 否则端点就绪事件可能抢先消耗所选运行时的连接策略并复用错误目标。
+      if (event.logs) this.logs = event.logs;
+      this.emit();
+      return;
+    }
     if (event.type === 'INITIALIZE') {
       this.logs = undefined;
       this.retrying = false;
@@ -304,6 +336,10 @@ export class GatewayConnectionManager {
       this.error = event.error;
       this.retrying = false;
       this.selectedGatewayReady = false;
+    } else if (event.type === 'CONNECT_FAILED') {
+      this.error = event.error;
+      this.retrying = false;
+      this.selectedGatewayReady = false;
     } else if (
       event.type === 'RESET'
       || event.type === 'RETRY'
@@ -317,7 +353,7 @@ export class GatewayConnectionManager {
 
     const result = this.fsm.transition(event);
 
-    // Execute actions returned by the FSM
+    // 执行状态机返回的副作用动作。
     for (const action of result.actions) {
       this.executeAction(action, this.lifecycleEpoch.capture());
     }
@@ -327,13 +363,25 @@ export class GatewayConnectionManager {
 
   private executeAction(action: GatewayAction, generation: number): void {
     switch (action) {
-      case 'CONNECT':
-        void this.actionExecutor.connect((httpUrl) => {
+      case 'CONNECT': {
+        const connectOptions = this.useSelectedRuntimeForNextConnection
+          ? { targetRequest: { targetScope: 'selected-runtime' as const } }
+          : undefined;
+        this.useSelectedRuntimeForNextConnection = false;
+        void this.actionExecutor.connect(
+          (httpUrl) => {
+            if (!this.isCurrent(generation)) return;
+            // App.tsx 使用该地址解析媒体资源并呈现配对入口。
+            window.dispatchEvent(new CustomEvent('aegis:gateway-http-url', { detail: httpUrl }));
+          },
+          () => this.isCurrent(generation),
+          connectOptions,
+        ).catch((error) => {
           if (!this.isCurrent(generation)) return;
-          // App.tsx uses this for media resolution / pairing
-          window.dispatchEvent(new CustomEvent('aegis:gateway-http-url', { detail: httpUrl }));
-        }, () => this.isCurrent(generation));
+          this.dispatch({ type: 'CONNECT_FAILED', error: String(error) });
+        });
         break;
+      }
       case 'START':
         void this.actionExecutor.start()
           .then((result) => this.completeStart(result, generation))
@@ -345,7 +393,7 @@ export class GatewayConnectionManager {
           .catch((error) => this.completeStart({ success: false, error: String(error) }, generation));
         break;
       case 'SHOW_ERROR':
-        // error already committed by dispatch
+        // 错误已由 dispatch 提交到快照。
         break;
       case 'NONE':
         break;
@@ -379,7 +427,7 @@ export class GatewayConnectionManager {
   private beginRecovery(event: 'RESET' | 'RETRY'): void {
     this.invalidateLifecycle('A newer Gateway recovery was requested');
     this.dispatch({ type: event });
-    gateway.disconnect();
+    this.connectionTransport.disconnect();
     this.probe();
   }
 
@@ -395,6 +443,8 @@ export class GatewayConnectionManager {
       this.dispatch({ type: 'START_SUCCESS' });
       this.pendingStart?.resolve(result);
     } else {
+      this.useSelectedRuntimeForNextConnection = false;
+      this.connectionTransport.disconnect();
       const error = result?.error || 'Failed to start gateway';
       this.dispatch({ type: 'START_FAILED', error });
       this.pendingStart?.reject(new Error(error));
@@ -410,6 +460,7 @@ export class GatewayConnectionManager {
 
   private invalidateLifecycle(reason: string): void {
     this.rejectPendingStart(reason);
+    this.useSelectedRuntimeForNextConnection = false;
     this.lifecycleEpoch.invalidate();
   }
 

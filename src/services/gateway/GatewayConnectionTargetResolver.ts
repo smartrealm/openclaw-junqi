@@ -19,6 +19,7 @@ export interface GatewayConnectionTargetRequest {
   tokenOverride?: string;
   useTokenOverride?: boolean;
   useSavedUrl?: boolean;
+  targetScope?: 'selected-runtime';
 }
 
 export interface GatewayConnectionTargetResolverDependencies {
@@ -98,10 +99,7 @@ export async function getStoredGatewayCredentialToken(
   return deviceCredential(gatewayUrl, dependencies);
 }
 
-/**
- * Persists a rotated or newly paired device token in the credential scope
- * associated with its currently selected Gateway endpoint.
- */
+/** 将轮换或新配对的设备令牌写入当前 Gateway 端点绑定的凭据作用域。 */
 export async function storeGatewayConnectionDeviceCredential(
   gatewayUrl: string,
   token: string,
@@ -115,18 +113,26 @@ export async function storeGatewayConnectionDeviceCredential(
 }
 
 /**
- * Resolves an endpoint and credentials without exposing compatibility config
- * objects to callers. Explicit credentials are scoped to the request; the
- * selected runtime token is never sent to a different manual endpoint.
+ * 在不向调用方暴露配置对象的前提下解析端点与凭据。
+ * 显式凭据只作用于当前请求，所选运行时令牌不能发送到其他手动端点。
  */
 export async function resolveGatewayConnectionTarget(
   request: GatewayConnectionTargetRequest = {},
   dependencies: GatewayConnectionTargetResolverDependencies = defaultDependencies,
 ): Promise<ConnectionTarget> {
-  const configured = await dependencies.detectConfig().catch(() => null);
+  const configured = request.targetScope === 'selected-runtime'
+    ? await dependencies.detectConfig()
+    : await dependencies.detectConfig().catch(() => null);
   const configuredUrl = normalizeUrl(configured?.ws_url);
-  const savedUrl = request.useSavedUrl === false ? '' : normalizeUrl(dependencies.getSavedUrl());
-  const explicitUrl = normalizeUrl(request.preferredUrl);
+  if (request.targetScope === 'selected-runtime' && !configuredUrl) {
+    throw new Error('Selected OpenClaw Runtime did not provide a Gateway WebSocket URL');
+  }
+  const savedUrl = request.targetScope === 'selected-runtime' || request.useSavedUrl === false
+    ? ''
+    : normalizeUrl(dependencies.getSavedUrl());
+  const explicitUrl = request.targetScope === 'selected-runtime'
+    ? ''
+    : normalizeUrl(request.preferredUrl);
   const wsUrl = explicitUrl || savedUrl || configuredUrl || defaultGatewayWsUrl();
   const sameSelectedRuntime = Boolean(configuredUrl) && gatewayEndpointsMatch(wsUrl, configuredUrl);
   const token = request.useTokenOverride

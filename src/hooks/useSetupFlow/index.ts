@@ -1,7 +1,5 @@
-// ═══════════════════════════════════════════════════════════
-// useSetupFlow — Detection & installation state machine
-// Pure logic hook, no UI. Drives app-store state transitions.
-// ═══════════════════════════════════════════════════════════
+// 首次设置的检测与安装状态机。
+// 该 Hook 只负责流程逻辑和应用状态转换，不渲染界面。
 
 import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -186,12 +184,12 @@ export function useSetupFlow(
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       if (!isRunActive(runId)) throw new Error("setup cancelled");
-      if (gateway.getStatus().connected) return;
+      if (captureCurrentAttestedGatewayConnectionId()) return;
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     throw new Error(t(
       "setup.wizard.connectionTimeout",
-      "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成经认证的 Gateway 连接。",
+      "Gateway 进程已就绪，但 JunQi 未能在限定时间内完成认证连接与运行时身份核验。",
     ));
   }, [isRunActive, t]);
 
@@ -210,7 +208,10 @@ export function useSetupFlow(
     return required;
   }, [updateOnboardingRequirement]);
   // 检测阶段依赖此探针；保持引用稳定，避免检测 effect 因渲染而重复启动。
-  const isGatewayConnected = useCallback(() => gateway.getStatus().connected, []);
+  const isGatewayConnected = useCallback(
+    () => captureCurrentAttestedGatewayConnectionId() !== null,
+    [],
+  );
 
   const {
     continueAfterEnvironmentReview,
@@ -363,10 +364,9 @@ export function useSetupFlow(
       } else {
         commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
       }
-      reportPhase("ready", t("setup.gatewayConnected", "Gateway 已连接"));
+      reportPhase("ready", t("setup.gatewayConnected", "Gateway 连接与运行时身份已核验"));
       if (!isRunActive(runId)) return false;
-      // Starting a runtime and choosing what to do with it are separate user
-      // decisions. The next stage is entered only from continueAfterGatewayReady.
+      // 启动运行时与决定后续配置是两次独立的用户操作；这里只进入 Gateway 就绪页。
       replaceSetupStep("gateway-ready");
       return true;
     } catch (error) {
@@ -560,9 +560,8 @@ export function useSetupFlow(
   }, [performRuntimeSelection]);
 
   const requestReinstall = useCallback(() => {
-    // This action is rendered on the auto-starting Gateway screen. Supersede
-    // that owned run before changing screens so its late success cannot replace
-    // the runtime chooser with gateway-ready.
+    // 该操作位于 Gateway 自动启动页；切换页面前先废弃当前运行，避免迟到的成功结果
+    // 用 gateway-ready 覆盖用户已经选择的运行时页面。
     void invalidateActiveRun();
     reinstallRequestedRef.current = true;
     setSetupError(null);
@@ -580,10 +579,8 @@ export function useSetupFlow(
     relocationRequestedRef.current = result?.openclawRelocationRequired === true;
     if (createdFresh) updateOnboardingRequirement(true);
 
-    // A selected runtime is always brought back through its own preflight and
-    // startup orchestration after storage is confirmed. Native verifies the
-    // Node.js/npm/OpenClaw contract; Docker verifies the selected image and
-    // container. Neither path asks the user to manually start Gateway.
+    // 数据位置确认后，所选运行时必须重新经过自己的预检和启动闭环。Native 核验
+    // Node.js、npm 与 OpenClaw，Docker 核验所选镜像和容器；两条路径都不要求用户手动启动 Gateway。
     const canResumeNativeRuntime = installMode === "native"
       && openclawStatus?.installed
       && !relocationRequestedRef.current;

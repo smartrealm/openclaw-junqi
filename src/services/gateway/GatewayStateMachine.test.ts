@@ -70,3 +70,37 @@ test('healthy process polling does not downgrade CONNECTED', () => {
   assert.equal(result.state, GatewayState.CONNECTED);
   assert.deepEqual(result.actions, ['NONE']);
 });
+
+test('连接目标解析失败进入可见错误态', () => {
+  const machine = new GatewayStateMachine();
+  machine.transition({ type: 'START_REQUESTED' });
+  machine.transition({ type: 'START_SUCCESS' });
+
+  const result = machine.transition({
+    type: 'CONNECT_FAILED',
+    error: 'selected runtime target unavailable',
+  });
+
+  assert.equal(result.state, GatewayState.ERROR);
+  assert.deepEqual(result.actions, ['SHOW_ERROR']);
+});
+
+test('启动期间端点提前就绪后启动失败仍进入错误态', () => {
+  const machine = new GatewayStateMachine();
+  machine.transition({ type: 'START_REQUESTED' });
+  machine.transition({
+    type: 'STATUS_RECEIVED',
+    processAlive: true,
+    endpointReady: true,
+    error: null,
+    retrying: false,
+  });
+
+  const result = machine.transition({
+    type: 'START_FAILED',
+    error: 'selected runtime start failed',
+  });
+
+  assert.equal(result.state, GatewayState.ERROR);
+  assert.deepEqual(result.actions, ['SHOW_ERROR']);
+});

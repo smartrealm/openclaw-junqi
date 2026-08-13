@@ -121,11 +121,11 @@
         <polygon points="320,180 368,228 320,276 272,228" class="decision"/><text x="320" y="220" class="name" text-anchor="middle">完成标记</text><text x="320" y="237" class="sub" text-anchor="middle">= 3 ?</text>
         <rect x="256" y="332" width="128" height="48" rx="6" class="box-soft"/><text x="320" y="354" class="name" text-anchor="middle">欢迎与环境检测</text><text x="320" y="369" class="sub" text-anchor="middle">language / theme</text>
         <rect x="220" y="386" width="200" height="16" rx="4" class="status-fixed"/><text x="320" y="397" class="status-text-fixed" text-anchor="middle">已修复 · 无闪白、横向溢出和重复摘要</text>
-        <rect x="432" y="352" width="192" height="56" rx="6" class="box"/><text x="444" y="368" class="tag">STORAGE</text><text x="528" y="386" class="name" text-anchor="middle">配置数据与运行时位置</text><text x="528" y="401" class="sub" text-anchor="middle">configure_storage</text>
-        <rect x="456" y="416" width="144" height="16" rx="4" class="status-fixed"/><text x="528" y="427" class="status-text-fixed" text-anchor="middle">已修复 · 窄屏底栏分区</text>
+        <rect x="432" y="352" width="192" height="56" rx="6" class="box"/><text x="444" y="368" class="tag">STORAGE</text><text x="528" y="386" class="name" text-anchor="middle">用户确认数据与运行时位置</text><text x="528" y="401" class="sub" text-anchor="middle">点击下一步 → configure_storage</text>
+        <rect x="448" y="416" width="160" height="16" rx="4" class="status-fixed"/><text x="528" y="427" class="status-text-fixed" text-anchor="middle">读取只填表 · 成功提交才推进</text>
         <rect x="432" y="212" width="192" height="88" rx="6" class="box"/><text x="444" y="228" class="tag">RUNTIME</text><text x="528" y="250" class="name" text-anchor="middle">确认运行方式并复用环境</text><text x="528" y="268" class="sub" text-anchor="middle">Native / Docker</text><text x="528" y="284" class="sub" text-anchor="middle">缺失才安装 · 异常才修复</text>
         <rect x="466" y="306" width="124" height="16" rx="4" class="status-fixed"/><text x="528" y="317" class="status-text-fixed" text-anchor="middle">已修复 · 双环境识别</text>
-        <rect x="688" y="212" width="96" height="96" rx="6" class="box-accent"/><text x="700" y="228" class="tag">GATE</text><text x="736" y="252" class="name" text-anchor="middle">启动并验证</text><text x="736" y="270" class="name" text-anchor="middle">Gateway</text><text x="736" y="289" class="sub" text-anchor="middle">probe selected</text>
+        <rect x="688" y="212" width="96" height="96" rx="6" class="box-accent"/><text x="700" y="228" class="tag">GATE</text><text x="736" y="252" class="name" text-anchor="middle">启动并验证</text><text x="736" y="270" class="name" text-anchor="middle">Gateway</text><text x="736" y="289" class="sub" text-anchor="middle">fresh attested</text>
         <rect x="688" y="364" width="192" height="48" rx="6" class="box"/><text x="784" y="386" class="name" text-anchor="middle">Guided 探测与模型实测</text><text x="784" y="401" class="sub" text-anchor="middle">operator.admin</text>
         <rect x="880" y="384" width="192" height="56" rx="6" class="box"/><text x="892" y="400" class="tag">HANDOFF</text><text x="976" y="420" class="name" text-anchor="middle">认证连接与配置复核</text>
         <rect x="880" y="252" width="192" height="64" rx="6" class="box"/><text x="892" y="268" class="tag">READY</text><text x="976" y="288" class="name" text-anchor="middle">完成页与独立自启动</text><text x="976" y="304" class="sub" text-anchor="middle">Gateway + JunQi Desktop</text>
@@ -199,7 +199,7 @@
   </section>
 
   <section id="gateway">
-    <div class="section-head"><span class="number">FIG. 03</span><h2>Gateway、配对权限与官方 Wizard</h2><p class="section-note">Windows UAC 与 Gateway 管理权限是两套系统。本图新增的身份 fencing、临时 admin RPC、取消锁和过期响应门禁已经过代码与自动化测试，但尚未在真实 Windows + OpenClaw Gateway 配对环境验证。</p></div>
+    <div class="section-head"><span class="number">FIG. 03</span><h2>Gateway、配对权限与官方 Wizard</h2><p class="section-note">Windows UAC 与 Gateway 管理权限是两套系统。首次设置先关闭旧连接，再按所选 Runtime 的正式配置建立新连接；只有新连接的 hello-ok 围栏与 Runtime Identity 同时核验通过才进入官方 Wizard。身份围栏、临时 admin RPC、取消锁和过期响应门禁已经过代码与自动化测试，但尚未在真实 Windows + OpenClaw Gateway 配对环境验证。</p></div>
     <div class="diagram">
       <svg viewBox="0 0 1120 624" role="img" aria-label="Gateway 与 OpenClaw Wizard 流程">
         <defs><marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4f5d75"/></marker><marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#eb6c36"/></marker><marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2e5aa8"/></marker></defs>
@@ -217,13 +217,13 @@
         <rect x="286" y="456" width="120" height="14" fill="#f5f5f5"/><text x="346" y="466" class="edge-label" text-anchor="middle">PAIRING_REQUIRED</text>
         <rect x="680" y="494" width="58" height="14" fill="#f5f5f5"/><text x="709" y="504" class="edge-label" text-anchor="middle">失败</text>
         <!-- nodes -->
-        <rect x="96" y="104" width="192" height="48" rx="6" class="box-accent"/><text x="192" y="126" class="name" text-anchor="middle">启动选定 Gateway</text><text x="192" y="141" class="sub" text-anchor="middle">Native / Docker</text>
-        <rect x="96" y="212" width="192" height="48" rx="6" class="box"/><text x="192" y="234" class="name" text-anchor="middle">验证进程、端点与身份</text><text x="192" y="249" class="sub" text-anchor="middle">probe_selected_gateway</text>
+        <rect x="96" y="104" width="192" height="48" rx="6" class="box-accent"/><text x="192" y="126" class="name" text-anchor="middle">断开旧连接并启动</text><text x="192" y="141" class="sub" text-anchor="middle">selected Native / Docker</text>
+        <rect x="96" y="212" width="192" height="48" rx="6" class="box"/><text x="192" y="234" class="name" text-anchor="middle">解析所选运行时目标</text><text x="192" y="249" class="sub" text-anchor="middle">ignore saved manual URL</text>
         <rect x="128" y="266" width="128" height="16" rx="4" class="status-fixed"/><text x="192" y="277" class="status-text-fixed" text-anchor="middle">代码已修复 · SecretRef 解析</text>
         <rect x="128" y="284" width="128" height="16" rx="4" class="status-pending"/><text x="192" y="295" class="status-text-pending" text-anchor="middle">待真实 SecretRef 后端验证</text>
-        <polygon points="192,296 240,344 192,392 144,344" class="decision"/><text x="192" y="338" class="name" text-anchor="middle">认证通过</text><text x="192" y="355" class="sub" text-anchor="middle">WS OPEN ?</text>
+        <polygon points="192,296 240,344 192,392 144,344" class="decision"/><text x="192" y="338" class="name" text-anchor="middle">身份核验</text><text x="192" y="355" class="sub" text-anchor="middle">hello-ok + identity</text>
         <rect x="96" y="444" width="192" height="48" rx="6" class="box-security"/><text x="192" y="466" class="name" text-anchor="middle">批准设备配对</text><text x="192" y="481" class="sub" text-anchor="middle">endpoint-scoped token</text>
-        <rect x="116" y="498" width="152" height="16" rx="4" class="status-fixed"/><text x="192" y="509" class="status-text-fixed" text-anchor="middle">代码已修复 · 身份门禁</text>
+        <rect x="116" y="498" width="152" height="16" rx="4" class="status-fixed"/><text x="192" y="509" class="status-text-fixed" text-anchor="middle">代码已修复 · 新连接身份门禁</text>
         <rect x="128" y="518" width="128" height="16" rx="4" class="status-pending"/><text x="192" y="529" class="status-text-pending" text-anchor="middle">待真实 Gateway 配对验证</text>
         <rect x="448" y="320" width="96" height="48" rx="6" class="box"/><text x="496" y="342" class="name" text-anchor="middle">启动 Wizard</text><text x="496" y="357" class="sub" text-anchor="middle">wizard.start</text>
         <rect x="442" y="374" width="108" height="16" rx="4" class="status-fixed"/><text x="496" y="385" class="status-text-fixed" text-anchor="middle">代码已修复 · admin 通道</text>
@@ -248,7 +248,7 @@
       </svg>
     </div>
     <div class="cards">
-      <div class="card"><p class="card-kicker">FULL FIRST-RUN PRESENTATION</p><h3>JunQi 安装与官方 Wizard 共用稳定页面骨架</h3><ul><li>欢迎、环境检测、数据位置、运行方式、依赖安装、Gateway 启动、OpenClaw 配置和完成页均占用同一窗口剩余高度；标题区与底部操作区保持固定，页面主内容区统一滚动，步骤卡片按真实内容自适应且不预留固定滚动槽，日志正文和官方长选项只在确有需要时局部滚动</li><li>数据位置的真实目录读取沿用最终表单的静态骨架，不把短暂 IPC 阶段渲染成独立状态页；读取失败才展示可重试错误</li><li>数据位置页默认展开“安装位置”，直接展示工作区及可选 npm、Node.js 和 Git 位置；用户在当前设置会话中的显式折叠选择由设置草稿保留</li><li>主体不再按步骤 React key 整体卸载；用户前进时正文从左向右短距离切换，返回时从右向左切换，后台运行状态只淡入；全部过渡为 120 至 180 毫秒且只使用 transform 与 opacity，系统减少动态效果时立即完成</li><li>环境探测与结果复核复用同一个场景和三项能力卡骨架；OpenClaw、Gateway 与 Docker 探针全部收敛后一次性发布真实结果，避免 Docker 晚到造成二次跳动</li><li>存储失败、恢复、应用和就绪使用统一状态面板；应用期间旧表单退出交互，进度只来自真实迁移事件，完成后提供继续与显式更改位置</li><li>Git、Node.js 和 Gateway 前置条件以“运行时”阶段标题承载，具体活动或错误只在主体状态卡出现一次，避免标题与正文重复</li><li>安装、探测和 Gateway 生命周期语义不变；统一的是几何边界、状态反馈和切换节奏，不增加假步骤、假进度或乐观成功</li></ul></div>
+      <div class="card"><p class="card-kicker">FULL FIRST-RUN PRESENTATION</p><h3>JunQi 安装与官方 Wizard 共用稳定页面骨架</h3><ul><li>欢迎、环境检测、数据位置、运行方式、依赖安装、Gateway 启动、OpenClaw 配置和完成页均占用同一窗口剩余高度；标题区与底部操作区保持固定，页面主内容区统一滚动，步骤卡片按真实内容自适应且不预留固定滚动槽，日志正文和官方长选项只在确有需要时局部滚动</li><li>数据位置的真实目录读取沿用最终表单的静态骨架，不把短暂 IPC 阶段渲染成独立状态页；读取完成后始终停留在表单，由用户点击“下一步”，只有原生存储事务成功才进入运行时</li><li>数据位置页默认展开“安装位置”，直接展示工作区及可选 npm、Node.js 和 Git 位置；用户在当前设置会话中的显式折叠选择由设置草稿保留</li><li>主体不再按步骤 React key 整体卸载；用户前进时正文从左向右短距离切换，返回时从右向左切换，后台运行状态只淡入；全部过渡为 120 至 180 毫秒且只使用 transform 与 opacity，系统减少动态效果时立即完成</li><li>环境探测与结果复核复用同一个场景和三项能力卡骨架；OpenClaw、Gateway 与 Docker 探针全部收敛后一次性发布真实结果，避免 Docker 晚到造成二次跳动</li><li>存储失败、恢复和应用使用统一状态面板；应用期间旧表单退出交互，进度只来自真实迁移事件，成功后直接切换阶段，不增加“数据位置已就绪”页面</li><li>首次设置启动 Gateway 前关闭旧 WebSocket，并忽略普通设置中保存的手工地址；新连接必须绑定当前所选 Runtime 的配置目标，不能用上一连接的 connected 状态推进页面</li><li>Git、Node.js 和 Gateway 前置条件以“运行时”阶段标题承载，具体活动或错误只在主体状态卡出现一次，避免标题与正文重复</li><li>安装、探测和 Gateway 生命周期语义不变；统一的是几何边界、状态反馈和切换节奏，不增加假步骤、假进度或乐观成功</li></ul></div>
       <div class="card"><p class="card-kicker">UNIFIED CONFIGURATION STAGE</p><h3>Gateway 就绪后原地核验 OpenClaw 配置</h3><ul><li>运行时步骤完成后，顶部直接激活“配置 OpenClaw”；Gateway 就绪仅作为该页面中的真实检查结果</li><li>请求 <code>openclaw.setup.detect</code> 协商模式：成功时使用 Guided，明确 unknown-method 时进入官方 Classic Wizard</li><li>连接、权限与响应错误不会触发模式切换；支持 Guided 的 Runtime 仍可由用户显式选择详细配置</li><li>配置核验与官方 Wizard 共享视觉场景，切换后复位主体滚动位置，不能因上一状态的日志滚动出现空白视口</li><li>普通交互步骤默认收起日志，失败时自动展开；日志不参与业务状态推断</li><li>官方步骤返回结构化 <code>externalUrl</code> 时由共享组件生成本地二维码、浏览器入口与复制操作</li><li>授权步骤提交后立即销毁旧二维码；插件拥有扫码轮询、过期与终态，JunQi 不从扫码表象推断成功</li><li>供应商流程结束后重新探测候选并执行真实激活，不把授权结束当作模型可用</li><li>Guided 与 Classic 终态共用单一交接门禁：复用当前已核验连接，连接失效时才重连；Guided 核验 <code>setup.detect</code> 与 <code>setup.verify</code>，Classic 使用当前官方 Wizard 的 <code>done</code></li></ul></div>
     </div>
   </section>
@@ -271,7 +271,7 @@
         <rect x="400" y="232" width="192" height="48" rx="6" class="box"/><text x="496" y="254" class="name" text-anchor="middle">动画与完成状态提交</text><text x="496" y="269" class="sub" text-anchor="middle">780ms · setup-done = 3</text>
         <rect x="400" y="112" width="192" height="48" rx="6" class="box-accent"/><text x="496" y="134" class="name" text-anchor="middle">verified-gateway-handoff</text><text x="496" y="149" class="sub" text-anchor="middle">reuse trusted connection</text>
         <rect x="438" y="166" width="116" height="16" rx="4" class="status-verified"/><text x="496" y="177" class="status-text-verified" text-anchor="middle">已验证 · 不重放冷启动</text>
-        <rect x="752" y="112" width="192" height="48" rx="6" class="box"/><text x="848" y="134" class="name" text-anchor="middle">App.tsx 再次探测</text><text x="848" y="149" class="sub" text-anchor="middle">probe selected gateway</text>
+        <rect x="752" y="112" width="192" height="48" rx="6" class="box"/><text x="848" y="134" class="name" text-anchor="middle">App.tsx 再次探测</text><text x="848" y="149" class="sub" text-anchor="middle">attested selected gateway</text>
         <rect x="790" y="166" width="116" height="16" rx="4" class="status-fixed"/><text x="848" y="177" class="status-text-fixed" text-anchor="middle">已修复 · 失败清标记</text>
         <rect x="752" y="232" width="192" height="48" rx="6" class="box"/><text x="848" y="254" class="name" text-anchor="middle">初始化连接管理器</text><text x="848" y="269" class="sub" text-anchor="middle">GatewayConnectionManager</text>
         <rect x="752" y="352" width="144" height="48" rx="6" class="box"/><text x="824" y="374" class="name" text-anchor="middle">加载会话与历史</text><text x="824" y="389" class="sub" text-anchor="middle">sessions / transcript</text>
@@ -288,6 +288,7 @@
     <div class="section-head"><span class="number">AUDIT</span><h2>关键风险处置状态</h2><p class="section-note">“已修复”表示源代码与自动化回归已经通过；不等于真实环境验收。FIG. 03 本轮变更仍需在 Windows、真实 OpenClaw Gateway、设备配对及 operator.admin scope 升级环境中验证。</p></div>
     <div class="risk-grid">
       <article class="risk resolved"><p class="level">代码已修复 · NATIVE ENDPOINT REUSE</p><h3>已认证 selected Native 服务不会在 Docker 释放检查中被提前拒绝</h3><p>Native 启动前的共享端口门禁现在区分“managed Docker owner”与“已接受 selected config/token 的非 Docker endpoint”。后者保持运行并交给 Native 启动链继续执行 token/config、健康与 service ownership 验证；未知端口占用、foreign config 和真正的 Docker owner 仍按原契约 fail-closed。自动化与本地 ARM64 构建通过，待用首次设置界面重试验证完整日志和页面推进。</p></article>
+      <article class="risk resolved"><p class="level">代码已修复 · SETUP CONNECTION GENERATION</p><h3>旧连接不能证明本次所选 Runtime 已就绪</h3><p>首次设置启动前主动关闭旧 WebSocket，连接动作忽略普通设置保存的手工地址并重新解析当前所选 Runtime。页面只接受新连接的 hello-ok 围栏与 Runtime Identity 核验；正式目标读取失败进入统一错误态，不猜测默认端点，也不再形成未处理 Promise 或伪成功。</p></article>
       <article class="risk resolved"><p class="level">代码已修复 · READY NAVIGATION</p><h3>后台自启动偏好不再困住已就绪用户</h3><p>官方 Wizard 终态与 Gateway 已验证 Ready 后，自启动交接继续显示真实进度并锁定返回操作，但不再禁用“进入仪表盘”。进入动作重新验证 selected Gateway，并消费同一次流程已取得的官方终态；后台偏好操作不能绕过完成门禁。</p></article>
       <article class="risk resolved"><p class="level">代码已修复 · WIZARD HANDOFF FENCING</p><h3>过期 Wizard 完成任务不得提交交接结果</h3><p>official-service handoff、交接后 Gateway probe 与连接目标刷新之后均重新验证同一 Wizard operation identity。页面返回或新操作接管后，旧任务即使完成 Rust 交接，也不得修改设置 UI、进入 Ready 或继续后续探测。待 Windows 官方服务交接真机实测。</p></article>
       <article class="risk resolved"><p class="level">代码已修复 · WIZARD TERMINAL RECOVERY</p><h3>未知终态不再被伪装成完成或仍需配置</h3><p>官方 done 结果单独进入不可重放的恢复边界。首次消费终态只执行一次服务交接；客户端优先复用当前已核验连接，连接失效时才重连。连接围栏或所选 Runtime 探测失败时，页面停留在配置阶段并只提供“重新核验”。若最终 wizard.next 返回前原 sessionId 被回收，客户端恢复当前 Gateway 并尝试恢复原会话；确认不可恢复后保留终态未知，不构造本地 done，也不自动调用 wizard.start。用户显式重新开始时还需通过可取消的二次确认，并获知可能重复配置写入的风险。授权步骤提交期间旧二维码会替换为等待投影，超时和终态继续由官方插件拥有。</p></article>
@@ -313,7 +314,7 @@
     </div>
   </section>
 
-  <footer><span>JunQi Desktop · First-run to Workspace</span><span>Updated code audit visualization · 2026-08-08</span></footer>
+  <footer><span>JunQi Desktop · First-run to Workspace</span><span>Updated code audit visualization · 2026-08-13</span></footer>
 </main>
 </body>
 </html>

@@ -4,23 +4,6 @@ export interface StorageCompletion {
   openclawRelocationRequired?: boolean;
 }
 
-export interface ExistingStorageStatus {
-  configured: boolean;
-  openclawRelocationRequired: boolean;
-}
-
-export function storageAutoAdvanceCompletion(
-  status: ExistingStorageStatus | null,
-  hasDraft: boolean,
-  forceConfigure: boolean,
-): StorageCompletion | null {
-  if (!status?.configured || hasDraft || forceConfigure) return null;
-  return {
-    createdFresh: false,
-    openclawRelocationRequired: status.openclawRelocationRequired,
-  };
-}
-
 export function initialStorageLocationsVisibility(savedVisibility?: boolean): boolean {
   return savedVisibility ?? true;
 }
