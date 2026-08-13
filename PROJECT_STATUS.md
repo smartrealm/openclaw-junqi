@@ -50,7 +50,7 @@
 - 完整前端测试 2702 项与脚本测试通过。
 - 本轮没有修改 Rust；既有 Rust 635 项通过、1 项忽略的结果未在本轮重跑。
 - `pnpm lint`、`pnpm build`、`pnpm verify:openclaw-docs` 与 `git diff --check` 通过。
-- 本阶段尚未提交、打包、推送或发布。
+- 代码已提交为 `76af04f9`。本机已生成并通过 `hdiutil verify` 校验的 macOS ARM64 DMG；由于本机没有 Tauri updater 发布私钥，updater 签名阶段按预期失败，该 DMG 仅用于本地安装验证，不是正式签名或公证制品。
 
 ## 已知问题与未验证边界
 
