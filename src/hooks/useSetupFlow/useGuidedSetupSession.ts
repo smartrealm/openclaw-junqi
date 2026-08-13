@@ -17,6 +17,7 @@ import {
 } from "@/services/openclawWizard";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import { activateFirstWorkingGuidedCandidate } from "@/services/setup/guidedSetupCandidateLadder";
+import { isGuidedSetupUnsupported } from "@/services/setup/openClawSetupCapability";
 
 export type GuidedSetupPhase =
   | "detecting"
@@ -48,6 +49,7 @@ export interface GuidedSetupController {
 interface GuidedSetupSessionPorts {
   enabled: boolean;
   onComplete: () => Promise<void>;
+  onUnsupported: () => void;
 }
 
 function operationError(error: unknown, t: (key: string, fallback: string) => string): string {
@@ -65,6 +67,7 @@ function operationError(error: unknown, t: (key: string, fallback: string) => st
 export function useGuidedSetupSession({
   enabled,
   onComplete,
+  onUnsupported,
 }: GuidedSetupSessionPorts): GuidedSetupController {
   const { t } = useTranslation();
   const [phase, setPhase] = useState<GuidedSetupPhase>("detecting");
@@ -197,6 +200,10 @@ export function useGuidedSetupSession({
       const result = await guidedClientRef.current!.detect();
       await continueFromDetection(result, operation);
     } catch (cause) {
+      if (isGuidedSetupUnsupported(cause)) {
+        if (operation === operationRef.current) onUnsupported();
+        return;
+      }
       if (operation === operationRef.current) {
         setError(operationError(cause, t));
         setPhase("error");
@@ -204,7 +211,7 @@ export function useGuidedSetupSession({
     } finally {
       if (operation === operationRef.current) setBusy(false);
     }
-  }, [beginOperation, continueFromDetection, t]);
+  }, [beginOperation, continueFromDetection, onUnsupported, t]);
 
   const applyProviderWizardResult = useCallback(async (
     result: OpenClawWizardResult,

@@ -2,7 +2,7 @@
 
 JunQi 是 OpenClaw Gateway 的 Tauri 桌面客户端。安装流程只负责桌面运行时选择、环境检测、Gateway 生命周期交接和官方 OpenClaw 安装协议的呈现；模型、凭据、工作区、渠道、会话和工具的语义均由 OpenClaw 决定。
 
-当前默认路径已经对齐最新版 OpenClaw guided inference；经典 Wizard 仅由用户显式选择“详细配置”后启动。实施依据与未验证边界见 [OpenClaw 原生安装对齐审计](../quality/openclaw-native-installation-alignment-audit-2026-08-12.md)。
+当前路径按所选 Runtime 的正式 RPC 响应协商配置模式：支持 Guided Setup 时使用 guided inference；明确不支持该方法时使用官方 Classic Wizard。实施依据与未验证边界见 [OpenClaw 原生安装对齐审计](../quality/openclaw-native-installation-alignment-audit-2026-08-12.md)。
 
 ## 当前流程
 
@@ -10,10 +10,10 @@ JunQi 是 OpenClaw Gateway 的 Tauri 桌面客户端。安装流程只负责桌�
 2. JunQi 按所选运行时检测或准备 Node、npm、OpenClaw、Docker 与必要系统能力。路径和凭据始终绑定该运行时，不能使用开发机默认值。
 3. 数据位置步骤会读取选定运行时绑定的真实目录，但初次读取只保持最终表单的静态骨架，不把短暂 IPC 阶段展示为独立页面。读取失败时才显示可重试错误。正常表单默认展开“安装位置”，直接展示 OpenClaw 工作区及可选的 npm、Node.js 和 Git 位置；用户可以折叠该区域，在同一次设置会话中返回此步骤时保留用户的展开或折叠选择。
 4. JunQi 启动或复用 Gateway，并在认证连接与 Runtime Identity 均完成核验后继续。端口可达或进程启动不等于交接成功。
-5. 默认调用 `openclaw.setup.detect`。已有完整配置时进入统一交接门禁；否则按官方候选顺序执行真实激活，或呈现官方认证与准备方式。方法缺失、无权限、断线与响应非法分别保留真实失败，不静默回退经典 Wizard。
+5. 认证连接建立后调用 `openclaw.setup.detect` 协商配置协议。成功时按 Guided 结果继续；只有 Gateway 明确返回 unknown-method 才进入同一 Runtime 的官方 Classic Wizard。无权限、断线与响应非法分别保留真实失败，不能冒充协议不支持。
 6. 认证或准备 Wizard 结束后重新探测候选并执行真实激活，不把“授权流程结束”误判为模型已经可用。推理成立后使用独立 session 调用 `openclaw.chat`，由官方对话继续工作区、Gateway、渠道和其他可选配置。用户显式选择“详细配置”时才进入经典 Wizard。
 7. 官方 Wizard step 返回 `externalUrl` 时，JunQi 在该步骤存活期间通过共享前端组件本地生成二维码，并提供浏览器打开和复制操作。第三方插件尚未接入 `openUrl()`、但在当前结构化 step 的 `message` 中返回唯一、带非空 `user_code` 的 HTTPS 一次性授权地址时，JunQi 可将该地址原样投影为二维码；普通文档链接不生成二维码。授权区域明确说明完成外部授权后还需提交当前官方步骤，主要操作使用授权专用文案。步骤标识变化、提交等待、官方终态、取消或失败后立即销毁该投影，不读取历史日志、不改写地址，也不据此推断授权状态。`deviceCode` 继续按官方字段并列呈现，二维码生成失败时保留链接与手工流程。
-8. Guided 与 Classic 的官方终态共用唯一交接门禁：优先复用当前已核验连接，连接失效时才等待既有生命周期操作收敛并重连；随后在同一连接围栏内核验所选 Runtime、重新执行 `setup.detect`，再以 `setup.verify` 完成真实模型核验。任一步失败都停在当前配置页重试，不重启向导、不恢复旧二维码、不写入完成标记。全部通过后才进入 Ready；用户确认进入工作台时再次核验 Gateway 与配置，再持久化 JunQi 完成标记。
+8. Guided 与 Classic 的官方终态共用唯一交接门禁：优先复用当前已核验连接，连接失效时才等待既有生命周期操作收敛并重连，并在同一连接围栏内核验所选 Runtime。Guided 继续执行 `setup.detect` 与 `setup.verify`；Classic 直接采用当前官方 Wizard 的 `done`，不要求 Runtime 实现 Guided 专属方法。任一步失败都停在当前配置页，不重启向导、不恢复旧二维码、不写入完成标记。
 
 ## 当前验证与边界
 

@@ -9,7 +9,7 @@ export interface ExistingStorageStatus {
   openclawRelocationRequired: boolean;
 }
 
-export function initialStorageCompletion(
+export function storageAutoAdvanceCompletion(
   status: ExistingStorageStatus | null,
   hasDraft: boolean,
   forceConfigure: boolean,

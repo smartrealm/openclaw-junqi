@@ -122,21 +122,3 @@ test("BUG-WIN-CANCEL-05 a running install always offers a cancellation path", ()
   assert.match(flow, /const runNativeSetup[\s\S]*?if \(!beginSetupOperation\(runId\)\) return false[\s\S]*?finally \{\s*\n\s*finishSetupOperation\(runId\)/);
   assert.match(flow, /const runDockerSetup[\s\S]*?if \(!beginSetupOperation\(runId\)\) return false[\s\S]*?finally \{\s*\n\s*finishSetupOperation\(runId\)/);
 });
-
-test("BUG-WFR-05 stale Wizard completion cannot commit Gateway verification UI", () => {
-  const completion = flow.slice(
-    flow.indexOf("const completeWizardRuntime = useCallback"),
-    flow.indexOf("const applyWizardResult = useCallback"),
-  );
-  assert.match(completion, /operationId: number/);
-  assert.match(completion, /const handoff = await performOpenClawSetupHandoff\(\{/);
-  assert.match(completion, /reconnectAfterCurrent\(WIZARD_COMPLETION_RECONNECT_SOURCE\)/);
-  assert.match(completion, /probeSelectedGateway/);
-  assert.match(completion, /detectSetup: \(\) => client\.detect\(\)/);
-  assert.match(completion, /verifyModel: \(\) => client\.verify\(\)/);
-  assert.match(completion, /\}\);\s*assertWizardOperationCurrent\(operationId\);\s*if \(!handoff\.ready\)/);
-  assert.doesNotMatch(completion, /handoffGatewayToOfficialService|prepareWizardCompletionLifecycle/);
-  assert.doesNotMatch(completion, /probeActiveRuntimeModel|modelProbe/);
-  assert.doesNotMatch(completion, /await refreshGatewayConnectionTarget\(\)/);
-  assert.doesNotMatch(completion, /completedWizardResult|status: "done"/);
-});

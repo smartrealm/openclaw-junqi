@@ -5,7 +5,7 @@
 ## 原则
 
 - 先修 P0 与 P1，不同时增加新业务功能。
-- 默认路径对齐最新 OpenClaw guided inference；classic 只保留为明确高级入口。
+- 按正式 RPC 响应协商 Guided 与 Classic；不以版本号或功能清单猜测能力。
 - 删除被替代的旧完成凭据判断和错误文档，不增加兼容 fallback。
 - 每个阶段先写可失败回归，再实现，再运行定向验证。
 
@@ -15,15 +15,15 @@
 2. 全部请求复用 `gateway.callPrivileged()`，保留 `operator.admin`、runtime identity 和 Gateway 地址作用域。
 3. 新建单一 guided onboarding controller，负责检测、认证或准备、激活、验证和 chat session；页面只消费状态，不直接调用 Gateway。
 4. 把首次设置默认入口从 `OpenClawWizardClient.start()` 切换到 guided controller。
-5. 方法缺失时显示 OpenClaw 更新要求，不回退到 classic。
+5. `openclaw.setup.detect` 明确返回 unknown-method 时进入官方 Classic；连接、权限和响应错误保留原失败语义。
 
 定向测试：协议解析、权限失败、方法缺失、检测完成、检测未完成、激活失败、激活成功、验证失败、断线未知、chat exit、chat open-agent。
 
 ## 第二阶段：收敛完成门禁
 
-1. 将 `resolveActiveRuntimeOnboardingRequirement()` 改为读取当前 Gateway 的 `setup.detect`，不再由页面内 Wizard attestation 决定默认 onboarding。
+1. 将 `resolveActiveRuntimeOnboardingRequirement()` 改为协商当前 Gateway 的配置协议：Guided 读取 `setup.detect`，Classic 只消费当前官方 Wizard 的终态证明。
 2. 保留本地安装健康检查，但只让它判断包、image 和存储事务，不判断模型配置。
-3. fresh activation 必须通过 `setup.verify`；已配置冷启动按官方 `setupComplete` 跳过。
+3. Guided fresh activation 必须通过 `setup.verify`；Classic 以官方 `done` 进入同一连接与 Runtime 交接门禁。
 4. 删除被替代的 `wizardCompletionAttestation` 默认路径及其专属测试；classic session 需要的进程内防重放状态留在 classic controller 内部，不扩散为全局完成事实。
 5. 明确 classify：未授权、方法不存在、Gateway 不可达、配置未完成、验证失败和结果未知。
 6. 交接优先复用当前已核验连接；仅在连接失效时通过统一生命周期重连，并用连接标识围栏 Runtime 探测、配置检测和模型验证。
@@ -47,6 +47,7 @@
 4. 根据官方选择核验生命周期：要求 daemon 时执行官方服务交接；明确不安装时保持前台所有者并标记后台常驻未启用。
 5. 渠道中心继续使用现有 channels Wizard，不与首次 guided provider 设置混合。
 6. 官方步骤正文复用共享稳定内容槽；用户导航使用方向过渡，后台状态只淡入，并尊重系统减少动态效果。
+7. 删除既有数据位置读取后的重复完成页，复用保存成功后的同一阶段转换。
 
 定向测试：guided 默认、classic 显式、install-daemon、no-daemon、channels 隔离、取消、session 丢失与未知终态。
 

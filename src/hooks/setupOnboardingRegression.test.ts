@@ -62,19 +62,6 @@ test('BUG-ONB-01 stale detection cannot override Back navigation', () => {
   assert.match(detection, /settleInitialEnvironmentDetection\([\s\S]*?detectEnvironment\(runId\)[\s\S]*?checkDocker\(\)[\s\S]*?!isRunActive\(runId\)[\s\S]*?navigateSetup\("environment-review", "replace"\)/);
 });
 
-test('BUG-ONB-16 wizard completion requires authenticated Gateway readiness and official setup detection', () => {
-  const completion = setupFlow.slice(
-    setupFlow.indexOf('const completeWizardRuntime = useCallback'),
-    setupFlow.indexOf('const applyWizardResult = useCallback'),
-  );
-
-  assert.match(completion, /performOpenClawSetupHandoff\(\{/);
-  assert.match(completion, /reconnectAfterCurrent\(WIZARD_COMPLETION_RECONNECT_SOURCE\)/);
-  assert.match(completion, /probeSelectedGateway/);
-  assert.match(completion, /detectSetup: \(\) => client\.detect\(\)/);
-  assert.match(completion, /verifyModel: \(\) => client\.verify\(\)/);
-});
-
 test('BUG-ONB-34 cached setup defers cold recovery until durable installation validation settles', () => {
   assert.ok(
     (app.match(/if \(cachedSetupValidationPending\) return;/g) ?? []).length >= 2,

@@ -3,9 +3,15 @@ export interface OpenClawSetupHandoffPorts {
   isAttestedConnectionCurrent: (connectionId: string) => boolean;
   reconnect: () => Promise<{ success: boolean; diagnostic?: string }>;
   probeSelectedGateway: () => Promise<boolean>;
-  detectSetup: () => Promise<{ setupComplete: boolean }>;
-  verifyModel: () => Promise<{ ok: true } | { ok: false; error: string }>;
 }
+
+export type OpenClawSetupCompletionEvidence =
+  | {
+    kind: "guided";
+    detectSetup: () => Promise<{ setupComplete: boolean }>;
+    verifyModel: () => Promise<{ ok: true } | { ok: false; error: string }>;
+  }
+  | { kind: "classic-wizard-terminal" };
 
 export type OpenClawSetupHandoffResult =
   | { ready: true }
@@ -25,6 +31,7 @@ export type OpenClawSetupHandoffResult =
  */
 export async function performOpenClawSetupHandoff(
   ports: OpenClawSetupHandoffPorts,
+  evidence: OpenClawSetupCompletionEvidence,
 ): Promise<OpenClawSetupHandoffResult> {
   // 官方配置会在当前已认证连接中提交结果。仅当该连接已经失效时才重连，
   // 避免强制制造新连接并把无变化的健康连接误判为超时。
@@ -49,7 +56,11 @@ export async function performOpenClawSetupHandoff(
     return { ready: false, reason: "connection-unavailable" };
   }
 
-  const detection = await ports.detectSetup();
+  // Classic Wizard 的 done 是稳定协议给出的官方终态，不要求 Runtime 同时实现
+  // Guided 专属的 detect 与 verify。两种终态共享连接和 Runtime 身份门禁。
+  if (evidence.kind === "classic-wizard-terminal") return { ready: true };
+
+  const detection = await evidence.detectSetup();
   if (!ports.isAttestedConnectionCurrent(connectionId)) {
     return { ready: false, reason: "connection-unavailable" };
   }
@@ -57,7 +68,7 @@ export async function performOpenClawSetupHandoff(
     return { ready: false, reason: "setup-incomplete" };
   }
 
-  const verification = await ports.verifyModel();
+  const verification = await evidence.verifyModel();
   if (!ports.isAttestedConnectionCurrent(connectionId)) {
     return { ready: false, reason: "connection-unavailable" };
   }

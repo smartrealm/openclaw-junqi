@@ -35,9 +35,6 @@ import {
   reconcileWizardSessionLoss,
 } from "@/services/setup/setupCompletionGate";
 import { getGatewayDeviceCredentialForUrl } from "@/services/gateway/credentialProvider";
-import {
-  OpenClawGuidedSetupClient,
-} from "@/services/gateway/OpenClawGuidedSetupClient";
 
 const WIZARD_COMPLETION_RECONNECT_SOURCE = "wizard-completion";
 const WIZARD_SESSION_RECOVERY_RECONNECT_SOURCE = "wizard-session-recovery";
@@ -260,9 +257,6 @@ export function useWizardSession({
     setWizardStep(null);
     setWizardRecoveryMode("runtime");
     try {
-      const client = new OpenClawGuidedSetupClient({
-        requestPrivileged: (method, params) => gateway.callPrivileged(method, params),
-      });
       const handoff = await performOpenClawSetupHandoff({
         captureAttestedConnectionId: captureCurrentAttestedGatewayConnectionId,
         isAttestedConnectionCurrent: isAttestedGatewayConnectionCurrent,
@@ -274,8 +268,8 @@ export function useWizardSession({
           };
         },
         probeSelectedGateway: () => probeSelectedGateway().catch(() => false),
-        detectSetup: () => client.detect(),
-        verifyModel: () => client.verify(),
+      }, {
+        kind: "classic-wizard-terminal",
       });
       assertWizardOperationCurrent(operationId);
       if (!handoff.ready) {

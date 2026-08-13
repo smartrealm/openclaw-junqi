@@ -259,7 +259,7 @@ Wizard 会话存在于 Gateway 进程内。Gateway 重启后，原 `sessionId` �
 
 1. 用户已经明确选择 Native 或 Docker Runtime。
 2. JunQi 已核验 Gateway 目标、凭据和 Runtime Identity。
-3. 首次配置默认由正式 `openclaw.setup.detect` 与 Guided 流程判断既有配置；Classic Wizard 只在用户显式选择详细配置时启动。
+3. 首次配置先请求正式 `openclaw.setup.detect` 协商能力；支持时使用 Guided，明确 unknown-method 时使用官方 Classic Wizard。支持 Guided 的 Runtime 仍只在用户显式选择详细配置时进入 Classic。
 4. Wizard RPC 使用经授权的 `operator.admin` 临时管理连接。
 
 ### 当前首次配置请求
@@ -299,9 +299,9 @@ JunQi 首次启动只发起完整官方配置：
 1. 捕获当前已核验 Gateway 连接及其 Runtime 身份；
 2. 只有该连接已经失效时，才通过全局 Gateway 生命周期协调器重新解析目标和凭据并重连；
 3. 在同一连接标识围栏内探测用户所选 Gateway；
-4. 调用官方 `openclaw.setup.detect` 核验配置终态；
-5. 调用官方 `openclaw.setup.verify` 完成真实模型核验；
-6. 所有门禁通过后才进入完成页。
+4. Classic 使用当前 Wizard 返回的官方 `done` 作为配置终态，不调用该 Runtime 未提供的 Guided 专属方法；
+5. Guided 终态才继续调用官方 `openclaw.setup.detect` 与 `openclaw.setup.verify`；
+6. 对应模式的门禁通过后才进入完成页。
 
 Wizard 完成不等于桌面客户端已经连接到正确 Runtime。上述核验失败时必须停留在配置页面，并保留“官方终态已确认”的本地派生恢复状态。此后的“重新核验”只重复连接围栏、所选 Runtime、配置终态和真实模型核验；当前连接失效时才重连。该恢复不调用 `wizard.start`、`wizard.next`，也不恢复或重放已经回收的官方会话。
 

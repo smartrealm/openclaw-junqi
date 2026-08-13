@@ -30,6 +30,7 @@ import {
 } from "@/services/setup/setupCompletionGate";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import { performOpenClawSetupHandoff } from "@/services/setup/openClawSetupHandoff";
+import { resolveOpenClawSetupCapability } from "@/services/setup/openClawSetupCapability";
 import { createOnboardingPresentationMachine } from "@/services/setup/onboardingPresentation";
 import { OpenClawGuidedSetupClient } from "@/services/gateway/OpenClawGuidedSetupClient";
 import { isCurrentSetupOperationProgress } from "@/hooks/setupProgressEvents";
@@ -195,12 +196,16 @@ export function useSetupFlow(
   }, [isRunActive, t]);
 
   const resolveActiveRuntimeOnboardingRequirement = useCallback(async (): Promise<boolean> => {
-    // Gateway 健康或本地页面终态都不能证明模型配置完成；每次门禁核验都读取
-    // OpenClaw 官方探测结果，避免安装完成后因进程内标记丢失而重新进入配置。
-    const result = await new OpenClawGuidedSetupClient({
+    const client = new OpenClawGuidedSetupClient({
       requestPrivileged: (method, params) => gateway.callPrivileged(method, params),
-    }).detect();
-    const required = !result.setupComplete;
+    });
+    const capability = await resolveOpenClawSetupCapability(() => client.detect());
+    setConfigurationMode(capability.mode);
+    // 稳定版 Classic Wizard 没有全局只读完成探针。该模式只沿用当前流程中
+    // 已由官方 Wizard 终态更新的需求状态，不从 Gateway 健康或配置文本猜测。
+    const required = capability.mode === "guided"
+      ? !capability.detection.setupComplete
+      : needsOnboardingRef.current;
     updateOnboardingRequirement(required);
     return required;
   }, [updateOnboardingRequirement]);
@@ -292,6 +297,8 @@ export function useSetupFlow(
         };
       },
       probeSelectedGateway: () => probeSelectedGateway().catch(() => false),
+    }, {
+      kind: "guided",
       detectSetup: () => client.detect(),
       verifyModel: () => client.verify(),
     });
@@ -309,14 +316,15 @@ export function useSetupFlow(
     replaceSetupStep("ready");
   }, [replaceSetupStep, report, setGatewayRunning, setPostStorageStep, setSetupError, t, updateOnboardingRequirement]);
 
+  const switchToClassicConfiguration = useCallback(() => {
+    setConfigurationMode("classic");
+  }, []);
+
   const guidedSetup = useGuidedSetupSession({
     enabled: setupStep === "configure-openclaw" && configurationMode === "guided",
     onComplete: completeGuidedSetup,
+    onUnsupported: switchToClassicConfiguration,
   });
-
-  useEffect(() => {
-    if (setupStep !== "configure-openclaw") setConfigurationMode("guided");
-  }, [setupStep]);
 
   // ── Actions ──
   const startGatewayAction = useCallback(async (

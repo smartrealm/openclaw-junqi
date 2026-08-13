@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Check, CheckCircle2, ChevronDown, CircleAlert, Cpu, Database, FolderOpen, GitBranch, HardDrive, LoaderCircle, Package, Terminal } from 'lucide-react';
+import { Check, ChevronDown, CircleAlert, Cpu, Database, FolderOpen, GitBranch, HardDrive, LoaderCircle, Package, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell, StatusPanel } from '@/components/setup/SetupFlowPanels';
 import {
-  initialStorageCompletion,
   initialStorageLocationsVisibility,
+  storageAutoAdvanceCompletion,
   type StorageCompletion,
 } from '@/components/setup/storageSetupModel';
 import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
@@ -194,7 +194,6 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
   const [recoveringRuntime, setRecoveringRuntime] = useState(false);
   const [progress, setProgress] = useState<MigrationProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [completion, setCompletion] = useState<StorageCompletion | null>(null);
 
   const loadStorageStatus = useCallback(async () => {
     setLoading(true);
@@ -389,22 +388,12 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
   }, [appendSetupLog, customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, forceConfigure, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, status, t, targetDir, terminalIntegration, usingSourceLocation, workspaceDir]);
 
   useEffect(() => {
-    setCompletion(null);
-  }, [customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, targetDir, terminalIntegration, workspaceDir]);
-
-  useEffect(() => {
     if (initialCompletionHandledRef.current) return;
-    const initialCompletion = initialStorageCompletion(status, Boolean(storageDraft), forceConfigure);
+    const initialCompletion = storageAutoAdvanceCompletion(status, Boolean(storageDraft), forceConfigure);
     if (!initialCompletion) return;
     initialCompletionHandledRef.current = true;
-    setCompletion(initialCompletion);
+    onReadyRef.current(initialCompletion);
   }, [forceConfigure, status, storageDraft]);
-
-  const advanceAfterStorage = useCallback(() => {
-    if (!completion || advanceInFlightRef.current || applyInFlightRef.current || backInFlightRef.current) return;
-    advanceInFlightRef.current = true;
-    onReadyRef.current(completion);
-  }, [completion]);
 
   const rememberDraft = useCallback(() => {
     const draft: StorageSetupDraft = {
@@ -570,37 +559,6 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
                 </div>
               </div>
             )}
-          />
-        </div>
-      </SetupShell>
-    );
-  }
-
-  if (completion) {
-    return (
-      <SetupShell
-        active={activeStage}
-        contentIdentity="storage:complete"
-        title={t('storage.title', '选择 OpenClaw 数据位置')}
-        subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
-        logs={logs}
-        previousAction={{ onClick: handleBack }}
-        secondaryAction={{
-          label: t('storage.changeLocation', '更改位置'),
-          onClick: () => setCompletion(null),
-        }}
-        nextAction={{
-          label: t('setup.nextStep', '下一步'),
-          onClick: advanceAfterStorage,
-          icon: 'next',
-        }}
-      >
-        <div className="flex min-h-[260px] items-center">
-          <StatusPanel
-            icon={<CheckCircle2 size={22} />}
-            tone="success"
-            title={t('storage.readyTitle', '数据位置已就绪')}
-            message={t('storage.saved', '存储位置已保存，请点击下一步继续。')}
           />
         </div>
       </SetupShell>

@@ -74,6 +74,7 @@ import { validateCachedSetupInstallation } from '@/services/setupInstallationHea
 import { approveSelectedGatewayDevice } from '@/api/tauri-commands';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
 import { OpenClawGuidedSetupClient } from '@/services/gateway/OpenClawGuidedSetupClient';
+import { resolveOpenClawSetupCapability } from '@/services/setup/openClawSetupCapability';
 import { shouldBlockWorkspaceEntry } from '@/services/setup/setupEntryGate';
 import { JarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
 import { projectOpenClawSessionForChat } from '@/utils/openClawSessionProjection';
@@ -257,10 +258,16 @@ export default function App() {
     const client = new OpenClawGuidedSetupClient({
       requestPrivileged: (method, params) => gateway.callPrivileged(method, params),
     });
-    void client.detect()
-      .then((result) => {
+    void resolveOpenClawSetupCapability(() => client.detect())
+      .then((capability) => {
         if (cancelled) return;
-        if (!result.setupComplete) {
+        // Classic Wizard 没有全局只读完成探针。冷启动时保留先前由官方终态
+        // 提交的本地证明，并由当前已认证 Gateway 连接继续约束工作台入口。
+        if (capability.mode === 'classic') {
+          setOfficialSetupValidationPending(false);
+          return;
+        }
+        if (!capability.detection.setupComplete) {
           const store = useAppStore.getState();
           store.setSetupComplete(null);
           store.navigateSetup('configure-openclaw', 'replace');

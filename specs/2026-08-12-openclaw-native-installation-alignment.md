@@ -4,7 +4,7 @@
 
 ## 目标
 
-JunQi 首次设置必须忠实呈现最新版 OpenClaw 的默认 guided inference 流程，并把经典 Wizard 保留为用户显式选择的高级路径。JunQi 只负责桌面安装、运行时选择、结构化协议呈现、Gateway 生命周期和可验证完成门禁，不重定义 OpenClaw 安装语义。
+JunQi 首次设置必须按当前所选 OpenClaw Runtime 的正式 RPC 能力呈现配置流程：支持 `openclaw.setup.detect` 时使用 guided inference；明确返回 unknown-method 时使用官方经典 Wizard。JunQi 只负责桌面安装、运行时选择、结构化协议呈现、Gateway 生命周期和可验证完成门禁，不重定义 OpenClaw 安装语义。
 
 ## 范围
 
@@ -22,9 +22,9 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 1. JunQi 完成桌面环境和用户选择的运行时检查。
 2. 缺少 OpenClaw 时，安装官方最新版包或官方 Docker image。
 3. JunQi 启动或连接所选 Gateway，并完成身份与 `operator.admin` 权限核验。
-4. 调用 `openclaw.setup.detect`。
-5. `setupComplete` 为真时，进入正常工作台，不重复 onboarding。
-6. `setupComplete` 为假时，呈现官方候选、不可用候选、认证方式和准备方式。
+4. 调用 `openclaw.setup.detect` 协商当前 Runtime 的正式配置能力；只有结构化 unknown-method 才切换到官方 `wizard.start/next/status/cancel`。
+5. Guided 的 `setupComplete` 为真时，进入正常工作台，不重复 onboarding；Classic 则以当前官方 Wizard 会话的 `done` 作为终态证明。
+6. Guided 的 `setupComplete` 为假时，呈现官方候选、不可用候选、认证方式和准备方式；Classic 忠实呈现官方步骤。
 7. 需要认证或准备时，分别调用 `openclaw.setup.auth.start` 或 `openclaw.setup.prepare.start`，只投影结构化结果。
 8. 用户确认候选后调用 `openclaw.setup.activate`。只有上游返回成功并且 `openclaw.setup.verify` 通过，才能认为推理配置成立。
 9. 推理成立后，用独立 session 调用 `openclaw.chat`，首个请求携带 `welcomeVariant: "onboarding"`。
@@ -34,11 +34,12 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 
 ## 明确的高级路径
 
-- 用户必须显式选择“详细配置”后才启动 `wizard.start { flow: "setup" }`。
+- 支持 Guided 的 Runtime 中，用户显式选择“详细配置”后启动 Classic Wizard；不支持 Guided 的当前稳定 Runtime 直接使用官方 Classic Wizard。
 - 渠道中心继续使用 `wizard.start { flow: "channels", channel }`。
 - classic 的 workspace、daemon 和 remote 选择由官方步骤或正式 start 参数拥有。
 - 如果用户明确选择不安装 daemon，JunQi 不得强制把官方服务交接作为完成条件；此时必须保持当前前台 Gateway 的真实所有权，并明确后台常驻不可用。
 - 如果用户选择安装 daemon，Native 完成条件继续要求系统服务交接成功；服务切换使原连接失效时，必须重新建立并核验认证连接。
+- 已有数据位置且没有待提交草稿时，读取完成后直接进入运行时阶段；不得插入只用于重复确认的“数据位置已就绪”页面。
 
 ## 安装契约
 
@@ -51,7 +52,7 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 ## 持久完成语义
 
 - `junqi-setup-done` 只能作为界面缓存，不能作为 OpenClaw 已配置事实。
-- 每次冷启动在认证 Gateway 可用后调用 `openclaw.setup.detect` 确认是否需要 onboarding。
+- 每次冷启动在认证 Gateway 可用后先协商 Guided 能力。支持时调用 `openclaw.setup.detect`；不支持时保留先前由官方 Classic `done` 提交的本地证明，不从健康状态或配置文本重建终态。
 - 安装包或 Docker image 缺失仍由桌面安装健康检查提前拦截。
 - `openclaw.setup.verify` 用于 fresh activation 的强制完成门禁和用户触发的诊断，不改变上游对已配置 Gateway 的跳过语义。
 - 方法未注册、未授权、连接失败和协议解析失败必须分别呈现，不得统一映射为“需要重新配置”。
@@ -80,6 +81,6 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 - fresh activation 未取得真实 completion 时不能进入工作台。
 - npm 12 安装不会阻止 OpenClaw lifecycle script。
 - classic no-daemon 与 install-daemon 两种官方选择都能得到真实且不同的生命周期结果。
-- 旧 Runtime 缺少正式方法时显示更新要求，不静默回退或伪成功。
+- Guided 方法明确不受支持时进入同一 Runtime 的官方 Classic Wizard；连接、权限和响应错误不得触发该切换。
 - Native、Docker 的选定运行方式和凭据作用域在整个流程中保持不变。
 - 相关 TypeScript、Rust、协议、文档和边界测试通过。
