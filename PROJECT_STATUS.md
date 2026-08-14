@@ -118,6 +118,7 @@
 - `pnpm build` 已通过，包含协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建。
 - OpenClaw 官方主线重新核对到提交 `e826501fdb6a413f2c8ff70f500155ff1cbf1f81`；`sessions.patch` schema、Gateway handler 和 Control UI 共同证明请求布尔字段对应时间戳持久化条目，分叉继续使用官方 `sessions.create`。
 - 本轮复用现有 `aegis-bg`、`aegis-border`、`aegis-text`、`aegis-primary`、状态色、通知和虚拟列表组件，没有增加平行主题或会话实现。自动化覆盖加载、失败、空数据和结构化内容；尚未完成亮色、暗色、窄窗口、键盘焦点及长历史连续抓帧的真机视觉验收。
+- 已从提交 `d9ef528b` 使用无 updater 制品配置构建 macOS ARM64 DMG；`hdiutil verify` 通过。制品版本为 3.1.0，文件大小为 8366738 字节，SHA-256 为 `c6b289546de6fd467b2ab1400f2fa851143110ed24ff50ffbdfbf13b006904a0`。本轮没有挂载、打开、安装或替换应用，由用户自行安装验证。
 - 定向连接安全、连接收敛、生命周期协调、活动配置应用、终态交接和 Guided 方法族协商回归已通过；本轮相关定向前端测试 72 项通过。
 - OpenClaw 官方远端 `main` 已核对到提交 `b3d5265f58522bab67e06168d436b3b328cbae60`。它相对上一审计基线仅包含 Docker 安全加固，Wizard 终态、Hosted 工作保留、配置应用修订、重载和认证代次契约没有变化。
 - `pnpm lint` 已通过，包含 906 个文件的模块边界检查、版本一致性和 TypeScript 类型检查。
@@ -151,7 +152,7 @@
 
 ## 下一步顺序
 
-1. 构建并启动新的 macOS 本地安装包，逐项验收会话组织、会话切换尾部定位、新建空会话和 JSON 展示。
+1. 由用户安装本轮 macOS 本地安装包，逐项验收会话组织、会话切换尾部定位、新建空会话和 JSON 展示。
 2. 使用长 transcript 连续抓帧验证首次定位不闪回顶部，且用户上滑后新输出不会强制回到底部。
 3. 分别补充暗色主题、窄窗口、键盘焦点和 Windows、Linux 目标平台真机验收。
 4. 未经明确要求不推送、打 tag 或发布。
