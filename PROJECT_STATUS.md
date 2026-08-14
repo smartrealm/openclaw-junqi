@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-完成工作区主要页面的动态尺寸统一，以及长工具结果从 OpenClaw 原始内容块到结构化会话记录的可读展示。
+完成工作区主要页面动态尺寸、会话记录展示与操作闭环，并合入协作插件更新事务对 OpenClaw 官方 peer dependency 链接的严格处理。
 
 ## 已完成内容
 
@@ -23,6 +23,10 @@
 - 用户开始后固定按新建会话、配置模型供应商、配置渠道和管理智能体前往具体功能页并高亮真实操作控件；已有 Runtime 数据不再导致核心教学步骤被跳过。
 - JunQi 的打开项目和终端工作区已从 OpenClaw 核心操作引导及其选择器、状态探针、文案和测试中删除；渠道配置仍交给现有官方流程。
 - 新会话首发的 leaf 围栏按当前已核验连接协商：最新版参数成功时继续使用；stable 仅在精确 schema 拒绝证明请求未执行后，沿用同一幂等键省略该字段。其他错误不降参、不重放。
+- 已复现协作更新失败：本机已安装 `junqi-collab` 暴露 schema 13，当前内嵌 bundle 要求 schema 15，但两者插件版本都为 0.4.0。
+- 已确认唯一触发备份拒绝的插件树链接为 `node_modules/openclaw`，目标是当前 OpenClaw 安装根；OpenClaw 2026.7.1-2 本机源码和官方远端 `main` 的 `plugin-peer-link.ts` 都证明该链接由 OpenClaw 为声明 `openclaw` peer dependency 的插件维护，不是异常用户文件。
+- `collect_plugin_tree_entries` 现在仅在根包明确声明 `peerDependencies.openclaw` 时排除精确的 `node_modules/openclaw` 派生链接；该链接不进入归档或内容哈希，其他符号链接和 Windows 重解析点仍失败关闭。
+- 协作插件版本已从 0.4.0 提升至 0.5.0，并同步包清单、OpenClaw 清单、运行时常量、README、归档、Rust metadata 和前端 metadata；当前身份为插件 0.5.0、schema 15。
 - Guided、Classic 与渠道 Wizard 共用严格终态谓词：只有 `done === true` 且状态为官方终态时才结束会话；携带正式步骤的 `done: false` 不会因 `status: done` 被提前消费。
 - 官方终态后重新解析当前所选 Runtime 的端点、共享凭据和设备凭据；解析失败时停止交接，不复用向导前的内存目标、历史手工地址或另一 Runtime 的凭据。
 - 新增活动配置应用门禁：同一已核验连接上的 `config.get.configRevisionHash` 与 `appliedConfigHash` 必须非空且相等，才能证明当前 Runtime 已采用磁盘修订。
@@ -59,6 +63,9 @@
 - `sessions.patch` 的请求字段与持久化回执字段是不同契约；成功核验必须依据 handler 返回的持久化条目，不能假设响应回显请求布尔值。
 - 会话尾部定位属于活动会话入口行为，不属于单一侧栏点击或历史请求完成事件；入口条件只绑定活动 key 与当前时间线提交，不从先到的加载元数据推断 DOM 已就绪。
 - transcript 格式化是可逆的只读展示投影。只有完整 JSON 文档才能增加缩进和语言标识，解析失败时保留原文，不修补内容或改变上游事实。
+- 不得通过手工删除 `node_modules/openclaw` 绕过更新门禁；该链接是 OpenClaw 插件 SDK 解析所需的派生运行时结构。
+- 后续修复应只识别并排除由 OpenClaw 契约证明的 host peer link，其他符号链接继续失败关闭；回滚后必须由官方插件安装流程重建并核验该链接，不能放宽为任意链接归档或跟随链接复制宿主 OpenClaw 树。
+- schema 13 到 15 的不兼容变化不能继续共用插件版本 0.4.0；插件清单、包、运行时版本、bundle metadata 和发布验证必须同步更新。
 - Wizard 终态、Gateway 进程健康、认证连接、Runtime Identity 和活动配置修订是不同事实，必须按顺序分别核验。
 - `config.get.hash` 是配置写入冲突控制值，不是活动 Runtime 修订证据；缺失 `configRevisionHash` 或 `appliedConfigHash` 时失败关闭并要求更新 OpenClaw。
 - 主线接受 `installDaemon:false` 时，JunQi 明确关闭该次 Wizard 的 daemon 分支；stable 公共参数模式下 daemon 选择仍由官方 Wizard 步骤拥有，JunQi 不改写答案，也不伪报已关闭。
@@ -89,6 +96,13 @@
 - `docs/quality/session-transcript-and-organization-audit-2026-08-14.md`
 - `specs/2026-08-14-session-transcript-and-organization.md`
 - `plans/2026-08-14-session-transcript-and-organization.md`
+- `src-tauri/src/commands/collaboration_bootstrap.rs`
+- `packages/junqi-collab/package.json`
+- `packages/junqi-collab/src/schema.ts`
+- `src-tauri/resources/collaboration/metadata.json`
+- `docs/quality/collaboration-plugin-peer-link-update-audit-2026-08-14.md`
+- `specs/2026-08-14-collaboration-plugin-update-peer-link.md`
+- `plans/2026-08-14-collaboration-plugin-update-peer-link.md`
 - `src/services/setup/openClawSetupHandoff.ts`
 - `src/services/gateway/OpenClawGuidedSetupClient.ts`
 - `src/services/gateway/OpenClawConfigApplicationClient.ts`
@@ -124,6 +138,11 @@
 
 ## 测试与验证
 
+- 本轮合并后 `pnpm collab:test` 已通过，协作插件 355 项测试全部通过；`pnpm collab:validate` 与 `pnpm collab:bundle` 已通过，重建产物保持插件 0.5.0、schema 15 和 SHA-256 `1e3d7544be5efa1faaf3c16f121ce294f3479e554c9153a3d083580c9b79996d`。
+- 本轮新增的三项 Rust 定向回归已通过，分别证明声明 peer dependency 的精确 OpenClaw host link 被排除、无声明的同路径链接被拒绝、其他符号链接继续被拒绝。
+- 本轮 `cargo fmt -- --check`、`cargo check --lib` 和完整 `cargo test --lib` 已通过；Rust 共运行 642 项，641 项通过，1 项会修改当前用户 Keychain 的测试按设计忽略。
+- 本轮完整 `pnpm test`、`pnpm lint`、`pnpm verify:openclaw-docs` 与 `pnpm build` 已通过；生产构建重新生成并核验协作插件与钉钉插件，再完成 TypeScript 和 Vite 构建。
+- 第一次生产构建与尚未退出的 `collab:validate` 并发清理同一协作插件 `dist`，因此在归档核验时缺少 `dist/index.js`；等待验证进程结束后串行重跑通过，未以业务代码规避验证调度冲突。
 - 本轮原始记录复制与结构化记录定向回归 15 项通过；完整 `pnpm test` 已通过，前端与源码测试 2826 项、脚本测试 238 项均通过。
 - `pnpm lint` 已通过，包含 910 个文件的模块边界检查、版本一致性和 TypeScript 类型检查；`pnpm build` 已通过，包含协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建。
 - 已从提交 `dac6914c` 使用无 updater 制品配置构建 macOS ARM64 DMG；`hdiutil verify` 通过。文件大小为 8367269 字节，SHA-256 为 `a05031380196320731e7ef4aea1038ae2416995f5ea666394e6b108138117b12`，当前已挂载到 `/Volumes/JunQi Desktop`，由用户自行安装。
@@ -160,6 +179,8 @@
 ## 已知问题与未验证边界
 
 - 当前改动尚未在重新打包的 macOS 应用中完成新建空会话、长历史切换、删除回退、会话组织菜单和 JSON 工具结果的逐项真机交互验收。
+- 合法 OpenClaw peer dependency 链接尚未在当前安装包中执行真实插件覆盖、Gateway 重启和能力握手，不能把代码修复等同于本机端到端更新成功。
+- Windows junction、Linux 文件权限与 Docker 挂载路径尚未真机验证；当前实现按 Windows 重解析点失败关闭并仅排除精确 host peer link。
 - 最新 OpenClaw 上的真实 Guided provider、浏览器授权、官方活动工作延迟重启、token 轮换和新认证连接尚未完成 macOS 安装包端到端验证。
 - 当前本机已安装 Runtime 缺少活动配置修订字段，只能验证“证据不可用”分支，不能证明最新版 Runtime 的成功接管链路。
 - 当前 npm `latest` OpenClaw 2026.7.1-2 的 Classic Wizard 不接受 `wizard.start.installDaemon`，但公共参数已经真实启动并取消。完整 Classic 交互、daemon 选择、配置提交和终态交接尚未在隔离数据目录真机验收。
@@ -169,7 +190,8 @@
 
 ## 下一步顺序
 
-1. 由用户安装本轮 macOS 本地安装包，逐项验收会话组织、会话切换尾部定位、新建空会话和 JSON 展示。
-2. 使用长 transcript 连续抓帧验证首次定位不闪回顶部，且用户上滑后新输出不会强制回到底部。
-3. 分别补充暗色主题、窄窗口、键盘焦点和 Windows、Linux 目标平台真机验收。
-4. 未经明确要求不推送、打 tag 或发布。
+1. 在当前 macOS OpenClaw Runtime 上执行协作插件 0.4.0 到 0.5.0 的真实更新、Gateway 重启和能力确认，并验证失败回滚。
+2. 由用户逐项验收会话组织、会话切换尾部定位、新建空会话和 JSON 展示，并使用长 transcript 连续抓帧验证阅读锁。
+3. 在最新版 OpenClaw Runtime 上执行真实配置终态、官方延迟重启、活动修订与认证连接收敛验证。
+4. 分别补充暗色主题、窄窗口、键盘焦点，以及 Windows、Linux 与 Docker 目标平台真机验收。
+5. 未经明确要求不推送、打 tag 或发布。

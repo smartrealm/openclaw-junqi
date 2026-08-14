@@ -13,6 +13,7 @@
 - [OpenClaw Wizard 流程](installation/openclaw-wizard-start-flow.md)：`wizard.start`、步骤循环、取消恢复、完整配置与渠道流程的官方契约及 JunQi 适配边界。
 - [OpenClaw Wizard 终态交接审计](quality/openclaw-wizard-terminal-handoff-audit-2026-08-11.md)：官方终态、Gateway 后置核验、重试边界与授权等待投影的缺陷和验证记录。
 - [OpenClaw 渠道二维码生命周期审计](quality/openclaw-channel-qr-lifecycle-audit-2026-08-11.md)：Web 扫码开始、监听、二维码轮换、成功回调和界面恢复的协议差异与修复记录。
+- [协作插件更新与 OpenClaw Peer Link 审计](quality/collaboration-plugin-peer-link-update-audit-2026-08-14.md)：更新前回滚归档、官方 host link、插件版本身份和跨平台验证边界。
 - [OpenClaw 第三方渠道支持](channels/openclaw-third-party-channel-support.md)：官方目录、外部插件、国内重点渠道、扫码能力和 JunQi 呈现边界。
 - [Gateway 生命周期验证](gateway/gateway-lifecycle-unification-validation-2026-08-10.md)：统一恢复、重启和身份核验的当前证据。
 - [AI 原生交互参考与 JunQi 映射](design/ai-native-interaction-reference.md)：展示交互的可复用原则与 OpenClaw 数据边界。
