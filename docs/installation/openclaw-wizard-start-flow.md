@@ -62,15 +62,17 @@ sequenceDiagram
 
 ## 二、`wizard.start` 请求
 
-最新官方参数如下：
+官方主线参数如下；npm stable 2026.7.1-2 的公开 schema 只接受 `mode` 与 `workspace`：
 
 | 字段 | 类型 | 语义 |
 | --- | --- | --- |
 | `mode` | `local` 或 `remote` | 完整配置流程的运行方式 |
 | `workspace` | 字符串 | 可选工作区输入，由官方流程继续校验和解析 |
-| `installDaemon` | 布尔值 | 是否在官方收尾阶段处理后台服务安装 |
-| `flow` | `setup` 或 `channels` | 缺省为完整 `setup`；`channels` 只运行渠道配置流程 |
-| `channel` | 非空字符串 | `channels` 流程的预选渠道，不代表最终一定配置成功 |
+| `installDaemon` | 布尔值 | 主线字段；是否在官方收尾阶段处理后台服务安装 |
+| `flow` | `setup` 或 `channels` | 主线字段；缺省为完整 `setup`，`channels` 只运行渠道配置流程 |
+| `channel` | 非空字符串 | 主线字段；`channels` 流程的预选渠道，不代表最终一定配置成功 |
+
+JunQi 首次请求保留主线 `installDaemon:false`。只有 stable 在创建会话前精确拒绝该字段时，客户端才以公共字段重试一次；stable 省略字段后的 daemon 分支仍由官方 Wizard 拥有。渠道专用 flow 不做这种降参，因为 stable 没有对应公开参数，当前界面应保留正式不可用或官方终端交接语义。
 
 完整首次配置的最小请求示例：
 

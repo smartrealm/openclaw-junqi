@@ -107,31 +107,6 @@ test('用户显式选择 Classic 后才呈现官方详细向导', () => {
   assert.doesNotMatch(html, /Detected inference options/);
 });
 
-test('Classic 协议不兼容时只提供返回已核验官方引导的操作', () => {
-  const flow = {
-    ...createGuidedFlow(),
-    configurationMode: 'classic' as const,
-    guidedSetupAvailable: true,
-    wizardStep: null,
-    wizardSubmitting: false,
-    wizardActivity: null,
-    wizardError: 'wizard.start.installDaemon is not accepted',
-    wizardRecoveryMode: 'protocol-incompatible' as const,
-    returnToGuidedSetup: () => undefined,
-    submitWizardStep: async () => null,
-    pollWizard: async () => null,
-    retryWizard: async () => null,
-    reclaimWizard: async () => null,
-  } as unknown as SetupFlow;
-  const html = renderToStaticMarkup(
-    <OpenClawConfigurationScreen flow={flow} logs={[]} />,
-  );
-
-  assert.match(html, /Return to guided setup/);
-  assert.doesNotMatch(html, />Retry</);
-  assert.doesNotMatch(html, /Check for OpenClaw updates/);
-});
-
 test('Guided 供应商授权复用官方步骤二维码呈现', () => {
   const html = renderToStaticMarkup(
     <OpenClawConfigurationScreen

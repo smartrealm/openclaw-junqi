@@ -180,7 +180,6 @@ export type OpenClawWizardFailureKind =
   | 'step_desynchronized'
   | 'already_running'
   | 'request_timeout'
-  | 'protocol_unsupported'
   | 'cancelled'
   | 'unknown';
 
@@ -529,21 +528,40 @@ export class OpenClawWizardClient {
     this.failedSessionId = null;
     // setup 与 channels 都使用 OpenClaw 正式 Wizard 协议。调用方必须使用不同的
     // 会话存储范围，避免主界面渠道配置接管首次启动中的官方会话。
-    const result = parseOpenClawWizardStartResult(await this.callGateway(
-      'wizard.start',
-      {
-        ...(this.startOptions.flow === 'channels'
-          ? { flow: 'channels' as const, channel: this.startOptions.channel }
-          : {
-              mode: 'local' as const,
-              ...(this.startOptions.workspace ? { workspace: this.startOptions.workspace } : {}),
-              ...(typeof this.startOptions.installDaemon === 'boolean'
-                ? { installDaemon: this.startOptions.installDaemon }
-                : {}),
-            }),
-      },
-      { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS },
-    ));
+    const startParams = this.startOptions.flow === 'channels'
+      ? { flow: 'channels' as const, channel: this.startOptions.channel }
+      : {
+          mode: 'local' as const,
+          ...(this.startOptions.workspace ? { workspace: this.startOptions.workspace } : {}),
+          ...(typeof this.startOptions.installDaemon === 'boolean'
+            ? { installDaemon: this.startOptions.installDaemon }
+            : {}),
+        };
+    const requestOptions = { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS };
+    let rawResult: unknown;
+    try {
+      rawResult = await this.callGateway('wizard.start', startParams, requestOptions);
+    } catch (error) {
+      if (
+        this.startOptions.flow === 'channels'
+        || typeof this.startOptions.installDaemon !== 'boolean'
+        || !isInstallDaemonStartParamUnsupported(error)
+      ) {
+        throw error;
+      }
+      // stable 在创建会话前以封闭 schema 拒绝该主线新增字段，因此这里只重试
+      // 公共参数。其他错误不能证明零副作用，必须原样失败。
+      this.assertOperationCurrent(operation);
+      debugWarn(
+        'gateway',
+        'OpenClaw stable wizard.start does not accept installDaemon; retrying the official common parameter set.',
+      );
+      rawResult = await this.callGateway('wizard.start', {
+        mode: 'local' as const,
+        ...(this.startOptions.workspace ? { workspace: this.startOptions.workspace } : {}),
+      }, requestOptions);
+    }
+    const result = parseOpenClawWizardStartResult(rawResult);
     this.assertOperationCurrent(operation);
     const returnedSessionId = result.sessionId;
     const terminal = isOpenClawWizardTerminalResult(result);
@@ -717,11 +735,6 @@ export function classifyOpenClawWizardFailure(error: unknown): OpenClawWizardFai
     ? record.details as Record<string, unknown>
     : null;
   const code = String(details?.code ?? record?.code ?? '').toUpperCase();
-  if (error instanceof GatewayRpcError
-    && error.code === 'INVALID_REQUEST'
-    && error.message === "invalid wizard.start params: at root: unexpected property 'installDaemon'") {
-    return 'protocol_unsupported';
-  }
   if (normalized.includes('wizard not found')
     || normalized.includes('wizard not running')
     || normalized.includes('wizard session is not running')
@@ -732,6 +745,12 @@ export function classifyOpenClawWizardFailure(error: unknown): OpenClawWizardFai
   if (isOpenClawSetupAdmissionBusy(error)) return 'already_running';
   if (normalized.includes('request timeout')) return 'request_timeout';
   return 'unknown';
+}
+
+function isInstallDaemonStartParamUnsupported(error: unknown): boolean {
+  return error instanceof GatewayRpcError
+    && error.code === 'INVALID_REQUEST'
+    && error.message === "invalid wizard.start params: at root: unexpected property 'installDaemon'";
 }
 
 export function isOpenClawWizardSessionLost(error: unknown): boolean {

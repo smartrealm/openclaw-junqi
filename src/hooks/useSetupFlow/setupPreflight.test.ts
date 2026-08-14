@@ -33,10 +33,9 @@ test('独立更新步骤在检查完成前不能进入官方配置', () => {
   }), false);
 });
 
-test('Classic Wizard 参数不兼容始终留在配置页而不进入更新页', () => {
-  assert.equal(wizardFailureDestination(false, 'protocol-incompatible'), 'configure-openclaw');
-  assert.equal(wizardFailureDestination(true, 'wizard'), 'configure-openclaw');
-  assert.equal(wizardFailureDestination(false, 'wizard'), null);
+test('Wizard 准备失败只在调用方要求时进入配置页', () => {
+  assert.equal(wizardFailureDestination(true), 'configure-openclaw');
+  assert.equal(wizardFailureDestination(false), null);
 });
 
 test('beta、dev 与未知渠道都不能进入受管配置或更新', () => {

@@ -14,17 +14,18 @@
 - 检查完成前不能启动 Guided 或 Classic 配置。
 - 可用更新保持用户明确确认，不自动修改本地安装。
 
-## BUG-02 · Wizard 协议不兼容
+## BUG-02 · Wizard 启动参数协商
 
 当前：封闭 schema 拒绝 `installDaemon` 后仍提供相同请求的重试。
 
-目标：基于 `GatewayRpcError.code === "INVALID_REQUEST"` 和正式字段拒绝详情，将该结果分类为当前 Runtime 的 Classic Wizard 参数不兼容；不自动重发或省略字段，也不从该错误推断更新可用性。当前 Runtime 另有正式 Guided 方法时允许回到默认结构化配置。
+目标：主线 Runtime 首次请求保留 `installDaemon:false`。只有 stable 在创建会话前以精确 `INVALID_REQUEST` 拒绝该字段时，才在同一操作仍有效的前提下改用主线与 stable 的公共参数启动一次；其他错误不得重试或降参。
 
 验收：
 
-- 正式字段拒绝得到稳定的协议不兼容错误类型。
-- 通用网络、权限和未知参数错误不被误分类。
-- 协议不兼容时停留在 OpenClaw 配置页，主操作不再发送 `wizard.start`；当前 Runtime 已核验存在 Guided 方法时，直接提供返回官方引导的操作，不进入更新页，也不能要求用户执行不存在的更新。
+- 主线 Runtime 只收到一次含 `installDaemon:false` 的请求。
+- stable 精确拒绝该字段时，第二次请求只包含 `mode` 与可选 `workspace`，并继续呈现官方步骤。
+- 通用网络、权限、其他未知参数错误和 channels flow 不触发该协商。
+- 第一次响应返回后操作已失效时，不发送第二次请求。
 
 ## BUG-03 · 存储状态读取
 
@@ -38,18 +39,18 @@
 - 迁移事务内用于复制完整性校验的统计保持不变。
 - 前端字段和 Tauri 序列化契约同步删除无消费者的容量字段。
 
-## BUG-04 · 协议不兼容与更新可用性
+## BUG-04 · 配置协议与更新可用性
 
 当前：当前 Runtime 拒绝正式 Wizard 参数后，界面直接显示“需要更新”，并把完成更新当作唯一解除条件；该错误本身没有证明当前渠道存在更新或更新后会兼容。
 
-目标：错误只表示当前 Runtime 与所需 Classic Wizard RPC 不兼容。客户端必须继续核对当前 Runtime 是否提供稳定版正式 `crestodian.setup.*` Guided 方法，不能把 Classic 字段缺失扩大为整个配置协议不可用。更新检查仍返回真实阶段和 `available` 字段。
+目标：客户端必须继续核对当前 Runtime 是否提供稳定版正式 `crestodian.setup.*` Guided 方法，并按 BUG-02 协商 Classic Wizard 启动参数。更新检查仍返回真实阶段和 `available` 字段，不能把字段差异推导为存在更新。
 
 验收：
 
-- `protocol_unsupported` 映射为“协议不兼容”，不再映射为“需要更新”。
+- `installDaemon` 的精确字段拒绝由 Wizard 客户端内部完成安全协商，不映射为“需要更新”或永久“协议不兼容”。
 - `openclaw.setup.detect` 精确 unknown-method 后调用正式 `crestodian.setup.detect`；其他错误不切换方法名。
 - Guided 方法成功后，后续 activate 与 chat 必须绑定同一方法族；两个 detect 都明确 unknown-method 才进入 Classic。
-- Classic 协议不兼容不得触发更新页导航；已核验可用的官方 Guided 直接作为配置页内的恢复入口。
+- Wizard 启动错误不得触发更新页导航；无法安全协商的真实错误原样停留在当前准备边界。
 - 稳定 activate 的真实模型调用成功可作为本次流程的模型证据；不得调用不存在的 verify 或重复 activate。
 
 ## BUG-05 · 生产发布渠道门禁

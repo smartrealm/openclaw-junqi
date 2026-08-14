@@ -1,5 +1,5 @@
 import type { InstallMode } from '@/stores/setup-navigation';
-import type { InstallTargetTier, WizardRecoveryMode } from './types';
+import type { InstallTargetTier } from './types';
 
 export interface SetupUpdateCheckResult {
   state: 'pending' | 'ready' | 'error';
@@ -36,9 +36,6 @@ export function isOpenClawUpdateContinuationDisabled({
 
 export function wizardFailureDestination(
   surfaceFailureOnConfigurationPage: boolean,
-  recoveryMode: WizardRecoveryMode,
 ): 'configure-openclaw' | null {
-  return surfaceFailureOnConfigurationPage || recoveryMode === 'protocol-incompatible'
-    ? 'configure-openclaw'
-    : null;
+  return surfaceFailureOnConfigurationPage ? 'configure-openclaw' : null;
 }

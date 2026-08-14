@@ -88,6 +88,80 @@ test('首次引导只启动官方完整向导并保留渠道跳过说明', async
   });
 });
 
+test('stable 在创建会话前拒绝 installDaemon 时改用官方公共参数启动', async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const client = new OpenClawWizardClient(async (method, params) => {
+    calls.push({ method, params });
+    if (calls.length === 1) {
+      throw new GatewayRpcError(
+        "invalid wizard.start params: at root: unexpected property 'installDaemon'",
+        'INVALID_REQUEST',
+      );
+    }
+    return {
+      sessionId: 'stable-session-1',
+      done: false,
+      status: 'running',
+      step: { id: 'stable-intro', type: 'note', title: 'OpenClaw Setup' },
+    };
+  });
+
+  const result = await client.start({ workspace: ' /tmp/stable-workspace ', installDaemon: false });
+
+  assert.equal(result.sessionId, 'stable-session-1');
+  assert.equal(result.step?.id, 'stable-intro');
+  assert.deepEqual(calls, [
+    {
+      method: 'wizard.start',
+      params: {
+        mode: 'local',
+        workspace: '/tmp/stable-workspace',
+        installDaemon: false,
+      },
+    },
+    {
+      method: 'wizard.start',
+      params: { mode: 'local', workspace: '/tmp/stable-workspace' },
+    },
+  ]);
+});
+
+test('stable 参数协商前操作已失效时不得发送第二次请求', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  let client: OpenClawWizardClient;
+  client = new OpenClawWizardClient(async (_method, params) => {
+    calls.push(params);
+    client.invalidatePendingOperations();
+    throw new GatewayRpcError(
+      "invalid wizard.start params: at root: unexpected property 'installDaemon'",
+      'INVALID_REQUEST',
+    );
+  });
+
+  await assert.rejects(
+    () => client.start({ installDaemon: false }),
+    OpenClawWizardOperationSupersededError,
+  );
+  assert.equal(calls.length, 1);
+});
+
+test('非 installDaemon schema 拒绝不得降参重试', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const client = new OpenClawWizardClient(async (_method, params) => {
+    calls.push(params);
+    throw new GatewayRpcError(
+      "invalid wizard.start params: at root: unexpected property 'workspace'",
+      'INVALID_REQUEST',
+    );
+  });
+
+  await assert.rejects(
+    () => client.start({ workspace: '/tmp/workspace', installDaemon: false }),
+    /unexpected property 'workspace'/,
+  );
+  assert.equal(calls.length, 1);
+});
+
 test('渠道配置使用官方 channels flow 并保留真实完成账号', async () => {
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const client = new OpenClawWizardClient(async (method, params) => {
@@ -585,17 +659,6 @@ test('recognizes only recoverable wizard session loss errors', () => {
     code: 'INVALID_REQUEST',
     details: { code: 'WIZARD_NOT_FOUND' },
   }), 'session_lost');
-});
-
-test('BUG-02 将正式 installDaemon 字段拒绝分类为不可重复的协议不满足', () => {
-  assert.equal(classifyOpenClawWizardFailure(new GatewayRpcError(
-    "invalid wizard.start params: at root: unexpected property 'installDaemon'",
-    'INVALID_REQUEST',
-  )), 'protocol_unsupported');
-  assert.equal(classifyOpenClawWizardFailure(new GatewayRpcError(
-    "invalid wizard.start params: at root: unexpected property 'workspace'",
-    'INVALID_REQUEST',
-  )), 'unknown');
 });
 
 test('resumes a desynchronized wizard without replaying an answer', async () => {

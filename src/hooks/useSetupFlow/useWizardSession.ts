@@ -139,8 +139,6 @@ export function useWizardSession({
         return t("setup.wizard.alreadyRunning", "另一个 OpenClaw 配置会话仍在运行，请完成或关闭后重试。");
       case "request_timeout":
         return t("setup.wizard.requestTimeout", "OpenClaw 配置请求等待超时，请重新连接后继续。");
-      case "protocol_unsupported":
-        return t("setup.wizard.protocolIncompatible", "OpenClaw Gateway 返回 INVALID_REQUEST，并明确拒绝 wizard.start.installDaemon。JunQi 需要该参数关闭 Wizard 的 Gateway service 安装分支，不能安全省略，也不会重复发送同一无效请求。");
       case "cancelled":
         return t("setup.wizard.cancelled", "OpenClaw 配置向导已取消，请重试以开始新的配置会话。");
       case "unknown": {
@@ -162,7 +160,6 @@ export function useWizardSession({
     if (error instanceof OpenClawWizardRecoveryVerificationError) return "session";
     const failure = classifyOpenClawWizardFailure(error);
     if (failure === "already_running") return "reclaim";
-    if (failure === "protocol_unsupported") return "protocol-incompatible";
     return fallback;
   }, []);
   const invalidateWizardOperations = useCallback(() => {
@@ -256,8 +253,8 @@ export function useWizardSession({
   }, [assertWizardOperationCurrent, refreshGatewayConnectionTarget, refreshWizardSessionScope, t]);
 
   const startManagedWizardSession = useCallback(() => {
-    // JunQi 已在运行时阶段安装并启动 Gateway。官方 Wizard 仅负责配置，
-    // 否则 QuickStart 可能重启承载该进程内 Wizard 会话的 Gateway，使终态无法回收。
+    // 主线 Runtime 显式关闭 daemon 分支；stable 若在 schema 校验阶段拒绝该
+    // 新字段，客户端会改用官方公共参数并忠实呈现其 daemon 选择步骤。
     return wizardClientRef.current!.start({ installDaemon: false });
   }, []);
 
@@ -487,7 +484,6 @@ export function useWizardSession({
       setSetupError(message);
       const failureDestination = wizardFailureDestination(
         surfaceFailureOnConfigurationPage,
-        recoveryMode,
       );
       if (failureDestination) {
         replaceSetupStep(failureDestination);
@@ -646,15 +642,6 @@ export function useWizardSession({
     return await resumeOfficialOnboarding();
   }, [resumeOfficialOnboarding]);
 
-  const clearWizardFailure = useCallback(() => {
-    invalidateWizardOperations();
-    setWizardActivity(null);
-    setWizardError(null);
-    setWizardRecoveryMode(null);
-    setWizardSubmitting(false);
-    setSetupError(null);
-  }, [invalidateWizardOperations, setSetupError, setWizardRecoveryMode]);
-
   const reclaimOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     if (wizardRecoveryInFlightRef.current || wizardNavigationInFlightRef.current) return null;
     const operationId = beginWizardOperation();
@@ -701,7 +688,6 @@ export function useWizardSession({
     retryWizard: retryOfficialOnboarding,
     reclaimWizard: reclaimOfficialOnboarding,
     prepareWizard: () => startOfficialOnboarding(false, setupStep !== "configure-openclaw"),
-    clearWizardFailure,
     invalidateWizardOperations,
     setWizardStep,
     setWizardError,

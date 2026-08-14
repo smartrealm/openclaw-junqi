@@ -98,7 +98,6 @@ export function useSetupFlow(
   const [openclawStatus, setOpenclawStatus] = useState<OpenclawStatus | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [configurationMode, setConfigurationMode] = useState<"guided" | "classic">("guided");
-  const [guidedSetupAvailable, setGuidedSetupAvailable] = useState(false);
   const [enteringDashboard, setEnteringDashboard] = useState(false);
   const [dashboardEntryError, setDashboardEntryError] = useState<string | null>(null);
   const dashboardEntryInFlightRef = useRef(false);
@@ -208,7 +207,6 @@ export function useSetupFlow(
     });
     const capability = await resolveOpenClawSetupCapability(() => client.detect());
     activeSetupCapabilityRef.current = capability;
-    setGuidedSetupAvailable(capability.mode === "guided");
     setConfigurationMode(capability.mode);
     // 稳定版 Classic Wizard 没有全局只读完成探针。该模式只沿用当前流程中
     // 已由官方 Wizard 终态更新的需求状态，不从 Gateway 健康或配置文本猜测。
@@ -276,7 +274,6 @@ export function useSetupFlow(
     retryWizard,
     reclaimWizard,
     prepareWizard,
-    clearWizardFailure,
     invalidateWizardOperations,
     setWizardStep,
     setWizardError,
@@ -375,13 +372,6 @@ export function useSetupFlow(
   const switchToClassicConfiguration = useCallback(() => {
     setConfigurationMode("classic");
   }, []);
-
-  const returnToGuidedSetup = useCallback(() => {
-    if (!guidedSetupAvailable) return;
-    clearWizardFailure();
-    setConfigurationMode("guided");
-    replaceSetupStep("configure-openclaw");
-  }, [clearWizardFailure, guidedSetupAvailable, replaceSetupStep]);
 
   const guidedSetup = useGuidedSetupSession({
     enabled: setupStep === "configure-openclaw" && configurationMode === "guided",
@@ -1096,7 +1086,6 @@ export function useSetupFlow(
     wizardError,
     wizardRecoveryMode,
     configurationMode,
-    guidedSetupAvailable,
     guidedSetup,
     needsOnboarding,
     gatewayReadyContinuation,
@@ -1118,7 +1107,6 @@ export function useSetupFlow(
     pollWizard,
     retryWizard,
     reclaimWizard,
-    returnToGuidedSetup,
     openClassicSetup,
     runNativeSetup,
     runDockerSetup,

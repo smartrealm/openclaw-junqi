@@ -4225,8 +4225,6 @@
       "alreadyRunning": "An OpenClaw setup session is still running. Take over setup to restart the selected Gateway and continue without changing the data directory or workspace.",
       "reclaim": "Take over setup",
       "requestTimeout": "The OpenClaw setup request timed out. Reconnect to continue.",
-      "protocolIncompatible": "OpenClaw Gateway returned INVALID_REQUEST and explicitly rejected wizard.start.installDaemon. JunQi needs this parameter to disable the Wizard Gateway service installation branch, so it cannot safely omit it or repeat the same invalid request.",
-      "returnToGuided": "Return to guided setup",
       "cancelled": "The OpenClaw setup wizard was cancelled. Retry to start a new setup session.",
       "pauseAndReturn": "Pause and return",
       "retry": "Retry",

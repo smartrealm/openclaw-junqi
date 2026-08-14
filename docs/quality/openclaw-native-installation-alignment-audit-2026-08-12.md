@@ -56,9 +56,9 @@ JunQi 当前安装器能够安装官方 OpenClaw npm 包、维持用户选择的
 
 ### 经典 Wizard
 
-`wizard.start` 仍是官方能力，负责经典详细配置与渠道专用配置。其 `start` 参数包含 `mode`、`workspace`、`installDaemon`、`flow` 和 `channel`。它不是最新版默认推理引导的替代品。
+`wizard.start` 仍是官方能力，负责经典详细配置与渠道专用配置。官方主线 `start` 参数包含 `mode`、`workspace`、`installDaemon`、`flow` 和 `channel`；npm stable 2026.7.1-2 的公开 schema 只接受 `mode` 与 `workspace`。它不是最新版默认推理引导的替代品。
 
-官方 Gateway 将 Wizard session 保存在承载进程的内存中。官方 QuickStart 在未收到 `installDaemon` 时默认进入 daemon 安装分支；已加载服务可在该分支中执行重启。JunQi 的运行时阶段已经安装并启动 Gateway，如果配置阶段再次采用该默认值，Gateway 可能在 `wizard.next` 返回最终 `done` 前重启并丢失原 session，客户端只能得到无法核验的未知终态。首次设置的 Classic 路径因此明确提交官方 `installDaemon: false`，由 JunQi 的统一 Gateway 生命周期继续拥有安装和启动；渠道专用 flow 不附带该 setup 参数。
+官方 Gateway 将 Wizard session 保存在承载进程的内存中。官方 QuickStart 在未收到 `installDaemon` 时默认进入 daemon 安装分支；已加载服务可在该分支中让用户选择重启、重装或跳过。JunQi 首次请求向主线提交 `installDaemon:false`，由统一 Gateway 生命周期继续拥有安装和启动。stable 在创建会话前精确拒绝该字段时，客户端以公共参数启动一次，daemon 选择继续由官方 Wizard 步骤拥有；JunQi 忠实呈现且保留终态未知边界。渠道专用 flow 不附带该 setup 参数。
 
 ### npm 安装
 
@@ -117,7 +117,7 @@ npm install -g openclaw@latest --allow-scripts openclaw
 | INS-09 | P0 | 客户端自有数据位置必须由用户确认后才能提交和推进 | 删除读取完成后的自动推进；只有 `configure_storage` 成功事件可以进入运行时 | 代码已修复，真机待验证 |
 | INS-10 | P0 | 连接与配置操作必须绑定当前所选 Runtime 和当前认证连接 | 首次设置启动前断开旧连接；连接目标忽略历史手动地址；`connected` 不再替代 Runtime Identity 核验 | 代码已修复，真机待验证 |
 | INS-11 | P1 | 官方短步骤应忠实呈现真实内容，不由客户端制造固定高度 | 删除通用步骤场景和正文切换容器的强制满高；页面主内容区继续拥有纵向滚动 | 代码已修复，真机待验证 |
-| INS-19 | P0 | Gateway 内存中的 Wizard session 不能被同一向导的 daemon 收尾重启销毁 | 首次设置 Classic 路径提交官方 `installDaemon: false`，Gateway 生命周期仍由运行时阶段统一管理 | 代码已修复，真机待验证 |
+| INS-19 | P0 | Gateway 内存中的 Wizard session 不能被客户端误判或静默重放 | 主线提交 `installDaemon:false`；stable 精确拒绝时以公共参数启动并忠实呈现官方 daemon 选择，未知终态不自动重放 | 代码已修复，完整流程真机待验证 |
 | INS-20 | P1 | 官方步骤切换期间不能同时呈现旧、新正文 | 配置正文改为退出完成后再进入，方向语义保持不变 | 代码已修复，真机待验证 |
 | INS-21 | P2 | 官方短步骤需要可辨识的状态层级且不能改写上游内容 | 共享摘要增加轻量语义引导线与图标底，正文、来源说明和来源图标使用三级语义层级 | 代码已修复，主题真机待验证 |
 | INS-12 | P1 | 客户端国际化叶子必须保持稳定类型 | 删除 `storage.progress` 的对象与扁平字符串冲突，并在资源加载与测试中拒绝同路径类型冲突 | 代码已修复 |

@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-完成首次设置前置门禁、OpenClaw 核心操作引导和 stable Runtime 新会话首条消息失败修复。
+完成首次设置前置门禁、OpenClaw 核心操作引导、stable Runtime 新会话首条消息失败修复和官方 Wizard 版本参数协商。
 
 ## 已完成内容
 
@@ -29,10 +29,10 @@
 - Guided 和 Classic 共用 setup admission busy 分类；不可用候选、官方修复入口、推荐安装和取消操作均保留正式协议语义。
 - 首次设置运行时页面原地完成 Gateway 认证与身份核验；只有 Guided 可操作状态或 Classic 首个官方步骤准备完成后才进入配置页，不显示空配置页后自动跳变。
 - 本次设置开始前已安装的 Native OpenClaw 在“正在配置 JunQi Desktop”完成后显示“下一步”并进入独立更新步骤；本次流程中新安装的 OpenClaw 显示“核验配置”并直接准备官方配置。更新检查完成后才可继续，检查失败保留原地重试，可用更新仍由用户明确确认。
-- 当前 Runtime 以正式 `INVALID_REQUEST` 明确拒绝 `wizard.start.installDaemon` 时，错误分类为 Classic Wizard 参数不兼容；主操作不再重复发送同一无效请求，也不省略字段降级。
+- Classic Wizard 首次向官方主线提交 `installDaemon:false`。只有 stable 在创建会话前以精确 `INVALID_REQUEST` 拒绝该字段时，才在同一操作仍有效的前提下改用 `{mode:'local', workspace?}` 公共参数启动一次；权限、连接、超时、其他字段错误和 channels flow 都不重试。
 - Guided 能力协商先调用最新版 `openclaw.setup.detect`，仅在精确 unknown-method 时调用 stable 正式提供的 `crestodian.setup.detect`。任一成功后 activate 与 chat 绑定同一方法族，只有两者均明确不支持才进入 Classic。
 - stable Crestodian detect 的较小正式 schema 被显式规范化为当前 UI 所需结构；activate 严格省略其 schema 未定义的 `modelRef`。activate 返回的真实模型调用成功作为本次交接模型证据，不调用不存在的 verify，也不重放 activate。
-- Classic Wizard 协议不兼容不再进入更新页，也不再提供会重复发送无效请求的主操作；当前 Runtime 已核验 Guided 可用时，配置页直接提供“返回官方引导”。更新页仅服务于本次设置开始前已有的 Native 安装。
+- `installDaemon` 字段差异不再进入更新页或永久协议不兼容页面；参数协商成功后继续呈现 JunQi 现有的官方 Wizard UI，其他真实失败仍停留在当前准备边界。
 - OpenClaw 新安装继续使用官方定义为 stable 的 npm `latest`，不从版本字符串推断渠道。已有安装只有 `stable` 与 `extended-stable` 可以进入 JunQi 受管更新和后续配置；`beta`、`dev`、其他值与缺失渠道均保持阻断。Rust 更新 command 在 Gateway 维护交接前再次执行同一门禁，不能绕过前端。
 - JunQi 不自动切换用户已有的 OpenClaw 更新渠道。官方渠道切换可能持久化并降级，因此非生产渠道只展示官方更新说明入口，等待用户显式切换后重新检查。
 - 数据位置初始状态不再递归统计旧 OpenClaw 目录容量，表单字段同步删除无消费者的容量值；迁移事务内的复制完整性统计保持不变。
@@ -45,7 +45,7 @@
 
 - Wizard 终态、Gateway 进程健康、认证连接、Runtime Identity 和活动配置修订是不同事实，必须按顺序分别核验。
 - `config.get.hash` 是配置写入冲突控制值，不是活动 Runtime 修订证据；缺失 `configRevisionHash` 或 `appliedConfigHash` 时失败关闭并要求更新 OpenClaw。
-- `installDaemon: false` 只关闭 Wizard 的 daemon 安装分支，不关闭 OpenClaw 自身的配置监听和进程内重启；JunQi 不得因此抢跑重启。
+- 主线接受 `installDaemon:false` 时，JunQi 明确关闭该次 Wizard 的 daemon 分支；stable 公共参数模式下 daemon 选择仍由官方 Wizard 步骤拥有，JunQi 不改写答案，也不伪报已关闭。
 - OpenClaw 可能为活动 Wizard 工作延迟官方重启，并可能在实际重启前轮换共享认证代次。旧 socket 仍在线、旧 token 可用或重启命令返回成功都不能证明接管完成。
 - 只有官方结构化配置或健康状态可以证明重载被禁用；文本、超时和空结果不能升级为显式重启依据。
 - 所有恢复、重连和重启继续经 `GatewayLifecycleCoordinator`；业务页面不得直接控制 Gateway 进程或系统服务。
@@ -84,8 +84,11 @@
 - `src-tauri/src/commands/storage.rs`
 - `src-tauri/src/commands/openclaw_update.rs`
 - `docs/quality/setup-preflight-audit-2026-08-14.md`
+- `docs/quality/openclaw-wizard-version-negotiation-audit-2026-08-14.md`
 - `specs/2026-08-14-setup-preflight-gates.md`
+- `specs/2026-08-14-openclaw-wizard-version-negotiation.md`
 - `plans/2026-08-14-setup-preflight-gates.md`
+- `plans/2026-08-14-openclaw-wizard-version-negotiation.md`
 - `docs/quality/openclaw-wizard-terminal-handoff-audit-2026-08-11.md`
 - `specs/2026-08-12-openclaw-native-installation-alignment.md`
 - `plans/2026-08-12-openclaw-native-installation-alignment.md`
@@ -109,12 +112,15 @@
 - 本地 `.app` 严格代码签名校验未通过，`codesign` 报告资源封签缺失。该结果符合本地无发布凭据构建边界，但不能作为开发者签名或公证证据。
 - `git diff --check`、本次修改文件的 Emoji 扫描和多语言 JSON 解析已通过。
 - 工具导航定向回归 4 项与 TypeScript 类型检查通过，覆盖工具配置归属、普通配置归属和工具入口目标。
+- OpenClaw 官方主线重新核对到提交 `c2269f7a6c4115972496e1a5ae1a79ad9af457ae`：`WizardStartParamsSchema` 接受 `mode`、`workspace`、`installDaemon`、`flow` 和 `channel`，handler 在参数校验后才创建 session。官方文档明确桌面客户端可直接渲染 Gateway Wizard 步骤，无需重写 onboarding。
+- 本机官方 stable `2026.7.1-2 (0790d9f)` 发布包 schema 只接受 `mode` 与 `workspace`。真实 Gateway 请求已复现含 `installDaemon:false` 时返回精确 `INVALID_REQUEST`；公共参数请求成功取得 sessionId 和官方 `note` 步骤，随后已用 `wizard.cancel` 取消，没有提交答案或执行整套配置写入。
+- Wizard 版本协商定向回归 64 项通过，包含主线单请求、stable 精确两请求、失效操作禁止二次请求、其他 schema 错误禁止降参和首次设置页面契约；`pnpm lint`、完整 `pnpm test`、`pnpm verify:openclaw-docs` 与 `pnpm build` 均通过。
 
 ## 已知问题与未验证边界
 
 - 最新 OpenClaw 上的真实 Guided provider、浏览器授权、官方活动工作延迟重启、token 轮换和新认证连接尚未完成 macOS 安装包端到端验证。
 - 当前本机已安装 Runtime 缺少活动配置修订字段，只能验证“证据不可用”分支，不能证明最新版 Runtime 的成功接管链路。
-- 当前 npm `latest` OpenClaw 2026.7.1-2 的 Classic Wizard 尚不接受 `wizard.start.installDaemon`，因此用户显式选择 Classic 时仍会得到真实不兼容状态；默认配置已改用该 Runtime 同时提供的官方 Crestodian Guided，不再等待不存在的稳定更新。
+- 当前 npm `latest` OpenClaw 2026.7.1-2 的 Classic Wizard 不接受 `wizard.start.installDaemon`，但公共参数已经真实启动并取消。完整 Classic 交互、daemon 选择、配置提交和终态交接尚未在隔离数据目录真机验收。
 - macOS、Windows、Linux 与 Docker 的系统服务、凭据库、连接轮换和首次进入工作台仍需分别在目标环境真机验证。
 - 真实渠道插件授权、Classic Wizard 收尾、暗色主题、窄窗口、键盘焦点和减少动态效果不属于本轮自动化能够证明的范围。
 - 本轮 macOS ARM64 DMG 是未签名、未公证的本地安装验证包，不是正式 Release；严格代码签名校验已确认其不具备完整资源封签。未构建其他平台安装包，也未发布远端制品。
@@ -123,5 +129,5 @@
 
 1. 在隔离测试配置上执行 stable Crestodian activate、聊天完成、配置应用与 Ready 全链路真机验证，并在最新版 OpenClaw Runtime 上执行对应方法族的终态收敛验证。
 2. 覆盖共享 token 轮换、设备凭据连接、主连接换代和管理员临时写请求的真实 Gateway 场景。
-3. 使用本轮重新生成的安装包连续抓帧验证 macOS 数据位置加载、更新检查和协议不兼容提示，再分别完成 Windows、Linux 与 Docker 真机验收。
+3. 使用隔离数据目录连续抓帧验证 macOS stable Classic Wizard 的完整步骤、daemon 选择和终态交接，再分别完成 Windows、Linux 与 Docker 真机验收。
 4. 未经明确要求不推送、打 tag 或发布。

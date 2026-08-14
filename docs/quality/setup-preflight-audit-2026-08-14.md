@@ -22,6 +22,8 @@
 
 当前 Runtime 以 `INVALID_REQUEST` 拒绝 `wizard.start.installDaemon` 后，界面仍提供“重新核验”，再次发送完全相同的无效请求。省略字段也不安全：当前稳定版 QuickStart 在未显式指定时默认进入 Gateway service 安装或重启分支。
 
+后续复验更正：stable handler 在 schema 校验通过后才创建 Wizard session。真实 stable Gateway 证明该精确字段拒绝没有创建会话，而只带 `mode:local` 的公共参数可以启动并取消官方 Wizard。因此修复已改为严格参数协商：主线请求仍带 `installDaemon:false`；只有上述精确零副作用拒绝才在操作仍有效时省略该字段重试一次。stable 的 daemon 分支继续由官方 Wizard 步骤拥有，JunQi 不再把它描述为已关闭。完整证据见 [Wizard 版本协商审计](openclaw-wizard-version-negotiation-audit-2026-08-14.md)。
+
 ### BUG-03 · 中等 · 数据位置表单被容量统计阻塞
 
 未配置状态下，`get_storage_setup_status` 在返回表单所需路径前递归统计整个旧 OpenClaw 目录。本机目录约 1.9 GB、37032 个条目；容量仅用于辅助展示，不应阻塞可编辑表单。
@@ -32,7 +34,7 @@ JunQi 只调用最新版文档中的 `openclaw.setup.detect`。稳定版返回 u
 
 修复后，客户端先调用最新版 `openclaw.setup.detect`；只有精确 unknown-method 才继续调用稳定版正式 `crestodian.setup.detect`。任一方法成功后，后续 activate 与 chat 绑定到该方法族；连接、权限、非法响应与业务失败都不能触发换名重试。只有两个 detect 均明确 unknown-method 才进入 Classic。稳定方法族的 activate 请求严格按其封闭 schema 省略 `modelRef`，并将 activate 返回的真实模型调用成功作为本次配置交接证据，不伪造不存在的 `setup.verify`。
 
-Classic Wizard 协议不兼容只在 OpenClaw 配置页呈现，不再导航到更新页。当前 Runtime 已通过能力协商证明 Guided 方法可用时，页面直接提供“返回官方引导”，并清除 Classic 错误投影后回到同一 Runtime 的结构化配置。更新页只服务于本次设置开始前已有的 Native 安装；更新结果不能充当协议兼容性证据。
+Classic Wizard 的 `installDaemon` 字段差异由服务层安全协商，不再暴露为永久协议不兼容。其他真实错误仍在当前准备边界呈现，不导航到更新页。更新页只服务于本次设置开始前已有的 Native 安装；更新结果不能充当协议兼容性证据。
 
 ### BUG-05 · 严重 · 受管更新跟随 beta 或 dev 渠道
 
@@ -45,7 +47,7 @@ JunQi 不自动把现有 `beta` 或 `dev` 切回 stable。官方说明指出渠�
 ## 未验证边界
 
 - 本机已真实调用 `openclaw.setup.detect` 并得到结构化 unknown-method，再调用 `crestodian.setup.detect` 成功返回配置完成状态与真实候选；为避免改变现有用户配置，没有在开发机上执行有写入副作用的 `crestodian.setup.activate`。
-- 当前稳定 Classic Wizard 仍不接受 `installDaemon`。该事实只影响用户显式选择的 Classic 路径，不再阻断默认 Guided 配置。
+- 当前稳定 Classic Wizard 不接受 `installDaemon`，但已经通过公共参数真实启动并取消；完整交互、daemon 选择和终态仍需隔离配置真机验收。
 - beta 制品不是 JunQi 的安装、更新或配置候选。
 - Windows、Linux、Docker 和真实更新后的 Gateway 重连需要目标环境验证。
 

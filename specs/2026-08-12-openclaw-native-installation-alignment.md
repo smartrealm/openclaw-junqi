@@ -102,7 +102,7 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 - Gateway 启动摘要从执行中原地切换到已核验，用户点击核验配置后才进入正式 Guided 或 Classic 配置；中间不得出现第二张运行时就绪页面。
 - “核验配置”必须在运行时页面内完成模式协商，并取得 Guided 的可操作状态或 Classic Wizard 的首个官方步骤；配置页不得先挂载客户端连接占位卡后再自动切换内容。
 - Classic Wizard 的 `note`、`action` 与 `progress` 使用统一紧凑摘要，明确区分官方提示、用户待执行操作和官方处理中状态；官方标题与正文保持原样且只呈现一次。`Done` 标题或完成文案仍是可确认步骤，只有后续结构化 `done` 结果才可进入 JunQi 完成交接。
-- JunQi 已在运行时阶段启动 Gateway 时，首次设置的 Classic `wizard.start` 必须提交官方 `installDaemon: false`；不得允许向导的 daemon 收尾重启承载其进程内 session 的 Gateway。渠道专用 Wizard 不附带该 setup 参数。
+- JunQi 已在运行时阶段启动 Gateway 时，首次设置的 Classic `wizard.start` 首次请求必须提交主线 `installDaemon:false`。stable 在创建会话前精确拒绝该字段时可改用公共参数启动一次；此时 daemon 选择仍由官方 Wizard 拥有，JunQi 不得描述为已禁用。渠道专用 Wizard 不附带该 setup 参数。
 - 同一配置内容槽的新旧官方步骤必须串行切换；旧步骤退出完成前不得挂载新步骤，前进与后退方向保持可辨识，减少动态效果时立即完成。
 - 官方提示、待执行操作和处理中状态复用同一紧凑组件与语义主题 token；只用轻量引导线、图标底和眉题色区分状态，正文使用次级正文色，Runtime 来源说明使用弱化文字色，来源图标使用当前状态语义色，不写死主题颜色。
 - 首次设置已有旧连接时，启动所选 Runtime 必须先断开旧连接，随后以 `selected-runtime` 目标范围重新解析正式配置；读取失败不能使用历史手工地址或默认端点，只有新连接的 Runtime Identity 已核验时才能进入配置能力协商。
