@@ -237,3 +237,13 @@ export function resolveTraceSourceRecordContent(
       }
     : null;
 }
+
+/** 复制入口返回当前已加载 transcript 的原始载荷，普通消息保留原始正文。 */
+export function resolveTraceSourceRecordCopyText(message: ChatMessage | undefined): string | null {
+  const content = resolveTraceSourceRecordContent(message);
+  if (!content) return null;
+  if (content.kind === 'tool-output') {
+    return content.raw ?? (content.structured === null ? content.text : formatRawValue(content.structured));
+  }
+  return content.text;
+}

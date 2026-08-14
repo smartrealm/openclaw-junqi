@@ -1698,6 +1698,8 @@
       "sourceRecord": "第 {{number}} 条记录",
       "viewSourceRecord": "查看原始记录",
       "sourceRecordTitle": "原始会话记录",
+      "copySourceRecord": "复制原始记录",
+      "copySourceRecordFailed": "复制原始记录失败",
       "backToTrace": "返回执行追溯",
       "sourceRecordUnavailable": "当前已加载的会话记录中没有这条原始记录",
       "sourceRecordUnavailableDescription": "这条记录不在当前已加载的会话历史中，或已不再可用。JunQi 不会根据记录标识还原或猜测内容。",

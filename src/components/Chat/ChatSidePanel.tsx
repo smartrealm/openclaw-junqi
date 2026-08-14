@@ -9,6 +9,7 @@ interface ChatSidePanelProps {
   onClose: () => void;
   backLabel?: string;
   onBack?: () => void;
+  headerActions?: ReactNode;
   overlay?: boolean;
   children: ReactNode;
 }
@@ -20,6 +21,7 @@ export function ChatSidePanel({
   onClose,
   backLabel,
   onBack,
+  headerActions,
   overlay = false,
   children,
 }: ChatSidePanelProps) {
@@ -93,6 +95,7 @@ export function ChatSidePanel({
         <h2 id={titleId} className="min-w-0 flex-1 truncate text-[13px] font-semibold">
           {title}
         </h2>
+        {headerActions}
         <button
           ref={closeButtonRef}
           type="button"

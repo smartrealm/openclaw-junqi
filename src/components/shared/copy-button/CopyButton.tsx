@@ -1,5 +1,5 @@
-// CopyButton — idle -> copied -> error state machine
-// Based on Hermes shared-ui CopyButton pattern.
+// CopyButton 使用空闲、已复制和失败三态，并同步图标与无障碍名称。
+// 交互结构沿用 Hermes shared-ui 的 CopyButton 模式。
 import { useState, useCallback, type ReactNode } from "react";
 import { Copy, Check, AlertCircle } from "lucide-react";
 import { Button, type ButtonProps } from "../button";
@@ -7,15 +7,19 @@ import { Button, type ButtonProps } from "../button";
 type CopyState = "idle" | "copied" | "error";
 
 export interface CopyButtonProps extends Omit<ButtonProps, "onClick" | "children" | "leadingIcon"> {
-  /** Text to copy, or an async factory returning text */
+  /** 要复制的文本，或返回文本的异步工厂。 */
   text: string | (() => string | Promise<string>);
-  /** How long (ms) to show the copied/error state before resetting. Default 1800. */
+  /** 已复制或失败状态的保留毫秒数，默认 1800。 */
   resetMs?: number;
-  /** Custom label. Defaults to nothing (icon-only). Pass a string to show label. */
+  /** 可选可见标签；省略时显示为纯图标按钮。 */
   label?: ReactNode;
-  /** Called after the clipboard write succeeds. */
+  /** 已复制状态使用的无障碍名称。 */
+  copiedLabel?: string;
+  /** 失败状态使用的无障碍名称。 */
+  errorLabel?: string;
+  /** 剪贴板写入成功后调用。 */
   onCopySuccess?: (value: string) => void;
-  /** Called when resolving or writing the clipboard value fails. */
+  /** 解析文本或写入剪贴板失败时调用。 */
   onCopyError?: (error: unknown) => void;
 }
 
@@ -27,6 +31,8 @@ export function CopyButton({
   variant = "ghost",
   tone = "neutral",
   iconOnly,
+  copiedLabel,
+  errorLabel,
   onCopySuccess,
   onCopyError,
   ...props
@@ -50,6 +56,12 @@ export function CopyButton({
 
   const Icon = state === "copied" ? Check : state === "error" ? AlertCircle : Copy;
   const resolvedTone = state === "error" ? "danger" : state === "copied" ? "success" : tone;
+  const idleLabel = props["aria-label"] ?? "Copy";
+  const stateLabel = state === "copied"
+    ? copiedLabel ?? idleLabel
+    : state === "error"
+      ? errorLabel ?? idleLabel
+      : idleLabel;
 
   return (
     <Button
@@ -58,9 +70,10 @@ export function CopyButton({
       variant={variant}
       tone={resolvedTone}
       iconOnly={!label}
-      aria-label={props["aria-label"] ?? "Copy"}
+      aria-label={stateLabel}
+      title={stateLabel}
       onClick={handleCopy}
-      leadingIcon={<Icon size={13} />}
+      leadingIcon={<Icon size={13} aria-hidden="true" />}
     >
       {label}
     </Button>

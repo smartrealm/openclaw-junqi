@@ -1700,6 +1700,8 @@
       "sourceRecord": "Record {{number}}",
       "viewSourceRecord": "View source record",
       "sourceRecordTitle": "Source record",
+      "copySourceRecord": "Copy source record",
+      "copySourceRecordFailed": "Could not copy source record",
       "backToTrace": "Back to execution trace",
       "sourceRecordUnavailable": "This source record is not available in the loaded transcript",
       "sourceRecordUnavailableDescription": "This record is outside the currently loaded conversation history or is no longer available. JunQi does not reconstruct a record from its identifier.",

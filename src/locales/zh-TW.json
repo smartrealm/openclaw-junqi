@@ -1667,6 +1667,8 @@
       "sourceRecord": "第 {{number}} 條記錄",
       "viewSourceRecord": "查看原始記錄",
       "sourceRecordTitle": "原始對話記錄",
+      "copySourceRecord": "複製原始記錄",
+      "copySourceRecordFailed": "複製原始記錄失敗",
       "backToTrace": "返回執行追溯",
       "sourceRecordUnavailable": "目前已載入的對話記錄中沒有這條原始記錄",
       "sourceRecordUnavailableDescription": "這條記錄不在目前已載入的對話歷史中，或已不再可用。JunQi 不會根據記錄識別碼還原或猜測內容。",

@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import type { ChatMessage } from '@/stores/chatStore';
 import { normalizeHistoryMessage } from '@/processing/normalizeHistoryMessage';
-import { resolveTraceSourceRecordContent } from './chatTraceSourceMessagePresentation';
+import {
+  resolveTraceSourceRecordContent,
+  resolveTraceSourceRecordCopyText,
+} from './chatTraceSourceMessagePresentation';
 
 function message(partial: Partial<ChatMessage>): ChatMessage {
   return {
@@ -110,6 +114,29 @@ test('uses the original OpenClaw content blocks when the compact tool projection
   });
   assert.equal(result?.containsUntrustedExternalContent, true);
   assert.match(result?.raw ?? '', /"type": "text"/);
+  assert.equal(
+    resolveTraceSourceRecordCopyText(normalized),
+    JSON.stringify(normalized.rawContent, null, 2),
+  );
+});
+
+test('copies ordinary source records as their unmodified message text', () => {
+  assert.equal(
+    resolveTraceSourceRecordCopyText(message({ content: 'Original assistant response.' })),
+    'Original assistant response.',
+  );
+  assert.equal(resolveTraceSourceRecordCopyText(undefined), null);
+});
+
+test('source record copy labels exist in every shipped language', () => {
+  for (const language of ['en', 'zh', 'zh-TW']) {
+    const locale = JSON.parse(readFileSync(
+      new URL(`../../locales/${language}.json`, import.meta.url),
+      'utf8',
+    )) as { chat?: { trace?: Record<string, unknown> } };
+    assert.equal(typeof locale.chat?.trace?.copySourceRecord, 'string');
+    assert.equal(typeof locale.chat?.trace?.copySourceRecordFailed, 'string');
+  }
 });
 
 test('formats a delimited external JSON body while keeping transport metadata', () => {

@@ -2,8 +2,12 @@ import { useTranslation } from 'react-i18next';
 import type { ChatMessage } from '@/stores/chatStore';
 import { ChatMarkdownRenderer } from './ChatMarkdownRenderer';
 import { ChatSidePanel } from './ChatSidePanel';
+import { CopyButton } from '@/components/shared/copy-button';
 import { formatTraceTimestamp } from './chatResponseTracePresentation';
-import { resolveTraceSourceRecordContent } from './chatTraceSourceMessagePresentation';
+import {
+  resolveTraceSourceRecordContent,
+  resolveTraceSourceRecordCopyText,
+} from './chatTraceSourceMessagePresentation';
 
 interface ChatTraceSourceMessagePanelProps {
   sourceMessageId: string;
@@ -71,6 +75,7 @@ export function ChatTraceSourceMessagePanel({
   const { t, i18n } = useTranslation();
   const titleId = `chat-trace-source-title-${sourceMessageId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const content = resolveTraceSourceRecordContent(message);
+  const copyText = resolveTraceSourceRecordCopyText(message);
 
   return (
     <ChatSidePanel
@@ -80,6 +85,16 @@ export function ChatTraceSourceMessagePanel({
       onClose={onClose}
       backLabel={t('chat.trace.backToTrace')}
       onBack={onBack}
+      headerActions={(
+        <CopyButton
+          text={copyText ?? ''}
+          disabled={copyText === null}
+          aria-label={t('chat.trace.copySourceRecord')}
+          copiedLabel={t('common.copied')}
+          errorLabel={t('chat.trace.copySourceRecordFailed')}
+          size="sm"
+        />
+      )}
       overlay={overlay}
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 chat-scrollbar">
