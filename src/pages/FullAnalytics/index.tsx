@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Activity, AlertCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { WORKSPACE_PAGE_FRAME_CLASS_NAME } from '@/components/shared/workspacePageLayout';
 import { useChatStore }   from '@/stores/chatStore';
 
 import { useAnalyticsData }   from './useAnalyticsData';
@@ -82,7 +83,7 @@ export function FullAnalyticsPage() {
   // Render
   // ─────────────────────────────────────────────────────────
   return (
-    <PageTransition className="p-6 space-y-5 max-w-[1200px] mx-auto">
+    <PageTransition className={`${WORKSPACE_PAGE_FRAME_CLASS_NAME} space-y-5`}>
 
       {/* ══ Header ══ */}
       <div className="flex items-center justify-between">

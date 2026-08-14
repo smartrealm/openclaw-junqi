@@ -70,6 +70,7 @@ import {
 } from './components';
 import { DashboardCostEmptyState } from './DashboardCostEmptyState';
 import { DashboardTokenUsageSummary } from './DashboardTokenUsageSummary';
+import { WORKSPACE_PAGE_FRAME_CLASS_NAME } from '@/components/shared/workspacePageLayout';
 
 const CostChart = lazy(() => import('./CostChart').then((m) => ({ default: m.CostChart })));
 
@@ -460,7 +461,7 @@ export function DashboardPage() {
   // ── Render ───────────────────────────────────────────────────
   return (
     <SceneTransition
-      className="min-h-full p-3 sm:p-5 space-y-4 max-w-[1280px] mx-auto"
+      className={`${WORKSPACE_PAGE_FRAME_CLASS_NAME} space-y-4`}
       recoveryRevision={sceneRecovery.revision}
       recoveryReason={sceneRecovery.reason}
     >

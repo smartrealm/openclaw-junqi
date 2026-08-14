@@ -8,6 +8,7 @@ import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { WORKSPACE_PAGE_FRAME_CLASS_NAME } from '@/components/shared/workspacePageLayout';
 import {
   openClawSkillsRuntime,
   type OpenClawSkill,
@@ -528,7 +529,7 @@ export function SkillsPage() {
 
   return (
     <PageTransition className="flex-1 overflow-y-auto overflow-x-hidden">
-      <div className="mx-auto max-w-[900px] px-9 py-8 pb-16">
+      <div className={`${WORKSPACE_PAGE_FRAME_CLASS_NAME} pb-16`}>
         <header className="mb-6 flex items-center gap-3">
           <Puzzle size={20} className="text-aegis-primary" aria-hidden="true" />
           <h1 className="text-[21px] font-bold">{t('skills.title')}</h1>

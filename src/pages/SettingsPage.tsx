@@ -14,6 +14,7 @@ import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard, GlassCardEnterMotionScope } from '@/components/shared/GlassCard';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { WORKSPACE_PAGE_FRAME_CLASS_NAME } from '@/components/shared/workspacePageLayout';
 import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 import { OpenClawUpdatePanel } from '@/components/shared/OpenClawUpdatePanel';
 import { StatusDot } from '@/components/shared/badge';
@@ -412,7 +413,7 @@ export function SettingsPageFull() {
   };
 
   return (
-    <PageTransition className="p-6 space-y-6 max-w-[920px] mx-auto">
+    <PageTransition className={`${WORKSPACE_PAGE_FRAME_CLASS_NAME} space-y-6`}>
       <div>
         <h1 className="text-[22px] font-bold text-aegis-text flex items-center gap-3">
           <Settings size={24} className="text-aegis-text-dim" />

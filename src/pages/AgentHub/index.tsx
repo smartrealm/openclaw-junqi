@@ -14,6 +14,7 @@ import { showAlert } from '@/components/shared/AlertDialog';
 import { AgentSettingsPanel } from './AgentSettingsPanel';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { WORKSPACE_PAGE_FRAME_CLASS_NAME } from '@/components/shared/workspacePageLayout';
 import { ProgressRing } from '@/components/shared/ProgressRing';
 import { StatusDot } from '@/components/shared/badge';
 import { useChatStore } from '@/stores/chatStore';
@@ -1299,7 +1300,7 @@ export function AgentHubPage() {
   };
 
   return (
-    <PageTransition className={workspaceView ? 'h-full min-h-0' : 'p-6 space-y-6 max-w-[1200px] mx-auto'}>
+    <PageTransition className={workspaceView ? 'h-full min-h-0' : `${WORKSPACE_PAGE_FRAME_CLASS_NAME} space-y-6`}>
       {workspaceView ? (
         <div className={clsx('h-full min-h-0', settingsAgent && 'pe-[340px]')}>
           <OpenClawAgentWorkspacePanel

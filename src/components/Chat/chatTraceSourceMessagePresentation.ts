@@ -13,7 +13,7 @@ const MAX_STRUCTURED_INPUT_LENGTH = 512_000;
 const MAX_STRUCTURED_DECODE_DEPTH = 6;
 const MAX_STRUCTURED_NODE_COUNT = 2_000;
 const EXTERNAL_CONTENT_START = /<<<EXTERNAL_UNTRUSTED_CONTENT[^>]*>>>/;
-const EXTERNAL_CONTENT_END = /<<<END_EXTERNAL_UNTRUSTED_CONTENT>>>/;
+const EXTERNAL_CONTENT_END = /<<<END_EXTERNAL_UNTRUSTED_CONTENT(?:\s+[^>]*)?>>>/;
 
 function nonEmptyText(value: string | undefined): string | null {
   const text = value?.trim();
@@ -188,9 +188,16 @@ function formatRawValue(value: unknown): string {
   }
 }
 
+/** 原始记录面板优先消费 Gateway transcript 块，紧凑截断值只作为无原始块时的后备。 */
+function sourceToolValue(message: ChatMessage): unknown {
+  if (message.rawContent !== null && typeof message.rawContent === 'object') {
+    return message.rawContent;
+  }
+  return message.toolOutputValue ?? message.rawContent ?? message.toolOutput ?? message.content;
+}
+
 /**
- * Tool records keep their raw payload for evidence, while the primary view
- * projects only recognized structured documents or content blocks.
+ * 工具记录保留原始载荷作为证据，主视图只投影可确认的结构化文档或内容块。
  */
 export function resolveTraceSourceRecordContent(
   message: ChatMessage | undefined,
@@ -199,7 +206,7 @@ export function resolveTraceSourceRecordContent(
 
   const isToolRecord = message.role === 'tool' || message.role === 'toolResult';
   if (isToolRecord) {
-    const rawValue = message.toolOutputValue ?? message.rawContent ?? message.toolOutput ?? message.content;
+    const rawValue = sourceToolValue(message);
     const raw = formatRawValue(rawValue);
     const fallbackText = nonEmptyText(message.toolOutput) ?? nonEmptyText(message.content) ?? raw;
     if (!fallbackText.trim()) return null;

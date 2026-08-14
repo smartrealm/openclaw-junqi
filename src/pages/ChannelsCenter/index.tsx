@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, MoreHorizontal, Plus, RefreshCw, Settings2 } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { WORKSPACE_PAGE_FRAME_CLASS_NAME } from '@/components/shared/workspacePageLayout';
 import { showAlert, showConfirm } from '@/components/shared/AlertDialog';
 import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { gateway, openClawChannelQrLoginClient } from '@/services/gateway';
@@ -509,7 +510,7 @@ export function ChannelsCenterPage() {
   };
 
   return (
-    <PageTransition className="mx-auto w-full max-w-[1180px] space-y-4 p-5">
+    <PageTransition className={`${WORKSPACE_PAGE_FRAME_CLASS_NAME} space-y-4`}>
       <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div className="min-w-0">
           <h1 className="text-[18px] font-bold text-aegis-text">

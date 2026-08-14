@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ChatMessage } from '@/stores/chatStore';
+import { normalizeHistoryMessage } from '@/processing/normalizeHistoryMessage';
 import { resolveTraceSourceRecordContent } from './chatTraceSourceMessagePresentation';
 
 function message(partial: Partial<ChatMessage>): ChatMessage {
@@ -72,6 +73,43 @@ test('keeps the original structured value for a source record and detects untrus
   });
   assert.equal(result?.containsUntrustedExternalContent, true);
   assert.equal(result?.raw, JSON.stringify(sourceValue, null, 2));
+});
+
+test('uses the original OpenClaw content blocks when the compact tool projection is truncated', () => {
+  const weather = {
+    current_condition: [{ temp_C: '26', humidity: '79' }],
+    forecast: Array.from({ length: 80 }, (_, index) => ({ hour: index, weatherCode: '113' })),
+  };
+  const payload = {
+    url: 'https://example.invalid/weather',
+    status: 200,
+    externalContent: { untrusted: true, source: 'runtime-tool' },
+    text: [
+      'SECURITY NOTICE: External data.',
+      '<<<EXTERNAL_UNTRUSTED_CONTENT id="fixture">>>',
+      'Source: Runtime Tool',
+      '---',
+      JSON.stringify(weather),
+      '<<<END_EXTERNAL_UNTRUSTED_CONTENT id="fixture">>>',
+    ].join('\n'),
+  };
+  const normalized = normalizeHistoryMessage({
+    role: 'toolResult',
+    toolName: 'runtime_tool',
+    content: [{ type: 'text', text: JSON.stringify(payload) }],
+  });
+
+  assert.equal(normalized.toolOutputTruncated, true);
+  assert.equal(typeof normalized.toolOutputValue, 'string');
+  const result = resolveTraceSourceRecordContent(normalized);
+  assert.deepEqual(result?.structured, {
+    url: 'https://example.invalid/weather',
+    status: 200,
+    externalContent: { untrusted: true, source: 'runtime-tool' },
+    text: weather,
+  });
+  assert.equal(result?.containsUntrustedExternalContent, true);
+  assert.match(result?.raw ?? '', /"type": "text"/);
 });
 
 test('formats a delimited external JSON body while keeping transport metadata', () => {

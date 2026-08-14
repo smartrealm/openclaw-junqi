@@ -4,6 +4,7 @@ import { BookOpenText, CircleAlert, LoaderCircle, RefreshCw, TerminalSquare } fr
 import clsx from 'clsx';
 import { CopyButton } from '@/components/shared/copy-button';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { WORKSPACE_PAGE_CONTENT_CLASS_NAME } from '@/components/shared/workspacePageLayout';
 import { useOpenClawCommands } from '@/hooks/useOpenClawCommands';
 import { useChatStore } from '@/stores/chatStore';
 import type { OpenClawCommandEntry } from '@/services/gateway/OpenClawCommandsClient';
@@ -69,7 +70,7 @@ export function OpenClawCommandsPage() {
     <PageTransition className="min-h-full bg-aegis-bg">
       <div className="min-h-full">
         <header className="sticky top-0 z-10 border-b border-aegis-border bg-aegis-bg">
-          <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
+          <div className={`${WORKSPACE_PAGE_CONTENT_CLASS_NAME} flex flex-col gap-4 py-4`}>
             <div className="flex min-w-0 items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="grid size-9 shrink-0 place-items-center rounded-md bg-aegis-primary/12 text-aegis-primary ring-1 ring-inset ring-aegis-primary/20">
@@ -111,7 +112,7 @@ export function OpenClawCommandsPage() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1280px] px-4 py-5 sm:px-6 lg:px-8">
+        <main className={`${WORKSPACE_PAGE_CONTENT_CLASS_NAME} py-5`}>
           {!connected ? (
             <CommandState icon={CircleAlert} message={t('openclawCommands.disconnected')} />
           ) : loading ? (

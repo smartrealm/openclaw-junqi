@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { SceneTransition } from '@/components/shared/SceneTransition';
+import { WORKSPACE_PAGE_FRAME_CLASS_NAME } from '@/components/shared/workspacePageLayout';
 import { StatusBadge, type LifecycleState } from '@/components/shared/StatusBadge';
 import { useChatStore, type Session } from '@/stores/chatStore';
 import {
@@ -313,7 +314,7 @@ export function ActivityCenterPage() {
   ];
 
   return (
-    <SceneTransition className="mx-auto min-h-full w-full max-w-[1280px] space-y-4 p-3 sm:p-5">
+    <SceneTransition className={`${WORKSPACE_PAGE_FRAME_CLASS_NAME} space-y-4`}>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-aegis-primary/20 bg-aegis-primary/10 text-aegis-primary">

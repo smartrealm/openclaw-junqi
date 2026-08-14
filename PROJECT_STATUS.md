@@ -4,10 +4,14 @@
 
 ## 当前目标
 
-完成会话组织操作闭环、所有活动会话切换入口的尾部定位、新建空会话输入状态，以及 transcript 结构化内容展示。
+完成工作区主要页面的动态尺寸统一，以及长工具结果从 OpenClaw 原始内容块到结构化会话记录的可读展示。
 
 ## 已完成内容
 
+- 仪表盘、活动中心、完整用量、技能、渠道、设置、智能体、OpenClaw 命令和性能页面不再维护 900 至 1280 像素不等的路由级画布上限；统一使用随路由视口伸缩的全宽外框和响应式边距。
+- 阅读正文、对话气泡、弹窗和字段说明继续保留局部可读宽度；全宽页面契约没有覆盖这些内容级约束，也没有改变终端、日历、文件和业务应用等原本已占满工作区的页面。
+- 原始会话记录优先消费 OpenClaw transcript 的原始对象或内容块，紧凑工具气泡仍使用 2000 字符的有界展示投影。长结果不再因为紧凑截断退化为带转义符的内容数组文本。
+- 内容投影按实际类型递归处理对象、数组、内容块、JSON 字符串和外部内容包络；结束标记允许携带上游 id 属性，不按工具名或业务字段维护专属格式化器。无法确认的普通文本、畸形 JSON 和不完整内容仍保持原样。
 - 会话置顶、未读和归档不再按不存在的同名布尔回执判定；现在分别核验 OpenClaw 持久化条目的 `pinnedAt`、`markedUnreadAt`、`lastReadAt` 与 `archivedAt`，避免 Gateway 已写入而 JunQi 误报失败。
 - 已知会话身份的归档和恢复操作透传 `expectedSessionId`，防止同一 key 身份轮换后误改新的 transcript；归档文案删除了错误的“本机”语义。
 - 会话菜单异步操作增加统一进行中门禁；成功后由真实列表投影或新页签反馈，失败时显示本地化可操作说明，内部 `SESSION_ORGANIZATION_RESPONSE_INVALID` 不再进入通知正文。
@@ -49,6 +53,8 @@
 
 ## 关键技术决策
 
+- 页面外框宽度与正文可读宽度是不同契约。数据和管理页面使用完整工作区宽度，只有内容组件可以基于阅读、输入或弹窗语义设置局部上限。
+- 工具输出的紧凑字符串是展示投影，不是 transcript 证据。原始记录面板必须从仍保留的 OpenClaw 内容块生成可读视图，并把未改写的载荷保留在折叠区。
 - `sessions.patch` 的请求字段与持久化回执字段是不同契约；成功核验必须依据 handler 返回的持久化条目，不能假设响应回显请求布尔值。
 - 会话尾部定位属于活动会话入口行为，不属于单一侧栏点击或历史请求完成事件；入口条件只绑定活动 key 与当前时间线提交，不从先到的加载元数据推断 DOM 已就绪。
 - transcript 格式化是可逆的只读展示投影。只有完整 JSON 文档才能增加缩进和语言标识，解析失败时保留原文，不修补内容或改变上游事实。
@@ -69,6 +75,11 @@
 
 ## 核心文件
 
+- `src/components/shared/workspacePageLayout.ts`
+- `src/components/Chat/chatTraceSourceMessagePresentation.ts`
+- `docs/quality/workspace-layout-and-structured-transcript-audit-2026-08-14.md`
+- `specs/2026-08-14-workspace-layout-and-structured-transcript.md`
+- `plans/2026-08-14-workspace-layout-and-structured-transcript.md`
 - `src/services/gateway/OpenClawSessionOrganizationClient.ts`
 - `src/components/Chat/session-actions/SessionActionsMenu.tsx`
 - `src/pages/ChatView.tsx`
@@ -112,6 +123,10 @@
 
 ## 测试与验证
 
+- 本轮工作区布局与结构化记录定向回归 35 项通过；完整 `pnpm test` 已通过，前端与源码测试 2823 项、脚本测试 238 项均通过。
+- `pnpm lint` 已通过，包含 910 个文件的模块边界检查、版本一致性和 TypeScript 类型检查；`pnpm build` 已通过，包含协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建。
+- 已用本机截图对应的 OpenClaw transcript 记录做只读实测：紧凑输出确认已截断，原始记录仍恢复出 14 个顶层字段；嵌套 `text` 恢复为包含 `current_condition`、`nearest_area`、`request` 和 `weather` 的对象，并保留不可信外部内容提示。
+- 页面迁移复用 `aegis-bg`、`aegis-border`、`aegis-text` 等现有主题 token 及现有 PageTransition、SceneTransition、卡片和滚动组件。本轮尚未在重新打包应用中完成亮色、暗色、窄窗口和宽窗口真机视觉验收。
 - 本轮定向回归 32 项通过，覆盖官方时间戳回执、归档身份参数、组织错误映射、新空会话判定、活动会话统一尾部定位和 JSON 展示。
 - 完整 `pnpm test` 已通过：前端与源码测试 2820 项、脚本测试 238 项均通过。
 - `pnpm lint` 已通过，包含 909 个文件的模块边界检查、版本一致性和 TypeScript 类型检查。
