@@ -2321,7 +2321,7 @@ fn validate_installed_plugin_directory(
 ) -> Result<(PathBuf, String), String> {
     let metadata = std::fs::symlink_metadata(path)
         .map_err(|error| format!("The installed plugin directory is unavailable: {error}"))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err("The installed plugin path is not a safe directory".to_string());
     }
     let canonical = std::fs::canonicalize(path)
@@ -2372,11 +2372,28 @@ fn validate_installed_plugin_directory(
     Ok((canonical, package_version.to_string()))
 }
 
+fn metadata_is_link_or_reparse_point(metadata: &std::fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+
+        // Windows junction 使用重解析点而不一定表现为普通符号链接，必须统一按链接边界处理。
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    }
+    #[cfg(not(windows))]
+    false
+}
+
 fn collect_plugin_tree_entries(
     root: &Path,
     current: &Path,
     entries: &mut Vec<(PathBuf, bool)>,
     expanded_bytes: &mut u64,
+    excludes_openclaw_host_peer_link: bool,
 ) -> Result<(), String> {
     let mut children = std::fs::read_dir(current)
         .map_err(|error| format!("Failed to inspect the installed plugin directory: {error}"))?
@@ -2390,12 +2407,6 @@ fn collect_plugin_tree_entries(
         let path = child.path();
         let metadata = std::fs::symlink_metadata(&path)
             .map_err(|error| format!("Failed to inspect an installed plugin entry: {error}"))?;
-        if metadata.file_type().is_symlink() {
-            return Err(
-                "The installed plugin contains symbolic links and cannot be backed up exactly"
-                    .to_string(),
-            );
-        }
         let relative = path
             .strip_prefix(root)
             .map_err(|_| "The installed plugin entry escaped its package root".to_string())?
@@ -2407,9 +2418,26 @@ fn collect_plugin_tree_entries(
         {
             return Err("The installed plugin contains an unsafe entry path".to_string());
         }
+        if metadata_is_link_or_reparse_point(&metadata) {
+            if excludes_openclaw_host_peer_link
+                && relative == Path::new("node_modules").join("openclaw")
+            {
+                continue;
+            }
+            return Err(
+                "The installed plugin contains symbolic links and cannot be backed up exactly"
+                    .to_string(),
+            );
+        }
         if metadata.is_dir() {
             entries.push((relative, true));
-            collect_plugin_tree_entries(root, &path, entries, expanded_bytes)?;
+            collect_plugin_tree_entries(
+                root,
+                &path,
+                entries,
+                expanded_bytes,
+                excludes_openclaw_host_peer_link,
+            )?;
         } else if metadata.is_file() {
             *expanded_bytes = expanded_bytes
                 .checked_add(metadata.len())
@@ -2431,12 +2459,26 @@ fn collect_plugin_tree_entries(
 fn plugin_tree_entries(root: &Path) -> Result<Vec<(PathBuf, bool)>, String> {
     let metadata = std::fs::symlink_metadata(root)
         .map_err(|error| format!("The installed plugin root is unavailable: {error}"))?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+    if metadata_is_link_or_reparse_point(&metadata) || !metadata.is_dir() {
         return Err("The installed plugin root changed during backup".to_string());
     }
+    let package = read_plugin_manifest(&root.join("package.json"), "package.json")?;
+    let excludes_openclaw_host_peer_link = package
+        .get("peerDependencies")
+        .and_then(Value::as_object)
+        .and_then(|dependencies| dependencies.get("openclaw"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .is_some_and(|range| !range.is_empty());
     let mut entries = Vec::new();
     let mut expanded_bytes = 0_u64;
-    collect_plugin_tree_entries(root, root, &mut entries, &mut expanded_bytes)?;
+    collect_plugin_tree_entries(
+        root,
+        root,
+        &mut entries,
+        &mut expanded_bytes,
+        excludes_openclaw_host_peer_link,
+    )?;
     Ok(entries)
 }
 
@@ -6058,6 +6100,104 @@ mod tests {
         .unwrap();
         std::fs::write(plugin_root.join("dist/index.js"), b"export default {};\n").unwrap();
         plugin_root
+    }
+
+    fn declare_test_openclaw_peer_dependency(plugin_root: &Path) {
+        let package_path = plugin_root.join("package.json");
+        let mut package: Value =
+            serde_json::from_slice(&std::fs::read(&package_path).unwrap()).unwrap();
+        package["peerDependencies"] = serde_json::json!({ "openclaw": ">=2026.7.1" });
+        std::fs::write(package_path, serde_json::to_vec_pretty(&package).unwrap()).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bug_01_official_openclaw_peer_link_is_excluded_from_exact_backup_content() {
+        use std::os::unix::fs::symlink;
+
+        let root =
+            std::env::temp_dir().join(format!("junqi-peer-link-backup-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let plugin_root = create_test_plugin_directory(&root, "0.4.0");
+        declare_test_openclaw_peer_dependency(&plugin_root);
+        let node_modules = plugin_root.join("node_modules");
+        let first_host = root.join("openclaw-host-one");
+        let second_host = root.join("openclaw-host-two");
+        std::fs::create_dir_all(&node_modules).unwrap();
+        std::fs::create_dir_all(&first_host).unwrap();
+        std::fs::create_dir_all(&second_host).unwrap();
+        let peer_link = node_modules.join("openclaw");
+        symlink(&first_host, &peer_link).unwrap();
+
+        let first_hash = hash_plugin_tree(&plugin_root).unwrap();
+        let archive_path = root.join("backup.tgz");
+        assert_eq!(
+            create_plugin_tree_archive(&plugin_root, &archive_path).unwrap(),
+            first_hash
+        );
+        let decoder = flate2::read::GzDecoder::new(std::fs::File::open(&archive_path).unwrap());
+        let mut archive = tar::Archive::new(decoder);
+        let archived_paths = archive
+            .entries()
+            .unwrap()
+            .map(|entry| entry.unwrap().path().unwrap().to_path_buf())
+            .collect::<Vec<_>>();
+        assert!(!archived_paths
+            .iter()
+            .any(|path| path == Path::new("package/node_modules/openclaw")));
+
+        std::fs::remove_file(&peer_link).unwrap();
+        symlink(&second_host, &peer_link).unwrap();
+        assert_eq!(hash_plugin_tree(&plugin_root).unwrap(), first_hash);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bug_01_unrelated_plugin_symlink_remains_rejected() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "junqi-unrelated-link-backup-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let plugin_root = create_test_plugin_directory(&root, "0.4.0");
+        declare_test_openclaw_peer_dependency(&plugin_root);
+        let target = root.join("target.js");
+        std::fs::write(&target, b"export default {};\n").unwrap();
+        symlink(&target, plugin_root.join("dist/linked.js")).unwrap();
+
+        assert!(hash_plugin_tree(&plugin_root)
+            .unwrap_err()
+            .contains("contains symbolic links"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bug_01_openclaw_link_without_peer_declaration_remains_rejected() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "junqi-undeclared-peer-link-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let plugin_root = create_test_plugin_directory(&root, "0.4.0");
+        let node_modules = plugin_root.join("node_modules");
+        let host = root.join("openclaw-host");
+        std::fs::create_dir_all(&node_modules).unwrap();
+        std::fs::create_dir_all(&host).unwrap();
+        symlink(&host, node_modules.join("openclaw")).unwrap();
+
+        assert!(hash_plugin_tree(&plugin_root)
+            .unwrap_err()
+            .contains("contains symbolic links"));
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn test_mutation_target(root: &Path, deployment_kind: RuntimeDeploymentKind) -> MutationTarget {

@@ -5,7 +5,7 @@ runs. It owns workflow state, dispatch idempotency, recovery, audit events, and
 exact transcript delivery. JunQi is a client of the `junqi.collab.*` Gateway
 RPC surface; it is not the workflow scheduler.
 
-Current package baseline: plugin `0.4.0`, SQLite schema `13`, OpenClaw
+Current package baseline: plugin `0.5.0`, SQLite schema `15`, OpenClaw
 `>=2026.7.1`.
 
 ## Execution boundary
@@ -39,7 +39,7 @@ Build and inspect locally:
 ```bash
 npm run collab:build
 npm run collab:pack
-openclaw plugins install --force --pin npm-pack:packages/junqi-collab/dist/junqi-openclaw-collaboration-0.4.0.tgz
+openclaw plugins install --force --pin npm-pack:packages/junqi-collab/dist/junqi-openclaw-collaboration-0.5.0.tgz
 openclaw plugins inspect junqi-collab --runtime --json
 ```
 
