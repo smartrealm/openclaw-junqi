@@ -41,7 +41,7 @@ export type GatewayReadyContinuation =
   | { status: "checking"; error: null }
   | { status: "failed"; error: string };
 
-export type WizardRecoveryMode = "wizard" | "reclaim" | "runtime" | "session" | "terminal-unknown" | null;
+export type WizardRecoveryMode = "wizard" | "reclaim" | "runtime" | "session" | "terminal-unknown" | "protocol-incompatible" | null;
 
 export interface SetupFlow {
   presentation: OnboardingPresentation;
@@ -62,6 +62,7 @@ export interface SetupFlow {
   wizardError: string | null;
   wizardRecoveryMode: WizardRecoveryMode;
   configurationMode: "guided" | "classic";
+  guidedSetupAvailable: boolean;
   guidedSetup: GuidedSetupController;
   needsOnboarding: boolean;
   gatewayReadyContinuation: GatewayReadyContinuation;
@@ -75,12 +76,14 @@ export interface SetupFlow {
   startGateway: () => Promise<boolean>;
   retryGateway: () => Promise<boolean>;
   continueAfterGatewayReady: () => Promise<void>;
+  continueAfterOpenClawUpdate: () => Promise<void>;
   repairAndRetry: () => Promise<void>;
   disablePluginsAndRetry: () => Promise<void>;
   submitWizardStep: (stepId: string, value?: unknown) => Promise<OpenClawWizardResult | null>;
   pollWizard: () => Promise<OpenClawWizardResult | null>;
   retryWizard: () => Promise<OpenClawWizardResult | null>;
   reclaimWizard: () => Promise<OpenClawWizardResult | null>;
+  returnToGuidedSetup: () => void;
   openClassicSetup: () => Promise<void>;
   runNativeSetup: () => Promise<boolean>;
   runDockerSetup: () => Promise<boolean>;

@@ -4218,6 +4218,8 @@
       "alreadyRunning": "现有 OpenClaw 配置会话仍在运行。点击“重新接管向导”会重启当前 Gateway 并继续配置，不会修改数据目录或工作区。",
       "reclaim": "重新接管向导",
       "requestTimeout": "OpenClaw 配置请求等待超时，请重新连接后继续。",
+      "protocolIncompatible": "OpenClaw Gateway 返回 INVALID_REQUEST，并明确拒绝 wizard.start.installDaemon。JunQi 需要该参数关闭 Wizard 的 Gateway service 安装分支，不能安全省略，也不会重复发送同一无效请求。",
+      "returnToGuided": "返回官方引导",
       "cancelled": "OpenClaw 配置向导已取消，请重试以开始新的配置会话。",
       "pauseAndReturn": "暂停并返回",
       "retry": "重试",
@@ -5074,7 +5076,10 @@
   "setup.runtimeDetails.methodCustom": "npm 全局安装（自定义 prefix）",
   "setup.runtimeDetails.methodExisting": "已有安装（跳过安装）",
   "setup.openclawUpdate.title": "OpenClaw 更新",
-  "setup.openclawUpdate.subtitle": "使用 OpenClaw 官方更新器识别安装方式、渠道和可用版本。检查更新不会阻止你继续下一步。",
+  "setup.openclawUpdate.subtitle": "使用 OpenClaw 官方更新器核验安装方式和生产渠道。JunQi 只受管 stable 与 extended-stable，不安装 beta 或 dev。",
+  "setup.openclawUpdate.stepTitle": "检查 OpenClaw 更新",
+  "setup.openclawUpdate.stepSubtitle": "已检测到本机现有 OpenClaw。完成更新检查后，再进入官方配置。",
+  "setup.guided.finishSetup": "完成配置核验",
   "setup.openclawUpdate.currentVersion": "当前版本",
   "setup.gatewayReadyTitle": "运行时已就绪",
   "setup.gatewayReadyCheckAction": "核验配置",
@@ -5143,6 +5148,10 @@
   "setup.openclawUpdate.channel.stable": "稳定版",
   "setup.openclawUpdate.channel.beta": "测试版",
   "setup.openclawUpdate.channel.dev": "开发版",
+  "setup.openclawUpdate.channel.extended-stable": "长期维护稳定版",
+  "setup.openclawUpdate.unsupportedChannelTitle": "当前渠道不受 JunQi 管理",
+  "setup.openclawUpdate.unsupportedChannelHint": "检测到 {{channel}}。JunQi 仅允许 stable 和 extended-stable 进入受管更新与配置；请按官方更新说明显式切换到稳定渠道后重新检查。",
+  "setup.openclawUpdate.unknownChannelHint": "OpenClaw 没有返回有效的更新渠道。为避免误装候选版本，JunQi 已停止受管更新与配置。",
   "setup.openclawUpdate.registryLabel": "更新源：{{registry}}",
   "setup.openclawUpdate.registry.official": "npm 官方源",
   "setup.openclawUpdate.registry.chinaMirror": "国内镜像",
@@ -5896,42 +5905,83 @@
   },
   "businessGuide": {
     "title": "开始使用",
-    "progress": "已确认完成 {{completed}} / {{total}} 项",
+    "firstSuccessLabel": "首次成功路径",
+    "contextualDescription": "跟随真实控件完成模型配置、新建会话，并以 OpenClaw 的首条回复核验完整链路。",
+    "startGuide": "开始配置",
+    "startAction": "开始",
+    "later": "稍后再说",
     "dismiss": "隐藏开始使用引导",
     "reopen": "显示开始使用引导",
-    "blocked": "请先连接 Gateway 后继续",
     "step": "第 {{current}} / {{total}} 步",
     "welcomeTitle": "欢迎使用 JunQi",
-    "welcomeDescription": "快速了解已验证工作台的核心能力。",
-    "skip": "跳过",
-    "skipStep": "跳过本步",
+    "welcomeDescription": "这次引导会停留在每个真实操作处，直到保存、会话创建或回复结果得到确认。",
+    "finishTitle": "首次对话已经打通",
+    "extensionReadyTitle": "已进入 OpenClaw 配置流程",
+    "exitGuide": "退出引导",
+    "targetMissing": "没有在当前页面找到需要操作的控件。页面可能仍在加载，或者当前状态暂不提供该操作。",
+    "retryTarget": "重新定位",
+    "useExistingConfig": "继续使用当前配置",
+    "verifiedByResponse": "当前会话已经收到模型回复，这证明本次会话到 Gateway 的端到端路径可用。",
+    "extensionHandoff": "引导已经打开真实操作入口，后续结果仍由 OpenClaw 官方流程确认。",
     "finish": "完成",
+    "state": {
+      "waitingSave": "保存成功后自动继续",
+      "waitingSession": "会话创建成功后自动继续",
+      "waitingResponse": "正在等待当前会话的模型回复"
+    },
     "tour": {
       "newSession": "点击高亮的新建会话控件继续。",
-      "addChannel": "点击高亮的添加渠道控件，继续官方配置流程。",
-      "finished": "可随时通过指南图标重新打开引导。",
-      "clickToContinue": "点击高亮控件继续"
+      "createSession": "选择智能体后点击高亮的新建桌面会话。创建失败时引导会留在这里。",
+      "addProvider": "点击高亮的添加模型服务进入真实配置。已有可用配置时，也可以明确选择继续使用。",
+      "chooseProvider": "在供应商目录中选择实际使用的服务。引导会在配置表单出现后继续。",
+      "saveProvider": "完成认证和模型选择后保存。只有现有配置写入链路返回成功，引导才会继续。",
+      "sendMessage": "在高亮的消息编辑器中输入并发送第一条指令。发送失败不会完成本步。",
+      "waitResponse": "保持当前会话打开。收到位于这条用户消息之后的真实助手内容时，引导才会完成。",
+      "addChannel": "点击高亮的添加渠道控件，将后续认证与核验交给 OpenClaw 官方流程。",
+      "addAgent": "点击高亮的添加智能体控件，在真实表单中管理 OpenClaw 智能体。",
+      "finished": "首次回复已经完成端到端核验。渠道和更多智能体可以按需继续配置。"
     },
     "tasks": {
-      "startChat": {
-        "title": "开始对话",
-        "description": "打开聊天并创建会话。"
+      "newSession": {
+        "title": "新建会话"
       },
-      "chooseModel": {
-        "title": "确认模型",
-        "description": "查看当前运行时的模型配置。"
+      "createSession": {
+        "title": "创建桌面会话"
       },
-      "reviewAgents": {
-        "title": "查看智能体",
-        "description": "查看 Gateway 返回的智能体。"
+      "configureModelProvider": {
+        "title": "配置模型供应商"
       },
-      "connectChannel": {
-        "title": "连接渠道",
-        "description": "继续官方渠道授权流程。"
+      "chooseModelProvider": {
+        "title": "选择模型供应商"
       },
-      "openWorkspace": {
-        "title": "打开工作区",
-        "description": "选择项目并打开它的终端工作区。"
+      "saveModelProvider": {
+        "title": "保存并应用配置"
+      },
+      "sendFirstMessage": {
+        "title": "发送第一条消息"
+      },
+      "waitFirstResponse": {
+        "title": "核验首次回复"
+      },
+      "configureChannel": {
+        "title": "配置渠道"
+      },
+      "manageAgents": {
+        "title": "管理智能体"
+      }
+    },
+    "extensions": {
+      "channel": {
+        "title": "连接消息渠道",
+        "description": "前往渠道中心并打开 OpenClaw 拥有的渠道配置入口。",
+        "action": "连接渠道",
+        "ready": "渠道目录已经打开。请在官方流程中继续认证和状态核验。"
+      },
+      "agent": {
+        "title": "管理智能体",
+        "description": "前往智能体中心并打开真实的新建智能体表单。",
+        "action": "管理智能体",
+        "ready": "智能体表单已经打开。请按 OpenClaw 当前支持的字段继续配置。"
       }
     }
   }

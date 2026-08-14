@@ -4,6 +4,7 @@ import type { GuidedSetupDetection } from "@/services/gateway/OpenClawGuidedSetu
 import { activateFirstWorkingGuidedCandidate } from "./guidedSetupCandidateLadder";
 
 const detection: GuidedSetupDetection = {
+  methodFamily: "openclaw",
   candidates: [
     {
       kind: "codex-cli",

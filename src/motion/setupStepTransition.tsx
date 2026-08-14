@@ -17,9 +17,10 @@ const SETUP_STEP_INDEX: Record<SetupStep, number> = {
   'install-node': 10,
   'install-openclaw': 11,
   'gateway-ready': 12,
-  'configure-openclaw': 13,
-  ready: 14,
-  error: 15,
+  'update-openclaw': 13,
+  'configure-openclaw': 14,
+  ready: 15,
+  error: 16,
 };
 
 export type SetupStepMotionDirection = -1 | 0 | 1;

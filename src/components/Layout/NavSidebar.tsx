@@ -1028,9 +1028,9 @@ export function NavSidebar() {
 
   // Sync explicit selection from URL for deep links / sidebar-internal navigation.
   useEffect(() => {
-    const resolved = resolveTab(location.pathname);
+    const resolved = resolveTab(`${location.pathname}${location.search}`);
     setActiveTab(resolved);
-  }, [location.pathname, setActiveTab]);
+  }, [location.pathname, location.search, setActiveTab]);
 
   if (isHidden) return null;
 

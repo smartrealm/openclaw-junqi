@@ -44,6 +44,8 @@ export function setupStepMessageKey(step: SetupStep): string {
     case "install-openclaw":
     case "gateway-ready":
       return "setup.gatewayConnected";
+    case "update-openclaw":
+      return "setup.openclawUpdate.stepTitle";
     case "configure-openclaw":
       return "setup.wizard.title";
   }
@@ -70,6 +72,8 @@ export function setupStepProgress(step: SetupStep): number {
       return 52;
     case "gateway-ready":
       return 74;
+    case "update-openclaw":
+      return 78;
     case "configure-openclaw":
       return 82;
     case "ready":

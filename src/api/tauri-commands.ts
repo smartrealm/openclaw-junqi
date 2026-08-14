@@ -160,6 +160,7 @@ export interface OpenclawUpdateStatus {
   gitBehind: number | null;
   channel: string | null;
   channelLabel: string | null;
+  managedChannelPolicy: 'eligible' | 'unsupported' | 'unknown';
   installKind: string | null;
   packageManager: string | null;
   npmRegistry: string | null;

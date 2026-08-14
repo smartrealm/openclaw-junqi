@@ -180,11 +180,20 @@ pub struct OpenclawUpdateStatus {
     pub git_behind: Option<i64>,
     pub channel: Option<String>,
     pub channel_label: Option<String>,
+    pub managed_channel_policy: ManagedUpdateChannelPolicy,
     pub install_kind: Option<String>,
     pub package_manager: Option<String>,
     pub npm_registry: Option<String>,
     pub npm_registry_kind: Option<NpmRegistryKind>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ManagedUpdateChannelPolicy {
+    Eligible,
+    Unsupported,
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -273,6 +282,28 @@ struct RawDryRunUpdateStatus {
 #[derive(Debug, Deserialize)]
 struct RawVersionMarker {
     version: Option<String>,
+}
+
+fn managed_update_channel_policy(channel: Option<&str>) -> ManagedUpdateChannelPolicy {
+    match channel {
+        Some("stable" | "extended-stable") => ManagedUpdateChannelPolicy::Eligible,
+        Some(_) => ManagedUpdateChannelPolicy::Unsupported,
+        None => ManagedUpdateChannelPolicy::Unknown,
+    }
+}
+
+fn require_managed_update_channel(channel: Option<&str>) -> Result<(), String> {
+    match managed_update_channel_policy(channel) {
+        ManagedUpdateChannelPolicy::Eligible => Ok(()),
+        ManagedUpdateChannelPolicy::Unsupported => Err(format!(
+            "JunQi manages OpenClaw updates only on stable or extended-stable; the current channel is {}",
+            channel.unwrap_or("unknown")
+        )),
+        ManagedUpdateChannelPolicy::Unknown => Err(
+            "OpenClaw did not report its effective update channel; JunQi did not start a managed update"
+                .to_string(),
+        ),
+    }
 }
 
 fn build_openclaw_command(
@@ -695,6 +726,7 @@ fn empty_update_status(installed_version: Option<String>, error: String) -> Open
         git_behind: None,
         channel: None,
         channel_label: None,
+        managed_channel_policy: ManagedUpdateChannelPolicy::Unknown,
         install_kind: None,
         package_manager: None,
         npm_registry: None,
@@ -714,6 +746,7 @@ fn parse_update_status(
     let install_kind = payload.update.install_kind;
     let package_manager = payload.update.package_manager;
 
+    let channel = payload.channel.value;
     Ok(OpenclawUpdateStatus {
         current_version: installed_version.clone(),
         installed_version,
@@ -725,7 +758,8 @@ fn parse_update_status(
         has_git_update: payload.availability.has_git_update,
         has_registry_update: payload.availability.has_registry_update,
         git_behind: payload.availability.git_behind,
-        channel: payload.channel.value,
+        managed_channel_policy: managed_update_channel_policy(channel.as_deref()),
+        channel,
         channel_label: payload.channel.label,
         install_kind,
         package_manager,
@@ -778,6 +812,7 @@ fn update_status_from_npm_dry_run(
         None
     };
 
+    let channel = payload.effective_channel;
     OpenclawUpdateStatus {
         installed_version: detected_version,
         current_version,
@@ -786,8 +821,9 @@ fn update_status_from_npm_dry_run(
         has_git_update: false,
         has_registry_update: available,
         git_behind: None,
-        channel: payload.effective_channel.clone(),
-        channel_label: payload.effective_channel,
+        managed_channel_policy: managed_update_channel_policy(channel.as_deref()),
+        channel_label: channel.clone(),
+        channel,
         install_kind: payload.install_kind,
         package_manager: payload.mode,
         npm_registry: source
@@ -1043,6 +1079,11 @@ pub async fn update_openclaw(
             return Err(error);
         }
     };
+    if let Err(error) = require_managed_update_channel(dry_run_status.effective_channel.as_deref())
+    {
+        emit_update_error(&app, &error, Some(0.38));
+        return Err(error);
+    }
     let target_contract =
         match resolve_update_target_contract(&dry_run_status, &metadata_source).await {
             Ok(contract) => contract,
@@ -1297,6 +1338,10 @@ mod tests {
         assert_eq!(status.latest_version.as_deref(), Some("2026.7.1"));
         assert_eq!(status.install_kind.as_deref(), Some("package"));
         assert_eq!(status.package_manager.as_deref(), Some("npm"));
+        assert_eq!(
+            status.managed_channel_policy,
+            ManagedUpdateChannelPolicy::Eligible
+        );
     }
 
     #[test]
@@ -1320,6 +1365,10 @@ mod tests {
         assert!(status.has_git_update);
         assert_eq!(status.git_behind, Some(3));
         assert_eq!(status.channel.as_deref(), Some("dev"));
+        assert_eq!(
+            status.managed_channel_policy,
+            ManagedUpdateChannelPolicy::Unsupported
+        );
         assert_eq!(status.latest_version, None);
     }
 
@@ -1416,6 +1465,15 @@ mod tests {
         .unwrap();
 
         assert!(npm_dry_run_needs_registry_fallback(&dry_run));
+    }
+
+    #[test]
+    fn managed_updates_accept_only_official_production_channels() {
+        assert!(require_managed_update_channel(Some("stable")).is_ok());
+        assert!(require_managed_update_channel(Some("extended-stable")).is_ok());
+        assert!(require_managed_update_channel(Some("beta")).is_err());
+        assert!(require_managed_update_channel(Some("dev")).is_err());
+        assert!(require_managed_update_channel(None).is_err());
     }
 
     #[test]

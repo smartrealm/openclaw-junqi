@@ -49,6 +49,7 @@ import { useSetupEnvironmentReview } from "./useSetupEnvironmentReview";
 import { isEnvironmentReviewActionInFlight } from "./environmentReviewAction";
 import { useSetupPresentation } from "./useSetupPresentation";
 import { useSetupInstallers } from "./useSetupInstallers";
+import { shouldVisitOpenClawUpdateStep } from "./setupPreflight";
 import {
   AUTO_ADVANCE_GATEWAY_STEP,
   INITIAL_DOCKER_STEPS,
@@ -97,6 +98,7 @@ export function useSetupFlow(
   const [openclawStatus, setOpenclawStatus] = useState<OpenclawStatus | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(true);
   const [configurationMode, setConfigurationMode] = useState<"guided" | "classic">("guided");
+  const [guidedSetupAvailable, setGuidedSetupAvailable] = useState(false);
   const [enteringDashboard, setEnteringDashboard] = useState(false);
   const [dashboardEntryError, setDashboardEntryError] = useState<string | null>(null);
   const dashboardEntryInFlightRef = useRef(false);
@@ -206,6 +208,7 @@ export function useSetupFlow(
     });
     const capability = await resolveOpenClawSetupCapability(() => client.detect());
     activeSetupCapabilityRef.current = capability;
+    setGuidedSetupAvailable(capability.mode === "guided");
     setConfigurationMode(capability.mode);
     // 稳定版 Classic Wizard 没有全局只读完成探针。该模式只沿用当前流程中
     // 已由官方 Wizard 终态更新的需求状态，不从 Gateway 健康或配置文本猜测。
@@ -273,6 +276,7 @@ export function useSetupFlow(
     retryWizard,
     reclaimWizard,
     prepareWizard,
+    clearWizardFailure,
     invalidateWizardOperations,
     setWizardStep,
     setWizardError,
@@ -290,10 +294,26 @@ export function useSetupFlow(
     setGatewayRunning,
   });
 
-  const completeGuidedSetup = useCallback(async () => {
+  const completeGuidedSetup = useCallback(async (evidence: {
+    methodFamily: "openclaw" | "crestodian";
+    activation?: { ok: true; modelRef: string };
+  }) => {
     const client = new OpenClawGuidedSetupClient({
       requestPrivileged: (method, params) => gateway.callPrivileged(method, params),
     });
+    const modelEvidence = (() => {
+      if (evidence.methodFamily === "openclaw") {
+        return { kind: "verify-rpc" as const, verifyModel: () => client.verify() };
+      }
+      const activation = evidence.activation;
+      if (!activation) {
+        throw new Error(t(
+          "setup.handoff.model-unverified",
+          "OpenClaw 配置已存在，但当前稳定协议没有返回本次流程的模型实测证据。请重新选择模型并完成核验。",
+        ));
+      }
+      return { kind: "activation" as const, modelRef: activation.modelRef };
+    })();
     const handoff = await performOpenClawSetupHandoff({
       waitForLifecycleIdle: (boundary) => gatewayLifecycle.waitForIdle(boundary),
       isLifecycleReceiptCurrent: (receipt) => gatewayLifecycle.isIdleReceiptCurrent(receipt),
@@ -328,7 +348,7 @@ export function useSetupFlow(
     }, {
       kind: "guided",
       detectSetup: () => client.detect(),
-      verifyModel: () => client.verify(),
+      modelEvidence,
     });
     if (!handoff.ready) {
       if (handoff.diagnostic) {
@@ -355,6 +375,13 @@ export function useSetupFlow(
   const switchToClassicConfiguration = useCallback(() => {
     setConfigurationMode("classic");
   }, []);
+
+  const returnToGuidedSetup = useCallback(() => {
+    if (!guidedSetupAvailable) return;
+    clearWizardFailure();
+    setConfigurationMode("guided");
+    replaceSetupStep("configure-openclaw");
+  }, [clearWizardFailure, guidedSetupAvailable, replaceSetupStep]);
 
   const guidedSetup = useGuidedSetupSession({
     enabled: setupStep === "configure-openclaw" && configurationMode === "guided",
@@ -385,7 +412,8 @@ export function useSetupFlow(
     requestedMode?: InstallMode,
     existingRunId?: number,
   ): Promise<boolean> => {
-    const runId = existingRunId ?? beginRun();
+    // 单独启动 Gateway 不会重新选择安装目标，保留检测到的已有安装身份供后续更新步骤使用。
+    const runId = existingRunId ?? beginOperationRun();
     setGatewayRunning(false);
     navigateSetup("checking", "push");
     reportPhase("gatewayConfig", t("setup.gatewayReadingConfig", "正在读取 Gateway 配置…"));
@@ -437,9 +465,9 @@ export function useSetupFlow(
       replaceSetupStep("error");
       return false;
     }
-  }, [beginRun, isRunActive, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForAuthenticatedGateway, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
+  }, [beginOperationRun, isRunActive, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForAuthenticatedGateway, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
 
-  const continueAfterGatewayReady = useCallback(async () => {
+  const continueAfterGatewayConfiguration = useCallback(async () => {
     if (gatewayReadyContinuationInFlightRef.current) return;
     gatewayReadyContinuationInFlightRef.current = true;
     setGatewayReadyContinuation({ status: "checking", error: null });
@@ -489,6 +517,20 @@ export function useSetupFlow(
       gatewayReadyContinuationInFlightRef.current = false;
     }
   }, [appendSetupLog, gatewayRunning, navigateSetup, prepareOpenClawConfiguration, report, resolveActiveRuntimeOnboardingRequirement, setSetupError, startGatewayAction, t]);
+
+  const continueAfterGatewayReady = useCallback(async () => {
+    if (gatewayReadyContinuationInFlightRef.current) return;
+    if (shouldVisitOpenClawUpdateStep(installMode, installTarget?.tier ?? null)) {
+      setGatewayReadyContinuation({ status: "idle", error: null });
+      navigateSetup("update-openclaw", "push");
+      return;
+    }
+    await continueAfterGatewayConfiguration();
+  }, [continueAfterGatewayConfiguration, installMode, installTarget?.tier, navigateSetup]);
+
+  const continueAfterOpenClawUpdate = useCallback(async () => {
+    await continueAfterGatewayConfiguration();
+  }, [continueAfterGatewayConfiguration]);
 
   const openClassicSetup = useCallback(async () => {
     if (gatewayReadyContinuationInFlightRef.current || isWizardOperationInFlight()) return;
@@ -1054,6 +1096,7 @@ export function useSetupFlow(
     wizardError,
     wizardRecoveryMode,
     configurationMode,
+    guidedSetupAvailable,
     guidedSetup,
     needsOnboarding,
     gatewayReadyContinuation,
@@ -1067,6 +1110,7 @@ export function useSetupFlow(
     dashboardEntryError,
     startGateway: startGatewayAction,
     continueAfterGatewayReady,
+    continueAfterOpenClawUpdate,
     retryGateway: startGatewayAction,
     repairAndRetry,
     disablePluginsAndRetry,
@@ -1074,6 +1118,7 @@ export function useSetupFlow(
     pollWizard,
     retryWizard,
     reclaimWizard,
+    returnToGuidedSetup,
     openClassicSetup,
     runNativeSetup,
     runDockerSetup,

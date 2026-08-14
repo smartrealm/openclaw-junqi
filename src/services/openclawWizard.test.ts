@@ -11,6 +11,7 @@ import {
   OpenClawWizardOperationSupersededError,
   createScopedOpenClawWizardSessionStore,
 } from './openclawWizard';
+import { GatewayRpcError } from '@/services/gateway/Connection';
 
 test('wizard client preserves dynamic option values and session lifecycle', async () => {
   const calls: Array<{ method: string; params: Record<string, unknown>; options?: { timeoutMs?: number | null } }> = [];
@@ -584,6 +585,17 @@ test('recognizes only recoverable wizard session loss errors', () => {
     code: 'INVALID_REQUEST',
     details: { code: 'WIZARD_NOT_FOUND' },
   }), 'session_lost');
+});
+
+test('BUG-02 将正式 installDaemon 字段拒绝分类为不可重复的协议不满足', () => {
+  assert.equal(classifyOpenClawWizardFailure(new GatewayRpcError(
+    "invalid wizard.start params: at root: unexpected property 'installDaemon'",
+    'INVALID_REQUEST',
+  )), 'protocol_unsupported');
+  assert.equal(classifyOpenClawWizardFailure(new GatewayRpcError(
+    "invalid wizard.start params: at root: unexpected property 'workspace'",
+    'INVALID_REQUEST',
+  )), 'unknown');
 });
 
 test('resumes a desynchronized wizard without replaying an answer', async () => {

@@ -78,6 +78,8 @@ function localizedSetupMessage(app: ReturnType<typeof useAppStore.getState>): st
       return i18n.t('setup.installingOpenclaw', { defaultValue: 'Installing OpenClaw...' });
     case 'gateway-ready':
       return i18n.t('setup.gatewayConnected', { defaultValue: 'Gateway is ready' });
+    case 'update-openclaw':
+      return i18n.t('setup.openclawUpdate.stepTitle', { defaultValue: 'Check for OpenClaw updates' });
     case 'configure-openclaw':
       return i18n.t('setup.wizard.title');
     case 'ready':
@@ -98,6 +100,7 @@ function setupStepTitleKey(step: ReturnType<typeof useAppStore.getState>['setupS
     case 'storage':
       return 'setup.steps.storage.title';
     case 'gateway-ready':
+    case 'update-openclaw':
     case 'configure-openclaw':
       return 'setup.steps.configuration.title';
     case 'gateway-stopped':

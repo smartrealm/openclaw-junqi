@@ -4225,6 +4225,8 @@
       "alreadyRunning": "An OpenClaw setup session is still running. Take over setup to restart the selected Gateway and continue without changing the data directory or workspace.",
       "reclaim": "Take over setup",
       "requestTimeout": "The OpenClaw setup request timed out. Reconnect to continue.",
+      "protocolIncompatible": "OpenClaw Gateway returned INVALID_REQUEST and explicitly rejected wizard.start.installDaemon. JunQi needs this parameter to disable the Wizard Gateway service installation branch, so it cannot safely omit it or repeat the same invalid request.",
+      "returnToGuided": "Return to guided setup",
       "cancelled": "The OpenClaw setup wizard was cancelled. Retry to start a new setup session.",
       "pauseAndReturn": "Pause and return",
       "retry": "Retry",
@@ -5051,7 +5053,10 @@
   "setup.runtimeDetails.methodCustom": "Global npm install (custom prefix)",
   "setup.runtimeDetails.methodExisting": "Existing install (install skipped)",
   "setup.openclawUpdate.title": "OpenClaw updates",
-  "setup.openclawUpdate.subtitle": "Use the official OpenClaw updater to detect the install type, channel, and available version. Checking never blocks the next step.",
+  "setup.openclawUpdate.subtitle": "Use the official OpenClaw updater to verify the install type and production channel. JunQi manages only stable and extended-stable, never beta or dev.",
+  "setup.openclawUpdate.stepTitle": "Check for OpenClaw updates",
+  "setup.openclawUpdate.stepSubtitle": "An existing local OpenClaw installation was detected. Check for updates before starting official setup.",
+  "setup.guided.finishSetup": "Complete configuration verification",
   "setup.openclawUpdate.currentVersion": "Current",
   "setup.gatewayReadyTitle": "Runtime ready",
   "setup.gatewayReadyCheckAction": "Verify configuration",
@@ -5120,6 +5125,10 @@
   "setup.openclawUpdate.channel.stable": "Stable",
   "setup.openclawUpdate.channel.beta": "Beta",
   "setup.openclawUpdate.channel.dev": "Development",
+  "setup.openclawUpdate.channel.extended-stable": "Extended stable",
+  "setup.openclawUpdate.unsupportedChannelTitle": "Current channel is not managed by JunQi",
+  "setup.openclawUpdate.unsupportedChannelHint": "Detected {{channel}}. JunQi allows managed updates and setup only on stable or extended-stable. Switch explicitly using the official update guide, then check again.",
+  "setup.openclawUpdate.unknownChannelHint": "OpenClaw did not report a valid update channel. JunQi stopped managed updates and setup to avoid installing a candidate build.",
   "setup.openclawUpdate.registryLabel": "Update source: {{registry}}",
   "setup.openclawUpdate.registry.official": "npm official registry",
   "setup.openclawUpdate.registry.chinaMirror": "China mirror",
@@ -5873,42 +5882,83 @@
   },
   "businessGuide": {
     "title": "Get started",
-    "progress": "{{completed}} of {{total}} verified tasks complete",
+    "firstSuccessLabel": "First successful path",
+    "contextualDescription": "Configure a model, create a session, and verify the full path with a real OpenClaw reply.",
+    "startGuide": "Start setup",
+    "startAction": "Start",
+    "later": "Later",
     "dismiss": "Hide getting started",
     "reopen": "Show getting started",
-    "blocked": "Connect to the Gateway to continue",
     "step": "Step {{current}} of {{total}}",
     "welcomeTitle": "Welcome to JunQi",
-    "welcomeDescription": "A short tour of the verified workspace capabilities.",
-    "skip": "Skip",
-    "skipStep": "Skip this step",
+    "welcomeDescription": "This guide stays with each real control until saving, session creation, or a reply is confirmed.",
+    "finishTitle": "Your first conversation works",
+    "extensionReadyTitle": "OpenClaw configuration opened",
+    "exitGuide": "Exit guide",
+    "targetMissing": "The required control was not found on this page. The page may still be loading, or the current state may not provide this action.",
+    "retryTarget": "Locate again",
+    "useExistingConfig": "Use current configuration",
+    "verifiedByResponse": "This session received a model reply, confirming the end-to-end path to the Gateway for this conversation.",
+    "extensionHandoff": "The guide opened the real operation. OpenClaw's official flow still owns the final result.",
     "finish": "Finish",
+    "state": {
+      "waitingSave": "Continues after the configuration is saved",
+      "waitingSession": "Continues after the session is created",
+      "waitingResponse": "Waiting for a model reply in this session"
+    },
     "tour": {
       "newSession": "Click the highlighted New session control to continue.",
-      "addChannel": "Click the highlighted Add channel control to continue with the official setup flow.",
-      "finished": "You can reopen this guide at any time from the compass control.",
-      "clickToContinue": "Click the highlighted control"
+      "createSession": "Choose an agent, then click the highlighted New desktop session action. A failed creation keeps the guide here.",
+      "addProvider": "Click the highlighted Add model service control. If the current configuration is already usable, you may explicitly continue with it.",
+      "chooseProvider": "Choose the service you actually use. The guide continues when its configuration form appears.",
+      "saveProvider": "Complete authentication and model selection, then save. The guide continues only after the existing configuration write succeeds.",
+      "sendMessage": "Enter and send your first instruction in the highlighted composer. A failed send does not complete this step.",
+      "waitResponse": "Keep this session open. The guide completes only when real assistant content appears after the guided user message.",
+      "addChannel": "Click the highlighted Add channel control. OpenClaw's official flow owns authentication and verification from there.",
+      "addAgent": "Click the highlighted Add Agent control and continue in the real OpenClaw agent form.",
+      "finished": "The first reply completed the end-to-end check. Add channels or more agents only when you need them."
     },
     "tasks": {
-      "startChat": {
-        "title": "Start a conversation",
-        "description": "Open Chat and create a session."
+      "newSession": {
+        "title": "Create a session"
       },
-      "chooseModel": {
-        "title": "Verify a model",
-        "description": "Review the current runtime model configuration."
+      "createSession": {
+        "title": "Create a desktop session"
       },
-      "reviewAgents": {
-        "title": "Review agents",
-        "description": "See the agents reported by the Gateway."
+      "configureModelProvider": {
+        "title": "Configure a model provider"
       },
-      "connectChannel": {
-        "title": "Connect a channel",
-        "description": "Continue with the official channel authorization flow."
+      "chooseModelProvider": {
+        "title": "Choose a model provider"
       },
-      "openWorkspace": {
-        "title": "Open a workspace",
-        "description": "Choose a project and open its terminal workspace."
+      "saveModelProvider": {
+        "title": "Save and apply configuration"
+      },
+      "sendFirstMessage": {
+        "title": "Send your first message"
+      },
+      "waitFirstResponse": {
+        "title": "Verify the first reply"
+      },
+      "configureChannel": {
+        "title": "Configure a channel"
+      },
+      "manageAgents": {
+        "title": "Manage agents"
+      }
+    },
+    "extensions": {
+      "channel": {
+        "title": "Connect a message channel",
+        "description": "Open Channels and enter the channel setup flow owned by OpenClaw.",
+        "action": "Connect channel",
+        "ready": "The channel catalog is open. Continue authentication and status verification in the official flow."
+      },
+      "agent": {
+        "title": "Manage agents",
+        "description": "Open the agent center and enter the real new-agent form.",
+        "action": "Manage agents",
+        "ready": "The agent form is open. Continue with the fields supported by the current OpenClaw runtime."
       }
     }
   }

@@ -13,6 +13,7 @@ const status: OpenclawUpdateStatus = {
   gitBehind: null,
   channel: 'stable',
   channelLabel: 'stable (default)',
+  managedChannelPolicy: 'eligible',
   installKind: 'package',
   packageManager: 'npm',
   npmRegistry: 'https://registry.npmjs.org',

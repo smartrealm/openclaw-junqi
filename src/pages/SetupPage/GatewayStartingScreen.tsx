@@ -3,13 +3,10 @@ import { useTranslation } from 'react-i18next';
 import type { SetupLog } from '@/stores/app-store';
 import type { SetupFlow } from '@/hooks/useSetupFlow';
 import { OpenClawRuntimeDetails, SetupShell, StatusPanel } from '@/components/setup/SetupFlowPanels';
-import { OpenClawUpdatePanel } from '@/components/shared/OpenClawUpdatePanel';
-import { useSetupNavigation } from './shared';
 
 /** Gateway 启动属于可取消执行，不把未完成的启动描述为已停止状态。 */
 export function GatewayStartingScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog[] }) {
   const { t } = useTranslation();
-  const navigateSetup = useSetupNavigation();
   return (
     <SetupShell
       active={flow.presentation.stage}
@@ -43,17 +40,6 @@ export function GatewayStartingScreen({ flow, logs }: { flow: SetupFlow; logs: S
           installTarget={flow.installTarget}
           gatewayState="starting"
         />
-        {flow.openclawStatus?.installed && (
-          <OpenClawUpdatePanel
-            currentVersion={flow.openclawStatus.version}
-            onUpdated={async () => {
-              const refreshed = await flow.refreshRuntime();
-              if (refreshed.gatewayRunning) {
-                navigateSetup(refreshed.needsOnboarding ? 'configure-openclaw' : 'ready');
-              }
-            }}
-          />
-        )}
       </div>
     </SetupShell>
   );

@@ -16,6 +16,14 @@ export const OPENCLAW_GUIDED_SETUP_METHODS = {
   chat: 'openclaw.chat',
 } as const;
 
+export const OPENCLAW_CRESTODIAN_GUIDED_SETUP_METHODS = {
+  detect: 'crestodian.setup.detect',
+  activate: 'crestodian.setup.activate',
+  chat: 'crestodian.chat',
+} as const;
+
+export type GuidedSetupMethodFamily = 'openclaw' | 'crestodian';
+
 const SETUP_KINDS = [
   'existing-model',
   'openai-api-key',
@@ -106,6 +114,7 @@ export interface GuidedSetupRecommendedInstall {
 }
 
 export interface GuidedSetupDetection {
+  methodFamily: GuidedSetupMethodFamily;
   candidates: GuidedSetupCandidate[];
   unavailableCandidates: GuidedSetupUnavailableCandidate[];
   manualProviders: GuidedSetupManualProvider[];
@@ -324,17 +333,28 @@ function parseArray<T>(
   return result.every((item): item is T => item !== null) ? result : null;
 }
 
-export function parseGuidedSetupDetection(value: unknown): GuidedSetupDetection {
+export function parseGuidedSetupDetection(
+  value: unknown,
+  methodFamily: GuidedSetupMethodFamily = 'openclaw',
+): GuidedSetupDetection {
   const source = record(value);
   if (!source || typeof source.setupComplete !== 'boolean') {
     throw new OpenClawGuidedSetupResponseError(OPENCLAW_GUIDED_SETUP_METHODS.detect);
   }
   const candidates = parseArray(source.candidates, parseCandidate);
-  const unavailableCandidates = parseArray(source.unavailableCandidates, parseUnavailableCandidate);
+  const unavailableCandidates = methodFamily === 'crestodian'
+    ? []
+    : parseArray(source.unavailableCandidates, parseUnavailableCandidate);
   const manualProviders = parseArray(source.manualProviders, parseManualProvider);
-  const authOptions = parseArray(source.authOptions, parseAuthOption);
-  const prepareOptions = parseArray(source.prepareOptions, parsePrepareOption, true);
-  const recommendedInstalls = parseArray(source.recommendedInstalls, parseRecommendedInstall);
+  const authOptions = methodFamily === 'crestodian'
+    ? []
+    : parseArray(source.authOptions, parseAuthOption);
+  const prepareOptions = methodFamily === 'crestodian'
+    ? undefined
+    : parseArray(source.prepareOptions, parsePrepareOption, true);
+  const recommendedInstalls = methodFamily === 'crestodian'
+    ? []
+    : parseArray(source.recommendedInstalls, parseRecommendedInstall);
   const workspace = text(source.workspace);
   const configuredModel = optionalText(source.configuredModel);
   if (!candidates || !unavailableCandidates || !manualProviders || !authOptions
@@ -343,6 +363,7 @@ export function parseGuidedSetupDetection(value: unknown): GuidedSetupDetection 
     throw new OpenClawGuidedSetupResponseError(OPENCLAW_GUIDED_SETUP_METHODS.detect);
   }
   return {
+    methodFamily,
     candidates,
     unavailableCandidates,
     manualProviders,
@@ -493,30 +514,98 @@ function parseChatQuestion(value: unknown): GuidedSetupChatQuestion | null {
 }
 
 export class OpenClawGuidedSetupClient {
+  private methodFamily: GuidedSetupMethodFamily | null = null;
+
   constructor(private readonly dependencies: OpenClawGuidedSetupClientDependencies) {}
 
-  detect(): Promise<GuidedSetupDetection> {
-    return this.request(OPENCLAW_GUIDED_SETUP_METHODS.detect, {}, parseGuidedSetupDetection);
+  async detect(): Promise<GuidedSetupDetection> {
+    if (this.methodFamily === 'crestodian') {
+      return this.request(
+        OPENCLAW_CRESTODIAN_GUIDED_SETUP_METHODS.detect,
+        {},
+        (value) => parseGuidedSetupDetection(value, 'crestodian'),
+      );
+    }
+    try {
+      const result = await this.request(
+        OPENCLAW_GUIDED_SETUP_METHODS.detect,
+        {},
+        (value) => parseGuidedSetupDetection(value, 'openclaw'),
+      );
+      this.methodFamily = 'openclaw';
+      return result;
+    } catch (error) {
+      if (!(error instanceof OpenClawGuidedSetupMethodUnavailableError)
+        || error.availability !== 'unsupported') {
+        throw error;
+      }
+    }
+    const result = await this.request(
+      OPENCLAW_CRESTODIAN_GUIDED_SETUP_METHODS.detect,
+      {},
+      (value) => parseGuidedSetupDetection(value, 'crestodian'),
+    );
+    this.methodFamily = 'crestodian';
+    return result;
+  }
+
+  useMethodFamily(methodFamily: GuidedSetupMethodFamily): void {
+    this.methodFamily = methodFamily;
   }
 
   activate(params: GuidedSetupActivateParams): Promise<GuidedSetupActivation> {
-    return this.request(OPENCLAW_GUIDED_SETUP_METHODS.activate, params, parseActivation);
+    const methodFamily = this.requireMethodFamily();
+    const method = methodFamily === 'crestodian'
+      ? OPENCLAW_CRESTODIAN_GUIDED_SETUP_METHODS.activate
+      : OPENCLAW_GUIDED_SETUP_METHODS.activate;
+    const requestParams = methodFamily === 'crestodian'
+      ? {
+          kind: params.kind,
+          ...(params.authChoice !== undefined ? { authChoice: params.authChoice } : {}),
+          ...(params.apiKey !== undefined ? { apiKey: params.apiKey } : {}),
+          ...(params.workspace !== undefined ? { workspace: params.workspace } : {}),
+        }
+      : params;
+    return this.request(method, requestParams, parseActivation);
   }
 
   verify(): Promise<GuidedSetupVerification> {
+    this.assertCurrentMethods('verify');
     return this.request(OPENCLAW_GUIDED_SETUP_METHODS.verify, {}, parseVerification);
   }
 
   startAuth(params: GuidedSetupWizardStartParams): Promise<OpenClawWizardStartResult> {
+    this.assertCurrentMethods('authStart');
     return this.request(OPENCLAW_GUIDED_SETUP_METHODS.authStart, params, parseOpenClawHostedWizardStartResult);
   }
 
   startPrepare(params: GuidedSetupWizardStartParams): Promise<OpenClawWizardStartResult> {
+    this.assertCurrentMethods('prepareStart');
     return this.request(OPENCLAW_GUIDED_SETUP_METHODS.prepareStart, params, parseOpenClawHostedWizardStartResult);
   }
 
   chat(params: GuidedSetupChatParams): Promise<GuidedSetupChatResult> {
-    return this.request(OPENCLAW_GUIDED_SETUP_METHODS.chat, params, parseChat);
+    const methodFamily = this.requireMethodFamily();
+    const method = methodFamily === 'crestodian'
+      ? OPENCLAW_CRESTODIAN_GUIDED_SETUP_METHODS.chat
+      : OPENCLAW_GUIDED_SETUP_METHODS.chat;
+    if (methodFamily === 'crestodian' && (params.wizardAnswer || params.wizardCancel)) {
+      throw new OpenClawGuidedSetupMethodUnavailableError(method, 'unsupported');
+    }
+    return this.request(method, params, parseChat);
+  }
+
+  private requireMethodFamily(): GuidedSetupMethodFamily {
+    if (this.methodFamily) return this.methodFamily;
+    throw new OpenClawGuidedSetupResponseError(OPENCLAW_GUIDED_SETUP_METHODS.detect);
+  }
+
+  private assertCurrentMethods(method: keyof typeof OPENCLAW_GUIDED_SETUP_METHODS): void {
+    if (this.requireMethodFamily() === 'openclaw') return;
+    throw new OpenClawGuidedSetupMethodUnavailableError(
+      OPENCLAW_GUIDED_SETUP_METHODS[method],
+      'unsupported',
+    );
   }
 
   private async request<T, P extends object>(

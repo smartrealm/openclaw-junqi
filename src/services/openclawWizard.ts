@@ -1,6 +1,7 @@
 import { debugWarn } from '@/utils/debugLog';
 import { wizardRuntimeScopeKey } from '@/services/setup/wizardRuntimeScope';
 import { isOpenClawSetupAdmissionBusy } from '@/services/setup/openClawSetupAdmission';
+import { GatewayRpcError } from '@/services/gateway/Connection';
 
 export type OpenClawWizardStepType =
   | 'note'
@@ -179,6 +180,7 @@ export type OpenClawWizardFailureKind =
   | 'step_desynchronized'
   | 'already_running'
   | 'request_timeout'
+  | 'protocol_unsupported'
   | 'cancelled'
   | 'unknown';
 
@@ -715,6 +717,11 @@ export function classifyOpenClawWizardFailure(error: unknown): OpenClawWizardFai
     ? record.details as Record<string, unknown>
     : null;
   const code = String(details?.code ?? record?.code ?? '').toUpperCase();
+  if (error instanceof GatewayRpcError
+    && error.code === 'INVALID_REQUEST'
+    && error.message === "invalid wizard.start params: at root: unexpected property 'installDaemon'") {
+    return 'protocol_unsupported';
+  }
   if (normalized.includes('wizard not found')
     || normalized.includes('wizard not running')
     || normalized.includes('wizard session is not running')

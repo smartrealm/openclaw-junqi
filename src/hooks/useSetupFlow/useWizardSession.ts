@@ -29,6 +29,7 @@ import {
 } from "@/services/openclawWizard";
 import { cacheGatewayTarget } from "./helpers";
 import type { StepStatus, WizardRecoveryMode } from "./types";
+import { wizardFailureDestination } from "./setupPreflight";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import {
   performOpenClawSetupHandoff,
@@ -138,6 +139,8 @@ export function useWizardSession({
         return t("setup.wizard.alreadyRunning", "另一个 OpenClaw 配置会话仍在运行，请完成或关闭后重试。");
       case "request_timeout":
         return t("setup.wizard.requestTimeout", "OpenClaw 配置请求等待超时，请重新连接后继续。");
+      case "protocol_unsupported":
+        return t("setup.wizard.protocolIncompatible", "OpenClaw Gateway 返回 INVALID_REQUEST，并明确拒绝 wizard.start.installDaemon。JunQi 需要该参数关闭 Wizard 的 Gateway service 安装分支，不能安全省略，也不会重复发送同一无效请求。");
       case "cancelled":
         return t("setup.wizard.cancelled", "OpenClaw 配置向导已取消，请重试以开始新的配置会话。");
       case "unknown": {
@@ -157,7 +160,9 @@ export function useWizardSession({
   ): WizardRecoveryMode => {
     if (error instanceof OpenClawWizardTerminalUnknownError) return "terminal-unknown";
     if (error instanceof OpenClawWizardRecoveryVerificationError) return "session";
-    if (classifyOpenClawWizardFailure(error) === "already_running") return "reclaim";
+    const failure = classifyOpenClawWizardFailure(error);
+    if (failure === "already_running") return "reclaim";
+    if (failure === "protocol_unsupported") return "protocol-incompatible";
     return fallback;
   }, []);
   const invalidateWizardOperations = useCallback(() => {
@@ -475,12 +480,17 @@ export function useWizardSession({
     } catch (error) {
       if (error instanceof OpenClawWizardOperationSupersededError) return null;
       const message = wizardFailureMessage(error);
-      setWizardRecoveryMode(wizardRecoveryModeForFailure(error));
+      const recoveryMode = wizardRecoveryModeForFailure(error);
+      setWizardRecoveryMode(recoveryMode);
       setWizardActivity(null);
       setWizardError(message);
       setSetupError(message);
-      if (surfaceFailureOnConfigurationPage) {
-        replaceSetupStep("configure-openclaw");
+      const failureDestination = wizardFailureDestination(
+        surfaceFailureOnConfigurationPage,
+        recoveryMode,
+      );
+      if (failureDestination) {
+        replaceSetupStep(failureDestination);
       } else {
         throw new Error(message);
       }
@@ -636,6 +646,15 @@ export function useWizardSession({
     return await resumeOfficialOnboarding();
   }, [resumeOfficialOnboarding]);
 
+  const clearWizardFailure = useCallback(() => {
+    invalidateWizardOperations();
+    setWizardActivity(null);
+    setWizardError(null);
+    setWizardRecoveryMode(null);
+    setWizardSubmitting(false);
+    setSetupError(null);
+  }, [invalidateWizardOperations, setSetupError, setWizardRecoveryMode]);
+
   const reclaimOfficialOnboarding = useCallback(async (): Promise<OpenClawWizardResult | null> => {
     if (wizardRecoveryInFlightRef.current || wizardNavigationInFlightRef.current) return null;
     const operationId = beginWizardOperation();
@@ -682,6 +701,7 @@ export function useWizardSession({
     retryWizard: retryOfficialOnboarding,
     reclaimWizard: reclaimOfficialOnboarding,
     prepareWizard: () => startOfficialOnboarding(false, setupStep !== "configure-openclaw"),
+    clearWizardFailure,
     invalidateWizardOperations,
     setWizardStep,
     setWizardError,

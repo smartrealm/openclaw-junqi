@@ -27,7 +27,6 @@ pub struct StorageSetupStatus {
     terminal_launcher_dir: String,
     legacy_dir: String,
     legacy_exists: bool,
-    legacy_size_bytes: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -1683,6 +1682,22 @@ struct SelectedGatewayService {
     running: bool,
 }
 
+fn same_location_change_requires_gateway_service_inspection(
+    existing: Option<&StorageBootstrap>,
+    native_runtime_reconfiguration: bool,
+    config_path_changed: bool,
+) -> bool {
+    let Some(existing) = existing else {
+        return false;
+    };
+    native_runtime_reconfiguration
+        || config_path_changed
+        || existing.openclaw_relocation_required
+        || existing.gateway_service_rebind_required
+        || existing.runtime_switch_rollback_mode.is_some()
+        || existing.pending_runtime_reconfiguration.is_some()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RuntimeRestoreStrategy {
     Docker,
@@ -2531,14 +2546,6 @@ pub async fn get_storage_setup_status() -> Result<StorageSetupStatus, String> {
     let configured = configuration_error.is_none()
         && runtime_reconfiguration_recovery_error.is_none()
         && (bootstrap.is_some() || state_overridden);
-    let stats = if configured {
-        DirectoryStats::default()
-    } else {
-        let legacy_for_stats = legacy.clone();
-        tokio::task::spawn_blocking(move || collect_stats(&legacy_for_stats).unwrap_or_default())
-            .await
-            .map_err(|e| format!("Failed to inspect existing storage: {}", e))?
-    };
     let layout = bootstrap.clone().unwrap_or_else(|| {
         let state_dir = effective.state_dir.clone();
         let config_path = effective.config_path.clone();
@@ -2600,7 +2607,6 @@ pub async fn get_storage_setup_status() -> Result<StorageSetupStatus, String> {
         terminal_launcher_dir: paths::terminal_launcher_dir().to_string_lossy().to_string(),
         legacy_dir: legacy.to_string_lossy().to_string(),
         legacy_exists: legacy.exists(),
-        legacy_size_bytes: stats.bytes,
     })
 }
 
@@ -2761,12 +2767,22 @@ pub async fn configure_storage(
         // service, or runtime locations; writability alone does not prove that
         // Node's chmod/rename operations are supported on Windows mounts.
         verify_layout_storage_capability(&layout).await?;
+        let config_path_changed =
+            !paths::paths_refer_to_same_location(&layout.config_path, &old_native_config);
+        // 当前目录的无副作用确认不会停止或重绑 Gateway，因此不能要求尚未安装的
+        // OpenClaw 提供服务身份；只有真实影响服务绑定或恢复状态时才执行核验。
+        let inspect_selected_gateway_service =
+            same_location_change_requires_gateway_service_inspection(
+                old_bootstrap.as_ref(),
+                native_runtime_reconfiguration,
+                config_path_changed,
+            );
         let previous = PreviousGateway {
             reachable: crate::commands::gateway::gateway_matches_config(port, &old_config).await,
             runtime: state.runtime_snapshot()?,
             selected_runtime: existing_layout.runtime_mode,
             port,
-            selected_service: if old_bootstrap.is_some() {
+            selected_service: if inspect_selected_gateway_service {
                 selected_gateway_service(
                     binary.as_deref(),
                     &source,
@@ -2782,8 +2798,7 @@ pub async fn configure_storage(
             },
         };
         if previous.selected_service.installed
-            && (native_runtime_reconfiguration
-                || !paths::paths_refer_to_same_location(&layout.config_path, &old_native_config))
+            && (native_runtime_reconfiguration || config_path_changed)
         {
             layout.gateway_service_rebind_required = true;
             layout.gateway_service_was_running = previous.selected_service.running;
@@ -3408,6 +3423,44 @@ mod tests {
         ] {
             assert!(result.is_err());
         }
+    }
+
+    #[test]
+    fn same_location_noop_does_not_require_an_installed_openclaw_runtime() {
+        let root = storage_test_root("same-location-service-inspection");
+        let layout = StorageBootstrap::for_state_dir(root, None);
+
+        assert!(!same_location_change_requires_gateway_service_inspection(
+            Some(&layout),
+            false,
+            false,
+        ));
+        assert!(same_location_change_requires_gateway_service_inspection(
+            Some(&layout),
+            true,
+            false,
+        ));
+        assert!(same_location_change_requires_gateway_service_inspection(
+            Some(&layout),
+            false,
+            true,
+        ));
+        assert!(!same_location_change_requires_gateway_service_inspection(
+            None, false, false,
+        ));
+    }
+
+    #[test]
+    fn same_location_pending_recovery_still_requires_service_inspection() {
+        let root = storage_test_root("same-location-pending-service-inspection");
+        let mut layout = StorageBootstrap::for_state_dir(root, None);
+        layout.gateway_service_rebind_required = true;
+
+        assert!(same_location_change_requires_gateway_service_inspection(
+            Some(&layout),
+            false,
+            false,
+        ));
     }
 
     #[test]

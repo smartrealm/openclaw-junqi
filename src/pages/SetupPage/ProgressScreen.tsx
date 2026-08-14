@@ -5,6 +5,7 @@ import { useAppStore } from "@/stores/app-store";
 import { setupBackPolicy } from "@/hooks/useSetupFlow/helpers";
 import type { SetupLog } from "@/stores/app-store";
 import type { SetupFlow } from "@/hooks/useSetupFlow";
+import { gatewayReadyPrimaryActionKind } from "@/hooks/useSetupFlow/setupPreflight";
 import { InstallationConsole, currentStepOf, installStepTitle, SetupShell, StatusPanel } from "@/components/setup/SetupFlowPanels";
 import { GatewayAiDiagnosticDisclosure } from "@/components/GatewayAiDiagnosticDisclosure";
 
@@ -14,6 +15,10 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
   const isInstalling = setupBackPolicy(setupStep) === "cancel-install";
   const isGatewayReady = setupStep === "gateway-ready";
   const gatewayContinuation = flow.gatewayReadyContinuation;
+  const gatewayReadyActionKind = gatewayReadyPrimaryActionKind(
+    flow.installMode,
+    flow.installTarget?.tier ?? null,
+  );
   const currentInstallStep = currentStepOf(flow.steps);
   const diagnosticLogs = logs
     .slice(-500)
@@ -78,11 +83,13 @@ export function ProgressScreen({ flow, logs }: { flow: SetupFlow; logs: SetupLog
                     ? t("setup.gatewayReadyCheckingAction", "正在核验配置…")
                     : gatewayContinuation.status === "failed"
                       ? t("setup.gatewayReadyRetryAction", "重新核验")
-                      : t("setup.gatewayReadyCheckAction", "核验配置"),
+                      : gatewayReadyActionKind === "next"
+                        ? t("common.next", "下一步")
+                        : t("setup.gatewayReadyCheckAction", "核验配置"),
                   onClick: () => { void flow.continueAfterGatewayReady(); },
                   disabled: gatewayContinuation.status === "checking",
                   loading: gatewayContinuation.status === "checking",
-                  icon: "none",
+                  icon: gatewayReadyActionKind === "next" ? "next" : "none",
                 }
             : { label: runningStepLabel, disabled: true, loading: true, icon: "none" }
       }

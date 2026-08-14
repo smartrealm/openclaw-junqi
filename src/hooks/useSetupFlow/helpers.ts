@@ -11,9 +11,7 @@ export const INSTALL_TARGET_KEYS = {
   existing: "setup.openclaw.useExisting",
 } as const;
 
-/// The one step that means "the runtime is ready and nobody has started the
-/// local Gateway yet". Starting it is an installation transition rather than a
-/// user decision, so reaching this step starts it automatically.
+/// 该步骤表示运行时已就绪但本地 Gateway 尚未启动；进入后自动执行启动事务。
 export const AUTO_ADVANCE_GATEWAY_STEP: SetupStep = "gateway-stopped";
 
 export type SetupBackPolicy =
@@ -22,12 +20,7 @@ export type SetupBackPolicy =
   | "rollback-storage"
   | "navigate";
 
-/**
- * Declares which durable side effect, if any, a page owns when leaving via Back.
- * Keeping this exhaustive and pure prevents a generic Back handler from
- * rolling back committed runtime state merely because every screen shares the
- * same button component.
- */
+/** 声明页面返回时拥有的持久副作用，避免通用返回逻辑误回滚已提交的运行时。 */
 export function setupBackPolicy(step: SetupStep): SetupBackPolicy {
   switch (step) {
     case "detecting":
@@ -46,6 +39,7 @@ export function setupBackPolicy(step: SetupStep): SetupBackPolicy {
     case "welcome":
     case "environment-review":
     case "gateway-ready":
+    case "update-openclaw":
     case "configure-openclaw":
     case "ready":
     case "error":

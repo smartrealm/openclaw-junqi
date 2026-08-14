@@ -34,7 +34,6 @@ interface StorageSetupStatus {
   terminalLauncherDir: string;
   legacyDir: string;
   legacyExists: boolean;
-  legacySizeBytes: number;
 }
 
 interface StorageConfigureResult {
@@ -55,14 +54,6 @@ interface StorageSetupStepProps {
   onBack: () => void | Promise<void>;
   logs: SetupLog[];
   forceConfigure?: boolean;
-}
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
-  const value = bytes / 1024 ** index;
-  return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
 }
 
 function childStoragePath(parent: string): string {
@@ -565,9 +556,6 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
               {usingSourceLocation && <Check size={16} className="text-aegis-primary" />}
             </span>
             <span className="mt-3 block break-all font-mono text-[11px] leading-5 text-aegis-text-dim">{sourceDir}</span>
-            {sourceDir === status.legacyDir && status.legacyExists && (
-              <span className="mt-1 block text-xs text-aegis-text-muted">{formatBytes(status.legacySizeBytes)}</span>
-            )}
           </button>
 
           <button

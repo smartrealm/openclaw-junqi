@@ -4187,6 +4187,8 @@
       "alreadyRunning": "現有 OpenClaw 配置會話仍在運行。點擊「重新接管設定精靈」會重啟目前的 Gateway 並繼續配置，不會變更資料目錄或工作區。",
       "reclaim": "重新接管設定精靈",
       "requestTimeout": "OpenClaw 配置請求等待超時，請重新連接後繼續。",
+      "protocolIncompatible": "OpenClaw Gateway 返回 INVALID_REQUEST，並明確拒絕 wizard.start.installDaemon。JunQi 需要該參數關閉 Wizard 的 Gateway service 安裝分支，不能安全省略，也不會重複傳送同一無效請求。",
+      "returnToGuided": "返回官方引導",
       "cancelled": "OpenClaw 配置精靈已取消，請重試以開始新的配置會話。",
       "pauseAndReturn": "暫停並返回",
       "retry": "重試",
@@ -5053,7 +5055,10 @@
   "setup.runtimeDetails.methodCustom": "npm 全局安裝（自定義 prefix）",
   "setup.runtimeDetails.methodExisting": "已有安裝（跳過安裝）",
   "setup.openclawUpdate.title": "OpenClaw 更新",
-  "setup.openclawUpdate.subtitle": "使用 OpenClaw 官方更新器識別安裝方式、渠道和可用版本。檢查更新不會阻止你繼續下一步。",
+  "setup.openclawUpdate.subtitle": "使用 OpenClaw 官方更新器核驗安裝方式和生產渠道。JunQi 只受管 stable 與 extended-stable，不安裝 beta 或 dev。",
+  "setup.openclawUpdate.stepTitle": "檢查 OpenClaw 更新",
+  "setup.openclawUpdate.stepSubtitle": "已檢測到本機現有 OpenClaw。完成更新檢查後，再進入官方設定。",
+  "setup.guided.finishSetup": "完成設定核驗",
   "setup.openclawUpdate.currentVersion": "當前版本",
   "setup.gatewayReadyTitle": "運行時已就緒",
   "storage.save": "保存位置",
@@ -5112,6 +5117,10 @@
   "setup.openclawUpdate.channel.stable": "穩定版",
   "setup.openclawUpdate.channel.beta": "測試版",
   "setup.openclawUpdate.channel.dev": "開發版",
+  "setup.openclawUpdate.channel.extended-stable": "長期維護穩定版",
+  "setup.openclawUpdate.unsupportedChannelTitle": "目前渠道不受 JunQi 管理",
+  "setup.openclawUpdate.unsupportedChannelHint": "檢測到 {{channel}}。JunQi 僅允許 stable 和 extended-stable 進入受管更新與設定；請按官方更新說明明確切換到穩定渠道後重新檢查。",
+  "setup.openclawUpdate.unknownChannelHint": "OpenClaw 沒有返回有效的更新渠道。為避免誤裝候選版本，JunQi 已停止受管更新與設定。",
   "setup.openclawUpdate.registryLabel": "更新源：{{registry}}",
   "setup.openclawUpdate.registry.official": "npm 官方源",
   "setup.openclawUpdate.registry.chinaMirror": "國內鏡像",
@@ -5488,42 +5497,83 @@
   },
   "businessGuide": {
     "title": "開始使用",
-    "progress": "已確認完成 {{completed}} / {{total}} 項",
+    "firstSuccessLabel": "首次成功路徑",
+    "contextualDescription": "跟隨真實控制項完成模型設定、新建工作階段，並以 OpenClaw 的首條回覆核驗完整鏈路。",
+    "startGuide": "開始設定",
+    "startAction": "開始",
+    "later": "稍後再說",
     "dismiss": "隱藏開始使用引導",
     "reopen": "顯示開始使用引導",
-    "blocked": "請先連線 Gateway 後繼續",
     "step": "第 {{current}} / {{total}} 步",
     "welcomeTitle": "歡迎使用 JunQi",
-    "welcomeDescription": "快速了解已驗證工作台的核心能力。",
-    "skip": "跳過",
-    "skipStep": "跳過本步",
+    "welcomeDescription": "這次引導會停留在每個真實操作處，直到儲存、工作階段建立或回覆結果得到確認。",
+    "finishTitle": "首次對話已經打通",
+    "extensionReadyTitle": "已進入 OpenClaw 設定流程",
+    "exitGuide": "退出引導",
+    "targetMissing": "沒有在目前頁面找到需要操作的控制項。頁面可能仍在載入，或者目前狀態暫不提供該操作。",
+    "retryTarget": "重新定位",
+    "useExistingConfig": "繼續使用目前設定",
+    "verifiedByResponse": "目前工作階段已經收到模型回覆，這證明本次對話到 Gateway 的端到端路徑可用。",
+    "extensionHandoff": "引導已經開啟真實操作入口，後續結果仍由 OpenClaw 官方流程確認。",
     "finish": "完成",
+    "state": {
+      "waitingSave": "儲存成功後自動繼續",
+      "waitingSession": "工作階段建立成功後自動繼續",
+      "waitingResponse": "正在等待目前工作階段的模型回覆"
+    },
     "tour": {
       "newSession": "點擊高亮的新建會話控制項以繼續。",
-      "addChannel": "點擊高亮的新增渠道控制項，繼續官方設定流程。",
-      "finished": "可隨時透過指南圖示重新開啟引導。",
-      "clickToContinue": "點擊高亮控制項繼續"
+      "createSession": "選擇智能體後點擊高亮的新建桌面工作階段。建立失敗時引導會留在這裡。",
+      "addProvider": "點擊高亮的新增模型服務進入真實設定。已有可用設定時，也可以明確選擇繼續使用。",
+      "chooseProvider": "在供應商目錄中選擇實際使用的服務。引導會在設定表單出現後繼續。",
+      "saveProvider": "完成認證和模型選擇後儲存。只有現有設定寫入鏈路返回成功，引導才會繼續。",
+      "sendMessage": "在高亮的訊息編輯器中輸入並傳送第一條指令。傳送失敗不會完成本步。",
+      "waitResponse": "保持目前工作階段開啟。收到位於這條使用者訊息之後的真實助手內容時，引導才會完成。",
+      "addChannel": "點擊高亮的新增渠道控制項，將後續認證與核驗交給 OpenClaw 官方流程。",
+      "addAgent": "點擊高亮的新增智能體控制項，在真實表單中管理 OpenClaw 智能體。",
+      "finished": "首次回覆已經完成端到端核驗。渠道和更多智能體可以按需繼續設定。"
     },
     "tasks": {
-      "startChat": {
-        "title": "開始對話",
-        "description": "開啟聊天並建立工作階段。"
+      "newSession": {
+        "title": "新建工作階段"
       },
-      "chooseModel": {
-        "title": "確認模型",
-        "description": "查看目前執行階段的模型設定。"
+      "createSession": {
+        "title": "建立桌面工作階段"
       },
-      "reviewAgents": {
-        "title": "查看智能體",
-        "description": "查看 Gateway 回傳的智能體。"
+      "configureModelProvider": {
+        "title": "設定模型供應商"
       },
-      "connectChannel": {
-        "title": "連接渠道",
-        "description": "繼續官方渠道授權流程。"
+      "chooseModelProvider": {
+        "title": "選擇模型供應商"
       },
-      "openWorkspace": {
-        "title": "開啟工作區",
-        "description": "選擇專案並開啟它的終端工作區。"
+      "saveModelProvider": {
+        "title": "儲存並套用設定"
+      },
+      "sendFirstMessage": {
+        "title": "傳送第一條訊息"
+      },
+      "waitFirstResponse": {
+        "title": "核驗首次回覆"
+      },
+      "configureChannel": {
+        "title": "設定渠道"
+      },
+      "manageAgents": {
+        "title": "管理智能體"
+      }
+    },
+    "extensions": {
+      "channel": {
+        "title": "連接訊息渠道",
+        "description": "前往渠道中心並開啟 OpenClaw 擁有的渠道設定入口。",
+        "action": "連接渠道",
+        "ready": "渠道目錄已經開啟。請在官方流程中繼續認證和狀態核驗。"
+      },
+      "agent": {
+        "title": "管理智能體",
+        "description": "前往智能體中心並開啟真實的新建智能體表單。",
+        "action": "管理智能體",
+        "ready": "智能體表單已經開啟。請按 OpenClaw 目前支援的欄位繼續設定。"
       }
     }
   }

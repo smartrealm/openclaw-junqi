@@ -147,6 +147,7 @@ export function WizardScreen({
   if (!step) {
     const failed = Boolean(wizard.wizardError);
     const canRecover = failed || wizard.wizardRecoveryMode !== null;
+    const protocolIncompatible = wizard.wizardRecoveryMode === "protocol-incompatible";
     return (
       <>
         <SetupShell
@@ -161,7 +162,7 @@ export function WizardScreen({
           logs={logs}
           previousAction={{ onClick: flow.goBack, disabled: wizard.wizardSubmitting }}
           secondaryAction={secondaryAction}
-          nextAction={{
+          nextAction={protocolIncompatible ? undefined : {
             label: wizard.wizardRecoveryMode === "reclaim"
               ? t("setup.wizard.reclaim", "重新接管向导")
               : wizard.wizardRecoveryMode === "terminal-unknown"
@@ -238,6 +239,7 @@ export function WizardScreen({
     : replaceStepWithWaiting
       ? "waiting"
       : "step";
+  const protocolIncompatible = wizard.wizardRecoveryMode === "protocol-incompatible";
   const submitCurrentStep = async () => {
     await wizard.submitWizardStep(step.id, value);
   };
@@ -257,7 +259,7 @@ export function WizardScreen({
           disabled: false,
         }}
         secondaryAction={secondaryAction}
-        nextAction={{
+        nextAction={protocolIncompatible ? undefined : {
           label: wizard.wizardError
             ? wizard.wizardRecoveryMode === "terminal-unknown"
               ? t("setup.wizard.restartAfterLoss", "重新开始官方向导")

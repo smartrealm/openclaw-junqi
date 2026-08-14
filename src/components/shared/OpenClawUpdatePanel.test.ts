@@ -27,6 +27,11 @@ test('OpenClaw update panel preserves the installed npm package revision for dis
   assert.doesNotMatch(source, /NPM_RELEASE_REVISION|presentOpenClawReleaseVersion/);
 });
 
+test('已是最新版时重新检查降为页脚弱操作', () => {
+  assert.match(source, /if \(upToDate\) return null;/);
+  assert.match(source, /\{upToDate && \([\s\S]*?size="xs"[\s\S]*?variant="ghost"/);
+});
+
 test('OpenClaw updater keeps npm output as diagnostics without replacing localized progress', () => {
   assert.match(updaterSource, /npm_config_loglevel", "http"/);
   assert.match(updaterSource, /lower\.contains\("npm http fetch"\)/);

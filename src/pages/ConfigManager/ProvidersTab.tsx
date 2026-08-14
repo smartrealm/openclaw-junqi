@@ -2155,7 +2155,7 @@ function PickStep({ onPick, onClose: _onClose }: PickStepProps) {
   const isSearching = Boolean(search.trim());
 
   return (
-    <div className="flex min-h-0 flex-col gap-4">
+    <div data-tour="provider-picker" className="flex min-h-0 flex-col gap-4">
       <div className="relative">
         <Search size={14} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-aegis-text-dim" />
         <input
@@ -3000,6 +3000,7 @@ function ConfigureStep({
       <div className="sticky -bottom-5 -mx-5 flex gap-2 border-t border-aegis-border bg-aegis-card-solid px-5 pb-1 pt-3">
         <button
           type="button"
+          data-tour="provider-config-back"
           onClick={onBack}
           className={clsx(
             'inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium',
@@ -3013,6 +3014,7 @@ function ConfigureStep({
         </button>
         <button
           type="button"
+          data-tour="provider-save"
           onClick={() => void handleSubmit()}
           disabled={!canSubmit || saving}
           className={clsx(
@@ -3110,6 +3112,7 @@ function AddProviderModal({
           </div>
           <button
             type="button"
+            data-tour="provider-modal-close"
             onClick={onClose}
             className="grid size-8 shrink-0 place-items-center rounded text-aegis-text-dim transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text"
             aria-label={t('common.close', 'Close')}
@@ -3417,6 +3420,7 @@ export function ProvidersTab({
             </p>
           </div>
           <button
+            data-tour="providers-add"
             onClick={() => openModal()}
             className={clsx(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold',

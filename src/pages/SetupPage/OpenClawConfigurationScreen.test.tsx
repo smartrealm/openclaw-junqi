@@ -14,6 +14,7 @@ function createGuidedFlow(): SetupFlow {
     guidedSetup: {
       phase: 'selecting',
       detection: {
+        methodFamily: 'openclaw',
         candidates: [{
           kind: 'codex-cli',
           brandId: 'test-provider',
@@ -106,6 +107,31 @@ test('用户显式选择 Classic 后才呈现官方详细向导', () => {
   assert.doesNotMatch(html, /Detected inference options/);
 });
 
+test('Classic 协议不兼容时只提供返回已核验官方引导的操作', () => {
+  const flow = {
+    ...createGuidedFlow(),
+    configurationMode: 'classic' as const,
+    guidedSetupAvailable: true,
+    wizardStep: null,
+    wizardSubmitting: false,
+    wizardActivity: null,
+    wizardError: 'wizard.start.installDaemon is not accepted',
+    wizardRecoveryMode: 'protocol-incompatible' as const,
+    returnToGuidedSetup: () => undefined,
+    submitWizardStep: async () => null,
+    pollWizard: async () => null,
+    retryWizard: async () => null,
+    reclaimWizard: async () => null,
+  } as unknown as SetupFlow;
+  const html = renderToStaticMarkup(
+    <OpenClawConfigurationScreen flow={flow} logs={[]} />,
+  );
+
+  assert.match(html, /Return to guided setup/);
+  assert.doesNotMatch(html, />Retry</);
+  assert.doesNotMatch(html, /Check for OpenClaw updates/);
+});
+
 test('Guided 供应商授权复用官方步骤二维码呈现', () => {
   const html = renderToStaticMarkup(
     <OpenClawConfigurationScreen
@@ -139,6 +165,26 @@ test('Guided 自动激活后先确认当前有效路径', () => {
   assert.match(html, /Use Codex CLI/);
   assert.match(html, /View other options/);
   assert.doesNotMatch(html, /Tell OpenClaw what to configure next/);
+});
+
+test('稳定 Guided 激活后提供明确的完成配置核验操作', () => {
+  const flow = createGuidedFlow();
+  const html = renderToStaticMarkup(
+    <OpenClawConfigurationScreen
+      flow={{
+        ...flow,
+        guidedSetup: {
+          ...flow.guidedSetup,
+          phase: 'chat',
+          activation: { ok: true, modelRef: 'openai/codex' },
+          chat: { sessionId: 'stable-chat', reply: 'Ready', action: 'none' },
+        },
+      }}
+      logs={[]}
+    />,
+  );
+
+  assert.match(html, /Complete configuration verification/);
 });
 
 test('Guided 呈现官方不可用原因、修复入口和推荐安装', () => {
