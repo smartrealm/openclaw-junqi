@@ -64,6 +64,7 @@
 - `pnpm lint` 已通过，包含 904 个文件的模块边界检查、版本一致性和 TypeScript 类型检查。
 - `pnpm test` 已通过，包含 2790 项前端测试和 238 项脚本测试。
 - `pnpm build` 已通过，包含协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建；`pnpm verify:openclaw-docs` 已通过。
+- 已从提交 `5dfc16f8962c7e1ce4c3d453dab53fbd048b6084` 使用无 updater 制品配置构建 macOS ARM64 DMG；`hdiutil verify` 通过，文件大小为 8333321 字节，SHA-256 为 `2e3f38101208cf54ef8a22df8fd5cc9591a2c18fc065d041d8e24827477faa16`。
 - `git diff --check`、本次修改文件的 Emoji 扫描和多语言 JSON 解析已通过。
 - 本轮未修改 Rust；既有 Rust 验证结果不能替代本次 TypeScript 接管链路验证，本轮不重复声称 Rust 真机通过。
 
@@ -73,7 +74,7 @@
 - 当前本机已安装 Runtime 缺少活动配置修订字段，只能验证“证据不可用”分支，不能证明最新版 Runtime 的成功接管链路。
 - macOS、Windows、Linux 与 Docker 的系统服务、凭据库、连接轮换和首次进入工作台仍需分别在目标环境真机验证。
 - 真实渠道插件授权、Classic Wizard 收尾、暗色主题、窄窗口、键盘焦点和减少动态效果不属于本轮自动化能够证明的范围。
-- 本轮未构建、签名、公证或发布安装包。
+- 本轮 macOS ARM64 DMG 是未签名、未公证的本地安装验证包，不是正式 Release；未构建其他平台安装包，也未发布远端制品。
 
 ## 下一步顺序
 
