@@ -125,6 +125,7 @@
 
 - 本轮工作区布局与结构化记录定向回归 35 项通过；完整 `pnpm test` 已通过，前端与源码测试 2823 项、脚本测试 238 项均通过。
 - `pnpm lint` 已通过，包含 910 个文件的模块边界检查、版本一致性和 TypeScript 类型检查；`pnpm build` 已通过，包含协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建。
+- 已从提交 `dac6914c` 使用无 updater 制品配置构建 macOS ARM64 DMG；`hdiutil verify` 通过。文件大小为 8367269 字节，SHA-256 为 `a05031380196320731e7ef4aea1038ae2416995f5ea666394e6b108138117b12`，当前已挂载到 `/Volumes/JunQi Desktop`，由用户自行安装。
 - 已用本机截图对应的 OpenClaw transcript 记录做只读实测：紧凑输出确认已截断，原始记录仍恢复出 14 个顶层字段；嵌套 `text` 恢复为包含 `current_condition`、`nearest_area`、`request` 和 `weather` 的对象，并保留不可信外部内容提示。
 - 页面迁移复用 `aegis-bg`、`aegis-border`、`aegis-text` 等现有主题 token 及现有 PageTransition、SceneTransition、卡片和滚动组件。本轮尚未在重新打包应用中完成亮色、暗色、窄窗口和宽窗口真机视觉验收。
 - 本轮定向回归 32 项通过，覆盖官方时间戳回执、归档身份参数、组织错误映射、新空会话判定、活动会话统一尾部定位和 JSON 展示。
