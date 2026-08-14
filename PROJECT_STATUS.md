@@ -101,7 +101,7 @@
 - `pnpm test` 已通过；新增回归覆盖已有 Native 安装进入独立更新步骤、本次新安装跳过、检查完成门禁、Wizard 协议拒绝、稳定渠道更新提示，以及 beta、dev 与未知渠道阻断。
 - `pnpm build` 已通过，包含协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建；`pnpm verify:openclaw-docs` 已通过。
 - `cargo fmt -- --check`、`cargo check --lib` 与完整 `cargo test --lib` 已通过；Rust 共运行 639 项，638 项通过，1 项会修改当前用户 Keychain 的测试按设计忽略。以 `same_location_` 过滤运行的三项存储回归全部通过，其中两项为本轮新增，分别证明当前目录无副作用确认不需要 OpenClaw、未完成服务恢复仍要求核验。
-- 已基于首次设置、OpenClaw 核心操作引导、新会话首发、存储门禁和工具导航修复，使用无 updater 制品配置重新构建 macOS ARM64 `.app` 与 DMG；前端生产构建和 Rust release 编译随打包命令通过，`hdiutil verify` 通过，应用版本为 3.1.0。最新 DMG 文件大小为 8363663 字节，SHA-256 为 `e6681c309d98a27991f677b576824120980c12751c607b4c61342b0d40c444b0`。
+- 已从提交 `35e012282941bd3ca676b13f660ec1e4c9844683` 使用无 updater 制品配置重新构建 macOS ARM64 `.app` 与 DMG；前端生产构建和 Rust release 编译随打包命令通过，`hdiutil verify` 通过，应用版本为 3.1.0。最新 DMG 文件大小为 8366308 字节，SHA-256 为 `171982114407598470fc9b7a59af57f5cbea7c7e0023ef6bccd369d976d59a3f`，并已挂载到 `/Volumes/JunQi Desktop`。
 - 已结束 `/Applications` 中旧的 `junqi-desktop` 测试进程并用 `open -n` 启动本轮构建目录中的 `.app`，当前进程 PID 35127。用户此前在当前机器真实提交 `/Users/wei/.openclaw`，日志证明存储位置于 17:15:56 保存成功并进入 Node、npm、OpenClaw 安装；该结果证明本次报告的当前目录首次安装阻断已消失，不代表自定义目录迁移或其他平台已验收。
 - npm 官方 registry 与 npmmirror 在 2026-08-14 均返回 `latest: 2026.7.1-2`、`beta: 2026.8.1-beta.1`、`extended-stable: 2026.6.34`。本机 updater dry-run 返回 stable、`openclaw@latest`，当前与目标均为 2026.7.1-2；`-2` 是官方稳定修订，不是 beta。
 - npm 官方 registry 与 npmmirror 返回的 `openclaw@2026.7.1-2` SHA-1 均为 `4583b987ea7277230ce1c7b2b8535d3e219f57ac`，SHA-512 integrity 也完全一致；两端仅 tarball 域名不同。用户本机安装日志显示 JunQi 在确认版本与 tarball 可达后通过 npmmirror 安装并再次验出 2026.7.1-2。
