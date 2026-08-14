@@ -4,6 +4,7 @@
 
 ## 当前入口
 
+- [会话组织与 transcript 展示审计](quality/session-transcript-and-organization-audit-2026-08-14.md)：会话操作回执、历史定位、新建空会话和结构化内容展示的当前契约与缺陷。
 - [OpenClaw 原生安装对齐审计](quality/openclaw-native-installation-alignment-audit-2026-08-12.md)：最新版默认 guided inference、正式 setup RPC、经典 Wizard、npm 安装与 JunQi 当前差异。
 - [OpenClaw 原生安装对齐规格](../specs/2026-08-12-openclaw-native-installation-alignment.md)：默认安装状态机、完成门禁、安全边界与验收条件。
 - [OpenClaw 原生安装对齐计划](../plans/2026-08-12-openclaw-native-installation-alignment.md)：P0、P1 修复顺序、旧路径删除和跨平台验证安排。

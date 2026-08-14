@@ -1751,8 +1751,8 @@ export const gateway = {
   async setSessionUnread(unread: boolean, sessionKey: string) {
     return sessionOrganization.setUnread(sessionKey, unread);
   },
-  async setSessionArchived(archived: boolean, sessionKey: string) {
-    return sessionOrganization.setArchived(sessionKey, archived);
+  async setSessionArchived(archived: boolean, sessionKey: string, expectedSessionId?: string) {
+    return sessionOrganization.setArchived(sessionKey, archived, expectedSessionId);
   },
   async setSessionCategory(category: string | null, sessionKey: string) {
     return sessionOrganization.setCategory(sessionKey, category);

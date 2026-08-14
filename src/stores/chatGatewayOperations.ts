@@ -4,7 +4,7 @@ import type { OpenClawSessionGroup } from '@/services/gateway/OpenClawSessionGro
 export interface ChatGatewayOperations {
   setSessionPinned(pinned: boolean, sessionKey: string): Promise<unknown>;
   setSessionUnread(unread: boolean, sessionKey: string): Promise<unknown>;
-  setSessionArchived(archived: boolean, sessionKey: string): Promise<unknown>;
+  setSessionArchived(archived: boolean, sessionKey: string, expectedSessionId?: string): Promise<unknown>;
   setSessionCategory(category: string | null, sessionKey: string): Promise<string | null>;
   listSessionGroups(): Promise<readonly OpenClawSessionGroup[]>;
   ensureSessionGroup(name: string): Promise<readonly OpenClawSessionGroup[]>;

@@ -32,6 +32,7 @@ import {
 } from '@/agent-execution-plan/domain';
 import { stripDirectives, isNoise, stripUserMeta } from './TextCleaner';
 import { autoDetectCode } from '@/utils/autoDetectCode';
+import { formatAssistantTranscriptMarkdown } from '@/utils/transcriptContentPresentation';
 import {
   parseArtifacts,
   extractFileRefs,
@@ -229,7 +230,9 @@ export function buildSemanticBlocks(
   const baseText = role === 'user' ? stripUserMeta(normalized.text) : normalized.text;
   const cleanedText = stripDirectives(baseText);
   const visibleText = cleanedText && !isNoise(cleanedText) ? cleanedText : '';
-  const markdown = role === 'assistant' ? autoDetectCode(visibleText) : visibleText;
+  const markdown = role === 'assistant'
+    ? formatAssistantTranscriptMarkdown(visibleText) ?? autoDetectCode(visibleText)
+    : visibleText;
   const { cleanText: textAfterArtifacts, artifacts } = parseArtifacts(markdown);
   let cleanText = textAfterArtifacts;
 

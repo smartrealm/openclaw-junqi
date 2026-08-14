@@ -90,6 +90,7 @@ import {
   hasConfirmedEmptyTranscript,
   shouldLoadActiveSessionHistory,
 } from '@/utils/confirmedEmptyTranscript';
+import { shouldPositionActiveSessionTail } from '@/utils/sessionEntryTail';
 
 const HISTORY_LIMIT = 500;
 const EMPTY_MODEL_CATALOG: Array<{ id: string; label: string; alias?: string }> = [];
@@ -316,7 +317,7 @@ function ChatViewContent() {
   const prevResponseGroupsLenRef = useRef(0);
   const initialHistoryTailSessionRef = useRef<string | null>(null);
 
-  // Reset scroll lock when switching sessions — new session should start at bottom
+  // 所有活动会话切换入口共用同一个尾部定位状态，包括删除和关闭后的回退。
   useEffect(() => {
     scrollLockedRef.current = false;
     setAtBottom(true);
@@ -905,19 +906,18 @@ function ChatViewContent() {
     return () => window.removeEventListener('aegis:quick-action', handleQuickAction as EventListener);
   }, [handleQuickAction]);
 
-  const activeHistoryMeta = historyMetaBySession[activeSessionKey];
-
-  // The initial history position is an entry behavior, not a tail-follow
-  // behavior. Virtuoso may transiently report "not at bottom" while it
-  // measures a newly hydrated history, so do not apply the reader lock here.
+  // 首次定位只在当前会话时间线已经提交后完成，不能由先到的加载元数据提前消费。
   useEffect(() => {
-    if (!activeHistoryMeta?.loaded) return;
-    if (initialHistoryTailSessionRef.current === activeSessionKey) return;
+    if (!shouldPositionActiveSessionTail({
+      activeSessionKey,
+      positionedSessionKey: initialHistoryTailSessionRef.current,
+      timelineItemCount: timelineItems.length,
+    })) return;
     initialHistoryTailSessionRef.current = activeSessionKey;
     scrollLockedRef.current = false;
     setAtBottom(true);
     return scrollToConversationTail({ instant: true });
-  }, [activeSessionKey, activeHistoryMeta?.loaded, scrollToConversationTail]);
+  }, [activeSessionKey, scrollToConversationTail, timelineItems.length]);
 
   const retryMessageDelivery = useCallback(async (sourceMessage: ChatMessage) => {
     const payload = sourceMessage.retryPayload ?? { text: sourceMessage.content };
@@ -1493,6 +1493,7 @@ function ChatViewContent() {
           <div className="flex h-full flex-col justify-end" />
         ) : (
           <Virtuoso
+            key={activeSessionKey}
             ref={virtuosoRef}
             scrollerRef={(element) => {
               scrollerRef.current = element instanceof HTMLElement ? element : null;

@@ -951,6 +951,32 @@ test('explicit unread state follows the confirmed native session patch in both d
   }
 });
 
+test('归档操作向 Gateway 传递已确认的会话身份并只在成功后更新投影', async () => {
+  const setSessionArchived = gateway.setSessionArchived;
+  const sessionKey = 'agent:main:archive-session';
+  const calls: Array<{ archived: boolean; key: string; expectedSessionId?: string }> = [];
+  Object.assign(gateway, {
+    setSessionArchived: async (archived: boolean, key: string, expectedSessionId?: string) => {
+      calls.push({ archived, key, expectedSessionId });
+    },
+  });
+  useChatStore.setState({
+    sessions: [{ key: sessionKey, sessionId: 'gateway-archive-session', label: 'Archive session' }],
+  });
+
+  try {
+    await useChatStore.getState().setSessionArchived(sessionKey, true);
+    assert.deepEqual(calls, [{
+      archived: true,
+      key: sessionKey,
+      expectedSessionId: 'gateway-archive-session',
+    }]);
+    assert.equal(useChatStore.getState().sessions[0]?.archived, true);
+  } finally {
+    Object.assign(gateway, { setSessionArchived });
+  }
+});
+
 test('会话组织写入只依赖 Gateway key，不因缺少本地 sessionId 被静默跳过', async () => {
   const setSessionPinned = gateway.setSessionPinned;
   const sessionKey = 'agent:main:key-only-session';

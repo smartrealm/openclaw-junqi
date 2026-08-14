@@ -4,10 +4,16 @@
 
 ## 当前目标
 
-完成首次设置前置门禁、OpenClaw 核心操作引导、stable Runtime 新会话首条消息失败修复和官方 Wizard 版本参数协商。
+完成会话组织操作闭环、所有活动会话切换入口的尾部定位、新建空会话输入状态，以及 transcript 结构化内容展示。
 
 ## 已完成内容
 
+- 会话置顶、未读和归档不再按不存在的同名布尔回执判定；现在分别核验 OpenClaw 持久化条目的 `pinnedAt`、`markedUnreadAt`、`lastReadAt` 与 `archivedAt`，避免 Gateway 已写入而 JunQi 误报失败。
+- 已知会话身份的归档和恢复操作透传 `expectedSessionId`，防止同一 key 身份轮换后误改新的 transcript；归档文案删除了错误的“本机”语义。
+- 会话菜单异步操作增加统一进行中门禁；成功后由真实列表投影或新页签反馈，失败时显示本地化可操作说明，内部 `SESSION_ORGANIZATION_RESPONSE_INVALID` 不再进入通知正文。
+- 侧栏切换、页签切换、新建、分叉、关闭页签和删除当前会话后的回退共用一次性尾部定位规则。只有当前会话时间线条目已经提交后才消费定位，虚拟列表按活动会话重建，后续用户上滑仍受阅读锁保护。
+- 普通新建空会话继续以 Gateway 创建回执中的 key、sessionId、agentId 和空 leaf 作为跳过历史预热的完整事实；已确认空 transcript 时输入框立即可用，不显示“正在加载最近对话”。
+- assistant 返回完整 JSON 对象或数组时投影为 JSON 代码块，工具结果中的完整 JSON 使用保留字面量的缩进展示；不完整 JSON、普通文本、既有 Markdown 围栏和原始工具载荷保持原文路径。
 - 首页新手引导不再把已有模型、智能体、会话和渠道显示为用户完成比例，也不再展示集中任务网格；首次入口仅说明引导方式。
 - 用户开始后固定按新建会话、配置模型供应商、配置渠道和管理智能体前往具体功能页并高亮真实操作控件；已有 Runtime 数据不再导致核心教学步骤被跳过。
 - JunQi 的打开项目和终端工作区已从 OpenClaw 核心操作引导及其选择器、状态探针、文案和测试中删除；渠道配置仍交给现有官方流程。
@@ -43,6 +49,9 @@
 
 ## 关键技术决策
 
+- `sessions.patch` 的请求字段与持久化回执字段是不同契约；成功核验必须依据 handler 返回的持久化条目，不能假设响应回显请求布尔值。
+- 会话尾部定位属于活动会话入口行为，不属于单一侧栏点击或历史请求完成事件；入口条件只绑定活动 key 与当前时间线提交，不从先到的加载元数据推断 DOM 已就绪。
+- transcript 格式化是可逆的只读展示投影。只有完整 JSON 文档才能增加缩进和语言标识，解析失败时保留原文，不修补内容或改变上游事实。
 - Wizard 终态、Gateway 进程健康、认证连接、Runtime Identity 和活动配置修订是不同事实，必须按顺序分别核验。
 - `config.get.hash` 是配置写入冲突控制值，不是活动 Runtime 修订证据；缺失 `configRevisionHash` 或 `appliedConfigHash` 时失败关闭并要求更新 OpenClaw。
 - 主线接受 `installDaemon:false` 时，JunQi 明确关闭该次 Wizard 的 daemon 分支；stable 公共参数模式下 daemon 选择仍由官方 Wizard 步骤拥有，JunQi 不改写答案，也不伪报已关闭。
@@ -60,6 +69,14 @@
 
 ## 核心文件
 
+- `src/services/gateway/OpenClawSessionOrganizationClient.ts`
+- `src/components/Chat/session-actions/SessionActionsMenu.tsx`
+- `src/pages/ChatView.tsx`
+- `src/utils/sessionEntryTail.ts`
+- `src/utils/transcriptContentPresentation.ts`
+- `docs/quality/session-transcript-and-organization-audit-2026-08-14.md`
+- `specs/2026-08-14-session-transcript-and-organization.md`
+- `plans/2026-08-14-session-transcript-and-organization.md`
 - `src/services/setup/openClawSetupHandoff.ts`
 - `src/services/gateway/OpenClawGuidedSetupClient.ts`
 - `src/services/gateway/OpenClawConfigApplicationClient.ts`
@@ -95,6 +112,12 @@
 
 ## 测试与验证
 
+- 本轮定向回归 32 项通过，覆盖官方时间戳回执、归档身份参数、组织错误映射、新空会话判定、活动会话统一尾部定位和 JSON 展示。
+- 完整 `pnpm test` 已通过：前端与源码测试 2820 项、脚本测试 238 项均通过。
+- `pnpm lint` 已通过，包含 909 个文件的模块边界检查、版本一致性和 TypeScript 类型检查。
+- `pnpm build` 已通过，包含协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建。
+- OpenClaw 官方主线重新核对到提交 `e826501fdb6a413f2c8ff70f500155ff1cbf1f81`；`sessions.patch` schema、Gateway handler 和 Control UI 共同证明请求布尔字段对应时间戳持久化条目，分叉继续使用官方 `sessions.create`。
+- 本轮复用现有 `aegis-bg`、`aegis-border`、`aegis-text`、`aegis-primary`、状态色、通知和虚拟列表组件，没有增加平行主题或会话实现。自动化覆盖加载、失败、空数据和结构化内容；尚未完成亮色、暗色、窄窗口、键盘焦点及长历史连续抓帧的真机视觉验收。
 - 定向连接安全、连接收敛、生命周期协调、活动配置应用、终态交接和 Guided 方法族协商回归已通过；本轮相关定向前端测试 72 项通过。
 - OpenClaw 官方远端 `main` 已核对到提交 `b3d5265f58522bab67e06168d436b3b328cbae60`。它相对上一审计基线仅包含 Docker 安全加固，Wizard 终态、Hosted 工作保留、配置应用修订、重载和认证代次契约没有变化。
 - `pnpm lint` 已通过，包含 906 个文件的模块边界检查、版本一致性和 TypeScript 类型检查。
@@ -118,6 +141,7 @@
 
 ## 已知问题与未验证边界
 
+- 当前改动尚未在重新打包的 macOS 应用中完成新建空会话、长历史切换、删除回退、会话组织菜单和 JSON 工具结果的逐项真机交互验收。
 - 最新 OpenClaw 上的真实 Guided provider、浏览器授权、官方活动工作延迟重启、token 轮换和新认证连接尚未完成 macOS 安装包端到端验证。
 - 当前本机已安装 Runtime 缺少活动配置修订字段，只能验证“证据不可用”分支，不能证明最新版 Runtime 的成功接管链路。
 - 当前 npm `latest` OpenClaw 2026.7.1-2 的 Classic Wizard 不接受 `wizard.start.installDaemon`，但公共参数已经真实启动并取消。完整 Classic 交互、daemon 选择、配置提交和终态交接尚未在隔离数据目录真机验收。
@@ -127,7 +151,7 @@
 
 ## 下一步顺序
 
-1. 在隔离测试配置上执行 stable Crestodian activate、聊天完成、配置应用与 Ready 全链路真机验证，并在最新版 OpenClaw Runtime 上执行对应方法族的终态收敛验证。
-2. 覆盖共享 token 轮换、设备凭据连接、主连接换代和管理员临时写请求的真实 Gateway 场景。
-3. 使用隔离数据目录连续抓帧验证 macOS stable Classic Wizard 的完整步骤、daemon 选择和终态交接，再分别完成 Windows、Linux 与 Docker 真机验收。
+1. 构建并启动新的 macOS 本地安装包，逐项验收会话组织、会话切换尾部定位、新建空会话和 JSON 展示。
+2. 使用长 transcript 连续抓帧验证首次定位不闪回顶部，且用户上滑后新输出不会强制回到底部。
+3. 分别补充暗色主题、窄窗口、键盘焦点和 Windows、Linux 目标平台真机验收。
 4. 未经明确要求不推送、打 tag 或发布。

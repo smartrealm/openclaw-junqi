@@ -203,6 +203,20 @@ test('keeps structured assistant output when visible text is empty', () => {
   );
 });
 
+test('将完整 assistant JSON 文档投影为可读代码块', () => {
+  const blocks = buildSemanticBlocks(
+    createAssistantMessage('{"result":{"name":"report.json","ready":true}}'),
+    { toolIntentEnabled: true },
+  );
+  const messageBlock = blocks.find((block) => block.type === 'message-content');
+
+  assert.ok(messageBlock && messageBlock.type === 'message-content');
+  assert.equal(
+    messageBlock.markdown,
+    '```json\n{\n  "result": {\n    "name": "report.json",\n    "ready": true\n  }\n}\n```',
+  );
+});
+
 test('does not create an empty message bubble for card-only output', () => {
   const normalized: NormalizedMessage = {
     ...createAssistantMessage(''),

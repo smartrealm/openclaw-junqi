@@ -1735,7 +1735,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSessionArchived: async (key, archived) => {
     const session = get().sessions.find((candidate) => candidate.key === key);
     if (!session) return;
-    await getChatGatewayOperations().setSessionArchived(archived, key);
+    await getChatGatewayOperations().setSessionArchived(archived, key, session.sessionId);
     set((state) => ({ sessions: updateSession(state.sessions, key, (item) => ({ ...item, archived })) }));
   },
 

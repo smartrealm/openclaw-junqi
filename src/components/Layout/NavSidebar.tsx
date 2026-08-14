@@ -55,6 +55,8 @@ import {
   type WorkbenchNavigationIcon,
 } from './workbenchNavigation';
 import { SessionScopeControls } from './SessionScopeControls';
+import { sessionActionErrorKey } from '@/utils/sessionActionError';
+import { debugError } from '@/utils/debugLog';
 
 const AgentsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.AgentsPanel })));
 const BusinessApplicationsPanel = lazy(() => import('./NavSidebarPanels').then(m => ({ default: m.BusinessApplicationsPanel })));
@@ -734,7 +736,8 @@ function WorkbenchPanel() {
                       useChatStore.getState().openTab(session.key);
                       navigate('/chat');
                     }).catch((error: unknown) => {
-                      useNotificationStore.getState().addToast('error', t('chat.sessionActions'), error instanceof Error ? error.message : String(error));
+                      debugError('app', '[NavSidebar] Session restore failed:', error);
+                      useNotificationStore.getState().addToast('error', t('chat.sessionActions'), t(sessionActionErrorKey(error)));
                     });
                   }}
                   className="min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-[11px] text-aegis-text-dim transition-colors hover:bg-aegis-hover/35 hover:text-aegis-text-secondary"
@@ -745,7 +748,8 @@ function WorkbenchPanel() {
                 <button
                   type="button"
                   onClick={() => void setSessionArchived(session.key, false).catch((error: unknown) => {
-                    useNotificationStore.getState().addToast('error', t('chat.sessionActions'), error instanceof Error ? error.message : String(error));
+                    debugError('app', '[NavSidebar] Session restore failed:', error);
+                    useNotificationStore.getState().addToast('error', t('chat.sessionActions'), t(sessionActionErrorKey(error)));
                   })}
                   className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-aegis-text-dim opacity-0 transition-opacity hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:opacity-100 group-hover/archived-session:opacity-100"
                   title={t('sidebar.restoreSession')}
