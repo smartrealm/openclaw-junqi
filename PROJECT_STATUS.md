@@ -1,6 +1,6 @@
 # 项目交接状态
 
-更新时间：2026-08-15
+更新时间：2026-08-17
 
 ## 当前目标
 
@@ -10,11 +10,13 @@
 
 本轮验证：`pnpm lint`、完整 `pnpm test`、`pnpm test:rust` 均通过；Rust 为 641 项通过、1 项 Keychain 测试按设计忽略。`pnpm build` 通过，并重建协作与钉钉插件 bundle。`pnpm exec tauri build --target aarch64-apple-darwin --bundles app,dmg --no-sign --ci` 通过；DMG SHA-256 为 `9a05bee51f703b3425d3eee21798efac9fd05847fae183ba50ea77756811b0e7`，`hdiutil verify` 通过。未执行签名、公证、Gatekeeper 或其他目标平台真机验收。
 
-准备 JunQi Desktop 3.1.1 标签发布，并通过受保护的 tag 工作流构建和发布多平台 Release。
+JunQi Desktop `v3.1.1` 已发布。带注释 tag 指向提交 `eaa7d2963c148ee876f3b998533a04f8deb08587`；远端主分支 CI 与 Tagged Desktop Release 工作流均已成功。GitHub Release 已发布 macOS ARM64、macOS x64、Windows x64 安装与 updater 制品，以及 `latest.json` 更新清单。
 
 ## 已完成内容
 
 - `v3.1.0` 已存在于远端且指向既有发布提交，因此本轮不移动历史 tag；桌面版本按补丁版本提升至 3.1.1，并同步 `package.json`、`Cargo.toml`、`Cargo.lock` 与 `tauri.conf.json`。
+- `v3.1.1` 已创建带注释 tag 并通过受保护的发布工作流发布。工作流逐项完成来源祖先校验、三平台构建、macOS DMG 校验、Windows 原生 Rust 测试、制品上传、更新清单校验和 GitHub Release 创建；发布页为 `https://github.com/smartrealm/openclaw-junqi/releases/tag/v3.1.1`。
+- 远端 Release 包含 macOS ARM64/x64 的 `.dmg`、`.app.tar.gz` 与对应 `.sig`，Windows x64 的 NSIS 安装器与 `.sig`，以及 `latest.json`。Windows 使用短期内部测试证书，附件 CER 仅用于受控测试，不具备公共 CA 信任；开启 Smart App Control 时仍可能阻止安装。
 - 仪表盘、活动中心、完整用量、技能、渠道、设置、智能体、OpenClaw 命令和性能页面不再维护 900 至 1280 像素不等的路由级画布上限；统一使用随路由视口伸缩的全宽外框和响应式边距。
 - 阅读正文、对话气泡、弹窗和字段说明继续保留局部可读宽度；全宽页面契约没有覆盖这些内容级约束，也没有改变终端、日历、文件和业务应用等原本已占满工作区的页面。
 - 原始会话记录优先消费 OpenClaw transcript 的原始对象或内容块，紧凑工具气泡仍使用 2000 字符的有界展示投影。长结果不再因为紧凑截断退化为带转义符的内容数组文本。
@@ -149,6 +151,7 @@
 - 本轮新增的三项 Rust 定向回归已通过，分别证明声明 peer dependency 的精确 OpenClaw host link 被排除、无声明的同路径链接被拒绝、其他符号链接继续被拒绝。
 - 本轮 `cargo fmt -- --check`、`cargo check --lib` 和完整 `cargo test --lib` 已通过；Rust 共运行 642 项，641 项通过，1 项会修改当前用户 Keychain 的测试按设计忽略。
 - 本轮完整 `pnpm test`、`pnpm lint`、`pnpm verify:openclaw-docs` 与 `pnpm build` 已通过；生产构建重新生成并核验协作插件与钉钉插件，再完成 TypeScript 和 Vite 构建。
+- 发布前 `pnpm lint`、完整 `pnpm test`、`pnpm test:rust` 与 `pnpm build` 均通过；Rust 共 641 项通过、1 项按设计忽略。远端 `v3.1.1` 发布工作流在 2026-08-17 成功完成，三平台构建、Release 资产校验和 GitHub Release 创建均通过。
 - 第一次生产构建与尚未退出的 `collab:validate` 并发清理同一协作插件 `dist`，因此在归档核验时缺少 `dist/index.js`；等待验证进程结束后串行重跑通过，未以业务代码规避验证调度冲突。
 - 本轮原始记录复制与结构化记录定向回归 15 项通过；完整 `pnpm test` 已通过，前端与源码测试 2826 项、脚本测试 238 项均通过。
 - `pnpm lint` 已通过，包含 910 个文件的模块边界检查、版本一致性和 TypeScript 类型检查；`pnpm build` 已通过，包含协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建。
@@ -193,7 +196,8 @@
 - 当前 npm `latest` OpenClaw 2026.7.1-2 的 Classic Wizard 不接受 `wizard.start.installDaemon`，但公共参数已经真实启动并取消。完整 Classic 交互、daemon 选择、配置提交和终态交接尚未在隔离数据目录真机验收。
 - macOS、Windows、Linux 与 Docker 的系统服务、凭据库、连接轮换和首次进入工作台仍需分别在目标环境真机验证。
 - 真实渠道插件授权、Classic Wizard 收尾、暗色主题、窄窗口、键盘焦点和减少动态效果不属于本轮自动化能够证明的范围。
-- 本轮 macOS ARM64 DMG 是未签名、未公证的本地安装验证包，不是正式 Release；严格代码签名校验已确认其不具备完整资源封签。未构建其他平台安装包，也未发布远端制品。
+- 本机 macOS ARM64 DMG 是 `--no-sign` 的未签名、未公证安装验证包；该本地结果不能替代远端 Release 资产的工作流校验，也不能作为开发者签名或公证证据。
+- 已发布的 Windows 安装器使用短期内部测试证书，不具备公共 CA 信任。macOS 公证、Gatekeeper、Windows Smart App Control，以及 Linux、Docker 的目标平台真机验收仍未执行。
 
 ## 下一步顺序
 
@@ -201,4 +205,3 @@
 2. 由用户逐项验收会话组织、会话切换尾部定位、新建空会话和 JSON 展示，并使用长 transcript 连续抓帧验证阅读锁。
 3. 在最新版 OpenClaw Runtime 上执行真实配置终态、官方延迟重启、活动修订与认证连接收敛验证。
 4. 分别补充暗色主题、窄窗口、键盘焦点，以及 Windows、Linux 与 Docker 目标平台真机验收。
-5. 未经明确要求不推送、打 tag 或发布。
