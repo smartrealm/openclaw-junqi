@@ -44,12 +44,19 @@ Classic Wizard 的 `installDaemon` 字段差异由服务层安全协商，不再
 
 JunQi 不自动把现有 `beta` 或 `dev` 切回 stable。官方说明指出渠道切换会持久化并可能降级，因此界面只链接官方说明，等待用户显式完成切换后重新检查。
 
+### BUG-06 · 严重 · 自动候选激活异常阻断手动配置
+
+Windows 首次安装实测中，稳定 Runtime 的 `crestodian.setup.activate` 自动探测 `minimax` 时先报告临时推理 Agent 缺少 API Key，随后清理临时 SQLite `-shm` 文件返回 `EBUSY`。这是官方激活请求的异常终态，不是 JunQi 可以解释为“未执行”或“配置成功”的结果。
+
+修复后，自动候选梯子在任一激活请求异常时立即停止，不重试该请求，也不继续调用下一个候选。JunQi 保留同一次 `detect` 的官方候选、认证方式和手动 Provider 入口，在选择界面内呈现原始诊断。用户可显式选择另一条官方路径；成功仍只以 OpenClaw 的结构化激活回执与后续交接核验为准。
+
 ## 未验证边界
 
 - 本机已真实调用 `openclaw.setup.detect` 并得到结构化 unknown-method，再调用 `crestodian.setup.detect` 成功返回配置完成状态与真实候选；为避免改变现有用户配置，没有在开发机上执行有写入副作用的 `crestodian.setup.activate`。
 - 当前稳定 Classic Wizard 不接受 `installDaemon`，但已经通过公共参数真实启动并取消；完整交互、daemon 选择和终态仍需隔离配置真机验收。
 - beta 制品不是 JunQi 的安装、更新或配置候选。
 - Windows、Linux、Docker 和真实更新后的 Gateway 重连需要目标环境验证。
+- Windows 上临时 SQLite `-shm` 被占用时的真实 UI 回退尚未在修复后的安装包中验收；自动化只证明客户端不会重放未知激活，也不会丢失手动配置入口。
 
 ## 顶层工具导航归属
 

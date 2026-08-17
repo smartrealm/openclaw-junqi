@@ -97,6 +97,45 @@ test("guided setup preserves the last official failure after exhausting candidat
   });
 });
 
+test("guided setup stops automatic activation after a request interruption", async () => {
+  const interruption = new Error("temporary SQLite cleanup failed");
+  const calls: string[] = [];
+  const result = await activateFirstWorkingGuidedCandidate(detection, {
+    activateCandidate: async (candidate) => {
+      calls.push(candidate.modelRef);
+      throw interruption;
+    },
+  });
+
+  assert.deepEqual(calls, ["first/model"]);
+  assert.deepEqual(result, {
+    activated: false,
+    lastResult: null,
+    interruptedCause: interruption,
+  });
+});
+
+test("guided setup does not continue after an interruption following an official failure", async () => {
+  const interruption = new Error("gateway interrupted");
+  const calls: string[] = [];
+  const result = await activateFirstWorkingGuidedCandidate(detection, {
+    activateCandidate: async (candidate) => {
+      calls.push(candidate.modelRef);
+      if (candidate.modelRef === "first/model") {
+        return { ok: false, status: "auth", error: "missing credential" };
+      }
+      throw interruption;
+    },
+  });
+
+  assert.deepEqual(calls, ["first/model", "second/model"]);
+  assert.deepEqual(result, {
+    activated: false,
+    lastResult: { ok: false, status: "auth", error: "missing credential" },
+    interruptedCause: interruption,
+  });
+});
+
 test("guided setup does not invent a candidate when detection returns none", async () => {
   let called = false;
   const result = await activateFirstWorkingGuidedCandidate(

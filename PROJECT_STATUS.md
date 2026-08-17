@@ -12,11 +12,16 @@
 
 JunQi Desktop `v3.1.1` 已发布。带注释 tag 指向提交 `eaa7d2963c148ee876f3b998533a04f8deb08587`；远端主分支 CI 与 Tagged Desktop Release 工作流均已成功。GitHub Release 已发布 macOS ARM64、macOS x64、Windows x64 安装与 updater 制品，以及 `latest.json` 更新清单。
 
+本轮修复 Windows Guided 自动候选激活的异常恢复：上游 `crestodian.setup.activate` 在临时 SQLite 清理返回 `EBUSY` 等异常时，JunQi 停止自动候选梯子、保留检测结果与诊断并回到官方候选、认证和手动 Provider 选择，不重放未知副作用请求，也不继续激活下一个候选。
+
+准备 JunQi Desktop 3.1.2 标签发布，为 Windows、macOS ARM64/x64 生成包含上述恢复修复的安装器。
+
 ## 已完成内容
 
 - `v3.1.0` 已存在于远端且指向既有发布提交，因此本轮不移动历史 tag；桌面版本按补丁版本提升至 3.1.1，并同步 `package.json`、`Cargo.toml`、`Cargo.lock` 与 `tauri.conf.json`。
 - `v3.1.1` 已创建带注释 tag 并通过受保护的发布工作流发布。工作流逐项完成来源祖先校验、三平台构建、macOS DMG 校验、Windows 原生 Rust 测试、制品上传、更新清单校验和 GitHub Release 创建；发布页为 `https://github.com/smartrealm/openclaw-junqi/releases/tag/v3.1.1`。
 - 远端 Release 包含 macOS ARM64/x64 的 `.dmg`、`.app.tar.gz` 与对应 `.sig`，Windows x64 的 NSIS 安装器与 `.sig`，以及 `latest.json`。Windows 使用短期内部测试证书，附件 CER 仅用于受控测试，不具备公共 CA 信任；开启 Smart App Control 时仍可能阻止安装。
+- 自动候选激活请求异常时不再把用户停留在终止错误页。候选梯子将异常作为未知副作用边界返回，保留最近一个上游结构化失败与原始异常诊断；controller 停止自动尝试并呈现同一次官方 `detect` 的候选、认证方式和手动凭据入口。
 - 仪表盘、活动中心、完整用量、技能、渠道、设置、智能体、OpenClaw 命令和性能页面不再维护 900 至 1280 像素不等的路由级画布上限；统一使用随路由视口伸缩的全宽外框和响应式边距。
 - 阅读正文、对话气泡、弹窗和字段说明继续保留局部可读宽度；全宽页面契约没有覆盖这些内容级约束，也没有改变终端、日历、文件和业务应用等原本已占满工作区的页面。
 - 原始会话记录优先消费 OpenClaw transcript 的原始对象或内容块，紧凑工具气泡仍使用 2000 字符的有界展示投影。长结果不再因为紧凑截断退化为带转义符的内容数组文本。
@@ -152,6 +157,7 @@ JunQi Desktop `v3.1.1` 已发布。带注释 tag 指向提交 `eaa7d2963c148ee87
 - 本轮 `cargo fmt -- --check`、`cargo check --lib` 和完整 `cargo test --lib` 已通过；Rust 共运行 642 项，641 项通过，1 项会修改当前用户 Keychain 的测试按设计忽略。
 - 本轮完整 `pnpm test`、`pnpm lint`、`pnpm verify:openclaw-docs` 与 `pnpm build` 已通过；生产构建重新生成并核验协作插件与钉钉插件，再完成 TypeScript 和 Vite 构建。
 - 发布前 `pnpm lint`、完整 `pnpm test`、`pnpm test:rust` 与 `pnpm build` 均通过；Rust 共 641 项通过、1 项按设计忽略。远端 `v3.1.1` 发布工作流在 2026-08-17 成功完成，三平台构建、Release 资产校验和 GitHub Release 创建均通过。
+- 本轮自动候选异常恢复的 34 项定向设置回归通过；完整 `pnpm test`、`pnpm lint`、`pnpm build` 与 `pnpm verify:openclaw-docs` 均通过。完整测试存在既有 React SSR `useLayoutEffect` 警告，但没有失败。
 - 第一次生产构建与尚未退出的 `collab:validate` 并发清理同一协作插件 `dist`，因此在归档核验时缺少 `dist/index.js`；等待验证进程结束后串行重跑通过，未以业务代码规避验证调度冲突。
 - 本轮原始记录复制与结构化记录定向回归 15 项通过；完整 `pnpm test` 已通过，前端与源码测试 2826 项、脚本测试 238 项均通过。
 - `pnpm lint` 已通过，包含 910 个文件的模块边界检查、版本一致性和 TypeScript 类型检查；`pnpm build` 已通过，包含协作插件、钉钉业务插件、TypeScript 与 Vite 生产构建。
@@ -198,6 +204,7 @@ JunQi Desktop `v3.1.1` 已发布。带注释 tag 指向提交 `eaa7d2963c148ee87
 - 真实渠道插件授权、Classic Wizard 收尾、暗色主题、窄窗口、键盘焦点和减少动态效果不属于本轮自动化能够证明的范围。
 - 本机 macOS ARM64 DMG 是 `--no-sign` 的未签名、未公证安装验证包；该本地结果不能替代远端 Release 资产的工作流校验，也不能作为开发者签名或公证证据。
 - 已发布的 Windows 安装器使用短期内部测试证书，不具备公共 CA 信任。macOS 公证、Gatekeeper、Windows Smart App Control，以及 Linux、Docker 的目标平台真机验收仍未执行。
+- Windows 上真实 `crestodian.setup.activate` 的临时 SQLite `-shm` 文件占用场景尚未在修复后的安装包中复测；自动化已证明异常不会重放或隐藏手动配置入口，但不能替代该真机验收。
 
 ## 下一步顺序
 

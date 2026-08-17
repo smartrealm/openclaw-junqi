@@ -216,8 +216,12 @@ export function useGuidedSetupSession({
     }
     setActivation(ladder.lastResult);
     setPhase("selecting");
-    if (ladder.lastResult) setError(ladder.lastResult.error);
-  }, [assertCurrent, completeHandoff]);
+    if (ladder.interruptedCause) {
+      setError(operationError(ladder.interruptedCause, t));
+    } else if (ladder.lastResult) {
+      setError(ladder.lastResult.error);
+    }
+  }, [assertCurrent, completeHandoff, t]);
 
   const activate = useCallback(async (
     params: Parameters<OpenClawGuidedSetupClient["activate"]>[0],

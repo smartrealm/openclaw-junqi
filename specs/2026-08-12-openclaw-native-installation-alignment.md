@@ -27,7 +27,7 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 6. Guided 的 `setupComplete` 为真时，进入正常工作台，不重复 onboarding；Classic 则以当前官方 Wizard 会话的 `done` 作为终态证明。
 7. Guided 的 `setupComplete` 为假时，呈现官方候选、不可用候选、认证方式和准备方式；Classic 忠实呈现官方步骤。
 8. 需要认证或准备时，分别调用 `openclaw.setup.auth.start` 或 `openclaw.setup.prepare.start`，只投影结构化结果。
-9. 自动候选按官方顺序尝试，但必须跳过 `credentials === false` 的候选；已有默认模型候选激活失败后立即停止自动尝试，不得静默替换为其他模型。
+9. 自动候选按官方顺序尝试，但必须跳过 `credentials === false` 的候选；已有默认模型候选激活失败后立即停止自动尝试，不得静默替换为其他模型。任何激活请求异常中断时都必须停止自动尝试、保留检测结果和原始诊断并返回选择界面；不得推断激活未执行、重放该请求或继续激活下一个候选。
 10. 自动候选激活成功后，呈现官方“使用当前路径”或“查看其他选项”确认。激活结果已经由 OpenClaw 持久化；用户选择其他选项时在当前有效路径上打开完整选择器，不能伪装成尚未写入。
 11. 用户明确选择其他候选或手动凭据时调用 `openclaw.setup.activate`。只有上游返回成功并且 `openclaw.setup.verify` 通过，才能认为推理配置成立。
 12. 推理成立后，用独立 session 调用 `openclaw.chat`，首个请求携带 `welcomeVariant: "onboarding"`。
@@ -111,6 +111,7 @@ Remote Gateway 本轮只保留为未实现的官方能力，不新增猜测性�
 - 英语、简体中文和繁体中文资源均不存在扁平键与嵌套路径的类型冲突；数据位置提交进度读取明确的字符串叶子。
 - 新安装默认不会调用 `wizard.start`，而是依次使用正式 setup RPC 和 onboarding chat。
 - 自动候选不会尝试 `credentials === false` 的项；已有默认模型候选失败后不会继续激活后续候选。
+- 自动候选激活请求异常时保留官方检测结果、停止后续自动候选并回到手动选择；不得重放异常请求或将其标记为成功。
 - 自动候选成功后必须先显示当前已激活路径的使用或改选确认，不能直接进入 onboarding chat。
 - 无可用候选时可以看到官方不可用原因、可用认证或手动凭据入口以及推荐安装建议。
 - Provider Wizard 和 chat 内嵌 Wizard 都有可访问的显式取消入口，并调用各自的官方取消协议。
