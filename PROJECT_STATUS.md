@@ -1,13 +1,20 @@
 # 项目交接状态
 
-更新时间：2026-08-14
+更新时间：2026-08-15
 
 ## 当前目标
 
-完成工作区主要页面动态尺寸、会话记录展示与操作闭环，并合入协作插件更新事务对 OpenClaw 官方 peer dependency 链接的严格处理。
+本轮已将会话读取入口收紧为通用 OpenClaw Gateway 操作：页面使用用户提供的 `sessionId`，通过认证 Gateway 的会话目录和历史 RPC 读取 transcript，不依赖本机状态目录或本地会话路径。
+
+本轮已完成本地 release 打包链路：前端、协作插件、钉钉插件、Rust release、macOS `.app` 和 Apple Silicon DMG 均已生成。当前机器已通过 `hdiutil verify` 校验 DMG 完整性；构建使用 `--no-sign`，因此产物未签名、未公证，不能描述为正式发布包。
+
+本轮验证：`pnpm lint`、完整 `pnpm test`、`pnpm test:rust` 均通过；Rust 为 641 项通过、1 项 Keychain 测试按设计忽略。`pnpm build` 通过，并重建协作与钉钉插件 bundle。`pnpm exec tauri build --target aarch64-apple-darwin --bundles app,dmg --no-sign --ci` 通过；DMG SHA-256 为 `9a05bee51f703b3425d3eee21798efac9fd05847fae183ba50ea77756811b0e7`，`hdiutil verify` 通过。未执行签名、公证、Gatekeeper 或其他目标平台真机验收。
+
+准备 JunQi Desktop 3.1.1 标签发布，并通过受保护的 tag 工作流构建和发布多平台 Release。
 
 ## 已完成内容
 
+- `v3.1.0` 已存在于远端且指向既有发布提交，因此本轮不移动历史 tag；桌面版本按补丁版本提升至 3.1.1，并同步 `package.json`、`Cargo.toml`、`Cargo.lock` 与 `tauri.conf.json`。
 - 仪表盘、活动中心、完整用量、技能、渠道、设置、智能体、OpenClaw 命令和性能页面不再维护 900 至 1280 像素不等的路由级画布上限；统一使用随路由视口伸缩的全宽外框和响应式边距。
 - 阅读正文、对话气泡、弹窗和字段说明继续保留局部可读宽度；全宽页面契约没有覆盖这些内容级约束，也没有改变终端、日历、文件和业务应用等原本已占满工作区的页面。
 - 原始会话记录优先消费 OpenClaw transcript 的原始对象或内容块，紧凑工具气泡仍使用 2000 字符的有界展示投影。长结果不再因为紧凑截断退化为带转义符的内容数组文本。

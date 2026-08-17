@@ -434,6 +434,13 @@ export interface GatewayHistoryResponse extends Record<string, unknown> {
   sessionInfo?: GatewayHistorySessionInfo;
 }
 
+export class GatewaySessionNotFoundError extends Error {
+  constructor(sessionId: string) {
+    super(`OpenClaw session ${sessionId} was not found in the authenticated Gateway`);
+    this.name = 'GatewaySessionNotFoundError';
+  }
+}
+
 export interface GatewayMessageResponse extends Record<string, unknown> {
   ok?: boolean;
   message?: unknown;
@@ -1448,6 +1455,23 @@ export const gateway = {
       (method, params) => connection.request(method, params),
       agentIds,
     );
+  },
+  async getHistoryBySessionId(sessionId: string, limit = 200): Promise<GatewayHistoryResponse> {
+    const normalizedId = typeof sessionId === 'string' ? sessionId.trim() : '';
+    if (!normalizedId) throw new Error('OpenClaw sessionId is required');
+    const catalog = await this.getSessions();
+    const session = (catalog.sessions ?? []).find((candidate) => {
+      if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) return false;
+      return (candidate as Record<string, unknown>).sessionId === normalizedId;
+    });
+    if (session === undefined || typeof session !== 'object' || Array.isArray(session)) {
+      throw new GatewaySessionNotFoundError(normalizedId);
+    }
+    const key = (session as Record<string, unknown>).key;
+    if (typeof key !== 'string' || !key.trim()) {
+      throw new Error('OpenClaw sessions.list returned a session without a key');
+    }
+    return this.getHistory(key, limit);
   },
   async createSession(input: {
     agentId: string;
