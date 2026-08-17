@@ -14,13 +14,14 @@ JunQi Desktop `v3.1.1` 已发布。带注释 tag 指向提交 `eaa7d2963c148ee87
 
 本轮修复 Windows Guided 自动候选激活的异常恢复：上游 `crestodian.setup.activate` 在临时 SQLite 清理返回 `EBUSY` 等异常时，JunQi 停止自动候选梯子、保留检测结果与诊断并回到官方候选、认证和手动 Provider 选择，不重放未知副作用请求，也不继续激活下一个候选。
 
-准备 JunQi Desktop 3.1.2 标签发布，为 Windows、macOS ARM64/x64 生成包含上述恢复修复的安装器。
+JunQi Desktop `v3.1.2` 已发布。带注释 tag 指向提交 `af24bdc809306e0b143f979a3f5c984b9c8aca16`；远端主分支 CI 与 Tagged Desktop Release 工作流均已成功。GitHub Release 已发布 macOS ARM64、macOS x64、Windows x64 安装与 updater 制品，以及 `latest.json` 更新清单。
 
 ## 已完成内容
 
 - `v3.1.0` 已存在于远端且指向既有发布提交，因此本轮不移动历史 tag；桌面版本按补丁版本提升至 3.1.1，并同步 `package.json`、`Cargo.toml`、`Cargo.lock` 与 `tauri.conf.json`。
 - `v3.1.1` 已创建带注释 tag 并通过受保护的发布工作流发布。工作流逐项完成来源祖先校验、三平台构建、macOS DMG 校验、Windows 原生 Rust 测试、制品上传、更新清单校验和 GitHub Release 创建；发布页为 `https://github.com/smartrealm/openclaw-junqi/releases/tag/v3.1.1`。
 - 远端 Release 包含 macOS ARM64/x64 的 `.dmg`、`.app.tar.gz` 与对应 `.sig`，Windows x64 的 NSIS 安装器与 `.sig`，以及 `latest.json`。Windows 使用短期内部测试证书，附件 CER 仅用于受控测试，不具备公共 CA 信任；开启 Smart App Control 时仍可能阻止安装。
+- `v3.1.2` 已创建带注释 tag 并通过受保护的发布工作流发布。工作流逐项完成来源祖先校验、三平台构建、macOS DMG 校验、Windows 原生 Rust 测试、制品上传、更新清单校验和 GitHub Release 创建；发布页为 `https://github.com/smartrealm/openclaw-junqi/releases/tag/v3.1.2`。
 - 自动候选激活请求异常时不再把用户停留在终止错误页。候选梯子将异常作为未知副作用边界返回，保留最近一个上游结构化失败与原始异常诊断；controller 停止自动尝试并呈现同一次官方 `detect` 的候选、认证方式和手动凭据入口。
 - 仪表盘、活动中心、完整用量、技能、渠道、设置、智能体、OpenClaw 命令和性能页面不再维护 900 至 1280 像素不等的路由级画布上限；统一使用随路由视口伸缩的全宽外框和响应式边距。
 - 阅读正文、对话气泡、弹窗和字段说明继续保留局部可读宽度；全宽页面契约没有覆盖这些内容级约束，也没有改变终端、日历、文件和业务应用等原本已占满工作区的页面。
