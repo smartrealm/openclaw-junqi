@@ -58,6 +58,12 @@
 - 维护中心结果判定与自救面板接口定向回归 12 项通过。
 - `pnpm lint` 通过，模块边界扫描 917 个生产文件，四处版本一致，TypeScript 类型检查通过。
 - 完整 `pnpm test` 通过，前端与源码测试 2846 项、脚本测试 238 项均无失败；`pnpm build` 通过。
+- 功能改动已提交为 `d9480100`。随后执行
+  `pnpm exec tauri build --target aarch64-apple-darwin --bundles app,dmg --no-sign --ci`，Apple Silicon
+  `.app` 与 DMG 均生成成功；应用二进制核验为 Mach-O arm64，应用与构建版本均为 3.1.2。
+- `hdiutil verify` 已确认本地 DMG 完整，SHA-256 为
+  `7f86f4961b2e677849d62359c7b37381fb75cc25069907a1db82a46b6ac71584`。该制品使用 `--no-sign`，没有开发者
+  签名或公证，只能作为当前机器的本地安装验证包。
 
 ## 已知问题与未验证边界
 
@@ -66,6 +72,8 @@
 - 当前截图中的 DWS 授权按钮禁用是未验证本机或 Docker 运行时的安全结果；可打开指引，但不能由桌面端执行远程宿主授权。
 - Gateway 错误页失败保留和 Agent 删除后的渠道重载部分失败尚未在真实 Native、Docker、Windows 或 Linux 运行时人为制造并验收。
 - 维护中心失败反馈尚未在真实 Native、Docker、Windows 或 Linux 运行时人为制造并做键盘、亮暗主题和窄窗口验收。
+- 本轮本地 DMG 尚未执行安装后的首次启动、Gatekeeper、签名或公证验收；Windows、Linux 安装包没有在当前
+  macOS 主机生成。
 
 ## 下一步顺序
 
