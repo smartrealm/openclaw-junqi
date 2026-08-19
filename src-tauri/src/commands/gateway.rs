@@ -191,6 +191,7 @@ enum GatewayObservation {
     ManagedChildReady,
     ManagedChildUnready,
     ManagedChildExited,
+    SelectedSystemServiceHealthy,
     EndpointHealthy,
     EndpointOffline,
 }
@@ -467,6 +468,9 @@ fn runtime_after_observation(
         GatewayObservation::ManagedChildUnready => {
             (GatewayLifecycle::Starting, GatewayRuntimeMode::ManagedChild)
         }
+        GatewayObservation::SelectedSystemServiceHealthy => {
+            (GatewayLifecycle::Running, GatewayRuntimeMode::SystemService)
+        }
         GatewayObservation::ManagedChildExited | GatewayObservation::EndpointOffline => {
             (GatewayLifecycle::Stopped, GatewayRuntimeMode::None)
         }
@@ -493,6 +497,21 @@ fn runtime_after_observation(
         lifecycle,
         mode,
         restarting: current.restarting,
+    }
+}
+
+fn native_healthy_endpoint_observation(
+    current_mode: GatewayRuntimeMode,
+    service: Option<crate::commands::gateway_service::GatewayServiceInspection>,
+) -> GatewayObservation {
+    if matches!(
+        current_mode,
+        GatewayRuntimeMode::None | GatewayRuntimeMode::External
+    ) && service.is_some_and(crate::commands::gateway_service::is_running_selected_service)
+    {
+        GatewayObservation::SelectedSystemServiceHealthy
+    } else {
+        GatewayObservation::EndpointHealthy
     }
 }
 
@@ -552,6 +571,72 @@ mod runtime_observation_tests {
             runtime_after_observation(stale, GatewayObservation::EndpointHealthy),
             runtime(GatewayLifecycle::Running, GatewayRuntimeMode::External)
         );
+    }
+
+    #[test]
+    fn bug_gri01_selected_official_service_restores_cold_start_ownership() {
+        use crate::commands::gateway_service::{GatewayServiceInspection, GatewayServiceOwnership};
+
+        let selected = GatewayServiceInspection {
+            ownership: GatewayServiceOwnership::SelectedState,
+            installed: true,
+            running: true,
+            runtime_known: true,
+        };
+        for current_mode in [GatewayRuntimeMode::None, GatewayRuntimeMode::External] {
+            let observation = native_healthy_endpoint_observation(current_mode, Some(selected));
+            assert_eq!(
+                runtime_after_observation(
+                    runtime(GatewayLifecycle::Running, current_mode),
+                    observation,
+                ),
+                runtime(GatewayLifecycle::Running, GatewayRuntimeMode::SystemService)
+            );
+        }
+    }
+
+    #[test]
+    fn bug_gri01_unverified_endpoint_cannot_gain_system_service_ownership() {
+        use crate::commands::gateway_service::{GatewayServiceInspection, GatewayServiceOwnership};
+
+        let baseline = GatewayServiceInspection {
+            ownership: GatewayServiceOwnership::SelectedState,
+            installed: true,
+            running: true,
+            runtime_known: true,
+        };
+        for service in [
+            None,
+            Some(GatewayServiceInspection {
+                ownership: GatewayServiceOwnership::Absent,
+                installed: false,
+                running: false,
+                ..baseline
+            }),
+            Some(GatewayServiceInspection {
+                ownership: GatewayServiceOwnership::Foreign,
+                ..baseline
+            }),
+            Some(GatewayServiceInspection {
+                ownership: GatewayServiceOwnership::Unverifiable,
+                ..baseline
+            }),
+        ] {
+            assert_eq!(
+                native_healthy_endpoint_observation(GatewayRuntimeMode::None, service),
+                GatewayObservation::EndpointHealthy
+            );
+        }
+        for current_mode in [
+            GatewayRuntimeMode::ManagedChild,
+            GatewayRuntimeMode::SystemService,
+            GatewayRuntimeMode::Docker,
+        ] {
+            assert_eq!(
+                native_healthy_endpoint_observation(current_mode, Some(baseline)),
+                GatewayObservation::EndpointHealthy
+            );
+        }
     }
 
     #[test]
@@ -4184,13 +4269,27 @@ pub async fn gateway_status(state: State<'_, GatewayProcess>) -> Result<GatewayS
         });
     }
 
-    // 2. No managed child: probe JunQi's configured OpenClaw port only.
+    // 2. 没有桌面托管子进程时，只探测 JunQi 当前配置的 OpenClaw 端口。
     if gateway_matches_config(port, &config_path).await {
         if can_reconcile {
             *state.port.lock().map_err(|e| e.to_string())? = port;
+            let current_mode = state.runtime_snapshot()?.mode;
+            let service = if matches!(
+                paths::active_runtime_mode(),
+                paths::OpenClawRuntimeMode::Native
+            ) && matches!(
+                current_mode,
+                GatewayRuntimeMode::None | GatewayRuntimeMode::External
+            ) {
+                crate::commands::gateway_service::inspect_selected_native_gateway_service()
+                    .await
+                    .ok()
+            } else {
+                None
+            };
             reconcile_runtime_observation(
                 &state,
-                GatewayObservation::EndpointHealthy,
+                native_healthy_endpoint_observation(current_mode, service),
                 "gateway_status: configured endpoint is healthy",
             )?;
         }

@@ -6,6 +6,7 @@ import {
   clearPersistentNotifications,
   createOpenClawMediaPreviewUrl,
   finishTalkPlayback,
+  getNativeVoiceWakeCapability,
   getGatewayRuntimeSnapshot,
   getOpenclawChannelCapabilities,
   getOpenclawChannelCatalog,
@@ -22,8 +23,10 @@ import {
   signGatewayDeviceChallenge,
   startDwsOperation,
   startGateway,
+  startNativeVoiceWake,
   startVoiceCapture,
   stopGateway,
+  stopNativeVoiceWake,
   stopTalkPlayback,
   stopVoiceCapture,
   type GatewayDeviceChallengeParams,
@@ -174,6 +177,7 @@ test('设备签名和钉钉操作保持网关身份与操作标识的嵌套边�
         await startDwsOperation('runtime-1', 'connection-1', 'authorize'),
         { operationId: 'operation-1', kind: 'authorize' },
       );
+      await startDwsOperation('runtime-1', 'connection-1', 'switchProfile', 'corp-a:user-a');
       await cancelDwsOperation('runtime-1', 'connection-1', 'operation-1');
       assert.deepEqual(calls, [
         { command: 'sign_gateway_device_challenge', args: { params: signatureParams } },
@@ -184,6 +188,16 @@ test('设备签名和钉钉操作保持网关身份与操作标识的嵌套边�
             targetFingerprint: 'runtime-1',
             expectedConnectionId: 'connection-1',
             kind: 'authorize',
+            profile: null,
+          },
+        },
+        {
+          command: 'start_dws_operation',
+          args: {
+            targetFingerprint: 'runtime-1',
+            expectedConnectionId: 'connection-1',
+            kind: 'switchProfile',
+            profile: 'corp-a:user-a',
           },
         },
         {
@@ -277,6 +291,27 @@ test('原生语音与媒体预览包装器验证响应并保留运行时参数',
       if (command === 'voice_capture_stop') {
         return { ownerId: 'owner-1', listening: false, stopped: true, reused: false };
       }
+      if (command === 'voice_wake_capability') {
+        return { supported: true, engine: 'windows-sapi' };
+      }
+      if (command === 'voice_wake_start') {
+        return {
+          ownerId: 'wake-owner-1',
+          supported: true,
+          listening: true,
+          reused: false,
+          stopped: false,
+        };
+      }
+      if (command === 'voice_wake_stop') {
+        return {
+          ownerId: 'wake-owner-1',
+          supported: true,
+          listening: false,
+          reused: false,
+          stopped: true,
+        };
+      }
       if (command === 'voice_talk_play_pcm') return { queued: false };
       if (command === 'create_openclaw_media_preview_url') {
         return { success: true, url: 'asset://preview', error: null };
@@ -293,6 +328,24 @@ test('原生语音与媒体预览包装器验证响应并保留运行时参数',
         await stopVoiceCapture('owner-1'),
         { ownerId: 'owner-1', listening: false, stopped: true, reused: false },
       );
+      assert.deepEqual(await getNativeVoiceWakeCapability(), {
+        supported: true,
+        engine: 'windows-sapi',
+      });
+      assert.deepEqual(await startNativeVoiceWake('wake-owner-1', [' OpenClaw ']), {
+        ownerId: 'wake-owner-1',
+        supported: true,
+        listening: true,
+        reused: false,
+        stopped: false,
+      });
+      assert.deepEqual(await stopNativeVoiceWake('wake-owner-1'), {
+        ownerId: 'wake-owner-1',
+        supported: true,
+        listening: false,
+        reused: false,
+        stopped: true,
+      });
       assert.equal(
         await playTalkPcm('AA==', { sampleRateHz: 24_000, channels: 1 }),
         'overflow',
@@ -311,6 +364,12 @@ test('原生语音与媒体预览包装器验证响应并保留运行时参数',
           args: { ownerId: 'owner-1', sampleRateHz: 24_000, channels: 1 },
         },
         { command: 'voice_capture_stop', args: { ownerId: 'owner-1' } },
+        { command: 'voice_wake_capability', args: {} },
+        {
+          command: 'voice_wake_start',
+          args: { ownerId: 'wake-owner-1', triggers: ['OpenClaw'] },
+        },
+        { command: 'voice_wake_stop', args: { ownerId: 'wake-owner-1' } },
         {
           command: 'voice_talk_play_pcm',
           args: { audioBase64: 'AA==', sampleRateHz: 24_000, channels: 1 },

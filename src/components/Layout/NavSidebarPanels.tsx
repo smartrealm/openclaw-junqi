@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Activity, ArrowUpRight, BarChart3, BookOpenText, Bot, Brain, Building2, Calendar, CircleAlert, Clock, Cpu, Database, FileText, Folder, History, ListChecks, MessageSquare, Plus, Puzzle, RefreshCw, Settings, Settings2, Terminal, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -9,6 +9,7 @@ import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSkillsStore } from '@/stores/skillsStore';
 import { useOpenClawCommands } from '@/hooks/useOpenClawCommands';
 import { groupOpenClawCommands } from '@/pages/OpenClawCommands/commandGroups';
+import { openClawCommandCategoryFromHash } from '@/pages/OpenClawCommands/commandScrollSpy';
 import { SidebarRow, SidebarSection } from './SidebarRow';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
@@ -371,13 +372,22 @@ export function CommandsPanel() {
     includeArgs: false,
   });
   const groups = useMemo(() => groupOpenClawCommands(commands), [commands]);
-  const selectedCategory = new URLSearchParams(location.hash.slice(1)).get('category');
+  const selectedCategory = openClawCommandCategoryFromHash(location.hash);
+  const navigationScrollRef = useRef<HTMLDivElement>(null);
   const navigateToCommands = (category?: string) => {
     navigate({
       pathname: '/openclaw-commands',
       ...(category ? { hash: `#category=${encodeURIComponent(category)}` } : {}),
     });
   };
+
+  useEffect(() => {
+    const targetCategory = selectedCategory ?? '';
+    const target = Array.from(
+      navigationScrollRef.current?.querySelectorAll<HTMLElement>('[data-openclaw-command-category]') ?? [],
+    ).find((element) => element.dataset.openclawCommandCategory === targetCategory);
+    target?.scrollIntoView({ block: 'nearest' });
+  }, [selectedCategory]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -396,15 +406,17 @@ export function CommandsPanel() {
           </div>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto py-2">
+      <div ref={navigationScrollRef} className="min-h-0 flex-1 overflow-y-auto py-2">
         <SidebarSection label={t('openclawCommands.navigation.allCommands', '当前目录')}>
-          <SidebarRow
-            icon={<BookOpenText size={14} />}
-            title={t('openclawCommands.title')}
-            meta={loading ? t('openclawCommands.navigation.loading', '正在读取') : t('openclawCommands.navigation.commandCount', '{{count}} 条命令', { count: commands.length })}
-            active={!selectedCategory}
-            onClick={() => navigateToCommands()}
-          />
+          <div data-openclaw-command-category="">
+            <SidebarRow
+              icon={<BookOpenText size={14} />}
+              title={t('openclawCommands.title')}
+              meta={loading ? t('openclawCommands.navigation.loading', '正在读取') : t('openclawCommands.navigation.commandCount', '{{count}} 条命令', { count: commands.length })}
+              active={!selectedCategory}
+              onClick={() => navigateToCommands()}
+            />
+          </div>
         </SidebarSection>
         {!connected && (
           <SidebarSection label={t('openclawCommands.navigation.groups', '命令分组')}>
@@ -424,14 +436,15 @@ export function CommandsPanel() {
         {connected && !loading && !failure && groups.length > 0 && (
           <SidebarSection label={t('openclawCommands.navigation.groups', '命令分组')}>
             {groups.map((group) => (
-              <SidebarRow
-                key={group.id}
-                icon={<ListChecks size={14} />}
-                title={t(`openclawCommands.categories.${group.id}`)}
-                meta={t('openclawCommands.navigation.commandCount', '{{count}} 条命令', { count: group.commands.length })}
-                active={selectedCategory === group.id}
-                onClick={() => navigateToCommands(group.id)}
-              />
+              <div key={group.id} data-openclaw-command-category={group.id}>
+                <SidebarRow
+                  icon={<ListChecks size={14} />}
+                  title={t(`openclawCommands.categories.${group.id}`)}
+                  meta={t('openclawCommands.navigation.commandCount', '{{count}} 条命令', { count: group.commands.length })}
+                  active={selectedCategory === group.id}
+                  onClick={() => navigateToCommands(group.id)}
+                />
+              </div>
             ))}
           </SidebarSection>
         )}

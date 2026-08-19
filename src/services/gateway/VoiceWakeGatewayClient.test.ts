@@ -48,11 +48,42 @@ test('唤醒词读写始终绑定同一个可信 Gateway 连接', async () => {
   ]);
 });
 
-test('唤醒路由只通过官方保留的方法读取', async () => {
+test('当前设置投影通过官方读取方法取得唤醒路由', async () => {
   const { client, calls } = clientWith([{ config: routing }]);
   assert.deepEqual(await client.getRouting(), routing);
   assert.deepEqual(calls, [
     { method: 'voicewake.routing.get', params: {}, connectionId: 'connection-a' },
+  ]);
+});
+
+test('智能体唤醒路由通过官方智能体快照派生显式主会话', async () => {
+  const { client, calls } = clientWith([
+    {
+      defaultId: 'main',
+      mainKey: 'primary',
+      scope: 'global',
+      agents: [{ id: 'main' }, { id: 'jarvis' }],
+    },
+    {
+      defaultId: 'main',
+      mainKey: 'primary',
+      scope: 'per-sender',
+      agents: [{ id: 'main' }],
+    },
+  ]);
+  assert.equal(await client.resolveAgentMainSessionKey(' jarvis '), 'agent:jarvis:primary');
+  assert.equal(await client.resolveAgentMainSessionKey('missing'), null);
+  assert.deepEqual(calls, [
+    {
+      method: 'agents.list',
+      params: {},
+      connectionId: 'connection-a',
+    },
+    {
+      method: 'agents.list',
+      params: {},
+      connectionId: 'connection-a',
+    },
   ]);
 });
 

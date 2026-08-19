@@ -4,6 +4,7 @@ import {
   DINGTALK_RUNTIME_STATUS_TOOL,
   dingTalkDomainLabel,
   type DingTalkEffectiveTool,
+  type DingTalkRuntimeProfileProjection,
   type DingTalkToolSchemaProjection,
 } from '@/business-applications/dingtalkTools';
 import type { DingTalkApprovalTraceProjection } from '@/business-applications/dingtalkApproval';
@@ -24,6 +25,7 @@ export function DingTalkToolDetail({
   width,
   collapsed,
   profile,
+  profiles,
   argumentsJson,
   schema,
   schemaLoading,
@@ -49,6 +51,7 @@ export function DingTalkToolDetail({
   width: number;
   collapsed: boolean;
   profile: string;
+  profiles: readonly DingTalkRuntimeProfileProjection[];
   argumentsJson: string;
   schema: DingTalkToolSchemaProjection | null;
   schemaLoading: boolean;
@@ -117,16 +120,25 @@ export function DingTalkToolDetail({
 
           {!runtimeTool && (
             <>
-              <label className="mt-3 block text-[10.5px] font-medium text-aegis-text-secondary" htmlFor="dingtalk-profile">租户身份</label>
-              <input
+              <label className="mt-3 block text-[10.5px] font-medium text-aegis-text-secondary" htmlFor="dingtalk-profile">执行身份（DWS Profile）</label>
+              <select
                 id="dingtalk-profile"
                 value={profile}
                 onChange={(event) => onProfileChange(event.target.value)}
-                placeholder="corpId:userId"
-                autoComplete="off"
-                spellCheck={false}
                 className="mt-1 h-8 w-full rounded-md border border-aegis-border bg-aegis-bg px-2 font-mono text-[10.5px] text-aegis-text outline-none placeholder:text-aegis-text-dim focus:border-aegis-primary/60 focus:ring-1 focus:ring-aegis-primary/25"
-              />
+                disabled={profiles.length === 0}
+              >
+                {profiles.length === 0 && <option value="">DWS 未返回已登录账号</option>}
+                {profiles.map((candidate) => (
+                  <option key={candidate.profile} value={candidate.profile}>
+                    {candidate.corpName && candidate.userName
+                      ? `${candidate.corpName} / ${candidate.userName}`
+                      : candidate.userName ?? candidate.corpName ?? candidate.profile}
+                    {candidate.isCurrent ? '（当前）' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[9.5px] leading-4 text-aegis-text-dim">每次调用均把所选精确 Profile 交给 DWS，不从姓名或最近使用记录推断账号。</p>
 
               <div className="mt-3 flex items-center justify-between gap-2">
                 <span className="text-[10.5px] font-medium text-aegis-text-secondary">当前 DWS 参数</span>

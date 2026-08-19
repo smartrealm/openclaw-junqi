@@ -33,16 +33,82 @@ function iconStatus(state: ExecutionPlanStepState): StatusIconValue {
   return 'pending';
 }
 
+function ExecutionPlanDetails({
+  plan,
+  regionId,
+  scrollable = false,
+}: {
+  plan: AgentExecutionPlan;
+  regionId: string;
+  scrollable?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      id={regionId}
+      className={clsx(
+        'px-3 py-2.5 motion-safe:animate-fade-in',
+        scrollable && 'chat-scrollbar max-h-[min(42vh,360px)] overflow-y-auto overscroll-contain',
+      )}
+    >
+      {plan.explanation && (
+        <p className="mb-2 text-[11px] leading-relaxed text-aegis-text-muted">
+          {plan.explanation}
+        </p>
+      )}
+      {plan.previousStepCount !== undefined && (
+        <p className="mb-2 text-[10px] text-aegis-text-dim">
+          {t('chat.executionPlan.stepCountChanged', {
+            previous: plan.previousStepCount,
+            current: plan.steps.length,
+          })}
+        </p>
+      )}
+      <ol className="space-y-0.5">
+        {plan.steps.map((step, index) => (
+          <li key={step.id} data-execution-plan-step-state={step.state} className="relative grid min-w-0 grid-cols-[16px_minmax(0,1fr)_auto] items-start gap-x-2.5 py-1.5">
+            {index < plan.steps.length - 1 && (
+              <span aria-hidden="true" className="absolute start-[7px] top-[22px] h-[calc(100%-8px)] w-px bg-aegis-border" />
+            )}
+            <span className="relative z-10 mt-0.5 grid size-4 shrink-0 place-items-center bg-aegis-card">
+              <StatusIcon status={iconStatus(step.state)} size={14} />
+            </span>
+            <span className={clsx(
+              'min-w-0 break-words text-[12px] leading-5',
+              step.state === 'completed' ? 'text-aegis-text-dim' : 'text-aegis-text',
+            )}>
+              {step.title}
+            </span>
+            <span className={clsx(
+              'mt-0.5 shrink-0 text-[9px] font-medium',
+              step.state === 'running'
+                ? 'text-aegis-primary'
+                : step.state === 'completed'
+                  ? 'text-aegis-success'
+                  : 'text-aegis-text-dim',
+            )}>
+              {t(`chat.trace.nodeStatus.${step.state === 'running' ? 'running' : step.state}`)}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 export function ExecutionPlanCard({
   plan,
   outcome,
   onOpenTrace,
+  presentation = 'transcript',
 }: {
   plan: AgentExecutionPlan;
   /** `plan.state` 不能区分运行中与运行中断，终态必须由响应组提供。 */
   outcome: ExecutionPlanOutcome;
   /** 打开包含全部上游计划快照的响应追溯。 */
   onOpenTrace?: () => void;
+  /** 运行中计划使用输入区紧凑入口，终态计划保留会话记录卡片。 */
+  presentation?: 'transcript' | 'composer';
 }) {
   const { t } = useTranslation();
   const regionId = useId();
@@ -65,6 +131,59 @@ export function ExecutionPlanCard({
       return next;
     });
   };
+
+  if (presentation === 'composer') {
+    const progress = t('chat.executionPlan.progress', {
+      current: plan.currentStepIndex + 1,
+      total: plan.steps.length,
+    });
+    return (
+      <section
+        data-execution-plan-card="true"
+        data-execution-plan-state={outcome}
+        data-execution-plan-presentation="composer"
+        className="flex w-full flex-col items-center"
+        aria-label={t('chat.executionPlan.ariaLabel')}
+        aria-live="polite"
+      >
+        {!collapsed && (
+          <div className="mb-2 w-full max-w-[640px] overflow-hidden rounded-xl border border-aegis-border bg-aegis-card shadow-popover">
+            <div className="flex min-h-10 items-center gap-2 border-b border-aegis-border px-3 py-2">
+              <ListChecks size={15} className="shrink-0 text-aegis-primary" />
+              <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-aegis-text">
+                {t('chat.executionPlan.title')}
+              </span>
+              {plan.revision > 1 && (
+                <span className="shrink-0 text-[9px] text-aegis-text-dim">
+                  {t('chat.executionPlan.revision', { revision: plan.revision })}
+                </span>
+              )}
+            </div>
+            <ExecutionPlanDetails plan={plan} regionId={regionId} scrollable />
+          </div>
+        )}
+        <button
+          type="button"
+          data-execution-plan-compact-trigger="true"
+          onClick={toggle}
+          aria-expanded={!collapsed}
+          aria-controls={regionId}
+          aria-label={`${t('chat.executionPlan.title')}，${progress}`}
+          className="flex min-h-10 items-center gap-2 rounded-full border border-aegis-border bg-aegis-card px-4 py-2 text-aegis-text-secondary shadow-sm transition-[background-color,border-color,color,transform] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none hover:border-aegis-primary/35 hover:bg-aegis-hover/35 hover:text-aegis-text active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40"
+        >
+          <StatusIcon status={iconStatus(currentStep.state)} size={17} />
+          <span className="text-[12px] font-medium tabular-nums">{progress}</span>
+          <ChevronDown
+            size={14}
+            className={clsx(
+              'text-aegis-text-dim transition-transform duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] motion-reduce:transition-none',
+              !collapsed && 'rotate-180',
+            )}
+          />
+        </button>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -142,48 +261,8 @@ export function ExecutionPlanCard({
       </div>
 
       {!collapsed && (
-        <div id={regionId} className="border-t border-aegis-border px-3 py-2.5 motion-safe:animate-fade-in">
-          {plan.explanation && (
-            <p className="mb-2 text-[11px] leading-relaxed text-aegis-text-muted">
-              {plan.explanation}
-            </p>
-          )}
-          {plan.previousStepCount !== undefined && (
-            <p className="mb-2 text-[10px] text-aegis-text-dim">
-              {t('chat.executionPlan.stepCountChanged', {
-                previous: plan.previousStepCount,
-                current: plan.steps.length,
-              })}
-            </p>
-          )}
-          <ol className="space-y-0.5">
-            {plan.steps.map((step, index) => (
-              <li key={step.id} data-execution-plan-step-state={step.state} className="relative grid min-w-0 grid-cols-[16px_minmax(0,1fr)_auto] items-start gap-x-2.5 py-1.5">
-                {index < plan.steps.length - 1 && (
-                  <span aria-hidden="true" className="absolute start-[7px] top-[22px] h-[calc(100%-8px)] w-px bg-aegis-border" />
-                )}
-                <span className="relative z-10 mt-0.5 grid size-4 shrink-0 place-items-center bg-aegis-card">
-                  <StatusIcon status={iconStatus(step.state)} size={14} />
-                </span>
-                <span className={clsx(
-                  'min-w-0 break-words text-[12px] leading-5',
-                  step.state === 'completed' ? 'text-aegis-text-dim' : 'text-aegis-text',
-                )}>
-                  {step.title}
-                </span>
-                <span className={clsx(
-                  'mt-0.5 shrink-0 text-[9px] font-medium',
-                  step.state === 'running'
-                    ? 'text-aegis-primary'
-                    : step.state === 'completed'
-                      ? 'text-aegis-success'
-                      : 'text-aegis-text-dim',
-                )}>
-                  {t(`chat.trace.nodeStatus.${step.state === 'running' ? 'running' : step.state}`)}
-                </span>
-              </li>
-            ))}
-          </ol>
+        <div className="border-t border-aegis-border">
+          <ExecutionPlanDetails plan={plan} regionId={regionId} />
         </div>
       )}
     </section>

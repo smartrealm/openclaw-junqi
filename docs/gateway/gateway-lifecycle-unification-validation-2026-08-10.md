@@ -130,3 +130,47 @@ Identity 仍在异步建立，导致钉钉业务页另建 60 秒轮询，而渠�
 - 尚未在真实渠道消息到达期间删除 Agent 并制造 Gateway 重启失败，核对旧路由停止生效的最终运行时状态。
 - 自救面板删除的是无消费者分支，现有生产渲染结构没有新增视觉状态；警告反馈复用现有 `showAlert` 和主题
   token。亮色、暗色、窄窗口和键盘焦点未做真机视觉验收。
+
+## 2026-08-19 冷启动官方服务归属恢复
+
+### BUG-GRI-01 · 健康的所选官方服务被标记为 External
+
+#### 官方与本机证据
+
+- OpenClaw 官方 `gateway status --json --no-probe` 返回服务命令、环境、工作目录、配置路径和运行状态，JunQi
+  已使用这些字段核验服务是否属于当前选择的 state、config 与 Node/OpenClaw 运行时。
+- 当前机器的 `ai.openclaw.gateway` LaunchAgent 正在运行，18789 监听进程的父进程为系统服务管理器。结构化状态中的
+  state、config、工作目录、Node 和 OpenClaw 包均与 JunQi 当前 Native 运行时匹配，因此它属于所选官方服务。
+
+#### 根因与影响
+
+- 应用冷启动时，进程观察先调用 `gateway_status`。旧实现看到健康端点且没有桌面子进程后，直接把初始
+  `None` 模式转为 `External`，没有执行已有的官方服务归属核验。
+- WebSocket 随后连接成功，应用取消冷启动 `recover`；只有 `ensure_gateway_running` 才执行的服务归属恢复不再运行。
+- Runtime Identity 因此生成 `ownership=user_managed`、`installTarget=remote_manual` 和
+  `desktopMutationAllowed=false`，钉钉页错误阻止 JunQi 管理实际属于当前选择的本机插件。
+
+#### 目标行为
+
+- Native 健康端点首次进入进程观察时，如果当前模式为 `None` 或 `External`，必须先核验所选官方服务。
+- 只有结构化服务状态证明已安装、运行且属于当前 state、config 与运行时，才恢复为 `SystemService`。
+- 核验失败、服务不属于当前选择或状态不可验证时继续保持 `External`，不得根据端口、进程名或本机地址猜测归属。
+- Runtime Identity 仍必须继续通过端点和路径核验，服务归属恢复不能绕过现有身份围栏。
+
+#### 实现与验证
+
+- `gateway_status` 在 Native 健康端点的初始 `None` 或既有 `External` 状态下，复用
+  `inspect_selected_native_gateway_service` 读取 OpenClaw 官方结构化服务状态；只有 `SelectedState` 且服务正在运行时，
+  才提交 `SystemService` 观察结果。
+- 新增行为回归覆盖初始状态和误分类恢复，以及服务缺失、停止、Foreign、Unverifiable、桌面子进程、既有系统服务
+  与 Docker 不被错误接管。两项定向回归、完整 Rust 库测试、完整前端与脚本测试、`pnpm lint` 和
+  `git diff --check` 均通过。
+- Apple Silicon 本地包已重新构建，`hdiutil verify` 通过；DMG SHA-256 为
+  `cf29dae56089bf24c253e3c96e3a320b92f3407e5665ab0fab7f59bc856cbc51`。
+
+#### 未验证边界
+
+- 自动化已证明归属状态转换与失败关闭，但新包尚未替换当前正在运行的旧应用。需要完整退出旧进程、安装新包并冷启动，
+  再确认钉钉接入页不再把所选官方服务显示为外部或远程 Gateway。
+- 本地包使用 `--no-sign`，只有链接器生成的 ad-hoc 标记，没有 Developer ID 签名或公证；Windows、Linux 和 Docker
+  的真实运行时归属未在本轮实测。

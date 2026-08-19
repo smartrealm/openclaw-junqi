@@ -44,6 +44,22 @@ export interface DashboardTokenUsageOverview {
   hasTrend: boolean;
 }
 
+export type DashboardChartMetric = 'cost' | 'tokens';
+export type DashboardChartMetricPreference = 'auto' | DashboardChartMetric;
+
+export function resolveDashboardChartMetric(
+  preference: DashboardChartMetricPreference,
+  availability: DashboardCostAvailability,
+  tokenOverview: DashboardTokenUsageOverview,
+): DashboardChartMetric {
+  const tokenUsageAvailable = availability.totalTokens > 0;
+  if (preference === 'cost' && availability.hasPricedCost) return 'cost';
+  if (preference === 'tokens' && tokenUsageAvailable) return 'tokens';
+  if (availability.missingCostEntries > 0 && tokenOverview.hasTrend) return 'tokens';
+  if (availability.hasPricedCost) return 'cost';
+  return 'tokens';
+}
+
 function nonNegativeNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.max(0, value)
@@ -110,9 +126,8 @@ export function buildDailyCostChartData(
 }
 
 /**
- * Cost and token usage are different signals. OpenClaw can have complete token
- * records while a provider has no configured pricing, so the dashboard must
- * explain that state instead of rendering an empty $0 chart as real cost data.
+ * 费用与 Token 用量是两类独立信号。Provider 未配置价格时，OpenClaw 仍可能返回完整
+ * Token 记录，因此仪表盘必须解释未估价状态，不能把空费用图当成真实的零费用。
  */
 export function getDailyCostAvailability(
   entries: DashboardDailyCostEntry[],
@@ -134,9 +149,8 @@ export function getDailyCostAvailability(
 }
 
 /**
- * A single dated usage bucket has useful information but cannot form a
- * meaningful time-series. Keep that distinction outside the chart component
- * so the dashboard can present the recorded usage without inventing a trend.
+ * 单个日期桶包含有效用量，但不足以形成有意义的趋势。该判断保留在图表组件之外，
+ * 让仪表盘可以展示已记录用量，同时不虚构趋势。
  */
 export function getDashboardTokenUsageOverview(
   data: DashboardCostChartPoint[],

@@ -25,6 +25,7 @@ import { ChatMarkdownRenderer, ChatMediaFallback } from './ChatMarkdownRenderer'
 import { ChatIconButton } from './ChatIconButton';
 import { resolveAssistantPresentation } from './assistantPresentation';
 import { visibleDeliveryFailureDetail } from './messageDeliveryPresentation';
+import { CHAT_ASSISTANT_RESPONSE_MAX_WIDTH } from './chatResponseLayout';
 
 const ChatImage = lazy(() => import('./ChatImage').then((m) => ({ default: m.ChatImage })));
 const AudioPlayer = lazy(() => import('./AudioPlayer').then((m) => ({ default: m.AudioPlayer })));
@@ -550,7 +551,7 @@ function stripInlineCodeTicks(md: string): string {
 
       {/* ── Content Column ── */}
       <div className="flex flex-col min-w-0"
-        style={{ width: '100%', maxWidth: 'min(640px, 72%)', alignItems: isUser ? 'flex-end' : 'flex-start' }}>
+        style={{ width: '100%', maxWidth: isUser ? 'min(640px, 72%)' : CHAT_ASSISTANT_RESPONSE_MAX_WIDTH, alignItems: isUser ? 'flex-end' : 'flex-start' }}>
 
         {/* Bubble */}
         <motion.div

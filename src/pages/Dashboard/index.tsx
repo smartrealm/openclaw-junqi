@@ -59,6 +59,8 @@ import {
   buildDailyCostChartData,
   getDashboardTokenUsageOverview,
   getDailyCostAvailability,
+  resolveDashboardChartMetric,
+  type DashboardChartMetricPreference,
   formatActivityTime,
   formatActivityTimeTitle,
   shortModelName,
@@ -139,6 +141,7 @@ export function DashboardPage() {
   } = useChatStore();
   const budgetLimit = useSettingsStore((s) => s.budgetLimit);
   const hasProviders = availableModels.length > 0;
+  const [chartMetricPreference, setChartMetricPreference] = useState<DashboardChartMetricPreference>('auto');
 
   // ── Data from central store ─────────────────────────────────
   const sessions  = useGatewayDataStore((s) => s.sessions);
@@ -346,7 +349,12 @@ export function DashboardPage() {
   const hasTokenChartData = costAvailability.hasDatedEntries && costAvailability.totalTokens > 0;
   const tokenUsageOverview = useMemo(() => getDashboardTokenUsageOverview(chartData), [chartData]);
   const hasTokenTrend = hasTokenChartData && tokenUsageOverview.hasTrend;
-  const shouldRenderChart = hasChartData || hasTokenTrend;
+  const chartMetric = resolveDashboardChartMetric(
+    chartMetricPreference,
+    costAvailability,
+    tokenUsageOverview,
+  );
+  const shouldRenderChart = chartMetric === 'cost' ? hasChartData : hasTokenTrend;
 
   const agentIdFromKey = useCallback((key?: string) => {
     const parts = String(key || '').split(':');
@@ -719,19 +727,21 @@ export function DashboardPage() {
       {/* ════ SECTION 3: MIDDLE ROW (Chart + Agents) ════ */}
       <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-3 shrink-0">
 
-        {/* Daily Cost Chart */}
+        {/* 每日费用与 Token 趋势 */}
         <GlassCard hover={false} delay={0.16} noPad className="h-full">
           <div className="flex h-full min-h-[250px] flex-col p-5">
             <div className="mb-4 flex shrink-0 items-center justify-between">
               <div className="flex items-center gap-2">
                 <TrendingUp size={15} className="text-aegis-primary" />
-                <span className="text-[14px] font-semibold text-aegis-text">{t('dashboard.dailyCostChart')}</span>
+                <span className="text-[14px] font-semibold text-aegis-text">
+                  {t(chartMetric === 'cost' ? 'dashboard.dailyCostChart' : 'dashboard.dailyTokenChart')}
+                </span>
                 {!hasChartData && hasTokenChartData && (
                   <span className="rounded bg-aegis-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-aegis-warning">
                     {t('dashboard.usageUnpriced', '用量 · 未估价')}
                   </span>
                 )}
-                {hasChartData && costAvailability.missingCostEntries > 0 && (
+                {costAvailability.missingCostEntries > 0 && (
                   <span className="rounded bg-aegis-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-aegis-warning">
                     {t('dashboard.costPartiallyPriced', {
                       count: costAvailability.missingCostEntries,
@@ -740,22 +750,30 @@ export function DashboardPage() {
                   </span>
                 )}
               </div>
-              {shouldRenderChart && (
-                <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-aegis-text-muted font-medium">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{hasChartData ? t('dashboard.inputCostLabel') : t('dashboard.input')}</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{hasChartData ? t('dashboard.outputCostLabel') : t('dashboard.output')}</span>
-                  {chartData.some((d) => hasChartData ? d.cache > 0 : d.cacheTokens > 0) && (
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-success" />{hasChartData ? t('dashboard.cacheCostLabel', 'Cache') : t('dashboard.cacheTokenLabel', 'Cache')}</span>
-                  )}
-                </div>
-              )}
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {hasChartData && hasTokenChartData && (
+                  <div className="flex rounded-md border border-aegis-border bg-aegis-surface/55 p-0.5" role="group" aria-label={t('dashboard.chartMetric')}>
+                    <button type="button" aria-pressed={chartMetric === 'cost'} onClick={() => setChartMetricPreference('cost')} className={clsx('rounded px-2 py-1 text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60', chartMetric === 'cost' ? 'bg-aegis-primary/12 text-aegis-primary' : 'text-aegis-text-dim hover:text-aegis-text-secondary')}>{t('dashboard.costMetric')}</button>
+                    <button type="button" aria-pressed={chartMetric === 'tokens'} onClick={() => setChartMetricPreference('tokens')} className={clsx('rounded px-2 py-1 text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60', chartMetric === 'tokens' ? 'bg-aegis-primary/12 text-aegis-primary' : 'text-aegis-text-dim hover:text-aegis-text-secondary')}>{t('dashboard.tokenMetric')}</button>
+                  </div>
+                )}
+                {shouldRenderChart && (
+                  <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-aegis-text-muted font-medium">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-accent" />{chartMetric === 'cost' ? t('dashboard.inputCostLabel') : t('dashboard.input')}</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-primary" />{chartMetric === 'cost' ? t('dashboard.outputCostLabel') : t('dashboard.output')}</span>
+                    {chartData.some((d) => chartMetric === 'cost' ? d.cache > 0 : d.cacheTokens > 0) && (
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-aegis-success" />{chartMetric === 'cost' ? t('dashboard.cacheCostLabel', 'Cache') : t('dashboard.cacheTokenLabel', 'Cache')}</span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="relative min-h-[160px] flex-1">
               {shouldRenderChart ? (
                 <Suspense fallback={<div className="h-full" />}>
-                  <CostChart data={chartData} metric={hasChartData ? 'cost' : 'tokens'} />
+                  <CostChart data={chartData} metric={chartMetric} />
                 </Suspense>
-              ) : hasTokenChartData ? (
+              ) : chartMetric === 'tokens' && hasTokenChartData ? (
                 <DashboardTokenUsageSummary overview={tokenUsageOverview} />
               ) : !connected ? (
                 <div className="absolute inset-0 flex items-center justify-center text-[13px] text-aegis-text-dim">

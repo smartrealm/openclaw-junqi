@@ -3,22 +3,30 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
+  useEffect,
   type ReactNode,
 } from 'react';
 import { JarvisVoiceOverlay } from '@/components/Chat/JarvisVoiceOverlay';
 import { useComposerVoice } from '@/hooks/chat/useComposerVoice';
+import { useNativeVoiceWake, type NativeVoiceWakeState } from '@/hooks/useNativeVoiceWake';
 import { useChatStore } from '@/stores/chatStore';
 import { debugError } from '@/utils/debugLog';
+import { resolveNativeVoiceWakeSessionKey } from '@/services/voice/NativeVoiceWakeRouting';
+import type { VoiceWakeRouteTarget } from '@/types/voiceWake';
 import {
   hasConfirmedEmptyTranscript,
   shouldWarmUpHistoryBeforeFirstSend,
 } from '@/utils/confirmedEmptyTranscript';
 
 type JarvisVoiceController = ReturnType<typeof useComposerVoice>;
+type JarvisVoiceRuntimeValue = JarvisVoiceController & {
+  voiceWake: NativeVoiceWakeState;
+};
 
-const JarvisVoiceContext = createContext<JarvisVoiceController | null>(null);
+const JarvisVoiceContext = createContext<JarvisVoiceRuntimeValue | null>(null);
 
-export function useJarvisVoiceRuntime(): JarvisVoiceController {
+export function useJarvisVoiceRuntime(): JarvisVoiceRuntimeValue {
   const controller = useContext(JarvisVoiceContext);
   if (!controller) throw new Error('Jarvis voice runtime is unavailable before workspace initialization');
   return controller;
@@ -53,7 +61,38 @@ export function JarvisVoiceRuntime({ children }: { children: ReactNode }) {
     setIsSending: useChatStore.getState().setIsSending,
     reportAttachmentError,
   });
-  const value = useMemo(() => controller, [controller]);
+  const pendingWakeSessionRef = useRef<string | null>(null);
+  const activateWakeTarget = useCallback((
+    _trigger: string,
+    target: VoiceWakeRouteTarget,
+    resolvedAgentSessionKey: string | null,
+  ) => {
+    const state = useChatStore.getState();
+    const sessionKey = resolveNativeVoiceWakeSessionKey(target, {
+      activeSessionKey: state.activeSessionKey,
+      sessions: state.sessions,
+    }, resolvedAgentSessionKey);
+    if (!sessionKey) throw new Error('Gateway 语音唤醒路由目标在当前会话投影中不可用');
+    if (sessionKey === state.activeSessionKey) {
+      controller.startTalk();
+      return;
+    }
+    pendingWakeSessionRef.current = sessionKey;
+    state.setActiveSession(sessionKey);
+  }, [controller]);
+  const voiceWake = useNativeVoiceWake({
+    connected,
+    voiceBusy: controller.recording
+      || controller.voiceMode.mode !== 'off'
+      || controller.talkConversation.phase !== 'idle',
+    onDetected: activateWakeTarget,
+  });
+  useEffect(() => {
+    if (pendingWakeSessionRef.current !== activeSessionKey) return;
+    pendingWakeSessionRef.current = null;
+    controller.startTalk();
+  }, [activeSessionKey, controller]);
+  const value = useMemo(() => ({ ...controller, voiceWake }), [controller, voiceWake]);
 
   return (
     <JarvisVoiceContext.Provider value={value}>

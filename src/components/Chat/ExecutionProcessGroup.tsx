@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import type { RenderBlock } from '@/types/RenderBlock';
 import type { ExecutionProcessBlock } from './executionProcessGrouping';
 import { AgentActivityIndicator } from '@/components/shared/AgentActivityIndicator';
+import { CHAT_ASSISTANT_RESPONSE_MAX_WIDTH } from './chatResponseLayout';
 
 interface ExecutionProcessGroupProps {
   blocks: ExecutionProcessBlock[];
@@ -69,11 +70,11 @@ export function ExecutionProcessGroup({
   return (
     <section className="ml-[46px] mr-4 py-1" aria-label={t('chat.execution.ariaLabel')}>
       <div className={clsx(
-        'max-w-[min(760px,88%)] overflow-hidden rounded-lg border transition-colors',
+        'overflow-hidden rounded-lg border transition-colors',
         expanded
           ? 'border-aegis-primary/15 bg-[rgb(var(--aegis-overlay)/0.025)]'
           : 'border-[rgb(var(--aegis-overlay)/0.06)] bg-transparent hover:bg-[rgb(var(--aegis-overlay)/0.025)]',
-      )}>
+      )} style={{ maxWidth: CHAT_ASSISTANT_RESPONSE_MAX_WIDTH }}>
         <button
           type="button"
           aria-expanded={expanded}

@@ -6,6 +6,7 @@
 
 - [钉钉 Agent 授权收敛审计](quality/dingtalk-agent-authorization-convergence-audit-2026-08-17.md)：指定 Agent 的普通与 sandbox 工具门禁、最小配置补丁、`discovery` 与 `tool-discovery` 注册语义、有效工具投影、统一 Gateway 重启进度与工作区放行范围。
 - [DWS 安装与工作区恢复审计](quality/dws-install-and-workspace-recovery-2026-08-19.md)：DWS 安装输出、终态事件竞态、Gateway 重启后同会话快照的首屏放行及可重试失败边界。
+- [用量仪表盘恢复记录](quality/usage-dashboard-recovery-2026-08-19.md)：OpenClaw Token 与费用边界、部分未估价时的趋势选择、Agent 图标乱码和业务错误布局修复。
 - [OpenClaw 运行时命令导航](quality/openclaw-runtime-command-navigation-2026-08-19.md)：`commands.list` 的官方目录分组、左侧导航和不可用状态边界。
 - [智能体工位空间化对齐审计](quality/agent-office-star-office-alignment-2026-08-18.md)：Star Office 的空间状态看板映射、原创像素角色与办公室素材、配置身份、协作许可和只读运行投影的边界。
 - [消息预览宽度调整](quality/chat-message-preview-resize-2026-08-18.md)：主会话预览分隔条、可访问键盘调整、宽度边界与窄窗口覆盖式行为。
@@ -33,6 +34,7 @@
 - [流程预览](previews/)：安装流程和业务工作台的静态预览。
 - [中国大陆网络与安装源策略](installation/mainland-china-network-policy.md)
 - [Windows 内部测试签名流程](installation/windows-internal-test-signing.md)
+- [Windows 本地语音唤醒契约与验证](quality/windows-native-voice-wake-2026-08-19.md)
 
 ## 使用规则
 

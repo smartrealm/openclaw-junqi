@@ -4,6 +4,7 @@ import {
   buildDailyCostChartData,
   getDashboardTokenUsageOverview,
   getDailyCostAvailability,
+  resolveDashboardChartMetric,
   formatActivityTime,
   formatActivityTimeTitle,
   shortModelName,
@@ -121,6 +122,29 @@ test('multiple plotted usage days remain eligible for the token trend chart', ()
 
   assert.equal(overview.hasTrend, true);
   assert.equal(overview.activeDays, 2);
+});
+
+test('部分未估价时默认展示 Token 趋势并允许查看已知费用', () => {
+  const availability = {
+    hasDatedEntries: true,
+    hasPricedCost: true,
+    totalTokens: 42_000,
+    missingCostEntries: 3,
+  };
+  const overview = {
+    totalTokens: 42_000,
+    inputTokens: 40_000,
+    outputTokens: 2_000,
+    cacheTokens: 0,
+    unclassifiedTokens: 0,
+    activeDays: 2,
+    latestActivityDate: '07-20',
+    hasTrend: true,
+  };
+
+  assert.equal(resolveDashboardChartMetric('auto', availability, overview), 'tokens');
+  assert.equal(resolveDashboardChartMetric('cost', availability, overview), 'cost');
+  assert.equal(resolveDashboardChartMetric('tokens', availability, overview), 'tokens');
 });
 
 test('activity metadata uses compact local time and short model names', () => {

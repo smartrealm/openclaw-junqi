@@ -35,6 +35,18 @@ export function resolveOpenClawDefaultMainSessionKey(snapshot: Pick<
   return `agent:${snapshot.defaultId}:${snapshot.mainKey}`;
 }
 
+/** 按 OpenClaw 显式智能体路由规则还原该智能体的主会话 key。 */
+export function resolveOpenClawExplicitAgentMainSessionKey(
+  snapshot: Pick<OpenClawAgentListProjection, 'mainKey' | 'agents'>,
+  agentId: string,
+): string | null {
+  const normalizedAgentId = agentId.trim();
+  if (!normalizedAgentId || !snapshot.agents.some((agent) => agent.id === normalizedAgentId)) {
+    return null;
+  }
+  return `agent:${normalizedAgentId}:${snapshot.mainKey}`;
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

@@ -23,6 +23,9 @@ static OPERATION_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 pub enum DwsOperationKind {
     Install,
     Authorize,
+    ResetAuth,
+    SwitchProfile,
+    LogoutProfile,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -124,6 +127,86 @@ fn dws_package_entry_for_prefix(prefix: &Path) -> PathBuf {
     modules.join(DWS_PACKAGE).join("bin").join("dws.js")
 }
 
+fn dws_operation_args(
+    kind: DwsOperationKind,
+    device_authorization: bool,
+) -> Result<Vec<String>, String> {
+    match kind {
+        DwsOperationKind::Install => Err("DWS 安装不使用 DWS 命令参数".to_string()),
+        DwsOperationKind::Authorize if device_authorization => {
+            Ok(["auth", "login", "--device", "--format", "json"]
+                .into_iter()
+                .map(str::to_string)
+                .collect())
+        }
+        DwsOperationKind::Authorize => Ok(["auth", "login", "--format", "json"]
+            .into_iter()
+            .map(str::to_string)
+            .collect()),
+        DwsOperationKind::ResetAuth => Ok(["auth", "reset", "--format", "json", "--yes"]
+            .into_iter()
+            .map(str::to_string)
+            .collect()),
+        DwsOperationKind::SwitchProfile | DwsOperationKind::LogoutProfile => {
+            Err("DWS Profile 操作缺少精确身份".to_string())
+        }
+    }
+}
+
+fn dws_profile_operation_args(
+    kind: DwsOperationKind,
+    profile: &str,
+) -> Result<Vec<String>, String> {
+    match kind {
+        DwsOperationKind::SwitchProfile => Ok(vec![
+            "profile".to_string(),
+            "switch".to_string(),
+            profile.to_string(),
+            "--format".to_string(),
+            "json".to_string(),
+        ]),
+        DwsOperationKind::LogoutProfile => Ok(vec![
+            "auth".to_string(),
+            "logout".to_string(),
+            "--profile".to_string(),
+            profile.to_string(),
+        ]),
+        _ => Err("当前 DWS 操作不接受 Profile 参数".to_string()),
+    }
+}
+
+fn normalize_operation_profile(
+    kind: DwsOperationKind,
+    profile: Option<String>,
+) -> Result<Option<String>, String> {
+    let normalized = profile.map(|value| value.trim().to_string());
+    if matches!(
+        kind,
+        DwsOperationKind::SwitchProfile | DwsOperationKind::LogoutProfile
+    ) {
+        let value = normalized
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "DWS Profile 操作需要精确的 corpId:userId 身份".to_string())?;
+        let parts = value.split(':').collect::<Vec<_>>();
+        if parts.len() != 2
+            || parts
+                .iter()
+                .any(|part| part.is_empty() || part.chars().any(char::is_whitespace))
+        {
+            return Err("DWS Profile 必须使用精确的 corpId:userId 格式".to_string());
+        }
+        return Ok(Some(value));
+    }
+    if normalized.as_deref().is_some_and(|value| !value.is_empty()) {
+        return Err("当前 DWS 操作不接受 Profile 参数".to_string());
+    }
+    Ok(None)
+}
+
+fn operation_requires_validation(kind: DwsOperationKind) -> bool {
+    !matches!(kind, DwsOperationKind::ResetAuth)
+}
+
 async fn native_runtime_paths() -> Result<(PathBuf, PathBuf, PathBuf), String> {
     let requirement = system::installed_openclaw_node_requirement().await?;
     let runtime = system::NodeRuntimeContract::resolve(&requirement).await?;
@@ -146,7 +229,10 @@ async fn native_runtime_paths() -> Result<(PathBuf, PathBuf, PathBuf), String> {
     Ok((node, npm.npm_cli().to_path_buf(), prefix))
 }
 
-async fn native_command(kind: DwsOperationKind) -> Result<SelectedDwsCommand, String> {
+async fn native_command(
+    kind: DwsOperationKind,
+    profile: Option<&str>,
+) -> Result<SelectedDwsCommand, String> {
     let (node, npm_cli, prefix) = native_runtime_paths().await?;
     let entry = dws_package_entry_for_prefix(&prefix);
     let search_path =
@@ -160,7 +246,10 @@ async fn native_command(kind: DwsOperationKind) -> Result<SelectedDwsCommand, St
                 .env("npm_config_prefix", &prefix);
             command
         }
-        DwsOperationKind::Authorize => {
+        DwsOperationKind::Authorize
+        | DwsOperationKind::ResetAuth
+        | DwsOperationKind::SwitchProfile
+        | DwsOperationKind::LogoutProfile => {
             if !entry.is_file() {
                 return Err(format!(
                     "当前 OpenClaw Native 运行时没有 DWS 包入口：{}",
@@ -168,9 +257,12 @@ async fn native_command(kind: DwsOperationKind) -> Result<SelectedDwsCommand, St
                 ));
             }
             let mut command = Command::new(&node);
-            command
-                .arg(&entry)
-                .args(["auth", "login", "--format", "json"]);
+            let args = if let Some(profile) = profile {
+                dws_profile_operation_args(kind, profile)?
+            } else {
+                dws_operation_args(kind, false)?
+            };
+            command.arg(&entry).args(args);
             command
         }
     };
@@ -181,18 +273,35 @@ async fn native_command(kind: DwsOperationKind) -> Result<SelectedDwsCommand, St
     })
 }
 
-async fn selected_runtime_command(kind: DwsOperationKind) -> Result<SelectedDwsCommand, String> {
+async fn selected_runtime_command(
+    kind: DwsOperationKind,
+    profile: Option<&str>,
+) -> Result<SelectedDwsCommand, String> {
     if paths::active_runtime_mode() == OpenClawRuntimeMode::Native {
-        return native_command(kind).await;
+        return native_command(kind, profile).await;
     }
     let docker_bin = docker::resolve_docker_bin().await?;
     let program = match kind {
         DwsOperationKind::Install => "npm",
-        DwsOperationKind::Authorize => "dws",
+        DwsOperationKind::Authorize
+        | DwsOperationKind::ResetAuth
+        | DwsOperationKind::SwitchProfile
+        | DwsOperationKind::LogoutProfile => "dws",
     };
-    let args: &[&str] = match kind {
-        DwsOperationKind::Install => &["install", "-g", DWS_PACKAGE, "--no-fund", "--no-audit"],
-        DwsOperationKind::Authorize => &["auth", "login", "--device", "--format", "json"],
+    let args = match kind {
+        DwsOperationKind::Install => ["install", "-g", DWS_PACKAGE, "--no-fund", "--no-audit"]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        DwsOperationKind::Authorize | DwsOperationKind::ResetAuth => {
+            dws_operation_args(kind, true)?
+        }
+        DwsOperationKind::SwitchProfile | DwsOperationKind::LogoutProfile => {
+            dws_profile_operation_args(
+                kind,
+                profile.ok_or_else(|| "DWS Profile 操作缺少精确身份".to_string())?,
+            )?
+        }
     };
     let mut command = Command::new(&docker_bin);
     command
@@ -204,12 +313,21 @@ async fn selected_runtime_command(kind: DwsOperationKind) -> Result<SelectedDwsC
     })
 }
 
-fn validation_command(target: &DwsValidationTarget, kind: DwsOperationKind) -> Command {
+fn validation_command(
+    target: &DwsValidationTarget,
+    kind: DwsOperationKind,
+) -> Result<Command, String> {
     let args: &[&str] = match kind {
         DwsOperationKind::Install => &["version", "--format", "json"],
         DwsOperationKind::Authorize => &["auth", "status", "--format", "json"],
+        DwsOperationKind::SwitchProfile | DwsOperationKind::LogoutProfile => {
+            &["profile", "list", "--format", "json"]
+        }
+        DwsOperationKind::ResetAuth => {
+            return Err("DWS 登录态重置没有登录状态核验命令".to_string());
+        }
     };
-    match target {
+    Ok(match target {
         DwsValidationTarget::Native { node, entry } => {
             let mut command = Command::new(node);
             command
@@ -225,13 +343,17 @@ fn validation_command(target: &DwsValidationTarget, kind: DwsOperationKind) -> C
                 .args(args);
             command
         }
-    }
+    })
 }
 
 fn validate_dws_runtime(
     target: &DwsValidationTarget,
     kind: DwsOperationKind,
+    profile: Option<&str>,
 ) -> Result<Option<String>, String> {
+    if !operation_requires_validation(kind) {
+        return Err("DWS 登录态重置不能使用登录状态核验".to_string());
+    }
     if let DwsValidationTarget::Native { entry, .. } = target {
         if !entry.is_file() {
             return Err(format!(
@@ -240,7 +362,7 @@ fn validate_dws_runtime(
             ));
         }
     }
-    let output = validation_command(target, kind)
+    let output = validation_command(target, kind)?
         .output()
         .map_err(|error| format!("无法执行 DWS 结构化核验：{error}"))?;
     if !output.status.success() {
@@ -249,20 +371,72 @@ fn validate_dws_runtime(
     if output.stdout.len() > OUTPUT_LINE_LIMIT {
         return Err("DWS 结构化核验输出超过安全上限".to_string());
     }
-    validate_dws_json_output(&output.stdout)?;
-    Ok(match target {
-        DwsValidationTarget::Native { entry, .. } => Some(entry.to_string_lossy().into_owned()),
-        DwsValidationTarget::Docker(_) => None,
+    validate_dws_json_output(&output.stdout, kind, profile)?;
+    Ok(match (kind, target) {
+        (DwsOperationKind::Install, DwsValidationTarget::Native { entry, .. }) => {
+            Some(entry.to_string_lossy().into_owned())
+        }
+        _ => None,
     })
 }
 
-fn validate_dws_json_output(output: &[u8]) -> Result<(), String> {
+fn validate_dws_json_output(
+    output: &[u8],
+    kind: DwsOperationKind,
+    profile: Option<&str>,
+) -> Result<(), String> {
     let payload: serde_json::Value = serde_json::from_slice(output)
         .map_err(|_| "DWS 结构化核验没有返回有效 JSON".to_string())?;
-    if !payload.is_object()
-        || payload.get("success").and_then(serde_json::Value::as_bool) == Some(false)
-    {
+    if !payload.is_object() {
+        return Err("DWS 结构化核验没有返回对象".to_string());
+    }
+    if matches!(kind, DwsOperationKind::Install) {
+        let version = payload
+            .get("version")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        if version.is_none() {
+            return Err("DWS 版本核验没有返回有效版本".to_string());
+        }
+        return Ok(());
+    }
+    if payload.get("success").and_then(serde_json::Value::as_bool) != Some(true) {
         return Err("DWS 结构化核验返回失败状态".to_string());
+    }
+    match kind {
+        DwsOperationKind::Authorize => {
+            if payload
+                .get("authenticated")
+                .and_then(serde_json::Value::as_bool)
+                != Some(true)
+            {
+                return Err("DWS 授权核验未确认当前 Profile 已登录".to_string());
+            }
+        }
+        DwsOperationKind::SwitchProfile => {
+            let expected = profile.ok_or_else(|| "DWS Profile 切换核验缺少精确身份".to_string())?;
+            if payload
+                .get("currentProfile")
+                .and_then(serde_json::Value::as_str)
+                != Some(expected)
+            {
+                return Err("DWS Profile 切换后未返回目标当前身份".to_string());
+            }
+        }
+        DwsOperationKind::LogoutProfile => {
+            let expected = profile.ok_or_else(|| "DWS Profile 退出核验缺少精确身份".to_string())?;
+            let profiles = payload
+                .get("profiles")
+                .and_then(serde_json::Value::as_array)
+                .ok_or_else(|| "DWS Profile 退出核验缺少账号列表".to_string())?;
+            if profiles.iter().any(|item| {
+                item.get("profile").and_then(serde_json::Value::as_str) == Some(expected)
+            }) {
+                return Err("DWS Profile 退出后目标账号仍存在".to_string());
+            }
+        }
+        DwsOperationKind::Install | DwsOperationKind::ResetAuth => {}
     }
     Ok(())
 }
@@ -282,6 +456,9 @@ fn operation_started_message(kind: DwsOperationKind) -> &'static str {
     match kind {
         DwsOperationKind::Install => "DWS 安装命令已启动，正在等待 npm 完成。",
         DwsOperationKind::Authorize => "DWS 授权命令已启动，正在等待官方授权流程输出。",
+        DwsOperationKind::ResetAuth => "DWS 登录态重置命令已启动，正在等待官方流程完成。",
+        DwsOperationKind::SwitchProfile => "DWS Profile 切换命令已启动，正在等待官方流程完成。",
+        DwsOperationKind::LogoutProfile => "DWS 单账号退出命令已启动，正在等待官方流程完成。",
     }
 }
 
@@ -293,6 +470,15 @@ fn operation_waiting_message(kind: DwsOperationKind, elapsed: Duration) -> Strin
         }
         DwsOperationKind::Authorize => {
             format!("DWS 授权仍在运行，正在等待官方授权流程完成（已等待 {seconds} 秒）。")
+        }
+        DwsOperationKind::ResetAuth => {
+            format!("DWS 登录态重置仍在运行，正在等待官方流程完成（已等待 {seconds} 秒）。")
+        }
+        DwsOperationKind::SwitchProfile => {
+            format!("DWS Profile 切换仍在运行，正在等待官方流程完成（已等待 {seconds} 秒）。")
+        }
+        DwsOperationKind::LogoutProfile => {
+            format!("DWS 单账号退出仍在运行，正在等待官方流程完成（已等待 {seconds} 秒）。")
         }
     }
 }
@@ -324,9 +510,11 @@ pub async fn start_dws_operation(
     target_fingerprint: String,
     expected_connection_id: String,
     kind: DwsOperationKind,
+    profile: Option<String>,
 ) -> Result<DwsOperationStarted, String> {
     validated_target(&state, &target_fingerprint, &expected_connection_id)?;
-    let selected = selected_runtime_command(kind).await?;
+    let profile = normalize_operation_profile(kind, profile)?;
+    let selected = selected_runtime_command(kind, profile.as_deref()).await?;
     let validation_target = selected.validation_target;
     let mut command = selected.command;
     command
@@ -338,7 +526,7 @@ pub async fn start_dws_operation(
         .lock()
         .map_err(|_| "DWS 操作状态不可用".to_string())?;
     if active.is_some() {
-        return Err("已有 DWS 安装或授权正在运行".to_string());
+        return Err("已有 DWS 操作正在运行".to_string());
     }
     let mut child = command
         .spawn()
@@ -409,15 +597,19 @@ pub async fn start_dws_operation(
             };
             if let Some((command_succeeded, cancelled)) = outcome {
                 if command_succeeded {
-                    emit_output(
-                        &app,
-                        &wait_operation_id,
-                        "status",
-                        "DWS 命令已结束，正在核验当前运行时。".to_string(),
-                    );
+                    let status = if operation_requires_validation(kind) {
+                        "DWS 命令已结束，正在核验当前运行时。"
+                    } else {
+                        "DWS 官方登录态重置命令已结束。"
+                    };
+                    emit_output(&app, &wait_operation_id, "status", status.to_string());
                 }
                 let verification = if command_succeeded {
-                    validate_dws_runtime(&validation_target, kind)
+                    if operation_requires_validation(kind) {
+                        validate_dws_runtime(&validation_target, kind, profile.as_deref())
+                    } else {
+                        Ok(None)
+                    }
                 } else {
                     Err(if cancelled {
                         "DWS 官方流程已取消".to_string()
@@ -434,6 +626,15 @@ pub async fn start_dws_operation(
                             }
                             DwsOperationKind::Authorize => {
                                 "DWS 授权已通过结构化状态核验".to_string()
+                            }
+                            DwsOperationKind::ResetAuth => {
+                                "DWS 官方登录态重置命令已完成".to_string()
+                            }
+                            DwsOperationKind::SwitchProfile => {
+                                "DWS 当前 Profile 已切换并通过结构化核验".to_string()
+                            }
+                            DwsOperationKind::LogoutProfile => {
+                                "DWS 目标 Profile 已退出并通过结构化核验".to_string()
                             }
                         },
                         dws_path,
@@ -501,8 +702,10 @@ pub fn cancel_dws_operation(
 #[cfg(test)]
 mod tests {
     use super::{
-        dws_package_entry_for_prefix, operation_started_message, operation_waiting_message,
-        redact_line, validate_dws_json_output, DwsOperationKind, DWS_PACKAGE,
+        dws_operation_args, dws_package_entry_for_prefix, dws_profile_operation_args,
+        normalize_operation_profile, operation_requires_validation, operation_started_message,
+        operation_waiting_message, redact_line, validate_dws_json_output, DwsOperationKind,
+        DWS_PACKAGE,
     };
     use std::time::Duration;
 
@@ -535,11 +738,22 @@ mod tests {
     }
 
     #[test]
-    fn dws_verification_requires_json_without_a_failure_status() {
-        assert!(validate_dws_json_output(br#"{"success":true,"body":{}}"#).is_ok());
-        assert!(validate_dws_json_output(br#"{"success":false}"#).is_err());
-        assert!(validate_dws_json_output(b"not-json").is_err());
-        assert!(validate_dws_json_output(br#"[]"#).is_err());
+    fn dws_version_verification_uses_the_official_version_payload() {
+        assert!(validate_dws_json_output(
+            br#"{"version":"0.1.0","edition":"open","architecture":"MCP Static Endpoint Mode","go":"1.24+"}"#,
+            DwsOperationKind::Install,
+            None
+        )
+        .is_ok());
+        assert!(validate_dws_json_output(
+            br#"{"success":true,"body":{}}"#,
+            DwsOperationKind::Install,
+            None
+        )
+        .is_err());
+        assert!(validate_dws_json_output(br#"{}"#, DwsOperationKind::Install, None).is_err());
+        assert!(validate_dws_json_output(b"not-json", DwsOperationKind::Install, None).is_err());
+        assert!(validate_dws_json_output(br#"[]"#, DwsOperationKind::Install, None).is_err());
     }
 
     #[test]
@@ -550,5 +764,78 @@ mod tests {
                 .contains("15")
         );
         assert!(operation_started_message(DwsOperationKind::Authorize).contains("授权"));
+        assert!(operation_started_message(DwsOperationKind::ResetAuth).contains("重置"));
+        assert!(
+            operation_waiting_message(DwsOperationKind::ResetAuth, Duration::from_secs(15))
+                .contains("15")
+        );
+    }
+
+    #[test]
+    fn dws_auth_reset_uses_the_official_destructive_command_without_login_validation() {
+        assert_eq!(
+            dws_operation_args(DwsOperationKind::ResetAuth, false).unwrap(),
+            ["auth", "reset", "--format", "json", "--yes"]
+        );
+        assert!(!operation_requires_validation(DwsOperationKind::ResetAuth));
+    }
+
+    #[test]
+    fn dws_authorization_requires_an_authenticated_status() {
+        assert!(validate_dws_json_output(
+            br#"{"success":true,"authenticated":true}"#,
+            DwsOperationKind::Authorize,
+            None
+        )
+        .is_ok());
+        assert!(validate_dws_json_output(
+            br#"{"success":true,"authenticated":false}"#,
+            DwsOperationKind::Authorize,
+            None
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn dws_profile_operations_use_exact_identity_and_verify_terminal_state() {
+        assert_eq!(
+            normalize_operation_profile(
+                DwsOperationKind::SwitchProfile,
+                Some("corp-a:user-a".to_string())
+            )
+            .unwrap(),
+            Some("corp-a:user-a".to_string())
+        );
+        assert!(normalize_operation_profile(
+            DwsOperationKind::LogoutProfile,
+            Some("corp-only".to_string())
+        )
+        .is_err());
+        assert_eq!(
+            dws_profile_operation_args(DwsOperationKind::SwitchProfile, "corp-a:user-a").unwrap(),
+            ["profile", "switch", "corp-a:user-a", "--format", "json"]
+        );
+        assert_eq!(
+            dws_profile_operation_args(DwsOperationKind::LogoutProfile, "corp-a:user-a").unwrap(),
+            ["auth", "logout", "--profile", "corp-a:user-a"]
+        );
+        assert!(validate_dws_json_output(
+            br#"{"success":true,"currentProfile":"corp-a:user-a","profiles":[]}"#,
+            DwsOperationKind::SwitchProfile,
+            Some("corp-a:user-a")
+        )
+        .is_ok());
+        assert!(validate_dws_json_output(
+            br#"{"success":true,"profiles":[{"profile":"corp-b:user-b"}]}"#,
+            DwsOperationKind::LogoutProfile,
+            Some("corp-a:user-a")
+        )
+        .is_ok());
+        assert!(validate_dws_json_output(
+            br#"{"success":true,"profiles":[{"profile":"corp-a:user-a"}]}"#,
+            DwsOperationKind::LogoutProfile,
+            Some("corp-a:user-a")
+        )
+        .is_err());
     }
 }

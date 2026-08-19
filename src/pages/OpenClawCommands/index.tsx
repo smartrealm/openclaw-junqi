@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BookOpenText, CircleAlert, LoaderCircle, RefreshCw, TerminalSquare } from 'lucide-react';
 import clsx from 'clsx';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { CopyButton } from '@/components/shared/copy-button';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { WORKSPACE_PAGE_CONTENT_CLASS_NAME } from '@/components/shared/workspacePageLayout';
@@ -11,6 +11,14 @@ import { useChatStore } from '@/stores/chatStore';
 import type { OpenClawCommandEntry } from '@/services/gateway/OpenClawCommandsClient';
 import { agentIdFromSessionKey } from '@/utils/sessionPresentation';
 import { groupOpenClawCommands } from './commandGroups';
+import {
+  openClawCommandCategoryFromHash,
+  openClawCommandCategoryHash,
+  resolveOpenClawCommandScrollGroup,
+} from './commandScrollSpy';
+
+const COMMAND_GROUP_ANCHOR_GAP_PX = 12;
+const PROGRAMMATIC_SCROLL_SETTLE_MS = 140;
 
 function commandSearchText(command: OpenClawCommandEntry): string {
   return [
@@ -36,10 +44,20 @@ function commandText(command: OpenClawCommandEntry): string | null {
 export function OpenClawCommandsPage() {
   const { t } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
   const connected = useChatStore((state) => state.connected);
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const agentId = agentIdFromSessionKey(activeSessionKey) ?? undefined;
   const [query, setQuery] = useState('');
+  const headerRef = useRef<HTMLElement>(null);
+  const commandGroupsRef = useRef<HTMLDivElement>(null);
+  const scrollFrameRef = useRef<number | null>(null);
+  const scrollSettleTimerRef = useRef<number | null>(null);
+  const programmaticScrollRef = useRef(false);
+  const scrollSpyHashRef = useRef<string | null>(null);
+  const currentLocationHashRef = useRef(location.hash);
+  const resolvedNavigationHashRef = useRef<string | undefined>(undefined);
+  currentLocationHashRef.current = location.hash;
   const { commands, failure, loading, refresh } = useOpenClawCommands(connected, {
     agentId,
     scope: 'text',
@@ -53,16 +71,114 @@ export function OpenClawCommandsPage() {
   }, [commands, query]);
   const groups = useMemo(() => groupOpenClawCommands(filteredCommands), [filteredCommands]);
 
+  const scheduleProgrammaticScrollRelease = useCallback((onReleased: () => void) => {
+    if (scrollSettleTimerRef.current !== null) {
+      window.clearTimeout(scrollSettleTimerRef.current);
+    }
+    scrollSettleTimerRef.current = window.setTimeout(() => {
+      scrollSettleTimerRef.current = null;
+      programmaticScrollRef.current = false;
+      onReleased();
+    }, PROGRAMMATIC_SCROLL_SETTLE_MS);
+  }, []);
+
+  const measureActiveGroup = useCallback(() => {
+    if (programmaticScrollRef.current) return;
+    const content = commandGroupsRef.current;
+    const routeScroll = content?.closest<HTMLElement>('[data-route-scroll]');
+    if (!content || !routeScroll) return;
+
+    const routeRect = routeScroll.getBoundingClientRect();
+    const headerBottom = headerRef.current?.getBoundingClientRect().bottom ?? routeRect.top;
+    const anchorTop = Math.max(0, headerBottom - routeRect.top) + COMMAND_GROUP_ANCHOR_GAP_PX;
+    const positions = groups.flatMap((group) => {
+      const section = document.getElementById(`openclaw-command-group-${group.id}`);
+      return section ? [{ id: group.id, top: section.getBoundingClientRect().top - routeRect.top }] : [];
+    });
+    const atScrollEnd = routeScroll.scrollTop + routeScroll.clientHeight >= routeScroll.scrollHeight - 2;
+    const activeCategory = resolveOpenClawCommandScrollGroup(positions, anchorTop, atScrollEnd);
+    const nextHash = openClawCommandCategoryHash(activeCategory);
+    if (currentLocationHashRef.current === nextHash) return;
+
+    scrollSpyHashRef.current = nextHash;
+    currentLocationHashRef.current = nextHash;
+    navigate({
+      pathname: location.pathname,
+      search: location.search,
+      hash: nextHash,
+    }, { replace: true });
+  }, [groups, location.pathname, location.search, navigate]);
+
+  const scheduleActiveGroupMeasurement = useCallback(() => {
+    if (scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      measureActiveGroup();
+    });
+  }, [measureActiveGroup]);
+
   useEffect(() => {
-    const categoryId = new URLSearchParams(location.hash.slice(1)).get('category');
-    if (!categoryId || groups.length === 0) return;
-    document.getElementById(`openclaw-command-group-${categoryId}`)?.scrollIntoView({ block: 'start' });
-  }, [groups.length, location.hash]);
+    if (groups.length === 0) return;
+    if (scrollSpyHashRef.current === location.hash) {
+      scrollSpyHashRef.current = null;
+      resolvedNavigationHashRef.current = location.hash;
+      return;
+    }
+    if (resolvedNavigationHashRef.current === location.hash) return;
+
+    const categoryId = openClawCommandCategoryFromHash(location.hash);
+    const target = categoryId
+      ? document.getElementById(`openclaw-command-group-${categoryId}`)
+      : commandGroupsRef.current;
+    if (!target) return;
+
+    const firstResolvedNavigation = resolvedNavigationHashRef.current === undefined;
+    resolvedNavigationHashRef.current = location.hash;
+    if (firstResolvedNavigation && !categoryId) return;
+
+    const routeScroll = commandGroupsRef.current?.closest<HTMLElement>('[data-route-scroll]');
+    if (!routeScroll) return;
+    const routeRect = routeScroll.getBoundingClientRect();
+    const headerBottom = headerRef.current?.getBoundingClientRect().bottom ?? routeRect.top;
+    const anchorTop = Math.max(0, headerBottom - routeRect.top) + COMMAND_GROUP_ANCHOR_GAP_PX;
+    const targetTop = categoryId
+      ? routeScroll.scrollTop + target.getBoundingClientRect().top - routeRect.top - anchorTop
+      : 0;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    programmaticScrollRef.current = true;
+    routeScroll.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior: reduceMotion ? 'auto' : 'smooth',
+    });
+    scheduleProgrammaticScrollRelease(scheduleActiveGroupMeasurement);
+  }, [groups, location.hash, scheduleActiveGroupMeasurement, scheduleProgrammaticScrollRelease]);
+
+  useEffect(() => {
+    const routeScroll = commandGroupsRef.current?.closest<HTMLElement>('[data-route-scroll]');
+    if (!routeScroll || groups.length === 0) return;
+
+    const handleScroll = () => {
+      if (programmaticScrollRef.current) {
+        scheduleProgrammaticScrollRelease(scheduleActiveGroupMeasurement);
+        return;
+      }
+      scheduleActiveGroupMeasurement();
+    };
+    routeScroll.addEventListener('scroll', handleScroll, { passive: true });
+    scheduleActiveGroupMeasurement();
+    return () => routeScroll.removeEventListener('scroll', handleScroll);
+  }, [groups.length, scheduleActiveGroupMeasurement, scheduleProgrammaticScrollRelease]);
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+    if (scrollSettleTimerRef.current !== null) window.clearTimeout(scrollSettleTimerRef.current);
+  }, []);
 
   return (
     <PageTransition className="min-h-full bg-aegis-bg">
       <div className="min-h-full">
-        <header className="sticky top-0 z-10 border-b border-aegis-border bg-aegis-bg">
+        <header ref={headerRef} className="sticky top-0 z-10 border-b border-aegis-border bg-aegis-bg">
           <div className={`${WORKSPACE_PAGE_CONTENT_CLASS_NAME} flex flex-col gap-4 py-4`}>
             <div className="flex min-w-0 items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
@@ -120,11 +236,15 @@ export function OpenClawCommandsPage() {
           ) : groups.length === 0 ? (
             <CommandState icon={BookOpenText} message={t('openclawCommands.empty')} />
           ) : (
-            <div className="space-y-7 pb-8">
+            <div ref={commandGroupsRef} className="space-y-7 pb-8">
               {groups.map((group) => (
-                <section key={group.id} aria-labelledby={`openclaw-command-group-${group.id}`} className="scroll-mt-36">
+                <section
+                  key={group.id}
+                  id={`openclaw-command-group-${group.id}`}
+                  aria-labelledby={`openclaw-command-group-${group.id}-label`}
+                >
                   <div className="mb-2.5 flex items-center gap-2">
-                    <h2 id={`openclaw-command-group-${group.id}`} className="text-[13px] font-semibold text-aegis-text">
+                    <h2 id={`openclaw-command-group-${group.id}-label`} className="text-[13px] font-semibold text-aegis-text">
                       {t(`openclawCommands.categories.${group.id}`)}
                     </h2>
                     <span className="text-[11px] tabular-nums text-aegis-text-dim">{group.commands.length}</span>

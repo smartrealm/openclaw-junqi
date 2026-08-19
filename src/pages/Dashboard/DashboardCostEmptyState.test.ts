@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import {
+  getDashboardTokenUsageOverview,
+  getDailyCostAvailability,
+  resolveDashboardChartMetric,
+} from './dashboardData';
 
 const componentSource = readFileSync(new URL('./DashboardCostEmptyState.tsx', import.meta.url), 'utf8');
 const summarySource = readFileSync(new URL('./DashboardTokenUsageSummary.tsx', import.meta.url), 'utf8');
@@ -22,11 +27,39 @@ test('the dashboard no-usage view uses actual workspace counts and routes users 
   assert.match(dashboardSource, /onConfigureProviders=\{\(\) => navigate\('\/config'\)\}/);
 });
 
-test('the chart remains a token chart when usage exists without pricing', () => {
-  assert.match(dashboardSource, /const hasTokenTrend = hasTokenChartData && tokenUsageOverview\.hasTrend/);
-  assert.match(dashboardSource, /const shouldRenderChart = hasChartData \|\| hasTokenTrend/);
-  assert.match(dashboardSource, /<DashboardTokenUsageSummary overview=\{tokenUsageOverview\} \/>/);
-  assert.match(dashboardSource, /metric=\{hasChartData \? 'cost' : 'tokens'\}/);
+test('the dashboard selects token usage when records exist without pricing', () => {
+  const availability = getDailyCostAvailability([
+    { date: '2026-08-18', input: 10_000, missingCostEntries: 1 },
+    { date: '2026-08-19', output: 2_000, missingCostEntries: 1 },
+  ]);
+  const overview = getDashboardTokenUsageOverview([
+    {
+      date: '08-18',
+      input: 0,
+      output: 0,
+      cache: 0,
+      other: 0,
+      total: 0,
+      inputTokens: 10_000,
+      outputTokens: 0,
+      cacheTokens: 0,
+      totalTokens: 10_000,
+    },
+    {
+      date: '08-19',
+      input: 0,
+      output: 0,
+      cache: 0,
+      other: 0,
+      total: 0,
+      inputTokens: 0,
+      outputTokens: 2_000,
+      cacheTokens: 0,
+      totalTokens: 2_000,
+    },
+  ]);
+
+  assert.equal(resolveDashboardChartMetric('auto', availability, overview), 'tokens');
 });
 
 test('single-point token usage has a localized summary rather than an empty chart canvas', () => {

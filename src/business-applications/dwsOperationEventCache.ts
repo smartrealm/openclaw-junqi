@@ -2,8 +2,16 @@ import type { DwsOperationFinished, DwsOperationOutput } from '@/api/tauri-comma
 
 export type DwsOperationEventCache = {
   readonly output: Record<string, string[]>;
+  readonly events: Record<string, DwsOperationOutput[]>;
   readonly finished: Record<string, DwsOperationFinished>;
 };
+
+export function formatDwsOperationOutput(
+  payload: DwsOperationOutput,
+  diagnosticPrefix: string,
+): string {
+  return `${payload.stream === 'stderr' ? diagnosticPrefix : ''}${payload.line}`;
+}
 
 export function cacheDwsOperationOutput(
   cache: DwsOperationEventCache,
@@ -11,7 +19,9 @@ export function cacheDwsOperationOutput(
   line: string,
 ): string[] {
   const output = [...(cache.output[payload.operationId] ?? []), line].slice(-400);
+  const events = [...(cache.events[payload.operationId] ?? []), payload].slice(-400);
   cache.output[payload.operationId] = output;
+  cache.events[payload.operationId] = events;
   return output;
 }
 

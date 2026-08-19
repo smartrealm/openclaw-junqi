@@ -46,8 +46,7 @@ test('completed plan defaults to a compact summary', () => {
   assert.doesNotMatch(html, /Plan adjusted after protocol review/);
 });
 
-// A completed header used to read "Step 2/2" next to "2/2 done" - the same
-// number twice, and neither said what the run actually finished.
+// 完成计划摘要最后完成的步骤，避免在标题中重复两组相同计数。
 test('completed plan summarises the finishing step instead of repeating the count', () => {
   const html = renderToStaticMarkup(
     <ExecutionPlanCard plan={createPlan('completed')} outcome="completed" />,
@@ -77,4 +76,32 @@ test('trace entry is a sibling control, never nested inside the collapse button'
     <ExecutionPlanCard plan={createPlan('completed')} outcome="completed" />,
   );
   assert.equal((withoutTrace.match(/<button/g) ?? []).length, 1);
+});
+
+test('composer plan uses a centered compact trigger with an expandable bounded panel', () => {
+  const html = renderToStaticMarkup(
+    <ExecutionPlanCard plan={createPlan('running')} outcome="running" presentation="composer" />,
+  );
+  assert.match(html, /data-execution-plan-presentation="composer"/);
+  assert.match(html, /data-execution-plan-compact-trigger="true"/);
+  assert.match(html, /aria-expanded="true"/);
+  assert.match(html, /max-w-\[640px\]/);
+  assert.match(html, /max-h-\[min\(42vh,360px\)\]/);
+  assert.match(html, /Inspect protocol/);
+  assert.match(html, /Run tests/);
+});
+
+test('collapsed composer plan leaves only the compact progress trigger', () => {
+  localStorage.setItem('junqi:chat-plan-collapsed:plan-test', 'true');
+  try {
+    const html = renderToStaticMarkup(
+      <ExecutionPlanCard plan={createPlan('running')} outcome="running" presentation="composer" />,
+    );
+    assert.match(html, /aria-expanded="false"/);
+    assert.match(html, /data-execution-plan-compact-trigger="true"/);
+    assert.doesNotMatch(html, /Plan adjusted after protocol review/);
+    assert.doesNotMatch(html, /max-w-\[640px\]/);
+  } finally {
+    localStorage.removeItem('junqi:chat-plan-collapsed:plan-test');
+  }
 });

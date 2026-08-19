@@ -41,6 +41,11 @@ import {
   type DingTalkRuntimeIdentityProjection,
 } from '@/business-applications/dingtalkTools';
 import { dingtalkPluginInstallBlocker } from '@/business-applications/dingtalkPluginInstall';
+import { resolveDwsExecutionProfile } from '@/business-applications/dwsProfileSelection';
+import {
+  diagnoseDwsAuthorizationFailure,
+  type DwsAuthorizationFailureDiagnosis,
+} from '@/business-applications/dwsAuthorizationFailure';
 import {
   authorizeDingTalkAgent,
   configureDingTalkDwsPath,
@@ -49,6 +54,7 @@ import { collectDingTalkAuthorizationTargets } from '@/business-applications/din
 import {
   cacheDwsOperationFinished,
   cacheDwsOperationOutput,
+  formatDwsOperationOutput,
   type DwsOperationEventCache,
 } from '@/business-applications/dwsOperationEventCache';
 import { useBusinessActivityStore } from '@/business-applications/activityStore';
@@ -301,7 +307,8 @@ export function BusinessApplicationsPage() {
   const [pluginInstallDialogOpen, setPluginInstallDialogOpen] = useState(false);
   const [dwsOperation, setDwsOperation] = useState<DingTalkDwsOperationPresentation | null>(null);
   const [dwsOutput, setDwsOutput] = useState<string[]>([]);
-  const dwsEventCache = useRef<DwsOperationEventCache>({ output: {}, finished: {} });
+  const [dwsAuthorizationFailure, setDwsAuthorizationFailure] = useState<DwsAuthorizationFailureDiagnosis | null>(null);
+  const dwsEventCache = useRef<DwsOperationEventCache>({ output: {}, events: {}, finished: {} });
   const dwsFinalizedOperationIds = useRef(new Set<string>());
   const [dwsCompletionRevision, setDwsCompletionRevision] = useState(0);
   const dingtalkRefreshInFlight = useRef(false);
@@ -445,6 +452,20 @@ export function BusinessApplicationsPage() {
 
   const finalizeDwsOperation = useCallback(async (payload: DwsOperationFinished) => {
     if (payload.cancelled || !payload.success) {
+      if (payload.kind === 'authorize') {
+        const diagnosis = diagnoseDwsAuthorizationFailure(
+          dwsEventCache.current.events[payload.operationId] ?? [],
+        );
+        setDwsAuthorizationFailure(diagnosis);
+        if (diagnosis?.stage === 'local-credential-save') {
+          setDwsOutput((current) => [
+            ...current,
+            t('businessApplications.dws.credentialSaveFailure'),
+          ].slice(-400));
+        }
+      } else if (payload.kind === 'install') {
+        setDwsAuthorizationFailure(null);
+      }
       const phase = payload.cancelled ? 'cancelled' : 'failed';
       setDwsOperation((current) => current?.id === payload.operationId
         ? {
@@ -471,13 +492,20 @@ export function BusinessApplicationsPage() {
       } else {
         await refreshDingTalkState();
       }
+      setDwsAuthorizationFailure(null);
       setDwsOperation((current) => current?.id === payload.operationId
         ? {
             ...current,
             phase: 'completed',
             message: t(payload.kind === 'install'
               ? 'businessApplications.dws.installCompleted'
-              : 'businessApplications.dws.authorizeCompleted'),
+              : payload.kind === 'resetAuth'
+                ? 'businessApplications.dws.resetCompleted'
+                : payload.kind === 'switchProfile'
+                  ? 'businessApplications.dws.switchProfileCompleted'
+                  : payload.kind === 'logoutProfile'
+                    ? 'businessApplications.dws.logoutProfileCompleted'
+                    : 'businessApplications.dws.authorizeCompleted'),
           }
         : current);
     } catch (error) {
@@ -504,7 +532,10 @@ export function BusinessApplicationsPage() {
   useEffect(() => {
     const outputUnlisten = subscribeTauriEvent<DwsOperationOutput>('dws-operation-output', (event) => {
       const payload = event.payload;
-      const line = `${payload.stream === 'stderr' ? t('businessApplications.dws.errorPrefix') : ''}${payload.line}`;
+      const line = formatDwsOperationOutput(
+        payload,
+        t('businessApplications.dws.diagnosticPrefix'),
+      );
       const cached = cacheDwsOperationOutput(dwsEventCache.current, payload, line);
       setDwsOperation((current) => {
         if (!current || current.id !== payload.operationId) return current;
@@ -609,6 +640,14 @@ export function BusinessApplicationsPage() {
   }, [activeSessionKey]);
 
   useEffect(() => {
+    setProfile((current) => resolveDwsExecutionProfile(
+      runtimeIdentity?.profiles ?? [],
+      runtimeIdentity?.currentProfile ?? null,
+      current,
+    ));
+  }, [runtimeIdentity]);
+
+  useEffect(() => {
     if (!selectedTool || selectedTool.entry.id === DINGTALK_RUNTIME_STATUS_TOOL) return;
     void loadSchema(selectedTool);
   }, [loadSchema, selectedTool]);
@@ -627,7 +666,7 @@ export function BusinessApplicationsPage() {
     if (selectedTool.entry.deniedBySession) return '当前 Session 已拒绝此工具。';
     if (selectedTool.effect === 'unknown' || !selectedTool.entry.risk) return 'OpenClaw 未提供完整效果或风险契约。';
     if (selectedTool.entry.id === DINGTALK_RUNTIME_STATUS_TOOL) return null;
-    if (!parseProfileReference(profile)) return '租户身份必须使用 corpId:userId 格式。';
+    if (!parseProfileReference(profile)) return '执行身份必须选择有效的 DWS Profile。';
     if (schemaLoading) return '正在核验当前 DWS 参数契约。';
     if (schemaError) return '当前 DWS 参数契约不可用。';
     if (!schema) return '执行前必须先读取当前 DWS 参数契约。';
@@ -767,15 +806,16 @@ export function BusinessApplicationsPage() {
     setPluginInstallDialogOpen(true);
   }, []);
 
-  const runDwsOperation = useCallback((kind: DwsOperationKind) => {
+  const runDwsOperation = useCallback((kind: DwsOperationKind, operationProfile?: string) => {
     const current = getCurrentRuntimeIdentity();
     if (!current?.verified || !current.desktopMutationAllowed) {
       setPluginError(dingtalkPluginInstallBlocker(current));
       return;
     }
     setPluginError(null);
+    if (kind !== 'resetAuth') setDwsAuthorizationFailure(null);
     setDwsOutput([]);
-    void startDwsOperation(current.targetFingerprint, current.connectionId, kind)
+    void startDwsOperation(current.targetFingerprint, current.connectionId, kind, operationProfile)
       .then((started) => {
         const output = dwsEventCache.current.output[started.operationId] ?? [];
         setDwsOperation({
@@ -784,7 +824,13 @@ export function BusinessApplicationsPage() {
           phase: 'running',
           message: started.kind === 'install'
             ? t('businessApplications.dws.installRunning')
-            : t('businessApplications.dws.authorizeRunning'),
+            : started.kind === 'resetAuth'
+              ? t('businessApplications.dws.resetRunning')
+              : started.kind === 'switchProfile'
+                ? t('businessApplications.dws.switchProfileRunning')
+                : started.kind === 'logoutProfile'
+                  ? t('businessApplications.dws.logoutProfileRunning')
+                  : t('businessApplications.dws.authorizeRunning'),
         });
         setDwsOutput(output);
       })
@@ -794,6 +840,22 @@ export function BusinessApplicationsPage() {
         setDwsOutput([message]);
       });
   }, [t]);
+
+  const resetDwsAuth = useCallback(() => {
+    showConfirm(
+      t('businessApplications.dws.resetConfirmTitle'),
+      t('businessApplications.dws.resetConfirmMessage'),
+      () => runDwsOperation('resetAuth'),
+    );
+  }, [runDwsOperation, t]);
+
+  const logoutDwsProfile = useCallback((operationProfile: string) => {
+    showConfirm(
+      t('businessApplications.dws.logoutConfirmTitle'),
+      t('businessApplications.dws.logoutConfirmMessage', { profile: operationProfile }),
+      () => runDwsOperation('logoutProfile', operationProfile),
+    );
+  }, [runDwsOperation, t]);
 
   const cancelCurrentDwsOperation = useCallback(() => {
     const current = getCurrentRuntimeIdentity();
@@ -885,6 +947,8 @@ export function BusinessApplicationsPage() {
     runtimeToolAvailable,
     runtime: runtimeIdentity,
     runtimeError: runtimeIdentityError,
+    operationError: pluginError,
+    operationNotice: authorizationNotice,
     pluginNeedsInstall,
     pluginStatusPending: localInstallAvailable && pluginStatusLoading,
     restartRequired: Boolean(pluginStatus?.restartRequired),
@@ -895,6 +959,8 @@ export function BusinessApplicationsPage() {
     installationProgress: pluginInstallationProgress,
     dwsOperation,
     dwsOutput,
+    dwsAuthorizationFailure,
+    selectedProfile: profile,
     busy: pluginOperation !== null || toolsLoading || dwsOperation?.phase === 'running',
     refreshing: dingtalkRefreshPending,
     operation: pluginOperation,
@@ -909,6 +975,10 @@ export function BusinessApplicationsPage() {
     onRestartGateway: () => { void restartGateway(); },
     onInstallDws: () => runDwsOperation('install'),
     onAuthorizeDws: () => runDwsOperation('authorize'),
+    onResetDwsAuth: resetDwsAuth,
+    onSelectedProfileChange: setProfile,
+    onSwitchDwsProfile: (operationProfile: string) => runDwsOperation('switchProfile', operationProfile),
+    onLogoutDwsProfile: logoutDwsProfile,
     onCancelDws: cancelCurrentDwsOperation,
     onDismissDws: () => setDwsOperation(null),
   };
@@ -923,9 +993,6 @@ export function BusinessApplicationsPage() {
         </div>
         <div className="ml-auto flex items-center gap-1.5">
           <DingTalkRuntimeIdentity runtime={runtimeIdentity} />
-          {runtimeIdentityError && <span className="max-w-[180px] truncate text-[9.5px] text-aegis-warning" title={runtimeIdentityError}>DWS 身份待验证</span>}
-          {pluginError && <span className="max-w-[280px] truncate text-[9.5px] text-aegis-danger" title={pluginError}>{pluginError}</span>}
-          {authorizationNotice && <span className="max-w-[340px] truncate text-[9.5px] text-aegis-success" title={authorizationNotice} role="status">{authorizationNotice}</span>}
           <IconButton
             aria-label={t(dingtalkRefreshPending ? 'businessApplications.readiness.refreshing' : 'businessApplications.readiness.refresh')}
             title={t('businessApplications.readiness.refreshTitle')}
@@ -1003,6 +1070,7 @@ export function BusinessApplicationsPage() {
             width={rightWidth}
             collapsed={rightCollapsed}
             profile={profile}
+            profiles={runtimeIdentity?.profiles ?? []}
             argumentsJson={argumentsJson}
             schema={schema}
             schemaLoading={schemaLoading}

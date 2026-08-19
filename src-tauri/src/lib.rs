@@ -156,6 +156,9 @@ pub fn run() {
             commands::voice_talk_playback::voice_talk_stop_playback,
             commands::voice_capture::voice_capture_start,
             commands::voice_capture::voice_capture_stop,
+            commands::voice_wake::voice_wake_capability,
+            commands::voice_wake::voice_wake_start,
+            commands::voice_wake::voice_wake_stop,
             // Setup
             commands::setup::install_node,
             commands::setup::cancel_setup_operation,

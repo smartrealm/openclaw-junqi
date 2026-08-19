@@ -9,10 +9,10 @@
 3. 活动审计解码器必须严格接受官方 V1 封闭联合，包括 `active_run_injected`，并拒绝未知状态、原因和字段相关性。
 4. 基础 `audit.list` 继续由现有基础审计模块独立处理，不与富审计模型混合。
 5. 请求客户端通过构造函数注入 Gateway requester；协议 codec 保持无状态、无网络依赖。
-6. 不再调用官方已删除的 `doctor.memory.remHarness`、`talk.session.cancelTurn`、`voicewake.routing.set` 和
-   `sessions.compaction.get`，也不保留对应的本地兼容路径。
+6. 不再调用当前官方仍已删除的 `doctor.memory.remHarness`、`talk.session.cancelTurn` 和
+   `sessions.compaction.get`，也不保留对应的本地兼容路径。`voicewake.routing.set` 已在 2026-08-19 官方契约中恢复。
 7. 内存诊断只保留 `doctor.memory.status` 的单一客户端和状态投影，不保留重复解码器或无消费者 Hook。
-8. 语音唤醒路由只呈现官方 `voicewake.routing.get` 的只读结果，不显示保存或编辑能力。
+8. 语音唤醒路由当前只呈现 `voicewake.routing.get` 的结果；这是 JunQi 当前界面范围，不代表官方缺少 `voicewake.routing.set`。
 9. 官方内置插件方法与 JunQi 自有扩展必须和核心 RPC 分开分类；`browser.request` 不能误判为未知核心方法。
 10. Cron 创建参数和响应投影必须遵守官方 Date 时间戳上限，并从单一契约导出 schedule、session target 与 wake mode。
 11. Cron 状态投影不得保留最新版官方 Schema 已删除且无消费者的旧字段。

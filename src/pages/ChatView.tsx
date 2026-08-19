@@ -1590,7 +1590,7 @@ function ChatViewContent() {
         >
           <div className="mx-auto w-full max-w-[760px]">
             <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface" />}>
-              <ExecutionPlanCard plan={activeExecutionPlan} outcome="running" />
+              <ExecutionPlanCard plan={activeExecutionPlan} outcome="running" presentation="composer" />
             </Suspense>
           </div>
         </div>

@@ -152,9 +152,13 @@
   效果时立即静止，账本详情加载和审批提交补齐 `aria-busy`、`aria-controls` 等真实进行中语义。
 - 快捷回复和 Gateway 内联按钮不再在本地点击后显示成功对勾；它们只表现为已选择且不可重复提交，
   不把客户端分发动作误表述为 Gateway 已处理或操作已完成。
-- OpenClaw `update_plan` 的运行中计划继续位于 Composer 上方，终态计划继续保留在 transcript 中；
-  `ExecutionPlanCard` 已收敛为摘要头、纵向步骤轨迹和按需详情三层。步骤连线、状态文字和进度仅来自
-  已解析的 OpenClaw 计划快照，计划修订仍通过现有执行追溯查看。
+- OpenClaw `update_plan` 的运行中计划继续位于 Composer 上方，终态计划继续保留在 transcript 中。运行中计划
+  现在以居中的当前步骤胶囊作为稳定入口，点击后在其上方展开有高度边界的完整步骤面板；再次点击收起，长计划
+  只在面板内部滚动，不持续挤压会话正文。系统减少动态效果时不执行展开过渡。
+- 终态 `ExecutionPlanCard` 继续使用摘要头、纵向步骤轨迹和按需详情三层。两种形态的步骤连线、状态文字、进度、
+  当前步骤与修订号都只来自已解析的 OpenClaw 计划快照；计划修订仍通过现有执行追溯查看，JunQi 不自行推进步骤。
+- 计划紧凑交互已通过组件、运行位置和命令滚动联动定向回归 19 项，并通过完整 `pnpm lint`、`pnpm test` 与
+  `pnpm build`。真实流式计划的亮色、暗色、窄窗口、键盘焦点、长计划滚动和减少动态效果仍待真机验收。
 - 消息挤压审查已核对 OpenClaw 官方 `chat.send`、队列和 `sessions.abort` 契约：普通 Composer 不传
   `queueMode`，由 Gateway 的有效会话配置决定 `steer`、`followup`、`collect` 或 `interrupt`；客户端
   不得自行合并、截断、丢弃或模拟上游队列。当前 `messageQueue` 只在会话删除、重置等破坏性变更的

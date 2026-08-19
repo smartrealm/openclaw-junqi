@@ -53,17 +53,6 @@ export function getAgentColor(agentId: string): string {
   return dataColor(Math.abs(hash) % 10);
 }
 
-/** Deterministic emoji icon per agent (hash-based) */
-export function getAgentIcon(agentId: string): string {
-  if (agentId === 'main') return 'O';
-  const icons = ['<Bot size={14} strokeWidth={1.75} />', '<MagnifyingGlass size={14} weight="regular" />', '<Cube size={14} weight="regular" />', '<SoccerBall size={14} weight="regular" />', '<Brain size={14} strokeWidth={1.75} />', '<Target size={14} />', '<BarChart3 size={14} strokeWidth={1.75} />', '<Wrench size={14} strokeWidth={1.75} />', '<Rocket size={14} strokeWidth={1.75} />', '<Lightbulb size={14} weight="regular" />'];
-  let hash = 0;
-  for (let i = 0; i < agentId.length; i++) {
-    hash = ((hash << 5) - hash + agentId.charCodeAt(i)) | 0;
-  }
-  return icons[Math.abs(hash) % icons.length];
-}
-
 // ─────────────────────────────────────────────────────────────
 // Export helpers — CSV download & clipboard copy
 // ─────────────────────────────────────────────────────────────
@@ -113,7 +102,7 @@ export async function copyAnalyticsText({
 }: CopyTextParams): Promise<void> {
   const t = i18n.t.bind(i18n);
   const lines = [
-    `${t('analytics.copyTitle', '<BarChart3 size={14} strokeWidth={1.75} /> Full Analytics Report')} — ${new Date().toLocaleDateString()}`,
+    `${t('analytics.copyTitle', 'Full Analytics Report')} — ${new Date().toLocaleDateString()}`,
     t('analytics.copyPeriod', { start: periodInfo.start, end: periodInfo.end, days: periodInfo.days }),
     '',
     t('analytics.copyTotalCost', { value: formatUsd(totals.totalCost) }),

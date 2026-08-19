@@ -63,6 +63,7 @@ import {
 } from '@/api/tauri-commands';
 import { StructuredPlanSettingsPanel } from '@/components/settings/StructuredPlanSettingsPanel';
 import { useJarvisVoiceSettings } from '@/hooks/useJarvisVoiceSettings';
+import { useJarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
 import { useOpenClawTtsStatus } from '@/hooks/useOpenClawTtsStatus';
 import { useOpenClawPlanToolSetting } from '@/hooks/useOpenClawPlanToolSetting';
 import { useOpenClawRuntimeLanguageSetting } from '@/hooks/useOpenClawRuntimeLanguageSetting';
@@ -107,6 +108,7 @@ export function SettingsPageFull() {
     if (budgetLimit > 0) void ensureGroupFresh('cost');
   }, [budgetLimit]);
   const { connected, connecting } = useChatStore();
+  const { voiceWake } = useJarvisVoiceRuntime();
   const prefersDark = usePrefersDark();
   const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled, backdropContrastEnabled, setBackdropContrastEnabled, captionScale: petCaptionScale, setCaptionScale: setPetCaptionScale } = usePetStore();
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
@@ -458,7 +460,9 @@ export function SettingsPageFull() {
 
       {activeTab === 'terminal' && <TerminalSettingsPanel />}
 
-      {activeTab === 'jarvis' && <JarvisVoiceSettingsPanel settings={jarvisVoiceSettings} />}
+      {activeTab === 'jarvis' && (
+        <JarvisVoiceSettingsPanel settings={jarvisVoiceSettings} voiceWake={voiceWake} />
+      )}
 
 
       {activeTab === 'maintenance' && (
