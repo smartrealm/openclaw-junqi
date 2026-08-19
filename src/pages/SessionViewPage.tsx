@@ -7,7 +7,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { marked } from 'marked';
 import {
   ChevronDown, ChevronRight, Wrench, Copy, Check,
   AlertCircle, ArrowLeft,
@@ -17,8 +16,9 @@ import {
 } from 'lucide-react';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { gateway } from '@/services/gateway';
+import { ChatMarkdownRenderer } from '@/components/Chat/ChatMarkdownRenderer';
 
-interface SessionContent {
+export interface SessionContent {
   type: 'text' | 'tool_use' | 'thinking';
   text?: string;
   id?: string;
@@ -206,7 +206,7 @@ function clsx2(...args: (string | false | undefined | null)[]): string {
 // AssistantMessageBlock — left-aligned with avatar + content
 // ═══════════════════════════════════════════════════════════
 
-function AssistantMessageBlock({ content, timestamp }: { content: SessionContent[]; timestamp?: string }) {
+export function AssistantMessageBlock({ content, timestamp }: { content: SessionContent[]; timestamp?: string }) {
   const textParts = content.filter((c) => c.type === 'text');
   const toolParts = content.filter((c) => c.type === 'tool_use');
   const thinkingParts = content.filter((c) => c.type === 'thinking');
@@ -238,14 +238,13 @@ function AssistantMessageBlock({ content, timestamp }: { content: SessionContent
           <ThinkingBlock key={`t-${i}`} thinking={t.thinking ?? ''} />
         ))}
 
-        {/* Text blocks — rendered with marked */}
+        {/* 会话正文复用聊天区的安全 Markdown 渲染边界，不启用原始 HTML。 */}
         {textParts.map((t, i) => (
           <div key={`tx-${i}`}
-            className="text-[13.5px] leading-relaxed prose prose-invert max-w-none mb-2"
-            dangerouslySetInnerHTML={{
-              __html: marked.parse(t.text ?? '', { async: false }) as string,
-            }}
-          />
+            className="mb-2 max-w-none text-[13.5px] leading-relaxed text-aegis-text-secondary"
+          >
+            <ChatMarkdownRenderer markdown={t.text ?? ''} />
+          </div>
         ))}
 
         {/* Tool use blocks */}

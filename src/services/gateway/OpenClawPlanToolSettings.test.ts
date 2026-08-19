@@ -7,18 +7,19 @@ import {
 
 test('resolves automatic and explicit plan tool modes from config', () => {
   assert.equal(resolveOpenClawPlanToolMode({}), 'automatic');
-  assert.equal(resolveOpenClawPlanToolMode({ tools: { experimental: { planTool: true } } }), 'enabled');
-  assert.equal(resolveOpenClawPlanToolMode({ tools: { experimental: { planTool: false } } }), 'disabled');
+  assert.equal(resolveOpenClawPlanToolMode({ tools: { updatePlan: true } }), 'enabled');
+  assert.equal(resolveOpenClawPlanToolMode({ tools: { updatePlan: false } }), 'disabled');
+  assert.equal(resolveOpenClawPlanToolMode({ tools: { experimental: { planTool: false } } }), 'automatic');
 });
 
-test('writes a guarded patch while preserving sibling experimental flags', async () => {
+test('writes a guarded minimal patch to the current OpenClaw progress card switch', async () => {
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const client = new OpenClawPlanToolSettingsClient({
     async call() {
       return {
         exists: true,
         valid: true,
-        config: { tools: { experimental: { otherPreview: true } } },
+        config: { tools: { allow: ['group:agents'] } },
         hash: 'config-hash',
       };
     },
@@ -32,9 +33,9 @@ test('writes a guarded patch while preserving sibling experimental flags', async
   assert.equal(calls.length, 1);
   assert.equal(calls[0].method, 'config.patch');
   assert.equal(calls[0].params.baseHash, 'config-hash');
-  assert.deepEqual(calls[0].params.replacePaths, ['tools.experimental']);
+  assert.equal(calls[0].params.replacePaths, undefined);
   assert.deepEqual(JSON.parse(String(calls[0].params.raw)), {
-    tools: { experimental: { otherPreview: true, planTool: true } },
+    tools: { updatePlan: true },
   });
 });
 
@@ -45,7 +46,7 @@ test('automatic mode removes only the plan tool override', async () => {
       return {
         exists: true,
         valid: true,
-        config: { tools: { experimental: { planTool: false, otherPreview: true } } },
+        config: { tools: { updatePlan: false, allow: ['group:agents'] } },
         hash: 'config-hash',
       };
     },
@@ -58,7 +59,7 @@ test('automatic mode removes only the plan tool override', async () => {
   await client.write('automatic');
   assert.equal(patches.length, 1);
   assert.deepEqual(JSON.parse(String(patches[0].raw)), {
-    tools: { experimental: { otherPreview: true } },
+    tools: { updatePlan: null },
   });
 });
 
@@ -82,7 +83,7 @@ test('allows the official hashless first-write configuration flow', async () => 
   assert.equal(patches.length, 1);
   assert.equal(patches[0].baseHash, undefined);
   assert.deepEqual(JSON.parse(String(patches[0].raw)), {
-    tools: { experimental: { planTool: true } },
+    tools: { updatePlan: true },
   });
 });
 

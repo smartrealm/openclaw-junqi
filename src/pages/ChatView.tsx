@@ -78,7 +78,6 @@ import {
   localUserMessageCapabilities,
   removeLocalUserMessage,
 } from '@/components/Chat/localUserMessageMutations';
-import { executionPlanOutcome, selectActiveExecutionPlan } from '@/components/Chat/executionPlanPlacement';
 import { ChatMessagePreviewPanel } from '@/components/Chat/ChatMessagePreviewPanel';
 import { ChatResponseTracePanel } from '@/components/Chat/ChatResponseTracePanel';
 import { findTraceSourceMessage, projectChatResponseTrace } from '@/components/Chat/chatResponseTrace';
@@ -91,6 +90,7 @@ import {
   shouldLoadActiveSessionHistory,
 } from '@/utils/confirmedEmptyTranscript';
 import { shouldPositionActiveSessionTail } from '@/utils/sessionEntryTail';
+import { useOpenClawProgressCard } from '@/hooks/useOpenClawProgressCard';
 
 const HISTORY_LIMIT = 500;
 const EMPTY_MODEL_CATALOG: Array<{ id: string; label: string; alias?: string }> = [];
@@ -102,7 +102,7 @@ const HISTORY_STARTUP_RETRY_MAX_MS = 12_000;
 
 const InlineButtonBar = lazy(() => import('@/components/Chat/InlineButtonBar').then((m) => ({ default: m.InlineButtonBar })));
 const DecisionCard = lazy(() => import('@/components/Chat/ResultCards').then((m) => ({ default: m.DecisionCard })));
-const ExecutionPlanCard = lazy(() => import('@/components/Chat/ExecutionPlanCard').then((m) => ({ default: m.ExecutionPlanCard })));
+const ProgressCard = lazy(() => import('@/components/Chat/ProgressCard').then((m) => ({ default: m.ProgressCard })));
 const FileResultCard = lazy(() => import('@/components/Chat/ResultCards').then((m) => ({ default: m.FileResultCard })));
 const AssistantResponseAvatar = lazy(() => import('@/components/Chat/MessageBubble').then((m) => ({ default: m.AssistantResponseAvatar })));
 const AssistantResponseFooter = lazy(() => import('@/components/Chat/MessageBubble').then((m) => ({ default: m.AssistantResponseFooter })));
@@ -248,6 +248,7 @@ function ChatViewContent() {
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const progressCard = useOpenClawProgressCard(activeSessionKey);
   const sessionHistoryCapabilities = useGatewaySessionHistoryCapabilities();
   const sidePanel = useChatSidePanel(activeSessionKey);
   const loadTraceAuditEvents = useCallback(
@@ -296,10 +297,6 @@ function ChatViewContent() {
   const { timelineItems, anchoredRunIds } = useMemo(
     () => buildCollaborationChatTimeline(responseGroups, messages, collaboration.runs),
     [collaboration.runs, messages, responseGroups],
-  );
-  const activeExecutionPlan = useMemo(
-    () => selectActiveExecutionPlan(responseGroups),
-    [responseGroups],
   );
   const workspaceForSession = useCallback((sessionKey: string) => {
     const session = useChatStore.getState().sessions.find((candidate) => candidate.key === sessionKey);
@@ -1115,7 +1112,6 @@ function ChatViewContent() {
     block: RenderBlock,
     groupPosition: ResponseGroupMessagePosition = 'standalone',
     responseSessionKey: string = activeSessionKey,
-    responseGroup?: ResponseGroup,
   ) => {
     switch (block.type) {
       case 'compaction':
@@ -1148,26 +1144,6 @@ function ChatViewContent() {
             />
           </Suspense>
         );
-
-      case 'execution-plan': {
-        // Running plans are projected once above the composer instead of
-        // participating in the assistant message column. Settled plans stay in
-        // transcript history as durable execution records - including plans the
-        // run never finished, which would otherwise be lost from both surfaces.
-        const outcome = executionPlanOutcome(block.plan, responseGroup?.status ?? 'final');
-        if (outcome === 'running') return null;
-        return (
-          <div className="mx-auto w-full max-w-[760px] px-3">
-            <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface" />}>
-              <ExecutionPlanCard
-                plan={block.plan}
-                outcome={outcome}
-                {...(responseGroup ? { onOpenTrace: () => sidePanel.openResponseTrace(responseGroup.id) } : {})}
-              />
-            </Suspense>
-          </div>
-        );
-      }
 
       case 'thinking':
         return (
@@ -1318,7 +1294,7 @@ function ChatViewContent() {
                 key={`execution-${row.blocks[0]?.id ?? rowIndex}`}
                 blocks={row.blocks}
                 streaming={isStreaming}
-                renderBlock={(block) => renderBlock(block, 'middle', group.sessionKey, group)}
+                renderBlock={(block) => renderBlock(block, 'middle', group.sessionKey)}
                 onBeforeExpandedChange={preserveViewportForExecutionToggle}
               />
             );
@@ -1331,7 +1307,7 @@ function ChatViewContent() {
             : 'standalone';
           return (
             <div key={row.block.id}>
-              {renderBlock(row.block, groupPosition, group.sessionKey, group)}
+              {renderBlock(row.block, groupPosition, group.sessionKey)}
             </div>
           );
         })}
@@ -1583,15 +1559,23 @@ function ChatViewContent() {
         </Suspense>
       )}
 
-      {activeExecutionPlan && (
+      {progressCard.card && (
         <div
-          data-execution-plan-placement="composer-above"
+          data-progress-card-placement="composer-above"
           className="shrink-0 bg-[var(--aegis-bg-frosted-60)] px-3 pt-3 backdrop-blur-sm"
         >
           <div className="mx-auto w-full max-w-[760px]">
             <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface" />}>
-              <ExecutionPlanCard plan={activeExecutionPlan} outcome="running" presentation="composer" />
+              <ProgressCard card={progressCard.card} />
             </Suspense>
+          </div>
+        </div>
+      )}
+
+      {connected && progressCard.error && !progressCard.card && (
+        <div className="shrink-0 bg-[var(--aegis-bg-frosted-60)] px-3 pt-2 backdrop-blur-sm">
+          <div className="mx-auto max-w-[760px] rounded-lg border border-aegis-warning/25 bg-aegis-warning/5 px-3 py-2 text-[11px] text-aegis-warning">
+            {t(`chat.executionPlan.errors.${progressCard.error}`)}
           </div>
         </div>
       )}

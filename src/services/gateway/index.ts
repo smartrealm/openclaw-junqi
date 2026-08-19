@@ -1,8 +1,4 @@
-// ═══════════════════════════════════════════════════════════
-// Gateway Service — Public API Facade
-// Wires Connection + ChatHandler into a single interface.
-// Backward-compatible with: import { gateway } from '@/services/gateway'
-// ═══════════════════════════════════════════════════════════
+// Gateway 公共服务门面：统一装配连接、聊天投影与官方运行时客户端。
 
 import {
   GatewayConnection,
@@ -46,6 +42,11 @@ import {
   routeVoiceWakeGatewayEvent,
   subscribeVoiceWakeGatewayEvents,
 } from './voiceWakeEventBridge';
+import { OpenClawProgressCardClient } from './OpenClawProgressCardClient';
+import {
+  routeOpenClawProgressCardEvent,
+  subscribeOpenClawProgressCardEvents,
+} from './progressCardEventBridge';
 import { TalkGatewayClient } from './TalkGatewayClient';
 import {
   routeTalkGatewayEvent,
@@ -495,6 +496,20 @@ export const voiceWakeGatewayClient = new VoiceWakeGatewayClient({
   ),
   subscribe: subscribeVoiceWakeGatewayEvents,
 });
+
+export const openClawProgressCardClient = new OpenClawProgressCardClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export { subscribeOpenClawProgressCardEvents };
 
 export const openClawTtsClient = new OpenClawTtsClient(
   (method, params, options) => connection.request(method, params, options),
@@ -1240,20 +1255,22 @@ async function reconcileOneChatSessionRun(sessionKey: string): Promise<void> {
   if (!settledByExactRun) await sessionRunReconciler.reconcile(sessionKey);
 }
 
-// Collaboration plugin streams are refresh hints, not chat/agent activity.
-// Route them through the typed bridge before the generic ChatHandler path.
+// 协作与运行时专用事件先经过类型桥，未识别事件才进入通用聊天处理器。
 connection.onEvent = (msg: unknown) => routeTalkGatewayEvent(
   msg,
   (talkRemainder) => routeVoiceWakeGatewayEvent(
     talkRemainder,
-    (voiceWakeRemainder) => routeOpenClawSessionObserverEvent(
+    (voiceWakeRemainder) => routeOpenClawProgressCardEvent(
       voiceWakeRemainder,
-      (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+      (progressCardRemainder) => routeOpenClawSessionObserverEvent(
+        progressCardRemainder,
+        (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+      ),
     ),
   ),
 );
 
-// ── Public API (matches original gateway.ts exactly) ──
+// 公共数据请求门面。
 export const openClawGatewayDataRequester = {
   request: (method: string, params: GatewayRequestParams) => connection.request(method, params),
   recordCapabilityInvalidResponse: (method: string) => connection.recordCapabilityInvalidResponse(method),

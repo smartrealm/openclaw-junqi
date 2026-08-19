@@ -25,7 +25,7 @@
 - Windows 适配层使用 SAPI 共享识别器和由 Gateway 唤醒词动态生成的顶层 grammar。
 - 音频不上传到 JunQi 或 Gateway；原生事件不携带自由文本识别结果。
 - 检测到已配置短语后，桌面运行时先停止监听，再启动现有 OpenClaw Talk。
-- 命中后按 Gateway 的规范化规则匹配路由。`agentId` 目标先根据同一连接的官方 `agents.list` 和上游显式 Agent 主会话规则解析，再与当前会话投影核对；目标缺失时失败关闭。
+- 命中后按 Gateway 的规范化规则匹配路由。`agentId` 目标先根据同一连接的官方 `agents.list`、`mainKey` 和 `scope` 解析；全局范围使用 `agent:<id>:global` 本地别名。目标与候选会话都经过同一会话目标解析器后比较；目标缺失时失败关闭。
 - 本地启用偏好、监听状态和错误是 JunQi 派生状态，不是 Gateway 或 transcript 事实。
 - 不引入路由、会话、任务或工具调用的新协议，不在超时或断线时推断成功。
 - 应用进程退出后不监听，不包装为 Windows 后台服务。
@@ -43,3 +43,4 @@
 - `pnpm build` 通过，Vite 转换 9307 个模块；`git diff --check` 通过。
 - 当前 macOS 开发机没有 Windows Rust 标准库目标，也没有可用的目标管理器，因此未完成 Windows 跨目标编译。Windows x64 原生编译、真实 SAPI、麦克风、语言包与权限仍待目标机验证。
 - 设置页复用 `SettingsSwitch` 以及 `aegis-border`、`aegis-surface`、`aegis-text`、`aegis-text-muted`、`aegis-danger` 主题 token；亮色、暗色、窄窗口、键盘焦点和连续状态变化尚未做 Windows 真机视觉验收。
+- 2026-08-20 补充全局会话回归，确认 `agents.list.scope=global` 时不再错误拼接普通 `mainKey`；更新后的完整 TypeScript 与 Rust 验证见运行时契约收敛审计。

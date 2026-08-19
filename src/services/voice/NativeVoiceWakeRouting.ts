@@ -40,11 +40,20 @@ export function resolveNativeVoiceWakeSessionKey(
   }
 
   if (!resolvedAgentSessionKey) return null;
+  let resolvedTargetKey: string;
+  try {
+    resolvedTargetKey = resolveOpenClawSessionTarget(
+      resolvedAgentSessionKey,
+      target.agentId,
+    ).key;
+  } catch {
+    return null;
+  }
   const candidates = projection.sessions.filter((session) => session.agentId === target.agentId);
   const matches = candidates.filter((session) => {
     try {
       return resolveOpenClawSessionTarget(session.key, session.agentId).key
-        === resolvedAgentSessionKey;
+        === resolvedTargetKey;
     } catch {
       return false;
     }

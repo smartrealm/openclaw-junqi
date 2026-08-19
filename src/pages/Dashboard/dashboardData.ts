@@ -46,6 +46,15 @@ export interface DashboardTokenUsageOverview {
 
 export type DashboardChartMetric = 'cost' | 'tokens';
 export type DashboardChartMetricPreference = 'auto' | DashboardChartMetric;
+export type DashboardPricingNotice = 'none' | 'unpriced' | 'partial';
+
+export function resolveDashboardPricingNotice(
+  availability: DashboardCostAvailability,
+): DashboardPricingNotice {
+  if (availability.hasPricedCost && availability.missingCostEntries > 0) return 'partial';
+  if (!availability.hasPricedCost && availability.totalTokens > 0) return 'unpriced';
+  return 'none';
+}
 
 export function resolveDashboardChartMetric(
   preference: DashboardChartMetricPreference,

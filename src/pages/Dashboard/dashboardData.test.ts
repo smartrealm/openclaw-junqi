@@ -4,6 +4,7 @@ import {
   buildDailyCostChartData,
   getDashboardTokenUsageOverview,
   getDailyCostAvailability,
+  resolveDashboardPricingNotice,
   resolveDashboardChartMetric,
   formatActivityTime,
   formatActivityTimeTitle,
@@ -92,6 +93,27 @@ test('daily cost availability retains partial-pricing evidence alongside known c
     totalTokens: 8_000,
     missingCostEntries: 3,
   });
+});
+
+test('费用提示在全部未定价和部分估价之间保持互斥', () => {
+  assert.equal(resolveDashboardPricingNotice({
+    hasDatedEntries: true,
+    hasPricedCost: false,
+    totalTokens: 42_000,
+    missingCostEntries: 3,
+  }), 'unpriced');
+  assert.equal(resolveDashboardPricingNotice({
+    hasDatedEntries: true,
+    hasPricedCost: true,
+    totalTokens: 42_000,
+    missingCostEntries: 3,
+  }), 'partial');
+  assert.equal(resolveDashboardPricingNotice({
+    hasDatedEntries: true,
+    hasPricedCost: true,
+    totalTokens: 42_000,
+    missingCostEntries: 0,
+  }), 'none');
 });
 
 test('single-day unpriced usage becomes a summary instead of a blank trend chart', () => {

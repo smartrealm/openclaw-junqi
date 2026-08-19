@@ -24,7 +24,7 @@ test('拒绝 OpenClaw 未定义的负数创建时间，避免排序伪造有效�
   );
 });
 
-test('显式智能体主会话只从官方 agents.list 快照派生', () => {
+test('显式智能体主会话同时服从官方会话范围和智能体列表', () => {
   const snapshot = parseOpenClawAgentList({
     defaultId: 'main',
     mainKey: 'primary',
@@ -33,7 +33,11 @@ test('显式智能体主会话只从官方 agents.list 快照派生', () => {
   });
   assert.equal(
     resolveOpenClawExplicitAgentMainSessionKey(snapshot, 'jarvis'),
-    'agent:jarvis:primary',
+    'agent:jarvis:global',
   );
   assert.equal(resolveOpenClawExplicitAgentMainSessionKey(snapshot, 'missing'), null);
+  assert.equal(resolveOpenClawExplicitAgentMainSessionKey({
+    ...snapshot,
+    scope: 'per-sender',
+  }, 'jarvis'), 'agent:jarvis:primary');
 });

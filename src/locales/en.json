@@ -856,8 +856,8 @@
     "openClawSessionObserverDesc": "While the main window is minimized, lets the Gateway provide native session summaries. This may use the Gateway utility model.",
     "dynamicIslandPreview": "Preview Dynamic Island",
     "structuredPlans": {
-      "title": "Structured Chat plans",
-      "description": "Show verified multi-step progress from the OpenClaw update_plan tool. This is currently an experimental OpenClaw capability.",
+      "title": "OpenClaw progress card",
+      "description": "Controls the official progress_card tool. Current status is read from the Gateway durable card instead of transcript history.",
       "automatic": "Automatic",
       "enabled": "Always on",
       "disabled": "Off",
@@ -1666,15 +1666,16 @@
       "thinkingCount": "{{count}} thoughts"
     },
     "executionPlan": {
-      "ariaLabel": "Execution plan",
-      "title": "Execution plan",
+      "ariaLabel": "Task progress",
+      "title": "Task progress",
       "progress": "Step {{current}}/{{total}}",
       "revision": "Revision {{revision}}",
-      "summaryCompleted": "{{total}} steps done",
-      "summaryInterrupted": "{{completed}}/{{total}} steps done",
-      "interruptedBadge": "Interrupted",
-      "openTrace": "View plan revisions",
-      "stepCountChanged": "Plan updated from {{previous}} to {{current}} steps"
+      "noteOnly": "Progress update",
+      "errors": {
+        "method_unavailable": "The connected OpenClaw Gateway does not support durable progress cards.",
+        "invalid_response": "OpenClaw returned an invalid progress card response.",
+        "request_failed": "The current progress card could not be read from OpenClaw."
+      }
     },
     "trace": {
       "open": "Execution trace",
@@ -1774,7 +1775,6 @@
         "unknown": "Unknown"
       },
       "timeline": "Structured timeline",
-      "planSnapshot": "Plan snapshot {{number}}",
       "thinking": "Thinking",
       "reviewRequest": "Human choice request",
       "assistantMessage": "Assistant response",

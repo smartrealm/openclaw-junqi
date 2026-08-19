@@ -16,7 +16,6 @@ import { useVoiceMode } from '@/hooks/useVoiceMode';
 import { startPomodoro, stopPomodoro, togglePausePomodoro } from '@/pet/petActions';
 import { combineUnlisteners, emitTauriEvent, subscribeTauriEvent, subscribeTauriListener } from '@/utils/tauriEvents';
 import { projectSessionActivity } from '@/utils/sessionPresentation';
-import { selectActiveExecutionPlan } from '@/components/Chat/executionPlanPlacement';
 import { prepareFocusNavigation } from '@/focus/openFocus';
 import { useFocusProjection } from '@/focus/useFocusProjection';
 import { useOpenClawSessionObserver } from '@/hooks/useOpenClawSessionObserver';
@@ -31,6 +30,8 @@ import {
   type DynamicIslandSessionActivity,
   type DynamicIslandSnapshot,
 } from './model';
+import { useOpenClawProgressCard } from '@/hooks/useOpenClawProgressCard';
+import { currentOpenClawProgressCardStepIndex } from '@/progress-card/domain';
 
 function observerDigestKey(digest: Pick<OpenClawSessionObserverDigest, 'sessionKey' | 'agentId'>): string {
   return `${digest.sessionKey}\u0000${digest.agentId ?? ''}`;
@@ -45,6 +46,7 @@ export default function DynamicIslandRuntime() {
   const connected = useChatStore((state) => state.connected);
   const connecting = useChatStore((state) => state.connecting);
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
+  const progressCard = useOpenClawProgressCard(activeSessionKey);
   const chatSessions = useChatStore((state) => state.sessions);
   const typingBySession = useChatStore((state) => state.typingBySession);
   const typingStartedAtBySession = useChatStore((state) => state.typingStartedAtBySession);
@@ -162,17 +164,18 @@ export default function DynamicIslandRuntime() {
     return [...localActivities, ...observerActivities];
   }, [activityProjection, gatewayAgents, observerDigests, t]);
   const sessionRunning = sessionActivities.length > 0;
-  const responseGroups = useChatStore((state) => state.responseGroups);
   const executionPlan = useMemo(() => {
-    const plan = selectActiveExecutionPlan(responseGroups);
-    const step = plan?.steps[plan.currentStepIndex];
-    if (!plan || !step) return null;
+    const card = progressCard.card;
+    if (!card || card.steps.length === 0) return null;
+    const currentStepIndex = currentOpenClawProgressCardStepIndex(card);
+    const step = card.steps[currentStepIndex];
+    if (!step) return null;
     return {
-      currentStep: plan.currentStepIndex + 1,
-      totalSteps: plan.steps.length,
-      stepTitle: step.title,
+      currentStep: currentStepIndex + 1,
+      totalSteps: card.steps.length,
+      stepTitle: step.step,
     };
-  }, [responseGroups]);
+  }, [progressCard.card]);
   const voiceActive = isVoiceActivePhase(voicePhase) || isDynamicIslandVoiceInputActive(voiceInput);
   const shouldShow = shouldShowDynamicIsland({
     enabled,

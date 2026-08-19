@@ -57,3 +57,13 @@ test('Windows 本地唤醒拒绝猜测未由 Gateway 解析的智能体目标', 
     ],
   }, 'session-b'), 'session-b');
 });
+
+test('Windows 本地唤醒在全局范围内按规范键匹配智能体作用域别名', () => {
+  assert.equal(resolveNativeVoiceWakeSessionKey({ agentId: 'jarvis' }, {
+    activeSessionKey: 'agent:main:global',
+    sessions: [
+      { key: 'agent:main:global', agentId: 'main' },
+      { key: 'agent:jarvis:global', agentId: 'jarvis' },
+    ],
+  }, 'agent:jarvis:global'), 'agent:jarvis:global');
+});

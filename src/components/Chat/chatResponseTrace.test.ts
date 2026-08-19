@@ -18,10 +18,10 @@ function blocks(message: Record<string, unknown>) {
 test('projects every structured response node in transcript order with upstream identities', () => {
   const semanticBlocks = [
     ...blocks({
-      id: 'plan-1',
+      id: 'progress-card-receipt',
       role: 'tool',
       toolCallId: 'call-plan-1',
-      toolName: 'update_plan',
+      toolName: 'progress_card',
       toolInput: { plan: [{ step: 'Inspect', status: 'in_progress' }] },
       toolStatus: 'done',
       nativeSequence: 10,
@@ -51,12 +51,13 @@ test('projects every structured response node in transcript order with upstream 
   assert.equal(trace.authority, 'openclaw-run');
   assert.equal(trace.runId, 'run-trace');
   assert.deepEqual(trace.nodes.map((node) => node.kind), [
-    'plan',
+    'tool',
     'tool',
     'message',
     'review-request',
   ]);
   assert.equal(trace.nodes[0]?.sourceSequence, 10);
+  assert.equal(trace.nodes[0]?.kind === 'tool' ? trace.nodes[0].toolName : null, 'progress_card');
   assert.equal(trace.nodes[1]?.kind === 'tool' ? trace.nodes[1].toolCallId : null, 'call-exec-1');
   assert.deepEqual(trace.nodes[2]?.kind === 'message' ? trace.nodes[2].context : null, undefined);
   assert.deepEqual(trace.review, {

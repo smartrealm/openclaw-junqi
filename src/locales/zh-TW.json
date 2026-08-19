@@ -827,8 +827,8 @@
     "openClawSessionObserverDesc": "主視窗最小化時，允許 Gateway 提供原生工作階段摘要。該能力可能使用 Gateway 設定的 utility model。",
     "dynamicIslandPreview": "預覽靈動島",
     "structuredPlans": {
-      "title": "結構化會話計劃",
-      "description": "顯示 OpenClaw update_plan 工具提供的可信分步進度。此能力目前屬於 OpenClaw 實驗功能。",
+      "title": "OpenClaw 任務進度卡",
+      "description": "控制官方 progress_card 工具。目前狀態從 Gateway 持久化卡片讀取，不再從工作階段歷史推斷。",
       "automatic": "自動",
       "enabled": "始終啟用",
       "disabled": "關閉",
@@ -1633,15 +1633,16 @@
       "thinkingCount": "{{count}} 條思考"
     },
     "executionPlan": {
-      "ariaLabel": "執行計劃",
-      "title": "執行計劃",
+      "ariaLabel": "任務進度",
+      "title": "任務進度",
       "progress": "第 {{current}}/{{total}} 步",
       "revision": "修訂 {{revision}}",
-      "summaryCompleted": "{{total}} 步已完成",
-      "summaryInterrupted": "已完成 {{completed}}/{{total}} 步",
-      "interruptedBadge": "已中斷",
-      "openTrace": "檢視計畫修訂",
-      "stepCountChanged": "計劃已從 {{previous}} 步調整為 {{current}} 步"
+      "noteOnly": "進度更新",
+      "errors": {
+        "method_unavailable": "目前 OpenClaw Gateway 不支援持久化任務進度卡。",
+        "invalid_response": "OpenClaw 傳回的任務進度卡結構無效。",
+        "request_failed": "暫時無法從 OpenClaw 讀取目前任務進度。"
+      }
     },
     "trace": {
       "open": "執行追溯",
@@ -1741,7 +1742,6 @@
         "unknown": "未知"
       },
       "timeline": "結構化時間線",
-      "planSnapshot": "計劃快照 {{number}}",
       "thinking": "思考過程",
       "reviewRequest": "人工選擇請求",
       "assistantMessage": "助手回覆",

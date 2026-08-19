@@ -6,7 +6,6 @@ import {
   Clock3,
   FileOutput,
   History,
-  ListChecks,
   MessageSquareText,
   ShieldCheck,
   SquareTerminal,
@@ -19,7 +18,6 @@ import { formatTraceJson, formatTraceTimestamp } from './chatResponseTracePresen
 
 function nodeIcon(node: ChatResponseTraceNode) {
   switch (node.kind) {
-    case 'plan': return <ListChecks size={14} />;
     case 'thinking': return <CircleDot size={14} />;
     case 'tool': return <Wrench size={14} />;
     case 'review-request': return <ShieldCheck size={14} />;
@@ -35,24 +33,6 @@ function nodeIcon(node: ChatResponseTraceNode) {
 
 function TraceNodeDetails({ node }: { node: ChatResponseTraceNode }) {
   const { t } = useTranslation();
-  if (node.kind === 'plan') {
-    return (
-      <div className="mt-2 space-y-1.5">
-        {node.snapshot.explanation && <p className="text-[11px] leading-4 text-aegis-text-muted">{node.snapshot.explanation}</p>}
-        <ol className="space-y-1">
-          {node.snapshot.steps.map((step, index) => (
-            <li key={`${step.title}-${index}`} className="flex items-start gap-2 text-[10.5px] leading-4 text-aegis-text-muted">
-              <span className="mt-0.5 font-mono text-aegis-text-dim">{index + 1}</span>
-              <span className="min-w-0 flex-1 break-words">{step.title}</span>
-              <span className="shrink-0 text-aegis-text-dim">
-                {t(`chat.trace.nodeStatus.${step.status === 'in_progress' ? 'inProgress' : step.status}`)}
-              </span>
-            </li>
-          ))}
-        </ol>
-      </div>
-    );
-  }
   if (node.kind === 'tool') {
     if (node.input === undefined && node.output === undefined && !node.error) return null;
     return (
@@ -164,7 +144,6 @@ export function ChatResponseTraceNodeCard({
   const { t, i18n } = useTranslation();
   const label = (() => {
     switch (node.kind) {
-      case 'plan': return t('chat.trace.planSnapshot', { number: node.snapshotNumber });
       case 'thinking': return t('chat.trace.thinking');
       case 'tool': return node.toolName;
       case 'review-request': return t('chat.trace.reviewRequest');

@@ -856,8 +856,8 @@
     "openClawSessionObserverDesc": "主窗口最小化时，允许 Gateway 提供原生会话摘要。该能力可能使用 Gateway 配置的 utility model。",
     "dynamicIslandPreview": "预览灵动岛",
     "structuredPlans": {
-      "title": "结构化会话计划",
-      "description": "展示 OpenClaw update_plan 工具提供的可信分步进度。该能力目前属于 OpenClaw 实验功能。",
+      "title": "OpenClaw 任务进度卡",
+      "description": "控制官方 progress_card 工具。当前状态从 Gateway 持久化卡片读取，不再从会话历史推断。",
       "automatic": "自动",
       "enabled": "始终启用",
       "disabled": "关闭",
@@ -1664,15 +1664,16 @@
       "thinkingCount": "{{count}} 条思考"
     },
     "executionPlan": {
-      "ariaLabel": "执行计划",
-      "title": "执行计划",
+      "ariaLabel": "任务进度",
+      "title": "任务进度",
       "progress": "第 {{current}}/{{total}} 步",
       "revision": "修订 {{revision}}",
-      "summaryCompleted": "{{total}} 步已完成",
-      "summaryInterrupted": "已完成 {{completed}}/{{total}} 步",
-      "interruptedBadge": "已中断",
-      "openTrace": "查看计划修订",
-      "stepCountChanged": "计划已从 {{previous}} 步调整为 {{current}} 步"
+      "noteOnly": "进度更新",
+      "errors": {
+        "method_unavailable": "当前 OpenClaw Gateway 不支持持久化任务进度卡。",
+        "invalid_response": "OpenClaw 返回的任务进度卡结构无效。",
+        "request_failed": "暂时无法从 OpenClaw 读取当前任务进度。"
+      }
     },
     "trace": {
       "open": "执行追溯",
@@ -1772,7 +1773,6 @@
         "unknown": "未知"
       },
       "timeline": "结构化时间线",
-      "planSnapshot": "计划快照 {{number}}",
       "thinking": "思考过程",
       "reviewRequest": "人工选择请求",
       "assistantMessage": "助手回复",

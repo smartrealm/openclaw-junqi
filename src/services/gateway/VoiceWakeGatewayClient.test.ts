@@ -71,7 +71,7 @@ test('智能体唤醒路由通过官方智能体快照派生显式主会话', as
       agents: [{ id: 'main' }],
     },
   ]);
-  assert.equal(await client.resolveAgentMainSessionKey(' jarvis '), 'agent:jarvis:primary');
+  assert.equal(await client.resolveAgentMainSessionKey(' jarvis '), 'agent:jarvis:global');
   assert.equal(await client.resolveAgentMainSessionKey('missing'), null);
   assert.deepEqual(calls, [
     {

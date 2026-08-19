@@ -12,7 +12,7 @@ const SAMPLED_RELOAD_KINDS: Record<string, string> = {
   'models.providers': 'hot',
   'agents.defaults.workspace': 'none',
   'session.dmScope': 'none',
-  'tools.experimental.planTool': 'none',
+  'tools.updatePlan': 'none',
   'skills.install.nodeManager': 'none',
 };
 
@@ -47,7 +47,7 @@ test('hot and none paths do not force a restart', async () => {
   for (const path of ['agents.defaults.model', 'models.providers']) {
     assert.equal((await planConfigReload([path], sampledLookup)).kind, 'hot', path);
   }
-  for (const path of ['agents.defaults.workspace', 'session.dmScope', 'tools.experimental.planTool', 'skills.install.nodeManager']) {
+  for (const path of ['agents.defaults.workspace', 'session.dmScope', 'tools.updatePlan', 'skills.install.nodeManager']) {
     assert.equal((await planConfigReload([path], sampledLookup)).kind, 'none', path);
   }
 });

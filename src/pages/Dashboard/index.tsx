@@ -59,6 +59,7 @@ import {
   buildDailyCostChartData,
   getDashboardTokenUsageOverview,
   getDailyCostAvailability,
+  resolveDashboardPricingNotice,
   resolveDashboardChartMetric,
   type DashboardChartMetricPreference,
   formatActivityTime,
@@ -347,6 +348,7 @@ export function DashboardPage() {
   const costAvailability = useMemo(() => getDailyCostAvailability(allDaily), [allDaily]);
   const hasChartData = costAvailability.hasPricedCost;
   const hasTokenChartData = costAvailability.hasDatedEntries && costAvailability.totalTokens > 0;
+  const pricingNotice = resolveDashboardPricingNotice(costAvailability);
   const tokenUsageOverview = useMemo(() => getDashboardTokenUsageOverview(chartData), [chartData]);
   const hasTokenTrend = hasTokenChartData && tokenUsageOverview.hasTrend;
   const chartMetric = resolveDashboardChartMetric(
@@ -736,12 +738,12 @@ export function DashboardPage() {
                 <span className="text-[14px] font-semibold text-aegis-text">
                   {t(chartMetric === 'cost' ? 'dashboard.dailyCostChart' : 'dashboard.dailyTokenChart')}
                 </span>
-                {!hasChartData && hasTokenChartData && (
+                {pricingNotice === 'unpriced' && (
                   <span className="rounded bg-aegis-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-aegis-warning">
                     {t('dashboard.usageUnpriced', '用量 · 未估价')}
                   </span>
                 )}
-                {costAvailability.missingCostEntries > 0 && (
+                {pricingNotice === 'partial' && (
                   <span className="rounded bg-aegis-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-aegis-warning">
                     {t('dashboard.costPartiallyPriced', {
                       count: costAvailability.missingCostEntries,

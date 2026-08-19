@@ -488,18 +488,35 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
     operation_id: String,
     stream: &'static str,
     reader: R,
-) {
+) -> std::thread::JoinHandle<()> {
+    spawn_line_reader(reader, move |line| {
+        emit_output(&app, &operation_id, stream, line);
+    })
+}
+
+fn spawn_line_reader<R, F>(reader: R, mut on_line: F) -> std::thread::JoinHandle<()>
+where
+    R: std::io::Read + Send + 'static,
+    F: FnMut(String) + Send + 'static,
+{
     std::thread::spawn(move || {
         for line in BufReader::new(reader).lines() {
             match line {
-                Ok(line) if !line.trim().is_empty() => {
-                    emit_output(&app, &operation_id, stream, line)
-                }
+                Ok(line) if !line.trim().is_empty() => on_line(line),
                 Ok(_) => {}
                 Err(_) => break,
             }
         }
-    });
+    })
+}
+
+fn join_output_readers(readers: Vec<std::thread::JoinHandle<()>>) -> Result<(), String> {
+    for reader in readers {
+        reader
+            .join()
+            .map_err(|_| "DWS 输出读取线程异常结束".to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -552,12 +569,13 @@ pub async fn start_dws_operation(
         "status",
         operation_started_message(kind).to_string(),
     );
-    spawn_reader(app.clone(), operation_id.clone(), "stdout", stdout);
-    spawn_reader(app.clone(), operation_id.clone(), "stderr", stderr);
+    let stdout_reader = spawn_reader(app.clone(), operation_id.clone(), "stdout", stdout);
+    let stderr_reader = spawn_reader(app.clone(), operation_id.clone(), "stderr", stderr);
     let state_ref = Arc::clone(&operations.active);
     let wait_operation_id = operation_id.clone();
     let operation_started_at = Instant::now();
     std::thread::spawn(move || {
+        let mut output_readers = Some(vec![stdout_reader, stderr_reader]);
         let mut last_wait_status_at = Duration::ZERO;
         loop {
             let outcome = {
@@ -575,27 +593,46 @@ pub async fn start_dws_operation(
                     Ok(Some(status)) => {
                         let cancelled = current.cancelled;
                         active.take();
-                        Some((status.success() && !cancelled, cancelled))
+                        Some((status.success() && !cancelled, cancelled, None))
                     }
                     Ok(None) => None,
                     Err(error) => {
+                        let _ = current.child.kill();
                         active.take();
-                        let _ = app.emit(
-                            FINISHED_EVENT,
-                            DwsOperationFinished {
-                                operation_id: wait_operation_id.clone(),
-                                kind,
-                                success: false,
-                                cancelled: false,
-                                message: format!("无法等待 DWS 流程：{error}"),
-                                dws_path: None,
-                            },
-                        );
-                        return;
+                        Some((false, false, Some(format!("无法等待 DWS 流程：{error}"))))
                     }
                 }
             };
-            if let Some((command_succeeded, cancelled)) = outcome {
+            if let Some((command_succeeded, cancelled, wait_error)) = outcome {
+                if let Err(message) = join_output_readers(output_readers.take().unwrap_or_default())
+                {
+                    let _ = app.emit(
+                        FINISHED_EVENT,
+                        DwsOperationFinished {
+                            operation_id: wait_operation_id.clone(),
+                            kind,
+                            success: false,
+                            cancelled,
+                            message,
+                            dws_path: None,
+                        },
+                    );
+                    return;
+                }
+                if let Some(message) = wait_error {
+                    let _ = app.emit(
+                        FINISHED_EVENT,
+                        DwsOperationFinished {
+                            operation_id: wait_operation_id.clone(),
+                            kind,
+                            success: false,
+                            cancelled: false,
+                            message,
+                            dws_path: None,
+                        },
+                    );
+                    return;
+                }
                 if command_succeeded {
                     let status = if operation_requires_validation(kind) {
                         "DWS 命令已结束，正在核验当前运行时。"
@@ -703,10 +740,12 @@ pub fn cancel_dws_operation(
 mod tests {
     use super::{
         dws_operation_args, dws_package_entry_for_prefix, dws_profile_operation_args,
-        normalize_operation_profile, operation_requires_validation, operation_started_message,
-        operation_waiting_message, redact_line, validate_dws_json_output, DwsOperationKind,
-        DWS_PACKAGE,
+        join_output_readers, normalize_operation_profile, operation_requires_validation,
+        operation_started_message, operation_waiting_message, redact_line, spawn_line_reader,
+        validate_dws_json_output, DwsOperationKind, DWS_PACKAGE,
     };
+    use std::io::Cursor;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     #[test]
@@ -769,6 +808,25 @@ mod tests {
             operation_waiting_message(DwsOperationKind::ResetAuth, Duration::from_secs(15))
                 .contains("15")
         );
+    }
+
+    #[test]
+    fn dws_output_readers_are_drained_before_terminal_processing() {
+        let lines = Arc::new(Mutex::new(Vec::new()));
+        let stdout_lines = Arc::clone(&lines);
+        let stderr_lines = Arc::clone(&lines);
+        let stdout = spawn_line_reader(Cursor::new("stdout-final\n"), move |line| {
+            stdout_lines.lock().unwrap().push(line);
+        });
+        let stderr = spawn_line_reader(Cursor::new("stderr-final\n"), move |line| {
+            stderr_lines.lock().unwrap().push(line);
+        });
+
+        join_output_readers(vec![stdout, stderr]).unwrap();
+
+        let mut captured = lines.lock().unwrap().clone();
+        captured.sort();
+        assert_eq!(captured, ["stderr-final", "stdout-final"]);
     }
 
     #[test]
