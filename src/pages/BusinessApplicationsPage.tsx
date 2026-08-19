@@ -29,6 +29,7 @@ import {
   DINGTALK_TOOL_SCHEMA_TOOL,
   collectDingTalkTools,
   dingTalkDomainLabel,
+  hasAvailableDingTalkRuntimeTool,
   parseDingTalkBusinessEvidence,
   parseDingTalkToolSchemaOutput,
   parseDingTalkRuntimeOutput,
@@ -44,6 +45,12 @@ import {
   authorizeDingTalkAgent,
   configureDingTalkDwsPath,
 } from '@/business-applications/dingtalkAgentAuthorization';
+import { collectDingTalkAuthorizationTargets } from '@/business-applications/dingtalkAuthorizationTarget';
+import {
+  cacheDwsOperationFinished,
+  cacheDwsOperationOutput,
+  type DwsOperationEventCache,
+} from '@/business-applications/dwsOperationEventCache';
 import { useBusinessActivityStore } from '@/business-applications/activityStore';
 import { parseBusinessApplicationsView } from '@/business-applications/businessApplicationsView';
 import {
@@ -245,6 +252,7 @@ export function BusinessApplicationsPage() {
   const identity = useRuntimeIdentitySnapshot();
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const sessions = useGatewayDataStore((state) => state.sessions);
+  const agents = useGatewayDataStore((state) => state.agents);
   const effective = useGatewayDataStore((state) => state.toolsEffective[activeSessionKey]);
   const toolsLoading = useGatewayDataStore((state) => (
     state.toolsEffectiveLoading && state.toolsEffectiveLoadingSessionKey === activeSessionKey
@@ -253,13 +261,17 @@ export function BusinessApplicationsPage() {
   const sessionExists = sessions.some((session) => session.key === activeSessionKey);
   const activeSession = sessions.find((session) => session.key === activeSessionKey) ?? null;
   const activeAgentId = effective?.agentId ?? activeSession?.agentId ?? null;
+  const authorizationAgentOptions = useMemo(
+    () => collectDingTalkAuthorizationTargets(activeAgentId, agents),
+    [activeAgentId, agents],
+  );
   const allTools = useMemo(() => collectDingTalkTools(effective?.groups), [effective]);
   const rawEffectiveTools = useMemo(
     () => effective?.groups.flatMap((group) => group.tools) ?? [],
     [effective],
   );
   const schemaToolAvailable = rawEffectiveTools.some((tool) => tool.id === DINGTALK_TOOL_SCHEMA_TOOL && !tool.deniedBySession);
-  const runtimeToolAvailable = rawEffectiveTools.some((tool) => tool.id === DINGTALK_RUNTIME_STATUS_TOOL && !tool.deniedBySession);
+  const runtimeToolAvailable = hasAvailableDingTalkRuntimeTool(effective?.groups);
 
   const view = parseBusinessApplicationsView(location.search);
   const [leftWidth, setLeftWidth] = useState(228);
@@ -281,12 +293,18 @@ export function BusinessApplicationsPage() {
   const [pluginStatus, setPluginStatus] = useState<DingTalkPluginStatus | null>(null);
   const [pluginStatusLoading, setPluginStatusLoading] = useState(true);
   const [pluginError, setPluginError] = useState<string | null>(null);
+  const [authorizationNotice, setAuthorizationNotice] = useState<string | null>(null);
+  const [authorizationTargetAgentId, setAuthorizationTargetAgentId] = useState<string | null>(null);
   const [pluginOperation, setPluginOperation] = useState<'installing' | 'authorizing' | 'restarting' | null>(null);
+  const [dingtalkRefreshPending, setDingTalkRefreshPending] = useState(false);
   const [pluginInstallationProgress, setPluginInstallationProgress] = useState<DingTalkPluginInstallProgress>({ phase: 'idle', message: null });
   const [pluginInstallDialogOpen, setPluginInstallDialogOpen] = useState(false);
   const [dwsOperation, setDwsOperation] = useState<DingTalkDwsOperationPresentation | null>(null);
   const [dwsOutput, setDwsOutput] = useState<string[]>([]);
-  const dwsOutputCache = useRef<Record<string, string[]>>({});
+  const dwsEventCache = useRef<DwsOperationEventCache>({ output: {}, finished: {} });
+  const dwsFinalizedOperationIds = useRef(new Set<string>());
+  const [dwsCompletionRevision, setDwsCompletionRevision] = useState(0);
+  const dingtalkRefreshInFlight = useRef(false);
   const [runtimeIdentity, setRuntimeIdentity] = useState<DingTalkRuntimeIdentityProjection | null>(null);
   const [runtimeIdentityError, setRuntimeIdentityError] = useState<string | null>(null);
 
@@ -346,9 +364,8 @@ export function BusinessApplicationsPage() {
   const refreshRuntimeIdentity = useCallback(async (useFreshToolSnapshot = false) => {
     const currentStore = useGatewayDataStore.getState();
     const currentSessionExists = currentStore.sessions.some((session) => session.key === activeSessionKey);
-    const freshTools = currentStore.toolsEffective[activeSessionKey]?.groups.flatMap((group) => group.tools) ?? [];
     const currentRuntimeToolAvailable = useFreshToolSnapshot
-      ? freshTools.some((tool) => tool.id === DINGTALK_RUNTIME_STATUS_TOOL && !tool.deniedBySession)
+      ? hasAvailableDingTalkRuntimeTool(currentStore.toolsEffective[activeSessionKey]?.groups)
       : runtimeToolAvailable;
     if (!currentSessionExists || !currentRuntimeToolAvailable) {
       setRuntimeIdentity(null);
@@ -398,6 +415,26 @@ export function BusinessApplicationsPage() {
       refreshRuntimeIdentity(true),
     ]);
   }, [refreshPluginStatus, refreshRuntimeIdentity, refreshTools]);
+
+  const requestDingTalkRefresh = useCallback(() => {
+    if (
+      !sessionExists
+      || dingtalkRefreshInFlight.current
+      || toolsLoading
+      || pluginStatusLoading
+      || pluginOperation !== null
+      || dwsOperation?.phase === 'running'
+    ) return;
+    dingtalkRefreshInFlight.current = true;
+    setDingTalkRefreshPending(true);
+    setPluginError(null);
+    void refreshDingTalkState()
+      .catch((error) => setPluginError(errorMessage(error)))
+      .finally(() => {
+        dingtalkRefreshInFlight.current = false;
+        setDingTalkRefreshPending(false);
+      });
+  }, [dwsOperation?.phase, pluginOperation, pluginStatusLoading, refreshDingTalkState, sessionExists, toolsLoading]);
 
   const restartAndRefreshDingTalkGateway = useCallback(async () => {
     const result = await gatewayLifecycle.restart('business-applications-dingtalk');
@@ -468,8 +505,7 @@ export function BusinessApplicationsPage() {
     const outputUnlisten = subscribeTauriEvent<DwsOperationOutput>('dws-operation-output', (event) => {
       const payload = event.payload;
       const line = `${payload.stream === 'stderr' ? t('businessApplications.dws.errorPrefix') : ''}${payload.line}`;
-      const cached = [...(dwsOutputCache.current[payload.operationId] ?? []), line].slice(-400);
-      dwsOutputCache.current[payload.operationId] = cached;
+      const cached = cacheDwsOperationOutput(dwsEventCache.current, payload, line);
       setDwsOperation((current) => {
         if (!current || current.id !== payload.operationId) return current;
         setDwsOutput(cached);
@@ -478,18 +514,34 @@ export function BusinessApplicationsPage() {
     });
     const finishedUnlisten = subscribeTauriEvent<DwsOperationFinished>('dws-operation-finished', (event) => {
       const payload = event.payload;
+      cacheDwsOperationFinished(dwsEventCache.current, payload);
       if (!payload.success && payload.message) {
-        const cached = [...(dwsOutputCache.current[payload.operationId] ?? []), payload.message].slice(-400);
-        dwsOutputCache.current[payload.operationId] = cached;
-        setDwsOutput(cached);
+        const cached = cacheDwsOperationOutput(dwsEventCache.current, {
+          operationId: payload.operationId,
+          stream: 'status',
+          line: payload.message,
+        }, payload.message);
+        setDwsOperation((current) => {
+          if (!current || current.id !== payload.operationId) return current;
+          setDwsOutput(cached);
+          return current;
+        });
       }
-      void finalizeDwsOperation(payload);
+      setDwsCompletionRevision((current) => current + 1);
     });
     return () => {
       outputUnlisten();
       finishedUnlisten();
     };
   }, [finalizeDwsOperation, t]);
+
+  useEffect(() => {
+    if (!dwsOperation) return;
+    const finished = dwsEventCache.current.finished[dwsOperation.id];
+    if (!finished || dwsFinalizedOperationIds.current.has(finished.operationId)) return;
+    dwsFinalizedOperationIds.current.add(finished.operationId);
+    void finalizeDwsOperation(finished);
+  }, [dwsCompletionRevision, dwsOperation, finalizeDwsOperation]);
 
   useEffect(() => {
     if (selectedTool) return;
@@ -725,7 +777,7 @@ export function BusinessApplicationsPage() {
     setDwsOutput([]);
     void startDwsOperation(current.targetFingerprint, current.connectionId, kind)
       .then((started) => {
-        const output = dwsOutputCache.current[started.operationId] ?? [];
+        const output = dwsEventCache.current.output[started.operationId] ?? [];
         setDwsOperation({
           id: started.operationId,
           kind: started.kind,
@@ -766,23 +818,43 @@ export function BusinessApplicationsPage() {
     }
   }, [restartAndRefreshDingTalkGateway]);
 
-  const authorizeCurrentAgent = useCallback(async () => {
-    if (!activeAgentId) {
-      setPluginError('当前 Session 没有可核验的 Agent ID。');
+  const selectedAuthorizationAgentId = authorizationTargetAgentId
+    && authorizationAgentOptions.some((candidate) => candidate.id === authorizationTargetAgentId)
+    ? authorizationTargetAgentId
+    : activeAgentId;
+
+  useEffect(() => {
+    setAuthorizationTargetAgentId(null);
+    setAuthorizationNotice(null);
+  }, [activeSessionKey]);
+
+  const authorizeSelectedAgent = useCallback(async (targetAgentId: string) => {
+    const normalizedTargetAgentId = targetAgentId.trim();
+    if (!normalizedTargetAgentId) {
+      setPluginError('请选择可核验的 Agent。');
       return;
     }
     setPluginOperation('authorizing');
     setPluginError(null);
+    setAuthorizationNotice(null);
     try {
-      await authorizeDingTalkAgent(gateway, activeAgentId);
+      await authorizeDingTalkAgent(gateway, normalizedTargetAgentId, activeSessionKey);
       await restartAndRefreshDingTalkGateway();
+      if (normalizedTargetAgentId !== activeAgentId) {
+        setAuthorizationNotice(t('businessApplications.readiness.nonCurrentAgentConfigured', { agentId: normalizedTargetAgentId }));
+        return;
+      }
+      const refreshedTools = useGatewayDataStore.getState().toolsEffective[activeSessionKey];
+      if (!hasAvailableDingTalkRuntimeTool(refreshedTools?.groups)) {
+        throw new Error('钉钉授权配置已确认写入，但当前 Session 的有效工具仍未出现钉钉运行时工具。请刷新后查看 Gateway 返回的实际策略或插件加载错误。');
+      }
       setPluginError(null);
     } catch (error) {
       setPluginError(errorMessage(error));
     } finally {
       setPluginOperation(null);
     }
-  }, [activeAgentId, restartAndRefreshDingTalkGateway]);
+  }, [activeAgentId, activeSessionKey, restartAndRefreshDingTalkGateway, t]);
 
   const localInstallAvailable = Boolean(identity?.verified && identity.desktopMutationAllowed);
   const pluginVisibleInSession = allTools.length > 0;
@@ -792,7 +864,15 @@ export function BusinessApplicationsPage() {
       || !pluginStatus.loaded
       || pluginStatus.version !== pluginStatus.bundledVersion
   ));
-  const headerStatus = pluginVisibleInSession
+  const refreshDisabled = !sessionExists
+    || dingtalkRefreshPending
+    || toolsLoading
+    || pluginStatusLoading
+    || pluginOperation !== null
+    || dwsOperation?.phase === 'running';
+  const headerStatus = dingtalkRefreshPending
+    ? t('businessApplications.readiness.refreshing')
+    : pluginVisibleInSession
     ? `${allTools.length} 个当前有效工具`
     : toolsLoading || pluginStatusLoading ? '正在核对当前 Session 与插件状态' : pluginStatus?.installed
       ? '插件已安装，等待 Gateway 刷新'
@@ -809,19 +889,23 @@ export function BusinessApplicationsPage() {
     pluginStatusPending: localInstallAvailable && pluginStatusLoading,
     restartRequired: Boolean(pluginStatus?.restartRequired),
     agentId: activeAgentId,
+    authorizationAgentOptions,
+    authorizationTargetAgentId: selectedAuthorizationAgentId,
     installAvailable: localInstallAvailable,
     installationProgress: pluginInstallationProgress,
     dwsOperation,
     dwsOutput,
     busy: pluginOperation !== null || toolsLoading || dwsOperation?.phase === 'running',
+    refreshing: dingtalkRefreshPending,
     operation: pluginOperation,
     sessionLabel: sessionExists ? activeSessionKey : null,
     effectiveToolCount: allTools.length,
     pluginVersion: pluginStatus?.version ?? null,
     bundledPluginVersion: pluginStatus?.bundledVersion ?? null,
-    onRefresh: () => { void refreshDingTalkState(); },
+    onRefresh: requestDingTalkRefresh,
     onInstallPlugin: installPlugin,
-    onAuthorizeAgent: () => void authorizeCurrentAgent(),
+    onAuthorizeAgent: (agentId: string) => void authorizeSelectedAgent(agentId),
+    onAuthorizationTargetAgentChange: setAuthorizationTargetAgentId,
     onRestartGateway: () => { void restartGateway(); },
     onInstallDws: () => runDwsOperation('install'),
     onAuthorizeDws: () => runDwsOperation('authorize'),
@@ -841,8 +925,15 @@ export function BusinessApplicationsPage() {
           <DingTalkRuntimeIdentity runtime={runtimeIdentity} />
           {runtimeIdentityError && <span className="max-w-[180px] truncate text-[9.5px] text-aegis-warning" title={runtimeIdentityError}>DWS 身份待验证</span>}
           {pluginError && <span className="max-w-[280px] truncate text-[9.5px] text-aegis-danger" title={pluginError}>{pluginError}</span>}
-          <IconButton aria-label="刷新钉钉工具和身份" title="刷新钉钉工具和身份" disabled={!sessionExists || toolsLoading} onClick={() => { void refreshTools(); void refreshRuntimeIdentity(); }}>
-            <RefreshCw size={13} className={toolsLoading ? 'animate-spin' : ''} />
+          {authorizationNotice && <span className="max-w-[340px] truncate text-[9.5px] text-aegis-success" title={authorizationNotice} role="status">{authorizationNotice}</span>}
+          <IconButton
+            aria-label={t(dingtalkRefreshPending ? 'businessApplications.readiness.refreshing' : 'businessApplications.readiness.refresh')}
+            title={t('businessApplications.readiness.refreshTitle')}
+            loading={dingtalkRefreshPending}
+            disabled={refreshDisabled}
+            onClick={requestDingTalkRefresh}
+          >
+            <RefreshCw size={13} />
           </IconButton>
         </div>
       </header>

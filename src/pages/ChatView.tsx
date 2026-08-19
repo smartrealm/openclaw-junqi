@@ -270,8 +270,6 @@ function ChatViewContent() {
     (s) => s.sessions.find((session) => session.key === activeSessionKey)?.hasActiveRun === true,
   );
   const agents = useGatewayDataStore((s) => s.agents);
-  const messageQueue = useChatStore((s) => s.messageQueue);
-  const queueCount = (messageQueue[activeSessionKey] || []).length;
   const availableModels = useChatStore((s) => {
     const agentId = activeAgentId?.trim();
     return agentId ? s.sessionAvailableModelsByAgentId[agentId] ?? EMPTY_MODEL_CATALOG : EMPTY_MODEL_CATALOG;
@@ -969,7 +967,6 @@ function ChatViewContent() {
         const current = state.messagesPerSession[activeSessionKey] ?? [];
         const updated = removeLocalUserMessage(current, sourceMessage.id);
         if (updated.length === current.length) return;
-        state.removeQueuedMessage(activeSessionKey, sourceMessage.id);
         state.setMessages(updated, activeSessionKey);
       },
     );
@@ -1478,7 +1475,7 @@ function ChatViewContent() {
 
       {/* Messages Area — Virtualized */}
       <div
-        className={clsx('flex-1 min-h-0 relative', queueCount > 0 && 'pb-[100px]')}
+        className="flex-1 min-h-0 relative"
         onWheelCapture={(e) => {
           if (e.deltaY < -2) {
             scrollLockedRef.current = true;

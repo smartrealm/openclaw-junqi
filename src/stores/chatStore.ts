@@ -6,21 +6,11 @@ import { normalizeGatewayMessage } from '@/processing/normalizeGatewayMessage';
 import { buildSemanticBlocks, projectSemanticBlocksToRenderBlocks } from '@/processing/buildSemanticBlocks';
 import { buildResponseGroups } from '@/processing/buildResponseGroups';
 import type { OpenClawChatRunStartup } from '@/processing/openClawChatEvent';
-import { isOpenClawChatSendDeliveryUncertain } from '@/processing/openClawChatEvent';
 import { OpenClawSessionGroupsUnsupportedError } from '@/services/gateway/OpenClawSessionGroupsClient';
 import type {
   OutboundChatPayload,
   PreparedAttachment,
-  QueuedChatMessage,
 } from '@/services/chat/types';
-import {
-  MAX_SESSION_MESSAGE_QUEUE_SIZE,
-  MAX_SESSION_MESSAGE_QUEUE_BYTES,
-  SessionMessageQueueFullError,
-  SessionMessageQueuePayloadLimitError,
-  queuedChatMessageBytes,
-} from '@/services/chat/types';
-import { sessionMutationGate } from '@/services/chat/sessionMutationGate';
 import {
   collectSessionIdentityTransitions,
   publishSessionIdentityTransitions,
@@ -49,19 +39,6 @@ import type { ModelEntry } from '@/services/gateway/modelLoaders';
 
 const MAIN_SESSION = 'agent:main:main';
 const OPEN_TABS_PREFS_KEY = 'aegis-open-tabs';
-const drainingQueueSessions = new Set<string>();
-
-function outboundPayloadFromQueue(message: QueuedChatMessage): OutboundChatPayload {
-  return {
-    text: message.text,
-    ...(message.sessionId ? { sessionId: message.sessionId } : {}),
-    ...(message.attachments?.length ? { attachments: message.attachments } : {}),
-    ...(message.displayAttachments?.length
-      ? { displayAttachments: message.displayAttachments }
-      : {}),
-  };
-}
-
 function persistOpenTabs(tabs: string[]): void {
   try {
     localStorage.setItem(OPEN_TABS_PREFS_KEY, JSON.stringify(tabs));
@@ -259,7 +236,7 @@ export interface ChatMessage {
   timestamp: string;
   runId?: string | null;
   responseState?: 'streaming' | 'final' | 'error' | 'aborted';
-  status?: 'pending' | 'held' | 'sent' | 'queued' | 'failed' | 'cancelled';
+  status?: 'pending' | 'sent' | 'failed' | 'cancelled';
   deliveryError?: string;
   isStreaming?: boolean;
   mediaUrl?: string;
@@ -271,7 +248,7 @@ export interface ChatMessage {
   }>;
   /** Local delivery metadata. Never serialized into the OpenClaw transcript. */
   outboundAttachments?: Array<{ fileName?: string; mimeType: string }>;
-  /** Retained only while a delivery is queued or failed so retry is lossless. */
+  /** 仅在发送失败或发送终态待核验时保留，用于不丢失地重试或呈现。 */
   retryPayload?: OutboundChatPayload;
   // Tool call metadata (role === 'tool')
   toolName?: string;
@@ -602,13 +579,6 @@ interface ChatState {
   settleSessionRunUi: (sessionKey?: string) => void;
   compactionStatusBySession: Record<string, SessionCompactionStatus>;
   setCompactionStatus: (sessionKey: string, status: SessionCompactionStatus | null) => void;
-  messageQueue: Record<string, QueuedChatMessage[]>;
-  enqueueMessage: (sessionKey: string, message: QueuedChatMessage) => void;
-  drainQueue: (sessionKey: string) => Promise<void>;
-  retryQueuedMessage: (sessionKey: string, id: string) => Promise<void>;
-  clearQueue: (sessionKey: string) => void;
-  queueSize: (sessionKey: string) => number;
-
   // ── Drag-drop attachments ─────────────────────────────────
   /** Files dropped onto the app that should attach to the next outgoing
    *  message in `activeSessionKey`. Cleared by ChatPage / MessageInput
@@ -624,8 +594,6 @@ interface ChatState {
   /** Binary-safe, fully prepared attachments isolated by session. */
   preparedAttachments: Record<string, PreparedAttachment[]>;
   setPreparedAttachments: (key: string, files: PreparedAttachment[]) => void;
-  removeQueuedMessage: (sessionKey: string, id: string) => void;
-  updateQueuedMessage: (sessionKey: string, id: string, newText: string) => void;
   sendingBySession: Record<string, boolean>;
   setIsSending: (sending: boolean, sessionKey?: string) => void;
   loadingHistoryBySession: Record<string, boolean>;
@@ -731,7 +699,6 @@ function clearTranscriptStateForIdentityChanges(
     thinkingBySession: withoutSessionKeys(state.thinkingBySession, sessionKeys),
     sendingBySession: withoutSessionKeys(state.sendingBySession, sessionKeys),
     loadingHistoryBySession: withoutSessionKeys(state.loadingHistoryBySession, sessionKeys),
-    messageQueue: withoutSessionKeys(state.messageQueue, sessionKeys),
     ...(activeChanged
       ? {
           messages: [],
@@ -1964,7 +1931,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { [key]: _qr, ...restQuickReplies } = state.quickRepliesBySession;
     const { [key]: _thinking, ...restThinking } = state.thinkingBySession;
     const { [key]: _draft, ...restDrafts } = state.drafts;
-    const { [key]: _queue, ...restMessageQueue } = state.messageQueue;
     const { [key]: _attachments, ...restDraftAttachments } = state.draftAttachments;
     const { [key]: _prepared, ...restPreparedAttachments } = state.preparedAttachments;
     const { [key]: _sending, ...restSendingBySession } = state.sendingBySession;
@@ -1990,7 +1956,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       quickRepliesBySession: restQuickReplies,
       thinkingBySession: restThinking,
       drafts: restDrafts,
-      messageQueue: restMessageQueue,
       draftAttachments: restDraftAttachments,
       preparedAttachments: restPreparedAttachments,
       sendingBySession: restSendingBySession,
@@ -2123,176 +2088,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     else delete next[normalizedKey];
     return { compactionStatusBySession: next };
   }),
-  messageQueue: {},
-  enqueueMessage: (sessionKey, message) => set((state) => {
-    const queue = state.messageQueue[sessionKey] || [];
-    if (queue.length >= MAX_SESSION_MESSAGE_QUEUE_SIZE) {
-      throw new SessionMessageQueueFullError();
-    }
-    const payloadBytes = queue.reduce((total, item) => total + queuedChatMessageBytes(item), 0)
-      + queuedChatMessageBytes(message);
-    if (payloadBytes > MAX_SESSION_MESSAGE_QUEUE_BYTES) {
-      throw new SessionMessageQueuePayloadLimitError();
-    }
-    return {
-      messageQueue: {
-        ...state.messageQueue,
-        [sessionKey]: [...queue, message],
-      },
-    };
-  }),
-  drainQueue: async (sessionKey) => {
-    if (isSessionDeleted(sessionKey) || drainingQueueSessions.has(sessionKey)) return;
-    if (
-      !get().connected
-      || get().typingBySession[sessionKey]
-      || sessionMutationGate.isBlocked(sessionKey)
-    ) return;
-    const next = get().messageQueue[sessionKey]?.[0];
-    if (!next || next.failed) return;
-
-    // Claim the renderer-owned item before any await. A local clear/edit action
-    // can only affect items that have not crossed this handoff boundary.
-    set((state) => {
-      const queue = state.messageQueue[sessionKey] || [];
-      if (queue[0]?.id !== next.id) return state;
-      return {
-        messageQueue: {
-          ...state.messageQueue,
-          [sessionKey]: queue.slice(1),
-        },
-      };
-    });
-    drainingQueueSessions.add(sessionKey);
-    const retryPayload = outboundPayloadFromQueue(next);
-    // Mark typing so the drained reply is tracked through its lifecycle — its
-    // completion (typing true→false) re-triggers the App.tsx drain subscription
-    // to send the next queued item. Without this the subscription would fire in
-    // a tight loop (typing stays false) and the reply would show no indicator.
-    // User message appears in chat BEFORE AI starts replying
-    get().addMessage({
-      id: next.id,
-      clientMessageId: next.id,
-      role: 'user', content: next.text,
-      timestamp: next.timestamp, status: 'pending' as const,
-      ...(next.displayAttachments?.length ? { attachments: next.displayAttachments } : {}),
-      retryPayload,
-      ...(next.attachments?.length
-        ? {
-            outboundAttachments: next.attachments.map((attachment) => ({
-              fileName: attachment.fileName,
-              mimeType: attachment.mimeType,
-            })),
-          }
-        : {}),
-    }, sessionKey);
-    get().updateMessage(sessionKey, next.id, { status: 'pending', deliveryError: undefined });
-    get().setIsTyping(true, sessionKey);
-    try {
-      const result = await getChatGatewayOperations().sendMessage(next.text, next.attachments, sessionKey, {
-        clientMessageId: next.id,
-        sessionId: next.sessionId,
-      }) as { queued?: boolean } | undefined;
-      const deliveryUncertain = isOpenClawChatSendDeliveryUncertain(result);
-      get().updateMessage(sessionKey, next.id, deliveryUncertain
-        ? { status: 'pending', deliveryError: undefined, retryPayload }
-        : {
-            status: result?.queued ? 'queued' : 'sent',
-            deliveryError: undefined,
-            retryPayload: result?.queued ? retryPayload : undefined,
-          });
-      if (result?.queued) get().setIsTyping(false, sessionKey);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error || 'Message delivery failed');
-      set((state) => ({
-        ...(isSessionDeleted(sessionKey) ? {} : {
-          messageQueue: {
-            ...state.messageQueue,
-            [sessionKey]: [{ ...next, failed: true, error: message }, ...(state.messageQueue[sessionKey] || [])],
-          },
-        }),
-      }));
-      get().updateMessage(sessionKey, next.id, {
-        status: 'failed',
-        deliveryError: message,
-        retryPayload,
-      });
-      get().setIsTyping(false, sessionKey);
-    } finally {
-      drainingQueueSessions.delete(sessionKey);
-      // A cached terminal chat.send acknowledgement can settle typing before
-      // this drain releases its re-entry guard. Re-arm the queue pump after
-      // the guard is gone so the next item is not stranded waiting for a
-      // transition that already happened.
-      queueMicrotask(() => {
-        const state = get();
-        const queued = state.messageQueue[sessionKey]?.[0];
-        if (
-          queued
-          && !queued.failed
-          && state.connected
-          && !state.typingBySession[sessionKey]
-          && !sessionMutationGate.isBlocked(sessionKey)
-          && !isSessionDeleted(sessionKey)
-        ) {
-          void state.drainQueue(sessionKey).catch(() => undefined);
-        }
-      });
-    }
-  },
-  retryQueuedMessage: async (sessionKey, id) => {
-    set((state) => ({
-      messageQueue: {
-        ...state.messageQueue,
-        [sessionKey]: (state.messageQueue[sessionKey] || []).map((item) => (
-          item.id === id ? { ...item, failed: false, error: undefined } : item
-        )),
-      },
-    }));
-    await get().drainQueue(sessionKey);
-  },
-  clearQueue: (sessionKey) => {
-    const queuedIds = new Set((get().messageQueue[sessionKey] || []).map((message) => message.id));
-    set((state) => ({
-      messageQueue: { ...state.messageQueue, [sessionKey]: [] },
-    }));
-    if (queuedIds.size === 0) return;
-
-    const messages = getSessionMessages(get(), sessionKey);
-    if (!messages.some((message) => queuedIds.has(message.id))) return;
-    get().setMessages(messages.map((message) => (
-      queuedIds.has(message.id)
-        ? { ...message, status: 'cancelled' as const, retryPayload: undefined }
-        : message
-    )), sessionKey);
-  },
-  removeQueuedMessage: (sessionKey, id) => {
-    set((state) => ({
-      messageQueue: {
-        ...state.messageQueue,
-        [sessionKey]: (state.messageQueue[sessionKey] || []).filter((message) => message.id !== id),
-      },
-    }));
-    get().updateMessage(sessionKey, id, { status: 'cancelled', retryPayload: undefined });
-  },
-  updateQueuedMessage: (sessionKey, id, newText) => {
-    set((state) => ({
-      messageQueue: {
-        ...state.messageQueue,
-        [sessionKey]: (state.messageQueue[sessionKey] || []).map((message) => (
-          message.id === id ? { ...message, text: newText } : message
-        )),
-      },
-    }));
-    const current = getSessionMessages(get(), sessionKey).find((message) => message.id === id);
-    get().updateMessage(sessionKey, id, {
-      content: newText,
-      ...(current?.retryPayload
-        ? { retryPayload: { ...current.retryPayload, text: newText } }
-        : {}),
-    });
-  },
-  queueSize: (sessionKey) => (get().messageQueue[sessionKey] || []).length,
   setIsTyping: (typing, sessionKey) =>
     set((state) => {
       const targetKey = sessionKey ?? state.activeSessionKey;

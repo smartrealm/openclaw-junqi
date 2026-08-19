@@ -55,7 +55,6 @@ interface SeedFile {
 }
 
 const EMPTY_MESSAGES: ReturnType<typeof useChatStore.getState>['messages'] = [];
-const EMPTY_QUEUE: ReturnType<typeof useChatStore.getState>['messageQueue'][string] = [];
 const EMPTY_RESPONSE_GROUPS: ResponseGroup[] = [];
 
 const AssistantResponseAvatar = lazy(() => import('@/components/Chat/MessageBubble').then((module) => ({ default: module.AssistantResponseAvatar })));
@@ -107,9 +106,6 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   );
   const isTyping = useChatStore((state) => Boolean(state.typingBySession[sessionKey]));
   const isRequestActive = useChatStore((state) => selectSessionRequestActive(state, sessionKey));
-  const pendingHandoffs = useChatStore((state) => state.messageQueue[sessionKey] ?? EMPTY_QUEUE);
-  const pendingHandoffCount = pendingHandoffs.length;
-  const failedPendingHandoff = pendingHandoffs.find((message) => message.failed);
   const voiceOutputActive = useVoiceStore((state) =>
     state.remoteOutput !== null
       || ((state.phase === 'queued' || state.phase === 'speaking') && state.sessionKey === sessionKey),
@@ -229,12 +225,6 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
       setTimeout(() => messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' }), 30);
     }
   }, [attachmentErrorMessage, text, sending, connected, files, sessionId, sessionKey, t]);
-
-  const handleRetryPendingHandoff = useCallback(async () => {
-    if (!failedPendingHandoff) return;
-    setSendError('');
-    await useChatStore.getState().retryQueuedMessage(sessionKey, failedPendingHandoff.id);
-  }, [failedPendingHandoff, sessionKey]);
 
   const handleStop = useCallback(async () => {
     voiceRuntime.interruptGlobally(sessionKey);
@@ -396,11 +386,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   }, [handleSend]);
 
   const handleClose = useCallback(async () => {
-    if (useChatStore.getState().typingBySession[sessionKey]) {
-      await handleStop().catch(() => undefined);
-    } else {
-      useChatStore.getState().clearQueue(sessionKey);
-    }
+    if (useChatStore.getState().typingBySession[sessionKey]) await handleStop().catch(() => undefined);
     try { await closeQuickChat(); } catch {}
   }, [handleStop, sessionKey]);
 
@@ -502,20 +488,6 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
           </section>
         )}
         {sendError && <div className="mt-2 text-[11px] text-aegis-danger">{sendError}</div>}
-        {failedPendingHandoff && (
-          <div className="mt-2 flex items-center gap-2 text-[11px] text-aegis-danger">
-            <span className="min-w-0 flex-1 truncate" title={failedPendingHandoff.error}>
-              {failedPendingHandoff.error || t('chat.sendFailed')}
-            </span>
-            <button
-              type="button"
-              onClick={() => { void handleRetryPendingHandoff(); }}
-              className="shrink-0 rounded-md border border-aegis-danger/30 px-2 py-1 font-medium hover:bg-aegis-danger/10"
-            >
-              {t('common.retry')}
-            </button>
-          </div>
-        )}
       </div>
 
       {/* 输入区保持稳定的桌面表面，发送状态只改变控件本身。 */}
@@ -534,9 +506,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         />
         <div className="flex items-center justify-between mt-1.5 px-0.5">
           <div className="text-[10px] text-aegis-text-dim opacity-60">
-            {pendingHandoffCount > 0
-              ? t('chat.sessionMutationHandoffMore', { n: pendingHandoffCount })
-              : text.length > 0 && t('pet.quickChat.characterCount', { count: text.length })}
+            {text.length > 0 && t('pet.quickChat.characterCount', { count: text.length })}
           </div>
           <div className="flex items-center gap-1.5">
             {(isRequestActive || voiceOutputActive) && (

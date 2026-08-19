@@ -94,3 +94,20 @@ test('插件状态未返回前不误报未安装或 Agent 未授权', () => {
   assert.equal(readiness.action, null);
   assert.equal(readiness.titleKey, 'checkingTitle');
 });
+
+test('当前 Session 缺少有效工具时不把快照缺失冒充为 Agent 未授权', () => {
+  const readiness = resolveDingTalkReadiness({
+    sessionExists: true,
+    runtimeToolAvailable: false,
+    runtime: null,
+    runtimeError: null,
+    pluginNeedsInstall: false,
+    pluginStatusPending: false,
+    restartRequired: false,
+    agentId: 'main',
+  });
+
+  assert.equal(readiness.titleKey, 'effectiveToolMissingTitle');
+  assert.equal(readiness.descriptionKey, 'effectiveToolMissingDescription');
+  assert.equal(readiness.action, 'configure-agent');
+});

@@ -55,7 +55,19 @@ export interface ChannelConfigRepository {
   detect(): Promise<{ path: string; exists: boolean }>;
   read(): Promise<{ config: GatewayRuntimeConfig; revision?: string }>;
   write(config: GatewayRuntimeConfig, expectedRevision?: string): Promise<void>;
-  restart(): Promise<{ success: boolean; error?: string } | null>;
+  restart(): Promise<{ success: boolean; error?: string }>;
+}
+
+export class ChannelConfigReloadError extends Error {
+  readonly removedBindings: number;
+  readonly diagnostic?: string;
+
+  constructor(removedBindings: number, diagnostic?: string) {
+    super(`Channel bindings were saved, but Gateway reload failed${diagnostic ? `: ${diagnostic}` : '.'}`);
+    this.name = 'ChannelConfigReloadError';
+    this.removedBindings = removedBindings;
+    this.diagnostic = diagnostic;
+  }
 }
 
 type ChannelRouteBinding = NonNullable<GatewayRuntimeConfig['bindings']>[number];
@@ -425,7 +437,7 @@ export const gatewayChannelConfigRepository: ChannelConfigRepository = {
   },
   async restart() {
     const { gatewayLifecycle } = await import('@/runtime/gatewayLifecycle');
-    return gatewayLifecycle.restart('channel-config-repository').catch(() => null);
+    return gatewayLifecycle.restart('channel-config-repository');
   },
 };
 
@@ -480,6 +492,10 @@ export async function cleanupDeletedAgentChannelBindingsWithRepository(
   if (removed === 0) return 0;
   await persistChannelsOnlyWithRepository(repository, config, next);
   window.dispatchEvent(new CustomEvent('aegis:config-saved', { detail: { channelsChanged: true, deletedAgentId: agentId } }));
-  await repository.restart();
+  const restartResult = await repository.restart();
+  if (!restartResult.success) {
+    // 配置写入已经提交，失败后不得自动重放；调用方必须呈现部分完成状态。
+    throw new ChannelConfigReloadError(removed, restartResult.error);
+  }
   return removed;
 }

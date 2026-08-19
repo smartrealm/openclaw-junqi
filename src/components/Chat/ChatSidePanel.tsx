@@ -1,6 +1,12 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { ArrowLeft, X } from 'lucide-react';
 import clsx from 'clsx';
+import {
+  CHAT_SIDE_PANEL_DEFAULT_WIDTH,
+  CHAT_SIDE_PANEL_MIN_WIDTH,
+  clampChatSidePanelWidth,
+  maximumChatSidePanelWidth,
+} from './chatSidePanelResize';
 
 interface ChatSidePanelProps {
   title: string;
@@ -11,6 +17,8 @@ interface ChatSidePanelProps {
   onBack?: () => void;
   headerActions?: ReactNode;
   overlay?: boolean;
+  resizable?: boolean;
+  resizeLabel?: string;
   children: ReactNode;
 }
 
@@ -23,10 +31,26 @@ export function ChatSidePanel({
   onBack,
   headerActions,
   overlay = false,
+  resizable = false,
+  resizeLabel,
   children,
 }: ChatSidePanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const resizeRef = useRef<{ pointerId: number; parentRight: number; maximum: number } | null>(null);
+  const [panelWidth, setPanelWidth] = useState(CHAT_SIDE_PANEL_DEFAULT_WIDTH);
+  const [resizing, setResizing] = useState(false);
+
+  const availableWidth = () => panelRef.current?.parentElement?.getBoundingClientRect().width;
+  const maximumWidth = () => maximumChatSidePanelWidth(availableWidth());
+  const setClampedPanelWidth = (nextWidth: number, maximum = maximumWidth()) => {
+    setPanelWidth(clampChatSidePanelWidth(nextWidth, maximum / 0.7));
+  };
+  const finishResize = (element: HTMLDivElement, pointerId: number) => {
+    if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
+    resizeRef.current = null;
+    setResizing(false);
+  };
 
   useEffect(() => {
     if (!overlay) return undefined;
@@ -73,13 +97,68 @@ export function ChatSidePanel({
         'flex min-h-0 flex-col overflow-hidden bg-aegis-bg text-aegis-text',
         overlay
           ? 'absolute inset-0 z-40'
-          : 'relative w-[min(46%,720px)] min-w-[340px] shrink-0 border-l border-aegis-border max-md:absolute max-md:inset-0 max-md:z-40 max-md:w-full max-md:min-w-0',
+          : 'relative w-[var(--chat-side-panel-width,min(46%,720px))] min-w-[340px] max-w-[70%] shrink-0 border-l border-aegis-border max-md:absolute max-md:inset-0 max-md:z-40 max-md:w-full max-md:min-w-0',
       )}
+      style={resizable && !overlay
+        ? { '--chat-side-panel-width': `${panelWidth}px` } as CSSProperties
+        : undefined}
       role="dialog"
       aria-modal={overlay || undefined}
       aria-labelledby={titleId}
       tabIndex={-1}
     >
+      {resizable && !overlay && resizeLabel && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={resizeLabel}
+          aria-valuemin={CHAT_SIDE_PANEL_MIN_WIDTH}
+          aria-valuemax={maximumWidth()}
+          aria-valuenow={clampChatSidePanelWidth(panelWidth, availableWidth())}
+          tabIndex={0}
+          title={resizeLabel}
+          onDoubleClick={() => setClampedPanelWidth(CHAT_SIDE_PANEL_DEFAULT_WIDTH)}
+          onKeyDown={(event) => {
+            const maximum = maximumWidth();
+            if (event.key === 'Home') {
+              event.preventDefault();
+              setClampedPanelWidth(CHAT_SIDE_PANEL_MIN_WIDTH, maximum);
+              return;
+            }
+            if (event.key === 'End') {
+              event.preventDefault();
+              setClampedPanelWidth(maximum, maximum);
+              return;
+            }
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            const step = event.shiftKey ? 48 : 16;
+            setClampedPanelWidth(panelWidth + (event.key === 'ArrowLeft' ? step : -step), maximum);
+          }}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            const parent = panelRef.current?.parentElement;
+            if (!parent) return;
+            const bounds = parent.getBoundingClientRect();
+            const maximum = maximumChatSidePanelWidth(bounds.width);
+            resizeRef.current = { pointerId: event.pointerId, parentRight: bounds.right, maximum };
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setResizing(true);
+          }}
+          onPointerMove={(event) => {
+            const state = resizeRef.current;
+            if (!state || state.pointerId !== event.pointerId) return;
+            setClampedPanelWidth(state.parentRight - event.clientX, state.maximum);
+          }}
+          onPointerUp={(event) => finishResize(event.currentTarget, event.pointerId)}
+          onPointerCancel={(event) => finishResize(event.currentTarget, event.pointerId)}
+          onLostPointerCapture={(event) => finishResize(event.currentTarget, event.pointerId)}
+          className={clsx(
+            'absolute inset-y-0 -left-1 z-20 block w-[7px] touch-none cursor-col-resize max-md:hidden focus-visible:outline-none focus-visible:bg-aegis-primary/35',
+            resizing ? 'bg-aegis-primary/35' : 'bg-transparent hover:bg-aegis-primary/20',
+          )}
+        />
+      )}
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-aegis-border px-4">
         {onBack && backLabel && (
           <button

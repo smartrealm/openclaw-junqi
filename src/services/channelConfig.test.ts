@@ -6,9 +6,11 @@ import {
   assessChannelAccountReadiness,
   buildChannelGroups,
   channelAccountEditorValues,
+  cleanupDeletedAgentChannelBindingsWithRepository,
   getChannelAgentOptions,
   persistChannelsOnlyWithRepository,
   removeAgentChannelBindings,
+  ChannelConfigReloadError,
   upsertChannelAccount,
   type ChannelConfigRepository,
 } from './channelConfig';
@@ -200,6 +202,45 @@ describe('channelConfig', () => {
     assert.deepEqual(next.channels?.modelByChannel, { target: 'keep' });
     assert.equal(original.channels?.feishu?.agentId, 'target');
     assert.equal(original.channels?.feishu?.accounts?.one?.agentId, 'target');
+  });
+
+  test('删除 Agent 后的渠道清理不能把 Gateway 重启失败报告为成功', async () => {
+    let current = cfg({
+      bindings: [{ type: 'route', agentId: 'target', match: { channel: 'telegram' } }],
+      channels: { telegram: { enabled: true } },
+    });
+    const repository: ChannelConfigRepository = {
+      async detect() {
+        return { path: '/tmp/openclaw.json', exists: true };
+      },
+      async read() {
+        return { config: current, revision: 'revision-1' };
+      },
+      async write(next) {
+        current = next;
+      },
+      async restart() {
+        return { success: false, error: 'Gateway identity verification failed' };
+      },
+    };
+
+    const originalDispatchEvent = window.dispatchEvent;
+    window.dispatchEvent = () => true;
+    try {
+      await assert.rejects(
+        () => cleanupDeletedAgentChannelBindingsWithRepository(repository, 'target'),
+        (error: unknown) => {
+          assert.equal(error instanceof ChannelConfigReloadError, true);
+          assert.equal((error as ChannelConfigReloadError).removedBindings, 1);
+          assert.equal((error as ChannelConfigReloadError).diagnostic, 'Gateway identity verification failed');
+          assert.match((error as Error).message, /Gateway identity verification failed/);
+          return true;
+        },
+      );
+      assert.deepEqual(current.bindings, []);
+    } finally {
+      window.dispatchEvent = originalDispatchEvent;
+    }
   });
 
   test('persistChannelsOnlyWithRepository preserves metadata and unrelated concurrent channel changes', async () => {

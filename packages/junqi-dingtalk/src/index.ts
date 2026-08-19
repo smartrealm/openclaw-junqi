@@ -1,5 +1,6 @@
 import {
   definePluginEntry,
+  type OpenClawPluginApi,
   type OpenClawPluginDefinition,
 } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "typebox";
@@ -59,13 +60,23 @@ function toolResult(details: Record<string, unknown>): {
   };
 }
 
+export function shouldRegisterDingTalkTools(
+  registrationMode: OpenClawPluginApi["registrationMode"],
+): boolean {
+  return (
+    registrationMode === "full" ||
+    registrationMode === "discovery" ||
+    registrationMode === "tool-discovery"
+  );
+}
+
 export function createJunqiDingTalkPlugin(): OpenClawPluginDefinition {
   return definePluginEntry({
     id: PLUGIN_ID,
     name: PLUGIN_NAME,
     description: PLUGIN_DESCRIPTION,
     register(api) {
-      if (api.registrationMode !== "full") return;
+      if (!shouldRegisterDingTalkTools(api.registrationMode)) return;
       const runner = new DwsRunner(normalizeRunnerConfig(api.pluginConfig));
       const schemas = new DwsSchemaRegistry(runner);
       const allowedAgentIds = normalizeAllowedAgentIds(api.pluginConfig);

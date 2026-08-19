@@ -1394,7 +1394,7 @@ export const gateway = {
     let requestDispatched = false;
     try {
       const dispatch = async () => {
-        // 渲染层拥有唯一可见、可取消的重试队列，传输层不得另建 UI 无法检查的队列。
+        // 上层协调器提供稳定幂等键；传输层只提交当前请求，不维护本地重试或消息队列。
         requestDispatched = true;
         return dispatchGatewayChatMessageWithLeafFenceNegotiation(connection, sessionSteer, {
           message,

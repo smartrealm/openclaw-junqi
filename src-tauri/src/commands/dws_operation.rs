@@ -7,13 +7,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, State};
 
 const OUTPUT_EVENT: &str = "dws-operation-output";
 const FINISHED_EVENT: &str = "dws-operation-finished";
 const DWS_PACKAGE: &str = "dingtalk-workspace-cli";
 const OUTPUT_LINE_LIMIT: usize = 4_096;
+const WAIT_STATUS_INTERVAL: Duration = Duration::from_secs(15);
 
 static OPERATION_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -277,6 +278,25 @@ fn emit_output(app: &AppHandle, operation_id: &str, stream: &'static str, line: 
     );
 }
 
+fn operation_started_message(kind: DwsOperationKind) -> &'static str {
+    match kind {
+        DwsOperationKind::Install => "DWS 安装命令已启动，正在等待 npm 完成。",
+        DwsOperationKind::Authorize => "DWS 授权命令已启动，正在等待官方授权流程输出。",
+    }
+}
+
+fn operation_waiting_message(kind: DwsOperationKind, elapsed: Duration) -> String {
+    let seconds = elapsed.as_secs();
+    match kind {
+        DwsOperationKind::Install => {
+            format!("DWS 安装仍在运行，正在等待 npm 完成（已等待 {seconds} 秒）。")
+        }
+        DwsOperationKind::Authorize => {
+            format!("DWS 授权仍在运行，正在等待官方授权流程完成（已等待 {seconds} 秒）。")
+        }
+    }
+}
+
 fn spawn_reader<R: std::io::Read + Send + 'static>(
     app: AppHandle,
     operation_id: String,
@@ -338,81 +358,115 @@ pub async fn start_dws_operation(
         cancelled: false,
     });
     drop(active);
+    emit_output(
+        &app,
+        &operation_id,
+        "status",
+        operation_started_message(kind).to_string(),
+    );
     spawn_reader(app.clone(), operation_id.clone(), "stdout", stdout);
     spawn_reader(app.clone(), operation_id.clone(), "stderr", stderr);
     let state_ref = Arc::clone(&operations.active);
     let wait_operation_id = operation_id.clone();
-    std::thread::spawn(move || loop {
-        let outcome = {
-            let mut active = match state_ref.lock() {
-                Ok(active) => active,
-                Err(_) => return,
-            };
-            let Some(current) = active.as_mut() else {
-                return;
-            };
-            if current.operation_id != wait_operation_id {
-                return;
-            }
-            match current.child.try_wait() {
-                Ok(Some(status)) => {
-                    let cancelled = current.cancelled;
-                    active.take();
-                    Some((status.success() && !cancelled, cancelled))
-                }
-                Ok(None) => None,
-                Err(error) => {
-                    active.take();
-                    let _ = app.emit(
-                        FINISHED_EVENT,
-                        DwsOperationFinished {
-                            operation_id: wait_operation_id.clone(),
-                            kind,
-                            success: false,
-                            cancelled: false,
-                            message: format!("无法等待 DWS 流程：{error}"),
-                            dws_path: None,
-                        },
-                    );
+    let operation_started_at = Instant::now();
+    std::thread::spawn(move || {
+        let mut last_wait_status_at = Duration::ZERO;
+        loop {
+            let outcome = {
+                let mut active = match state_ref.lock() {
+                    Ok(active) => active,
+                    Err(_) => return,
+                };
+                let Some(current) = active.as_mut() else {
+                    return;
+                };
+                if current.operation_id != wait_operation_id {
                     return;
                 }
-            }
-        };
-        if let Some((command_succeeded, cancelled)) = outcome {
-            let verification = if command_succeeded {
-                validate_dws_runtime(&validation_target, kind)
-            } else {
-                Err(if cancelled {
-                    "DWS 官方流程已取消".to_string()
+                match current.child.try_wait() {
+                    Ok(Some(status)) => {
+                        let cancelled = current.cancelled;
+                        active.take();
+                        Some((status.success() && !cancelled, cancelled))
+                    }
+                    Ok(None) => None,
+                    Err(error) => {
+                        active.take();
+                        let _ = app.emit(
+                            FINISHED_EVENT,
+                            DwsOperationFinished {
+                                operation_id: wait_operation_id.clone(),
+                                kind,
+                                success: false,
+                                cancelled: false,
+                                message: format!("无法等待 DWS 流程：{error}"),
+                                dws_path: None,
+                            },
+                        );
+                        return;
+                    }
+                }
+            };
+            if let Some((command_succeeded, cancelled)) = outcome {
+                if command_succeeded {
+                    emit_output(
+                        &app,
+                        &wait_operation_id,
+                        "status",
+                        "DWS 命令已结束，正在核验当前运行时。".to_string(),
+                    );
+                }
+                let verification = if command_succeeded {
+                    validate_dws_runtime(&validation_target, kind)
                 } else {
-                    "DWS 官方流程未成功完成".to_string()
-                })
-            };
-            let (success, message, dws_path) = match verification {
-                Ok(dws_path) => (
-                    true,
-                    match kind {
-                        DwsOperationKind::Install => "DWS 已安装并通过当前运行时核验".to_string(),
-                        DwsOperationKind::Authorize => "DWS 授权已通过结构化状态核验".to_string(),
+                    Err(if cancelled {
+                        "DWS 官方流程已取消".to_string()
+                    } else {
+                        "DWS 官方流程未成功完成".to_string()
+                    })
+                };
+                let (success, message, dws_path) = match verification {
+                    Ok(dws_path) => (
+                        true,
+                        match kind {
+                            DwsOperationKind::Install => {
+                                "DWS 已安装并通过当前运行时核验".to_string()
+                            }
+                            DwsOperationKind::Authorize => {
+                                "DWS 授权已通过结构化状态核验".to_string()
+                            }
+                        },
+                        dws_path,
+                    ),
+                    Err(message) => (false, message, None),
+                };
+                let _ = app.emit(
+                    FINISHED_EVENT,
+                    DwsOperationFinished {
+                        operation_id: wait_operation_id.clone(),
+                        kind,
+                        success,
+                        cancelled,
+                        message,
+                        dws_path,
                     },
-                    dws_path,
-                ),
-                Err(message) => (false, message, None),
-            };
-            let _ = app.emit(
-                FINISHED_EVENT,
-                DwsOperationFinished {
-                    operation_id: wait_operation_id.clone(),
-                    kind,
-                    success,
-                    cancelled,
-                    message,
-                    dws_path,
-                },
-            );
-            return;
+                );
+                return;
+            }
+            let elapsed = operation_started_at.elapsed();
+            if elapsed >= WAIT_STATUS_INTERVAL
+                && elapsed.saturating_sub(last_wait_status_at) >= WAIT_STATUS_INTERVAL
+            {
+                emit_output(
+                    &app,
+                    &wait_operation_id,
+                    "status",
+                    operation_waiting_message(kind, elapsed),
+                );
+                last_wait_status_at = elapsed;
+            }
+            std::thread::sleep(Duration::from_millis(120));
         }
-        std::thread::sleep(Duration::from_millis(120));
     });
     Ok(DwsOperationStarted { operation_id, kind })
 }
@@ -446,7 +500,11 @@ pub fn cancel_dws_operation(
 
 #[cfg(test)]
 mod tests {
-    use super::{dws_package_entry_for_prefix, redact_line, validate_dws_json_output, DWS_PACKAGE};
+    use super::{
+        dws_package_entry_for_prefix, operation_started_message, operation_waiting_message,
+        redact_line, validate_dws_json_output, DwsOperationKind, DWS_PACKAGE,
+    };
+    use std::time::Duration;
 
     #[test]
     fn dws_output_redacts_credential_material() {
@@ -482,5 +540,15 @@ mod tests {
         assert!(validate_dws_json_output(br#"{"success":false}"#).is_err());
         assert!(validate_dws_json_output(b"not-json").is_err());
         assert!(validate_dws_json_output(br#"[]"#).is_err());
+    }
+
+    #[test]
+    fn dws_operation_reports_started_and_waiting_states_without_npm_output() {
+        assert!(operation_started_message(DwsOperationKind::Install).contains("npm"));
+        assert!(
+            operation_waiting_message(DwsOperationKind::Install, Duration::from_secs(15))
+                .contains("15")
+        );
+        assert!(operation_started_message(DwsOperationKind::Authorize).contains("授权"));
     }
 }

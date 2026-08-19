@@ -58,19 +58,6 @@ function errorMessage(error: unknown): string {
   return 'Gateway rejected session reset';
 }
 
-function resumeQueuedMessages(sessionKey: string): void {
-  queueMicrotask(() => {
-    const chat = useChatStore.getState();
-    if (
-      chat.connected
-      && !chat.typingBySession[sessionKey]
-      && (chat.messageQueue[sessionKey]?.length ?? 0) > 0
-    ) {
-      void chat.drainQueue(sessionKey).catch(() => undefined);
-    }
-  });
-}
-
 async function performSessionReset(sessionKey: string): Promise<boolean> {
   try {
     const result = await sessionResetDeps.resetRemote(sessionKey);
@@ -78,7 +65,6 @@ async function performSessionReset(sessionKey: string): Promise<boolean> {
       ? result as Record<string, unknown>
       : null;
     if (outcome?.cancelled === true) {
-      resumeQueuedMessages(sessionKey);
       return false;
     }
     const failure = gatewayMutationFailure(result, 'Gateway rejected session reset');
@@ -94,7 +80,6 @@ async function performSessionReset(sessionKey: string): Promise<boolean> {
       : null;
     sessionTranscriptFence.invalidate(sessionKey);
     sessionResetDeps.invalidateChatRun(sessionKey);
-    chat.clearQueue(sessionKey);
     chat.clearSessionMessages(sessionKey);
     chat.clearSessionTokens(sessionKey);
     chat.settleSessionRunUi(sessionKey);
@@ -114,7 +99,6 @@ async function performSessionReset(sessionKey: string): Promise<boolean> {
     const message = errorMessage(error);
     sessionResetDeps.warn('[sessionReset] gateway.resetSession failed:', error);
     sessionResetDeps.notifyFailure(message);
-    resumeQueuedMessages(sessionKey);
     return false;
   }
 }

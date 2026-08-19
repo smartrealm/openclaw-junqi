@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ChatMessage } from '@/stores/chatStore';
-import { ChatSendCoordinator } from './sendTransaction';
+import {
+  ChatSendCoordinator,
+  ChatSessionMutationInProgressError,
+} from './sendTransaction';
 import { sessionMutationGate } from './sessionMutationGate';
 import { OpenClawSessionTargetError } from '@/services/gateway/OpenClawSessionTarget';
 
@@ -17,7 +20,6 @@ test('空会话目标会在写入本地状态和 Gateway 请求前失败', async
         updateMessage() {},
         setIsTyping() {},
         typingBySession: {},
-        enqueueMessage() {},
       };
     },
   );
@@ -33,7 +35,6 @@ test('空会话目标会在写入本地状态和 Gateway 请求前失败', async
 test('CHAT-02 rejected send records a retryable failure and releases typing', async () => {
   const messages = new Map<string, ChatMessage>();
   const typing: boolean[] = [];
-  const queued: unknown[] = [];
   const coordinator = new ChatSendCoordinator(
     { sendMessage: async () => { throw new Error('transport rejected'); } },
     () => ({
@@ -44,7 +45,6 @@ test('CHAT-02 rejected send records a retryable failure and releases typing', as
       },
       setIsTyping(value) { typing.push(value); },
       typingBySession: {},
-      enqueueMessage(_sessionKey, message) { queued.push(message); },
     }),
   );
 
@@ -56,7 +56,6 @@ test('CHAT-02 rejected send records a retryable failure and releases typing', as
   assert.equal(messages.get('client-1')?.deliveryError, 'transport rejected');
   assert.deepEqual(messages.get('client-1')?.retryPayload, { text: 'hello' });
   assert.deepEqual(typing, [true, false]);
-  assert.deepEqual(queued, []);
 });
 
 test('an ambiguous transport result stays pending until official reconciliation', async () => {
@@ -72,7 +71,6 @@ test('an ambiguous transport result stays pending until official reconciliation'
       },
       setIsTyping(value) { typing.push(value); },
       typingBySession: {},
-      enqueueMessage() {},
     }),
   );
 
@@ -87,10 +85,9 @@ test('an ambiguous transport result stays pending until official reconciliation'
   assert.deepEqual(typing, [true]);
 });
 
-test('CHAT-02 active sessions forward normal messages to the Gateway queue authority', async () => {
+test('CHAT-02 活跃会话的普通消息交给 Gateway', async () => {
   const messages = new Map<string, ChatMessage>();
   const typing: boolean[] = [];
-  const queued: Array<{ sessionKey: string; message: unknown }> = [];
   let transportCalls = 0;
   const coordinator = new ChatSendCoordinator(
     { sendMessage: async () => { transportCalls += 1; return { runId: 'client-2', status: 'started' }; } },
@@ -102,7 +99,6 @@ test('CHAT-02 active sessions forward normal messages to the Gateway queue autho
       },
       setIsTyping(value) { typing.push(value); },
       typingBySession: { 'session-a': true },
-      enqueueMessage(sessionKey, message) { queued.push({ sessionKey, message }); },
     }),
   );
 
@@ -118,7 +114,6 @@ test('CHAT-02 active sessions forward normal messages to the Gateway queue autho
   assert.equal(transportCalls, 1);
   assert.equal(messages.get('client-2')?.status, 'sent');
   assert.deepEqual(typing, [true]);
-  assert.deepEqual(queued, []);
 });
 
 test('普通发送使用当前 Gateway transcript leaf，steer 不伪造该围栏', async () => {
@@ -135,7 +130,6 @@ test('普通发送使用当前 Gateway transcript leaf，steer 不伪造该围�
       updateMessage() {},
       setIsTyping() {},
       typingBySession: {},
-      enqueueMessage() {},
       sessions: [{ key: 'session-a', activeLeafEntryId: 'leaf-current' }],
     }),
   );
@@ -148,6 +142,7 @@ test('普通发送使用当前 Gateway transcript leaf，steer 不伪造该围�
   });
 
   assert.equal(identities[0]?.expectedLeafEntryId, 'leaf-current');
+  assert.equal('queueMode' in (identities[0] ?? {}), false);
   assert.equal(identities[1]?.expectedLeafEntryId, undefined);
 });
 
@@ -169,7 +164,6 @@ test('已确认空 transcript 的首发传递 null leaf，并在 Gateway 受理�
         invalidatedLeaves.push(activeLeafEntryId);
       },
       typingBySession: {},
-      enqueueMessage() {},
       sessions: [{ key: 'session-a', activeLeafEntryId: null }],
     }),
   );
@@ -182,7 +176,7 @@ test('已确认空 transcript 的首发传递 null leaf，并在 Gateway 受理�
   assert.deepEqual(invalidatedLeaves, [undefined]);
 });
 
-test('native session steering bypasses the visible queue and calls the interrupt-and-steer lane', async () => {
+test('原生会话转向使用中断并转向通道', async () => {
   const messages = new Map<string, ChatMessage>();
   const typing: boolean[] = [];
   const calls: Array<{
@@ -191,7 +185,6 @@ test('native session steering bypasses the visible queue and calls the interrupt
     clientMessageId?: string;
     delivery?: 'send' | 'steer';
   }> = [];
-  const queued: unknown[] = [];
   const coordinator = new ChatSendCoordinator(
     {
       sendMessage: async (message, _attachments, sessionKey, identity) => {
@@ -213,7 +206,6 @@ test('native session steering bypasses the visible queue and calls the interrupt
       },
       setIsTyping(value) { typing.push(value); },
       typingBySession: { 'session-a': true },
-      enqueueMessage(_sessionKey, message) { queued.push(message); },
     }),
   );
 
@@ -231,7 +223,6 @@ test('native session steering bypasses the visible queue and calls the interrupt
     delivery: 'steer',
   }]);
   assert.equal(messages.get('client-steer')?.status, 'sent');
-  assert.deepEqual(queued, []);
   assert.deepEqual(typing, [true]);
 });
 
@@ -249,7 +240,6 @@ test('CHAT-02 attachment failures retain the complete payload for lossless retry
       },
       setIsTyping() {},
       typingBySession: {},
-      enqueueMessage() {},
     }),
   );
 
@@ -273,107 +263,74 @@ test('CHAT-02 attachment failures retain the complete payload for lossless retry
   ]);
 });
 
-test('CHAT-10 破坏性会话变更只暂存尚未提交的消息', async () => {
-  const queued: unknown[] = [];
-  let transportCalls = 0;
+test('会话变更期间拒绝发送，不创建本地消息队列', async () => {
   let releaseMutation!: () => void;
   const mutation = sessionMutationGate.run(
     'session-a',
     () => new Promise<void>((resolve) => { releaseMutation = resolve; }),
   );
   const coordinator = new ChatSendCoordinator(
-    { sendMessage: async () => { transportCalls += 1; } },
+    { sendMessage: async () => { throw new Error('Gateway must not receive this message'); } },
     () => ({
       addMessage() {},
       updateMessage() {},
       setIsTyping() {},
       typingBySession: {},
-      enqueueMessage(_sessionKey, message) { queued.push(message); },
-    }),
-  );
-
-  await coordinator.send({
-    sessionKey: 'session-a',
-    message: 'after reset',
-    clientMessageId: 'client-blocked',
-  });
-
-  assert.equal(transportCalls, 0);
-  assert.equal(queued.length, 1);
-  releaseMutation();
-  await mutation;
-});
-
-test('会话变更期间的重试标记为尚未提交，不伪装为 Gateway 已排队', async () => {
-  const messages = new Map<string, ChatMessage>([['client-held', {
-    id: 'client-held',
-    role: 'user',
-    content: 'retry after reset',
-    timestamp: new Date(0).toISOString(),
-    status: 'failed',
-  }]]);
-  let releaseMutation!: () => void;
-  const mutation = sessionMutationGate.run(
-    'session-a',
-    () => new Promise<void>((resolve) => { releaseMutation = resolve; }),
-  );
-  const coordinator = new ChatSendCoordinator(
-    { sendMessage: async () => { throw new Error('Gateway must not receive a held message'); } },
-    () => ({
-      addMessage() {},
-      updateMessage(_sessionKey, id, patch) {
-        const current = messages.get(id);
-        if (current) messages.set(id, { ...current, ...patch });
-      },
-      setIsTyping() {},
-      typingBySession: {},
-      enqueueMessage() {},
-    }),
-  );
-
-  try {
-    const result = await coordinator.send({
-      sessionKey: 'session-a',
-      message: 'retry after reset',
-      clientMessageId: 'client-held',
-      optimisticMessage: false,
-    });
-    assert.deepEqual(result, { heldForSessionMutation: true, clientMessageId: 'client-held' });
-    assert.equal(messages.get('client-held')?.status, 'held');
-  } finally {
-    releaseMutation();
-    await mutation;
-  }
-});
-
-test('CHAT-02 queue overflow becomes a visible retryable failure', async () => {
-  const messages = new Map<string, ChatMessage>();
-  let releaseMutation!: () => void;
-  const mutation = sessionMutationGate.run(
-    'session-a',
-    () => new Promise<void>((resolve) => { releaseMutation = resolve; }),
-  );
-  const coordinator = new ChatSendCoordinator(
-    { sendMessage: async () => { throw new Error('transport must not run'); } },
-    () => ({
-      addMessage(message) { messages.set(message.id, message); },
-      updateMessage() {},
-      setIsTyping() {},
-      typingBySession: { 'session-a': true },
-      enqueueMessage() { throw new Error('Session message queue is full (50 messages)'); },
     }),
   );
 
   try {
     await assert.rejects(coordinator.send({
       sessionKey: 'session-a',
-      message: 'keep this text',
-      clientMessageId: 'client-overflow',
-    }), /queue is full/);
-    assert.equal(messages.get('client-overflow')?.status, 'failed');
-    assert.deepEqual(messages.get('client-overflow')?.retryPayload, { text: 'keep this text' });
+      message: 'retry after reset',
+      clientMessageId: 'client-held',
+    }), ChatSessionMutationInProgressError);
   } finally {
     releaseMutation();
     await mutation;
   }
+});
+
+test('已准入发送完成前会话变更等待，后续发送被原子拒绝', async () => {
+  const sessionKey = 'session-send-mutation-order';
+  let releaseGateway!: () => void;
+  let gatewayStarted = false;
+  let mutationStarted = false;
+  const coordinator = new ChatSendCoordinator(
+    {
+      sendMessage: async () => {
+        gatewayStarted = true;
+        await new Promise<void>((resolve) => { releaseGateway = resolve; });
+        return { runId: 'first-send', status: 'started' };
+      },
+    },
+    () => ({
+      addMessage() {},
+      updateMessage() {},
+      setIsTyping() {},
+      typingBySession: {},
+    }),
+  );
+
+  const firstSend = coordinator.send({
+    sessionKey,
+    message: 'first',
+    clientMessageId: 'first-send',
+  });
+  await Promise.resolve();
+  assert.equal(gatewayStarted, true);
+
+  const mutation = sessionMutationGate.run(sessionKey, async () => {
+    mutationStarted = true;
+  });
+  await assert.rejects(
+    coordinator.send({ sessionKey, message: 'second', clientMessageId: 'second-send' }),
+    ChatSessionMutationInProgressError,
+  );
+  assert.equal(mutationStarted, false);
+
+  releaseGateway();
+  await firstSend;
+  await mutation;
+  assert.equal(mutationStarted, true);
 });

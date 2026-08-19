@@ -4,6 +4,12 @@
 
 ## 当前入口
 
+- [钉钉 Agent 授权收敛审计](quality/dingtalk-agent-authorization-convergence-audit-2026-08-17.md)：指定 Agent 的普通与 sandbox 工具门禁、最小配置补丁、`discovery` 与 `tool-discovery` 注册语义、有效工具投影、统一 Gateway 重启进度与工作区放行范围。
+- [DWS 安装与工作区恢复审计](quality/dws-install-and-workspace-recovery-2026-08-19.md)：DWS 安装输出、终态事件竞态、Gateway 重启后同会话快照的首屏放行及可重试失败边界。
+- [OpenClaw 运行时命令导航](quality/openclaw-runtime-command-navigation-2026-08-19.md)：`commands.list` 的官方目录分组、左侧导航和不可用状态边界。
+- [智能体工位空间化对齐审计](quality/agent-office-star-office-alignment-2026-08-18.md)：Star Office 的空间状态看板映射、原创像素角色与办公室素材、配置身份、协作许可和只读运行投影的边界。
+- [消息预览宽度调整](quality/chat-message-preview-resize-2026-08-18.md)：主会话预览分隔条、可访问键盘调整、宽度边界与窄窗口覆盖式行为。
+- [OpenClaw 消息队列运行时对齐审计](quality/openclaw-native-message-queue-alignment-2026-08-18.md)：官方 `queueMode` 契约、当前 Gateway 参数拒绝、发送与会话变更原子门禁及未验证边界。
 - [工作区布局与结构化会话记录审计](quality/workspace-layout-and-structured-transcript-audit-2026-08-14.md)：主要工作区页面的动态宽度契约、长工具结果的原始结构恢复和通用格式化边界。
 - [会话组织与 transcript 展示审计](quality/session-transcript-and-organization-audit-2026-08-14.md)：会话操作回执、历史定位、新建空会话和结构化内容展示的当前契约与缺陷。
 - [OpenClaw 原生安装对齐审计](quality/openclaw-native-installation-alignment-audit-2026-08-12.md)：最新版默认 guided inference、正式 setup RPC、经典 Wizard、npm 安装与 JunQi 当前差异。

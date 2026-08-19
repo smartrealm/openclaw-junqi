@@ -49,19 +49,6 @@ function errorMessage(error: unknown): string {
   }
 }
 
-function resumeQueuedMessages(sessionKey: string): void {
-  queueMicrotask(() => {
-    const chat = useChatStore.getState();
-    if (
-      chat.connected
-      && !chat.typingBySession[sessionKey]
-      && (chat.messageQueue[sessionKey]?.length ?? 0) > 0
-    ) {
-      void chat.drainQueue(sessionKey).catch(() => undefined);
-    }
-  });
-}
-
 function isProtectedMainSession(sessionKey: string): boolean {
   return sessionKey === useChatStore.getState().defaultMainSessionKey;
 }
@@ -75,7 +62,6 @@ export function applyConfirmedSessionDeletion(rawSessionKey: string, confirmedSe
     || chatStore.sessions.find((session) => session.key === sessionKey)?.sessionId;
   markSessionDeleted(sessionKey, sessionId);
   sessionDeleteDeps.invalidateChatRun(sessionKey);
-  chatStore.clearQueue(sessionKey);
   if (sessionId) {
     useCollaborationStore.getState().clearSessionProjection({ sessionKey, sessionId });
   }
@@ -96,7 +82,6 @@ async function performSessionDeletion(sessionKey: string): Promise<boolean> {
       ? result as Record<string, unknown>
       : null;
     if (response?.cancelled === true) {
-      resumeQueuedMessages(sessionKey);
       return false;
     }
     const confirmed = response?.success === true
@@ -110,7 +95,6 @@ async function performSessionDeletion(sessionKey: string): Promise<boolean> {
   } catch (error) {
     sessionDeleteDeps.warn('[sessionDelete] gateway.deleteSession failed:', error);
     sessionDeleteDeps.notifyFailure(errorMessage(error));
-    resumeQueuedMessages(sessionKey);
     return false;
   }
 

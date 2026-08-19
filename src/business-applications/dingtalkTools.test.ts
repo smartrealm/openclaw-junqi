@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   collectDingTalkTools,
+  hasAvailableDingTalkRuntimeTool,
   parseDingTalkBusinessEvidence,
   parseDingTalkRuntimeOutput,
   parseDingTalkToolSchemaOutput,
@@ -33,6 +34,20 @@ test('only projects effective tools owned by the DingTalk plugin', () => {
   assert.equal(tools.length, 1);
   assert.equal(tools[0]?.domain, 'calendar');
   assert.equal(tools[0]?.effect, 'read');
+});
+
+test('仅在当前 Session 明确提供且未拒绝钉钉运行时工具时确认授权生效', () => {
+  const runtimeTool = {
+    id: 'junqi_dingtalk_runtime_status',
+    label: '钉钉运行状态',
+    description: '读取运行状态',
+    rawDescription: '读取运行状态',
+    source: 'plugin' as const,
+    pluginId: 'junqi-dingtalk',
+  };
+  assert.equal(hasAvailableDingTalkRuntimeTool([{ tools: [runtimeTool] }]), true);
+  assert.equal(hasAvailableDingTalkRuntimeTool([{ tools: [{ ...runtimeTool, deniedBySession: true }] }]), false);
+  assert.equal(hasAvailableDingTalkRuntimeTool([{ tools: [{ ...runtimeTool, pluginId: 'other-plugin' }] }]), false);
 });
 
 test('projects the official tools.invoke AgentToolResult details', () => {

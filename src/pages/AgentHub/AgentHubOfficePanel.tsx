@@ -65,7 +65,7 @@ export function AgentHubOfficePanel({
     setLoading(true);
     setError(null);
     try {
-      await bootstrap();
+      await bootstrap(true);
       const loadedRuns = await syncGlobalRuns({ includeArchived: false });
       if (requestRef.current !== requestId) return;
       const next = selectAgentHubOfficeRun(
@@ -196,24 +196,25 @@ export function AgentHubOfficePanel({
 
       {!loading && !error && (
         <div className="space-y-3" data-agent-hub-office-workspace>
-          <AgentHubConfiguredOffice agents={configuredAgents} />
-
           {!selectedRun && (
-            <div className="flex min-h-36 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-aegis-border bg-aegis-surface-solid px-5 text-center">
-              <Bot size={20} className="text-aegis-text-dim" aria-hidden />
-              <div>
-                <h3 className="text-sm font-semibold text-aegis-text-secondary">{t('agentHub.office.emptyTitle', '暂无协作运行')}</h3>
-                <p className="mt-1 max-w-md text-xs leading-5 text-aegis-text-muted">{t('agentHub.office.emptyDescription', '当前没有可投影到办公室的未归档协作运行。')}</p>
+            <>
+              <AgentHubConfiguredOffice agents={configuredAgents} />
+              <div className="flex min-h-36 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-aegis-border bg-aegis-surface-solid px-5 text-center">
+                <Bot size={20} className="text-aegis-text-dim" aria-hidden />
+                <div>
+                  <h3 className="text-sm font-semibold text-aegis-text-secondary">{t('agentHub.office.emptyTitle', '暂无协作运行')}</h3>
+                  <p className="mt-1 max-w-md text-xs leading-5 text-aegis-text-muted">{t('agentHub.office.emptyDescription', '当前没有可投影到办公室的未归档协作运行。')}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onShowAgentList}
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-aegis-border bg-aegis-bg px-2.5 text-[11px] font-medium text-aegis-text-secondary transition-colors hover:border-aegis-border-hover hover:bg-aegis-elevated-solid"
+                >
+                  {t('agentHub.office.showAgentList', '查看智能体列表')}
+                  <ChevronRight size={13} aria-hidden />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={onShowAgentList}
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-aegis-border bg-aegis-bg px-2.5 text-[11px] font-medium text-aegis-text-secondary transition-colors hover:border-aegis-border-hover hover:bg-aegis-elevated-solid"
-              >
-                {t('agentHub.office.showAgentList', '查看智能体列表')}
-                <ChevronRight size={13} aria-hidden />
-              </button>
-            </div>
+            </>
           )}
 
           {snapshot && selectedRun && (

@@ -82,6 +82,16 @@ export function isDingTalkEffectiveTool(entry: OpenClawToolsEffectiveEntry): boo
     && entry.id.startsWith(DINGTALK_TOOL_PREFIX);
 }
 
+export function hasAvailableDingTalkRuntimeTool(
+  groups: readonly { readonly tools: readonly OpenClawToolsEffectiveEntry[] }[] | undefined,
+): boolean {
+  return (groups ?? []).some((group) => group.tools.some((entry) => (
+    entry.id === DINGTALK_RUNTIME_STATUS_TOOL
+      && !entry.deniedBySession
+      && isDingTalkEffectiveTool(entry)
+  )));
+}
+
 function tagDomain(tags: readonly string[] | undefined): DingTalkDomain {
   for (const domain of ['contact', 'approval', 'attendance', 'calendar', 'todo'] as const) {
     if (tags?.includes(domain)) return domain;

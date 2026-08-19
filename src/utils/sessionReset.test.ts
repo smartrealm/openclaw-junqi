@@ -16,9 +16,6 @@ beforeEach(() => {
     messagesPerSession: {
       [KEY]: [{ id: 'message-1', role: 'user', content: 'keep until reset', timestamp: '2026-01-01' }],
     },
-    messageQueue: {
-      [KEY]: [{ id: 'queued-1', text: 'queued', timestamp: '2026-01-01', sessionId: 'session-before' }],
-    },
   });
   setSessionResetDependenciesForTests();
 });
@@ -38,7 +35,6 @@ test('clears local state only after the coordinated native reset succeeds', asyn
 
   assert.equal(await resetSessionEverywhere(KEY), true);
   assert.equal(useChatStore.getState().messagesPerSession[KEY], undefined);
-  assert.equal(useChatStore.getState().messageQueue[KEY], undefined);
   assert.deepEqual(invalidated, [KEY]);
   assert.deepEqual(events, [KEY]);
   assert.equal(
@@ -54,7 +50,6 @@ test('preserves local state when the mutation is cancelled', async () => {
 
   assert.equal(await resetSessionEverywhere(KEY), false);
   assert.equal(useChatStore.getState().messagesPerSession[KEY]?.length, 1);
-  assert.equal(useChatStore.getState().messageQueue[KEY]?.length, 1);
 });
 
 test('preserves local state and reports a core failure', async () => {

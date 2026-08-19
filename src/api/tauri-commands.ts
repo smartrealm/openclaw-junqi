@@ -604,7 +604,7 @@ export type DwsOperationStarted = {
 };
 export type DwsOperationOutput = {
   operationId: string;
-  stream: 'stdout' | 'stderr';
+  stream: 'stdout' | 'stderr' | 'status';
   line: string;
 };
 export type DwsOperationFinished = {

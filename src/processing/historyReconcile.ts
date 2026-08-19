@@ -15,7 +15,7 @@ type HistoryLikeMessage = {
   toolName?: string;
   toolCallId?: string;
   thinkingContent?: string;
-  status?: 'pending' | 'held' | 'sent' | 'queued' | 'failed' | 'cancelled';
+  status?: 'pending' | 'sent' | 'failed' | 'cancelled';
   deliveryError?: string;
   isStreaming?: boolean;
   responseState?: 'streaming' | 'final' | 'error' | 'aborted';
@@ -290,7 +290,7 @@ export function reconcileHistoryMessageIds<T extends HistoryLikeMessage>(
 }
 
 function isLocalTailMessage(message: HistoryLikeMessage): boolean {
-  if (message.status === 'pending' || message.status === 'queued' || message.status === 'failed') return true;
+  if (message.status === 'pending' || message.status === 'failed') return true;
   if (message.isStreaming || message.responseState === 'streaming') return true;
   return Boolean(message.clientMessageId && !message.nativeMessageId);
 }

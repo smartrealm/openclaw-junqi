@@ -55,6 +55,7 @@ test('creating an agent persists skill and fallback overrides through a guarded 
   assert.match(page, /newAgent\.skillsMode === 'custom'/);
   assert.match(page, /newAgent\.modelMode === 'fallbacks'/);
   assert.match(page, /created\?\.agentId !== payload\.id/);
+  assert.match(page, /useCollaborationStore\.getState\(\)\.bootstrap\(true\)/);
   assert.doesNotMatch(page, /window\.aegis\.config\.write/);
   assert.doesNotMatch(page, /persistAgentSkillFilter/);
 });

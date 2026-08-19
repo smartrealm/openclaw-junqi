@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, CheckCircle2, FileText, HeartPulse, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react';
+import { AlertCircle, CheckCircle2, FileText, HeartPulse, RotateCcw, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { GatewayAiDiagnosticDisclosure } from './GatewayAiDiagnosticDisclosure';
 import { projectGatewaySelfRescuePresentation } from './gatewaySelfRescuePresentation';
@@ -21,7 +21,6 @@ export interface GatewaySelfRescuePanelProps {
   progressPercent?: number | null;
   primaryActionLabel: string;
   onPrimaryAction: () => void;
-  onReconnect?: () => void;
   onOpenLogs?: () => void;
   error?: string;
   logs?: string;
@@ -49,7 +48,6 @@ export function GatewaySelfRescuePanel({
   progressPercent,
   primaryActionLabel,
   onPrimaryAction,
-  onReconnect,
   onOpenLogs,
   error,
   logs,
@@ -148,8 +146,6 @@ export function GatewaySelfRescuePanel({
       }
     }
   };
-
-  const showReconnect = Boolean(onReconnect) && presentation.showRecoveryActions;
 
   return (
     <div className={clsx(
@@ -254,27 +250,15 @@ export function GatewaySelfRescuePanel({
           {primaryActionLabel}
         </button>
 
-        {(onReconnect || onOpenLogs) && (
-          <div className={clsx('grid gap-2', showReconnect && onOpenLogs ? 'grid-cols-2' : 'grid-cols-1')}>
-            {showReconnect && (
-              <button
-                onClick={onReconnect}
-                disabled={actionDisabled}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-aegis-border bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-aegis-text-secondary transition-colors hover:border-aegis-primary/30 hover:text-aegis-primary disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <RefreshCw size={12} />
-                {t('offline.retryGateway', '重新连接')}
-              </button>
-            )}
-            {onOpenLogs && (
-              <button
-                onClick={onOpenLogs}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-aegis-border bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-aegis-text-secondary transition-colors hover:border-aegis-primary/30 hover:text-aegis-primary"
-              >
-                <FileText size={12} />
-                {t('offline.viewLogs', '查看日志')}
-              </button>
-            )}
+        {onOpenLogs && (
+          <div className="grid grid-cols-1 gap-2">
+            <button
+              onClick={onOpenLogs}
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-aegis-border bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-aegis-text-secondary transition-colors hover:border-aegis-primary/30 hover:text-aegis-primary"
+            >
+              <FileText size={12} />
+              {t('offline.viewLogs', '查看日志')}
+            </button>
           </div>
         )}
 

@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BookOpenText, CircleAlert, LoaderCircle, RefreshCw, TerminalSquare } from 'lucide-react';
 import clsx from 'clsx';
+import { useLocation } from 'react-router-dom';
 import { CopyButton } from '@/components/shared/copy-button';
 import { PageTransition } from '@/components/shared/PageTransition';
 import { WORKSPACE_PAGE_CONTENT_CLASS_NAME } from '@/components/shared/workspacePageLayout';
@@ -9,11 +10,7 @@ import { useOpenClawCommands } from '@/hooks/useOpenClawCommands';
 import { useChatStore } from '@/stores/chatStore';
 import type { OpenClawCommandEntry } from '@/services/gateway/OpenClawCommandsClient';
 import { agentIdFromSessionKey } from '@/utils/sessionPresentation';
-
-interface CommandGroup {
-  readonly id: string;
-  readonly commands: readonly OpenClawCommandEntry[];
-}
+import { groupOpenClawCommands } from './commandGroups';
 
 function commandSearchText(command: OpenClawCommandEntry): string {
   return [
@@ -32,23 +29,13 @@ function commandSearchText(command: OpenClawCommandEntry): string {
   ].filter((value): value is string => typeof value === 'string').join('\n').toLocaleLowerCase();
 }
 
-function groupCommands(commands: readonly OpenClawCommandEntry[]): readonly CommandGroup[] {
-  const groups = new Map<string, OpenClawCommandEntry[]>();
-  for (const command of commands) {
-    const id = command.category ?? 'uncategorized';
-    const group = groups.get(id);
-    if (group) group.push(command);
-    else groups.set(id, [command]);
-  }
-  return [...groups.entries()].map(([id, entries]) => ({ id, commands: entries }));
-}
-
 function commandText(command: OpenClawCommandEntry): string | null {
   return command.textAliases?.[0] ?? null;
 }
 
 export function OpenClawCommandsPage() {
   const { t } = useTranslation();
+  const location = useLocation();
   const connected = useChatStore((state) => state.connected);
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const agentId = agentIdFromSessionKey(activeSessionKey) ?? undefined;
@@ -64,7 +51,13 @@ export function OpenClawCommandsPage() {
       ? commands.filter((command) => commandSearchText(command).includes(normalized))
       : commands;
   }, [commands, query]);
-  const groups = useMemo(() => groupCommands(filteredCommands), [filteredCommands]);
+  const groups = useMemo(() => groupOpenClawCommands(filteredCommands), [filteredCommands]);
+
+  useEffect(() => {
+    const categoryId = new URLSearchParams(location.hash.slice(1)).get('category');
+    if (!categoryId || groups.length === 0) return;
+    document.getElementById(`openclaw-command-group-${categoryId}`)?.scrollIntoView({ block: 'start' });
+  }, [groups.length, location.hash]);
 
   return (
     <PageTransition className="min-h-full bg-aegis-bg">
@@ -129,7 +122,7 @@ export function OpenClawCommandsPage() {
           ) : (
             <div className="space-y-7 pb-8">
               {groups.map((group) => (
-                <section key={group.id} aria-labelledby={`openclaw-command-group-${group.id}`}>
+                <section key={group.id} aria-labelledby={`openclaw-command-group-${group.id}`} className="scroll-mt-36">
                   <div className="mb-2.5 flex items-center gap-2">
                     <h2 id={`openclaw-command-group-${group.id}`} className="text-[13px] font-semibold text-aegis-text">
                       {t(`openclawCommands.categories.${group.id}`)}

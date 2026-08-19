@@ -1,6 +1,6 @@
 import { createClientMessageId } from '@/services/gateway/messageIdentity';
 import { isOpenClawChatSendDeliveryUncertain } from '@/processing/openClawChatEvent';
-import type { GatewayAttachment, QueuedChatMessage } from './types';
+import type { GatewayAttachment } from './types';
 import { sessionMutationGate } from './sessionMutationGate';
 import { requireOpenClawSessionTarget } from '@/services/gateway/OpenClawSessionTarget';
 
@@ -25,7 +25,7 @@ export interface ChatSendMessage {
   role: 'user';
   content: string;
   timestamp: string;
-  status?: 'pending' | 'held' | 'sent' | 'queued' | 'failed' | 'cancelled';
+  status?: 'pending' | 'sent' | 'failed' | 'cancelled';
   deliveryError?: string;
   mediaUrl?: string;
   mediaType?: string;
@@ -52,7 +52,6 @@ interface ChatSendState {
     activeLeafEntryId: string | null | undefined,
   ) => void;
   typingBySession: Record<string, boolean>;
-  enqueueMessage: (sessionKey: string, message: QueuedChatMessage) => void;
   sessions?: Array<{
     key: string;
     model?: string | null;
@@ -79,16 +78,25 @@ export interface ChatSendDispatchCancelled {
   clientMessageId: string;
 }
 
-export interface ChatSendHeldForSessionMutation {
-  heldForSessionMutation: true;
-  clientMessageId: string;
-}
-
 export function isChatSendDispatchCancelled(value: unknown): value is ChatSendDispatchCancelled {
   return typeof value === 'object'
     && value !== null
     && (value as { cancelled?: unknown }).cancelled === true
     && typeof (value as { clientMessageId?: unknown }).clientMessageId === 'string';
+}
+
+/** 会话身份正在变更时不得把输入交给旧会话或伪造本地队列。 */
+export class ChatSessionMutationInProgressError extends Error {
+  readonly code = 'OPENCLAW_SESSION_MUTATION_IN_PROGRESS';
+
+  constructor() {
+    super('OpenClaw session is changing; message was not submitted');
+    this.name = 'ChatSessionMutationInProgressError';
+  }
+}
+
+export function isChatSessionMutationInProgressError(error: unknown): error is ChatSessionMutationInProgressError {
+  return error instanceof ChatSessionMutationInProgressError;
 }
 
 function errorMessage(error: unknown): string {
@@ -120,87 +128,37 @@ export class ChatSendCoordinator {
         : {}),
     };
 
-    const sessionMutationBlocked = sessionMutationGate.isBlocked(sessionKey);
-    // OpenClaw 是运行中任务队列语义的权威；本地队列只保护破坏性会话变更的交接窗口。
-    const queueLocally = request.delivery !== 'steer'
-      && sessionMutationBlocked;
-    if (queueLocally) {
-      try {
-        state.enqueueMessage(sessionKey, {
-          id: clientMessageId,
-          timestamp,
-          ...retryPayload,
-        });
-      } catch (error) {
-        const failure = {
-          status: 'failed' as const,
-          deliveryError: errorMessage(error),
-          retryPayload,
-        };
-        if (request.optimisticMessage === false) {
-          state.updateMessage(sessionKey, clientMessageId, failure);
-        } else {
-          state.addMessage({
-            ...optimisticPatch,
-            id: clientMessageId,
-            clientMessageId,
-            role: 'user',
-            content: request.message,
-            timestamp,
-            ...failure,
-            ...(request.displayAttachments?.length
-              ? { attachments: request.displayAttachments }
-              : {}),
-            ...(request.attachments?.length
-              ? {
-                  outboundAttachments: request.attachments.map((attachment) => ({
-                    fileName: attachment.fileName,
-                    mimeType: attachment.mimeType,
-                  })),
-                }
-              : {}),
-          }, sessionKey);
-        }
-        throw error;
-      }
-      if (request.optimisticMessage === false) {
-        state.updateMessage(sessionKey, clientMessageId, {
-          status: 'held',
-          deliveryError: undefined,
-          retryPayload,
-        });
-      }
-      return { heldForSessionMutation: true, clientMessageId } satisfies ChatSendHeldForSessionMutation;
-    }
+    const releaseSendAdmission = sessionMutationGate.tryAcquireSend(sessionKey);
+    if (!releaseSendAdmission) throw new ChatSessionMutationInProgressError();
 
-    if (request.optimisticMessage !== false) {
-      state.addMessage({
-        ...optimisticPatch,
-        id: clientMessageId,
-        clientMessageId,
-        role: 'user',
-        content: request.message,
-        timestamp,
-        status: 'pending',
-        ...(request.displayAttachments?.length ? { attachments: request.displayAttachments } : {}),
-        ...(request.attachments?.length
-          ? {
-              outboundAttachments: request.attachments.map((attachment) => ({
-                fileName: attachment.fileName,
-                mimeType: attachment.mimeType,
-              })),
-              retryPayload,
-            }
-          : {}),
-      }, sessionKey);
-    }
-    state.updateMessage(sessionKey, clientMessageId, {
-      status: 'pending',
-      deliveryError: undefined,
-      retryPayload,
-    });
-    state.setIsTyping(true, sessionKey);
     try {
+      if (request.optimisticMessage !== false) {
+        state.addMessage({
+          ...optimisticPatch,
+          id: clientMessageId,
+          clientMessageId,
+          role: 'user',
+          content: request.message,
+          timestamp,
+          status: 'pending',
+          ...(request.displayAttachments?.length ? { attachments: request.displayAttachments } : {}),
+          ...(request.attachments?.length
+            ? {
+                outboundAttachments: request.attachments.map((attachment) => ({
+                  fileName: attachment.fileName,
+                  mimeType: attachment.mimeType,
+                })),
+                retryPayload,
+              }
+            : {}),
+        }, sessionKey);
+      }
+      state.updateMessage(sessionKey, clientMessageId, {
+        status: 'pending',
+        deliveryError: undefined,
+        retryPayload,
+      });
+      state.setIsTyping(true, sessionKey);
       const session = state.sessions?.find((candidate) => candidate.key === sessionKey);
       const expectedLeafEntryId = request.delivery === 'steer'
         ? undefined
@@ -217,19 +175,18 @@ export class ChatSendCoordinator {
             : {}),
           ...(request.delivery === 'steer' ? { delivery: 'steer' as const } : {}),
         },
-      ) as { queued?: boolean } | undefined;
+      );
       if (expectedLeafEntryId === null) {
         state.setSessionActiveLeafEntryId?.(sessionKey, undefined);
       }
       const deliveryUncertain = isOpenClawChatSendDeliveryUncertain(result);
       if (!deliveryUncertain) {
         state.updateMessage(sessionKey, clientMessageId, {
-          status: result?.queued ? 'queued' : 'sent',
+          status: 'sent',
           deliveryError: undefined,
-          retryPayload: result?.queued ? retryPayload : undefined,
+          retryPayload: undefined,
         });
       }
-      if (result?.queued) state.setIsTyping(false, sessionKey);
       return result;
     } catch (error) {
       state.updateMessage(sessionKey, clientMessageId, {
@@ -239,6 +196,8 @@ export class ChatSendCoordinator {
       });
       state.setIsTyping(false, sessionKey);
       throw error;
+    } finally {
+      releaseSendAdmission();
     }
   }
 }

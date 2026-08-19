@@ -43,15 +43,9 @@ test('only running plans are withheld from the transcript column', () => {
   assert.doesNotMatch(view, /block\.plan\.state !== 'completed'/);
 });
 
-test('execution plan, session handoff, and send composer share the centered send column', () => {
+test('execution plan and send composer share the centered send column', () => {
   const view = source('src/pages/ChatView.tsx');
-  const input = source('src/components/Chat/MessageInput.tsx');
-  const handoff = source('src/components/Chat/message-input/SessionMutationHandoffPanel.tsx');
   const composer = source('src/components/Chat/message-input/ComposerInputSurface.tsx');
   assert.match(view, /data-execution-plan-placement="composer-above"[\s\S]*?mx-auto w-full max-w-\[760px\]/);
-  assert.match(input, /<SessionMutationHandoffPanel[\s\S]*?<ComposerInputSurface/);
-  assert.match(handoff, /data-session-mutation-handoff-placement="composer-above"[\s\S]*?mx-auto w-full max-w-\[760px\]/);
-  assert.match(handoff, /sessionMutationHandoffDescription/);
-  assert.doesNotMatch(handoff, /chat\.queueTitle/);
   assert.match(composer, /mx-auto flex w-full max-w-\[784px\]/);
 });
