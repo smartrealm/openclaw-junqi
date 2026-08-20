@@ -23,6 +23,8 @@ test('官方进度卡以当前修订和步骤状态渲染到输入区伴随卡�
   assert.match(html, /data-progress-card-step-state="completed"/);
   assert.match(html, /data-progress-card-step-state="in_progress"/);
   assert.match(html, /正在执行测试/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /hidden=""/);
 });
 
 test('只把结构有效的官方 progress 元素投影为原生进度条', () => {

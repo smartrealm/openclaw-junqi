@@ -45,6 +45,7 @@ import {
 import { OpenClawProgressCardClient } from './OpenClawProgressCardClient';
 import {
   routeOpenClawProgressCardEvent,
+  subscribeOpenClawLegacyProgressPlanEvents,
   subscribeOpenClawProgressCardEvents,
 } from './progressCardEventBridge';
 import { TalkGatewayClient } from './TalkGatewayClient';
@@ -509,7 +510,10 @@ export const openClawProgressCardClient = new OpenClawProgressCardClient({
   ),
 });
 
-export { subscribeOpenClawProgressCardEvents };
+export {
+  subscribeOpenClawLegacyProgressPlanEvents,
+  subscribeOpenClawProgressCardEvents,
+};
 
 export const openClawTtsClient = new OpenClawTtsClient(
   (method, params, options) => connection.request(method, params, options),

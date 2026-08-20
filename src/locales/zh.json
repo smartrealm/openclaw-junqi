@@ -1670,7 +1670,6 @@
       "revision": "修订 {{revision}}",
       "noteOnly": "进度更新",
       "errors": {
-        "method_unavailable": "当前 OpenClaw Gateway 不支持持久化任务进度卡。",
         "invalid_response": "OpenClaw 返回的任务进度卡结构无效。",
         "request_failed": "暂时无法从 OpenClaw 读取当前任务进度。"
       }

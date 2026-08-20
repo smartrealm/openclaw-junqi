@@ -19,6 +19,13 @@ export interface OpenClawProgressCard {
   readonly steps: readonly OpenClawProgressCardStep[];
 }
 
+export interface OpenClawLegacyProgressPlanUpdate {
+  readonly sessionKey: string;
+  readonly updatedAt: number;
+  readonly markdown?: string;
+  readonly steps: readonly OpenClawProgressCardStep[];
+}
+
 export class OpenClawProgressCardResponseError extends Error {
   readonly code = 'OPENCLAW_PROGRESS_CARD_RESPONSE_INVALID';
 
@@ -82,6 +89,83 @@ function parseSteps(value: unknown): readonly OpenClawProgressCardStep[] | null 
   return steps.some((step) => step === null) || inProgressCount > 1
     ? null
     : steps as readonly OpenClawProgressCardStep[];
+}
+
+function parseLegacySteps(value: unknown): readonly OpenClawProgressCardStep[] | null {
+  if (!Array.isArray(value) || value.length > OPENCLAW_PROGRESS_CARD_MAX_STEPS) return null;
+  const occurrences = new Map<string, number>();
+  let hasInProgressStep = false;
+  const steps: OpenClawProgressCardStep[] = [];
+  for (const candidate of value) {
+    const source = record(candidate);
+    const rawStep = typeof candidate === 'string' ? candidate : source?.step;
+    const step = typeof rawStep === 'string' ? rawStep.trim() : '';
+    const stepStatus = typeof candidate === 'string' ? 'pending' : status(source?.status);
+    if (!step || utf8Length(step) > OPENCLAW_PROGRESS_CARD_MAX_STEP_BYTES || !stepStatus) continue;
+    if (stepStatus === 'in_progress') {
+      if (hasInProgressStep) continue;
+      hasInProgressStep = true;
+    }
+    const occurrence = occurrences.get(step) ?? 0;
+    occurrences.set(step, occurrence + 1);
+    steps.push({
+      id: `step-${stableHash(`${step}\u0000${occurrence}`)}`,
+      step,
+      status: stepStatus,
+    });
+  }
+  return steps;
+}
+
+/**
+ * 解码 OpenClaw 已发布 Gateway 的官方计划流。
+ * 该事件只提供当前运行中的临时投影，不替代持久化进度卡或 transcript。
+ */
+export function parseOpenClawLegacyProgressPlanUpdate(
+  value: unknown,
+): OpenClawLegacyProgressPlanUpdate | null {
+  const source = record(value);
+  const sessionKey = typeof source?.sessionKey === 'string' ? source.sessionKey.trim() : '';
+  const updatedAt = source?.ts;
+  const data = record(source?.data);
+  if (
+    !sessionKey
+    || utf8Length(sessionKey) > 4_096
+    || typeof updatedAt !== 'number'
+    || !Number.isSafeInteger(updatedAt)
+    || updatedAt < 0
+    || data?.phase !== 'update'
+  ) return null;
+  const steps = parseLegacySteps(data.steps);
+  if (!steps) return null;
+  const explanation = typeof data.explanation === 'string' ? data.explanation.trim() : '';
+  const markdown = explanation && utf8Length(explanation) <= OPENCLAW_PROGRESS_CARD_MAX_MARKDOWN_BYTES
+    ? explanation
+    : undefined;
+  return {
+    sessionKey,
+    updatedAt,
+    ...(markdown ? { markdown } : {}),
+    steps,
+  };
+}
+
+export function projectOpenClawLegacyProgressCard(
+  update: OpenClawLegacyProgressPlanUpdate,
+  revision: number,
+): OpenClawProgressCard | null {
+  if (update.steps.length === 0) return null;
+  if (!Number.isSafeInteger(revision) || revision < 1) {
+    throw new OpenClawProgressCardResponseError();
+  }
+  return {
+    id: `progress-card-${stableHash(update.sessionKey)}`,
+    sessionKey: update.sessionKey,
+    revision,
+    updatedAt: update.updatedAt,
+    ...(update.markdown ? { markdown: update.markdown } : {}),
+    steps: update.steps,
+  };
 }
 
 export function parseOpenClawProgressCardResult(value: unknown): OpenClawProgressCard | null {

@@ -21,6 +21,10 @@ export class ProgressCardRefreshGate {
     return repeat;
   }
 
+  discardPending(key: string): void {
+    this.pending.delete(key);
+  }
+
   clear(): void {
     this.active.clear();
     this.pending.clear();

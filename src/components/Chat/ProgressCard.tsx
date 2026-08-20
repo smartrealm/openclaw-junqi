@@ -16,10 +16,11 @@ const PROGRESS_ATTRIBUTE_PATTERN = /\b(value|max)\s*=\s*["']([^"']+)["']/gi;
 
 function readCollapsedPreference(cardId: string): boolean {
   try {
-    return localStorage.getItem(`${COLLAPSE_PREFERENCE_PREFIX}${cardId}`) === 'true';
+    const stored = localStorage.getItem(`${COLLAPSE_PREFERENCE_PREFIX}${cardId}`);
+    return stored === null ? true : stored === 'true';
   } catch {
-    // 本地偏好不可用时默认展开当前官方进度卡。
-    return false;
+    // 本地偏好不可用时按官方客户端交互默认收起详情。
+    return true;
   }
 }
 

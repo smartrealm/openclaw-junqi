@@ -44,6 +44,7 @@ import { parseOpenClawChatSendTiming } from '@/services/gateway/chatSendTiming';
 import {
   parseOpenClawSessionOperationEvent,
 } from '@/services/gateway/sessionOperation';
+import { publishOpenClawLegacyProgressPlanEvent } from '@/services/gateway/progressCardEventBridge';
 
 // ── Workshop Command Parser ──
 // Parses [[workshop:action ...]] commands from agent messages
@@ -1350,6 +1351,13 @@ export class ChatHandler {
     }
     if (payload.stream === 'thinking') {
       this.handleThinkingStream(payload);
+      return;
+    }
+    if (payload.stream === 'plan') {
+      if (!sessionKey || !this.beginRun(sessionKey, payload.runId)) return;
+      this.bindRunToSession(sessionKey, payload.runId);
+      publishOpenClawLegacyProgressPlanEvent(payload, sessionKey);
+      handleGatewayEvent('agent', payload);
       return;
     }
     if (payload.stream === 'item' && payload.data.kind === 'tool') {

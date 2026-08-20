@@ -1639,7 +1639,6 @@
       "revision": "修訂 {{revision}}",
       "noteOnly": "進度更新",
       "errors": {
-        "method_unavailable": "目前 OpenClaw Gateway 不支援持久化任務進度卡。",
         "invalid_response": "OpenClaw 傳回的任務進度卡結構無效。",
         "request_failed": "暫時無法從 OpenClaw 讀取目前任務進度。"
       }

@@ -10,7 +10,7 @@ import {
   type OpenClawProgressCard,
 } from '@/progress-card/domain';
 
-const PROGRESS_CARD_GET_METHOD = 'progressCard.get';
+export const OPENCLAW_PROGRESS_CARD_GET_METHOD = 'progressCard.get';
 
 export type OpenClawProgressCardUnavailableReason =
   | 'connection_unavailable'
@@ -54,7 +54,7 @@ export class OpenClawProgressCardClient {
     const target = resolveOpenClawSessionTarget(sessionKey);
     try {
       const response = await this.dependencies.requestFenced(
-        PROGRESS_CARD_GET_METHOD,
+        OPENCLAW_PROGRESS_CARD_GET_METHOD,
         { sessionKey: target.localKey },
         connectionId,
       );
@@ -71,7 +71,7 @@ export class OpenClawProgressCardClient {
       return card;
     } catch (error) {
       if (error instanceof OpenClawProgressCardUnavailableError) throw error;
-      if (isOpenClawUnknownMethodError(error, PROGRESS_CARD_GET_METHOD)) {
+      if (isOpenClawUnknownMethodError(error, OPENCLAW_PROGRESS_CARD_GET_METHOD)) {
         throw new OpenClawProgressCardUnavailableError(
           'method_unavailable',
           'The connected OpenClaw Gateway does not support progressCard.get',
