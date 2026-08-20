@@ -4,12 +4,15 @@
 
 ## 当前目标
 
-将已完成审查和修复的当前主线按语义版本发布为 JunQi Desktop `3.2.0`，先完成本地发布验证，再通过不可变 `v3.2.0` 标签触发三平台制品与 GitHub Release。
+JunQi Desktop `3.2.0` 已通过不可变 `v3.2.0` 标签完成三平台构建和 GitHub Release。当前交接目标是保留发布证据，并在目标设备上补齐安装、签名信任、OpenClaw 运行和 UI 真机验收。
 
 ## 已完成内容
 
 - `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json` 已统一更新为 `3.2.0`。
 - 已新增 `v3.2.0` 标签发布验证记录，明确远端 `main`、同提交 CI、不可变标签和三平台 Release 的先后门禁。
+- 版本提交 `4893905a22aa62f5faa54a2293191c3f27c83bf5` 已推送到远端 `main`，同提交 `CI` 工作流 32318391003 全部成功。
+- 带注释标签 `v3.2.0` 已推送并精确指向版本提交；`Tagged Desktop Release` 工作流 32318656779 全部成功。
+- GitHub Release `JunQi Desktop 3.2.0` 已发布，共包含 11 个附件，覆盖 macOS ARM64、macOS x64、Windows x64、更新签名、内部测试证书说明和 `latest.json`。
 - 会话进度已从 transcript 中的旧 `update_plan` 推断迁移到官方持久化进度卡。客户端通过 `progressCard.get` 读取，通过 `progressCard.changed` 刷新，不从历史工具回执补足当前状态。
 - 新进度卡读取绑定已认证连接身份和精确会话作用域；连接变化、跨会话响应和刷新期间晚到的旧修订都不能覆盖当前投影。
 - 聊天输入区上方新增可展开的当前步骤胶囊与有界详情面板，动态岛消费同一进度卡投影。旧执行计划领域、语义块、卡片、合并器及其专属测试已删除。
@@ -70,6 +73,9 @@
 - `pnpm collab:test` 与 `pnpm collab:validate` 通过：协作插件 355 项测试无失败，包契约有效。
 - `pnpm dingtalk:test` 与 `pnpm dingtalk:validate` 通过：钉钉插件 21 项测试无失败，包契约有效。
 - `git diff --check`、修改后完整文件 Emoji 扫描和暂存新增内容敏感信息扫描通过。
+- 远端同提交 `CI` 工作流 32318391003 通过。
+- `Tagged Desktop Release` 工作流 32318656779 通过：发布源校验、macOS ARM64、macOS x64 和 Windows x64 构建全部成功。
+- GitHub Release `v3.2.0` 已核验为正式发布，共 11 个附件；远端标签解引用后指向 `4893905a22aa62f5faa54a2293191c3f27c83bf5`。
 
 ## 已知问题与未验证边界
 
@@ -79,8 +85,8 @@
 - DWS 最后一批输出顺序尚未在真实授权、安装和多 Profile 操作中连续实测。
 - 费用提示尚未用真实混合定价、多模型和跨日数据完成人工视觉验收。
 - 会话回放安全回归证明原始 HTML 被转义，但尚未对长 Markdown、亮暗主题和窄窗口做真机视觉验收。
-- 未执行新的桌面安装包构建、正式签名、公证或 Windows 与 Linux 打包；`pnpm build` 只证明前端生产构建和内置插件生成成功。
-- `v3.2.0` 尚未推送，远端同提交 CI、标签工作流、GitHub Release 和制品摘要尚未产生。
+- 标签工作流已生成 macOS ARM64、macOS x64 和 Windows x64 安装制品，但尚未在目标设备完成安装、升级和运行验证；Linux 不在当前发布工作流的制品范围内。
+- macOS 制品不代表 Developer ID 签名或公证已经完成；Windows 制品使用内部测试证书，不具备公共证书颁发机构信任。
 - pnpm 9.15.9 在执行时仍输出根 `pnpm.overrides` 已忽略的警告，但当前锁文件顶部 overrides 与已解析依赖仍保留项目要求的安全版本。本轮未把该警告扩展为依赖布局迁移。
 
 ## 失败方案
@@ -91,8 +97,8 @@
 
 ## 下一步顺序
 
-1. 提交并推送 `3.2.0` 版本变更到远端 `main`。
-2. 等待同提交 `CI` 成功，创建并推送带注释标签 `v3.2.0`。
-3. 跟踪 `Tagged Desktop Release` 到终态，核验 Release 标签、提交、制品名称、数量和更新清单。
-4. 将线上结果回写本文件和发布验证记录后再次提交并推送。
-5. 后续在真实 OpenClaw、Windows x64 和 macOS 目标设备上补齐运行、安装、签名信任与视觉验收。
+1. 在 macOS ARM64、macOS x64 和 Windows x64 目标设备下载 Release 制品，核验摘要并完成安装、升级、卸载和首次启动测试。
+2. 在真实 OpenClaw 任务上验收进度卡实时修订、清空、重连恢复、长内容滚动和动态岛同步。
+3. 在 Windows x64 验证 SAPI、本地全局会话路由和 Talk 接力，在真实 DWS 流程验证授权、安装、多 Profile 与末尾输出顺序。
+4. 补齐亮色、暗色、窄窗口、键盘焦点、减少动态效果和费用提示的连续视觉验收。
+5. 正式对外分发前配置 macOS Developer ID 签名与公证、Windows 公共代码签名证书，并重新验证平台信任链。
