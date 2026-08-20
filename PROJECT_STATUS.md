@@ -4,10 +4,12 @@
 
 ## 当前目标
 
-依据 OpenClaw 官方当前主线重新审查 JunQi 的会话进度、DWS 终态、Windows 语音路由、用量提示、运行时配置和会话回放链路，修复已确认缺陷，完成全量自动化验证并提交。
+将已完成审查和修复的当前主线按语义版本发布为 JunQi Desktop `3.2.0`，先完成本地发布验证，再通过不可变 `v3.2.0` 标签触发三平台制品与 GitHub Release。
 
 ## 已完成内容
 
+- `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json` 已统一更新为 `3.2.0`。
+- 已新增 `v3.2.0` 标签发布验证记录，明确远端 `main`、同提交 CI、不可变标签和三平台 Release 的先后门禁。
 - 会话进度已从 transcript 中的旧 `update_plan` 推断迁移到官方持久化进度卡。客户端通过 `progressCard.get` 读取，通过 `progressCard.changed` 刷新，不从历史工具回执补足当前状态。
 - 新进度卡读取绑定已认证连接身份和精确会话作用域；连接变化、跨会话响应和刷新期间晚到的旧修订都不能覆盖当前投影。
 - 聊天输入区上方新增可展开的当前步骤胶囊与有界详情面板，动态岛消费同一进度卡投影。旧执行计划领域、语义块、卡片、合并器及其专属测试已删除。
@@ -21,6 +23,8 @@
 
 ## 关键技术决策
 
+- 相对 `v3.1.2` 的新增钉钉工作台、智能体工位、Windows 原生语音和官方进度卡属于向后兼容的新能力，因此采用次版本 `3.2.0`，不覆盖既有标签或 Release。
+- `.github/workflows/tag-release.yml` 是本次正式发布入口；必须先推送版本提交并取得同提交 `CI` 成功，再推送带注释标签 `v3.2.0`。
 - OpenClaw 官方仓库当前主线提交 `b934625d805` 的协议 schema、Gateway handler 和文档是本轮进度卡契约依据；本机安装版本只用于兼容性复现。
 - `progressCard.changed` 只表示需要重新读取，不能直接当作完整卡片；官方返回 `card: null` 才能确认当前卡片已清空。
 - `update_plan` 与 `progress_card` transcript 项都是普通工具活动，不是当前进度状态，也不提供客户端重建终态计划的依据。
@@ -31,6 +35,11 @@
 
 ## 核心文件
 
+- `docs/quality/tag-release-validation-2026-08-20.md`
+- `package.json`
+- `src-tauri/Cargo.toml`
+- `src-tauri/Cargo.lock`
+- `src-tauri/tauri.conf.json`
 - `src/progress-card/domain.ts`
 - `src/progress-card/settings.ts`
 - `src/services/gateway/OpenClawProgressCardClient.ts`
@@ -51,11 +60,12 @@
 
 ## 测试与验证
 
+- `pnpm check:versions` 通过：四处版本均为 `3.2.0`。
 - 本轮定向 TypeScript 行为测试 43 项通过。
 - `pnpm lint` 通过：模块边界扫描 932 个生产文件、四处版本一致、TypeScript 类型检查无错误。
 - `pnpm test` 通过：源码测试 2868 项、脚本测试 238 项，无失败。
 - `pnpm build` 通过：协作与钉钉插件包重新生成并校验，Vite 转换 9310 个模块。
-- `cargo fmt -- --check`、`cargo check --lib`、`cargo test --lib` 通过：Rust 653 项通过，1 项会修改当前用户 macOS Keychain 的既有测试按设计忽略。
+- `cargo fmt --all -- --check`、`cargo clippy --all-targets`、`cargo check --all-targets`、`cargo test --lib --no-fail-fast` 通过：Rust 653 项通过，1 项会修改当前用户 macOS Keychain 的既有测试按设计忽略；`clippy` 只有既有非阻断警告。
 - `pnpm verify:openclaw-docs` 通过。
 - `pnpm collab:test` 与 `pnpm collab:validate` 通过：协作插件 355 项测试无失败，包契约有效。
 - `pnpm dingtalk:test` 与 `pnpm dingtalk:validate` 通过：钉钉插件 21 项测试无失败，包契约有效。
@@ -70,6 +80,7 @@
 - 费用提示尚未用真实混合定价、多模型和跨日数据完成人工视觉验收。
 - 会话回放安全回归证明原始 HTML 被转义，但尚未对长 Markdown、亮暗主题和窄窗口做真机视觉验收。
 - 未执行新的桌面安装包构建、正式签名、公证或 Windows 与 Linux 打包；`pnpm build` 只证明前端生产构建和内置插件生成成功。
+- `v3.2.0` 尚未推送，远端同提交 CI、标签工作流、GitHub Release 和制品摘要尚未产生。
 - pnpm 9.15.9 在执行时仍输出根 `pnpm.overrides` 已忽略的警告，但当前锁文件顶部 overrides 与已解析依赖仍保留项目要求的安全版本。本轮未把该警告扩展为依赖布局迁移。
 
 ## 失败方案
@@ -80,8 +91,8 @@
 
 ## 下一步顺序
 
-1. 在真实 OpenClaw 当前主线或包含 `progressCard.get` 的发布版本中运行持续任务，核验进度卡从创建、修订到清空的完整序列。
-2. 在亮色、暗色、窄窗口、键盘与减少动态效果环境下连续验收进度卡和会话回放。
-3. 在 Windows x64 目标机验证全局范围语音唤醒、SAPI、麦克风权限和 Talk 接力。
-4. 在真实 DWS 授权与安装流程中确认最后诊断先于终态，并在混合定价数据上核验仪表盘互斥提示。
-5. 如需交付安装包，再单独执行目标平台 Tauri 打包、签名与安装验证，不把本轮 `pnpm build` 描述为正式安装包。
+1. 提交并推送 `3.2.0` 版本变更到远端 `main`。
+2. 等待同提交 `CI` 成功，创建并推送带注释标签 `v3.2.0`。
+3. 跟踪 `Tagged Desktop Release` 到终态，核验 Release 标签、提交、制品名称、数量和更新清单。
+4. 将线上结果回写本文件和发布验证记录后再次提交并推送。
+5. 后续在真实 OpenClaw、Windows x64 和 macOS 目标设备上补齐运行、安装、签名信任与视觉验收。
