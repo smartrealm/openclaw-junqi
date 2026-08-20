@@ -50,3 +50,18 @@ test('工具表格把账号权限与 Session 暴露状态分开且不冒充业�
   assert.doesNotMatch(html, /会话可见/);
   assert.doesNotMatch(html, />有效</);
 });
+
+test('Profile 探针加载期间不显示账号无操作的终态空文案', () => {
+  const html = renderToStaticMarkup(createElement(DingTalkToolTable, {
+    tools: [],
+    selectedId: null,
+    loading: true,
+    emptyMessage: '请先登录或选择状态为 active 的 DWS Profile。',
+    onSelect: () => {},
+  }));
+
+  assert.match(html, /正在读取插件操作目录/);
+  assert.match(html, /等待 OpenClaw 与当前 DWS Profile 的核验结果/);
+  assert.doesNotMatch(html, /当前账号没有可展示的操作/);
+  assert.doesNotMatch(html, /请先登录或选择状态为 active 的 DWS Profile/);
+});

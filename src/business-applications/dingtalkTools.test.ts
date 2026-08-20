@@ -9,6 +9,7 @@ import {
   parseDingTalkToolSchemaOutput,
   parseProfileReference,
   parseToolArguments,
+  resolveDingTalkCatalogAvailability,
 } from './dingtalkTools';
 
 test('only projects effective tools owned by the DingTalk plugin', () => {
@@ -101,6 +102,31 @@ test('仅在所选 DWS Profile 的官方登录状态为 active 时展示插件�
   assert.equal(isDingTalkProfileAuthenticated(runtime, 'corp-b:user-b'), false);
   assert.equal(isDingTalkProfileAuthenticated(runtime, 'corp-c:user-c'), false);
   assert.equal(isDingTalkProfileAuthenticated(null, 'corp-a:user-a'), false);
+});
+
+test('DWS Profile 探针结算前保留加载态而不发布未登录空态', () => {
+  const base = {
+    sessionExists: true,
+    toolsLoading: false,
+    pluginVisibleInSession: true,
+    runtimeToolAvailable: true,
+    runtimeIdentityError: null,
+    profileAuthenticated: false,
+  } as const;
+
+  assert.equal(resolveDingTalkCatalogAvailability({
+    ...base,
+    runtimeIdentitySettled: false,
+  }), 'loading-identity');
+  assert.equal(resolveDingTalkCatalogAvailability({
+    ...base,
+    runtimeIdentitySettled: true,
+  }), 'profile-required');
+  assert.equal(resolveDingTalkCatalogAvailability({
+    ...base,
+    runtimeIdentitySettled: true,
+    profileAuthenticated: true,
+  }), 'ready');
 });
 
 test('projects DWS runtime absence as a verified unavailable state', () => {

@@ -61,6 +61,42 @@ export interface DingTalkBusinessEvidenceProjection {
   readonly recoveryEventId: string | null;
 }
 
+export type DingTalkCatalogAvailability =
+  | 'no-session'
+  | 'loading-tools'
+  | 'no-tools'
+  | 'no-runtime-tool'
+  | 'loading-identity'
+  | 'identity-error'
+  | 'profile-required'
+  | 'ready';
+
+export function resolveDingTalkCatalogAvailability({
+  sessionExists,
+  toolsLoading,
+  pluginVisibleInSession,
+  runtimeToolAvailable,
+  runtimeIdentitySettled,
+  runtimeIdentityError,
+  profileAuthenticated,
+}: {
+  sessionExists: boolean;
+  toolsLoading: boolean;
+  pluginVisibleInSession: boolean;
+  runtimeToolAvailable: boolean;
+  runtimeIdentitySettled: boolean;
+  runtimeIdentityError: string | null;
+  profileAuthenticated: boolean;
+}): DingTalkCatalogAvailability {
+  if (!sessionExists) return 'no-session';
+  if (toolsLoading) return 'loading-tools';
+  if (!pluginVisibleInSession) return 'no-tools';
+  if (!runtimeToolAvailable) return 'no-runtime-tool';
+  if (!runtimeIdentitySettled) return 'loading-identity';
+  if (runtimeIdentityError) return 'identity-error';
+  return profileAuthenticated ? 'ready' : 'profile-required';
+}
+
 const DOMAIN_LABELS: Record<DingTalkDomain, string> = {
   contact: '通讯录',
   approval: '审批',

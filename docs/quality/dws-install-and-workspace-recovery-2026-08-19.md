@@ -28,6 +28,7 @@ Gateway 重启后的数据轮询还存在独立缺陷：`sessions.list` 返回�
 - `BUG-DWS-05`，中优先级：业务工具要求用户手填“租户身份”，没有使用 `profile list` 返回的精确 `corpId:userId`；工作台也没有官方 Profile 切换和单账号退出入口，全量重置因此容易被误解为普通退出。
 - `BUG-DWS-06`，低优先级：DWS 用户资料未返回 HTTPS 头像时，界面用姓名首字母生成占位头像，与“不会显示猜测头像”的产品文案不一致。
 - `BUG-DWS-07`，中优先级：钉钉业务审计读取失败时，Hook 丢弃错误类别并统一显示“账本不可用”，没有说明当前连接缺少 `operator.read`、Gateway 尚未支持 `audit.activity.list`、响应契约不兼容或普通请求失败的差异。
+- `BUG-DWS-08`，高优先级：`tools.effective` 与 DWS Profile 身份由两条异步链路读取。工具目录先返回时，页面把尚未结算的 `runtimeIdentity === null` 当作未登录终态，先发布“当前账号没有可展示的操作”，随后又切换为完整目录；DWS 当前 Profile 返回后，本地选择状态还会晚一个 React effect，造成第二个短暂错误空态。
 
 `BUG-DWS-03` 的恢复不能自动执行。DWS 官方文档说明 `auth reset` 会清除本机全部登录配置；JunQi 只能在展示影响范围并取得二次确认后调用官方命令。若旧登录态仍可读取，应优先按官方迁移流程处理，不得用重置代替迁移。
 
@@ -52,6 +53,7 @@ Gateway 重启后的数据轮询还存在独立缺陷：`sessions.list` 返回�
 - Profile 选择使用项目共享的 Radix Select 与 `aegis-*` 主题 token，不再调用操作系统原生下拉菜单；当前账号继续由 DWS `profile list` 的 `isCurrent` 标识，不由客户端推断。
 - `tools.effective` 只证明插件操作通过当前 OpenClaw Session 工具策略，不证明当前 DWS Profile 拥有相应钉钉审批、考勤或通讯录业务权限。工作台只有在所选 Profile 的官方状态为 `active` 时才展示“插件操作目录”，不将目录称为当前账号已拥有的能力；“账号权限”与“Session”分列，账号权限统一保留“调用时核验”，不得以绿色状态、`authorizedDomains` 或工具注册事实冒充已授权。
 - Profile 失效、被撤销、不可用或尚未核验时，业务操作目录为空；运行时探针仍由接入页自动执行，不需要把运行时工具暴露成用户业务能力。
+- 工具目录和 DWS Profile 必须按当前 Gateway `connectionId` 与 OpenClaw `sessionKey` 原子发布。Profile 探针未结算时只显示稳定加载态，读取失败显示可重试错误；只有当前上下文的结构化结果已结算后才能发布未登录空态。切换连接或 Session 后丢弃旧请求的迟到结果，官方当前 Profile 在同一渲染中直接作为执行身份，不等待本地选择状态的后续 effect。
 
 ## 验证
 
@@ -83,3 +85,5 @@ Gateway 重启后的数据轮询还存在独立缺陷：`sessions.list` 返回�
 - 未对真实第二个 DWS 账号执行切换或单账号退出；自动化证明官方命令参数、身份格式、二次确认和终态核验，不证明当前用户的真实账号状态已改变。
 - 新增 Profile 账户区复用了现有 Button、Dialog 和 `aegis-*` 主题 token，但尚未在亮色、暗色、窄窗口及键盘焦点下完成连续真机视觉验收。
 - 主题化 Profile 下拉和 Session 工具语义已通过定向 SSR 契约测试与 TypeScript、模块边界检查；下拉展开、方向键选择、Escape 关闭和焦点返回尚待真实 WebView 连续验收。
+- DWS Profile 原子发布回归测试通过：当前 Session 已有插件工具但 Profile 探针尚未结算时保持加载态，表格不会渲染账号无操作的终态文案；探针结算后才分别进入 `active` 目录或未登录空态。定向测试共 20 项通过，`pnpm lint` 通过，模块边界扫描 934 个生产文件且 TypeScript 类型检查无错误；`pnpm build` 通过，协作插件、钉钉插件、TypeScript 与 Vite 生产构建完成。
+- 包含原子发布修复的 Apple Silicon 本地 DMG 已生成，应用版本与构建版本均为 `3.2.1`，二进制为 Mach-O arm64。`hdiutil verify` 通过，DMG SHA-256 为 `166af3656fb460a1fca638fdf1609f6d6977583ff7239bf6fae30954dd854ae1`；应用仅为 ad-hoc 签名，未绑定开发团队且未公证。
