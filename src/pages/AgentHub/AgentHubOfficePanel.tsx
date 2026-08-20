@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Bot, ChevronRight, PanelsTopLeft, RefreshCw } from 'lucide-react';
+import { AlertCircle, Bot, ChevronRight, PanelsTopLeft, RefreshCw, Settings2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AgentOfficeView } from '@/components/Collaboration/AgentOfficeView';
 import {
@@ -9,6 +9,7 @@ import {
 } from '@/components/Collaboration/CollaborationCard';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { useCollaborationStore } from '@/stores/collaborationStore';
+import { useCollaborationSetupStore } from '@/stores/collaborationSetupStore';
 import type { CollaborationRunSummary } from '@/types/collaboration';
 import {
   selectableAgentHubOfficeRuns,
@@ -36,6 +37,7 @@ export function AgentHubOfficePanel({
   const runsById = useCollaborationStore((state) => state.runsById);
   const snapshotsByRunId = useCollaborationStore((state) => state.snapshotsByRunId);
   const bootstrap = useCollaborationStore((state) => state.bootstrap);
+  const requestCollaborationSetup = useCollaborationSetupStore((state) => state.requestSetup);
   const syncGlobalRuns = useCollaborationStore((state) => state.syncGlobalRuns);
   const refreshRun = useCollaborationStore((state) => state.refreshRun);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -166,6 +168,15 @@ export function AgentHubOfficePanel({
               </select>
             </label>
           )}
+          <button
+            type="button"
+            onClick={() => requestCollaborationSetup('agent-office')}
+            data-agent-hub-configure-collaboration
+            className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-aegis-primary/30 bg-aegis-primary/[0.07] px-2.5 text-[11px] font-medium text-aegis-primary transition-colors hover:border-aegis-primary/45 hover:bg-aegis-primary/[0.11] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40"
+          >
+            <Settings2 size={12} aria-hidden="true" />
+            {t('agentHub.office.configureCollaboration', '配置协作许可')}
+          </button>
           <button
             type="button"
             onClick={() => void load(selectedRunRef.current)}

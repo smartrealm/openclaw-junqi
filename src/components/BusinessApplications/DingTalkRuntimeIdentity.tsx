@@ -1,18 +1,22 @@
-import { ShieldCheck, UserRound } from 'lucide-react';
+import { UserPlus, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { DingTalkRuntimeIdentityProjection } from '@/business-applications/dingtalkTools';
 import {
   resolveDwsAvatarUrl,
   resolveDwsIdentitySecondaryLabel,
+  resolveDwsProfileActionState,
 } from '@/business-applications/dwsProfileSelection';
 import { Button } from '@/components/shared/button/Button';
+import { DingTalkProfileSelect } from './DingTalkProfileSelect';
 
 export function DingTalkRuntimeIdentity({
   runtime,
   mode = 'compact',
   selectedProfile = '',
   operationActive = false,
+  profileOperationsAvailable = true,
   onSelectedProfileChange,
+  onAddProfile,
   onSwitchProfile,
   onLogoutProfile,
 }: {
@@ -20,7 +24,9 @@ export function DingTalkRuntimeIdentity({
   mode?: 'compact' | 'full';
   selectedProfile?: string;
   operationActive?: boolean;
+  profileOperationsAvailable?: boolean;
   onSelectedProfileChange?: (profile: string) => void;
+  onAddProfile?: () => void;
   onSwitchProfile?: (profile: string) => void;
   onLogoutProfile?: (profile: string) => void;
 }) {
@@ -31,7 +37,12 @@ export function DingTalkRuntimeIdentity({
       : <span className="text-[9.5px] text-aegis-text-dim">{t('businessApplications.runtimeIdentity.notRead')}</span>;
   }
   const current = runtime.profiles.find((profile) => profile.isCurrent) ?? runtime.profiles.find((profile) => profile.profile === runtime.currentProfile);
-  const selected = runtime.profiles.find((profile) => profile.profile === selectedProfile);
+  const profileActionState = resolveDwsProfileActionState(
+    runtime.profiles,
+    runtime.currentProfile,
+    selectedProfile,
+  );
+  const selected = profileActionState.selected;
   const user = runtime.user;
   const avatarUrl = resolveDwsAvatarUrl(user?.avatarUrl ?? null);
   const primaryLabel = user?.name ?? current?.userName ?? t('businessApplications.runtimeIdentity.userPending');
@@ -65,55 +76,62 @@ export function DingTalkRuntimeIdentity({
           <dd className="text-aegis-text-secondary">{user?.department ?? t('businessApplications.runtimeIdentity.notReturned')}</dd>
           <dt className="text-aegis-text-dim">{t('businessApplications.runtimeIdentity.expiresAt')}</dt>
           <dd className="text-aegis-text-secondary">{current?.expiresAt ?? t('businessApplications.runtimeIdentity.notReturned')}</dd>
-          <dt className="text-aegis-text-dim">{t('businessApplications.runtimeIdentity.authorizedDomains')}</dt>
-          <dd className="flex flex-wrap gap-1">
-            {current?.authorizedDomains.length
-              ? current.authorizedDomains.map((domain) => <span key={domain} className="border border-aegis-success/25 bg-aegis-success/[0.06] px-1.5 py-0.5 text-[9px] text-aegis-success">{domain}</span>)
-              : <span className="text-aegis-text-dim">{t('businessApplications.runtimeIdentity.domainsNotReturned')}</span>}
-          </dd>
         </dl>
-        {runtime.profiles.length > 0 && onSelectedProfileChange && onSwitchProfile && onLogoutProfile && (
+        {runtime.profiles.length > 0 && onSelectedProfileChange && onAddProfile && onSwitchProfile && onLogoutProfile && (
           <div className="border-t border-aegis-border px-3 py-3">
-            <label className="block text-[10px] text-aegis-text-secondary" htmlFor="dingtalk-runtime-profile">
+            <div className="block text-[10px] text-aegis-text-secondary">
               <span className="mb-1.5 block font-medium">{t('businessApplications.runtimeIdentity.accountProfile')}</span>
-              <select
-                id="dingtalk-runtime-profile"
+              <DingTalkProfileSelect
+                triggerId="dingtalk-runtime-profile"
+                ariaLabel={t('businessApplications.runtimeIdentity.accountProfile')}
                 value={selectedProfile}
-                onChange={(event) => onSelectedProfileChange(event.target.value)}
-                disabled={operationActive}
-                className="h-8 w-full rounded-md border border-aegis-border bg-aegis-bg px-2 font-mono text-[10px] text-aegis-text outline-none transition-colors focus:border-aegis-primary/50 focus-visible:ring-2 focus-visible:ring-aegis-primary/35 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {runtime.profiles.map((profile) => (
-                  <option key={profile.profile} value={profile.profile}>
-                    {profile.corpName && profile.userName
-                      ? `${profile.corpName} / ${profile.userName} (${profile.profile})`
-                      : profile.profile}
-                  </option>
-                ))}
-              </select>
-            </label>
+                profiles={runtime.profiles}
+                onValueChange={onSelectedProfileChange}
+                disabled={operationActive || !profileOperationsAvailable}
+              />
+            </div>
             <p className="mt-1.5 text-[9.5px] leading-4 text-aegis-text-dim">
-              {t('businessApplications.runtimeIdentity.profileActionsBoundary')}
+              {profileActionState.onlyOneProfile
+                ? t('businessApplications.runtimeIdentity.singleProfileHint')
+                : t('businessApplications.runtimeIdentity.profileActionsBoundary')}
             </p>
-            <div className="mt-2 flex flex-wrap justify-end gap-2">
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <Button
                 size="xs"
                 variant="outline"
-                tone="neutral"
-                disabled={!selected || selected.profile === runtime.currentProfile || operationActive}
-                onClick={() => selected && onSwitchProfile(selected.profile)}
+                tone="primary"
+                disabled={operationActive}
+                leadingIcon={<UserPlus size={12} aria-hidden="true" />}
+                onClick={onAddProfile}
               >
-                {t('businessApplications.runtimeIdentity.switchProfile')}
+                {t('businessApplications.runtimeIdentity.addProfile')}
               </Button>
-              <Button
-                size="xs"
-                variant="outline"
-                tone="danger"
-                disabled={!selected || operationActive}
-                onClick={() => selected && onLogoutProfile(selected.profile)}
-              >
-                {t('businessApplications.runtimeIdentity.logoutProfile')}
-              </Button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  tone="neutral"
+                  disabled={!profileActionState.canSwitch || operationActive || !profileOperationsAvailable}
+                  title={!profileOperationsAvailable
+                    ? t('businessApplications.runtimeIdentity.profileOperationsUnavailable')
+                    : selected?.profile === runtime.currentProfile
+                      ? t('businessApplications.runtimeIdentity.alreadyCurrent')
+                      : undefined}
+                  onClick={() => selected && onSwitchProfile(selected.profile)}
+                >
+                  {t('businessApplications.runtimeIdentity.switchProfile')}
+                </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  tone="danger"
+                  disabled={!selected || operationActive || !profileOperationsAvailable}
+                  title={!profileOperationsAvailable ? t('businessApplications.runtimeIdentity.profileOperationsUnavailable') : undefined}
+                  onClick={() => selected && onLogoutProfile(selected.profile)}
+                >
+                  {t('businessApplications.runtimeIdentity.logoutProfile')}
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -132,7 +150,7 @@ export function DingTalkRuntimeIdentity({
         <div className="truncate text-[10px] font-medium text-aegis-text-secondary">{primaryLabel}</div>
         <div className="truncate font-mono text-[9px] text-aegis-text-dim">{secondaryLabel}</div>
       </div>
-      {current && <span className="ml-auto hidden shrink-0 items-center gap-1 text-[9px] text-aegis-success 2xl:flex" title={current.authorizedDomains.length ? t('businessApplications.runtimeIdentity.domainsTitle', { domains: current.authorizedDomains.join(', ') }) : t('businessApplications.runtimeIdentity.domainsNotReturned')}><ShieldCheck size={10} />{current.status ?? t('businessApplications.runtimeIdentity.read')}</span>}
+      {current && <span className="ml-auto hidden shrink-0 text-[9px] text-aegis-text-dim 2xl:block" title={t('businessApplications.runtimeIdentity.identityStatus')}>{current.status ?? t('businessApplications.runtimeIdentity.read')}</span>}
     </div>
   );
 }

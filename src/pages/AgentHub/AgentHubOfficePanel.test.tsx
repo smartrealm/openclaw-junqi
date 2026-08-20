@@ -11,3 +11,12 @@ test('智能体中心办公室在 Gateway 未连接时不展示未经核验的�
   assert.doesNotMatch(html, /data-agent-hub-office/);
   assert.doesNotMatch(html, /data-office-agent-id=/);
 });
+
+test('智能体中心办公室提供统一协作许可配置入口', () => {
+  const html = renderToStaticMarkup(
+    <AgentHubOfficePanel connected onOpenRun={() => undefined} onShowAgentList={() => undefined} />,
+  );
+
+  assert.match(html, /data-agent-hub-configure-collaboration="true"/);
+  assert.match(html, /Configure collaboration permission/);
+});

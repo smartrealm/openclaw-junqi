@@ -34,7 +34,6 @@ export interface DingTalkRuntimeProfileProjection {
   readonly corpName: string | null;
   readonly userName: string | null;
   readonly status: string | null;
-  readonly authorizedDomains: readonly string[];
   readonly expiresAt: string | null;
   readonly isCurrent: boolean;
 }
@@ -130,6 +129,18 @@ export function parseProfileReference(value: string): string | null {
   return /^[^:\s]+:[^:\s]+$/.test(normalized) ? normalized : null;
 }
 
+export function isDingTalkProfileAuthenticated(
+  runtime: DingTalkRuntimeIdentityProjection | null,
+  selectedProfile: string,
+): boolean {
+  if (!runtime?.available) return false;
+  const profileRef = parseProfileReference(selectedProfile);
+  if (!profileRef) return false;
+  return runtime.profiles.some((profile) => (
+    profile.profile === profileRef && profile.status === 'active'
+  ));
+}
+
 export function parseToolArguments(value: string): Record<string, unknown> {
   const parsed: unknown = JSON.parse(value);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -167,9 +178,6 @@ export function parseDingTalkRuntimeOutput(output: unknown): DingTalkRuntimeIden
       corpName: optionalString(profile?.corpName),
       userName: optionalString(profile?.userName),
       status: optionalString(profile?.status),
-      authorizedDomains: Array.isArray(profile?.authorizedDomains)
-        ? profile.authorizedDomains.flatMap((domain) => optionalString(domain) ? [optionalString(domain)!] : [])
-        : [],
       expiresAt: optionalString(profile?.expiresAt),
       isCurrent: profile?.isCurrent === true,
     };

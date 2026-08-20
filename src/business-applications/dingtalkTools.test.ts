@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   collectDingTalkTools,
   hasAvailableDingTalkRuntimeTool,
+  isDingTalkProfileAuthenticated,
   parseDingTalkBusinessEvidence,
   parseDingTalkRuntimeOutput,
   parseDingTalkToolSchemaOutput,
@@ -73,7 +74,7 @@ test('requires exact profile references and object arguments', () => {
   assert.throws(() => parseToolArguments('[]'), /JSON 对象/);
 });
 
-test('projects DWS login user and authorization status without accepting unsafe avatar URLs', () => {
+test('projects DWS login identity without retaining unverified domain metadata or unsafe avatar URLs', () => {
   const runtime = parseDingTalkRuntimeOutput({ output: { details: { runtime: {
     currentProfile: 'corp-a:user-a',
     profiles: [{ profile: 'corp-a:user-a', corpName: '示例组织', userName: '张三', status: 'active', authorizedDomains: ['contact'], isCurrent: true }],
@@ -82,7 +83,24 @@ test('projects DWS login user and authorization status without accepting unsafe 
   assert.equal(runtime.user?.name, '张三');
   assert.equal(runtime.available, false);
   assert.equal(runtime.user?.avatarUrl, null);
-  assert.deepEqual(runtime.profiles[0]?.authorizedDomains, ['contact']);
+  assert.equal('authorizedDomains' in (runtime.profiles[0] ?? {}), false);
+});
+
+test('仅在所选 DWS Profile 的官方登录状态为 active 时展示插件操作目录', () => {
+  const runtime = parseDingTalkRuntimeOutput({ output: { details: { runtime: {
+    available: true,
+    currentProfile: 'corp-a:user-a',
+    profiles: [
+      { profile: 'corp-a:user-a', status: 'active', isCurrent: true },
+      { profile: 'corp-b:user-b', status: 'expired', isCurrent: false },
+    ],
+    currentUser: null,
+  } } } });
+
+  assert.equal(isDingTalkProfileAuthenticated(runtime, 'corp-a:user-a'), true);
+  assert.equal(isDingTalkProfileAuthenticated(runtime, 'corp-b:user-b'), false);
+  assert.equal(isDingTalkProfileAuthenticated(runtime, 'corp-c:user-c'), false);
+  assert.equal(isDingTalkProfileAuthenticated(null, 'corp-a:user-a'), false);
 });
 
 test('projects DWS runtime absence as a verified unavailable state', () => {

@@ -302,7 +302,9 @@ export function DingTalkReadinessPanel({
                 mode="full"
                 selectedProfile={selectedProfile}
                 operationActive={dwsOperationActive}
+                profileOperationsAvailable={installAvailable}
                 onSelectedProfileChange={onSelectedProfileChange}
+                onAddProfile={onAuthorizeDws}
                 onSwitchProfile={onSwitchDwsProfile}
                 onLogoutProfile={onLogoutDwsProfile}
               />

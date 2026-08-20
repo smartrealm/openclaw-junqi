@@ -10,21 +10,15 @@ import {
   OPENCLAW_PROGRESS_CARD_GET_METHOD,
   OpenClawProgressCardUnavailableError,
 } from '@/services/gateway/OpenClawProgressCardClient';
-import { OpenClawProgressCardResponseError } from '@/progress-card/domain';
 import {
   ProgressCardCompatibilityGate,
   type LegacyProgressCardProjection,
 } from './progressCardCompatibilityGate';
 import { ProgressCardRefreshGate } from './progressCardRefreshGate';
 
-export type ProgressCardReadError =
-  | 'invalid_response'
-  | 'request_failed';
-
 export interface ProgressCardEntry {
   readonly card: OpenClawProgressCard | null;
   readonly loading: boolean;
-  readonly error: ProgressCardReadError | null;
 }
 
 interface StoredProgressCardEntry extends ProgressCardEntry {
@@ -38,7 +32,6 @@ interface ProgressCardStoreState {
 const EMPTY_ENTRY: ProgressCardEntry = Object.freeze({
   card: null,
   loading: false,
-  error: null,
 });
 
 export const useProgressCardStore = create<ProgressCardStoreState>(() => ({ entries: {} }));
@@ -64,7 +57,7 @@ export function projectProgressCardEntry(
   connectionId: string | null,
 ): ProgressCardEntry {
   if (!entry || entry.connectionId !== connectionId) return EMPTY_ENTRY;
-  return { card: entry.card, loading: entry.loading, error: entry.error };
+  return { card: entry.card, loading: entry.loading };
 }
 
 function writeEntry(
@@ -87,14 +80,6 @@ function forgetAllEntries(): void {
   useProgressCardStore.setState({ entries: {} });
 }
 
-function classifyError(error: unknown): ProgressCardReadError | null {
-  if (error instanceof OpenClawProgressCardUnavailableError) {
-    return null;
-  }
-  if (error instanceof OpenClawProgressCardResponseError) return 'invalid_response';
-  return 'request_failed';
-}
-
 function publishLegacyProjection(
   connectionId: string,
   projection: LegacyProgressCardProjection,
@@ -106,7 +91,6 @@ function publishLegacyProjection(
   writeEntry(projection.sessionKey, connectionId, {
     card: projection.card,
     loading: false,
-    error: null,
   });
 }
 
@@ -130,7 +114,6 @@ export function refreshOpenClawProgressCard(sessionKey: string): Promise<void> {
       writeEntry(normalizedSessionKey, connectionId, {
         card: current.card,
         loading: false,
-        error: null,
       });
     }
     for (const projection of projections) publishLegacyProjection(connectionId, projection);
@@ -150,7 +133,6 @@ export function refreshOpenClawProgressCard(sessionKey: string): Promise<void> {
   writeEntry(normalizedSessionKey, connectionId, {
     card: previous.card,
     loading: previous.card === null,
-    error: null,
   });
 
   const request = openClawProgressCardClient.get(normalizedSessionKey)
@@ -164,7 +146,7 @@ export function refreshOpenClawProgressCard(sessionKey: string): Promise<void> {
         requestRevisions.get(normalizedSessionKey) !== revision
         || gateway.captureConnectionId() !== connectionId
       ) return;
-      writeEntry(normalizedSessionKey, connectionId, { card, loading: false, error: null });
+      writeEntry(normalizedSessionKey, connectionId, { card, loading: false });
     })
     .catch((error: unknown) => {
       const methodUnavailable = error instanceof OpenClawProgressCardUnavailableError
@@ -183,18 +165,15 @@ export function refreshOpenClawProgressCard(sessionKey: string): Promise<void> {
         writeEntry(normalizedSessionKey, connectionId, {
           card: previous.card,
           loading: false,
-          error: null,
         });
         for (const projection of legacyProjections) {
           publishLegacyProjection(connectionId, projection);
         }
         return;
       }
-      const classified = classifyError(error);
       writeEntry(normalizedSessionKey, connectionId, {
-        card: classified ? previous.card : null,
+        card: previous.card,
         loading: false,
-        error: classified,
       });
     })
     .finally(() => {
@@ -226,7 +205,6 @@ function ensureRuntimeSubscriptions(): void {
       writeEntry(event.sessionKey, connectionId, {
         card: null,
         loading: false,
-        error: null,
       });
       return;
     }

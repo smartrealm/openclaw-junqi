@@ -9,6 +9,7 @@ import {
 } from '@/business-applications/dingtalkTools';
 import type { DingTalkApprovalTraceProjection } from '@/business-applications/dingtalkApproval';
 import { DingTalkApprovalTracePanel } from './DingTalkApprovalTracePanel';
+import { DingTalkProfileSelect } from './DingTalkProfileSelect';
 import { PaneResizeHandle } from './PaneResizeHandle';
 
 function prettyJson(value: unknown): string {
@@ -95,7 +96,7 @@ export function DingTalkToolDetail({
         </IconButton>
       </header>
       {!tool ? (
-        <div className="flex flex-1 items-center justify-center px-5 text-center text-[11px] text-aegis-text-dim">选择一个有效工具查看契约和执行参数。</div>
+        <div className="flex flex-1 items-center justify-center px-5 text-center text-[11px] text-aegis-text-dim">选择一个插件操作查看契约和执行参数。</div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
           <div className="flex items-start justify-between gap-3">
@@ -114,30 +115,19 @@ export function DingTalkToolDetail({
             <dd className="text-aegis-text-secondary">{tool.effect === 'read' ? '读取' : tool.effect === 'write' ? '写入' : '未验证'}</dd>
             <dt className="text-aegis-text-dim">风险</dt>
             <dd className="text-aegis-text-secondary">{tool.entry.risk ?? '未验证'}</dd>
+            <dt className="text-aegis-text-dim">账号权限</dt>
+            <dd className="text-aegis-warning">调用时核验</dd>
             <dt className="text-aegis-text-dim">Session</dt>
-            <dd className="text-aegis-text-secondary">{tool.entry.deniedBySession ? '已拒绝' : '有效'}</dd>
+            <dd className="text-aegis-text-secondary">{tool.entry.deniedBySession ? '策略已拒绝' : '已暴露'}</dd>
           </dl>
+          <p className="mt-2 text-[9.5px] leading-4 text-aegis-text-dim">
+            目录只列出 OpenClaw 向当前 Session 暴露的插件操作。所选 DWS 账号是否能执行审批、考勤等业务动作，只能由携带当前 Profile 的实际调用结果确认。
+          </p>
 
           {!runtimeTool && (
             <>
               <label className="mt-3 block text-[10.5px] font-medium text-aegis-text-secondary" htmlFor="dingtalk-profile">执行身份（DWS Profile）</label>
-              <select
-                id="dingtalk-profile"
-                value={profile}
-                onChange={(event) => onProfileChange(event.target.value)}
-                className="mt-1 h-8 w-full rounded-md border border-aegis-border bg-aegis-bg px-2 font-mono text-[10.5px] text-aegis-text outline-none placeholder:text-aegis-text-dim focus:border-aegis-primary/60 focus:ring-1 focus:ring-aegis-primary/25"
-                disabled={profiles.length === 0}
-              >
-                {profiles.length === 0 && <option value="">DWS 未返回已登录账号</option>}
-                {profiles.map((candidate) => (
-                  <option key={candidate.profile} value={candidate.profile}>
-                    {candidate.corpName && candidate.userName
-                      ? `${candidate.corpName} / ${candidate.userName}`
-                      : candidate.userName ?? candidate.corpName ?? candidate.profile}
-                    {candidate.isCurrent ? '（当前）' : ''}
-                  </option>
-                ))}
-              </select>
+              <DingTalkProfileSelect value={profile} profiles={profiles} onValueChange={onProfileChange} />
               <p className="mt-1 text-[9.5px] leading-4 text-aegis-text-dim">每次调用均把所选精确 Profile 交给 DWS，不从姓名或最近使用记录推断账号。</p>
 
               <div className="mt-3 flex items-center justify-between gap-2">

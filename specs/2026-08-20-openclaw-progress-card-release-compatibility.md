@@ -4,7 +4,7 @@
 
 ## 上游依据
 
-- OpenClaw 官方主线提交 `29cfd195d19d8d6b0dab41f80f540bfc4a562872`。
+- OpenClaw 官方主线提交 `70b6f44f13e5a4c0c860e5412b9b5c3bb2272b1d`。
 - `progressCard.get` 与 `progressCard.changed` 是当前持久化进度卡契约。
 - OpenClaw 官方 Android、iOS 和 macOS 客户端明确保留 `stream: "plan"` 投影，用于尚未提供 `progressCard.get` 的已发布 Gateway。
 - 兼容投影只在当前连接对 `progressCard.get` 返回精确 `unknown method` 后启用；能力未知、请求失败或新 Gateway 双发事件时不得启用。
@@ -49,3 +49,4 @@ JunQi 只读取 `progressCard.get`。当前连接明确返回方法不存在后�
 - 默认只显示紧凑进度按钮，用户通过点击或键盘操作展开有界步骤详情；同一卡片保留用户的收起偏好。
 - 本轮不新增另一套计划卡片，不在消息 transcript 中插入伪造消息或工具结果。
 - 旧发布流的本地修订号只用于同一连接内的稳定渲染，不对外宣称为 OpenClaw 持久化修订。
+- 进度读取是可选投影。当前连接没有返回真实卡片时，聊天输入区不渲染错误占位或空卡片；读取失败只结束加载，不创造任务状态。

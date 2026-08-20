@@ -5,6 +5,7 @@
 ## 依据
 
 - [DWS 官方 README](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/blob/main/README.md) 将 `npm install -g dingtalk-workspace-cli` 列为 Node.js/npm 安装方式；登录仍由官方 `dws auth login` 或 headless 环境的 `dws auth login --device` 承担。
+- 2026-08-20 核对 DWS 官方主线提交 `62d72ad84cb667379c02132148086bd984ea69c9`：`profile list` 的稳定身份是 `corpId:userId`，状态来自真实 token；可选 `authorizedDomains` 只是 Profile 元数据，主线没有把它填充为审批、考勤等业务权限清单。当前安装的 `v1.0.58` 真实输出同样不包含该字段。
 - JunQi 只在已核验的所选 Native 或 Docker OpenClaw 运行时中执行该安装命令，安装后以 DWS 的结构化 JSON 命令核验，不读取或展示凭据。
 - Gateway 重启只通过 `gatewayLifecycle.restart` 协调；工作区入口以当前连接的 OpenClaw 会话快照为放行事实。
 
@@ -42,11 +43,15 @@ Gateway 重启后的数据轮询还存在独立缺陷：`sessions.list` 返回�
 - 对可识别的旧登录槽位不可读错误展示安全恢复说明。只有确认属于数据加密密钥缺失时，才提供“重置本机全部 DWS 登录态”的入口，并在二次确认后运行官方 `dws auth reset --format json --yes`；重置成功不等于重新授权成功。
 - 浏览器回调已返回但本机持久化失败时，界面分别呈现网页阶段和本机阶段；授权完成必须由 `auth status` 的 `authenticated: true` 证明。
 - 工具执行身份从 `profile list` 的精确 Profile 中选择。切换当前账号与退出单账号分别执行 DWS 官方 `profile switch` 和 `auth logout --profile`，并用新的 `profile list` 结果核验。
+- 已经存在当前 Profile 时仍提供“添加账号”入口，并继续调用官方 `auth login`。DWS 官方允许该命令新增或刷新账号；JunQi 不在本地创建 Profile。只有 `profile list` 返回两个或更多真实账号时，选择器才存在可切换目标。
 - DWS 未返回安全头像地址时显示通用用户占位图标，不生成姓名首字母头像。
 - 业务审计继续只调用最新版 OpenClaw 的 `audit.activity.list`，不回退旧协议；失败时显示可操作的分类原因，无记录时说明记录产生条件。
 - DWS 安装完成后调用官方 `dws version --format json`，以非空 `version` 为安装终态。官方版本响应没有 `success` 字段，不能复用授权和 Profile 操作的成功结构。
 - 顶栏紧凑身份只保留一个 DWS 头像和一组两级文本；姓名前的重复用户图标已删除，组织与姓名相同时次级文本回落到精确 Profile。
 - 插件操作错误与授权结果从顶栏移入共享接入诊断面板，长文本在业务上下文内完整换行，顶栏只保留身份和刷新操作。
+- Profile 选择使用项目共享的 Radix Select 与 `aegis-*` 主题 token，不再调用操作系统原生下拉菜单；当前账号继续由 DWS `profile list` 的 `isCurrent` 标识，不由客户端推断。
+- `tools.effective` 只证明插件操作通过当前 OpenClaw Session 工具策略，不证明当前 DWS Profile 拥有相应钉钉审批、考勤或通讯录业务权限。工作台只有在所选 Profile 的官方状态为 `active` 时才展示“插件操作目录”，不将目录称为当前账号已拥有的能力；“账号权限”与“Session”分列，账号权限统一保留“调用时核验”，不得以绿色状态、`authorizedDomains` 或工具注册事实冒充已授权。
+- Profile 失效、被撤销、不可用或尚未核验时，业务操作目录为空；运行时探针仍由接入页自动执行，不需要把运行时工具暴露成用户业务能力。
 
 ## 验证
 
@@ -59,6 +64,7 @@ Gateway 重启后的数据轮询还存在独立缺陷：`sessions.list` 返回�
 - DWS Profile 定向测试通过，确认切换使用 `profile switch <corpId:userId> --format json`，单账号退出使用 `auth logout --profile <corpId:userId>`；二者均通过新的 `profile list --format json` 结果核验终态。
 - 授权终态测试确认缺失 `success: true` 或缺失 `authenticated: true` 都不能完成授权；浏览器回调成功不会覆盖后续本机凭据保存失败。
 - Profile 选择、头像地址、当前 Session 审计查询和错误分类的前端纯函数回归测试通过。
+- 单账号 Profile 回归测试确认当前账号不会重复切换，同时保留继续添加账号的语义；选择其他已登录账号时才允许调用官方切换。
 - DWS 版本核验回归测试使用官方版本 JSON 结构，并拒绝缺少非空 `version` 的对象。
 - 紧凑身份标签回归测试覆盖组织名与姓名重复时回落到精确 Profile。
 - `pnpm lint` 通过，模块边界扫描 918 个生产文件，四处版本一致，TypeScript 类型检查通过。
@@ -76,3 +82,4 @@ Gateway 重启后的数据轮询还存在独立缺陷：`sessions.list` 返回�
 - 未对本机真实 DWS 登录态执行破坏性重置；自动化只证明命令、确认门禁和成功语义，不证明当前用户 Keychain 已恢复。
 - 未对真实第二个 DWS 账号执行切换或单账号退出；自动化证明官方命令参数、身份格式、二次确认和终态核验，不证明当前用户的真实账号状态已改变。
 - 新增 Profile 账户区复用了现有 Button、Dialog 和 `aegis-*` 主题 token，但尚未在亮色、暗色、窄窗口及键盘焦点下完成连续真机视觉验收。
+- 主题化 Profile 下拉和 Session 工具语义已通过定向 SSR 契约测试与 TypeScript、模块边界检查；下拉展开、方向键选择、Escape 关闭和焦点返回尚待真实 WebView 连续验收。

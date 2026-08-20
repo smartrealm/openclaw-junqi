@@ -1572,14 +1572,6 @@ function ChatViewContent() {
         </div>
       )}
 
-      {connected && progressCard.error && !progressCard.card && (
-        <div className="shrink-0 bg-[var(--aegis-bg-frosted-60)] px-3 pt-2 backdrop-blur-sm">
-          <div className="mx-auto max-w-[760px] rounded-lg border border-aegis-warning/25 bg-aegis-warning/5 px-3 py-2 text-[11px] text-aegis-warning">
-            {t(`chat.executionPlan.errors.${progressCard.error}`)}
-          </div>
-        </div>
-      )}
-
       <Suspense fallback={<div className="h-[76px] border-t border-aegis-border/20" />}>
         <MessageInput />
       </Suspense>

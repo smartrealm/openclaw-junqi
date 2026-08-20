@@ -264,7 +264,7 @@ export function BusinessApplicationsPanel() {
   const toolsMeta = toolsLoading
     ? t('businessApplications.sidebarToolsLoading', '正在读取当前 Session')
     : activeSession
-      ? t('businessApplications.sidebarToolsCount', '{{count}} 个当前有效工具', { count: toolCount })
+      ? t('businessApplications.sidebarToolsCount', '{{count}} 项插件操作', { count: toolCount })
       : t('businessApplications.sidebarNoSession', '尚未选择有效 Session');
   const activityMeta = attempts.length > 0
     ? t('businessApplications.sidebarActivityCount', '{{count}} 条本窗口投影', { count: attempts.length })
@@ -294,7 +294,7 @@ export function BusinessApplicationsPanel() {
         <SidebarSection label={t('businessApplications.sidebarTitle', '工作区')}>
           <SidebarRow
             icon={<Wrench size={14} />}
-            title={t('businessApplications.workspaceTools', '有效工具')}
+            title={t('businessApplications.workspaceTools', '插件操作目录')}
             meta={toolsMeta}
             active={location.pathname === '/business-applications' && view !== 'activity' && view !== 'runtime'}
             onClick={() => openWorkbench('tools')}

@@ -4,7 +4,7 @@
 
 ## 审计范围
 
-本轮以 JunQi 当前 `main`、OpenClaw 官方仓库当前 `main` 提交 `29cfd195d19d8d6b0dab41f80f540bfc4a562872`、相关协议 schema、Gateway handler、官方 Android、iOS 与 macOS 客户端、项目测试和本机可复现行为为依据，审查会话进度、DWS 子进程、Windows 语音唤醒和用量仪表盘链路。
+本轮以 JunQi 当前 `main`、OpenClaw 官方仓库当前 `main` 提交 `70b6f44f13e5a4c0c860e5412b9b5c3bb2272b1d`、相关协议 schema、Gateway handler、官方 Android、iOS 与 macOS 客户端、项目测试和本机可复现行为为依据，审查会话进度、DWS 子进程、Windows 语音唤醒、用量仪表盘和本机 Gateway 身份核验链路。
 
 ## 已确认缺陷
 
@@ -69,6 +69,22 @@
 - 影响：断线或高频更新时会产生无效读取，清空还会受额外请求失败影响。
 - 修复方向：收紧事件解码，在当前连接和会话内直接处理清空与重复修订，其他变化继续读取权威卡片。
 
+### BUG-RUNTIME-09：无真实进度卡时展示读取失败占位
+
+- 严重级别：中。
+- 当前行为：可选的 `progressCard.get` 读取失败且当前没有卡片时，聊天输入区上方持续展示“暂时无法读取”的警告。
+- 影响：用户会把协议读取失败误解为存在一项失败任务；无任务时仍占用会话空间。
+- 修复方向：只有 OpenClaw 返回真实进度卡时才渲染进度区域。读取失败只结束加载，不创建本地任务状态或错误卡片。
+
+### BUG-RUNTIME-10：本机所选官方服务被瞬时 External 状态误判为远程
+
+- 严重级别：高。
+- 当前行为：`hello-ok` 身份解析直接采用 Gateway 生命周期内存快照。快照仍为 `None` 或 `External` 时，即使同端口实际由所选状态目录和配置对应的官方系统服务运行，也会生成 `remote_manual` 安装目标。
+- 官方契约：OpenClaw 官方 `gateway status` 独立报告系统服务状态与 RPC 探测；端口健康不能代替服务归属核验。
+- 本机证据：`ai.openclaw.gateway` LaunchAgent 正在运行，服务命令、工作目录、状态目录和配置路径均与 JunQi 当前选择一致。
+- 影响：钉钉接入页把可管理的本机 Gateway 显示成外部或远程，并错误阻止插件与 DWS 生命周期操作。
+- 修复方向：仅当当前选择为 Native、观测端点为所选本机端口且内存模式为 `None` 或 `External` 时，再次只读核验所选官方服务；只有确认该服务正在运行且属于所选状态后，才将身份解析为 `SystemService`。
+
 ## 验收边界
 
 - 每个缺陷都有修复前可失败的行为回归测试。
@@ -89,6 +105,8 @@
 - Windows 本地唤醒在全局会话范围内生成 `agent:<id>:global` 本地身份，并在匹配双方都通过官方会话目标规则规范化后选择既有会话。
 - 仪表盘费用提示由一个互斥分类函数决定：全部未定价只显示 Token 未估价，部分已估价只显示部分估价。
 - 会话回放复用 `ChatMarkdownRenderer`，原始 HTML 只作为转义文本呈现；直接 HTML 注入和应用层 `marked` 依赖已删除。
+- 没有真实进度卡时不再渲染读取失败占位；同一连接内此前已核验的卡片在暂时读取失败时保持不变。
+- Gateway 身份解析在本机 Native 端点的瞬时模式为 `None` 或 `External` 时重新核验所选官方服务，确认归属后再授予本机系统服务身份；远程端点、Docker 选择和未确认服务不会被提升。
 
 ## 验证结果
 
@@ -99,9 +117,12 @@
 - `cargo fmt -- --check`、`cargo check --lib` 和完整 `cargo test --lib` 通过：Rust 653 项通过，1 项会修改当前用户 macOS Keychain 的既有测试按设计忽略。
 - `pnpm verify:openclaw-docs`、`pnpm collab:test`、`pnpm collab:validate`、`pnpm dingtalk:test` 和 `pnpm dingtalk:validate` 通过；协作插件 355 项、钉钉插件 21 项测试无失败。
 - 全仓再次扫描 Gateway 生命周期直连、静默错误、直接 Tauri 调用、未净化 HTML 和旧执行计划引用；本轮新增确认并修复会话回放注入缺陷，未把无可复现证据的候选项描述为缺陷。
+- 进度空投影与三语言资源定向测试 4 项通过；运行时身份定向 Rust 测试 9 项通过。
+- 本轮完成后再次执行 `pnpm lint`、完整 `pnpm test`、`pnpm build`、`cargo fmt -- --check`、`cargo check --lib`、完整 `cargo test --lib` 和 `git diff --check`，均通过；Rust 656 项通过，1 项忽略。
 
 ## 未验证边界
 
 - 已发布 Gateway 计划流和持久化进度卡仍需分别在真实 OpenClaw 运行中任务上核验展开、收起、实时修订、清空、长内容内部滚动和动态岛同步。
 - 亮色、暗色、窄窗口、键盘焦点及系统减少动态效果尚未完成连续真机视觉验收。
 - Windows SAPI、DWS 授权最后输出顺序、混合定价数据和 Docker 或远程 Gateway 仍未在对应目标环境实测。
+- 本机服务再核验已由纯函数与 Rust 单元测试覆盖；安装新构建后的钉钉接入页身份文案仍需真实 UI 复验。

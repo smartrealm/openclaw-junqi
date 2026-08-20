@@ -30,6 +30,7 @@ import {
   collectDingTalkTools,
   dingTalkDomainLabel,
   hasAvailableDingTalkRuntimeTool,
+  isDingTalkProfileAuthenticated,
   parseDingTalkBusinessEvidence,
   parseDingTalkToolSchemaOutput,
   parseDingTalkRuntimeOutput,
@@ -237,7 +238,7 @@ function FilterPane({
           <span>当前结果</span>
           <span className="font-mono tabular-nums">{filteredCount} / {domainCounts.all}</span>
         </div>
-        <p className="mt-1 text-[9.5px] leading-4 text-aegis-text-dim">仅筛选当前 Session 的真实 <code className="font-mono text-aegis-text-secondary">tools.effective</code> 投影。</p>
+        <p className="mt-1 text-[9.5px] leading-4 text-aegis-text-dim">仅筛选已绑定当前登录 DWS Profile 的插件操作目录；账号业务权限仍由实际调用核验。</p>
         {filtersActive && (
           <button
             type="button"
@@ -318,27 +319,32 @@ export function BusinessApplicationsPage() {
   const beginAttempt = useBusinessActivityStore((state) => state.begin);
   const settleAttempt = useBusinessActivityStore((state) => state.settle);
 
-  const selectedTool = allTools.find((tool) => tool.entry.id === selectedId) ?? null;
+  const profileAuthenticated = isDingTalkProfileAuthenticated(runtimeIdentity, profile);
+  const authenticatedCatalogTools = useMemo(
+    () => profileAuthenticated ? allTools : [],
+    [allTools, profileAuthenticated],
+  );
+  const selectedTool = authenticatedCatalogTools.find((tool) => tool.entry.id === selectedId) ?? null;
   const approvalTrace = useDingTalkApprovalTrace({
     activeSessionKey,
     profile,
     selectedToolId: selectedTool?.entry.id ?? null,
     selectedDomain: selectedTool?.domain ?? null,
     invocationOutput,
-    tools: allTools,
+    tools: authenticatedCatalogTools,
   });
   const filteredTools = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
-    return allTools.filter((tool) => {
+    return authenticatedCatalogTools.filter((tool) => {
       if (domain !== 'all' && tool.domain !== domain) return false;
       if (effect !== 'all' && tool.effect !== effect) return false;
       if (!query) return true;
       return `${tool.entry.label}\n${tool.entry.description}\n${tool.entry.id}`.toLocaleLowerCase().includes(query);
     });
-  }, [allTools, domain, effect, search]);
+  }, [authenticatedCatalogTools, domain, effect, search]);
   const domainCounts = useMemo(() => {
     const counts: Record<DomainFilter, number> = {
-      all: allTools.length,
+      all: authenticatedCatalogTools.length,
       contact: 0,
       approval: 0,
       attendance: 0,
@@ -347,14 +353,14 @@ export function BusinessApplicationsPage() {
       runtime: 0,
       unknown: 0,
     };
-    for (const tool of allTools) counts[tool.domain] += 1;
+    for (const tool of authenticatedCatalogTools) counts[tool.domain] += 1;
     return counts;
-  }, [allTools]);
+  }, [authenticatedCatalogTools]);
   const effectCounts = useMemo(() => ({
-    all: allTools.length,
-    read: allTools.filter((tool) => tool.effect === 'read').length,
-    write: allTools.filter((tool) => tool.effect === 'write').length,
-  }), [allTools]);
+    all: authenticatedCatalogTools.length,
+    read: authenticatedCatalogTools.filter((tool) => tool.effect === 'read').length,
+    write: authenticatedCatalogTools.filter((tool) => tool.effect === 'write').length,
+  }), [authenticatedCatalogTools]);
   const clearFilters = useCallback(() => {
     setSearch('');
     setDomain('all');
@@ -576,8 +582,8 @@ export function BusinessApplicationsPage() {
 
   useEffect(() => {
     if (selectedTool) return;
-    setSelectedId(allTools[0]?.entry.id ?? null);
-  }, [allTools, selectedTool]);
+    setSelectedId(authenticatedCatalogTools[0]?.entry.id ?? null);
+  }, [authenticatedCatalogTools, selectedTool]);
 
   useEffect(() => {
     const onResize = () => {
@@ -908,7 +914,7 @@ export function BusinessApplicationsPage() {
       }
       const refreshedTools = useGatewayDataStore.getState().toolsEffective[activeSessionKey];
       if (!hasAvailableDingTalkRuntimeTool(refreshedTools?.groups)) {
-        throw new Error('钉钉授权配置已确认写入，但当前 Session 的有效工具仍未出现钉钉运行时工具。请刷新后查看 Gateway 返回的实际策略或插件加载错误。');
+        throw new Error('钉钉授权配置已确认写入，但当前 Session 工具中仍未出现钉钉运行时工具。请刷新后查看 Gateway 返回的实际策略或插件加载错误。');
       }
       setPluginError(null);
     } catch (error) {
@@ -934,8 +940,10 @@ export function BusinessApplicationsPage() {
     || dwsOperation?.phase === 'running';
   const headerStatus = dingtalkRefreshPending
     ? t('businessApplications.readiness.refreshing')
+    : profileAuthenticated
+    ? `DWS Profile 已登录；${authenticatedCatalogTools.length} 项插件操作，账号业务权限按实际调用核验`
     : pluginVisibleInSession
-    ? `${allTools.length} 个当前有效工具`
+      ? '等待当前 DWS Profile 登录状态核验；尚不展示插件操作目录'
     : toolsLoading || pluginStatusLoading ? '正在核对当前 Session 与插件状态' : pluginStatus?.installed
       ? '插件已安装，等待 Gateway 刷新'
       : localInstallAvailable ? '插件尚未安装' : '当前 Session 未提供钉钉工具';
@@ -1051,17 +1059,21 @@ export function BusinessApplicationsPage() {
           <main className="flex min-h-0 min-w-0 flex-col bg-aegis-surface/20">
             <div className="flex h-9 shrink-0 items-center justify-between border-b border-aegis-border px-3">
               <div className="flex min-w-0 items-center gap-2 text-[10.5px] text-aegis-text-dim">
-                <span className="font-medium text-aegis-text-secondary">当前 Session</span>
-                <span className="max-w-[320px] truncate font-mono" title={activeSessionKey}>{sessionExists ? activeSessionKey : '未选择有效 Session'}</span>
+                <span className="font-medium text-aegis-text-secondary">当前执行身份</span>
+                <span className="max-w-[320px] truncate font-mono" title={profile}>{profileAuthenticated ? profile : '未完成 DWS Profile 登录核验'}</span>
               </div>
-              <span className="text-[10px] tabular-nums text-aegis-text-dim">{filteredTools.length} / {allTools.length}</span>
+              <span className="text-[10px] tabular-nums text-aegis-text-dim">{filteredTools.length} / {authenticatedCatalogTools.length}</span>
             </div>
             {toolsError && <div className="border-b border-aegis-danger/25 bg-aegis-danger/[0.06] px-3 py-1.5 text-[10px] text-aegis-danger">{toolsError}</div>}
             <DingTalkToolTable
               tools={filteredTools}
               selectedId={selectedId}
               loading={toolsLoading}
-              emptyMessage={sessionExists ? '请先按上方状态条完成当前阻塞步骤，再重新检测有效工具。' : '请先创建或选择一个 OpenClaw Session。'}
+              emptyMessage={profileAuthenticated
+                ? '当前 Session 未提供钉钉插件操作目录。'
+                : sessionExists
+                  ? '请先登录或选择状态为 active 的 DWS Profile。账号身份未核验时不会展示业务操作。'
+                  : '请先创建或选择一个 OpenClaw Session。'}
               onSelect={selectTool}
             />
           </main>

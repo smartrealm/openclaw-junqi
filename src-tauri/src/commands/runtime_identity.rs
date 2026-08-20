@@ -339,13 +339,52 @@ fn runtime_evidence(state: &GatewayProcess) -> Result<RuntimeEvidence, String> {
     })
 }
 
+fn should_inspect_selected_native_service(
+    observation: &GatewayHelloObservation,
+    evidence: &RuntimeEvidence,
+    selected_runtime_is_native: bool,
+) -> bool {
+    if !selected_runtime_is_native
+        || !matches!(
+            evidence.mode,
+            GatewayRuntimeMode::None | GatewayRuntimeMode::External
+        )
+    {
+        return false;
+    }
+
+    parse_endpoint(&observation.endpoint)
+        .is_some_and(|endpoint| endpoint.host_is_local && endpoint.port == Some(evidence.port))
+}
+
+fn apply_selected_native_service_attestation(
+    evidence: &mut RuntimeEvidence,
+    selected_service_running: bool,
+) {
+    if selected_service_running {
+        evidence.lifecycle = GatewayLifecycle::Running;
+        evidence.mode = GatewayRuntimeMode::SystemService;
+    }
+}
+
 #[tauri::command]
 pub async fn resolve_gateway_runtime_identity(
     observation: GatewayHelloObservation,
     gateway_state: State<'_, GatewayProcess>,
     identity_state: State<'_, RuntimeIdentityState>,
 ) -> Result<RuntimeIdentity, String> {
-    let evidence = runtime_evidence(&gateway_state)?;
+    let mut evidence = runtime_evidence(&gateway_state)?;
+    let selected_runtime_is_native = matches!(
+        paths::active_runtime_mode(),
+        paths::OpenClawRuntimeMode::Native
+    );
+    if should_inspect_selected_native_service(&observation, &evidence, selected_runtime_is_native) {
+        let selected_service_running =
+            crate::commands::gateway_service::inspect_selected_native_gateway_service()
+                .await
+                .is_ok_and(crate::commands::gateway_service::is_running_selected_service);
+        apply_selected_native_service_attestation(&mut evidence, selected_service_running);
+    }
     let selected_config_attestation = if matches!(
         evidence.mode,
         GatewayRuntimeMode::ManagedChild
@@ -535,5 +574,43 @@ mod tests {
         assert!(identity.verified);
         assert_eq!(identity.install_target, RuntimeInstallTarget::DockerExec);
         assert!(identity.desktop_exit_continuity);
+    }
+
+    #[test]
+    fn selected_native_service_replaces_stale_external_runtime_evidence() {
+        let mut runtime = evidence(GatewayRuntimeMode::External);
+        apply_selected_native_service_attestation(&mut runtime, true);
+
+        assert_eq!(runtime.lifecycle, GatewayLifecycle::Running);
+        assert_eq!(runtime.mode, GatewayRuntimeMode::SystemService);
+    }
+
+    #[test]
+    fn only_matching_local_native_endpoint_requires_service_reinspection() {
+        let runtime = evidence(GatewayRuntimeMode::External);
+        assert!(should_inspect_selected_native_service(
+            &observation("conn-local"),
+            &runtime,
+            true,
+        ));
+
+        let mut remote = observation("conn-remote");
+        remote.endpoint = "wss://gateway.example.test".to_string();
+        assert!(!should_inspect_selected_native_service(
+            &remote, &runtime, true,
+        ));
+        assert!(!should_inspect_selected_native_service(
+            &observation("conn-docker"),
+            &runtime,
+            false,
+        ));
+    }
+
+    #[test]
+    fn selected_native_service_does_not_replace_unverified_runtime_evidence() {
+        let mut runtime = evidence(GatewayRuntimeMode::External);
+        apply_selected_native_service_attestation(&mut runtime, false);
+
+        assert_eq!(runtime.mode, GatewayRuntimeMode::External);
     }
 }

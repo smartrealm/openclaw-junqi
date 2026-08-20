@@ -3,6 +3,25 @@ export type DwsProfileReference = {
   readonly isCurrent: boolean;
 };
 
+export interface DwsProfileActionState {
+  readonly selected: DwsProfileReference | null;
+  readonly onlyOneProfile: boolean;
+  readonly canSwitch: boolean;
+}
+
+export function resolveDwsProfileActionState(
+  profiles: readonly DwsProfileReference[],
+  currentProfile: string | null,
+  selectedProfile: string,
+): DwsProfileActionState {
+  const selected = profiles.find((profile) => profile.profile === selectedProfile) ?? null;
+  return {
+    selected,
+    onlyOneProfile: profiles.length === 1,
+    canSwitch: Boolean(selected && selected.profile !== currentProfile),
+  };
+}
+
 export function resolveDwsExecutionProfile(
   profiles: readonly DwsProfileReference[],
   currentProfile: string | null,

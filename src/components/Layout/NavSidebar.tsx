@@ -986,7 +986,7 @@ function miniItemsFor(
       { to: '/memory', icon: <Brain size={20} />, label: t('nav.memory', 'Memory'), feature: 'memory' },
     ];
     case 'businessApplications': return [
-      { to: '/business-applications', icon: <Wrench size={20} />, label: t('businessApplications.workspaceTools', '有效工具'), feature: 'businessApplications' },
+      { to: '/business-applications', icon: <Wrench size={20} />, label: t('businessApplications.workspaceTools', '插件操作目录'), feature: 'businessApplications' },
       { to: '/business-applications?view=activity', icon: <ListChecks size={20} />, label: t('businessApplications.workspaceActivity', '操作审计'), feature: 'businessApplications' },
       { to: '/business-applications?view=runtime', icon: <Settings2 size={20} />, label: t('businessApplications.workspaceRuntime', '接入与授权'), feature: 'businessApplications' },
     ];
