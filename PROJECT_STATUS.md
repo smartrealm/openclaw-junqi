@@ -4,10 +4,12 @@
 
 ## 当前目标
 
-JunQi Desktop `3.2.0` 已通过不可变 `v3.2.0` 标签完成三平台构建和 GitHub Release。当前交接目标是保留发布证据，并在目标设备上补齐安装、签名信任、OpenClaw 运行和 UI 真机验收。
+将当前主线按用户要求发布为 JunQi Desktop `3.2.1`。本次是 `v3.2.0` 发布结果文档之后的补丁发布，不新增运行时能力；先完成本地发布验证，再通过不可变 `v3.2.1` 标签触发三平台制品与 GitHub Release。
 
 ## 已完成内容
 
+- `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json` 已统一更新为 `3.2.1`。
+- 已新增 `v3.2.1` 标签发布验证记录，明确补丁版本依据、不可变标签发布顺序和制品信任边界。
 - `package.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json` 已统一更新为 `3.2.0`。
 - 已新增 `v3.2.0` 标签发布验证记录，明确远端 `main`、同提交 CI、不可变标签和三平台 Release 的先后门禁。
 - 版本提交 `4893905a22aa62f5faa54a2293191c3f27c83bf5` 已推送到远端 `main`，同提交 `CI` 工作流 32318391003 全部成功。
@@ -26,6 +28,8 @@ JunQi Desktop `3.2.0` 已通过不可变 `v3.2.0` 标签完成三平台构建和
 
 ## 关键技术决策
 
+- `v3.2.0` 之后没有运行时代码变更；用户明确要求发布当前主线，因此采用补丁版本 `3.2.1`，不覆盖或移动既有标签。
+- `.github/workflows/tag-release.yml` 仍是正式发布入口；必须先推送版本提交并取得同提交 `CI` 成功，再推送带注释标签 `v3.2.1`。
 - 相对 `v3.1.2` 的新增钉钉工作台、智能体工位、Windows 原生语音和官方进度卡属于向后兼容的新能力，因此采用次版本 `3.2.0`，不覆盖既有标签或 Release。
 - `.github/workflows/tag-release.yml` 是本次正式发布入口；必须先推送版本提交并取得同提交 `CI` 成功，再推送带注释标签 `v3.2.0`。
 - OpenClaw 官方仓库当前主线提交 `b934625d805` 的协议 schema、Gateway handler 和文档是本轮进度卡契约依据；本机安装版本只用于兼容性复现。
@@ -38,6 +42,7 @@ JunQi Desktop `3.2.0` 已通过不可变 `v3.2.0` 标签完成三平台构建和
 
 ## 核心文件
 
+- `docs/quality/tag-release-validation-2026-08-20-v3.2.1.md`
 - `docs/quality/tag-release-validation-2026-08-20.md`
 - `package.json`
 - `src-tauri/Cargo.toml`
@@ -63,6 +68,12 @@ JunQi Desktop `3.2.0` 已通过不可变 `v3.2.0` 标签完成三平台构建和
 
 ## 测试与验证
 
+- `pnpm check:versions` 通过：四处版本均为 `3.2.1`。
+- `pnpm lint` 通过：模块边界扫描 932 个生产文件，TypeScript 类型检查无错误。
+- `pnpm test` 通过：源码测试 2868 项、脚本测试 238 项，无失败。
+- `pnpm build` 通过：协作与钉钉插件包重新生成并校验，Vite 转换 9310 个模块。
+- `cargo fmt --all -- --check`、`cargo clippy --all-targets`、`cargo check --all-targets`、`cargo test --lib --no-fail-fast` 通过：Rust 653 项通过，1 项按设计忽略；`clippy` 只有既有非阻断警告。
+- `pnpm verify:openclaw-docs`、`pnpm collab:test`、`pnpm collab:validate`、`pnpm dingtalk:test` 和 `pnpm dingtalk:validate` 通过；协作插件 355 项、钉钉插件 21 项测试无失败。
 - `pnpm check:versions` 通过：四处版本均为 `3.2.0`。
 - 本轮定向 TypeScript 行为测试 43 项通过。
 - `pnpm lint` 通过：模块边界扫描 932 个生产文件、四处版本一致、TypeScript 类型检查无错误。
@@ -79,6 +90,7 @@ JunQi Desktop `3.2.0` 已通过不可变 `v3.2.0` 标签完成三平台构建和
 
 ## 已知问题与未验证边界
 
+- `v3.2.1` 尚未推送，远端同提交 CI、标签工作流、GitHub Release 和制品摘要尚未产生。
 - 尚未在真实 OpenClaw 运行中任务上验收进度卡的实时修订、清空、重连恢复、长内容滚动和动态岛同步。
 - 进度卡尚未完成亮色、暗色、窄窗口、键盘焦点及系统减少动态效果的连续真机视觉验收。
 - Windows x64 真机 SAPI、全局会话路由和 Talk 接力尚未验证；当前 macOS 自动化不能替代目标平台结果。
@@ -97,8 +109,8 @@ JunQi Desktop `3.2.0` 已通过不可变 `v3.2.0` 标签完成三平台构建和
 
 ## 下一步顺序
 
-1. 在 macOS ARM64、macOS x64 和 Windows x64 目标设备下载 Release 制品，核验摘要并完成安装、升级、卸载和首次启动测试。
-2. 在真实 OpenClaw 任务上验收进度卡实时修订、清空、重连恢复、长内容滚动和动态岛同步。
-3. 在 Windows x64 验证 SAPI、本地全局会话路由和 Talk 接力，在真实 DWS 流程验证授权、安装、多 Profile 与末尾输出顺序。
-4. 补齐亮色、暗色、窄窗口、键盘焦点、减少动态效果和费用提示的连续视觉验收。
-5. 正式对外分发前配置 macOS Developer ID 签名与公证、Windows 公共代码签名证书，并重新验证平台信任链。
+1. 完成本地发布验证并提交、推送 `3.2.1` 版本变更到远端 `main`。
+2. 等待同提交 `CI` 成功，创建并推送带注释标签 `v3.2.1`。
+3. 跟踪 `Tagged Desktop Release` 到终态，核验 Release 标签、提交、制品名称、数量和更新清单。
+4. 将线上结果回写本文件和发布验证记录后再次提交并推送。
+5. 后续在目标设备补齐安装、签名信任、OpenClaw 运行、DWS 全流程和 UI 真机验收。
