@@ -37,4 +37,9 @@
 
 ### 线上结果
 
-远端 `main`、标签工作流、GitHub Release 和制品清单尚未发布，完成后按远端实际结果回写。
+- 版本提交 `5df92992c04e9420efe365b06c98e0c33acfde96` 已推送到远端 `main`；远端记录本次直接推送使用了具备权限的规则绕过，同提交 `CI` 工作流 [32322901090](https://github.com/smartrealm/openclaw-junqi/actions/runs/32322901090) 随后全部成功。
+- 带注释标签 `v3.2.1` 已推送。远端标签对象为 `2d910703663a59ae58ad1a00ed1ecba786e644a6`，独立验证脚本解引用后确认其精确指向版本提交 `5df92992c04e9420efe365b06c98e0c33acfde96`。
+- `Tagged Desktop Release` 工作流 [32323466560](https://github.com/smartrealm/openclaw-junqi/actions/runs/32323466560) 全部成功；发布源校验、macOS ARM64、macOS x64、Windows x64、Release 创建和汇总均为成功终态。
+- [JunQi Desktop 3.2.1](https://github.com/smartrealm/openclaw-junqi/releases/tag/v3.2.1) 已于 2026-08-20 发布并成为 Latest，不是草稿或预发布版本。
+- Release 共包含 11 个附件：macOS ARM64 与 x64 的 DMG、应用更新包及签名，Windows x64 安装程序及更新签名，内部测试证书与说明，以及 `latest.json`。GitHub 已为全部附件返回 SHA-256 摘要。
+- 本次线上验证证明不可变标签、三平台 CI 构建、附件上传和更新清单生成成功；不证明 macOS Developer ID 签名、公证、Windows 公共证书信任或目标设备安装运行已经通过。
