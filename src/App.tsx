@@ -75,6 +75,7 @@ import { OpenClawGuidedSetupClient } from '@/services/gateway/OpenClawGuidedSetu
 import { resolveOpenClawSetupCapability } from '@/services/setup/openClawSetupCapability';
 import { shouldBlockWorkspaceEntry } from '@/services/setup/setupEntryGate';
 import { JarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
+import { useDingTalkBusinessPrewarm } from '@/runtime/useDingTalkBusinessPrewarm';
 import { projectOpenClawSessionForChat } from '@/utils/openClawSessionProjection';
 import {
   createWorkspaceBootstrapReadiness,
@@ -177,6 +178,10 @@ export default function App() {
     (s) => s.sessions.find((session) => session.key === s.activeSessionKey)?.agentId,
   );
   const setupComplete = useAppStore((s) => s.setupComplete);
+  useDingTalkBusinessPrewarm({
+    setupComplete: setupComplete === true,
+    connected,
+  });
   const workspaceStartupMode = useAppStore((s) => s.workspaceStartupMode);
   const setWorkspaceStartupMode = useAppStore((s) => s.setWorkspaceStartupMode);
   const [cachedSetupValidationPending, setCachedSetupValidationPending] = useState(

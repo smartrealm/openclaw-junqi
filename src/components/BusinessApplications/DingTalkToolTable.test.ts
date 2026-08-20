@@ -35,7 +35,7 @@ test('工具表格仅按真实输入中的业务域分组', () => {
   ]);
 });
 
-test('工具表格把账号权限与 Session 暴露状态分开且不冒充业务授权', () => {
+test('工具表格集中说明账号权限边界且不把每行渲染成授权结果', () => {
   const html = renderToStaticMarkup(createElement(DingTalkToolTable, {
     tools: [tool('junqi_dingtalk_approval_pending', 'approval')],
     selectedId: null,
@@ -44,11 +44,25 @@ test('工具表格把账号权限与 Session 暴露状态分开且不冒充业�
     onSelect: () => {},
   }));
 
-  assert.match(html, /账号权限/);
-  assert.match(html, /调用时核验/);
-  assert.match(html, /已暴露/);
-  assert.doesNotMatch(html, /会话可见/);
+  assert.match(html, /插件操作目录/);
+  assert.match(html, /账号业务权限由每次实际调用的钉钉结果确认/);
+  assert.doesNotMatch(html, /账号权限<\/th>/);
+  assert.doesNotMatch(html, /Session<\/th>/);
+  assert.doesNotMatch(html, /已暴露/);
   assert.doesNotMatch(html, />有效</);
+});
+
+test('只有被 OpenClaw 拒绝的操作才在对应行显示 Session 状态', () => {
+  const denied = tool('junqi_dingtalk_approval_pending', 'approval');
+  const html = renderToStaticMarkup(createElement(DingTalkToolTable, {
+    tools: [{ ...denied, entry: { ...denied.entry, deniedBySession: true } }],
+    selectedId: null,
+    loading: false,
+    emptyMessage: '',
+    onSelect: () => {},
+  }));
+
+  assert.match(html, /Session 已拒绝/);
 });
 
 test('Profile 探针加载期间不显示账号无操作的终态空文案', () => {

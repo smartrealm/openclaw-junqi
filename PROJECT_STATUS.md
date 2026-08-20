@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-收敛会话进度空态、钉钉接入页的 Gateway 所有权误判、DWS 多账号入口、协作办公室配置入口与钉钉登录身份、Session 策略、业务权限三层展示，并定位聊天输入卡顿链路。当前已修复钉钉工作台工具目录与 DWS Profile 异步探测造成的错误空态闪烁，并重新生成本地 Apple Silicon DMG。输入性能问题已完成静态根因核对，尚未实施修复或真机性能录制；当前公开 Release 仍不包含本轮修复。
+收敛会话进度空态、钉钉接入页的 Gateway 所有权误判、DWS 多账号入口、协作办公室配置入口与钉钉登录身份、Session 策略、业务权限三层展示，并定位聊天输入卡顿链路。当前已将钉钉工具投影与 DWS 身份核验前移到应用根运行时预热，业务页不再挂载后重新发起首屏探测；工具目录也已收敛为操作目录，不再逐行伪装成账号权限表。输入性能问题已完成静态根因核对，尚未实施修复或真机性能录制；当前公开 Release 和既有本地 DMG 均不包含本轮最新预热修复。
 
 ## 已完成内容
 
@@ -27,6 +27,10 @@
 - DWS Profile 下拉已替换为共享 Radix Select，弹层、边框、焦点和当前账号标识统一使用 `aegis-*` 主题 token，不再出现 macOS 原生蓝色菜单。
 - 钉钉工作台改为三层证据：所选 DWS Profile 必须是官方 `active` 登录状态才展示插件操作目录；Session 列只表示“已暴露”或“策略已拒绝”；账号业务权限始终显示“调用时核验”。已删除未被官方填充为业务权限的 `authorizedDomains` 前端投影，不再把插件目录称为当前账号已拥有的能力。
 - 修复钉钉工作台首屏竞态：DWS 身份快照绑定当前 Gateway `connectionId` 与 OpenClaw `sessionKey`，区分加载、结算和错误；切换上下文后丢弃旧请求结果，Profile 未结算时不再发布“当前账号没有可展示的操作”。官方当前 Profile 在同一渲染内直接作为执行身份，不再等待本地选择状态的后续 effect。
+- 将钉钉工作台预热前移到 App 根运行时：Gateway 身份和当前 Session 就绪后先确保 `tools.effective` 新鲜，只有当前 Session 明确提供且未拒绝钉钉运行时工具时才核验 DWS 身份。
+- 新增共享 DWS 身份协调器，快照绑定 `connectionId + sessionKey + toolsRevision`，同修订单飞复用；连接、Session 或工具修订变化后旧结果不能发布。
+- 业务页删除独立的首屏工具与身份探测 effect，只订阅共享快照；手动刷新仍强制重读工具投影、DWS 身份和本机插件状态。
+- 工具目录移除逐行重复的“账号权限：调用时核验”和“Session：已暴露”，改为顶部集中说明权威边界；只有 OpenClaw 明确拒绝的操作才在对应行显示拒绝状态。
 
 ## 关键技术决策
 
@@ -40,6 +44,8 @@
 - 多账号添加继续复用既有 DWS `Authorize` 操作，协作入口继续复用 `CollaborationSetupDialog`；两处都没有新增 RPC、Profile 存储或协作状态机。
 - DWS 官方 `profile list` 仅提供精确 Profile 与登录状态，当前主线不提供可覆盖审批、考勤等业务操作的全局权限清单。JunQi 因此只能用登录状态作目录入口门禁，不能在调用前猜测用户是否拥有某项钉钉业务权限。
 - 多探针页面必须按连接与 Session 上下文原子发布业务状态；`null` 只表示结果尚不可用，不能在探针结算前直接解释为未登录终态。
+- OpenClaw 官方 `tools.effective` 允许启动阶段读取，但 UI 查询只能投影已预热的核心 Session 工具目录，不能为权限预检创建 MCP 运行时。JunQi 因此预热工具投影和 DWS 身份，不后台遍历调用业务工具。
+- DWS 最新公开 npm `1.0.59` 仍没有账号级全业务权限清单；`dws pat chmod` 的行为授权计划也不等同于组织角色和数据权限，目录只能保留“实际调用结果确认”的真实边界。
 
 ## 核心文件
 
@@ -57,6 +63,7 @@
 - `src/pages/ChatView.tsx`
 - `src-tauri/src/commands/runtime_identity.rs`
 - `src/business-applications/dwsProfileSelection.ts`
+- `src/business-applications/dingtalkRuntimeIdentityCoordinator.ts`
 - `src/business-applications/dingtalkTools.ts`
 - `src/components/BusinessApplications/DingTalkRuntimeIdentity.tsx`
 - `src/components/BusinessApplications/DingTalkReadinessPanel.tsx`
@@ -64,6 +71,8 @@
 - `src/components/BusinessApplications/DingTalkToolDetail.tsx`
 - `src/components/BusinessApplications/DingTalkToolTable.tsx`
 - `src/pages/AgentHub/AgentHubOfficePanel.tsx`
+- `src/runtime/useDingTalkBusinessPrewarm.ts`
+- `src/stores/dingTalkRuntimeIdentityStore.ts`
 
 ## 测试与验证
 
@@ -84,6 +93,11 @@
 - DWS Profile 与协作办公室定向测试 16 项通过，覆盖单账号不可重复切换、其他账号可切换、三类配置工位和统一协作配置入口。
 - 本轮追加改动后的 `pnpm lint` 通过：模块边界扫描 933 个生产文件，四处版本一致，TypeScript 类型检查无错误。
 - DWS Profile 原子发布定向测试 20 项通过，覆盖探针未结算保持加载、加载态不渲染账号无操作终态、结算后未登录空态和 `active` Profile 目录；追加改动后的 `pnpm lint` 通过，模块边界扫描 934 个生产文件，四处版本一致，TypeScript 类型检查无错误；`pnpm build` 通过，协作插件和钉钉插件包契约有效。
+- 本轮预热与目录语义定向回归 24 项通过，覆盖同修订单飞、工具修订变化后重新核验、上下文切换后迟到结果丢弃、失效上下文拒绝发布、集中权限边界和 Session 明确拒绝状态。
+- 本轮 `pnpm lint` 通过：模块边界扫描 937 个生产文件，四处版本一致，TypeScript 类型检查无错误。
+- 本轮完整 `pnpm test` 通过：前端与源码测试 2891 项、脚本测试 238 项均无失败。
+- 本轮 `pnpm build` 通过：协作与钉钉插件包契约有效，Vite 转换 9315 个模块。
+- 本轮 `git diff --check` 通过。
 
 ## 已知问题与未验证边界
 
@@ -100,6 +114,8 @@
 - 新 Profile 下拉尚未在真实 Tauri WebView 中完成亮色、暗色、窄栏、键盘方向键、Escape 关闭和焦点返回验收。
 - DWS Profile 原子发布修复已进入最新本地 DMG，但尚未在真实 Tauri WebView 连续抓帧验证加载态到目录的过渡。
 - 尚未使用真实无审批权限与有审批权限的两个 DWS Profile 分别执行同一工具；自动化只证明展示不会伪报已授权，不证明真实钉钉 RBAC 结果。
+- 连接级预热尚未在真实 Gateway 冷启动、重连、切换 Session 和进入业务页的连续抓帧中验证；亮色、暗色、窄窗口和键盘焦点也未完成本轮真实 WebView 验收。
+- 本轮只完成生产前端构建，尚未重新生成包含预热修复的 Tauri 安装包。
 - 工作树原有未跟踪目录 `.pnpm-store/` 和 `outputs/` 不属于本任务，已保持不动。
 
 ## 失败方案
@@ -114,13 +130,14 @@
 - 首次定向测试命令未加载仓库 `test-setup.ts`，导致 CSS Module 和 i18n 测试环境错误；改用项目正式测试启动参数后，相关 16 项测试通过。
 - 首次直接对整个钉钉详情面板做 SSR 测试时遇到共享 Button 的 CSS Module 导入限制；随后把 Profile 选择器拆为独立交互组件。Radix 为无障碍表单保留隐藏原生 select，回归测试改为验证可见的 combobox 按钮和无障碍名称，不再把隐藏节点误判为系统原生菜单。
 - 两次组合补丁因长距离上下文不匹配被 `apply_patch` 原子拒绝，均未产生部分写入；随后按相邻语义块拆分并完成修改，细节已记录在 `.learnings/ERRORS.md`。
+- 本轮验证记录与学习日志的组合补丁因文档段落位置判断错误被 `apply_patch` 原子拒绝，没有产生部分写入；随后按文件和相邻段落拆分补丁，并把误放在“未验证边界”下的既有验证结果移回“验证”。
 
 ## 下一步顺序
 
-1. 安装并启动最新本地 DMG，验证 DWS 添加第二账号、切换当前账号和单账号退出。
-2. 从协作办公室打开配置对话框，验证协调 Agent 与允许列表保存后工位分区随权威 capability 刷新。
-3. 在钉钉接入页重新连接本机官方服务，核验运行时身份不再显示外部或远程，同时确认远程 Gateway 仍保持不可修改语义。
-4. 完成亮色、暗色、窄窗口、键盘和长内容视觉验收，再决定提交、版本号、标签与 Release。
-5. 对聊天输入做真机性能基线，随后将草稿保留在输入组件局部状态、按会话边界同步，并把 `App`、`ChatTabs`、`MessageInput` 等全 Store 订阅改为精确 selector；高度测量合并到每帧一次后补充中文 IME 回归测试。
-6. 将钉钉工具 schema 摘要替换为就地参数表单，按 DWS 返回的 `type`、`required` 和属性名生成输入控件；保留高级 JSON 作为同一草稿的结构化编辑视图，并为 `start`、`end` 提供 ISO-8601 时间输入与明确时区。
-7. 安装最新本地 DMG，在真实 Tauri WebView 连续验收 Profile 探针加载到操作目录的过渡，并覆盖亮色、暗色、窄窗口和键盘焦点。
+1. 在真实 Tauri WebView 连续抓帧验证 Gateway 冷启动和重连后预热完成，再进入钉钉业务页时直接复用共享快照；同时覆盖切换 Session、断线和探针失败。
+2. 完成钉钉工具目录的亮色、暗色、窄窗口、键盘焦点和滚动视觉验收，确认集中边界提示与现有主题一致。
+3. 根据用户指令再提交或重新生成 Tauri 安装包；生产前端构建已通过，但当前既有 DMG 不包含本轮预热修复。
+4. 安装并启动后验证 DWS 添加第二账号、切换当前账号和单账号退出。
+5. 从协作办公室打开配置对话框，验证协调 Agent 与允许列表保存后工位分区随权威 capability 刷新。
+6. 对聊天输入做真机性能基线，随后将草稿保留在输入组件局部状态、按会话边界同步，并把 `App`、`ChatTabs`、`MessageInput` 等全 Store 订阅改为精确 selector；高度测量合并到每帧一次后补充中文 IME 回归测试。
+7. 将钉钉工具 schema 摘要替换为就地参数表单，按 DWS 返回的 `type`、`required` 和属性名生成输入控件；保留高级 JSON 作为同一草稿的结构化编辑视图，并为 `start`、`end` 提供 ISO-8601 时间输入与明确时区。

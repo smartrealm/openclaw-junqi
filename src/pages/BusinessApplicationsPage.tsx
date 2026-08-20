@@ -33,14 +33,12 @@ import {
   isDingTalkProfileAuthenticated,
   parseDingTalkBusinessEvidence,
   parseDingTalkToolSchemaOutput,
-  parseDingTalkRuntimeOutput,
   parseProfileReference,
   parseToolArguments,
   resolveDingTalkCatalogAvailability,
   type DingTalkDomain,
   type DingTalkEffectiveTool,
   type DingTalkToolSchemaProjection,
-  type DingTalkRuntimeIdentityProjection,
 } from '@/business-applications/dingtalkTools';
 import { dingtalkPluginInstallBlocker } from '@/business-applications/dingtalkPluginInstall';
 import { resolveDwsExecutionProfile } from '@/business-applications/dwsProfileSelection';
@@ -62,12 +60,17 @@ import {
 import { useBusinessActivityStore } from '@/business-applications/activityStore';
 import { parseBusinessApplicationsView } from '@/business-applications/businessApplicationsView';
 import {
-  ensureToolsEffectiveFresh,
   invokeOpenClawTool,
   refreshAll,
+  refreshToolsEffective,
   useGatewayDataStore,
 } from '@/stores/gatewayDataStore';
 import { useChatStore } from '@/stores/chatStore';
+import {
+  publishDingTalkRuntimeIdentityResult,
+  refreshDingTalkRuntimeIdentitySnapshot,
+  useDingTalkRuntimeIdentitySnapshot,
+} from '@/stores/dingTalkRuntimeIdentityStore';
 import {
   cancelDwsOperation,
   getDingTalkPluginStatus,
@@ -89,13 +92,6 @@ import { useDingTalkApprovalTrace } from './businessApplications/useDingTalkAppr
 
 type DomainFilter = 'all' | DingTalkDomain;
 type EffectFilter = 'all' | 'read' | 'write';
-
-type DingTalkRuntimeIdentitySnapshot = {
-  readonly contextKey: string;
-  readonly phase: 'loading' | 'settled';
-  readonly runtime: DingTalkRuntimeIdentityProjection | null;
-  readonly error: string | null;
-};
 
 const DOMAIN_FILTERS: readonly DomainFilter[] = [
   'all',
@@ -324,10 +320,7 @@ export function BusinessApplicationsPage() {
   const dwsFinalizedOperationIds = useRef(new Set<string>());
   const [dwsCompletionRevision, setDwsCompletionRevision] = useState(0);
   const dingtalkRefreshInFlight = useRef(false);
-  const runtimeIdentityRequestRevision = useRef(0);
-  const runtimeIdentityContextKeyRef = useRef(runtimeIdentityContextKey);
-  runtimeIdentityContextKeyRef.current = runtimeIdentityContextKey;
-  const [runtimeIdentitySnapshot, setRuntimeIdentitySnapshot] = useState<DingTalkRuntimeIdentitySnapshot | null>(null);
+  const runtimeIdentitySnapshot = useDingTalkRuntimeIdentitySnapshot();
 
   const currentRuntimeIdentitySnapshot = runtimeIdentityContextKey
     && runtimeIdentitySnapshot?.contextKey === runtimeIdentityContextKey
@@ -410,54 +403,17 @@ export function BusinessApplicationsPage() {
     const currentSessionExists = useGatewayDataStore.getState().sessions
       .some((session) => session.key === activeSessionKey);
     if (!currentSessionExists || !activeSessionKey) return;
-    await ensureToolsEffectiveFresh(activeSessionKey, 0);
-  }, [activeSessionKey]);
+    await refreshToolsEffective(activeSessionKey, activeSession?.agentId);
+  }, [activeSession?.agentId, activeSessionKey]);
 
-  const refreshRuntimeIdentity = useCallback(async (useFreshToolSnapshot = false) => {
-    const requestRevision = ++runtimeIdentityRequestRevision.current;
-    const requestContextKey = runtimeIdentityContextKey;
-    const currentStore = useGatewayDataStore.getState();
-    const currentSessionExists = currentStore.sessions.some((session) => session.key === activeSessionKey);
-    const currentRuntimeToolAvailable = useFreshToolSnapshot
-      ? hasAvailableDingTalkRuntimeTool(currentStore.toolsEffective[activeSessionKey]?.groups)
-      : runtimeToolAvailable;
-    if (!requestContextKey || !currentSessionExists || !currentRuntimeToolAvailable) {
-      setRuntimeIdentitySnapshot(null);
-      return;
-    }
-    setRuntimeIdentitySnapshot((current) => current?.contextKey === requestContextKey
-      ? { ...current, phase: 'loading', error: null }
-      : { contextKey: requestContextKey, phase: 'loading', runtime: null, error: null });
-    try {
-      const result = await invokeOpenClawTool({
-        name: DINGTALK_RUNTIME_STATUS_TOOL,
-        sessionKey: activeSessionKey,
-        args: {},
-      });
-      if (!result.ok) throw new Error(result.error?.message ?? 'DWS 身份读取失败');
-      if (
-        runtimeIdentityRequestRevision.current !== requestRevision
-        || runtimeIdentityContextKeyRef.current !== requestContextKey
-      ) return;
-      setRuntimeIdentitySnapshot({
-        contextKey: requestContextKey,
-        phase: 'settled',
-        runtime: parseDingTalkRuntimeOutput(result),
-        error: null,
-      });
-    } catch (error) {
-      if (
-        runtimeIdentityRequestRevision.current !== requestRevision
-        || runtimeIdentityContextKeyRef.current !== requestContextKey
-      ) return;
-      setRuntimeIdentitySnapshot({
-        contextKey: requestContextKey,
-        phase: 'settled',
-        runtime: null,
-        error: errorMessage(error),
-      });
-    }
-  }, [activeSessionKey, runtimeIdentityContextKey, runtimeToolAvailable]);
+  const refreshRuntimeIdentity = useCallback(async () => {
+    if (!identity?.connectionId || !activeSessionKey) return false;
+    return refreshDingTalkRuntimeIdentitySnapshot(
+      identity.connectionId,
+      activeSessionKey,
+      true,
+    );
+  }, [activeSessionKey, identity?.connectionId]);
 
   const refreshPluginStatus = useCallback(async () => {
     const currentIdentity = getCurrentRuntimeIdentity();
@@ -484,7 +440,7 @@ export function BusinessApplicationsPage() {
     await refreshTools();
     await Promise.all([
       refreshPluginStatus(),
-      refreshRuntimeIdentity(true),
+      refreshRuntimeIdentity(),
     ]);
   }, [refreshPluginStatus, refreshRuntimeIdentity, refreshTools]);
 
@@ -582,14 +538,6 @@ export function BusinessApplicationsPage() {
         : current);
     }
   }, [refreshDingTalkState, restartAndRefreshDingTalkGateway, t]);
-
-  useEffect(() => {
-    void refreshTools();
-  }, [refreshTools]);
-
-  useEffect(() => {
-    void refreshRuntimeIdentity();
-  }, [refreshRuntimeIdentity]);
 
   useEffect(() => {
     void refreshPluginStatus();
@@ -787,14 +735,12 @@ export function BusinessApplicationsPage() {
         ...(dwsEvidence.recoveryEventId ? { recoveryEventId: dwsEvidence.recoveryEventId } : {}),
       };
       setInvocationOutput(result);
-      if (runtimeTool && result.ok && runtimeIdentityContextKey) {
-        runtimeIdentityRequestRevision.current += 1;
-        setRuntimeIdentitySnapshot({
-          contextKey: runtimeIdentityContextKey,
-          phase: 'settled',
-          runtime: parseDingTalkRuntimeOutput(result),
-          error: null,
-        });
+      if (runtimeTool && result.ok && identity?.connectionId) {
+        publishDingTalkRuntimeIdentityResult(
+          identity.connectionId,
+          activeSessionKey,
+          result,
+        );
       }
       if (result.requiresApproval) {
         settleAttempt(attemptId, {
@@ -828,7 +774,7 @@ export function BusinessApplicationsPage() {
     } finally {
       setInvoking(false);
     }
-  }, [activeSession, activeSessionKey, beginAttempt, disabledReason, effective?.agentId, executionProfile, identity, parsedArguments.value, runtimeIdentityContextKey, selectedTool, settleAttempt]);
+  }, [activeSession, activeSessionKey, beginAttempt, disabledReason, effective?.agentId, executionProfile, identity, parsedArguments.value, selectedTool, settleAttempt]);
 
   const invokeSelected = useCallback(() => {
     if (!selectedTool) return;

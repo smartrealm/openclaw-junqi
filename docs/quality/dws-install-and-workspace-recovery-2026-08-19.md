@@ -6,6 +6,8 @@
 
 - [DWS 官方 README](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/blob/main/README.md) 将 `npm install -g dingtalk-workspace-cli` 列为 Node.js/npm 安装方式；登录仍由官方 `dws auth login` 或 headless 环境的 `dws auth login --device` 承担。
 - 2026-08-20 核对 DWS 官方主线提交 `62d72ad84cb667379c02132148086bd984ea69c9`：`profile list` 的稳定身份是 `corpId:userId`，状态来自真实 token；可选 `authorizedDomains` 只是 Profile 元数据，主线没有把它填充为审批、考勤等业务权限清单。当前安装的 `v1.0.58` 真实输出同样不包含该字段。
+- 2026-08-20 再次核对 OpenClaw 官方主线提交 `d5abaf4ab3a8d4741a2ec463eb4d3278102fc6f7`：`tools.effective` 是 `operator.read` 方法并允许启动阶段读取；对应 Gateway handler 明确要求 UI 查询只投影已预热的核心 Session 工具目录，不创建 MCP 运行时或额外连接。
+- DWS 最新公开 npm `1.0.59` 的 `profile list`、`auth status` 与工具 schema 仍未提供覆盖审批、考勤、日历等业务域的账号权限清单。`dws pat chmod` 的批量计划只表达 PAT 行为授权，不等同于组织角色、数据范围或具体业务权限。
 - JunQi 只在已核验的所选 Native 或 Docker OpenClaw 运行时中执行该安装命令，安装后以 DWS 的结构化 JSON 命令核验，不读取或展示凭据。
 - Gateway 重启只通过 `gatewayLifecycle.restart` 协调；工作区入口以当前连接的 OpenClaw 会话快照为放行事实。
 
@@ -29,6 +31,8 @@ Gateway 重启后的数据轮询还存在独立缺陷：`sessions.list` 返回�
 - `BUG-DWS-06`，低优先级：DWS 用户资料未返回 HTTPS 头像时，界面用姓名首字母生成占位头像，与“不会显示猜测头像”的产品文案不一致。
 - `BUG-DWS-07`，中优先级：钉钉业务审计读取失败时，Hook 丢弃错误类别并统一显示“账本不可用”，没有说明当前连接缺少 `operator.read`、Gateway 尚未支持 `audit.activity.list`、响应契约不兼容或普通请求失败的差异。
 - `BUG-DWS-08`，高优先级：`tools.effective` 与 DWS Profile 身份由两条异步链路读取。工具目录先返回时，页面把尚未结算的 `runtimeIdentity === null` 当作未登录终态，先发布“当前账号没有可展示的操作”，随后又切换为完整目录；DWS 当前 Profile 返回后，本地选择状态还会晚一个 React effect，造成第二个短暂错误空态。
+- `BUG-DWS-09`，高优先级：即使错误空态已经收敛，`tools.effective` 与 DWS Profile 仍在业务页挂载后才开始读取。用户进入页面时需要等待完整探测，连接和当前 Session 已经就绪的空闲阶段没有复用。
+- `BUG-DWS-10`，中优先级：工具表格逐行显示“账号权限：调用时核验”和“Session：已暴露”，容易把插件操作目录理解为已授予账号的权限清单，并为每行重复相同边界信息。
 
 `BUG-DWS-03` 的恢复不能自动执行。DWS 官方文档说明 `auth reset` 会清除本机全部登录配置；JunQi 只能在展示影响范围并取得二次确认后调用官方命令。若旧登录态仍可读取，应优先按官方迁移流程处理，不得用重置代替迁移。
 
@@ -51,9 +55,11 @@ Gateway 重启后的数据轮询还存在独立缺陷：`sessions.list` 返回�
 - 顶栏紧凑身份只保留一个 DWS 头像和一组两级文本；姓名前的重复用户图标已删除，组织与姓名相同时次级文本回落到精确 Profile。
 - 插件操作错误与授权结果从顶栏移入共享接入诊断面板，长文本在业务上下文内完整换行，顶栏只保留身份和刷新操作。
 - Profile 选择使用项目共享的 Radix Select 与 `aegis-*` 主题 token，不再调用操作系统原生下拉菜单；当前账号继续由 DWS `profile list` 的 `isCurrent` 标识，不由客户端推断。
-- `tools.effective` 只证明插件操作通过当前 OpenClaw Session 工具策略，不证明当前 DWS Profile 拥有相应钉钉审批、考勤或通讯录业务权限。工作台只有在所选 Profile 的官方状态为 `active` 时才展示“插件操作目录”，不将目录称为当前账号已拥有的能力；“账号权限”与“Session”分列，账号权限统一保留“调用时核验”，不得以绿色状态、`authorizedDomains` 或工具注册事实冒充已授权。
+- `tools.effective` 只证明插件操作通过当前 OpenClaw Session 工具策略，不证明当前 DWS Profile 拥有相应钉钉审批、考勤或通讯录业务权限。工作台只有在所选 Profile 的官方状态为 `active` 时才展示“插件操作目录”，并在目录顶部集中说明账号业务权限由每次实际调用的钉钉结果确认；普通行不重复“调用时核验”或“已暴露”，只有 OpenClaw 明确拒绝的操作才显示 Session 拒绝状态。
 - Profile 失效、被撤销、不可用或尚未核验时，业务操作目录为空；运行时探针仍由接入页自动执行，不需要把运行时工具暴露成用户业务能力。
 - 工具目录和 DWS Profile 必须按当前 Gateway `connectionId` 与 OpenClaw `sessionKey` 原子发布。Profile 探针未结算时只显示稳定加载态，读取失败显示可重试错误；只有当前上下文的结构化结果已结算后才能发布未登录空态。切换连接或 Session 后丢弃旧请求的迟到结果，官方当前 Profile 在同一渲染中直接作为执行身份，不等待本地选择状态的后续 effect。
+- 当前 Gateway 身份和 Session 就绪后，由应用根运行时预热 `tools.effective`。只有当前工具投影明确包含且未拒绝钉钉运行时工具时，才调用该工具核验 DWS Profile；业务页只消费共享快照。
+- DWS 身份快照绑定 `connectionId`、`sessionKey` 与工具投影修订。同一上下文和修订复用单个在途请求；连接、Session 或修订变化后，旧请求的迟到结果不能发布。
 
 ## 验证
 
@@ -74,6 +80,13 @@ Gateway 重启后的数据轮询还存在独立缺陷：`sessions.list` 返回�
 - `cargo check --lib` 和 `cargo test --lib` 通过：643 项通过、1 项会修改当前用户 Keychain 的既有测试按设计忽略。
 - `pnpm build` 通过，协作插件、钉钉插件、TypeScript 与 Vite 生产构建完成。
 - Apple Silicon 本地未签名应用与 DMG 已重新生成；应用二进制为 Mach-O arm64，版本 3.1.2。`hdiutil verify` 通过，DMG SHA-256 为 `27d1d2e600a25a6cf6b1041c9970fbc39b17793ed1471e4a2a796b125cdd9593`。
+- DWS Profile 原子发布回归测试通过：当前 Session 已有插件工具但 Profile 探针尚未结算时保持加载态，表格不会渲染账号无操作的终态文案；探针结算后才分别进入 `active` 目录或未登录空态。定向测试共 20 项通过，`pnpm lint` 通过，模块边界扫描 934 个生产文件且 TypeScript 类型检查无错误；`pnpm build` 通过，协作插件、钉钉插件、TypeScript 与 Vite 生产构建完成。
+- 包含原子发布修复的 Apple Silicon 本地 DMG 已生成，应用版本与构建版本均为 `3.2.1`，二进制为 Mach-O arm64。`hdiutil verify` 通过，DMG SHA-256 为 `166af3656fb460a1fca638fdf1609f6d6977583ff7239bf6fae30954dd854ae1`；应用仅为 ad-hoc 签名，未绑定开发团队且未公证。
+- DWS 身份预热协调器回归测试通过，覆盖同修订单飞、工具修订变化后重新核验、连接或 Session 切换后丢弃迟到结果，以及失效上下文拒绝发布。
+- 工具目录回归测试确认账号权限边界只集中说明一次，普通操作不再显示“已暴露”，只有 Session 明确拒绝的操作显示拒绝状态。
+- 本轮定向回归 24 项通过；`pnpm lint` 通过，模块边界扫描 937 个生产文件，四处版本一致且 TypeScript 类型检查无错误。
+- 本轮完整 `pnpm test` 通过：前端与源码测试 2891 项、脚本测试 238 项均无失败。
+- 本轮 `pnpm build` 通过，协作插件与钉钉插件包契约有效，Vite 生产构建转换 9315 个模块。
 
 ## 未验证边界
 
@@ -85,5 +98,4 @@ Gateway 重启后的数据轮询还存在独立缺陷：`sessions.list` 返回�
 - 未对真实第二个 DWS 账号执行切换或单账号退出；自动化证明官方命令参数、身份格式、二次确认和终态核验，不证明当前用户的真实账号状态已改变。
 - 新增 Profile 账户区复用了现有 Button、Dialog 和 `aegis-*` 主题 token，但尚未在亮色、暗色、窄窗口及键盘焦点下完成连续真机视觉验收。
 - 主题化 Profile 下拉和 Session 工具语义已通过定向 SSR 契约测试与 TypeScript、模块边界检查；下拉展开、方向键选择、Escape 关闭和焦点返回尚待真实 WebView 连续验收。
-- DWS Profile 原子发布回归测试通过：当前 Session 已有插件工具但 Profile 探针尚未结算时保持加载态，表格不会渲染账号无操作的终态文案；探针结算后才分别进入 `active` 目录或未登录空态。定向测试共 20 项通过，`pnpm lint` 通过，模块边界扫描 934 个生产文件且 TypeScript 类型检查无错误；`pnpm build` 通过，协作插件、钉钉插件、TypeScript 与 Vite 生产构建完成。
-- 包含原子发布修复的 Apple Silicon 本地 DMG 已生成，应用版本与构建版本均为 `3.2.1`，二进制为 Mach-O arm64。`hdiutil verify` 通过，DMG SHA-256 为 `166af3656fb460a1fca638fdf1609f6d6977583ff7239bf6fae30954dd854ae1`；应用仅为 ad-hoc 签名，未绑定开发团队且未公证。
+- 连接级预热尚未在真实 Gateway 冷启动、重连、切换 Session 和进入业务页的连续抓帧中验证；自动化只证明请求复用、失效围栏和展示契约。
