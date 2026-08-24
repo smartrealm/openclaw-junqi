@@ -4,10 +4,19 @@
 
 ## 当前目标
 
-修复多 Agent 协作服务启动诊断、DWS 钉钉提交入口与工作台异步状态、业务审计互斥状态、工作台本地化边界、Session 模型选择器滚动边界，以及目标运行环境的 Node.js 复用与安装诊断边界；并收紧代理证据来源，禁止参考代理所在本地环境。
+已合并本地 `main` 到 `Blues-Code/Jarvis`，完成安装目标层级契约收敛；已按官方 Codex 源码对照完成可由 OpenClaw 正式协议支撑的聊天交互增强。
 
 ## 已完成内容
 
+- 已创建合并提交 `2ba31791`，将本地 `main` 的 5 个领先于 `origin/main` 的提交纳入当前分支，无冲突。
+- 合并后安装目标类型已收敛为 `custom` 与 `existing`；同步删除旧 `user` 与 `userMissingPath` 的不可达界面、辅助函数回退和测试输入，避免 TypeScript 契约漂移。
+- 已将官方 `openai/codex` 当前 `main` 的浅克隆放入 `gui/`，固定审阅提交为 `068c49f`；该目录是参考源码，未接入 JunQi 构建。
+- 已对照 Codex 的运行历史、待处理审批、会话分支、运行时选择、多智能体工作区与中断转向模式。JunQi 已有 `ExecutionProcessGroup`、`SessionBranchesControl`、`SessionRuntimeControl`、`AgentOfficeView` 与正式 `sessions.steer` 路径；不复制 Codex TUI，也不新建平行会话、任务或审批语义。
+- 聊天 Composer 上方新增待处理 OpenClaw 审批提示条。它只复用既有审批 Store 的官方列表和实时订阅，按当前会话与其他会话汇总未决审批，并跳转至既有活动中心审批面板处理。
+- 持久化进度卡新增 OpenClaw 来源和 `updatedAt` 元信息；修订、步骤、时间与清空继续只以官方进度卡为准，无法格式化的上游时间不产生本地替代值。
+- 修复合并后钉钉插件打包阻断：当前工具规格只有 `read` 与 `write`，副作用标记不再比较不存在的 `destructive` 分支；同时补回中止执行测试遗漏的 `access` 导入。钉钉插件包与前端 metadata 已由正式构建重新生成。
+- 修复本地 Tauri 打包阻断：Rust 2021 crate 将 Rust 2024 let-chain 改为等价嵌套判断，并为 Node 路径借用返回显式绑定 Node 生命周期；同一安装链路的既有格式差异已由 `cargo fmt` 收敛。
+- 已在本机生成未签名 macOS ARM64 DMG：`src-tauri/target/release/bundle/dmg/JunQi Desktop_3.2.1_aarch64.dmg`，大小 8.0 MB，SHA-256 为 `7dee90f4714e96bc90f105cc4ce2f6154d999d7d3721431a453cb548ce987509`，`hdiutil verify` 通过。
 - 已更新并核对 OpenClaw 官方主线提交 `95b69efcc161548b364ff681b2f46c66742930cb` 的 `engines.node`。当前范围为 `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0`，其中无上限的 `>=25.9.0` 接受 `v26.1.0`。实际安装继续按当前目标 npm 包返回的准确范围判定，不把主线范围或开发机版本写死为目标契约。
 - Native Node.js 判断只使用当前目标机器、当前所选 Runtime 的实际 Node 路径、版本和同发行版自带 npm；开发机路径、版本和用户环境不参与判断。显式配置的 Node 路径保持独占，未配置时按目标平台候选探测。
 - 安装页现在区分“没有满足范围的 Node.js”与“已检测 Node.js 但版本不兼容”。后者显示实际版本和当前 OpenClaw 所需范围；OpenClaw 安装阶段的 Rust 进度事件也传递同一结构化参数。
@@ -98,6 +107,12 @@
 - `src/stores/dingTalkRuntimeIdentityStore.ts`
 - `src/business-applications/dingtalkTools.ts`
 - `src/components/Chat/session-runtime/SessionRuntimeControl.tsx`
+- `src/components/Chat/ChatPendingApprovalsStrip.tsx`
+- `src/components/Chat/ProgressCard.tsx`
+- `packages/junqi-dingtalk/src/index.ts`
+- `packages/junqi-dingtalk/src/dws-runner.test.ts`
+- `src-tauri/resources/dingtalk/junqi-dingtalk.tgz`
+- `src/generated/dingtalkPluginBundle.generated.json`
 - `src/components/Chat/ChatMarkdownRenderer.tsx`
 - `src/components/FileExplorer/MarkdownPreview.tsx`
 - `src-tauri/src/commands/setup/node.rs`
@@ -120,6 +135,10 @@
 
 ## 测试与验证
 
+- 本轮 `pnpm lint` 通过：模块边界、版本一致性和 TypeScript 类型检查均通过；安装预检定向测试 5 项通过；`git diff --check` 通过。
+- 本轮 Codex 对照交互定向回归 4 项通过，覆盖审批跨会话汇总与进度卡来源、更新时间；`pnpm lint`、`git diff --check` 和本次完整修改文件的 Emoji 扫描通过。
+- 本轮完整 `pnpm test` 通过。构建前的钉钉插件夹具与工具规格错误修复后，钉钉插件 23 项测试及 TypeScript 构建通过；完整 `pnpm build` 通过并重新生成协作、钉钉插件资源，随后 `pnpm lint` 与 `git diff --check` 再次通过。
+- 本轮 `cargo fmt -- --check`、`cargo check --lib` 与 `cargo test --lib` 通过，Rust 库测试为 658 项通过、1 项忽略。`pnpm tauri build --bundles dmg --no-sign` 成功，并由 `hdiutil verify` 验证生成的 DMG。
 - 本轮目标运行环境 Node.js 展示、安装闭包、安装引导与进度参数定向回归 122 项通过；三语 JSON 解析通过，修改文件与完整修改文件的 Emoji 扫描通过。
 - 本轮 `cargo fmt -- --check`、`cargo check --lib`、`pnpm lint` 和 `git diff --check` 通过。`pnpm lint` 同时覆盖模块边界、版本一致性和 TypeScript 类型检查。
 - 协作插件完整测试通过。
@@ -149,6 +168,8 @@
 
 ## 已知问题与未验证边界
 
+- 本轮未运行完整 `pnpm test`、Rust 测试或生产构建；未在真实 Gateway 或 Tauri WebView 验证待处理审批提示条与进度卡在亮暗主题、窄窗口、键盘焦点和减少动态效果下的完整序列。
+- 当前 DMG 使用 `--no-sign` 本地打包，未进行 Apple Developer ID 签名、公证、updater 签名或目标机器安装验收；不能作为正式发布制品。
 - 尚未在 Windows、macOS 与 Linux 的干净目标机器上分别验证：已有兼容 Node.js 复用、已存在不兼容 Node.js 的三语提示、版本管理器 PATH 选择、系统安装器权限和安装前二次复核。当前自动化与本机静态检查不替代这些目标平台验收。
 - 尚未在真实 Tauri WebView 中连续验证 schema 不兼容提示、精确回滚、Gateway 重连和回滚后旧插件恢复。
 - 亮色、暗色、护眼主题、窄窗口、键盘焦点和减少动态效果尚未完成真机视觉验收。
@@ -179,7 +200,8 @@
 
 ## 下一步顺序
 
-1. 在 Windows、macOS 和 Linux 的目标机器上分别验证已有兼容 Node.js 的无下载复用、已存在不兼容 Node.js 的版本范围提示、系统安装器权限和安装前二次复核。
+1. 在真实 Gateway 和 Tauri WebView 验证审批提示条、进度卡元信息、执行过程与活动中心审批面板的连续状态；覆盖亮暗主题、窄窗口、键盘焦点和减少动态效果。
+2. 在 Windows、macOS 和 Linux 的目标机器上分别验证已有兼容 Node.js 的无下载复用、已存在不兼容 Node.js 的版本范围提示、系统安装器权限和安装前二次复核。
 2. 在重新构建的真实桌面应用中点击 DWS 返回的请假提交入口，确认系统收到 Opener 打开请求；同时验证未安装客户端和无默认协议处理器时显示本地化错误。
 3. 在真实 Gateway 上验证业务审计读取失败、成功空结果、已有官方记录和本窗口投影四种互斥状态，确认刷新失败不会清空已确认记录。
 4. 用包含大量模型的真实 Session 验证模型列滚动到底、搜索、参数区独立滚动和底部操作可达，并覆盖三种主题与窄窗口。

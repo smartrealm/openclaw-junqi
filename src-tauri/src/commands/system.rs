@@ -919,10 +919,10 @@ pub(crate) async fn check_npm_for_node(node: &NodeStatus) -> NpmStatus {
 /// 仅在用户显式选择 OpenClaw npm 安装目录时应用其缓存目录。
 /// 未选择 npm 安装方式时，缓存配置不能改变系统 npm 的行为。
 pub(crate) fn apply_configured_npm_cache(command: &mut tokio::process::Command) {
-    if paths::configured_npm_prefix().is_some()
-        && let Some(cache) = paths::configured_npm_cache_dir()
-    {
-        command.env("npm_config_cache", cache);
+    if paths::configured_npm_prefix().is_some() {
+        if let Some(cache) = paths::configured_npm_cache_dir() {
+            command.env("npm_config_cache", cache);
+        }
     }
 }
 

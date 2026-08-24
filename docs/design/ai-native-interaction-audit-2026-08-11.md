@@ -170,6 +170,25 @@
   `SessionMutationHandoffPanel`，并明确允许编辑或放弃的范围只限这些本地消息。重试消息使用 `held`
   状态，不再复用 Gateway `queued` 状态；Gateway 已确认接收的 `queued` 状态仍只说明等待其处理，不对
   当前会话的队列模式、顺序或完成时间作客户端推断。
+- 2026-08-24 对官方 Codex 源码完成对照后，确认 JunQi 已有与其会话、运行、工具详情、分支、运行时
+  选择、协作办公室和原生转向发送相对应的真实 OpenClaw 投影；本轮不复制 Codex 的 TUI 或创建平行
+  任务模型。新增聊天输入区上方的待处理审批提示条，复用既有审批 Store 与 Gateway 审批列表、实时订阅
+  路径，只按当前会话和其他会话汇总未决审批，并跳转到既有审批面板决策。它不会在聊天页本地批准或推断
+  审批结果。
+- 同批进度卡在保留 `progressCard.get` 和 `progressCard.changed` 读取边界的前提下，增加 OpenClaw
+  来源与 Gateway 返回的 `updatedAt` 展示。修订、步骤和更新时间都仍是上游卡片字段；无法格式化的时间
+  不会被替换为本地时间。现有 `ExecutionProcessGroup` 继续作为工具、思考与错误的会话内摘要，不新增
+  第二条执行时间线。
+
+## Codex 对照结论（2026-08-24）
+
+| Codex 模式 | JunQi 对应实现 | 本轮处置 |
+| --- | --- | --- |
+| 运行中的历史单元、工具摘要与详情 | `ExecutionProcessGroup`、`ToolCallBubble`、`ChatResponseTracePanel` | 保持唯一执行投影，补齐进度卡来源与更新时间。 |
+| 跨线程待处理审批 | `OpenClawApprovalsPanel`、审批 Store | 在 Composer 上方增加跨会话未决审批提示条，决策仍在原生审批面板。 |
+| 线程分支、运行时选择和中断转向 | `SessionBranchesControl`、`SessionRuntimeControl`、`sessions.steer` 分发 | 已有正式 Gateway 边界，未增加本地 fork、队列或运行状态。 |
+| 多智能体工作区 | `AgentOfficeView` 与协作快照投影 | 已有只读办公室；不把配置席位表示为实时在线或执行状态。 |
+| 结构化追问 | 仅官方引导设置存在已核验的结构化问题 | 聊天协议无对应契约，本轮不实现。 |
 
 ## 审查依据
 

@@ -65,10 +65,10 @@ pub(super) async fn target_openclaw_install_target(
     })
 }
 
-fn node_path_for_target_metadata(
-    node: &crate::commands::system::NodeStatus,
+fn node_path_for_target_metadata<'a>(
+    node: &'a crate::commands::system::NodeStatus,
     npm: &crate::commands::system::NpmStatus,
-) -> Option<&Path> {
+) -> Option<&'a Path> {
     (node.available && npm.available)
         .then(|| node.path.as_deref().map(Path::new))
         .flatten()
@@ -982,11 +982,11 @@ async fn install_openclaw_impl_inner_scoped(
 
     // 完整 Node/npm 对存在时由 npm 读取用户配置；否则只读取公开元数据。
     // 两条路径都必须先取得目标包的 engines.node，之后才允许写入 Node.js。
-    let metadata_runtime = crate::commands::system::NodeRuntimeContract::resolve(
-        &NodeRuntimeRequirement::fallback(),
-    )
-    .await?;
-    let metadata_node = node_path_for_target_metadata(metadata_runtime.node(), metadata_runtime.npm());
+    let metadata_runtime =
+        crate::commands::system::NodeRuntimeContract::resolve(&NodeRuntimeRequirement::fallback())
+            .await?;
+    let metadata_node =
+        node_path_for_target_metadata(metadata_runtime.node(), metadata_runtime.npm());
     let target_resolution = OpenclawInstallTargetResolution::for_install(mode, relocation.as_ref());
     let target = target_openclaw_install_target(metadata_node, target_resolution).await?;
     let (compatible_node, _npm) =
@@ -1941,9 +1941,15 @@ mod tests {
             node_path_for_target_metadata(&node, &metadata_npm(true)),
             Some(Path::new("/target/node")),
         );
-        assert_eq!(node_path_for_target_metadata(&node, &metadata_npm(false)), None);
         assert_eq!(
-            node_path_for_target_metadata(&metadata_node(false, Some("/target/node")), &metadata_npm(true)),
+            node_path_for_target_metadata(&node, &metadata_npm(false)),
+            None
+        );
+        assert_eq!(
+            node_path_for_target_metadata(
+                &metadata_node(false, Some("/target/node")),
+                &metadata_npm(true)
+            ),
             None,
         );
     }

@@ -552,10 +552,6 @@ function installMethodLabel(source: string | null | undefined, target: InstallTa
   }
   if (!target) return t("setup.runtimeDetails.methodDetected", "检测到的本机安装");
   switch (target.tier) {
-    case "user":
-      return t("setup.runtimeDetails.methodUser", "npm 全局安装（用户 prefix）");
-    case "userMissingPath":
-      return t("setup.runtimeDetails.methodUserMissingPath", "npm 全局安装（未加入 PATH）");
     case "custom":
       return t("setup.runtimeDetails.methodCustom", "npm 全局安装（自定义 prefix）");
     case "existing":

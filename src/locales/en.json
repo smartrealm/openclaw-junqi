@@ -1678,7 +1678,16 @@
       "title": "Task progress",
       "progress": "Step {{current}}/{{total}}",
       "revision": "Revision {{revision}}",
+      "openClawSource": "OpenClaw",
+      "updatedAt": "Updated {{time}}",
       "noteOnly": "Progress update"
+    },
+    "pendingApprovals": {
+      "ariaLabel": "Pending OpenClaw approvals",
+      "activeSession": "{{count}} approval requires a decision in this session",
+      "otherSessions": "{{count}} approval requires a decision in another session",
+      "otherSessionsSuffix": "{{count}} in other sessions",
+      "open": "Review"
     },
     "trace": {
       "open": "Execution trace",
