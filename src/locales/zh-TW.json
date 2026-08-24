@@ -1645,7 +1645,16 @@
       "title": "任務進度",
       "progress": "第 {{current}}/{{total}} 步",
       "revision": "修訂 {{revision}}",
+      "openClawSource": "OpenClaw",
+      "updatedAt": "更新於 {{time}}",
       "noteOnly": "進度更新"
+    },
+    "pendingApprovals": {
+      "ariaLabel": "待處理的 OpenClaw 核准",
+      "activeSession": "此會話有 {{count}} 項核准需要你決定",
+      "otherSessions": "其他會話有 {{count}} 項核准需要你決定",
+      "otherSessionsSuffix": "其他會話還有 {{count}} 項",
+      "open": "查看核准"
     },
     "trace": {
       "open": "執行追溯",

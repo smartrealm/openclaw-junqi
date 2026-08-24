@@ -73,7 +73,7 @@ export function pickInstallTargetFromProgress(
   if (key === INSTALL_TARGET_KEYS.existing) {
     return { tier: "existing", path: params.path, version: params.version };
   }
-  return { tier: "user", path: params.path };
+  return null;
 }
 
 export const INITIAL_NATIVE_STEPS: StepState[] = [

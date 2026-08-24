@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { ChevronDown, ListChecks } from 'lucide-react';
+import { ChevronDown, Clock3, ListChecks } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import {
@@ -65,6 +65,15 @@ export function splitOpenClawProgressCardMarkdown(markdown: string): readonly Ma
   }
   if (cursor < markdown.length) parts.push({ kind: 'markdown', content: markdown.slice(cursor) });
   return parts;
+}
+
+export function formatOpenClawProgressCardUpdatedAt(updatedAt: number, language: string): string | null {
+  const date = new Date(updatedAt);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat(language, {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(date);
 }
 
 function ProgressCardMarkdown({ markdown }: { markdown: string }) {
@@ -134,7 +143,7 @@ function ProgressCardDetails({ card }: { card: OpenClawProgressCard }) {
 }
 
 export function ProgressCard({ card }: { card: OpenClawProgressCard }) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
   const regionId = useId();
   const [collapsed, setCollapsed] = useState(() => readCollapsedPreference(card.id));
   const currentStepIndex = currentOpenClawProgressCardStepIndex(card);
@@ -142,6 +151,7 @@ export function ProgressCard({ card }: { card: OpenClawProgressCard }) {
   const progress = currentStep
     ? t('chat.executionPlan.progress', { current: currentStepIndex + 1, total: card.steps.length })
     : t('chat.executionPlan.noteOnly');
+  const updatedAt = formatOpenClawProgressCardUpdatedAt(card.updatedAt, i18n.language);
 
   useEffect(() => {
     setCollapsed(readCollapsedPreference(card.id));
@@ -159,6 +169,8 @@ export function ProgressCard({ card }: { card: OpenClawProgressCard }) {
     <section
       data-progress-card="true"
       data-progress-card-revision={card.revision}
+      data-progress-card-source="openclaw"
+      data-progress-card-updated-at={card.updatedAt}
       className="flex w-full flex-col items-center"
       aria-label={t('chat.executionPlan.ariaLabel')}
       aria-live="polite"
@@ -170,8 +182,15 @@ export function ProgressCard({ card }: { card: OpenClawProgressCard }) {
       >
         <div className="flex min-h-10 items-center gap-2 border-b border-aegis-border px-3 py-2">
           <ListChecks size={15} className="shrink-0 text-aegis-primary" />
-          <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-aegis-text">
-            {t('chat.executionPlan.title')}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[12px] font-semibold text-aegis-text">
+              {t('chat.executionPlan.title')}
+            </span>
+            <span className="mt-0.5 flex items-center gap-1 text-[9px] text-aegis-text-dim">
+              <Clock3 size={11} aria-hidden="true" />
+              <span>{t('chat.executionPlan.openClawSource')}</span>
+              {updatedAt && <span>{t('chat.executionPlan.updatedAt', { time: updatedAt })}</span>}
+            </span>
           </span>
           <span className="shrink-0 text-[9px] text-aegis-text-dim">
             {t('chat.executionPlan.revision', { revision: card.revision })}

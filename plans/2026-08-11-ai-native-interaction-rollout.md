@@ -29,6 +29,12 @@ Composer 控件和原生决策区已收敛到轻量 Aegis 表面。快捷回复�
 与 Gateway 已接纳的消息队列明确分离；普通发送、Gateway 队列模式、Stop、工具调用、审批决策、任务
 取消和会话恢复协议均未改变。
 
+补充完成记录（2026-08-24）：依据官方 Codex 源码与 OpenClaw Gateway 正式协议完成对照。聊天输入区
+新增只读待处理审批提示条：连接时复用现有审批 Store 的官方列表与实时订阅，按当前会话和其他会话计数，
+只将用户带到既有审批决策页。持久化进度卡新增 OpenClaw 来源和官方 `updatedAt` 元信息。会话内工具、
+思考和错误仍只经既有 `ExecutionProcessGroup` 呈现；分支、运行时选择、协作办公室和 `sessions.steer`
+ 已分别由已有正式客户端实现，不新增重复界面或本地协议。聊天结构化追问缺少上游契约，保持未实现。
+
 ## 批次二：安装、Gateway 与渠道控制面
 
 范围：`SetupFlowPanels`、`SetupPage`、`setupStepTransition`、Channels Center 和共享加载状态。

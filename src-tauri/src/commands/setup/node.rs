@@ -430,8 +430,11 @@ pub(crate) async fn update_managed_node_runtime(app: tauri::AppHandle) -> Result
     paths::validate_runtime_overrides()?;
     let binary = crate::commands::system::resolve_openclaw_binary_async()
         .await
-        .ok_or("OpenClaw is not installed; Node.js update requires an installed package contract")?;
-    let requirement = crate::commands::system::required_node_requirement_for_openclaw_binary(&binary)?;
+        .ok_or(
+            "OpenClaw is not installed; Node.js update requires an installed package contract",
+        )?;
+    let requirement =
+        crate::commands::system::required_node_requirement_for_openclaw_binary(&binary)?;
     #[cfg(windows)]
     let result = install_node_for_requirement(app, requirement, true, None).await;
 

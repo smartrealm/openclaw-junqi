@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ProgressCard, splitOpenClawProgressCardMarkdown } from './ProgressCard';
+import {
+  ProgressCard,
+  formatOpenClawProgressCardUpdatedAt,
+  splitOpenClawProgressCardMarkdown,
+} from './ProgressCard';
 import type { OpenClawProgressCard } from '@/progress-card/domain';
 
 const card: OpenClawProgressCard = {
@@ -20,11 +24,18 @@ test('官方进度卡以当前修订和步骤状态渲染到输入区伴随卡�
   const html = renderToStaticMarkup(<ProgressCard card={card} />);
   assert.match(html, /data-progress-card="true"/);
   assert.match(html, /data-progress-card-revision="3"/);
+  assert.match(html, /data-progress-card-source="openclaw"/);
+  assert.match(html, /data-progress-card-updated-at="100"/);
   assert.match(html, /data-progress-card-step-state="completed"/);
   assert.match(html, /data-progress-card-step-state="in_progress"/);
   assert.match(html, /正在执行测试/);
   assert.match(html, /aria-expanded="false"/);
   assert.match(html, /hidden=""/);
+});
+
+test('进度卡仅为可格式化的 OpenClaw 更新时间生成展示时间', () => {
+  assert.ok(formatOpenClawProgressCardUpdatedAt(100, 'zh-CN'));
+  assert.equal(formatOpenClawProgressCardUpdatedAt(Number.MAX_SAFE_INTEGER, 'zh-CN'), null);
 });
 
 test('只把结构有效的官方 progress 元素投影为原生进度条', () => {

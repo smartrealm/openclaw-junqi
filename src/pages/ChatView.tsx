@@ -103,6 +103,7 @@ const HISTORY_STARTUP_RETRY_MAX_MS = 12_000;
 const InlineButtonBar = lazy(() => import('@/components/Chat/InlineButtonBar').then((m) => ({ default: m.InlineButtonBar })));
 const DecisionCard = lazy(() => import('@/components/Chat/ResultCards').then((m) => ({ default: m.DecisionCard })));
 const ProgressCard = lazy(() => import('@/components/Chat/ProgressCard').then((m) => ({ default: m.ProgressCard })));
+const ChatPendingApprovalsStrip = lazy(() => import('@/components/Chat/ChatPendingApprovalsStrip').then((m) => ({ default: m.ChatPendingApprovalsStrip })));
 const FileResultCard = lazy(() => import('@/components/Chat/ResultCards').then((m) => ({ default: m.FileResultCard })));
 const AssistantResponseAvatar = lazy(() => import('@/components/Chat/MessageBubble').then((m) => ({ default: m.AssistantResponseAvatar })));
 const AssistantResponseFooter = lazy(() => import('@/components/Chat/MessageBubble').then((m) => ({ default: m.AssistantResponseFooter })));
@@ -1571,6 +1572,14 @@ function ChatViewContent() {
           </div>
         </div>
       )}
+
+      <Suspense fallback={null}>
+        <ChatPendingApprovalsStrip
+          connected={connected}
+          activeSessionKey={activeSessionKey}
+          onOpenApprovals={() => navigate('/activity')}
+        />
+      </Suspense>
 
       <Suspense fallback={<div className="h-[76px] border-t border-aegis-border/20" />}>
         <MessageInput />
