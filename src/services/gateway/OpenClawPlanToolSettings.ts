@@ -1,5 +1,5 @@
 import { gateway } from './index';
-import type { OpenClawPlanToolMode } from '@/agent-execution-plan/settings';
+import type { OpenClawPlanToolMode } from '@/progress-card/settings';
 import { readOpenClawConfigSnapshot } from './OpenClawConfigSnapshot';
 import { requireOpenClawConfigPatchAcknowledgement } from './OpenClawRuntimeConfigClient';
 
@@ -14,13 +14,12 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function experimentalConfig(config: Record<string, unknown>): Record<string, unknown> {
-  const tools = asRecord(config.tools);
-  return { ...(asRecord(tools?.experimental) ?? {}) };
+function toolsConfig(config: Record<string, unknown>): Record<string, unknown> {
+  return asRecord(config.tools) ?? {};
 }
 
 export function resolveOpenClawPlanToolMode(config: Record<string, unknown>): OpenClawPlanToolMode {
-  const configured = experimentalConfig(config).planTool;
+  const configured = toolsConfig(config).updatePlan;
   if (configured === true) return 'enabled';
   if (configured === false) return 'disabled';
   return 'automatic';
@@ -36,15 +35,12 @@ export class OpenClawPlanToolSettingsClient {
 
   async write(mode: OpenClawPlanToolMode): Promise<void> {
     const snapshot = readOpenClawConfigSnapshot(await this.client.call('config.get', {}));
-    const experimental = experimentalConfig(snapshot.config);
-    if (mode === 'automatic') delete experimental.planTool;
-    else experimental.planTool = mode === 'enabled';
+    const updatePlan = mode === 'automatic' ? null : mode === 'enabled';
 
     const result = await this.client.callPrivileged('config.patch', {
       ...(snapshot.hash ? { baseHash: snapshot.hash } : {}),
-      raw: JSON.stringify({ tools: { experimental } }),
-      replacePaths: ['tools.experimental'],
-      note: 'Update structured Chat execution plan availability',
+      raw: JSON.stringify({ tools: { updatePlan } }),
+      note: 'Update OpenClaw progress card availability',
     });
     requireOpenClawConfigPatchAcknowledgement(result);
   }

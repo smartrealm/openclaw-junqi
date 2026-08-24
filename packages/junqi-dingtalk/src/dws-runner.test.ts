@@ -110,3 +110,25 @@ test("runs a configured npm JavaScript entry through the current Node runtime", 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("does not start DWS when the supplied signal is already aborted", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "junqi-dws-aborted-"));
+  const marker = path.join(directory, "started");
+  const entry = path.join(directory, "dws.js");
+  const controller = new AbortController();
+  controller.abort();
+  await writeFile(entry, `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "started");`);
+  const runner = new DwsRunner({
+    dwsPath: entry,
+    timeoutMs: 30_000,
+    maxOutputBytes: 2_097_152,
+  });
+  try {
+    await assert.rejects(runner.run(["version"], { signal: controller.signal }), (error) => (
+      error instanceof DingTalkRuntimeError && error.code === "DWS_CANCELLED"
+    ));
+    await assert.rejects(access(marker));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

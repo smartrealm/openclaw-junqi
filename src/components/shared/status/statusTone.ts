@@ -66,7 +66,6 @@ const TONE_ALIASES: Record<string, StatusTone> = {
   // ── task / agent lifecycle
   todo: 'idle',
   pending: 'idle',
-  held: 'warning',
   queue: 'idle',
   queued: 'idle',
   inProgress: 'running',

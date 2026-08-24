@@ -34,7 +34,6 @@ export interface DingTalkRuntimeProfileProjection {
   readonly corpName: string | null;
   readonly userName: string | null;
   readonly status: string | null;
-  readonly authorizedDomains: readonly string[];
   readonly expiresAt: string | null;
   readonly isCurrent: boolean;
 }
@@ -62,6 +61,42 @@ export interface DingTalkBusinessEvidenceProjection {
   readonly recoveryEventId: string | null;
 }
 
+export type DingTalkCatalogAvailability =
+  | 'no-session'
+  | 'loading-tools'
+  | 'no-tools'
+  | 'no-runtime-tool'
+  | 'loading-identity'
+  | 'identity-error'
+  | 'profile-required'
+  | 'ready';
+
+export function resolveDingTalkCatalogAvailability({
+  sessionExists,
+  toolsLoading,
+  pluginVisibleInSession,
+  runtimeToolAvailable,
+  runtimeIdentitySettled,
+  runtimeIdentityError,
+  profileAuthenticated,
+}: {
+  sessionExists: boolean;
+  toolsLoading: boolean;
+  pluginVisibleInSession: boolean;
+  runtimeToolAvailable: boolean;
+  runtimeIdentitySettled: boolean;
+  runtimeIdentityError: string | null;
+  profileAuthenticated: boolean;
+}): DingTalkCatalogAvailability {
+  if (!sessionExists) return 'no-session';
+  if (toolsLoading) return 'loading-tools';
+  if (!pluginVisibleInSession) return 'no-tools';
+  if (!runtimeToolAvailable) return 'no-runtime-tool';
+  if (!runtimeIdentitySettled) return 'loading-identity';
+  if (runtimeIdentityError) return 'identity-error';
+  return profileAuthenticated ? 'ready' : 'profile-required';
+}
+
 const DOMAIN_LABELS: Record<DingTalkDomain, string> = {
   contact: '通讯录',
   approval: '审批',
@@ -80,6 +115,16 @@ export function isDingTalkEffectiveTool(entry: OpenClawToolsEffectiveEntry): boo
   return entry.source === 'plugin'
     && entry.pluginId === DINGTALK_PLUGIN_ID
     && entry.id.startsWith(DINGTALK_TOOL_PREFIX);
+}
+
+export function hasAvailableDingTalkRuntimeTool(
+  groups: readonly { readonly tools: readonly OpenClawToolsEffectiveEntry[] }[] | undefined,
+): boolean {
+  return (groups ?? []).some((group) => group.tools.some((entry) => (
+    entry.id === DINGTALK_RUNTIME_STATUS_TOOL
+      && !entry.deniedBySession
+      && isDingTalkEffectiveTool(entry)
+  )));
 }
 
 function tagDomain(tags: readonly string[] | undefined): DingTalkDomain {
@@ -120,6 +165,18 @@ export function parseProfileReference(value: string): string | null {
   return /^[^:\s]+:[^:\s]+$/.test(normalized) ? normalized : null;
 }
 
+export function isDingTalkProfileAuthenticated(
+  runtime: DingTalkRuntimeIdentityProjection | null,
+  selectedProfile: string,
+): boolean {
+  if (!runtime?.available) return false;
+  const profileRef = parseProfileReference(selectedProfile);
+  if (!profileRef) return false;
+  return runtime.profiles.some((profile) => (
+    profile.profile === profileRef && profile.status === 'active'
+  ));
+}
+
 export function parseToolArguments(value: string): Record<string, unknown> {
   const parsed: unknown = JSON.parse(value);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -157,9 +214,6 @@ export function parseDingTalkRuntimeOutput(output: unknown): DingTalkRuntimeIden
       corpName: optionalString(profile?.corpName),
       userName: optionalString(profile?.userName),
       status: optionalString(profile?.status),
-      authorizedDomains: Array.isArray(profile?.authorizedDomains)
-        ? profile.authorizedDomains.flatMap((domain) => optionalString(domain) ? [optionalString(domain)!] : [])
-        : [],
       expiresAt: optionalString(profile?.expiresAt),
       isCurrent: profile?.isCurrent === true,
     };

@@ -52,7 +52,7 @@ export function ComposerInputSurface({
   const canSteer = isTyping && canSend && !isSending && !disabled;
 
   return (
-    <div className="mx-auto flex w-full max-w-[784px] min-w-0 items-end gap-2 px-3 pb-3 pt-2" dir={dir}>
+    <div data-tour="chat-composer" className="mx-auto flex w-full max-w-[784px] min-w-0 items-end gap-2 px-3 pb-3 pt-2" dir={dir}>
       <div
         className={clsx(
           'relative flex flex-1 flex-col gap-1 rounded-xl border border-aegis-border bg-aegis-surface px-2.5 py-2 shadow-sm',

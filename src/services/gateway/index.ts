@@ -1,8 +1,4 @@
-// ═══════════════════════════════════════════════════════════
-// Gateway Service — Public API Facade
-// Wires Connection + ChatHandler into a single interface.
-// Backward-compatible with: import { gateway } from '@/services/gateway'
-// ═══════════════════════════════════════════════════════════
+// Gateway 公共服务门面：统一装配连接、聊天投影与官方运行时客户端。
 
 import {
   GatewayConnection,
@@ -46,6 +42,12 @@ import {
   routeVoiceWakeGatewayEvent,
   subscribeVoiceWakeGatewayEvents,
 } from './voiceWakeEventBridge';
+import { OpenClawProgressCardClient } from './OpenClawProgressCardClient';
+import {
+  routeOpenClawProgressCardEvent,
+  subscribeOpenClawLegacyProgressPlanEvents,
+  subscribeOpenClawProgressCardEvents,
+} from './progressCardEventBridge';
 import { TalkGatewayClient } from './TalkGatewayClient';
 import {
   routeTalkGatewayEvent,
@@ -322,6 +324,17 @@ export interface GatewayChatDispatchTransport {
   request(method: string, params: GatewayRequestParams): Promise<unknown>;
 }
 
+export interface GatewayChatLeafFenceCapabilityState {
+  connectionId: string | null;
+  support: 'unknown' | 'supported' | 'unsupported';
+}
+
+export function isChatSendLeafFenceUnsupportedError(error: unknown): boolean {
+  return error instanceof GatewayRpcError
+    && error.code === 'INVALID_REQUEST'
+    && error.message === "invalid chat.send params: at root: unexpected property 'expectedLeafEntryId'";
+}
+
 export async function dispatchGatewayChatMessage(
   transport: GatewayChatDispatchTransport,
   steerClient: Pick<OpenClawSessionSteerClient, 'steer'>,
@@ -348,6 +361,37 @@ export async function dispatchGatewayChatMessage(
     idempotencyKey: input.clientMessageId,
     ...(input.attachments?.length ? { attachments: input.attachments } : {}),
   });
+}
+
+export async function dispatchGatewayChatMessageWithLeafFenceNegotiation(
+  transport: GatewayChatDispatchTransport,
+  steerClient: Pick<OpenClawSessionSteerClient, 'steer'>,
+  input: GatewayChatMessageDispatchInput,
+  connectionId: string | null,
+  capability: GatewayChatLeafFenceCapabilityState,
+): Promise<unknown> {
+  if (capability.connectionId !== connectionId) {
+    capability.connectionId = connectionId;
+    capability.support = 'unknown';
+  }
+  if (input.delivery === 'steer' || input.expectedLeafEntryId === undefined) {
+    return dispatchGatewayChatMessage(transport, steerClient, input);
+  }
+  if (capability.support === 'unsupported') {
+    const { expectedLeafEntryId: _expectedLeafEntryId, ...withoutLeafFence } = input;
+    return dispatchGatewayChatMessage(transport, steerClient, withoutLeafFence);
+  }
+  try {
+    const result = await dispatchGatewayChatMessage(transport, steerClient, input);
+    capability.support = 'supported';
+    return result;
+  } catch (error) {
+    if (!isChatSendLeafFenceUnsupportedError(error)) throw error;
+    capability.support = 'unsupported';
+    const { expectedLeafEntryId: _expectedLeafEntryId, ...withoutLeafFence } = input;
+    // 严格参数校验已经证明首个请求未进入处理器；沿用同一幂等键重发正式旧 schema。
+    return dispatchGatewayChatMessage(transport, steerClient, withoutLeafFence);
+  }
 }
 
 export interface GatewayAgentCreateResult {
@@ -392,6 +436,13 @@ export interface GatewayHistoryResponse extends Record<string, unknown> {
   sessionInfo?: GatewayHistorySessionInfo;
 }
 
+export class GatewaySessionNotFoundError extends Error {
+  constructor(sessionId: string) {
+    super(`OpenClaw session ${sessionId} was not found in the authenticated Gateway`);
+    this.name = 'GatewaySessionNotFoundError';
+  }
+}
+
 export interface GatewayMessageResponse extends Record<string, unknown> {
   ok?: boolean;
   message?: unknown;
@@ -400,6 +451,10 @@ export interface GatewayMessageResponse extends Record<string, unknown> {
 
 // ── Create instances ──
 const connection = new GatewayConnection();
+const chatSendLeafFenceCapability: GatewayChatLeafFenceCapabilityState = {
+  connectionId: null,
+  support: 'unknown',
+};
 const chatHandler = new ChatHandler(connection);
 const transcriptSubscription = new OpenClawSessionTranscriptSubscription(connection);
 export const openClawSessionObserverClient = new OpenClawSessionObserverClient({
@@ -442,6 +497,23 @@ export const voiceWakeGatewayClient = new VoiceWakeGatewayClient({
   ),
   subscribe: subscribeVoiceWakeGatewayEvents,
 });
+
+export const openClawProgressCardClient = new OpenClawProgressCardClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
+
+export {
+  subscribeOpenClawLegacyProgressPlanEvents,
+  subscribeOpenClawProgressCardEvents,
+};
 
 export const openClawTtsClient = new OpenClawTtsClient(
   (method, params, options) => connection.request(method, params, options),
@@ -1187,20 +1259,22 @@ async function reconcileOneChatSessionRun(sessionKey: string): Promise<void> {
   if (!settledByExactRun) await sessionRunReconciler.reconcile(sessionKey);
 }
 
-// Collaboration plugin streams are refresh hints, not chat/agent activity.
-// Route them through the typed bridge before the generic ChatHandler path.
+// 协作与运行时专用事件先经过类型桥，未识别事件才进入通用聊天处理器。
 connection.onEvent = (msg: unknown) => routeTalkGatewayEvent(
   msg,
   (talkRemainder) => routeVoiceWakeGatewayEvent(
     talkRemainder,
-    (voiceWakeRemainder) => routeOpenClawSessionObserverEvent(
+    (voiceWakeRemainder) => routeOpenClawProgressCardEvent(
       voiceWakeRemainder,
-      (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+      (progressCardRemainder) => routeOpenClawSessionObserverEvent(
+        progressCardRemainder,
+        (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+      ),
     ),
   ),
 );
 
-// ── Public API (matches original gateway.ts exactly) ──
+// 公共数据请求门面。
 export const openClawGatewayDataRequester = {
   request: (method: string, params: GatewayRequestParams) => connection.request(method, params),
   recordCapabilityInvalidResponse: (method: string) => connection.recordCapabilityInvalidResponse(method),
@@ -1341,9 +1415,9 @@ export const gateway = {
     let requestDispatched = false;
     try {
       const dispatch = async () => {
-        // 渲染层拥有唯一可见、可取消的重试队列，传输层不得另建 UI 无法检查的队列。
+        // 上层协调器提供稳定幂等键；传输层只提交当前请求，不维护本地重试或消息队列。
         requestDispatched = true;
-        return dispatchGatewayChatMessage(connection, sessionSteer, {
+        return dispatchGatewayChatMessageWithLeafFenceNegotiation(connection, sessionSteer, {
           message,
           attachments: gwAttachments,
           sessionKey: target.key,
@@ -1352,7 +1426,7 @@ export const gateway = {
           sessionId: identity.sessionId,
           expectedLeafEntryId: identity.expectedLeafEntryId,
           delivery: isSteer ? 'steer' : 'send',
-        });
+        }, connection.getAttestedConnectionId(), chatSendLeafFenceCapability);
       };
       // sessions.steer 自身即为 OpenClaw 的中断并发送控制操作，不能等待长时间 chat.send 请求。
       const dispatched = isSteer
@@ -1402,6 +1476,23 @@ export const gateway = {
       (method, params) => connection.request(method, params),
       agentIds,
     );
+  },
+  async getHistoryBySessionId(sessionId: string, limit = 200): Promise<GatewayHistoryResponse> {
+    const normalizedId = typeof sessionId === 'string' ? sessionId.trim() : '';
+    if (!normalizedId) throw new Error('OpenClaw sessionId is required');
+    const catalog = await this.getSessions();
+    const session = (catalog.sessions ?? []).find((candidate) => {
+      if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) return false;
+      return (candidate as Record<string, unknown>).sessionId === normalizedId;
+    });
+    if (session === undefined || typeof session !== 'object' || Array.isArray(session)) {
+      throw new GatewaySessionNotFoundError(normalizedId);
+    }
+    const key = (session as Record<string, unknown>).key;
+    if (typeof key !== 'string' || !key.trim()) {
+      throw new Error('OpenClaw sessions.list returned a session without a key');
+    }
+    return this.getHistory(key, limit);
   },
   async createSession(input: {
     agentId: string;
@@ -1705,8 +1796,8 @@ export const gateway = {
   async setSessionUnread(unread: boolean, sessionKey: string) {
     return sessionOrganization.setUnread(sessionKey, unread);
   },
-  async setSessionArchived(archived: boolean, sessionKey: string) {
-    return sessionOrganization.setArchived(sessionKey, archived);
+  async setSessionArchived(archived: boolean, sessionKey: string, expectedSessionId?: string) {
+    return sessionOrganization.setArchived(sessionKey, archived, expectedSessionId);
   },
   async setSessionCategory(category: string | null, sessionKey: string) {
     return sessionOrganization.setCategory(sessionKey, category);

@@ -2,7 +2,6 @@ import type {
   MetaItem,
   RenderBlock,
   ToolBlock,
-  ExecutionPlanBlock,
   ThinkingBlock,
   MessageBlock,
   InlineButtonsBlock,
@@ -18,7 +17,6 @@ import type {
   MessageSemanticBlock,
   ThinkingSemanticBlock,
   ToolActivitySemanticBlock,
-  ExecutionPlanSemanticBlock,
   InlineButtonsSemanticBlock,
   CompactionSemanticBlock,
   FileOutputSemanticBlock,
@@ -26,12 +24,9 @@ import type {
   WorkshopEventSemanticBlock,
   SessionEventSemanticBlock,
 } from '@/types/SemanticBlock';
-import {
-  parseOpenClawUpdatePlan,
-  reconcileExecutionPlanSnapshots,
-} from '@/agent-execution-plan/domain';
 import { stripDirectives, isNoise, stripUserMeta } from './TextCleaner';
 import { autoDetectCode } from '@/utils/autoDetectCode';
+import { formatAssistantTranscriptMarkdown } from '@/utils/transcriptContentPresentation';
 import {
   parseArtifacts,
   extractFileRefs,
@@ -68,27 +63,6 @@ function createBlockBase(normalized: NormalizedMessage, id = normalized.id) {
     timestamp: normalized.timestamp,
     isStreaming: normalized.isStreaming,
     responseState: normalized.responseState,
-  };
-}
-
-function executionPlanBlock(
-  normalized: NormalizedMessage,
-  toolName: unknown,
-  toolInput: unknown,
-  id: string,
-): ExecutionPlanSemanticBlock | null {
-  const snapshot = parseOpenClawUpdatePlan(toolName, toolInput, {
-    sourceId: id,
-    sessionKey: normalized.sessionKey,
-    runId: normalized.runId,
-    sourceSequence: normalized.sourceSequence,
-    timestamp: normalized.timestamp,
-  });
-  if (!snapshot) return null;
-  return {
-    ...createBlockBase(normalized, id),
-    type: 'execution-plan',
-    snapshot,
   };
 }
 
@@ -188,21 +162,19 @@ export function buildSemanticBlocks(
       const toolNormalized = tool.toolCallId
         ? { ...normalized, toolCallId: tool.toolCallId }
         : normalized;
-      return executionPlanBlock(toolNormalized, tool.name, tool.input, id) ?? ({
+      return {
         ...createBlockBase(toolNormalized, id),
         type: 'tool-activity',
         toolName: tool.name || 'unknown',
         input: tool.input ?? {},
         status: 'done',
         durationMs: normalized.toolDurationMs,
-      } satisfies ToolActivitySemanticBlock);
+      } satisfies ToolActivitySemanticBlock;
     });
   }
 
   if (role === 'toolResult' || role === 'tool') {
     const toolName = normalized.toolName || normalized.toolResults[0]?.name || 'unknown';
-    const planBlock = executionPlanBlock(normalized, toolName, normalized.toolInput, normalized.id);
-    if (planBlock) return [planBlock];
     const buttonRows = extractInlineButtonRows(toolName, normalized.toolInput);
     if (buttonRows) {
       return [{ ...base, type: 'inline-buttons', rows: buttonRows } satisfies InlineButtonsSemanticBlock];
@@ -229,7 +201,9 @@ export function buildSemanticBlocks(
   const baseText = role === 'user' ? stripUserMeta(normalized.text) : normalized.text;
   const cleanedText = stripDirectives(baseText);
   const visibleText = cleanedText && !isNoise(cleanedText) ? cleanedText : '';
-  const markdown = role === 'assistant' ? autoDetectCode(visibleText) : visibleText;
+  const markdown = role === 'assistant'
+    ? formatAssistantTranscriptMarkdown(visibleText) ?? autoDetectCode(visibleText)
+    : visibleText;
   const { cleanText: textAfterArtifacts, artifacts } = parseArtifacts(markdown);
   let cleanText = textAfterArtifacts;
 
@@ -354,19 +328,6 @@ export function projectSemanticBlocksToRenderBlocks(blocks: SemanticBlock[]): Re
             : {}),
         } satisfies ToolBlock);
         break;
-      case 'execution-plan': {
-        const plan = reconcileExecutionPlanSnapshots([block.snapshot]);
-        if (plan) {
-          renderBlocks.push({
-            type: 'execution-plan',
-            id: block.id,
-            timestamp: block.timestamp,
-            isStreaming: block.isStreaming,
-            plan,
-          } satisfies ExecutionPlanBlock);
-        }
-        break;
-      }
       case 'inline-buttons':
         renderBlocks.push({
           type: 'inline-buttons',

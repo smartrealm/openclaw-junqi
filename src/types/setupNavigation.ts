@@ -12,6 +12,7 @@ export type SetupStep =
   | 'install-node'
   | 'install-openclaw'
   | 'gateway-ready'
+  | 'update-openclaw'
   | 'configure-openclaw'
   | 'ready'
   | 'error';

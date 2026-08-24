@@ -89,13 +89,11 @@ export function WizardScreen({
   logs,
   wizard = flow,
   copy = DEFAULT_WIZARD_COPY,
-  secondaryAction,
 }: {
   flow: SetupFlow;
   logs: SetupLog[];
   wizard?: WizardController;
   copy?: WizardScreenCopy;
-  secondaryAction?: { label: string; onClick: () => void; disabled?: boolean };
 }) {
   const { t } = useTranslation();
   const step = wizard.wizardStep;
@@ -160,7 +158,6 @@ export function WizardScreen({
             : t("setup.wizard.officialStepSubtitle", "当前内容由所选 OpenClaw Runtime 提供。")}
           logs={logs}
           previousAction={{ onClick: flow.goBack, disabled: wizard.wizardSubmitting }}
-          secondaryAction={secondaryAction}
           nextAction={{
             label: wizard.wizardRecoveryMode === "reclaim"
               ? t("setup.wizard.reclaim", "重新接管向导")
@@ -256,7 +253,6 @@ export function WizardScreen({
           onClick: flow.goBack,
           disabled: false,
         }}
-        secondaryAction={secondaryAction}
         nextAction={{
           label: wizard.wizardError
             ? wizard.wizardRecoveryMode === "terminal-unknown"

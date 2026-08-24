@@ -5,6 +5,8 @@ import { SETUP_CONTENT_PRESENCE_MODE, setupContentEntryState, setupContentExitSt
 test('setup step transition moves forward from left to right and back from right to left', () => {
   assert.equal(setupStepMotionDirection('welcome', 'environment-review'), -1);
   assert.equal(setupStepMotionDirection('environment-review', 'welcome'), 1);
+  assert.equal(setupStepMotionDirection('gateway-ready', 'update-openclaw'), -1);
+  assert.equal(setupStepMotionDirection('update-openclaw', 'configure-openclaw'), -1);
   assert.equal(setupStepMotionDirection('configure-openclaw', 'ready'), -1);
   assert.equal(setupStepMotionDirection('ready', 'configure-openclaw'), 1);
 });
@@ -16,6 +18,7 @@ test('setup step transition keeps the initial scene stationary', () => {
 
 test('Gateway 配置核验与运行时安装共享一个视觉场景', () => {
   assert.equal(setupStepScene('gateway-ready'), 'checking');
+  assert.equal(setupStepScene('update-openclaw'), 'update-openclaw');
   assert.equal(setupStepScene('configure-openclaw'), 'configure-openclaw');
 });
 
@@ -30,6 +33,8 @@ test('共享视觉场景的环境探测与结果复核仍使用独立滚动位�
 });
 
 test('共享视觉场景的配置核验与官方向导仍使用独立滚动位置', () => {
+  assert.notEqual(setupStepScrollKey('gateway-ready'), setupStepScrollKey('update-openclaw'));
+  assert.notEqual(setupStepScrollKey('update-openclaw'), setupStepScrollKey('configure-openclaw'));
   assert.notEqual(setupStepScrollKey('gateway-ready'), setupStepScrollKey('configure-openclaw'));
 });
 

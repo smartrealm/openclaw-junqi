@@ -1,7 +1,6 @@
 import type { DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/types/RenderBlock';
 import type { ResponseGroup } from '@/types/ResponseGroup';
 import type { MessageSemanticBlock } from '@/types/SemanticBlock';
-import type { ExecutionPlanSnapshot } from '@/agent-execution-plan/domain';
 import type { ChatMessage } from '@/stores/chatStore';
 
 interface TraceNodeBase {
@@ -65,7 +64,6 @@ export interface ChatResponseTraceAuditPage {
 }
 
 export type ChatResponseTraceNode =
-  | (TraceNodeBase & { kind: 'plan'; snapshot: ExecutionPlanSnapshot; snapshotNumber: number })
   | (TraceNodeBase & { kind: 'thinking'; content: string })
   | (TraceNodeBase & {
       kind: 'tool';
@@ -163,7 +161,6 @@ function contextFromMeta(meta: MessageSemanticBlock['meta']): ChatResponseTraceC
 }
 
 export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrace {
-  let planSnapshotNumber = 0;
   const nodes = group.blocks.flatMap((block): ChatResponseTraceNode[] => {
     const base: TraceNodeBase = {
       id: block.id,
@@ -173,9 +170,6 @@ export function projectChatResponseTrace(group: ResponseGroup): ChatResponseTrac
     };
 
     switch (block.type) {
-      case 'execution-plan':
-        planSnapshotNumber += 1;
-        return [{ ...base, kind: 'plan', snapshot: block.snapshot, snapshotNumber: planSnapshotNumber }];
       case 'thinking':
         return [{ ...base, kind: 'thinking', content: block.content }];
       case 'tool-activity':

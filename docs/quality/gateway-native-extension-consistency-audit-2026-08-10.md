@@ -2,6 +2,9 @@
 
 日期：2026-08-10
 
+2026-08-19 复核更正：最新版官方文档、主线源码和本机 OpenClaw 2026.7.1-2 已重新提供
+`voicewake.routing.set`。下文关于该方法在 2026-08-10 快照中被删除的记录只保留历史背景，不再是当前契约结论。
+
 ## 权威依据
 
 - OpenClaw 官方仓库远端主线提交：`5c308e0ebacfa92a9992d77f342facd0bbcef90e`。
@@ -24,6 +27,7 @@
 - 官方主线相对上次审计快照新增 `sessions.catalog.startTerminal` 与 `worker.desktop.observe`，并将 `fs.listDir` 改为动态权限；JunQi 当前没有调用这三个方法，因此不需要增加猜测性入口。
 - 官方主线随后以提交 `bab4546b4189b1c16f319f338a7ac4802e259141` 删除 10 个无活跃处理器的 RPC。JunQi 曾消费其中
   `doctor.memory.remHarness`、`talk.session.cancelTurn`、`voicewake.routing.set` 和 `sessions.compaction.get`；其余 6 个方法没有发现 JunQi 生产调用。
+- 2026-08-19 当前官方契约已恢复 `voicewake.routing.set`，因此该方法不再属于应按“上游已删除”处理的集合。
 
 ## 已确认问题
 
@@ -53,11 +57,11 @@
 
 ### GNE-36 高：客户端继续调用上游已删除的 RPC
 
-官方主线已经删除 `doctor.memory.remHarness`、`talk.session.cancelTurn`、`voicewake.routing.set` 和
-`sessions.compaction.get` 的描述符、Schema 与处理器。JunQi 仍保留请求、状态、可编辑界面或外观方法时，真实最新版 Gateway 会返回未知方法；版本判断或回退不能恢复不存在的官方语义。
+2026-08-10 快照删除了 `doctor.memory.remHarness`、`talk.session.cancelTurn`、`voicewake.routing.set` 和
+`sessions.compaction.get` 的描述符、Schema 与处理器。2026-08-19 复核后，前三项中 `voicewake.routing.set` 已由官方恢复；其余已删除方法仍不能通过版本判断或回退恢复不存在的官方语义。
 
-整改要求：删除四条调用链及其专属类型、状态、界面、国际化和测试；保留仍有官方契约的 memory status、
-`talk.session.cancelOutput`、`talk.session.close`、`voicewake.routing.get`、compaction list、branch 和 restore。
+整改要求：删除仍无官方契约的调用链及其专属类型、状态、界面、国际化和测试；保留仍有官方契约的 memory status、
+`talk.session.cancelOutput`、`talk.session.close`、`voicewake.routing.get`、`voicewake.routing.set`、compaction list、branch 和 restore。
 
 ### GNE-37 中：内存诊断存在重复解码器和无消费者 Hook
 
@@ -65,11 +69,11 @@
 
 整改要求：以 `OpenClawMemoryDiagnosticsClient` 作为 `doctor.memory.status` 的单一请求与解码边界，删除重复模块、无消费者 Hook、外观导出和专属测试。
 
-### GNE-38 中：语音唤醒路由界面暴露不存在的写能力
+### GNE-38 历史结论已失效：语音唤醒路由写能力
 
-最新版官方协议只保留 `voicewake.routing.get`。JunQi 的可编辑路由表和保存按钮会暗示用户能够写入 Gateway，但上游没有对应方法。
+2026-08-10 快照只保留 `voicewake.routing.get`，当时删除编辑入口符合该快照。2026-08-19 当前官方协议已恢复 `voicewake.routing.set`，不能再声称上游没有对应方法。
 
-整改要求：路由投影改为只读，删除保存状态、写入客户端方法和编辑专属文案；未知或空路由保持真实只读状态。
+当前边界：本次 Windows 本地监听只消费路由，不扩展路由编辑界面；只读展示是 JunQi 当前产品范围，不是协议能力限制。
 
 ### GNE-39 低：会话目标守护测试残留已删除外观
 

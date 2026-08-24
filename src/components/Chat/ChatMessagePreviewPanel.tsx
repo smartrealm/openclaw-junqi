@@ -24,6 +24,8 @@ export function ChatMessagePreviewPanel({
       closeLabel={t('chat.closeMessagePreview')}
       onClose={onClose}
       overlay={overlay}
+      resizable
+      resizeLabel={t('chat.resizeMessagePreview')}
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 chat-scrollbar" data-chat-message-preview={preview.messageId}>
         <article className="markdown-body mx-auto w-full max-w-[760px] text-[15px] leading-relaxed">

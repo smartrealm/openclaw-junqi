@@ -1,7 +1,7 @@
 import { ListChecks } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import type { OpenClawPlanToolMode } from '@/agent-execution-plan/settings';
+import type { OpenClawPlanToolMode } from '@/progress-card/settings';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 
 const MODES: readonly OpenClawPlanToolMode[] = ['automatic', 'enabled', 'disabled'];

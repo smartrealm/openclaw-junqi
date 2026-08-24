@@ -1,4 +1,4 @@
-// Tab resolution — shared between TabBar and NavSidebar.
+// 顶层标签归属由 TabBar 与 NavSidebar 共用，查询参数属于路由语义的一部分。
 export type SidebarTab = 'workbench' | 'agents' | 'businessApplications' | 'tools' | 'commands' | 'settings';
 
 const TAB_ROUTE_MAP: [SidebarTab, string[]][] = [
@@ -12,19 +12,24 @@ const TAB_ROUTE_MAP: [SidebarTab, string[]][] = [
 
 const CACHE = new Map<string, SidebarTab>();
 
-export function resolveTab(pathname: string): SidebarTab {
-  const cached = CACHE.get(pathname);
+export function resolveTab(locationPath: string): SidebarTab {
+  const cached = CACHE.get(locationPath);
   if (cached) return cached;
+  const [pathname, query = ''] = locationPath.split('?', 2);
+  if (pathname === '/config' && new URLSearchParams(query).get('tab') === 'tools') {
+    CACHE.set(locationPath, 'tools');
+    return 'tools';
+  }
   for (const [tab, prefixes] of TAB_ROUTE_MAP) {
     for (const prefix of prefixes) {
       if (prefix === '/') {
-        if (pathname === '/') { CACHE.set(pathname, tab); return tab; }
+        if (pathname === '/') { CACHE.set(locationPath, tab); return tab; }
         continue;
       }
-      if (pathname.startsWith(prefix)) { CACHE.set(pathname, tab); return tab; }
+      if (pathname.startsWith(prefix)) { CACHE.set(locationPath, tab); return tab; }
     }
   }
-  CACHE.set(pathname, 'settings');
+  CACHE.set(locationPath, 'settings');
   return 'settings';
 }
 

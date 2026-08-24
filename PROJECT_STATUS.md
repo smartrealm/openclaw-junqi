@@ -1,102 +1,189 @@
 # 项目交接状态
 
-更新时间：2026-08-14
+更新时间：2026-08-24
 
 ## 当前目标
 
-当前分支已快进同步本地 `main`，并已修复协作插件更新事务与 OpenClaw 官方 peer dependency 链接之间的契约冲突。当前重点是完成真实 Gateway 更新、重启和能力确认，以及 Windows、Linux、Docker 目标平台验证。
+修复多 Agent 协作服务启动诊断、DWS 钉钉提交入口与工作台异步状态、业务审计互斥状态、工作台本地化边界、Session 模型选择器滚动边界，以及目标运行环境的 Node.js 复用与安装诊断边界；并收紧代理证据来源，禁止参考代理所在本地环境。
 
 ## 已完成内容
 
-- `Blues-Code/Jarvis` 已从 `822d7a16` 无冲突快进到本地 `main` 的 `31cf60a3`；更新远端引用后确认 `origin/main` 仍落后当前分支 24 个提交，因此本轮没有用远端旧引用覆盖本地 `main`。
-- 已复现协作更新失败：本机已安装 `junqi-collab` 暴露 schema 13，当前内嵌 bundle 要求 schema 15，但两者插件版本都为 0.4.0。
-- 已确认唯一触发备份拒绝的插件树链接为 `node_modules/openclaw`，目标是当前 OpenClaw 安装根；OpenClaw 2026.7.1-2 本机源码和官方远端 `main` 的 `plugin-peer-link.ts` 都证明该链接由 OpenClaw 为声明 `openclaw` peer dependency 的插件维护，不是异常用户文件。
-- `collect_plugin_tree_entries` 现在仅在根包明确声明 `peerDependencies.openclaw` 时排除精确的 `node_modules/openclaw` 派生链接；该链接不进入归档或内容哈希，其他符号链接和 Windows 重解析点仍失败关闭。
-- 协作插件版本已从 0.4.0 提升至 0.5.0，并同步包清单、OpenClaw 清单、运行时常量、README、归档、Rust metadata 和前端 metadata；当前身份为插件 0.5.0、schema 15。
-- Guided、Classic 与渠道 Wizard 共用严格终态谓词：只有 `done === true` 且状态为官方终态时才结束会话；携带正式步骤的 `done: false` 不会因 `status: done` 被提前消费。
-- 官方终态后重新解析当前所选 Runtime 的端点、共享凭据和设备凭据；解析失败时停止交接，不复用向导前的内存目标、历史手工地址或另一 Runtime 的凭据。
-- 新增活动配置应用门禁：同一已核验连接上的 `config.get.configRevisionHash` 与 `appliedConfigHash` 必须非空且相等，才能证明当前 Runtime 已采用磁盘修订。
-- 官方重载等待、连接轮换、Guided 探测、真实模型核验和最终修订核验共用一个六分钟绝对截止时间，所有异步步骤都消费同一剩余预算。
-- 普通等待超时不再主动重启 Gateway。只有 `gateway.reload.mode: off` 或官方 `health.configReload.hotReloadStatus: disabled` 明确重载关闭时，才通过全局唯一生命周期协调器补发一次重启。
-- 生命周期屏障以真实 `manager.restart()` 调用点维护单调重启代次。若同一交接事务已经等待过恢复内部重启，或两次屏障之间发生过快速重启，后续配置等待只重新核验，不补发第二次重启。
-- 进入 Ready 前再次核对同一连接和同一活动修订。验证期间修订从 A 变化为 B 时，在原事务预算内重新完成探测与模型证据，不提交旧修订的成功状态。
-- Gateway 主连接只有在 WebSocket 仍打开且 Runtime Identity 核验完成后才发布为 connected。核验等待期间连接关闭或换代会作废待定身份，迟到结果不能残留为可用 Runtime。
-- Gateway Manager 只拥有连接轮次，WebSocket 退避与耗尽只由 Connection 持有；进程健康观察不再重置退避。显式同目标连接会先结束旧传输再建立新轮，不能停在无后续事件的探测状态。
-- 新的 `connect` 响应被 Gateway 接受后立即清除旧配对等待；后续协议或身份失败进入有界普通重试，不再无限按配对间隔轮询。用户取消普通配对统一经 Manager 收敛活动握手与等待定时器，取消后只有显式恢复才能开启新连接轮次。
-- 生命周期连接收敛只把目标解析失败、当前连接身份失败和传输重试耗尽当作终态；进程观察瞬时错误只保留为诊断。
-- 特权临时连接在发送管理 RPC 前再次核对主连接标识、端点与凭据；临时握手期间来源换代时拒绝请求，不能在写操作已经发送后才报告围栏失效。
-- 手工输入的 Gateway shared token 仅用于当前进程重连，不再写入设备凭据存储；设备凭据只接受 OpenClaw 握手签发。
-- Guided 候选梯子跳过明确无凭据项，并在已有默认模型激活失败后停止自动替换；自动激活成功后保留用户确认当前路径或改选的边界。
-- Guided 和 Classic 共用 setup admission busy 分类；不可用候选、官方修复入口、推荐安装和取消操作均保留正式协议语义。
-- 首次设置运行时页面原地完成 Gateway 认证与身份核验；只有 Guided 可操作状态或 Classic 首个官方步骤准备完成后才进入配置页，不显示空配置页后自动跳变。
-- 官方步骤、二维码、日志、数据位置表单和页面方向过渡继续遵循当前首次启动规格；本轮未新增平行 Gateway 重启入口或客户端成功推断。
+- 已更新并核对 OpenClaw 官方主线提交 `95b69efcc161548b364ff681b2f46c66742930cb` 的 `engines.node`。当前范围为 `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0`，其中无上限的 `>=25.9.0` 接受 `v26.1.0`。实际安装继续按当前目标 npm 包返回的准确范围判定，不把主线范围或开发机版本写死为目标契约。
+- Native Node.js 判断只使用当前目标机器、当前所选 Runtime 的实际 Node 路径、版本和同发行版自带 npm；开发机路径、版本和用户环境不参与判断。显式配置的 Node 路径保持独占，未配置时按目标平台候选探测。
+- 安装页现在区分“没有满足范围的 Node.js”与“已检测 Node.js 但版本不兼容”。后者显示实际版本和当前 OpenClaw 所需范围；OpenClaw 安装阶段的 Rust 进度事件也传递同一结构化参数。
+- Node 安装与修复入口继续在下载、系统安装或覆盖前重新验证完整 Node/npm 契约；两次探测间已有兼容运行时可用时直接复用，不写入、不下载、不覆盖。
+- 已完成目标环境证据与副作用链路静态审查，确认首次 OpenClaw 安装的 `LegacyFallback` 写入路径与 DWS 已中止调用副作用问题。
+- 已修复目标环境证据与副作用链路审查的两项问题：首次 OpenClaw 安装先解析准确目标包 `engines.node`，不存在完整 Node/npm 对时只读取公开 npm 元数据；DWS 在启动前拒绝已中止调用，并将已启动写操作的中止、超时或不完整结果收敛为 `DWS_SIDE_EFFECT_UNVERIFIED`，不推断副作用未发生。
+- 已依据用户提供的安装日志修复运行时切换补偿：OpenClaw 安装失败时，只有切换前经所选端点确认运行的 Gateway 才允许恢复；未运行的 Native Gateway 不再触发第二条“未找到 OpenClaw”启动错误。
+- 已删除 Native 首次安装对 npm 默认全局前缀的隐式写入：只有用户明确选择 OpenClaw npm 安装目录才会执行 npm 安装，npm 缓存覆盖也绑定该选择；未配置时不会建议改动系统 npm 前缀。
+- 已更新并核对 OpenClaw 官方主线提交 `75c44b2b98d508593b71501da80c12aa63a7e672` 的插件注册、`activation.onStartup`、service 启动、RPC 注册、`tools.effective`、`tools.invoke` 和官方审计边界。
+- 本机运行证据确认 Gateway 正常启动，真正失败点是协作数据库 schema 13 与当前固定插件 schema 15 不兼容。
+- 新增结构化插件启动失败：schema 不兼容返回 `DATABASE_SCHEMA_UNSUPPORTED`，其他启动失败返回已脱敏的 `SERVICE_START_FAILED`。
+- service 未创建时的协作 RPC 也返回 `SERVICE_START_FAILED`，不再回退到带英文原始消息的 `UNAVAILABLE`。
+- 修正插件构造阶段异常逃逸，确保数据库构造失败也会被 RPC 能力探针读取。
+- 新增真实旧 schema 数据库回归测试，证明失败后数据库仍保持 schema 13，不迁移、不删除、不覆盖。
+- 前端能力读取不再吞掉错误，按当前 Gateway 连接和运行时身份原子发布结构化失败。
+- 精确目标重启进入唯一 Gateway 生命周期协调器，等待新连接和身份核验；预期断连期间不再触发全局 Gateway 启动失败和通知。
+- 删除 28、58、82 等固定百分比。只有真实 Gateway 进度事件存在时显示数值，否则显示不确定进度。
+- 协作设置对话框和协作办公室使用同一结构化错误语义，并提供打开修复入口。
+- schema 不兼容且安装事务可恢复时，只提供恢复安装前插件和配置的精确回滚，不自动迁移或清理数据。
+- 简体中文、繁体中文和英文主提示及协作设置所需键已补齐；原始运行时诊断和阻断原因不会作为主提示展示。
+- 协作固定包和元数据已重新生成。
+- 已把 OpenClaw 官方仓库更新到主线提交 `75c44b2b98d508593b71501da80c12aa63a7e672`，确认官方 Control UI 没有定义钉钉深链语义。
+- 已核对 Tauri 官方 Opener 契约与 DWS 最新主线结构化审批模板：模板必须带 `approveType`、`formName`、`processCode` 与 `submitUrl`；`submitUrl` 只能经系统默认处理器打开，不能由 JunQi 推断执行成功。
+- Chat 与 Markdown 文件预览现在复用同一桌面外部链接运行时；Markdown 会保留两个已核验的钉钉路径，其他自定义协议失败关闭。
+- 已删除 Tauri Shell 的旧外链路径，统一迁移到官方 Opener `openUrl`；能力范围只允许 HTTP、HTTPS、邮件、电话及 `dingtalkclient` 的两个已核验钉钉路径。桌面打开失败时显示本地化错误，不再静默回退到 WebView `window.open`。
+- 钉钉工具详情只在当前结果严格包含完整 DWS 审批模板且提交地址通过同一外链分类时显示“可用提交入口”；原始结果仍保留，非模板或不安全地址不会生成按钮。
+- 钉钉工具 schema 读取增加 Session、工具和请求代次围栏；晚到响应不能覆盖当前工具详情。
+- Session 切换会重建钉钉工作区本地状态，Profile 切换会清空参数草稿和旧输出，避免跨身份复用业务参数。
+- DWS 启动增加同步忙碌门禁和本地 `starting` 状态；没有官方操作标识时不再生成伪造标识，终态事件缓存有界并可释放。
+- 钉钉工具详情删除重复的账号权限和 Session 正常状态，只保留 OpenClaw 可证明的效果、风险和明确拒绝状态。
+- 业务审计首次加载、读取失败、成功空结果和已有内容改为互斥状态；请求失败不再同时显示“尚无审计”。
+- 业务审计页面的状态、筛选、错误和元数据标签已接入简体中文、繁体中文和英文资源。
+- Session 运行时模型目录与后续运行参数拆成独立滚动区；供应商列和模型列各自滚动，模型可按名称、别名或完整 id 筛选，底部操作保持可达。
+- 活动审计仅在当前握手未通告 `audit.activity.list` 时，才把旧 Gateway 的精确 `missing scope: operator.admin` 冻结响应识别为能力不支持；握手已通告该方法时保留失败事实，也不查询另一套审计协议。
+- Session 运行时弹层接入共享视口碰撞宿主；模型目录与运行参数改成互斥页签，默认把完整主体高度留给模型目录。
+- 删除了模型选择器对具体 Tailwind 字符串的脆弱测试，保留领域行为和共享视口碰撞测试。
+- 钉钉工具目录、详情、Profile 选择、插件安装进度和官方文档入口的固定客户端文案均接入中、繁、英资源；DWS 和 OpenClaw 的动态数据、动态错误仍保持原样。
+- 当 DWS 已返回 schema 但参数 JSON 无效或缺少必填字段时，详情自动展开 JSON 输入区域；字段含义仍完全以 DWS schema 为准，不生成本地表单规则。
+- 客户端可识别的 DWS schema 投影损坏使用稳定错误码并按当前语言显示；Gateway 或 DWS 的运行时诊断不被客户端翻译或覆盖。
+- 工作台官方说明链接现在通过受控的 Tauri 外链打开器交给系统；失败时在当前界面通知，不再静默调用 WebView 打开器。
+- 同一 Session 的官方活动审计在刷新失败时保留已确认的记录与分页游标；只有断开连接或缺少 Session 时才清空该范围，失败状态在现有列表内就近提示。
+- 钉钉插件 Agent 门禁改为以当前 Session 实际调用 `junqi_dingtalk_runtime_status` 成功为准；`tools.effective` 仅表示目录可见，不再单独标记为 Agent 已授权。
+- 会话模型目录弹层使用稳定的视口尺寸约束；供应商列和模型列均为独立、可聚焦的滚动区域，并显示当前筛选结果数量。模型目录与运行参数保持互斥页签，避免参数区挤占模型列表。
+- 业务审计页现绑定精确 Session key；切换会话后不会展示或在失败时保留上一会话的官方账本与分页游标。
+- Gateway 断开时同步撤回当前 Session 已读取的官方审计页、游标和加载更多状态；“账本读取失败”与“成功空账本”保持互斥，并明确不代表钉钉业务调用终态。
+- 活动审计继续优先 `audit.activity.list`；仅在官方定义的活动账本缺失且查询仅涉及运行或工具元数据时，受限重试官方 `audit.list`，并把返回页明确标记为兼容工具账本。消息、方向或渠道筛选及任何实际读取失败绝不回退。
+- 已删除无消费者且直接调用旧 `audit.list` 的聊天审计 Hook 与展示组件，聊天追溯改为复用统一审计客户端并传递真实账本来源。
+- 钉钉工具目录只接受连接、Session 和 `tools.effective` 修订均匹配且已结算的 DWS 身份快照；工具策略刷新期间不再复用旧 Profile 或保留旧执行入口。
+- 删除没有 DWS 官方结果 schema 依据的审批追溯、自动二次查询和本地状态合成；审批工具结果仅按官方原始输出展示。
+- Chat 中的 DWS 提交链接明确标注目标为钉钉桌面客户端，点击后在链接附近区分“已交给系统”与“系统拒绝打开”；前者不宣称钉钉页面已经打开。多 Agent 协作授权目标同步改用共享主题化 Select，避免原生下拉菜单破坏亮暗主题。
+- 钉钉工作台的 DWS 提交入口现在复用同一真实语义：系统接手后就近显示本地化提示，失败显示错误；不再让成功返回静默恢复按钮，也不声称钉钉页面已经打开。
 
 ## 关键技术决策
 
-- 不得通过手工删除 `node_modules/openclaw` 绕过更新门禁；该链接是 OpenClaw 插件 SDK 解析所需的派生运行时结构。
-- 后续修复应只识别并排除由 OpenClaw 契约证明的 host peer link，其他符号链接继续失败关闭；回滚后必须由官方插件安装流程重建并核验该链接，不能放宽为任意链接归档或跟随链接复制宿主 OpenClaw 树。
-- schema 13 到 15 的不兼容变化不能继续共用插件版本 0.4.0；插件清单、包、运行时版本、bundle metadata 和发布验证必须同步更新。
-- Wizard 终态、Gateway 进程健康、认证连接、Runtime Identity 和活动配置修订是不同事实，必须按顺序分别核验。
-- `config.get.hash` 是配置写入冲突控制值，不是活动 Runtime 修订证据；缺失 `configRevisionHash` 或 `appliedConfigHash` 时失败关闭并要求更新 OpenClaw。
-- `installDaemon: false` 只关闭 Wizard 的 daemon 安装分支，不关闭 OpenClaw 自身的配置监听和进程内重启；JunQi 不得因此抢跑重启。
-- OpenClaw 可能为活动 Wizard 工作延迟官方重启，并可能在实际重启前轮换共享认证代次。旧 socket 仍在线、旧 token 可用或重启命令返回成功都不能证明接管完成。
-- 只有官方结构化配置或健康状态可以证明重载被禁用；文本、超时和空结果不能升级为显式重启依据。
-- 所有恢复、重连和重启继续经 `GatewayLifecycleCoordinator`；业务页面不得直接控制 Gateway 进程或系统服务。
-- 是否已经发生过重启由协调器在真实原生副作用调用点记录，不按外层动作名称、进程状态或最终返回值推断；结果失败或未知也不能自动重放同一次补偿。
-- Gateway 连接重试只有一个所有者。健康轮询只提供端点事实，不能在 Connection 的尝试、退避或耗尽阶段并发创建第二轮连接。
-- 任何管理写请求都必须在副作用发送前通过当前连接来源围栏，事后拒绝不能撤销已发生的写入。
+- 代理所在本地环境不是项目或目标机器的证据来源。任何任务均不得以本地 Node.js、npm、pnpm、PATH、已安装依赖、运行进程、凭据、配置、网络、操作系统、用户目录、命令输出或工具版本形成结论、选择实现或报告验证；证据只可来自用户材料、受版本控制的仓库内容、目标系统可复现证据和上游官方契约。
+- Gateway 连接错误不是本次根因；协作 service 在打开持久化数据库时失败，RPC 仍可用于返回结构化启动诊断。
+- schema 13 到 15 包含结构删除，不能通过修改版本号安全升级。
+- 仓库禁止历史迁移和兼容 fallback，本次不增加迁移器，也不自动删除用户数据。
+- 当前安全恢复路径是使用安装事务保存的准确旧插件和配置执行回滚。若要采用 schema 15，需要另行定义并明确授权新的数据处置流程。
+- Gateway 重启、连接恢复和身份核验继续只经过 `GatewayLifecycleCoordinator`。
+- 钉钉深链只是 JunQi 对 OpenClaw Markdown 的受限桌面呈现，不改变 OpenClaw transcript、工具结果或 DWS 业务状态。
+- 自定义协议必须同时通过前端协议、主机、路径和危险字符校验，以及 Tauri Opener 的最小 URL scope 校验；桌面打开失败不能伪装为浏览器打开成功。
+- 审计兼容不是客户端本地 fallback：两个分支都读取 OpenClaw 官方账本，且旧账本始终以 `legacy` 来源暴露，不与活动账本或本窗口投影混用。
 
 ## 核心文件
 
-- `src-tauri/src/commands/collaboration_bootstrap.rs`
-- `packages/junqi-collab/package.json`
-- `packages/junqi-collab/src/schema.ts`
-- `src-tauri/resources/collaboration/metadata.json`
-- `src/services/setup/openClawSetupHandoff.ts`
-- `src/services/gateway/OpenClawConfigApplicationClient.ts`
-- `src/services/gateway/OpenClawConfigSnapshot.ts`
-- `src/services/gateway/Connection.ts`
-- `src/services/gateway/GatewayConnectionSettlement.ts`
+- `packages/junqi-collab/src/database-schema-initializer.ts`
+- `packages/junqi-collab/src/index.ts`
+- `packages/junqi-collab/src/rpc.ts`
 - `src/services/gateway/GatewayLifecycleCoordinator.ts`
-- `src/services/gateway/GatewayConnectionManager.ts`
-- `src/services/gateway/runtimeIdentity.ts`
-- `src/services/gateway/index.ts`
-- `src/runtime/gatewayLifecycle.ts`
-- `src/hooks/useSetupFlow/useWizardSession.ts`
-- `src/hooks/useSetupFlow/useGuidedSetupSession.ts`
-- `src/services/openclawWizard.ts`
-- `docs/quality/openclaw-wizard-terminal-handoff-audit-2026-08-11.md`
-- `specs/2026-08-12-openclaw-native-installation-alignment.md`
-- `plans/2026-08-12-openclaw-native-installation-alignment.md`
+- `src/stores/collaborationSetupStore.ts`
+- `src/components/Collaboration/CollaborationSetupDialog.tsx`
+- `src/pages/AgentHub/AgentHubOfficePanel.tsx`
+- `src/runtime/desktopExternalLink.ts`
+- `src-tauri/capabilities/default.json`
+- `src/business-applications/dingtalkToolRequestCoordinator.ts`
+- `src/business-applications/dwsOperationLifecycle.ts`
+- `src/components/BusinessApplications/businessActivityPresentation.ts`
+- `src/components/BusinessApplications/BusinessActivityList.tsx`
+- `src/components/BusinessApplications/DingTalkToolDetail.tsx`
+- `src/components/BusinessApplications/dingTalkSubmitLinkPresentation.ts`
+- `src/components/BusinessApplications/DingTalkReadinessPanel.tsx`
+- `src/components/BusinessApplications/dingTalkReadiness.ts`
+- `src/hooks/useDingTalkBusinessAudit.ts`
+- `src/services/gateway/OpenClawAuditClient.ts`
+- `src/components/Chat/chatResponseTrace.ts`
+- `src/business-applications/dingtalkRuntimeIdentityCoordinator.ts`
+- `src/stores/dingTalkRuntimeIdentityStore.ts`
+- `src/business-applications/dingtalkTools.ts`
+- `src/components/Chat/session-runtime/SessionRuntimeControl.tsx`
+- `src/components/Chat/ChatMarkdownRenderer.tsx`
+- `src/components/FileExplorer/MarkdownPreview.tsx`
+- `src-tauri/src/commands/setup/node.rs`
+- `src/hooks/useSetupFlow/useSetupInstallers.ts`
+- `src/hooks/useSetupFlow/nodeRuntimePreparation.ts`
+- `src/hooks/useSetupFlow/nodeRuntimePreparation.test.ts`
+- `src-tauri/tauri.conf.json`
+- `docs/quality/collaboration-service-startup-failure-audit-2026-08-21.md`
+- `docs/quality/dws-install-and-workspace-recovery-2026-08-19.md`
+- `docs/quality/dingtalk-workbench-state-audit-2026-08-21.md`
+- `docs/quality/business-audit-and-model-picker-state-audit-2026-08-21.md`
+- `specs/2026-08-21-collaboration-service-startup-failure.md`
+- `plans/2026-08-21-collaboration-service-startup-failure.md`
+- `docs/quality/target-runtime-node-resolution-2026-08-24.md`
+- `specs/2026-08-24-target-runtime-node-resolution.md`
+- `plans/2026-08-24-target-runtime-node-resolution.md`
+- `docs/quality/target-environment-evidence-code-audit-2026-08-24.md`
+- `specs/2026-08-24-target-environment-evidence-bugfix.md`
+- `plans/2026-08-24-target-environment-evidence-bugfix.md`
 
 ## 测试与验证
 
-- 本轮 `pnpm lint` 已通过，包含 904 个文件的模块边界检查、版本一致性和 TypeScript 类型检查。
-- 本轮 `pnpm test` 已通过；测试输出包含既有 React 服务端渲染 `useLayoutEffect` 警告和 Node `module.register()` 弃用警告，但命令退出码为 0。
-- 本轮 `cargo fmt -- --check`、`cargo check --lib` 和 `cargo test --lib` 已通过，其中 Rust 库测试为 638 项通过、1 项忽略。
-- 本轮 `pnpm collab:test` 已通过，355 项协作插件测试全部通过；`pnpm collab:validate` 与 `pnpm collab:bundle` 已通过。
-- 本轮 `pnpm build` 已通过，重新生成并核验协作插件 0.5.0、schema 15 的 bundle，同时完成钉钉 bundle、TypeScript 和 Vite 生产构建。
-- 本轮 `pnpm verify:openclaw-docs` 已通过；合并前差异和合并结果的 `git diff --check` 已通过。
-- 定向连接安全、连接收敛、生命周期协调、活动配置应用、终态交接和 Guided Wizard 回归已通过。
-- OpenClaw 官方远端 `main` 已核对到提交 `b3d5265f58522bab67e06168d436b3b328cbae60`。它相对上一审计基线仅包含 Docker 安全加固，Wizard 终态、Hosted 工作保留、配置应用修订、重载和认证代次契约没有变化。
-- 已从提交 `5dfc16f8962c7e1ce4c3d453dab53fbd048b6084` 使用无 updater 制品配置构建 macOS ARM64 DMG；`hdiutil verify` 通过，文件大小为 8333321 字节，SHA-256 为 `2e3f38101208cf54ef8a22df8fd5cc9591a2c18fc065d041d8e24827477faa16`。
-- `git diff --check`、本次修改文件的 Emoji 扫描和多语言 JSON 解析已通过。
-- 本轮修复包含 Rust 改动，已完成格式、静态检查和库测试；这些自动化结果不等于 macOS、Windows、Linux 或 Docker 真机验证。
+- 本轮目标运行环境 Node.js 展示、安装闭包、安装引导与进度参数定向回归 122 项通过；三语 JSON 解析通过，修改文件与完整修改文件的 Emoji 扫描通过。
+- 本轮 `cargo fmt -- --check`、`cargo check --lib`、`pnpm lint` 和 `git diff --check` 通过。`pnpm lint` 同时覆盖模块边界、版本一致性和 TypeScript 类型检查。
+- 协作插件完整测试通过。
+- 本轮协作空态、结构化失败、本地化与主提示隔离定向回归 47 项通过；`pnpm exec tsc --noEmit` 与 `git diff --check` 通过。
+- 定向前端回归通过，覆盖结构化错误透传、统一重启、数据保护、本地化错误、无假百分比和办公室修复入口。
+- 钉钉深链定向回归 11 项通过，覆盖两个受限路径、危险协议、伪造主机和路径、桌面打开失败及浏览器失败关闭。
+- `pnpm lint` 通过：模块边界扫描 938 个生产文件、版本一致性和 TypeScript 类型检查无错误。
+- `pnpm test` 通过：前端、源码和脚本全量测试均无失败。
+- `pnpm collab:validate` 通过。
+- `pnpm build` 通过：协作与钉钉固定包契约有效，Vite 转换 9316 个模块。
+- `pnpm tauri build --no-bundle` 通过，Tauri 接受受限 Shell 正则并生成本机 release 应用二进制；未生成安装包。
+- `pnpm verify:openclaw-docs` 通过。
+- `git diff --check` 通过。
+- 业务审计互斥状态、DWS 启动门禁、异步请求围栏、终态缓存回收和模型选择器既有运行时契约的定向测试通过。
+- 本轮审计与模型弹层定向回归 20 项通过；`pnpm lint`、`pnpm test`、`pnpm build` 和 `git diff --check` 再次通过。
+- 本轮钉钉工作台、审计、模型目录与桌面外链定向回归 46 项通过；`pnpm lint`、`pnpm test`、`pnpm build`、`pnpm verify:openclaw-docs` 和 `git diff --check` 均再次通过。
+- 本轮审计账本保留、Agent 运行时门禁与模型目录定向回归 24 项通过；`pnpm lint`、`pnpm test`、`pnpm build` 和 `pnpm verify:openclaw-docs` 通过。
+- `pnpm dingtalk:test` 通过，钉钉插件 21 项契约测试无失败。
+- 本轮提交入口定向回归 19 项通过，覆盖 DWS 完整模板投影、重复入口过滤、钉钉路径、危险协议、桌面打开失败与浏览器失败关闭。
+- 本轮审计 Session 隔离、失败空态与模型目录定向回归 25 项通过；`pnpm exec tsc --noEmit` 与 `git diff --check` 通过。
+- 本轮 `pnpm lint`、完整 `pnpm test`、`pnpm build`、`pnpm verify:openclaw-docs`、`cargo fmt -- --check`、`cargo check --lib`、`cargo test --lib` 与 `git diff --check` 通过。
+- 本轮钉钉身份修订门禁、断连审计收敛、审批结果边界、模型目录和钉钉深链定向回归 50 项通过；`pnpm lint`、`pnpm dingtalk:test`、完整 `pnpm test`、`pnpm build` 与 `git diff --check` 通过。
+- 本轮活动审计旧协议回退、Session 隔离与聊天追溯定向回归 17 项通过；`pnpm lint` 通过。完整测试和生产构建待本轮文档收口后执行。
+- 本轮钉钉深链、DWS 授权失败和操作单飞定向回归 12 项通过；`pnpm lint` 通过。真实 Tauri WebView 的钉钉系统协议启动仍待人工验证。
+- 本轮完整 `pnpm test`、`pnpm build`、`pnpm lint`、`pnpm verify:openclaw-docs` 与 `git diff --check` 通过。审计失败不会显示为成功空账本；模型目录与运行参数分别占用独立滚动区域。
+- 本轮钉钉提交入口状态投影、DWS 模板投影、桌面外链、Chat 深链与三语资源定向回归 22 项通过；`pnpm lint`、`git diff --check`、三语 JSON 解析与本次修改文件的 Emoji 扫描通过，系统接手反馈与打开失败保持互斥。
 
 ## 已知问题与未验证边界
 
-- 合法 OpenClaw peer dependency 链接的自动化回归已通过，但尚未在当前安装包中执行真实插件覆盖、Gateway 重启和能力握手，不能把代码修复等同于本机端到端更新成功。
-- Windows junction、Linux 文件权限与 Docker 挂载路径尚未真机验证；当前实现按 Windows 重解析点失败关闭并仅排除精确 host peer link。
-- 最新 OpenClaw 上的真实 Guided provider、浏览器授权、官方活动工作延迟重启、token 轮换和新认证连接尚未完成 macOS 安装包端到端验证。
-- 当前本机已安装 Runtime 缺少活动配置修订字段，只能验证“证据不可用”分支，不能证明最新版 Runtime 的成功接管链路。
-- macOS、Windows、Linux 与 Docker 的系统服务、凭据库、连接轮换和首次进入工作台仍需分别在目标环境真机验证。
-- 真实渠道插件授权、Classic Wizard 收尾、暗色主题、窄窗口、键盘焦点和减少动态效果不属于本轮自动化能够证明的范围。
-- 本轮 macOS ARM64 DMG 是未签名、未公证的本地安装验证包，不是正式 Release；未构建其他平台安装包，也未发布远端制品。
+- 尚未在 Windows、macOS 与 Linux 的干净目标机器上分别验证：已有兼容 Node.js 复用、已存在不兼容 Node.js 的三语提示、版本管理器 PATH 选择、系统安装器权限和安装前二次复核。当前自动化与本机静态检查不替代这些目标平台验收。
+- 尚未在真实 Tauri WebView 中连续验证 schema 不兼容提示、精确回滚、Gateway 重连和回滚后旧插件恢复。
+- 亮色、暗色、护眼主题、窄窗口、键盘焦点和减少动态效果尚未完成真机视觉验收。
+- Windows 和 Linux 的真实服务重启与回滚尚未验证。
+- 尚未在重新构建的真实 Tauri WebView 中点击 DWS 返回的实际钉钉提交入口并验证系统接手提示；macOS 钉钉客户端跳转、Windows 协议注册和未安装钉钉时的系统行为仍待真机验证。
+- 尚未在真实 Gateway 上连续验证审计失败、成功空结果和本窗口投影并存的完整切换序列。
+- 尚未在真实 Tauri WebView 中用长模型列表验证鼠标、触控板和键盘滚动到最后一项；本地浏览器控制插件因当前入口引用已清理的旧版本内部文件而无法建立测试连接。
+- 尚未在真实旧 Gateway 上复现 `unknown method` 或未通告状态下的 `missing scope: operator.admin`，并确认兼容工具账本来源提示；自动化已覆盖这两种精确结构化响应及禁止消息回退。
+- 尚未在真实桌面应用中确认长模型目录的模型列能够滚动至末项，也未连续验证钉钉详情自动展开参数输入和官方文档外链失败反馈；自动化仅覆盖其数据与结构契约。
+- 当前机器的浏览器控制入口引用了已清理的旧版本内部文件，无法替代真实 Tauri WebView 验收；模型目录、审计刷新失败保留和 Agent 运行时门禁仍需在安装后的桌面应用中验证。
+- 本轮链接交互复用既有 `aegis-*` 主题 token、共享 Button 与通知组件；亮色、暗色、护眼主题、窄窗口和键盘焦点仍待真机视觉验收。
+- 本轮没有生成 Tauri 安装包，没有正式签名、公证、提交、标签或线上发布。
+- 工作树原有未跟踪目录 `.pnpm-store/` 和 `outputs/` 不属于本任务，保持不动。
+
+## 失败方案
+
+- 仅重启 Gateway 无法修复 schema 不兼容，只会重复得到同一 service 启动失败。
+- 将固定进度作为安装状态会把等待误报为进展，已删除。
+- 把能力探测错误转换为 `null` 会丢失根因，已改为保留结构化错误。
+- 直接在协作安装流程调用专用重启会绕过统一生命周期，已改为协调器内执行精确目标重启。
+- 自动修改 schema 版本、迁移或删除数据库都不具备安全和授权依据，本次未采用。
+- 只保留链接样式不能修复问题，因为 `react-markdown` 默认转换会清空 `dingtalk://`，而旧 Shell 打开路径也不能提供当前官方的 Opener 契约。
+- 桌面打开失败后调用 `window.open` 只会掩盖错误，已删除该伪降级并改为就近本地化反馈。
+- 把官方审计读取失败放在“尚无审计”的描述中会把未知结果误报为空结果，已改为互斥状态。
+- 让模型目录和全部运行参数共享一个外层滚动区会造成裁切和滚动目标不清，已拆成独立滚动边界。
+- 不加握手条件地把 `missing scope: operator.admin` 归类为旧协议不支持会掩盖已通告方法的真实失败；JunQi 现在只在官方指定的未通告前提下采用该分类。
+- 用源码字符串断言弹层宽度和类名只会约束写法，无法证明可达性；该守护已删除，由领域行为测试、共享碰撞算法测试和待完成的真机视觉验收共同覆盖。
 
 ## 下一步顺序
 
-1. 在当前 macOS OpenClaw Runtime 上执行协作插件 0.4.0 到 0.5.0 的真实更新、Gateway 重启和能力确认，并验证失败回滚。
-2. 在最新版 OpenClaw Runtime 上执行真实配置终态、官方延迟重启和活动修订收敛验证。
-3. 覆盖共享 token 轮换、设备凭据连接、主连接换代和管理员临时写请求的真实 Gateway 场景。
-4. 重新生成安装包后验证 macOS 首次安装，再分别完成 Windows、Linux 与 Docker 真机验收。
-5. 未经明确要求不推送、打 tag 或发布。
+1. 在 Windows、macOS 和 Linux 的目标机器上分别验证已有兼容 Node.js 的无下载复用、已存在不兼容 Node.js 的版本范围提示、系统安装器权限和安装前二次复核。
+2. 在重新构建的真实桌面应用中点击 DWS 返回的请假提交入口，确认系统收到 Opener 打开请求；同时验证未安装客户端和无默认协议处理器时显示本地化错误。
+3. 在真实 Gateway 上验证业务审计读取失败、成功空结果、已有官方记录和本窗口投影四种互斥状态，确认刷新失败不会清空已确认记录。
+4. 用包含大量模型的真实 Session 验证模型列滚动到底、搜索、参数区独立滚动和底部操作可达，并覆盖三种主题与窄窗口。
+5. 在真实桌面应用中打开协作设置，确认 schema 不兼容显示本地化错误且不再出现固定百分比和全局 Gateway 启动失败。
+6. 执行精确回滚，验证旧插件与配置恢复、Gateway 重连以及既有协作数据仍可读取。
+7. 根据用户后续指令决定是否提交、打包或设计明确授权的数据重置流程。
+8. 在目标系统验证公开 npm 元数据解析、目标 npm 配置解析、Node.js 安装前目标契约门禁，以及 DWS 写操作的预先中止和启动后中止待核验语义。

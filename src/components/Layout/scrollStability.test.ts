@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { WORKSPACE_PAGE_FRAME_CLASS_NAME } from '../shared/workspacePageLayout';
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), 'utf8');
 
@@ -27,16 +28,8 @@ test('page transitions do not translate the route scrollbar', async () => {
   assert.doesNotMatch(source, /animate-slide-up/);
 });
 
-test('primary scrolling pages delegate vertical scrolling to AppLayout', async () => {
-  const sources = await Promise.all([
-    read('../../pages/Dashboard/index.tsx'),
-    read('../../pages/OpenClawCommands/index.tsx'),
-  ]);
-
-  for (const source of sources) {
-    const pageTransition = source.match(/<(?:Page|Scene)Transition(?:\s|\n)+className="([^"]+)"/)?.[1] ?? '';
-    assert.doesNotMatch(pageTransition, /overflow-y-auto/);
-    assert.equal(pageTransition.split(/\s+/).includes('h-full'), false);
-    assert.match(pageTransition, /min-h-full/);
-  }
+test('primary scrolling page contract delegates vertical scrolling to AppLayout', () => {
+  assert.doesNotMatch(WORKSPACE_PAGE_FRAME_CLASS_NAME, /overflow-y-auto/);
+  assert.equal(WORKSPACE_PAGE_FRAME_CLASS_NAME.split(/\s+/).includes('h-full'), false);
+  assert.match(WORKSPACE_PAGE_FRAME_CLASS_NAME, /min-h-full/);
 });

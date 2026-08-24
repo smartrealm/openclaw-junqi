@@ -6,7 +6,6 @@ import { ComposerAttachmentOverlays } from './message-input/ComposerAttachmentOv
 import { ComposerAttachmentTray } from './message-input/ComposerAttachmentTray';
 import { ComposerInputSurface } from './message-input/ComposerInputSurface';
 import { ComposerVoiceRecorder } from './message-input/ComposerVoiceRecorder';
-import { SessionMutationHandoffPanel } from './message-input/SessionMutationHandoffPanel';
 import { useComposerAttachments } from '@/hooks/chat/useComposerAttachments';
 import { useComposerInterruption } from '@/hooks/chat/useComposerInterruption';
 import { useComposerMenu } from './message-input/useComposerMenu';
@@ -113,7 +112,6 @@ export function MessageInput() {
         onPreview={attachments.setLightbox}
         onRemove={attachments.removeFile}
       />
-      <SessionMutationHandoffPanel sessionKey={activeSessionKey} dir={dir} />
       {voice.recording ? (
         <ComposerVoiceRecorder
           dir={dir}

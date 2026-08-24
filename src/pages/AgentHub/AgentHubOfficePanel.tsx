@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Bot, ChevronRight, PanelsTopLeft, RefreshCw } from 'lucide-react';
+import { AlertCircle, Bot, ChevronRight, PanelsTopLeft, RefreshCw, Settings2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AgentOfficeView } from '@/components/Collaboration/AgentOfficeView';
 import {
@@ -9,6 +9,7 @@ import {
 } from '@/components/Collaboration/CollaborationCard';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { useCollaborationStore } from '@/stores/collaborationStore';
+import { useCollaborationSetupStore } from '@/stores/collaborationSetupStore';
 import type { CollaborationRunSummary } from '@/types/collaboration';
 import {
   selectableAgentHubOfficeRuns,
@@ -36,6 +37,7 @@ export function AgentHubOfficePanel({
   const runsById = useCollaborationStore((state) => state.runsById);
   const snapshotsByRunId = useCollaborationStore((state) => state.snapshotsByRunId);
   const bootstrap = useCollaborationStore((state) => state.bootstrap);
+  const requestCollaborationSetup = useCollaborationSetupStore((state) => state.requestSetup);
   const syncGlobalRuns = useCollaborationStore((state) => state.syncGlobalRuns);
   const refreshRun = useCollaborationStore((state) => state.refreshRun);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -65,7 +67,7 @@ export function AgentHubOfficePanel({
     setLoading(true);
     setError(null);
     try {
-      await bootstrap();
+      await bootstrap(true);
       const loadedRuns = await syncGlobalRuns({ includeArchived: false });
       if (requestRef.current !== requestId) return;
       const next = selectAgentHubOfficeRun(
@@ -168,6 +170,15 @@ export function AgentHubOfficePanel({
           )}
           <button
             type="button"
+            onClick={() => requestCollaborationSetup('agent-office')}
+            data-agent-hub-configure-collaboration
+            className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-aegis-primary/30 bg-aegis-primary/[0.07] px-2.5 text-[11px] font-medium text-aegis-primary transition-colors hover:border-aegis-primary/45 hover:bg-aegis-primary/[0.11] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/40"
+          >
+            <Settings2 size={12} aria-hidden="true" />
+            {t('agentHub.office.configureCollaboration', '配置协作许可')}
+          </button>
+          <button
+            type="button"
             onClick={() => void load(selectedRunRef.current)}
             disabled={loading}
             className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-aegis-border bg-aegis-bg px-2.5 text-[11px] font-medium text-aegis-text-secondary transition-colors hover:border-aegis-border-hover hover:bg-aegis-elevated-solid disabled:cursor-not-allowed disabled:opacity-55"
@@ -196,24 +207,25 @@ export function AgentHubOfficePanel({
 
       {!loading && !error && (
         <div className="space-y-3" data-agent-hub-office-workspace>
-          <AgentHubConfiguredOffice agents={configuredAgents} />
-
           {!selectedRun && (
-            <div className="flex min-h-36 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-aegis-border bg-aegis-surface-solid px-5 text-center">
-              <Bot size={20} className="text-aegis-text-dim" aria-hidden />
-              <div>
-                <h3 className="text-sm font-semibold text-aegis-text-secondary">{t('agentHub.office.emptyTitle', '暂无协作运行')}</h3>
-                <p className="mt-1 max-w-md text-xs leading-5 text-aegis-text-muted">{t('agentHub.office.emptyDescription', '当前没有可投影到办公室的未归档协作运行。')}</p>
+            <>
+              <AgentHubConfiguredOffice agents={configuredAgents} />
+              <div className="flex min-h-36 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-aegis-border bg-aegis-surface-solid px-5 text-center">
+                <Bot size={20} className="text-aegis-text-dim" aria-hidden />
+                <div>
+                  <h3 className="text-sm font-semibold text-aegis-text-secondary">{t('agentHub.office.emptyTitle', '暂无协作运行')}</h3>
+                  <p className="mt-1 max-w-md text-xs leading-5 text-aegis-text-muted">{t('agentHub.office.emptyDescription', '当前没有可投影到办公室的未归档协作运行。')}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onShowAgentList}
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-aegis-border bg-aegis-bg px-2.5 text-[11px] font-medium text-aegis-text-secondary transition-colors hover:border-aegis-border-hover hover:bg-aegis-elevated-solid"
+                >
+                  {t('agentHub.office.showAgentList', '查看智能体列表')}
+                  <ChevronRight size={13} aria-hidden />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={onShowAgentList}
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-aegis-border bg-aegis-bg px-2.5 text-[11px] font-medium text-aegis-text-secondary transition-colors hover:border-aegis-border-hover hover:bg-aegis-elevated-solid"
-              >
-                {t('agentHub.office.showAgentList', '查看智能体列表')}
-                <ChevronRight size={13} aria-hidden />
-              </button>
-            </div>
+            </>
           )}
 
           {snapshot && selectedRun && (

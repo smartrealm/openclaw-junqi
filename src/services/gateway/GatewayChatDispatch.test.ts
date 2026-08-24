@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { dispatchGatewayChatMessage } from './index';
-import type { GatewayRequestParams } from './Connection';
+import {
+  dispatchGatewayChatMessage,
+  dispatchGatewayChatMessageWithLeafFenceNegotiation,
+  type GatewayChatLeafFenceCapabilityState,
+} from './index';
+import { GatewayRpcError, type GatewayRequestParams } from './Connection';
 import type { OpenClawSessionSteerInput } from './OpenClawSessionSteerClient';
 
 test('普通发送不会改写会话推理可见性', async () => {
@@ -68,6 +72,57 @@ test('普通发送将已验证的 transcript leaf 原样交给 OpenClaw', async 
       idempotencyKey: 'message-leaf',
     },
   }]);
+});
+
+test('稳定 Runtime 明确拒绝 leaf 围栏时只在参数校验后协商一次', async () => {
+  const requests: GatewayRequestParams[] = [];
+  const capability: GatewayChatLeafFenceCapabilityState = { connectionId: null, support: 'unknown' };
+  const transport = {
+    isConnected: () => true,
+    request: async (_method: string, params: GatewayRequestParams) => {
+      requests.push(params);
+      if ('expectedLeafEntryId' in params) {
+        throw new GatewayRpcError(
+          "invalid chat.send params: at root: unexpected property 'expectedLeafEntryId'",
+          'INVALID_REQUEST',
+        );
+      }
+      return { runId: 'accepted' };
+    },
+  };
+  const steer = { steer: async () => { throw new Error('不应执行 steering'); } };
+
+  await dispatchGatewayChatMessageWithLeafFenceNegotiation(transport, steer, {
+    message: 'first', sessionKey: 'agent:main:new', clientMessageId: 'message-first', expectedLeafEntryId: null,
+  }, 'connection-1', capability);
+  await dispatchGatewayChatMessageWithLeafFenceNegotiation(transport, steer, {
+    message: 'second', sessionKey: 'agent:main:new', clientMessageId: 'message-second', expectedLeafEntryId: 'leaf-1',
+  }, 'connection-1', capability);
+
+  assert.equal(capability.support, 'unsupported');
+  assert.equal(requests.length, 3);
+  assert.equal((requests[0] as Record<string, unknown>).expectedLeafEntryId, null);
+  assert.equal('expectedLeafEntryId' in requests[1]!, false);
+  assert.equal('expectedLeafEntryId' in requests[2]!, false);
+});
+
+test('chat.send 的其他失败不得触发降参重放', async () => {
+  let attempts = 0;
+  const capability: GatewayChatLeafFenceCapabilityState = { connectionId: null, support: 'unknown' };
+  await assert.rejects(
+    dispatchGatewayChatMessageWithLeafFenceNegotiation({
+      isConnected: () => true,
+      request: async () => {
+        attempts += 1;
+        throw new GatewayRpcError('model unavailable', 'INVALID_REQUEST');
+      },
+    }, { steer: async () => { throw new Error('不应执行 steering'); } }, {
+      message: 'first', sessionKey: 'agent:main:new', clientMessageId: 'message-failed', expectedLeafEntryId: null,
+    }, 'connection-1', capability),
+    /model unavailable/,
+  );
+  assert.equal(attempts, 1);
+  assert.equal(capability.support, 'unknown');
 });
 
 test('转向发送使用 OpenClaw 的 sessions.steer 且不会退回 chat.send', async () => {

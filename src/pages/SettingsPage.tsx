@@ -14,6 +14,7 @@ import { APP_VERSION } from '@/hooks/useAppVersion';
 import { GlassCard, GlassCardEnterMotionScope } from '@/components/shared/GlassCard';
 import { JunQiLogo } from '@/components/shared/JunQiLogo';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { WORKSPACE_PAGE_FRAME_CLASS_NAME } from '@/components/shared/workspacePageLayout';
 import { ActiveTabIndicator, AnimatedTabPanel } from '@/components/shared/TabMotion';
 import { OpenClawUpdatePanel } from '@/components/shared/OpenClawUpdatePanel';
 import { StatusDot } from '@/components/shared/badge';
@@ -62,6 +63,7 @@ import {
 } from '@/api/tauri-commands';
 import { StructuredPlanSettingsPanel } from '@/components/settings/StructuredPlanSettingsPanel';
 import { useJarvisVoiceSettings } from '@/hooks/useJarvisVoiceSettings';
+import { useJarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
 import { useOpenClawTtsStatus } from '@/hooks/useOpenClawTtsStatus';
 import { useOpenClawPlanToolSetting } from '@/hooks/useOpenClawPlanToolSetting';
 import { useOpenClawRuntimeLanguageSetting } from '@/hooks/useOpenClawRuntimeLanguageSetting';
@@ -106,6 +108,7 @@ export function SettingsPageFull() {
     if (budgetLimit > 0) void ensureGroupFresh('cost');
   }, [budgetLimit]);
   const { connected, connecting } = useChatStore();
+  const { voiceWake } = useJarvisVoiceRuntime();
   const prefersDark = usePrefersDark();
   const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled, backdropContrastEnabled, setBackdropContrastEnabled, captionScale: petCaptionScale, setCaptionScale: setPetCaptionScale } = usePetStore();
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
@@ -412,7 +415,7 @@ export function SettingsPageFull() {
   };
 
   return (
-    <PageTransition className="p-6 space-y-6 max-w-[920px] mx-auto">
+    <PageTransition className={`${WORKSPACE_PAGE_FRAME_CLASS_NAME} space-y-6`}>
       <div>
         <h1 className="text-[22px] font-bold text-aegis-text flex items-center gap-3">
           <Settings size={24} className="text-aegis-text-dim" />
@@ -457,7 +460,9 @@ export function SettingsPageFull() {
 
       {activeTab === 'terminal' && <TerminalSettingsPanel />}
 
-      {activeTab === 'jarvis' && <JarvisVoiceSettingsPanel settings={jarvisVoiceSettings} />}
+      {activeTab === 'jarvis' && (
+        <JarvisVoiceSettingsPanel settings={jarvisVoiceSettings} voiceWake={voiceWake} />
+      )}
 
 
       {activeTab === 'maintenance' && (

@@ -8,6 +8,7 @@ import clsx from 'clsx';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { serializeToolOutput } from '@/processing/toolExecutionProjection';
 import { getToolLabelKey, type BuiltInToolName } from './toolCallPresentation';
+import { formatStructuredTranscriptText } from '@/utils/transcriptContentPresentation';
 
 export interface ToolCallInfo {
   toolName: string;
@@ -238,7 +239,7 @@ export function ToolCallBubble({ tool }: ToolCallBubbleProps) {
                   bg-[rgb(var(--aegis-overlay)/0.04)] rounded-md p-2 max-h-[200px] overflow-auto
                   border border-[rgb(var(--aegis-overlay)/0.04)]"
                   dir="ltr">
-                  {tool.output}
+                  {formatStructuredTranscriptText(tool.output)}
                 </pre>
               </div>
             )}

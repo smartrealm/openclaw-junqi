@@ -11,6 +11,18 @@ export interface WorkspaceBootstrapReadiness {
   reset(): void;
 }
 
+/**
+ * 当前连接的会话快照是工作区首屏的权威放行条件。调用方不应等待某一个
+ * 特定请求完成，因为生命周期重连期间该请求可能被新的会话刷新合法取代。
+ */
+export function releaseWorkspaceAfterGatewayData(
+  readiness: WorkspaceBootstrapReadiness,
+  gatewayDataReady: boolean,
+): boolean {
+  readiness.updateGatewayDataReady(gatewayDataReady);
+  return gatewayDataReady && readiness.markInitialWorkspaceDataReady();
+}
+
 export function shouldReleaseWorkspaceAfterGatewayRetryExhaustion(
   setupComplete: boolean,
   setupValidationPending: boolean,

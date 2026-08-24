@@ -46,6 +46,7 @@ test('引导呈现状态机为每个持久化页面状态提供确定的用户�
     ['install-node', 2, 'operation'],
     ['install-openclaw', 2, 'operation'],
     ['gateway-ready', 2, 'operation'],
+    ['update-openclaw', 3, 'decision'],
     ['configure-openclaw', 3, 'official-wizard'],
     ['error', 2, 'failure'],
     ['ready', 4, 'complete'],

@@ -4,10 +4,14 @@ import { CircleAlert, CircleCheck, CircleDashed, Copy, ExternalLink, RefreshCw, 
 import { Button } from '@/components/shared/button/Button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { DingTalkRuntimeIdentityProjection } from '@/business-applications/dingtalkTools';
+import type { DwsAuthorizationFailureDiagnosis } from '@/business-applications/dwsAuthorizationFailure';
 import { DingTalkRuntimeIdentity } from './DingTalkRuntimeIdentity';
 import { resolveDingTalkReadiness } from './dingTalkReadiness';
+import { shouldHideDingTalkReadinessPanel } from './dingTalkReadinessFeedback';
+import { useSetupProgress } from '@/hooks/useSetupProgress';
 
 const DWS_OFFICIAL_GUIDE = 'https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli#installation';
+const DWS_AUTH_GUIDE = 'https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/blob/main/README.md';
 const DWS_INSTALL_COMMANDS = [
   { label: 'macOS / Linux', command: 'curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh | sh' },
   { label: 'Windows PowerShell', command: 'irm https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.ps1 | iex' },
@@ -50,9 +54,14 @@ export type DingTalkPluginInstallProgress = {
 
 export type DingTalkDwsOperationPresentation = {
   readonly id: string;
-  readonly kind: 'install' | 'authorize';
+  readonly kind: 'install' | 'authorize' | 'resetAuth' | 'switchProfile' | 'logoutProfile';
   readonly phase: 'running' | 'completed' | 'failed' | 'cancelled';
   readonly message: string | null;
+};
+
+export type DingTalkAuthorizationAgentOption = {
+  readonly id: string;
+  readonly name?: string;
 };
 
 export function DingTalkReadinessPanel({
@@ -60,15 +69,22 @@ export function DingTalkReadinessPanel({
   runtimeToolAvailable,
   runtime,
   runtimeError,
+  operationError,
+  operationNotice,
   pluginNeedsInstall,
   pluginStatusPending,
   restartRequired,
   agentId,
+  authorizationAgentOptions,
+  authorizationTargetAgentId,
   installAvailable,
   installationProgress,
   dwsOperation,
   dwsOutput,
+  dwsAuthorizationFailure,
+  selectedProfile,
   busy,
+  refreshing,
   operation,
   sessionLabel,
   effectiveToolCount,
@@ -79,9 +95,14 @@ export function DingTalkReadinessPanel({
   onRefresh,
   onInstallPlugin,
   onAuthorizeAgent,
+  onAuthorizationTargetAgentChange,
   onRestartGateway,
   onInstallDws,
   onAuthorizeDws,
+  onResetDwsAuth,
+  onSelectedProfileChange,
+  onSwitchDwsProfile,
+  onLogoutDwsProfile,
   onCancelDws,
   onDismissDws,
 }: {
@@ -89,15 +110,22 @@ export function DingTalkReadinessPanel({
   runtimeToolAvailable: boolean;
   runtime: DingTalkRuntimeIdentityProjection | null;
   runtimeError: string | null;
+  operationError: string | null;
+  operationNotice: string | null;
   pluginNeedsInstall: boolean;
   pluginStatusPending: boolean;
   restartRequired: boolean;
   agentId: string | null;
+  authorizationAgentOptions: readonly DingTalkAuthorizationAgentOption[];
+  authorizationTargetAgentId: string | null;
   installAvailable: boolean;
   installationProgress: DingTalkPluginInstallProgress;
   dwsOperation: DingTalkDwsOperationPresentation | null;
   dwsOutput: readonly string[];
+  dwsAuthorizationFailure: DwsAuthorizationFailureDiagnosis | null;
+  selectedProfile: string;
   busy: boolean;
+  refreshing: boolean;
   operation: 'installing' | 'authorizing' | 'restarting' | null;
   sessionLabel: string | null;
   effectiveToolCount: number;
@@ -107,14 +135,21 @@ export function DingTalkReadinessPanel({
   hideWhenReady?: boolean;
   onRefresh: () => void;
   onInstallPlugin: () => void;
-  onAuthorizeAgent: () => void;
+  onAuthorizeAgent: (agentId: string) => void;
+  onAuthorizationTargetAgentChange: (agentId: string) => void;
   onRestartGateway: () => void;
   onInstallDws: () => void;
   onAuthorizeDws: () => void;
+  onResetDwsAuth: () => void;
+  onSelectedProfileChange: (profile: string) => void;
+  onSwitchDwsProfile: (profile: string) => void;
+  onLogoutDwsProfile: (profile: string) => void;
   onCancelDws: () => void;
   onDismissDws: () => void;
 }) {
   const { t } = useTranslation();
+  const gatewayProgress = useSetupProgress('gateway');
+  const gatewayLifecycleActive = gatewayProgress?.status === 'running';
   const [guideOpen, setGuideOpen] = useState(false);
   const [authorizationGuideOpen, setAuthorizationGuideOpen] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
@@ -128,7 +163,12 @@ export function DingTalkReadinessPanel({
     restartRequired,
     agentId,
   });
-  if (hideWhenReady && readiness.tone === 'ready') return null;
+  if (shouldHideDingTalkReadinessPanel(
+    hideWhenReady,
+    readiness.tone === 'ready',
+    operationError,
+    operationNotice,
+  )) return null;
   const Icon = readiness.tone === 'ready' ? CircleCheck : CircleAlert;
   const toneClass = readiness.tone === 'ready'
     ? 'border-aegis-success/25 bg-aegis-success/[0.05] text-aegis-success'
@@ -145,6 +185,7 @@ export function DingTalkReadinessPanel({
     }
   };
   const dwsOperationActive = dwsOperation?.phase === 'running';
+  const refreshDisabled = !sessionExists || busy || refreshing;
   const description = readiness.action === 'install-plugin' && !installAvailable
     ? t('businessApplications.readiness.installUnavailable')
     : readiness.rawDescription
@@ -153,9 +194,9 @@ export function DingTalkReadinessPanel({
   const action = readiness.action === 'install-plugin'
     ? installAvailable
       ? <Button size="xs" variant="outline" tone="primary" loading={busy} leadingIcon={<Wrench size={12} />} onClick={onInstallPlugin} title={t('businessApplications.readiness.installPluginTitle')}>{t('businessApplications.readiness.installInJunqi')}</Button>
-      : <Button size="xs" variant="outline" tone="neutral" loading={busy} leadingIcon={<RefreshCw size={12} />} onClick={onRefresh}>{t('businessApplications.readiness.refresh')}</Button>
+      : <Button size="xs" variant="outline" tone="neutral" loading={refreshing} disabled={refreshDisabled} leadingIcon={<RefreshCw size={12} />} onClick={onRefresh}>{t(refreshing ? 'businessApplications.readiness.refreshing' : 'businessApplications.readiness.refresh')}</Button>
     : readiness.action === 'configure-agent'
-      ? <Button size="xs" variant="outline" tone="warning" loading={busy && operation === 'authorizing'} disabled={!agentId} onClick={() => setAuthorizationGuideOpen(true)}>{t('businessApplications.readiness.authorizeAgent')}</Button>
+      ? <Button size="xs" variant="outline" tone="warning" loading={busy && operation === 'authorizing'} disabled={!authorizationTargetAgentId} onClick={() => setAuthorizationGuideOpen(true)}>{t('businessApplications.readiness.authorizeAgent')}</Button>
     : readiness.action === 'install-dws'
       ? <Button size="xs" variant="outline" tone="warning" disabled={!installAvailable || dwsOperationActive} loading={dwsOperationActive} leadingIcon={<Terminal size={12} />} onClick={onInstallDws} title={t(installAvailable ? 'businessApplications.readiness.installDwsTitle' : 'businessApplications.readiness.runtimeMutationBlocked')}>{t('businessApplications.readiness.installDws')}</Button>
     : readiness.action === 'authorize-dws'
@@ -163,7 +204,7 @@ export function DingTalkReadinessPanel({
     : readiness.action === 'restart-gateway'
       ? <Button size="xs" variant="outline" tone="warning" loading={busy} onClick={onRestartGateway}>{t('businessApplications.readiness.restartGateway')}</Button>
       : readiness.action === 'refresh'
-        ? <Button size="xs" variant="outline" tone="neutral" loading={busy} leadingIcon={<RefreshCw size={12} />} onClick={onRefresh}>{t('businessApplications.readiness.refresh')}</Button>
+        ? <Button size="xs" variant="outline" tone="neutral" loading={refreshing} disabled={refreshDisabled} leadingIcon={<RefreshCw size={12} />} onClick={onRefresh}>{t(refreshing ? 'businessApplications.readiness.refreshing' : 'businessApplications.readiness.refresh')}</Button>
         : null;
   const installationActive = installationProgress.phase === 'checking' || installationProgress.phase === 'installing';
   const installationVisible = installationProgress.phase !== 'idle';
@@ -188,7 +229,18 @@ export function DingTalkReadinessPanel({
   return (
     <>
       <section className={`${sectionClass} ${toneClass}`} aria-live="polite">
-        {operation && !(operation === 'installing' && installationVisible) && (
+        {gatewayLifecycleActive && (
+          <div className="border-b border-aegis-border bg-aegis-bg/75 px-2.5 py-1.5" role="status">
+            <div className="flex items-center justify-between gap-2 text-[9.5px] text-aegis-text-secondary">
+              <span className="truncate">{gatewayProgress.message}</span>
+              <span className="shrink-0 font-mono tabular-nums">{Math.round(Math.max(0, Math.min(1, gatewayProgress.progress)) * 100)}%</span>
+            </div>
+            <div className="relative mt-1 h-1 overflow-hidden rounded-sm bg-aegis-border/65" role="progressbar" aria-label={gatewayProgress.message} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.max(0, Math.min(1, gatewayProgress.progress)) * 100)}>
+              <span className="absolute inset-y-0 left-0 bg-aegis-primary transition-[width] duration-200" style={{ width: `${Math.round(Math.max(0, Math.min(1, gatewayProgress.progress)) * 100)}%` }} />
+            </div>
+          </div>
+        )}
+        {operation && !gatewayLifecycleActive && !(operation === 'installing' && installationVisible) && (
           <div
             role="progressbar"
             aria-label={t(operation === 'installing' ? 'businessApplications.readiness.installingPlugin' : operation === 'authorizing' ? 'businessApplications.readiness.authorizingAgent' : 'businessApplications.readiness.restartingGateway')}
@@ -205,6 +257,16 @@ export function DingTalkReadinessPanel({
           </div>
           {action && <div className="shrink-0">{action}</div>}
         </div>
+        {operationError && (
+          <div className="border-t border-aegis-danger/20 bg-aegis-danger/[0.04] px-2.5 py-2 text-[10px] leading-4 text-aegis-danger" role="alert">
+            {operationError}
+          </div>
+        )}
+        {operationNotice && (
+          <div className="border-t border-aegis-success/20 bg-aegis-success/[0.04] px-2.5 py-2 text-[10px] leading-4 text-aegis-success" role="status">
+            {operationNotice}
+          </div>
+        )}
         {installationVisible && (
           <div className={variant === 'workspace' ? 'border-t border-current/15 px-4 py-3' : 'mt-2 border-t border-current/15 pt-2'} role="status">
             <div className="flex items-center gap-1.5 text-[9.5px]">
@@ -235,7 +297,17 @@ export function DingTalkReadinessPanel({
             </section>
             <section className="min-w-0 border-b border-aegis-border p-3 xl:border-b-0 xl:border-r" aria-labelledby="dingtalk-current-identity-title">
               <h2 id="dingtalk-current-identity-title" className="mb-2 text-[10.5px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.currentIdentity')}</h2>
-              <DingTalkRuntimeIdentity runtime={runtime} mode="full" />
+              <DingTalkRuntimeIdentity
+                runtime={runtime}
+                mode="full"
+                selectedProfile={selectedProfile}
+                operationActive={dwsOperationActive}
+                profileOperationsAvailable={installAvailable}
+                onSelectedProfileChange={onSelectedProfileChange}
+                onAddProfile={onAuthorizeDws}
+                onSwitchProfile={onSwitchDwsProfile}
+                onLogoutProfile={onLogoutDwsProfile}
+              />
             </section>
             <section className="min-w-0 p-3" aria-labelledby="dingtalk-runtime-evidence-title">
               <h2 id="dingtalk-runtime-evidence-title" className="mb-2 text-[10.5px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.currentEvidence')}</h2>
@@ -280,7 +352,7 @@ export function DingTalkReadinessPanel({
             </div>
             <div className="flex flex-wrap justify-end gap-2">
               <Button size="xs" variant="outline" tone="neutral" leadingIcon={<ExternalLink size={12} />} onClick={() => window.open(DWS_OFFICIAL_GUIDE, '_blank', 'noopener,noreferrer')}>{t('businessApplications.readiness.openOfficialDocs')}</Button>
-              <Button size="xs" variant="solid" tone="primary" leadingIcon={<RefreshCw size={12} />} onClick={() => { setGuideOpen(false); onRefresh(); }}>{t('businessApplications.readiness.refresh')}</Button>
+              <Button size="xs" variant="solid" tone="primary" loading={refreshing} disabled={refreshDisabled} leadingIcon={<RefreshCw size={12} />} onClick={() => { setGuideOpen(false); onRefresh(); }}>{t(refreshing ? 'businessApplications.readiness.refreshing' : 'businessApplications.readiness.refresh')}</Button>
             </div>
           </div>
         </DialogContent>
@@ -299,26 +371,73 @@ export function DingTalkReadinessPanel({
               </div>
               <p className="mt-2 text-aegis-text-dim">{t('businessApplications.readiness.agentPolicyBoundary')}</p>
             </div>
+            <label className="block text-[10.5px] text-aegis-text-secondary" htmlFor="dingtalk-authorization-agent">
+              <span className="mb-1.5 block font-medium">{t('businessApplications.readiness.authorizationTarget')}</span>
+              <select
+                id="dingtalk-authorization-agent"
+                value={authorizationTargetAgentId ?? ''}
+                onChange={(event) => onAuthorizationTargetAgentChange(event.target.value)}
+                disabled={busy || authorizationAgentOptions.length === 0}
+                className="h-8 w-full rounded-md border border-aegis-border bg-aegis-bg px-2 font-mono text-[11px] text-aegis-text outline-none transition-colors focus:border-aegis-primary/50 focus-visible:ring-2 focus-visible:ring-aegis-primary/35 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {authorizationAgentOptions.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name ? `${candidate.name} (${candidate.id})` : candidate.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {authorizationTargetAgentId && authorizationTargetAgentId !== agentId && (
+              <p className="rounded-md border border-aegis-warning/25 bg-aegis-warning/[0.05] px-2.5 py-2 text-[10px] leading-5 text-aegis-warning" role="status">
+                {t('businessApplications.readiness.nonCurrentAgentVerification', { agentId: authorizationTargetAgentId })}
+              </p>
+            )}
             <p className="text-[10px] leading-5 text-aegis-text-dim">{t('businessApplications.readiness.currentSession')} <code className="font-mono text-aegis-text-secondary">{sessionLabel ?? t('businessApplications.readiness.notSelected')}</code>。{t('businessApplications.readiness.agentEffectivePrefix')} <code className="font-mono text-aegis-text-secondary">tools.effective</code> {t('businessApplications.readiness.agentEffectiveSuffix')}</p>
           </div>
           <div className="flex justify-end gap-2 border-t border-aegis-border px-4 py-3">
             <Button size="xs" variant="outline" tone="neutral" onClick={() => setAuthorizationGuideOpen(false)}>{t('businessApplications.readiness.close')}</Button>
-            <Button size="xs" variant="solid" tone="primary" disabled={!agentId} loading={busy && operation === 'authorizing'} onClick={() => { setAuthorizationGuideOpen(false); onAuthorizeAgent(); }}>{t('businessApplications.readiness.authorizeAndRestart')}</Button>
+            <Button size="xs" variant="solid" tone="primary" disabled={!authorizationTargetAgentId} loading={busy && operation === 'authorizing'} onClick={() => { if (!authorizationTargetAgentId) return; setAuthorizationGuideOpen(false); onAuthorizeAgent(authorizationTargetAgentId); }}>{t('businessApplications.readiness.authorizeAndRestart')}</Button>
           </div>
         </DialogContent>
       </Dialog>
       <Dialog open={Boolean(dwsOperation)} onOpenChange={(open) => { if (!open && !dwsOperationActive) onDismissDws(); }}>
-        <DialogContent className="w-[min(720px,calc(100vw-24px))] border-aegis-border bg-aegis-bg-solid p-0 text-aegis-text">
-          <DialogHeader className="border-b border-aegis-border px-4 py-3 text-left">
-            <DialogTitle className="flex items-center gap-2 text-[13px]"><Terminal size={14} />{t(dwsOperation?.kind === 'install' ? 'businessApplications.readiness.installingDws' : 'businessApplications.readiness.authorizingDws')}</DialogTitle>
-            <DialogDescription className="text-[10.5px] text-aegis-text-dim">{dwsOperation?.message ?? t('businessApplications.readiness.waitingDwsOutput')}</DialogDescription>
+        <DialogContent className="max-h-[min(80vh,640px)] w-[min(720px,calc(100vw-24px))] min-w-0 max-w-none overflow-hidden border-aegis-border bg-aegis-bg-solid p-0 text-aegis-text">
+          <DialogHeader className="min-w-0 border-b border-aegis-border px-4 py-3 pr-11 text-left">
+            <DialogTitle className="flex min-w-0 items-center gap-2 text-[13px]"><Terminal size={14} className="shrink-0" />{t(dwsOperation?.kind === 'install'
+              ? 'businessApplications.readiness.installingDws'
+              : dwsOperation?.kind === 'resetAuth'
+                ? 'businessApplications.readiness.resettingDwsAuth'
+                : dwsOperation?.kind === 'switchProfile'
+                  ? 'businessApplications.readiness.switchingDwsProfile'
+                  : dwsOperation?.kind === 'logoutProfile'
+                    ? 'businessApplications.readiness.loggingOutDwsProfile'
+                    : 'businessApplications.readiness.authorizingDws')}</DialogTitle>
+            <DialogDescription className="break-words text-[10.5px] text-aegis-text-dim [overflow-wrap:anywhere]">{dwsOperation?.message ?? t('businessApplications.readiness.waitingDwsOutput')}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 p-4">
-            <div className="max-h-64 min-h-28 overflow-auto rounded-md border border-aegis-border bg-aegis-surface/55 p-2 font-mono text-[10px] leading-5 text-aegis-text-secondary" role="log" aria-live="polite" aria-label={t('businessApplications.readiness.dwsOutput')}>
-              {dwsOutput.length > 0 ? dwsOutput.map((line, index) => <div key={`${index}-${line}`} className="break-words">{line}</div>) : <span className="text-aegis-text-dim">{t('businessApplications.readiness.waitingOutput')}</span>}
+          <div className="min-h-0 min-w-0 space-y-3 overflow-y-auto p-4">
+            <div className="max-h-64 min-h-28 min-w-0 max-w-full overflow-x-hidden overflow-y-auto rounded-md border border-aegis-border bg-aegis-surface/55 p-2 font-mono text-[10px] leading-5 text-aegis-text-secondary" role="log" aria-live="polite" aria-label={t('businessApplications.readiness.dwsOutput')}>
+              {dwsOutput.length > 0 ? dwsOutput.map((line, index) => <div key={`${index}-${line}`} className="whitespace-pre-wrap break-all [overflow-wrap:anywhere]">{line}</div>) : <span className="text-aegis-text-dim">{t('businessApplications.readiness.waitingOutput')}</span>}
             </div>
-            <div className="flex justify-end gap-2">
-              {dwsOperationActive ? <Button size="xs" variant="outline" tone="danger" leadingIcon={<Square size={11} />} onClick={onCancelDws}>{t('businessApplications.readiness.cancel')}</Button> : <Button size="xs" variant="solid" tone="primary" leadingIcon={<RefreshCw size={12} />} onClick={() => { onRefresh(); onDismissDws(); }}>{t('businessApplications.readiness.refresh')}</Button>}
+            {dwsAuthorizationFailure && dwsOperation?.phase === 'failed' && (
+              <div className="min-w-0 rounded-md border border-aegis-warning/30 bg-aegis-warning/[0.06] p-3" role="alert">
+                <div className="text-[11px] font-semibold text-aegis-warning">{t(dwsAuthorizationFailure.stage === 'local-credential-save'
+                  ? 'businessApplications.dws.credentialSaveFailureTitle'
+                  : 'businessApplications.dws.credentialRecoveryTitle')}</div>
+                <p className="mt-1 text-[10px] leading-5 text-aegis-text-secondary">
+                  {t(dwsAuthorizationFailure.stage === 'local-credential-save'
+                    ? 'businessApplications.dws.credentialSaveFailure'
+                    : dwsAuthorizationFailure.kind === 'reset-required'
+                      ? 'businessApplications.dws.credentialResetRequired'
+                      : 'businessApplications.dws.credentialMigrationRequired')}
+                </p>
+                <div className="mt-2 flex flex-wrap justify-end gap-2">
+                  <Button size="xs" variant="outline" tone="neutral" leadingIcon={<ExternalLink size={11} />} onClick={() => window.open(DWS_AUTH_GUIDE, '_blank', 'noopener,noreferrer')}>{t('businessApplications.readiness.openOfficialDocs')}</Button>
+                  {dwsAuthorizationFailure.kind === 'reset-required' && <Button size="xs" variant="outline" tone="danger" disabled={dwsOperationActive} onClick={onResetDwsAuth}>{t('businessApplications.dws.resetAllCredentials')}</Button>}
+                </div>
+              </div>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              {dwsOperationActive ? <Button size="xs" variant="outline" tone="danger" leadingIcon={<Square size={11} />} onClick={onCancelDws}>{t('businessApplications.readiness.cancel')}</Button> : <Button size="xs" variant="solid" tone="primary" loading={refreshing} disabled={refreshDisabled} leadingIcon={<RefreshCw size={12} />} onClick={() => { onRefresh(); onDismissDws(); }}>{t(refreshing ? 'businessApplications.readiness.refreshing' : 'businessApplications.readiness.refresh')}</Button>}
             </div>
           </div>
         </DialogContent>

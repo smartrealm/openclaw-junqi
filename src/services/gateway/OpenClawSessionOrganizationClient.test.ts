@@ -22,9 +22,10 @@ describe('OpenClawSessionOrganizationClient', () => {
           entry: method === 'sessions.patch' && params.category === 'Finance'
             ? { category: 'Finance' }
             : {
-                ...(params.pinned !== undefined ? { pinned: params.pinned } : {}),
-                ...(params.unread !== undefined ? { unread: params.unread } : {}),
-                ...(params.archived !== undefined ? { archived: params.archived } : {}),
+                ...(params.pinned === true ? { pinnedAt: 1_755_000_000_000 } : {}),
+                ...(params.unread === true ? { markedUnreadAt: 1_755_000_000_001 } : {}),
+                ...(params.unread === false ? { lastReadAt: 1_755_000_000_002 } : {}),
+                ...(params.archived === true ? { archivedAt: 1_755_000_000_003 } : {}),
               },
         } as never;
       },
@@ -32,13 +33,13 @@ describe('OpenClawSessionOrganizationClient', () => {
 
     await client.setPinned(SESSION_KEY, true);
     await client.setUnread(SESSION_KEY, true);
-    await client.setArchived(SESSION_KEY, true);
+    await client.setArchived(SESSION_KEY, true, 'session-id');
     await client.setCategory(SESSION_KEY, 'Finance');
 
     assert.deepEqual(calls, [
       { method: 'sessions.patch', params: { key: SESSION_KEY, pinned: true } },
       { method: 'sessions.patch', params: { key: SESSION_KEY, unread: true } },
-      { method: 'sessions.patch', params: { key: SESSION_KEY, archived: true } },
+      { method: 'sessions.patch', params: { key: SESSION_KEY, expectedSessionId: 'session-id', archived: true } },
       { method: 'sessions.patch', params: { key: SESSION_KEY, category: 'Finance' } },
     ]);
   });
@@ -75,17 +76,19 @@ describe('OpenClawSessionOrganizationClient', () => {
     await assert.rejects(client.setCategory(SESSION_KEY, 'Finance'), SessionOrganizationResponseError);
   });
 
-  it('拒绝未确认或不一致的原生布尔组织字段', async () => {
+  it('拒绝缺失或不一致的原生时间戳组织字段', async () => {
     const client = new OpenClawSessionOrganizationClient({
       runMutation: (_key, operation) => operation(),
       request: async (_method, params) => ({
         ok: true,
         key: SESSION_KEY,
-        entry: params.pinned !== undefined
-          ? { pinned: !params.pinned }
-          : params.archived !== undefined
-            ? { archived: !params.archived }
-            : { unread: !params.unread },
+        entry: params.pinned === false
+          ? { pinnedAt: 1_755_000_000_000 }
+          : params.archived === false
+            ? { archivedAt: 1_755_000_000_001 }
+            : params.unread === false
+              ? { markedUnreadAt: 1_755_000_000_002 }
+              : {},
       } as never),
     });
 
@@ -95,6 +98,44 @@ describe('OpenClawSessionOrganizationClient', () => {
     await assert.rejects(client.setArchived(SESSION_KEY, false), SessionOrganizationResponseError);
     await assert.rejects(client.setUnread(SESSION_KEY, true), SessionOrganizationResponseError);
     await assert.rejects(client.setUnread(SESSION_KEY, false), SessionOrganizationResponseError);
+  });
+
+  it('按官方持久化字段确认取消置顶、恢复归档和标记已读', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const client = new OpenClawSessionOrganizationClient({
+      runMutation: (_key, operation) => operation(),
+      request: async (_method, params) => {
+        calls.push(params);
+        return {
+          ok: true,
+          key: SESSION_KEY,
+          entry: params.unread === false ? { lastReadAt: 1_755_000_000_000 } : {},
+        } as never;
+      },
+    });
+
+    await client.setPinned(SESSION_KEY, false);
+    await client.setArchived(SESSION_KEY, false, 'session-id');
+    await client.setUnread(SESSION_KEY, false);
+
+    assert.deepEqual(calls[1], {
+      key: SESSION_KEY,
+      expectedSessionId: 'session-id',
+      archived: false,
+    });
+  });
+
+  it('归档回执仍带置顶时间戳时拒绝确认', async () => {
+    const client = new OpenClawSessionOrganizationClient({
+      runMutation: (_key, operation) => operation(),
+      request: async () => ({
+        ok: true,
+        key: SESSION_KEY,
+        entry: { archivedAt: 1_755_000_000_000, pinnedAt: 1_754_000_000_000 },
+      } as never),
+    });
+
+    await assert.rejects(client.setArchived(SESSION_KEY, true), SessionOrganizationResponseError);
   });
 
   it('identifies only explicit protocol incompatibility for capability reporting', async () => {

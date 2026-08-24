@@ -246,15 +246,28 @@ test('renders an Agent Office projection from the same authoritative snapshot', 
         allowed: true,
         coordinator: false,
       },
+      {
+        id: 'new-agent',
+        name: 'New Agent',
+        runtimeType: 'native',
+        allowed: true,
+        coordinator: false,
+      },
     ],
     coordinatorAgentId: 'planner',
   }));
 
   assert.match(html, /data-work-item-view="office"/);
   assert.match(html, /data-agent-office="run-details"/);
+  assert.match(html, /data-office-layout="spatial"/);
   assert.match(html, /data-office-agent-id="researcher"/);
   assert.match(html, /data-office-agent-id="risk-reviewer"/);
   assert.match(html, /data-office-agent-state="ATTENTION"/);
+  assert.match(html, /data-office-zone="active"/);
+  assert.match(html, /data-office-zone="waiting"/);
+  assert.match(html, /data-office-configured-agent-id="new-agent"/);
+  assert.match(html, /data-office-seat="configured"/);
+  assert.match(html, /Configured seat only\. It does not claim current run participation, live presence, or execution state/);
   assert.match(html, /Read-only projection from the authoritative collaboration snapshot/);
   assert.doesNotMatch(html, /online/i);
   assert.doesNotMatch(html, /data-work-item-view="graph"/);

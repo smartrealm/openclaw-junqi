@@ -20,8 +20,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /**
- * Version 2 stored the obsolete dismissed/tourSeen pair. Either field means
- * the welcome was already handled, so a migration must never reopen it.
+ * 版本 2 保存了已废弃的 dismissed/tourSeen 字段。任一字段为真都表示用户已处理欢迎引导，
+ * 迁移时不得重新打开。
  */
 export function migrateBusinessGuidePersistedState(
   persistedState: unknown,

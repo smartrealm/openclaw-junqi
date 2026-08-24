@@ -353,6 +353,66 @@ test('未知但完整的 Agent 流不产生界面状态且保留后续序号', a
   assert.equal(useChatStore.getState().getCachedMessages(sessionKey)?.length ?? 0, 0);
 });
 
+test('官方计划流使用已解析会话且不阻断后续 Agent 序号', async () => {
+  installWindowMock();
+  const { ChatHandler } = await loadDeps();
+  const { subscribeOpenClawLegacyProgressPlanEvents } = await import(
+    '@/services/gateway/progressCardEventBridge'
+  );
+  resetChatStore();
+
+  const plans: Array<{ sessionKey: string; step: string }> = [];
+  const chunks: string[] = [];
+  const reconciliations: string[] = [];
+  const unsubscribe = subscribeOpenClawLegacyProgressPlanEvents((event) => {
+    plans.push({ sessionKey: event.sessionKey, step: event.steps[0]?.step ?? '' });
+  });
+  try {
+    const handler = new ChatHandler({
+      callbacks: {
+        onStreamChunk: (_sessionKey: string, _messageId: string, content: string) => chunks.push(content),
+        onStreamEnd: () => {},
+        onStreamReconciliationNeeded: (sessionKey: string) => reconciliations.push(sessionKey),
+      },
+    } as any);
+    const sessionKey = 'agent:main:official-plan-stream';
+    const runId = 'run-official-plan-stream';
+
+    dispatchGatewayEvent(handler, {
+      event: 'agent',
+      payload: {
+        sessionKey,
+        runId,
+        seq: 1,
+        stream: 'plan',
+        ts: 1_700_000_000_000,
+        data: {
+          phase: 'update',
+          steps: [{ step: '核对协议', status: 'in_progress' }],
+        },
+      },
+    });
+    dispatchGatewayEvent(handler, {
+      event: 'agent',
+      payload: {
+        sessionKey,
+        runId,
+        seq: 2,
+        stream: 'assistant',
+        ts: 1_700_000_000_001,
+        data: { text: '后续正文' },
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 70));
+    assert.deepEqual(plans, [{ sessionKey, step: '核对协议' }]);
+    assert.equal(chunks.at(-1), '后续正文');
+    assert.deepEqual(reconciliations, []);
+  } finally {
+    unsubscribe();
+  }
+});
+
 test('session.operation projects only official compact lifecycle state', async () => {
   installWindowMock();
   const { ChatHandler, useChatStore } = await loadDeps();

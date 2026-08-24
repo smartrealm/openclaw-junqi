@@ -85,18 +85,6 @@ const CASES: Record<string, Case> = {
       path: "/custom/npm/lib/node_modules/npm/bin/npm-cli.js",
     },
   },
-  ".userNpmPrefix": {
-    key: "setup.openclaw.userNpmPrefix",
-    message:
-      "Detected npm prefix /custom/npm (matches your `npm i -g`); installing openclaw there",
-    expected: { path: "/custom/npm" },
-  },
-  ".userNpmPrefixMissingPath": {
-    key: "setup.openclaw.userNpmPrefixMissingPath",
-    message:
-      "Detected npm prefix /custom/npm (matches your `npm i -g`); installing openclaw there",
-    expected: { path: "/custom/npm" },
-  },
   ".customNpmPrefix": {
     key: "setup.openclaw.customNpmPrefix",
     message: "Using custom npm prefix /Volumes/Tools/npm-global",
@@ -224,6 +212,16 @@ describe("setupProgressParams", () => {
       { path: "/Users/wei/OpenClaw" },
     );
     assert.equal(translated, "准备安装目录 /Users/wei/OpenClaw");
+  });
+
+  test("Node 运行时恢复进度使用后端提供的版本和目标范围", () => {
+    const translated = translateSetupProgressMessage(
+      "setup.node.autoRepairDetected",
+      "producer wording may evolve",
+      (_key, options) => `检测到 ${options.version}，目标范围 ${options.requirement}`,
+      { version: "v23.8.0", requirement: ">=24.15.0 <25" },
+    );
+    assert.equal(translated, "检测到 v23.8.0，目标范围 >=24.15.0 <25");
   });
 
   test("returns {} for an unknown key", () => {

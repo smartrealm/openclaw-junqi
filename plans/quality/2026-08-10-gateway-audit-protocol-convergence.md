@@ -8,8 +8,8 @@
 2. 删除 `audit.list` 兼容回退、旧事件解析器、旧 source 联合和无消费者导出。
 3. 让请求客户端只负责参数构造、单次 RPC、未知方法映射和 codec 调用。
 4. 添加 `active_run_injected`、单请求、未知方法和严格字段相关性的回归测试。
-5. 删除官方已移除的 REM、Talk cancelTurn、voice wake routing set 和 compaction get 调用链，以及重复内存诊断实现。
-6. 将语音唤醒路由收敛为只读投影，删除写入状态、编辑界面和无消费者国际化文案。
+5. 删除当前官方仍已移除的 REM、Talk cancelTurn 和 compaction get 调用链，以及重复内存诊断实现；2026-08-19 已恢复的 voice wake routing set 不再归入该集合。
+6. 语音唤醒路由界面仍保持当前只读范围，但不得再以官方缺少写方法作为依据。
 7. 全局搜索旧常量、旧解析器、`source: 'legacy'` 和已删除 RPC，确认没有动态或测试消费者。
 8. 以最新版官方核心描述符、官方内置插件和 JunQi 插件注册表分别核对生产请求清单。
 9. 收敛 Cron 的重复协议类型，按官方 Date 上限校验创建参数和响应时间戳，删除旧状态投影。

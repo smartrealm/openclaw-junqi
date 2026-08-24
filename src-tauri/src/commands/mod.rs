@@ -78,4 +78,5 @@ pub(crate) mod uninstall;
 pub mod voice;
 pub mod voice_capture;
 pub mod voice_talk_playback;
+pub mod voice_wake;
 pub mod workspace;

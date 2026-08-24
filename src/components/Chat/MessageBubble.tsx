@@ -24,6 +24,8 @@ import { createChatMessagePreview, type ChatMessagePreview } from './chatMessage
 import { ChatMarkdownRenderer, ChatMediaFallback } from './ChatMarkdownRenderer';
 import { ChatIconButton } from './ChatIconButton';
 import { resolveAssistantPresentation } from './assistantPresentation';
+import { visibleDeliveryFailureDetail } from './messageDeliveryPresentation';
+import { CHAT_ASSISTANT_RESPONSE_MAX_WIDTH } from './chatResponseLayout';
 
 const ChatImage = lazy(() => import('./ChatImage').then((m) => ({ default: m.ChatImage })));
 const AudioPlayer = lazy(() => import('./AudioPlayer').then((m) => ({ default: m.AudioPlayer })));
@@ -190,7 +192,7 @@ interface MessageBubbleProps {
   onDelete?: () => void;
   onRetry?: () => void;
   onErrorAction?: (action: string) => void;
-  deliveryStatus?: 'pending' | 'held' | 'sent' | 'queued' | 'failed' | 'cancelled';
+  deliveryStatus?: 'pending' | 'sent' | 'failed' | 'cancelled';
   deliveryError?: string;
   outboundAttachments?: Array<{ fileName?: string; mimeType: string }>;
   historyTruncated?: boolean;
@@ -448,6 +450,7 @@ export const MessageBubble = memo(function MessageBubble({
   const isUser = block.role === 'user';
   const dir = getDirection(i18n.language);
   const content = block.markdown;
+  const deliveryFailureDetail = visibleDeliveryFailureDetail(deliveryError);
   const errorAction = !isUser && !block.isStreaming && onErrorAction ? detectErrorAction(content) : null;
   const responseStatus = !isUser && block.responseState === 'aborted'
     ? 'cancelled'
@@ -548,7 +551,7 @@ function stripInlineCodeTicks(md: string): string {
 
       {/* ── Content Column ── */}
       <div className="flex flex-col min-w-0"
-        style={{ width: '100%', maxWidth: 'min(640px, 72%)', alignItems: isUser ? 'flex-end' : 'flex-start' }}>
+        style={{ width: '100%', maxWidth: isUser ? 'min(640px, 72%)' : CHAT_ASSISTANT_RESPONSE_MAX_WIDTH, alignItems: isUser ? 'flex-end' : 'flex-start' }}>
 
         {/* Bubble */}
         <motion.div
@@ -787,15 +790,20 @@ function stripInlineCodeTicks(md: string): string {
               {deliveryStatus === 'pending' && (
                 <span className="text-[10px] text-aegis-text-dim">{t('chat.sending')}</span>
               )}
-              {deliveryStatus === 'held' && (
-                <span className="text-[10px] text-aegis-warning">{t('chat.sessionMutationHandoffMessage')}</span>
-              )}
-              {deliveryStatus === 'queued' && (
-                <span className="text-[10px] text-aegis-warning">{t('chat.queued')}</span>
-              )}
               {deliveryStatus === 'failed' && (
-                <span className="text-[10px] text-aegis-danger" title={deliveryError}>
-                  {t('chat.sendFailed')}
+                <span
+                  className="inline-flex max-w-full items-center gap-1 text-[10px] text-aegis-danger"
+                  role="status"
+                  aria-live="polite"
+                  aria-label={deliveryFailureDetail
+                    ? `${t('chat.sendFailed')}: ${deliveryFailureDetail}`
+                    : t('chat.sendFailed')}>
+                  <span>{t('chat.sendFailed')}</span>
+                  {deliveryFailureDetail && (
+                    <span className="max-w-[26rem] truncate text-aegis-text-muted" title={deliveryFailureDetail}>
+                      {deliveryFailureDetail}
+                    </span>
+                  )}
                 </span>
               )}
             </span>

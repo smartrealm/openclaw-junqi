@@ -31,12 +31,14 @@ import { useCollaborationMaintenance } from '@/hooks/useCollaborationMaintenance
 import { useOpenClawDiagnosticStability } from '@/hooks/useOpenClawDiagnosticStability';
 import { useOpenClawHooksStatus } from '@/hooks/useOpenClawHooksStatus';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import type { GatewayLifecycleResult } from '@/services/gateway/GatewayLifecycleCoordinator';
+import { gatewayLifecycleFailureMessage } from './maintenanceGatewayRecovery';
 
 const CATEGORY_ORDER: MaintenanceCategory[] = ['config', 'plugin', 'mcp', 'security', 'gateway', 'doctor'];
 
 interface MaintenanceCenterProps {
   onOpenConfig?: (category: MaintenanceCategory) => void;
-  onRecoverGateway?: () => Promise<unknown> | unknown;
+  onRecoverGateway?: () => Promise<GatewayLifecycleResult>;
 }
 
 function errorMessage(error: unknown): string {
@@ -165,9 +167,8 @@ export function MaintenanceCenter({ onOpenConfig, onRecoverGateway }: Maintenanc
     setGatewayRecoveryError(null);
     try {
       const result = await onRecoverGateway();
-      if (result && typeof result === 'object' && 'healthy' in result && result.healthy === false) {
-        throw new Error('error' in result && result.error ? String(result.error) : 'Gateway recovery failed');
-      }
+      const failure = gatewayLifecycleFailureMessage(result, t('common.unknownError'));
+      if (failure) throw new Error(failure);
     } catch (error) {
       setGatewayRecoveryError(errorMessage(error));
     } finally {

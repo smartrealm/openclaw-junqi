@@ -669,6 +669,7 @@ function NewSessionPicker({
               </button>
               <button
                 type="button"
+                data-tour="chat-create-session"
                 disabled={creatingSession}
                 aria-disabled={!selectedAgentId}
                 onClick={() => {

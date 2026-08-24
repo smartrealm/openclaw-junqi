@@ -191,7 +191,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   gatewayToken: '',
   sidebarCollapsed: savedSidebarMode === 'mini',
   sidebarMode: savedSidebarMode,
-  activeSidebarTab: (typeof window !== 'undefined' && window.location) ? resolveTab(window.location.pathname) : 'workbench',
+  activeSidebarTab: (typeof window !== 'undefined' && window.location)
+    ? resolveTab(`${window.location.pathname}${window.location.search}`)
+    : 'workbench',
   accentColor: readPersistedAccentColor() ?? DEFAULT_ACCENT_COLOR,
 
   setTheme: (theme) => {

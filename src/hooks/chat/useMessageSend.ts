@@ -4,6 +4,7 @@ import { showAlert } from '@/components/shared/AlertDialog';
 import { displayAttachments, toGatewayAttachments } from '@/services/chat/attachments';
 import {
   isChatSendDispatchCancelled,
+  isChatSessionMutationInProgressError,
   type ChatSendRequest,
 } from '@/services/chat/sendTransaction';
 import { chatSendCoordinator } from '@/runtime/chatSendCoordinator';
@@ -137,6 +138,14 @@ export function useMessageSend({
         state.setQuickReplies([], sessionKey);
       }
     } catch (error) {
+      if (isChatSessionMutationInProgressError(error)) {
+        showAlert(
+          t('chat.sessionMutationInProgressTitle'),
+          t('chat.sessionMutationInProgressDescription'),
+          'warning',
+        );
+        return;
+      }
       if (shouldRefreshHistoryAfterMessageSendFailure(error, confirmedEmptyTranscript)) {
         void historyLoader?.(sessionKey, { force: true, background: true })
           .catch((refreshError) => debugError('app', '[MessageSend] Active leaf refresh failed:', refreshError));

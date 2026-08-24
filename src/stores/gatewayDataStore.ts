@@ -795,38 +795,6 @@ function gatewayErrorMessage(error: unknown): string {
     : String(error);
 }
 
-function gatewayProjectionEqual(left: unknown, right: unknown): boolean {
-  if (Object.is(left, right)) return true;
-  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') {
-    return false;
-  }
-  if (Array.isArray(left) || Array.isArray(right)) {
-    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
-    return left.every((entry, index) => gatewayProjectionEqual(entry, right[index]));
-  }
-  const leftRecord = left as Record<string, unknown>;
-  const rightRecord = right as Record<string, unknown>;
-  const leftKeys = Object.keys(leftRecord);
-  const rightKeys = Object.keys(rightRecord);
-  if (leftKeys.length !== rightKeys.length) return false;
-  return leftKeys.every((key) => (
-    Object.prototype.hasOwnProperty.call(rightRecord, key)
-      && gatewayProjectionEqual(leftRecord[key], rightRecord[key])
-  ));
-}
-
-/**
- * Gateway 会话投影来自 JSON RPC，响应对象每次都会重建。
- * 逐字段比较避免无变化轮询产生完整 JSON 字符串和不必要的状态更新。
- */
-export function sessionsHaveSameProjection(
-  previous: readonly SessionInfo[],
-  incoming: readonly SessionInfo[],
-): boolean {
-  return previous.length === incoming.length
-    && previous.every((session, index) => gatewayProjectionEqual(session, incoming[index]));
-}
-
 function isAgentInfo(value: unknown): value is AgentInfo {
   return isGatewayRecord(value)
     && typeof value.id === 'string'
@@ -1142,13 +1110,7 @@ async function fetchSessions(): Promise<boolean> {
       ? incomingList
       : [...incomingList, ...prev.filter((session) => !incomingKeys.has(session.key))];
 
-    // 无变化的权威快照不应触发订阅者重渲染或主线程序列化。
-    const same = sessionsHaveSameProjection(prev, list);
-    if (!same) {
-      store.setSessions(list);
-    } else {
-      store.setLoading('sessions', false);
-    }
+    store.setSessions(list);
     return true;
   } catch (error: unknown) {
     if (!isCurrentGatewayRequest(ticket)) return false;

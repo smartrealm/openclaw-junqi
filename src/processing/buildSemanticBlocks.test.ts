@@ -203,6 +203,20 @@ test('keeps structured assistant output when visible text is empty', () => {
   );
 });
 
+test('将完整 assistant JSON 文档投影为可读代码块', () => {
+  const blocks = buildSemanticBlocks(
+    createAssistantMessage('{"result":{"name":"report.json","ready":true}}'),
+    { toolIntentEnabled: true },
+  );
+  const messageBlock = blocks.find((block) => block.type === 'message-content');
+
+  assert.ok(messageBlock && messageBlock.type === 'message-content');
+  assert.equal(
+    messageBlock.markdown,
+    '```json\n{\n  "result": {\n    "name": "report.json",\n    "ready": true\n  }\n}\n```',
+  );
+});
+
 test('does not create an empty message bubble for card-only output', () => {
   const normalized: NormalizedMessage = {
     ...createAssistantMessage(''),
@@ -214,14 +228,14 @@ test('does not create an empty message bubble for card-only output', () => {
   assert.deepEqual(blocks.map((block) => block.type), ['decision']);
 });
 
-test('projects a valid update_plan tool as an execution plan instead of a generic tool', () => {
+test('进度工具 transcript 回执保持普通工具活动，不替代官方持久化进度卡', () => {
   const normalized = normalizeGatewayMessage({
     id: 'plan-tool-1',
     sessionKey: 'agent:main:main',
     runId: 'run-plan',
     role: 'tool',
     timestamp: '2026-07-30T10:00:00.000Z',
-    toolName: 'update_plan',
+    toolName: 'progress_card',
     toolInput: {
       plan: [
         { step: 'Inspect protocol', status: 'completed' },
@@ -234,14 +248,11 @@ test('projects a valid update_plan tool as an execution plan instead of a generi
 
   const blocks = buildSemanticBlocks(normalized, { toolIntentEnabled: true });
   assert.equal(blocks.length, 1);
-  assert.equal(blocks[0].type, 'execution-plan');
-  if (blocks[0].type === 'execution-plan') {
-    assert.equal(blocks[0].snapshot.sourceSequence, 12);
-    assert.equal(blocks[0].snapshot.steps[1].status, 'in_progress');
-  }
+  assert.equal(blocks[0].type, 'tool-activity');
+  if (blocks[0].type === 'tool-activity') assert.equal(blocks[0].sourceSequence, 12);
 });
 
-test('keeps an invalid update_plan payload visible as a generic tool', () => {
+test('旧 update_plan transcript 记录也不再重建客户端计划状态', () => {
   const normalized = normalizeGatewayMessage({
     id: 'plan-tool-invalid',
     sessionKey: 'agent:main:main',

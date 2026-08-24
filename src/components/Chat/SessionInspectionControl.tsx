@@ -98,7 +98,6 @@ export function SessionInspectionControl({ sessionKey, agentId }: SessionInspect
     const normalizedAgentId = agentId.trim();
     const chatStore = useChatStore.getState();
     const current = chatStore.sessions.find((session) => session.key === result.key);
-    chatStore.clearQueue(result.key);
     chatStore.clearSessionMessages(result.key);
     chatStore.clearSessionTokens(result.key);
     chatStore.settleSessionRunUi(result.key);

@@ -715,6 +715,12 @@ pub(crate) async fn resolve_effective_npm_registry_policy(
     ))
 }
 
+/// 在尚未拥有可执行 Node.js/npm 对时，只能使用公开源解析目标包元数据。
+/// 私有 npm 配置必须由已验证的目标 Node/npm 对读取，不能为首次安装猜测用户配置。
+pub(crate) async fn resolve_public_npm_registry_policy() -> EffectiveNpmRegistryPolicy {
+    EffectiveNpmRegistryPolicy::public(select_npm_registry().await)
+}
+
 /// Resolve one concrete package release and its Node.js contract. A missing
 /// contract is a hard failure for installation: using a local fallback can
 /// accept a runtime that the package about to be installed does not support.
@@ -740,6 +746,33 @@ pub(crate) async fn resolve_latest_openclaw_release_target(
     }
     Err(format!(
         "Unable to determine the target OpenClaw package version from the selected npm source: {}",
+        failures.join("; ")
+    ))
+}
+
+/// 在 Node.js 尚不可用时解析公开 npm 源中的目标 OpenClaw 包契约。
+/// 此路径仅取得元数据，绝不触发 Node.js 或 OpenClaw 的安装写入。
+pub(crate) async fn resolve_public_latest_openclaw_release_target(
+) -> Result<OpenclawReleaseTarget, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(REGISTRY_PROBE_TIMEOUT)
+        .timeout(REGISTRY_PROBE_TIMEOUT)
+        .user_agent("JunQi Desktop npm metadata resolver")
+        .build()
+        .map_err(|error| format!("Failed to initialize npm metadata resolver: {error}"))?;
+    let policy = resolve_public_npm_registry_policy().await;
+    let mut failures = Vec::new();
+    for source in policy.sources() {
+        match source.latest_metadata(&client).await {
+            Ok(metadata) => {
+                let version = metadata.version;
+                return resolve_pinned_openclaw_release_target(&client, &policy, &version).await;
+            }
+            Err(error) => failures.push(format!("{}: {error}", source.label())),
+        }
+    }
+    Err(format!(
+        "Unable to determine the target OpenClaw package version from public npm sources: {}",
         failures.join("; ")
     ))
 }

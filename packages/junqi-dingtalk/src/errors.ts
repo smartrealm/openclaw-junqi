@@ -30,6 +30,7 @@ const PUBLIC_ERROR_MESSAGES = {
   DWS_RUNTIME_NOT_FOUND: "DWS executable was not found",
   DWS_SCHEMA_DRIFT: "DWS schema differs from the reviewed contract",
   DWS_SCHEMA_INVALID: "DWS returned an invalid schema",
+  DWS_SIDE_EFFECT_UNVERIFIED: "DWS side effect status is unverified",
   DWS_SPAWN_FAILED: "Failed to start DWS",
   DWS_TIMEOUT: "DWS execution timed out",
 } as const;

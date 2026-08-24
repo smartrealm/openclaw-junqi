@@ -54,8 +54,8 @@ export function resolveDingTalkReadiness({
     }
     return {
       tone: 'blocked',
-      titleKey: 'agentUnauthorizedTitle',
-      descriptionKey: agentId ? 'agentUnauthorizedDescription' : 'agentMissingDescription',
+      titleKey: 'effectiveToolMissingTitle',
+      descriptionKey: agentId ? 'effectiveToolMissingDescription' : 'agentMissingDescription',
       ...(agentId ? { descriptionParams: { agentId } } : {}),
       action: 'configure-agent',
     };

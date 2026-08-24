@@ -8,7 +8,9 @@ import {
   type BusinessAttemptState,
 } from '@/business-applications/activityStore';
 import { useDingTalkBusinessAudit } from '@/hooks/useDingTalkBusinessAudit';
+import { useChatStore } from '@/stores/chatStore';
 import { summarizeDingTalkBusinessActivity } from './businessActivitySummary';
+import type { DingTalkAuditFailureKind } from '@/business-applications/dingtalkAuditAvailability';
 
 const STATE_LABEL: Record<BusinessAttemptState, string> = {
   pending: '执行中',
@@ -19,6 +21,15 @@ const STATE_LABEL: Record<BusinessAttemptState, string> = {
 };
 
 type ActivityScope = 'all' | 'official' | 'window';
+
+const AUDIT_FAILURE_DESCRIPTION: Record<DingTalkAuditFailureKind, string> = {
+  disconnected: '尚未连接 OpenClaw Gateway。连接并完成身份核验后才能读取官方审计账本。',
+  'session-missing': '尚未选择可核验的 OpenClaw Session。选择 Session 后才能查询其官方工具审计。',
+  unsupported: '当前 Gateway 不支持 audit.activity.list。升级到提供官方活动审计协议的 OpenClaw 后再重新检测。',
+  unauthorized: '当前 Gateway 连接未获得 operator.read。请重新完成设备配对或连接授权后重试。',
+  'invalid-response': 'Gateway 返回的审计数据不符合当前官方协议，JunQi 已拒绝猜测或降级解析。',
+  failed: '官方审计请求失败。请检查 Gateway 状态后重试；JunQi 不会用本窗口状态替代官方记录。',
+};
 
 function StateIcon({ state }: { state: BusinessAttemptState }) {
   if (state === 'pending') return <LoaderCircle size={14} className="animate-spin text-aegis-primary" />;
@@ -43,9 +54,10 @@ function includesQuery(values: readonly (string | null | undefined)[], query: st
 }
 
 export function BusinessActivityList() {
+  const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const attempts = useBusinessActivityStore((state) => state.attempts);
   const clear = useBusinessActivityStore((state) => state.clear);
-  const audit = useDingTalkBusinessAudit();
+  const audit = useDingTalkBusinessAudit(activeSessionKey);
   const [scope, setScope] = useState<ActivityScope>('all');
   const [search, setSearch] = useState('');
   const summary = useMemo(() => summarizeDingTalkBusinessActivity(audit.events, attempts), [attempts, audit.events]);
@@ -83,7 +95,9 @@ export function BusinessActivityList() {
         iconStyle="bare"
         icon={<Clock3 size={24} />}
         title="当前 Session 尚无钉钉业务审计"
-        description={audit.unavailable ? 'OpenClaw 审计账本当前不可用；不会以本地状态替代官方记录。' : '这里只展示 OpenClaw 的 metadata-only 审计和本窗口调用投影，不保存参数、业务正文或原始结果。'}
+        description={audit.failure
+          ? AUDIT_FAILURE_DESCRIPTION[audit.failure]
+          : '当前没有匹配的官方记录。只有钉钉工具经 OpenClaw 实际执行，并由启用的 metadata-only 审计账本记录后才会出现在这里。'}
       />
     );
   }
@@ -134,7 +148,7 @@ export function BusinessActivityList() {
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        {audit.unavailable && <div className="border-b border-aegis-warning/25 bg-aegis-warning/[0.05] px-3 py-2 text-[10px] text-aegis-warning">OpenClaw 官方审计账本不可用；本窗口投影不能替代三方审计证据。</div>}
+        {audit.failure && <div className="border-b border-aegis-warning/25 bg-aegis-warning/[0.05] px-3 py-2 text-[10px] text-aegis-warning">{AUDIT_FAILURE_DESCRIPTION[audit.failure]}</div>}
         {!hasFilteredActivity && (
           <EmptyState
             density="compact"

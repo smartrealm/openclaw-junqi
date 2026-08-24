@@ -78,7 +78,6 @@ import {
   localUserMessageCapabilities,
   removeLocalUserMessage,
 } from '@/components/Chat/localUserMessageMutations';
-import { executionPlanOutcome, selectActiveExecutionPlan } from '@/components/Chat/executionPlanPlacement';
 import { ChatMessagePreviewPanel } from '@/components/Chat/ChatMessagePreviewPanel';
 import { ChatResponseTracePanel } from '@/components/Chat/ChatResponseTracePanel';
 import { findTraceSourceMessage, projectChatResponseTrace } from '@/components/Chat/chatResponseTrace';
@@ -90,6 +89,8 @@ import {
   hasConfirmedEmptyTranscript,
   shouldLoadActiveSessionHistory,
 } from '@/utils/confirmedEmptyTranscript';
+import { shouldPositionActiveSessionTail } from '@/utils/sessionEntryTail';
+import { useOpenClawProgressCard } from '@/hooks/useOpenClawProgressCard';
 
 const HISTORY_LIMIT = 500;
 const EMPTY_MODEL_CATALOG: Array<{ id: string; label: string; alias?: string }> = [];
@@ -101,7 +102,7 @@ const HISTORY_STARTUP_RETRY_MAX_MS = 12_000;
 
 const InlineButtonBar = lazy(() => import('@/components/Chat/InlineButtonBar').then((m) => ({ default: m.InlineButtonBar })));
 const DecisionCard = lazy(() => import('@/components/Chat/ResultCards').then((m) => ({ default: m.DecisionCard })));
-const ExecutionPlanCard = lazy(() => import('@/components/Chat/ExecutionPlanCard').then((m) => ({ default: m.ExecutionPlanCard })));
+const ProgressCard = lazy(() => import('@/components/Chat/ProgressCard').then((m) => ({ default: m.ProgressCard })));
 const FileResultCard = lazy(() => import('@/components/Chat/ResultCards').then((m) => ({ default: m.FileResultCard })));
 const AssistantResponseAvatar = lazy(() => import('@/components/Chat/MessageBubble').then((m) => ({ default: m.AssistantResponseAvatar })));
 const AssistantResponseFooter = lazy(() => import('@/components/Chat/MessageBubble').then((m) => ({ default: m.AssistantResponseFooter })));
@@ -247,6 +248,7 @@ function ChatViewContent() {
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const progressCard = useOpenClawProgressCard(activeSessionKey);
   const sessionHistoryCapabilities = useGatewaySessionHistoryCapabilities();
   const sidePanel = useChatSidePanel(activeSessionKey);
   const loadTraceAuditEvents = useCallback(
@@ -269,8 +271,6 @@ function ChatViewContent() {
     (s) => s.sessions.find((session) => session.key === activeSessionKey)?.hasActiveRun === true,
   );
   const agents = useGatewayDataStore((s) => s.agents);
-  const messageQueue = useChatStore((s) => s.messageQueue);
-  const queueCount = (messageQueue[activeSessionKey] || []).length;
   const availableModels = useChatStore((s) => {
     const agentId = activeAgentId?.trim();
     return agentId ? s.sessionAvailableModelsByAgentId[agentId] ?? EMPTY_MODEL_CATALOG : EMPTY_MODEL_CATALOG;
@@ -298,10 +298,6 @@ function ChatViewContent() {
     () => buildCollaborationChatTimeline(responseGroups, messages, collaboration.runs),
     [collaboration.runs, messages, responseGroups],
   );
-  const activeExecutionPlan = useMemo(
-    () => selectActiveExecutionPlan(responseGroups),
-    [responseGroups],
-  );
   const workspaceForSession = useCallback((sessionKey: string) => {
     const session = useChatStore.getState().sessions.find((candidate) => candidate.key === sessionKey);
     const agentId = session?.agentId || sessionKey.split(':')[1] || 'main';
@@ -316,7 +312,7 @@ function ChatViewContent() {
   const prevResponseGroupsLenRef = useRef(0);
   const initialHistoryTailSessionRef = useRef<string | null>(null);
 
-  // Reset scroll lock when switching sessions — new session should start at bottom
+  // 所有活动会话切换入口共用同一个尾部定位状态，包括删除和关闭后的回退。
   useEffect(() => {
     scrollLockedRef.current = false;
     setAtBottom(true);
@@ -905,19 +901,18 @@ function ChatViewContent() {
     return () => window.removeEventListener('aegis:quick-action', handleQuickAction as EventListener);
   }, [handleQuickAction]);
 
-  const activeHistoryMeta = historyMetaBySession[activeSessionKey];
-
-  // The initial history position is an entry behavior, not a tail-follow
-  // behavior. Virtuoso may transiently report "not at bottom" while it
-  // measures a newly hydrated history, so do not apply the reader lock here.
+  // 首次定位只在当前会话时间线已经提交后完成，不能由先到的加载元数据提前消费。
   useEffect(() => {
-    if (!activeHistoryMeta?.loaded) return;
-    if (initialHistoryTailSessionRef.current === activeSessionKey) return;
+    if (!shouldPositionActiveSessionTail({
+      activeSessionKey,
+      positionedSessionKey: initialHistoryTailSessionRef.current,
+      timelineItemCount: timelineItems.length,
+    })) return;
     initialHistoryTailSessionRef.current = activeSessionKey;
     scrollLockedRef.current = false;
     setAtBottom(true);
     return scrollToConversationTail({ instant: true });
-  }, [activeSessionKey, activeHistoryMeta?.loaded, scrollToConversationTail]);
+  }, [activeSessionKey, scrollToConversationTail, timelineItems.length]);
 
   const retryMessageDelivery = useCallback(async (sourceMessage: ChatMessage) => {
     const payload = sourceMessage.retryPayload ?? { text: sourceMessage.content };
@@ -969,7 +964,6 @@ function ChatViewContent() {
         const current = state.messagesPerSession[activeSessionKey] ?? [];
         const updated = removeLocalUserMessage(current, sourceMessage.id);
         if (updated.length === current.length) return;
-        state.removeQueuedMessage(activeSessionKey, sourceMessage.id);
         state.setMessages(updated, activeSessionKey);
       },
     );
@@ -1118,7 +1112,6 @@ function ChatViewContent() {
     block: RenderBlock,
     groupPosition: ResponseGroupMessagePosition = 'standalone',
     responseSessionKey: string = activeSessionKey,
-    responseGroup?: ResponseGroup,
   ) => {
     switch (block.type) {
       case 'compaction':
@@ -1151,26 +1144,6 @@ function ChatViewContent() {
             />
           </Suspense>
         );
-
-      case 'execution-plan': {
-        // Running plans are projected once above the composer instead of
-        // participating in the assistant message column. Settled plans stay in
-        // transcript history as durable execution records - including plans the
-        // run never finished, which would otherwise be lost from both surfaces.
-        const outcome = executionPlanOutcome(block.plan, responseGroup?.status ?? 'final');
-        if (outcome === 'running') return null;
-        return (
-          <div className="mx-auto w-full max-w-[760px] px-3">
-            <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface" />}>
-              <ExecutionPlanCard
-                plan={block.plan}
-                outcome={outcome}
-                {...(responseGroup ? { onOpenTrace: () => sidePanel.openResponseTrace(responseGroup.id) } : {})}
-              />
-            </Suspense>
-          </div>
-        );
-      }
 
       case 'thinking':
         return (
@@ -1321,7 +1294,7 @@ function ChatViewContent() {
                 key={`execution-${row.blocks[0]?.id ?? rowIndex}`}
                 blocks={row.blocks}
                 streaming={isStreaming}
-                renderBlock={(block) => renderBlock(block, 'middle', group.sessionKey, group)}
+                renderBlock={(block) => renderBlock(block, 'middle', group.sessionKey)}
                 onBeforeExpandedChange={preserveViewportForExecutionToggle}
               />
             );
@@ -1334,7 +1307,7 @@ function ChatViewContent() {
             : 'standalone';
           return (
             <div key={row.block.id}>
-              {renderBlock(row.block, groupPosition, group.sessionKey, group)}
+              {renderBlock(row.block, groupPosition, group.sessionKey)}
             </div>
           );
         })}
@@ -1478,7 +1451,7 @@ function ChatViewContent() {
 
       {/* Messages Area — Virtualized */}
       <div
-        className={clsx('flex-1 min-h-0 relative', queueCount > 0 && 'pb-[100px]')}
+        className="flex-1 min-h-0 relative"
         onWheelCapture={(e) => {
           if (e.deltaY < -2) {
             scrollLockedRef.current = true;
@@ -1493,6 +1466,7 @@ function ChatViewContent() {
           <div className="flex h-full flex-col justify-end" />
         ) : (
           <Virtuoso
+            key={activeSessionKey}
             ref={virtuosoRef}
             scrollerRef={(element) => {
               scrollerRef.current = element instanceof HTMLElement ? element : null;
@@ -1585,14 +1559,14 @@ function ChatViewContent() {
         </Suspense>
       )}
 
-      {activeExecutionPlan && (
+      {progressCard.card && (
         <div
-          data-execution-plan-placement="composer-above"
+          data-progress-card-placement="composer-above"
           className="shrink-0 bg-[var(--aegis-bg-frosted-60)] px-3 pt-3 backdrop-blur-sm"
         >
           <div className="mx-auto w-full max-w-[760px]">
             <Suspense fallback={<div className="h-11 rounded-xl border border-aegis-border bg-aegis-surface" />}>
-              <ExecutionPlanCard plan={activeExecutionPlan} outcome="running" />
+              <ProgressCard card={progressCard.card} />
             </Suspense>
           </div>
         </div>

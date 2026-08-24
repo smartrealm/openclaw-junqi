@@ -14,6 +14,7 @@ function createGuidedFlow(): SetupFlow {
     guidedSetup: {
       phase: 'selecting',
       detection: {
+        methodFamily: 'openclaw',
         candidates: [{
           kind: 'codex-cli',
           brandId: 'test-provider',
@@ -139,6 +140,26 @@ test('Guided 自动激活后先确认当前有效路径', () => {
   assert.match(html, /Use Codex CLI/);
   assert.match(html, /View other options/);
   assert.doesNotMatch(html, /Tell OpenClaw what to configure next/);
+});
+
+test('稳定 Guided 激活后提供明确的完成配置核验操作', () => {
+  const flow = createGuidedFlow();
+  const html = renderToStaticMarkup(
+    <OpenClawConfigurationScreen
+      flow={{
+        ...flow,
+        guidedSetup: {
+          ...flow.guidedSetup,
+          phase: 'chat',
+          activation: { ok: true, modelRef: 'openai/codex' },
+          chat: { sessionId: 'stable-chat', reply: 'Ready', action: 'none' },
+        },
+      }}
+      logs={[]}
+    />,
+  );
+
+  assert.match(html, /Complete configuration verification/);
 });
 
 test('Guided 呈现官方不可用原因、修复入口和推荐安装', () => {

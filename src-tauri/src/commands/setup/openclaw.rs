@@ -30,14 +30,18 @@ impl OpenclawInstallTargetResolution {
 }
 
 pub(super) async fn target_openclaw_install_target(
-    node: &Path,
+    node: Option<&Path>,
     resolution: OpenclawInstallTargetResolution,
 ) -> Result<OpenclawInstallTarget, String> {
     let release = match resolution {
-        OpenclawInstallTargetResolution::Latest => {
-            npm_registry::resolve_latest_openclaw_release_target(node).await?
-        }
+        OpenclawInstallTargetResolution::Latest => match node {
+            Some(node) => npm_registry::resolve_latest_openclaw_release_target(node).await?,
+            None => npm_registry::resolve_public_latest_openclaw_release_target().await?,
+        },
         OpenclawInstallTargetResolution::PinnedRelocation(contract) => {
+            let node = node.ok_or(
+                "OpenClaw relocation requires an existing Node.js runtime with bundled npm to resolve its pinned package contract",
+            )?;
             let release =
                 npm_registry::resolve_openclaw_release_target(node, contract.version()).await?;
             if release.node_requirement() != contract.node_requirement() {
@@ -61,115 +65,54 @@ pub(super) async fn target_openclaw_install_target(
     })
 }
 
+fn node_path_for_target_metadata(
+    node: &crate::commands::system::NodeStatus,
+    npm: &crate::commands::system::NpmStatus,
+) -> Option<&Path> {
+    (node.available && npm.available)
+        .then(|| node.path.as_deref().map(Path::new))
+        .flatten()
+}
+
 pub(crate) async fn target_openclaw_node_requirement() -> Result<NodeRuntimeRequirement, String> {
     let fallback = NodeRuntimeRequirement::fallback();
     let runtime = crate::commands::system::NodeRuntimeContract::resolve(&fallback).await?;
     let node = runtime.node();
-    if !node.available || !runtime.npm().available {
-        return Ok(fallback);
-    }
-    let Some(path) = node.path.as_deref().map(Path::new) else {
-        return Ok(fallback);
-    };
+    let path = node_path_for_target_metadata(node, runtime.npm());
     Ok(
         target_openclaw_install_target(path, OpenclawInstallTargetResolution::Latest)
             .await?
             .node_requirement,
     )
 }
-/// Pick the directory we hand to `npm install -g` for the openclaw install.
-///
-/// Order of preference:
-/// 1. An explicit custom prefix from the persisted install layout.
-/// 2. The user's `npm config get prefix` from the npm bundled with the Node.js
-///    runtime selected for this installation. This matches the npm process
-///    that will perform `npm i -g openclaw`, including its own `.npmrc`.
-///
-/// There is intentionally no hidden user-home or JunQi-owned fallback. If
-/// npm's effective prefix is not writable, the installation guide asks for an
-/// explicit choice instead of creating a second global OpenClaw installation.
-pub(super) async fn selected_node_npm_prefix(
-    node: &crate::commands::system::NodeStatus,
-) -> Option<PathBuf> {
-    crate::commands::system::npm_global_prefix_for_node(node).await
-}
-
-pub(super) fn prefix_bin_dir(prefix: &std::path::Path) -> PathBuf {
-    if cfg!(windows) {
-        prefix.to_path_buf()
-    } else {
-        prefix.join("bin")
-    }
-}
-
-pub(super) fn prefix_bin_is_on_login_path(prefix: &std::path::Path) -> bool {
-    let expected = prefix_bin_dir(prefix);
-    let expected = std::fs::canonicalize(&expected).unwrap_or(expected);
-    let search_path = platform::current_search_path();
-    std::env::split_paths(&search_path).any(|entry| {
-        let entry = std::fs::canonicalize(&entry).unwrap_or(entry);
-        if cfg!(windows) {
-            entry
-                .to_string_lossy()
-                .eq_ignore_ascii_case(&expected.to_string_lossy())
-        } else {
-            entry == expected
-        }
+/// OpenClaw 的 npm 全局安装只能使用用户在设置中明确保存的目录。
+/// 不读取 npm 默认全局前缀，避免把桌面安装写入管理员管理的系统目录。
+pub(super) fn explicit_openclaw_npm_prefix(prefix: Option<PathBuf>) -> Result<PathBuf, String> {
+    prefix.ok_or_else(|| {
+        "Choose an OpenClaw npm installation directory before using the Native runtime. JunQi does not install OpenClaw into npm's default global prefix."
+            .to_string()
     })
 }
 
 pub(super) async fn pick_install_target(
     app: &tauri::AppHandle,
     step: &str,
-    node: &crate::commands::system::NodeStatus,
 ) -> Result<PathBuf, String> {
-    if let Some(prefix) = paths::configured_npm_prefix() {
-        if !try_use_prefix(&prefix) {
-            return Err(format!(
-                "The selected npm global prefix is not writable: {}",
-                prefix.display()
-            ));
-        }
-        emit_keyed(
-            app,
-            step,
-            &format!("Using custom npm prefix {}", prefix.display()),
-            "setup.openclaw.customNpmPrefix",
-            0.075,
-        );
-        return Ok(prefix);
-    }
-
-    let user_prefix = selected_node_npm_prefix(node).await;
-    if let Some(prefix) = user_prefix {
-        if try_use_prefix(&prefix) {
-            let terminal_ready = prefix_bin_is_on_login_path(&prefix);
-            emit_keyed(
-                app,
-                step,
-                &format!(
-                    "Detected npm prefix {} (matches your `npm i -g`); installing openclaw there",
-                    prefix.display()
-                ),
-                if terminal_ready {
-                    "setup.openclaw.userNpmPrefix"
-                } else {
-                    "setup.openclaw.userNpmPrefixMissingPath"
-                },
-                0.075,
-            );
-            return Ok(prefix);
-        }
+    let prefix = explicit_openclaw_npm_prefix(paths::configured_npm_prefix())?;
+    if !try_use_prefix(&prefix) {
         return Err(format!(
-            "npm reports global prefix {}, but it is not writable. Choose a custom OpenClaw npm directory in the installation guide or update npm's own prefix.",
+            "The selected OpenClaw npm installation directory is not writable: {}",
             prefix.display()
         ));
     }
-
-    Err(
-        "npm did not report an absolute global prefix. Install Node.js/npm normally, or choose a custom OpenClaw npm directory in the installation guide."
-            .into(),
-    )
+    emit_keyed(
+        app,
+        step,
+        &format!("Using selected OpenClaw npm directory {}", prefix.display()),
+        "setup.openclaw.customNpmPrefix",
+        0.075,
+    );
+    Ok(prefix)
 }
 
 /// Decide whether `path` is a usable install target. Returns true when
@@ -1037,20 +980,15 @@ async fn install_openclaw_impl_inner_scoped(
         );
     }
 
-    // A selected npm runtime owns registry discovery, including user/global
-    // npmrc locations and private credentials. Bootstrap a broadly supported
-    // Node/npm pair first, then resolve the target package contract through
-    // that exact npm configuration before choosing the final Node runtime.
-    let bootstrap_runtime =
-        ensure_installable_node_runtime(&app, step, &NodeRuntimeRequirement::fallback()).await?;
-    let bootstrap_node = bootstrap_runtime
-        .node()
-        .path
-        .as_deref()
-        .map(Path::new)
-        .ok_or("The bootstrap Node.js runtime did not report an executable path")?;
+    // 完整 Node/npm 对存在时由 npm 读取用户配置；否则只读取公开元数据。
+    // 两条路径都必须先取得目标包的 engines.node，之后才允许写入 Node.js。
+    let metadata_runtime = crate::commands::system::NodeRuntimeContract::resolve(
+        &NodeRuntimeRequirement::fallback(),
+    )
+    .await?;
+    let metadata_node = node_path_for_target_metadata(metadata_runtime.node(), metadata_runtime.npm());
     let target_resolution = OpenclawInstallTargetResolution::for_install(mode, relocation.as_ref());
-    let target = target_openclaw_install_target(bootstrap_node, target_resolution).await?;
+    let target = target_openclaw_install_target(metadata_node, target_resolution).await?;
     let (compatible_node, _npm) =
         ensure_installable_node_runtime(&app, step, &target.node_requirement)
             .await?
@@ -1109,14 +1047,14 @@ async fn install_openclaw_impl_inner_scoped(
                     .to_string()
             })?,
         OpenclawInstallMode::Relocate => {
-            let target = pick_install_target(&app, step, &compatible_node).await?;
+            let target = pick_install_target(&app, step).await?;
             relocation
                 .as_mut()
                 .ok_or("OpenClaw relocation request is unavailable")?
                 .freeze_target(&target)?;
             target
         }
-        OpenclawInstallMode::Normal => pick_install_target(&app, step, &compatible_node).await?,
+        OpenclawInstallMode::Normal => pick_install_target(&app, step).await?,
     };
     let openclaw_prefix_text = openclaw_prefix.to_string_lossy().into_owned();
     emit_keyed_with_params(
@@ -1977,6 +1915,39 @@ fn npm_requires_explicit_openclaw_script_permission(npm_major: u64) -> bool {
 mod tests {
     use super::*;
 
+    fn metadata_node(available: bool, path: Option<&str>) -> crate::commands::system::NodeStatus {
+        crate::commands::system::NodeStatus {
+            available,
+            version: available.then(|| "v24.15.0".to_string()),
+            path: path.map(str::to_string),
+            source: None,
+        }
+    }
+
+    fn metadata_npm(available: bool) -> crate::commands::system::NpmStatus {
+        crate::commands::system::NpmStatus {
+            available,
+            version: available.then(|| "11.0.0".to_string()),
+            path: available.then(|| "/target/npm-cli.js".to_string()),
+            source: None,
+            reason: None,
+        }
+    }
+
+    #[test]
+    fn target_metadata_uses_node_only_with_its_bundled_npm() {
+        let node = metadata_node(true, Some("/target/node"));
+        assert_eq!(
+            node_path_for_target_metadata(&node, &metadata_npm(true)),
+            Some(Path::new("/target/node")),
+        );
+        assert_eq!(node_path_for_target_metadata(&node, &metadata_npm(false)), None);
+        assert_eq!(
+            node_path_for_target_metadata(&metadata_node(false, Some("/target/node")), &metadata_npm(true)),
+            None,
+        );
+    }
+
     fn test_dir(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
             "junqi-{label}-{}-{}",
@@ -1995,6 +1966,15 @@ mod tests {
         assert!(!npm_requires_explicit_openclaw_script_permission(11));
         assert!(npm_requires_explicit_openclaw_script_permission(12));
         assert!(npm_requires_explicit_openclaw_script_permission(13));
+    }
+
+    #[test]
+    fn native_npm_install_requires_an_explicit_openclaw_directory() {
+        assert!(explicit_openclaw_npm_prefix(None).is_err());
+        assert_eq!(
+            explicit_openclaw_npm_prefix(Some(PathBuf::from("selected-openclaw-npm"))).unwrap(),
+            PathBuf::from("selected-openclaw-npm"),
+        );
     }
 
     fn write_windows_openclaw(prefix: &Path, version: &str) {

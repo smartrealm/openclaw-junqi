@@ -90,16 +90,12 @@ export function StatusBar() {
   const gatewayProgressTerminal = gatewayProgress?.status === 'completed'
     || gatewayProgress?.status === 'failed';
   const gatewayOperationActive = reconnecting || gatewayProgressActive;
-  // Setup already authenticated this Gateway — App.tsx trusts that handoff
-  // for up to 12s before falling back to normal cold-start recovery. Don't
-  // let the leftover setup-phase progress message flash "reconnecting" here
-  // for a connection nothing is actually wrong with. An operation the user
-  // just triggered themselves (`reconnecting`) still shows, since that's a
-  // deliberate action, not passive boot state.
+  // 已认证交接只影响静态连接态的展示。任何统一生命周期操作一旦运行，
+  // 状态栏必须立即展示同一进度，不能因操作入口不同而隐藏。
   const isVerifiedHandoff = useAppStore((s) => s.workspaceStartupMode) === 'verified-gateway-handoff';
   const showGatewayProgress = Boolean(gatewayProgress)
     && (showGatewayResult
-      || (gatewayProgressActive && (reconnecting || (!connected && !isVerifiedHandoff))));
+      || gatewayProgressActive);
   const gatewayMsg = showGatewayProgress ? gatewayProgress?.message ?? null : null;
   const gatewayProg = showGatewayProgress ? gatewayProgress?.progress ?? null : null;
 

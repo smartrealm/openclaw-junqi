@@ -1,12 +1,15 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Activity, ArrowUpRight, BarChart3, BookOpenText, Bot, Brain, Building2, Calendar, Clock, Cpu, Database, FileText, Folder, History, ListChecks, MessageSquare, Plus, Puzzle, Settings, Settings2, Terminal, Wrench } from 'lucide-react';
+import { Activity, ArrowUpRight, BarChart3, BookOpenText, Bot, Brain, Building2, Calendar, CircleAlert, Clock, Cpu, Database, FileText, Folder, History, ListChecks, MessageSquare, Plus, Puzzle, RefreshCw, Settings, Settings2, Terminal, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
 import { OPENCLAW_TOOLS_ROUTE } from '@/config/openClawToolsRoute';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import { useSkillsStore } from '@/stores/skillsStore';
+import { useOpenClawCommands } from '@/hooks/useOpenClawCommands';
+import { groupOpenClawCommands } from '@/pages/OpenClawCommands/commandGroups';
+import { openClawCommandCategoryFromHash } from '@/pages/OpenClawCommands/commandScrollSpy';
 import { SidebarRow, SidebarSection } from './SidebarRow';
 import { filterEnabledNavigationItems, type FeatureLinkedItem } from './navigationVisibility';
 import { getAgentDisplayName } from '@/utils/agentDisplayName';
@@ -261,7 +264,7 @@ export function BusinessApplicationsPanel() {
   const toolsMeta = toolsLoading
     ? t('businessApplications.sidebarToolsLoading', '正在读取当前 Session')
     : activeSession
-      ? t('businessApplications.sidebarToolsCount', '{{count}} 个当前有效工具', { count: toolCount })
+      ? t('businessApplications.sidebarToolsCount', '{{count}} 项插件操作', { count: toolCount })
       : t('businessApplications.sidebarNoSession', '尚未选择有效 Session');
   const activityMeta = attempts.length > 0
     ? t('businessApplications.sidebarActivityCount', '{{count}} 条本窗口投影', { count: attempts.length })
@@ -291,7 +294,7 @@ export function BusinessApplicationsPanel() {
         <SidebarSection label={t('businessApplications.sidebarTitle', '工作区')}>
           <SidebarRow
             icon={<Wrench size={14} />}
-            title={t('businessApplications.workspaceTools', '有效工具')}
+            title={t('businessApplications.workspaceTools', '插件操作目录')}
             meta={toolsMeta}
             active={location.pathname === '/business-applications' && view !== 'activity' && view !== 'runtime'}
             onClick={() => openWorkbench('tools')}
@@ -359,6 +362,32 @@ export function BusinessApplicationsPanel() {
 export function CommandsPanel() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
+  const connected = useChatStore((state) => state.connected);
+  const activeSessionKey = useChatStore((state) => state.activeSessionKey);
+  const agentId = agentIdFromSessionKey(activeSessionKey) ?? undefined;
+  const { commands, failure, loading } = useOpenClawCommands(connected, {
+    agentId,
+    scope: 'text',
+    includeArgs: false,
+  });
+  const groups = useMemo(() => groupOpenClawCommands(commands), [commands]);
+  const selectedCategory = openClawCommandCategoryFromHash(location.hash);
+  const navigationScrollRef = useRef<HTMLDivElement>(null);
+  const navigateToCommands = (category?: string) => {
+    navigate({
+      pathname: '/openclaw-commands',
+      ...(category ? { hash: `#category=${encodeURIComponent(category)}` } : {}),
+    });
+  };
+
+  useEffect(() => {
+    const targetCategory = selectedCategory ?? '';
+    const target = Array.from(
+      navigationScrollRef.current?.querySelectorAll<HTMLElement>('[data-openclaw-command-category]') ?? [],
+    ).find((element) => element.dataset.openclawCommandCategory === targetCategory);
+    target?.scrollIntoView({ block: 'nearest' });
+  }, [selectedCategory]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -377,14 +406,48 @@ export function CommandsPanel() {
           </div>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto py-2">
-        <SidebarSection label={t('openclawCommands.title')}>
-          <SidebarRow
-            icon={<BookOpenText size={14} />}
-            title={t('openclawCommands.title')}
-            onClick={() => navigate('/openclaw-commands')}
-          />
+      <div ref={navigationScrollRef} className="min-h-0 flex-1 overflow-y-auto py-2">
+        <SidebarSection label={t('openclawCommands.navigation.allCommands', '当前目录')}>
+          <div data-openclaw-command-category="">
+            <SidebarRow
+              icon={<BookOpenText size={14} />}
+              title={t('openclawCommands.title')}
+              meta={loading ? t('openclawCommands.navigation.loading', '正在读取') : t('openclawCommands.navigation.commandCount', '{{count}} 条命令', { count: commands.length })}
+              active={!selectedCategory}
+              onClick={() => navigateToCommands()}
+            />
+          </div>
         </SidebarSection>
+        {!connected && (
+          <SidebarSection label={t('openclawCommands.navigation.groups', '命令分组')}>
+            <SidebarRow icon={<CircleAlert size={14} />} title={t('openclawCommands.disconnected')} onClick={() => navigateToCommands()} />
+          </SidebarSection>
+        )}
+        {connected && loading && (
+          <SidebarSection label={t('openclawCommands.navigation.groups', '命令分组')}>
+            <SidebarRow icon={<RefreshCw size={14} className="animate-spin" />} title={t('openclawCommands.loading')} onClick={() => navigateToCommands()} />
+          </SidebarSection>
+        )}
+        {connected && !loading && failure && (
+          <SidebarSection label={t('openclawCommands.navigation.groups', '命令分组')}>
+            <SidebarRow icon={<CircleAlert size={14} />} title={t(failure === 'unavailable' ? 'openclawCommands.unavailable' : 'openclawCommands.invalidResponse')} onClick={() => navigateToCommands()} />
+          </SidebarSection>
+        )}
+        {connected && !loading && !failure && groups.length > 0 && (
+          <SidebarSection label={t('openclawCommands.navigation.groups', '命令分组')}>
+            {groups.map((group) => (
+              <div key={group.id} data-openclaw-command-category={group.id}>
+                <SidebarRow
+                  icon={<ListChecks size={14} />}
+                  title={t(`openclawCommands.categories.${group.id}`)}
+                  meta={t('openclawCommands.navigation.commandCount', '{{count}} 条命令', { count: group.commands.length })}
+                  active={selectedCategory === group.id}
+                  onClick={() => navigateToCommands(group.id)}
+                />
+              </div>
+            ))}
+          </SidebarSection>
+        )}
       </div>
     </div>
   );

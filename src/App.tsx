@@ -40,6 +40,7 @@ import { parseOpenClawSessionListSnapshot } from '@/services/gateway/OpenClawCha
 import { gatewayManager } from '@/services/gateway/GatewayConnectionManager';
 import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
+import { runGatewayErrorScreenRecovery } from '@/services/gateway/gatewayErrorRecovery';
 import {
   loadGatewayProcessLogs,
 } from '@/services/gateway/gatewayProcessObservation';
@@ -69,13 +70,16 @@ import type { GatewayAuthorizationIssue } from '@/services/gateway/messageRouter
 import { validateCachedSetupInstallation } from '@/services/setupInstallationHealth';
 import { approveSelectedGatewayDevice } from '@/api/tauri-commands';
 import { AppLoadingFallback } from '@/components/shared/AppLoadingFallback';
+import { useSetupProgress } from '@/hooks/useSetupProgress';
 import { OpenClawGuidedSetupClient } from '@/services/gateway/OpenClawGuidedSetupClient';
 import { resolveOpenClawSetupCapability } from '@/services/setup/openClawSetupCapability';
 import { shouldBlockWorkspaceEntry } from '@/services/setup/setupEntryGate';
 import { JarvisVoiceRuntime } from '@/runtime/JarvisVoiceRuntime';
+import { useDingTalkBusinessPrewarm } from '@/runtime/useDingTalkBusinessPrewarm';
 import { projectOpenClawSessionForChat } from '@/utils/openClawSessionProjection';
 import {
   createWorkspaceBootstrapReadiness,
+  releaseWorkspaceAfterGatewayData,
   shouldReleaseWorkspaceAfterGatewayRetryExhaustion,
 } from '@/runtime/workspaceBootstrapReadiness';
 
@@ -174,6 +178,10 @@ export default function App() {
     (s) => s.sessions.find((session) => session.key === s.activeSessionKey)?.agentId,
   );
   const setupComplete = useAppStore((s) => s.setupComplete);
+  useDingTalkBusinessPrewarm({
+    setupComplete: setupComplete === true,
+    connected,
+  });
   const workspaceStartupMode = useAppStore((s) => s.workspaceStartupMode);
   const setWorkspaceStartupMode = useAppStore((s) => s.setWorkspaceStartupMode);
   const [cachedSetupValidationPending, setCachedSetupValidationPending] = useState(
@@ -185,9 +193,9 @@ export default function App() {
   const [workspaceDataReady, setWorkspaceDataReady] = useState(false);
   const [workspaceStartupFailed, setWorkspaceStartupFailed] = useState(false);
   const workspaceBootstrapReadinessRef = useRef(createWorkspaceBootstrapReadiness());
-  const initialSessionSnapshotSettledRef = useRef(false);
   const gatewayBootstrapDataReady = useGatewayDataStore(hasCurrentWorkspaceBootstrapData);
   const gatewayBootstrapDataFailed = useGatewayDataStore(hasCurrentWorkspaceBootstrapFailure);
+  const gatewayProgress = useSetupProgress('gateway');
   const [routePath, setRoutePath] = useState(() => routePathFromLocation(window.location));
   const gatewayOptionalRoute = isGatewayOptionalPath(routePath);
   const [coldStartRecoveryActive, setColdStartRecoveryActive] = useState(true);
@@ -285,7 +293,6 @@ export default function App() {
   useEffect(() => {
     if (setupComplete !== true) {
       workspaceBootstrapReadinessRef.current.reset();
-      initialSessionSnapshotSettledRef.current = false;
       setWorkspaceDataReady(false);
       setWorkspaceStartupFailed(false);
       return;
@@ -303,11 +310,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    workspaceBootstrapReadinessRef.current.updateGatewayDataReady(gatewayBootstrapDataReady);
-    if (!initialSessionSnapshotSettledRef.current) return;
-    markInitialWorkspaceDataReady();
+    const released = releaseWorkspaceAfterGatewayData(
+      workspaceBootstrapReadinessRef.current,
+      gatewayBootstrapDataReady,
+    );
+    if (released) {
+      setWorkspaceStartupFailed(false);
+      setWorkspaceDataReady(true);
+    }
     if (gatewayBootstrapDataFailed) setWorkspaceStartupFailed(true);
-  }, [gatewayBootstrapDataFailed, gatewayBootstrapDataReady, markInitialWorkspaceDataReady]);
+  }, [gatewayBootstrapDataFailed, gatewayBootstrapDataReady]);
 
   useEffect(() => {
     const updateRoutePath = () => setRoutePath(routePathFromLocation(window.location));
@@ -471,16 +483,7 @@ export default function App() {
         setWorkspaceStartupFailed(true);
         return;
       }
-      queueMicrotask(() => {
-        const chat = useChatStore.getState();
-        for (const [sessionKey, queue] of Object.entries(chat.messageQueue)) {
-          if (queue.length > 0 && !chat.typingBySession[sessionKey]) {
-            void chat.drainQueue(sessionKey).catch(() => undefined);
-          }
-        }
-      });
       boot.markStageCompleted('config', 'Sessions ready');
-      initialSessionSnapshotSettledRef.current = true;
       // 会话请求已经取得 OpenClaw 的权威首屏快照；智能体列表由后台轮询补齐，
       // 不得让它的独立失败阻塞工作区进入。
       markInitialWorkspaceDataReady(true);
@@ -528,7 +531,6 @@ export default function App() {
 
   const retryWorkspaceStartup = useCallback(() => {
     workspaceBootstrapReadinessRef.current.reset();
-    initialSessionSnapshotSettledRef.current = false;
     setWorkspaceDataReady(false);
     setWorkspaceStartupFailed(false);
     void Promise.allSettled([refreshGroup('sessions'), refreshGroup('agents')]);
@@ -662,11 +664,6 @@ export default function App() {
   // webview zoom (set by settingsStore.setUiScale). No CSS transform
   // or zoom on #app-root — both break fixed positioning and scroll.
 
-  // ── Auto-drain the message queue when an AI reply completes ──
-  // Fires once per response (on the typing true→false transition) for any session,
-  // covering stream terminals and authoritative run reconciliation. Both
-  // settle typingBySession[key]; drainQueue re-arms typing
-  // so the next completion drains the next item, until the queue is empty.
   useEffect(() => {
     return subscribeSessionIdentityTransitions((transition) => {
       sessionTranscriptFence.invalidate(transition.sessionKey);
@@ -675,19 +672,6 @@ export default function App() {
         sessionKey: transition.sessionKey,
         sessionId: transition.previousSessionId,
       });
-    });
-  }, []);
-
-  useEffect(() => {
-    return useChatStore.subscribe((state, prev) => {
-      const cur = state.typingBySession;
-      const old = prev.typingBySession;
-      if (cur === old) return;
-      for (const key of Object.keys(cur)) {
-        if (cur[key] === false && old[key] === true && (state.messageQueue[key] || []).length > 0) {
-          void useChatStore.getState().drainQueue(key).catch(() => undefined);
-        }
-      }
     });
   }, []);
 
@@ -1026,17 +1010,34 @@ export default function App() {
     gateway.cancelApprovalAuthorizationRetry();
   }, []);
 
-  const handleGatewayRetry = useCallback(() => {
+  const handleGatewayRetry = useCallback(async () => {
     setGatewayRetrying(true);
-    void restartGatewayFromBoot(gatewayBootErrorRef.current ?? undefined, 'gateway-error-screen');
+    const recovered = await restartGatewayFromBoot(
+      gatewayBootErrorRef.current ?? undefined,
+      'gateway-error-screen',
+    );
+    if (recovered) {
+      setGatewayBootError(null);
+      setGatewayBootLogs(undefined);
+    }
+    setGatewayRetrying(false);
   }, [restartGatewayFromBoot]);
 
-  const handleGatewayRecovered = useCallback(() => {
-    setGatewayBootError(null);
-    setGatewayBootLogs(undefined);
-    setGatewayRetrying(false);
-    // 错误页恢复后立即进入统一重连，不等待周期探测器。
-    void gatewayLifecycle.reconnect('gateway-error-screen-recovered');
+  const handleGatewayRecovered = useCallback(async () => {
+    setGatewayRetrying(true);
+    await runGatewayErrorScreenRecovery({
+      reconnect: () => gatewayLifecycle.reconnect('gateway-error-screen-recovered'),
+      onRecovered: () => {
+        setGatewayBootError(null);
+        setGatewayBootLogs(undefined);
+        setGatewayRetrying(false);
+      },
+      onFailed: (error) => {
+        // 端点就绪不代表认证连接已完成，失败时保留错误页与既有日志。
+        setGatewayBootError(error);
+        setGatewayRetrying(false);
+      },
+    });
   }, []);
 
   if (shouldBlockWorkspaceEntry({
@@ -1078,11 +1079,14 @@ export default function App() {
   }
 
   if (!workspaceDataReady && !gatewayOptionalRoute) {
+    const workspaceLoadingLabel = gatewayProgress?.status === 'running'
+      ? gatewayProgress.message
+      : t('app.loadingWorkspace');
     return (
       <>
         <ThemeRuntime />
         <AppLoadingFallback
-          label={t('app.loadingWorkspace')}
+          label={workspaceLoadingLabel}
           errorLabel={workspaceStartupFailed ? t('app.workspaceLoadFailed') : undefined}
           retryLabel={workspaceStartupFailed ? t('app.retry') : undefined}
           onRetry={workspaceStartupFailed ? retryWorkspaceStartup : undefined}

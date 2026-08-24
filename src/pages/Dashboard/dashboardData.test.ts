@@ -4,6 +4,8 @@ import {
   buildDailyCostChartData,
   getDashboardTokenUsageOverview,
   getDailyCostAvailability,
+  resolveDashboardPricingNotice,
+  resolveDashboardChartMetric,
   formatActivityTime,
   formatActivityTimeTitle,
   shortModelName,
@@ -93,6 +95,27 @@ test('daily cost availability retains partial-pricing evidence alongside known c
   });
 });
 
+test('费用提示在全部未定价和部分估价之间保持互斥', () => {
+  assert.equal(resolveDashboardPricingNotice({
+    hasDatedEntries: true,
+    hasPricedCost: false,
+    totalTokens: 42_000,
+    missingCostEntries: 3,
+  }), 'unpriced');
+  assert.equal(resolveDashboardPricingNotice({
+    hasDatedEntries: true,
+    hasPricedCost: true,
+    totalTokens: 42_000,
+    missingCostEntries: 3,
+  }), 'partial');
+  assert.equal(resolveDashboardPricingNotice({
+    hasDatedEntries: true,
+    hasPricedCost: true,
+    totalTokens: 42_000,
+    missingCostEntries: 0,
+  }), 'none');
+});
+
 test('single-day unpriced usage becomes a summary instead of a blank trend chart', () => {
   const overview = getDashboardTokenUsageOverview(buildDailyCostChartData([{
     date: '2026-07-20',
@@ -121,6 +144,29 @@ test('multiple plotted usage days remain eligible for the token trend chart', ()
 
   assert.equal(overview.hasTrend, true);
   assert.equal(overview.activeDays, 2);
+});
+
+test('部分未估价时默认展示 Token 趋势并允许查看已知费用', () => {
+  const availability = {
+    hasDatedEntries: true,
+    hasPricedCost: true,
+    totalTokens: 42_000,
+    missingCostEntries: 3,
+  };
+  const overview = {
+    totalTokens: 42_000,
+    inputTokens: 40_000,
+    outputTokens: 2_000,
+    cacheTokens: 0,
+    unclassifiedTokens: 0,
+    activeDays: 2,
+    latestActivityDate: '07-20',
+    hasTrend: true,
+  };
+
+  assert.equal(resolveDashboardChartMetric('auto', availability, overview), 'tokens');
+  assert.equal(resolveDashboardChartMetric('cost', availability, overview), 'cost');
+  assert.equal(resolveDashboardChartMetric('tokens', availability, overview), 'tokens');
 });
 
 test('activity metadata uses compact local time and short model names', () => {

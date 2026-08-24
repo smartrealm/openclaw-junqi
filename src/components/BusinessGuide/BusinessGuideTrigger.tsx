@@ -4,7 +4,7 @@ import { useBusinessGuideActivation } from '@/hooks/useBusinessGuideActivation';
 import { useBusinessGuideStore } from '@/stores/businessGuideStore';
 import { WorkspaceChromeIconButton } from '@/components/Layout/WorkspaceChrome';
 
-/** The global recovery entry sits immediately before the notification control. */
+/** 全局引导入口固定放在通知控件之前。 */
 export function BusinessGuideTrigger() {
   const { t } = useTranslation();
   const active = useBusinessGuideActivation();

@@ -46,7 +46,6 @@ function seedSession(activeSessionKey = SESSION_KEY): Session[] {
     quickRepliesBySession: { [SESSION_KEY]: [{ text: 'Continue', value: 'continue' }] },
     thinkingBySession: { [SESSION_KEY]: { runId: 'run-1', text: 'thinking' } },
     drafts: { [SESSION_KEY]: 'private draft' },
-    messageQueue: { [SESSION_KEY]: [{ id: 'q1', text: 'queued', timestamp: 'now' }] },
     draftAttachments: { [SESSION_KEY]: ['/tmp/private.txt'] },
   });
   useGatewayDataStore.setState({ sessions: sessions.map(({ key, label }) => ({ key, label })) });
@@ -71,7 +70,6 @@ beforeEach(() => {
     quickRepliesBySession: {},
     thinkingBySession: {},
     drafts: {},
-    messageQueue: {},
     draftAttachments: {},
   });
   useGatewayDataStore.setState({ sessions: [] });
@@ -149,7 +147,6 @@ describe('session lifecycle regression fixes', () => {
     assert.equal(state.quickRepliesBySession[SESSION_KEY], undefined);
     assert.equal(state.thinkingBySession[SESSION_KEY], undefined);
     assert.equal(state.drafts[SESSION_KEY], undefined);
-    assert.equal(state.messageQueue[SESSION_KEY], undefined);
     assert.equal(state.draftAttachments[SESSION_KEY], undefined);
   });
 
@@ -286,10 +283,9 @@ describe('session lifecycle regression fixes', () => {
 
     assert.equal(await resetSessionEverywhere(SESSION_KEY), false);
     assert.deepEqual(useChatStore.getState().messagesPerSession[SESSION_KEY], [message('m1', 'private history')]);
-    assert.equal(useChatStore.getState().messageQueue[SESSION_KEY]?.length, 1);
   });
 
-  test('BUG-05 reset clears history, queue, and tokens only after success', async () => {
+test('BUG-05 reset clears history and tokens only after success', async () => {
     seedSession();
     useChatStore.setState({ sessions: [
       { key: MAIN_KEY, label: 'Main' },
@@ -303,7 +299,6 @@ describe('session lifecycle regression fixes', () => {
 
     assert.equal(await resetSessionEverywhere(SESSION_KEY), true);
     assert.deepEqual(useChatStore.getState().messagesPerSession[SESSION_KEY], []);
-    assert.deepEqual(useChatStore.getState().messageQueue[SESSION_KEY], []);
     assert.equal(useChatStore.getState().sessions.find((session) => session.key === SESSION_KEY)?.totalTokens, 0);
   });
 

@@ -3,6 +3,13 @@ import {
   decodeVoiceCaptureCommandResult,
   type VoiceCaptureCommandResult,
 } from './voiceCaptureContract';
+import {
+  decodeNativeVoiceWakeCapability,
+  decodeNativeVoiceWakeCommandResult,
+  normalizeNativeVoiceWakeTriggers,
+  type NativeVoiceWakeCapability,
+  type NativeVoiceWakeCommandResult,
+} from './nativeVoiceWakeContract';
 import { decodeVoiceTalkPlaybackAppendResult } from './voiceTalkPlaybackContract';
 import {
   parseTauriPlatformInfo,
@@ -56,6 +63,38 @@ export const stopVoiceCapture = async (ownerId: string): Promise<VoiceCaptureCom
     await invoke<unknown>('voice_capture_stop', { ownerId }),
   );
   if (!result || result.ownerId !== ownerId) throw new Error('原生语音采集停止响应无效');
+  return result;
+};
+
+export const getNativeVoiceWakeCapability = async (): Promise<NativeVoiceWakeCapability> => {
+  const result = decodeNativeVoiceWakeCapability(await invoke<unknown>('voice_wake_capability'));
+  if (!result) throw new Error('原生语音唤醒能力响应无效');
+  return result;
+};
+
+export const startNativeVoiceWake = async (
+  ownerId: string,
+  triggers: readonly string[],
+): Promise<NativeVoiceWakeCommandResult> => {
+  if (!ownerId.trim()) throw new Error('voice wake owner is required');
+  const normalizedTriggers = normalizeNativeVoiceWakeTriggers(triggers);
+  if (!normalizedTriggers) throw new Error('原生语音唤醒词无效');
+  const result = decodeNativeVoiceWakeCommandResult(await invoke<unknown>('voice_wake_start', {
+    ownerId,
+    triggers: normalizedTriggers,
+  }));
+  if (!result || result.ownerId !== ownerId) throw new Error('原生语音唤醒启动响应无效');
+  return result;
+};
+
+export const stopNativeVoiceWake = async (
+  ownerId: string,
+): Promise<NativeVoiceWakeCommandResult> => {
+  if (!ownerId.trim()) throw new Error('voice wake owner is required');
+  const result = decodeNativeVoiceWakeCommandResult(await invoke<unknown>('voice_wake_stop', {
+    ownerId,
+  }));
+  if (!result || result.ownerId !== ownerId) throw new Error('原生语音唤醒停止响应无效');
   return result;
 };
 
@@ -160,6 +199,7 @@ export interface OpenclawUpdateStatus {
   gitBehind: number | null;
   channel: string | null;
   channelLabel: string | null;
+  managedChannelPolicy: 'eligible' | 'unsupported' | 'unknown';
   installKind: string | null;
   packageManager: string | null;
   npmRegistry: string | null;
@@ -596,14 +636,14 @@ export const installBundledDingTalkPlugin = (targetFingerprint: string, expected
   invoke<DingTalkPluginStatus>('install_bundled_dingtalk_plugin', { targetFingerprint, expectedConnectionId })
 );
 
-export type DwsOperationKind = 'install' | 'authorize';
+export type DwsOperationKind = 'install' | 'authorize' | 'resetAuth' | 'switchProfile' | 'logoutProfile';
 export type DwsOperationStarted = {
   operationId: string;
   kind: DwsOperationKind;
 };
 export type DwsOperationOutput = {
   operationId: string;
-  stream: 'stdout' | 'stderr';
+  stream: 'stdout' | 'stderr' | 'status';
   line: string;
 };
 export type DwsOperationFinished = {
@@ -619,10 +659,12 @@ export const startDwsOperation = (
   targetFingerprint: string,
   expectedConnectionId: string,
   kind: DwsOperationKind,
+  profile?: string,
 ) => invoke<DwsOperationStarted>('start_dws_operation', {
   targetFingerprint,
   expectedConnectionId,
   kind,
+  profile: profile ?? null,
 });
 
 export const cancelDwsOperation = (

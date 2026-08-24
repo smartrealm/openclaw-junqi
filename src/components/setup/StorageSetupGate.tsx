@@ -34,7 +34,6 @@ interface StorageSetupStatus {
   terminalLauncherDir: string;
   legacyDir: string;
   legacyExists: boolean;
-  legacySizeBytes: number;
 }
 
 interface StorageConfigureResult {
@@ -55,14 +54,6 @@ interface StorageSetupStepProps {
   onBack: () => void | Promise<void>;
   logs: SetupLog[];
   forceConfigure?: boolean;
-}
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
-  const value = bytes / 1024 ** index;
-  return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
 }
 
 function childStoragePath(parent: string): string {
@@ -208,7 +199,10 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
       setWorkspaceDir(draft?.workspaceDir ?? result.workspaceDir);
       setRuntimeDir(draft?.runtimeDir ?? result.runtimeDir);
       setNpmCacheDir(draft?.npmCacheDir ?? result.npmCacheDir ?? '');
-      setCustomNpmCache(draft?.customNpmCache ?? Boolean(result.npmCacheDir));
+      setCustomNpmCache(
+        Boolean(draft?.customNpmPrefix ?? result.npmPrefix)
+          && (draft?.customNpmCache ?? Boolean(result.npmCacheDir)),
+      );
       setNpmPrefix(draft?.npmPrefix ?? result.npmPrefix ?? '');
       setCustomNpmPrefix(draft?.customNpmPrefix ?? Boolean(result.npmPrefix));
       setNodeRuntimeDir(draft?.nodeRuntimeDir ?? result.nodeRuntimeDir ?? '');
@@ -335,7 +329,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
         locations: {
           workspaceDir,
           runtimeDir,
-          npmCacheDir: customNpmCache ? npmCacheDir.trim() || null : null,
+          npmCacheDir: customNpmPrefix && customNpmCache ? npmCacheDir.trim() || null : null,
           npmPrefix: customNpmPrefix ? npmPrefix.trim() || null : null,
           nodeRuntimeDir: status.customNodeRuntimeSupported && customNodeRuntime ? nodeRuntimeDir.trim() || null : null,
           gitRuntimeDir: status.customGitRuntimeSupported && customGitRuntime ? gitRuntimeDir.trim() || null : null,
@@ -515,7 +509,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
     targetDir.trim()
       && workspaceDir.trim()
       && runtimeDir.trim()
-      && (!customNpmCache || npmCacheDir.trim())
+      && (!customNpmPrefix || !customNpmCache || npmCacheDir.trim())
       && (!customNpmPrefix || npmPrefix.trim())
       && (!customNodeRuntime || nodeRuntimeDir.trim())
       && (!customGitRuntime || gitRuntimeDir.trim()),
@@ -565,9 +559,6 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
               {usingSourceLocation && <Check size={16} className="text-aegis-primary" />}
             </span>
             <span className="mt-3 block break-all font-mono text-[11px] leading-5 text-aegis-text-dim">{sourceDir}</span>
-            {sourceDir === status.legacyDir && status.legacyExists && (
-              <span className="mt-1 block text-xs text-aegis-text-muted">{formatBytes(status.legacySizeBytes)}</span>
-            )}
           </button>
 
           <button
@@ -660,6 +651,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
                   <input
                     type="checkbox"
                     checked={customNpmCache}
+                    disabled={!customNpmPrefix}
                     onChange={(event) => {
                       setCustomNpmCache(event.target.checked);
                       if (!event.target.checked) setNpmCacheDir('');
@@ -667,7 +659,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
                     className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
                   />
                 </label>
-                {customNpmCache && (
+                {customNpmPrefix && customNpmCache && (
                   <LocationRow
                     icon={<Package size={16} />}
                     label={t('storage.npmCacheLocation', 'npm 下载缓存')}
@@ -680,13 +672,19 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
               <div className="border-b border-aegis-border/70 py-3">
                 <label className="flex cursor-pointer items-center justify-between gap-4">
                   <span>
-                    <span className="block text-xs font-semibold text-aegis-text">{t('storage.customNpmPrefix', '自定义 OpenClaw npm 安装目录')}</span>
-                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNpmPrefixHint', '关闭时读取登录终端的 npm prefix；不可写时请在此选择目录')}</span>
+                    <span className="block text-xs font-semibold text-aegis-text">{t('storage.customNpmPrefix', '使用 npm 安装 OpenClaw')}</span>
+                    <span className="mt-1 block text-[11px] text-aegis-text-muted">{t('storage.customNpmPrefixHint', '启用后选择 JunQi 写入 OpenClaw 的用户目录；不会使用 npm 的系统全局目录')}</span>
                   </span>
                   <input
                     type="checkbox"
                     checked={customNpmPrefix}
-                    onChange={(event) => setCustomNpmPrefix(event.target.checked)}
+                    onChange={(event) => {
+                      setCustomNpmPrefix(event.target.checked);
+                      if (!event.target.checked) {
+                        setCustomNpmCache(false);
+                        setNpmCacheDir('');
+                      }
+                    }}
                     className="h-4 w-4 accent-[rgb(var(--aegis-primary))]"
                   />
                 </label>

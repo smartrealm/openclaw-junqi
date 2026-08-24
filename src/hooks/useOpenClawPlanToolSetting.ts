@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   openClawPlanToolSettings,
 } from '@/services/gateway/OpenClawPlanToolSettings';
-import type { OpenClawPlanToolMode } from '@/agent-execution-plan/settings';
+import type { OpenClawPlanToolMode } from '@/progress-card/settings';
 
 export function useOpenClawPlanToolSetting(active: boolean) {
   const [mode, setMode] = useState<OpenClawPlanToolMode>('automatic');

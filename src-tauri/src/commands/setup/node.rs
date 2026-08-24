@@ -428,7 +428,10 @@ pub async fn install_node(
 
 pub(crate) async fn update_managed_node_runtime(app: tauri::AppHandle) -> Result<String, String> {
     paths::validate_runtime_overrides()?;
-    let requirement = crate::commands::system::installed_openclaw_node_requirement().await?;
+    let binary = crate::commands::system::resolve_openclaw_binary_async()
+        .await
+        .ok_or("OpenClaw is not installed; Node.js update requires an installed package contract")?;
+    let requirement = crate::commands::system::required_node_requirement_for_openclaw_binary(&binary)?;
     #[cfg(windows)]
     let result = install_node_for_requirement(app, requirement, true, None).await;
 
@@ -1055,17 +1058,33 @@ pub(super) async fn ensure_node_runtime(
 ) -> Result<crate::commands::system::NodeRuntimeContract, String> {
     let mut runtime = crate::commands::system::NodeRuntimeContract::resolve(requirement).await?;
     if !runtime.node().available {
-        emit_keyed(
-            app,
-            context_step,
-            &format!(
-                "Node.js is outside OpenClaw's supported range ({} from {}); preparing a compatible runtime...",
-                requirement.expression(),
-                requirement.source().label()
-            ),
-            "setup.node.autoRepair",
-            0.1,
+        let message = format!(
+            "Node.js is outside OpenClaw's supported range ({} from {}); preparing a compatible runtime...",
+            requirement.expression(),
+            requirement.source().label()
         );
+        if let Some(version) = runtime.node().version.as_deref() {
+            emit_keyed_with_params(
+                app,
+                context_step,
+                &message,
+                "setup.node.autoRepairDetected",
+                &[
+                    ("version", version),
+                    ("requirement", requirement.expression()),
+                ],
+                0.1,
+            );
+        } else {
+            emit_keyed_with_params(
+                app,
+                context_step,
+                &message,
+                "setup.node.autoRepair",
+                &[("requirement", requirement.expression())],
+                0.1,
+            );
+        }
         runtime = install_node_for_requirement(app.clone(), requirement.clone(), false, None)
             .await
             .map_err(|error| {

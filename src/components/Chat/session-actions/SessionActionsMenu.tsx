@@ -22,6 +22,8 @@ import { deleteSessionEverywhere } from '@/utils/sessionDelete';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { SessionGroupCreateDialog } from './SessionGroupCreateDialog';
 import { SessionGroupSubmenu } from './SessionGroupSubmenu';
+import { sessionActionErrorKey } from '@/utils/sessionActionError';
+import { debugError } from '@/utils/debugLog';
 
 export interface SessionActionsMenuProps {
   readonly session: Session;
@@ -82,11 +84,8 @@ function MenuButton({
 }
 
 /**
- * Shared session action menu for sidebar and tabs.
- *
- * The action order and nested group interaction match OpenClaw's native
- * SessionMenu. Opening a session remains the responsibility of its row/tab,
- * keeping navigation separate from session organization actions.
+ * 侧栏和页签共用的会话操作菜单。操作顺序与分组交互保持 OpenClaw 原生语义，
+ * 行和页签继续负责导航，菜单只负责会话组织操作。
  */
 export function SessionActionsMenu({
   session,
@@ -111,6 +110,7 @@ export function SessionActionsMenu({
   const groupTriggerRef = useRef<HTMLButtonElement>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState(false);
   const isMainSession = isGatewayMainSession(session.key, defaultMainSessionKey);
   const sessionCategories = useMemo(() => {
     const categories = new Map<string, string>();
@@ -126,13 +126,19 @@ export function SessionActionsMenu({
   }, [sessionGroupCatalog, sessions]);
 
   const finish = (action: () => Promise<void>) => {
-    void action().then(onDismiss).catch((error: unknown) => {
-      useNotificationStore.getState().addToast(
-        'error',
-        t('chat.sessionActions'),
-        error instanceof Error ? error.message : String(error),
-      );
-    });
+    if (pendingAction) return;
+    setPendingAction(true);
+    void action()
+      .then(onDismiss)
+      .catch((error: unknown) => {
+        debugError('app', '[SessionActionsMenu] Session action failed:', error);
+        useNotificationStore.getState().addToast(
+          'error',
+          t('chat.sessionActions'),
+          t(sessionActionErrorKey(error)),
+        );
+      })
+      .finally(() => setPendingAction(false));
   };
 
   const openGroups = () => {
@@ -143,11 +149,13 @@ export function SessionActionsMenu({
   };
 
   const forkSession = async () => {
+    if (pendingAction) return;
     const agentId = agentIdForSession(session);
     if (!agentId) {
       useNotificationStore.getState().addToast('error', t('chat.forkSession'), t('chat.agentUnavailable'));
       return;
     }
+    setPendingAction(true);
     const result = await createNativeSession({
       agentId,
       parentSessionKey: session.key,
@@ -155,9 +163,12 @@ export function SessionActionsMenu({
     });
     if (result.ok) {
       onOpenSession?.(result.session.key);
+      onDismiss();
       return;
     }
-    useNotificationStore.getState().addToast('error', t('chat.forkSession'), result.error);
+    debugError('app', '[SessionActionsMenu] Session fork failed:', result.error);
+    useNotificationStore.getState().addToast('error', t('chat.forkSession'), t('chat.forkSessionFailed'));
+    setPendingAction(false);
   };
 
   const createGroup = async (name: string) => {
@@ -176,27 +187,28 @@ export function SessionActionsMenu({
       )}
     >
       <MenuButton
-        disabled={session.archived === true}
+        disabled={pendingAction || session.archived === true}
         onClick={() => finish(() => togglePinSession(session.key))}
       >
         {session.pinned ? <PinOff size={13} aria-hidden="true" /> : <Pin size={13} aria-hidden="true" />}
         {session.pinned ? t('chat.unpinSession') : t('chat.pinSession')}
       </MenuButton>
-      <MenuButton onClick={() => finish(() => setSessionUnread(session.key, !isUnread(session)))}>
+      <MenuButton disabled={pendingAction} onClick={() => finish(() => setSessionUnread(session.key, !isUnread(session)))}>
         {isUnread(session) ? <Eye size={13} aria-hidden="true" /> : <Circle size={13} aria-hidden="true" />}
         {isUnread(session) ? t('chat.markSessionRead') : t('chat.markSessionUnread')}
       </MenuButton>
-      <MenuButton onClick={() => { onRequestRename(); onDismiss(); }}>
+      <MenuButton disabled={pendingAction} onClick={() => { onRequestRename(); onDismiss(); }}>
         <Pencil size={13} aria-hidden="true" />
         {t('chat.renameSession')}
       </MenuButton>
-      <MenuButton onClick={() => { onDismiss(); void forkSession(); }}>
+      <MenuButton disabled={pendingAction} onClick={() => { void forkSession(); }}>
         <GitFork size={13} aria-hidden="true" />
         {t('chat.forkSession')}
       </MenuButton>
       <MenuButton
         buttonRef={groupTriggerRef}
         hasPopup
+        disabled={pendingAction}
         onClick={openGroups}
         onFocus={openGroups}
         onMouseEnter={openGroups}
@@ -218,13 +230,14 @@ export function SessionActionsMenu({
         }}
       />
       <div className="my-1 border-t border-aegis-border/70" role="separator" />
-      <MenuButton onClick={() => finish(() => setSessionArchived(session.key, !session.archived))}>
+      <MenuButton disabled={pendingAction} onClick={() => finish(() => setSessionArchived(session.key, !session.archived))}>
         <Archive size={13} aria-hidden="true" />
         {session.archived ? t('chat.restoreSession') : t('chat.archiveSession')}
       </MenuButton>
       {!isMainSession && (
         <MenuButton
           danger
+          disabled={pendingAction}
           onClick={() => {
             showConfirm(t('chat.deleteSession'), t('chat.deleteSessionConfirm'), async () => {
               await deleteSessionEverywhere(session.key);

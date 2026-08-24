@@ -108,15 +108,7 @@ export default function QuickChatRoot() {
           gateway.resetSessionTranscriptTransport();
         }
         useChatStore.getState().setConnectionStatus(status);
-        if (status.connected) {
-          void reconcileRun().catch(() => undefined).finally(() => {
-            if (disposed) return;
-            const store = useChatStore.getState();
-            if ((store.messageQueue[sessionKey]?.length ?? 0) > 0 && !store.typingBySession[sessionKey]) {
-              void store.drainQueue(sessionKey).catch(() => undefined);
-            }
-          });
-        }
+        if (status.connected) void reconcileRun().catch(() => undefined);
       },
       onAuthorizationIssue: (issue) => useChatStore.getState().setConnectionStatus({
         connected: false,
@@ -132,22 +124,11 @@ export default function QuickChatRoot() {
         error: error instanceof Error ? error.message : String(error),
       });
     });
-    const unsubscribeQueue = useChatStore.subscribe((state, previous) => {
-      if (
-        previous.typingBySession[sessionKey] === true
-        && state.typingBySession[sessionKey] === false
-        && (state.messageQueue[sessionKey]?.length ?? 0) > 0
-      ) {
-        void state.drainQueue(sessionKey).catch(() => undefined);
-      }
-    });
     return () => {
       disposed = true;
       historyGeneration += 1;
-      unsubscribeQueue();
       voiceRuntime.interrupt(sessionKey);
       const store = useChatStore.getState();
-      store.clearQueue(sessionKey);
       const sessionId = store.sessions.find((session) => session.key === sessionKey)?.sessionId;
       void stopQuickChatRequest(sessionKey, sessionId, store, gateway.abortChat)
         .catch(() => undefined)

@@ -14,17 +14,22 @@ import { showAlert } from '@/components/shared/AlertDialog';
 import { AgentSettingsPanel } from './AgentSettingsPanel';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { PageTransition } from '@/components/shared/PageTransition';
+import { WORKSPACE_PAGE_FRAME_CLASS_NAME } from '@/components/shared/workspacePageLayout';
 import { ProgressRing } from '@/components/shared/ProgressRing';
 import { StatusDot } from '@/components/shared/badge';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore, refreshAll, refreshGroup } from '@/stores/gatewayDataStore';
 import { useSkillsStore } from '@/stores/skillsStore';
+import { useCollaborationStore } from '@/stores/collaborationStore';
 import {
   gateway,
   GatewayAgentDisplayNameUpdateError,
   type OpenClawAgentBootstrapFile,
 } from '@/services/gateway';
-import { cleanupDeletedAgentChannelBindings } from '@/services/channelConfig';
+import {
+  ChannelConfigReloadError,
+  cleanupDeletedAgentChannelBindings,
+} from '@/services/channelConfig';
 import { deleteAgentProfile } from '@/services/agentProfiles';
 import { isChannelConfigurationMetadataKey } from '@/services/channelConfigMerge';
 import {
@@ -1074,6 +1079,7 @@ export function AgentHubPage() {
       setNewAgentStep(0);
       setNewAgentSkillKeys([]);
       await refreshGroup('agents');
+      await useCollaborationStore.getState().bootstrap(true).catch(() => undefined);
       setSettingsAgent({
         id: payload.id,
         name: payload.name,
@@ -1084,6 +1090,7 @@ export function AgentHubPage() {
     } catch (err: any) {
       if (err instanceof GatewayAgentDisplayNameUpdateError) {
         await refreshGroup('agents');
+        await useCollaborationStore.getState().bootstrap(true).catch(() => undefined);
         setSelectedAgentId(err.agentId);
         setSettingsAgent({
           id: err.agentId,
@@ -1116,7 +1123,20 @@ export function AgentHubPage() {
         } catch (error: unknown) {
           profileCleanupError = error instanceof Error ? error.message : String(error);
         }
-        const removedBindings = await cleanupDeletedAgentChannelBindings(agentId);
+        let removedBindings = 0;
+        let channelCleanupError: string | null = null;
+        let channelCleanupPersisted = false;
+        try {
+          removedBindings = await cleanupDeletedAgentChannelBindings(agentId);
+        } catch (error: unknown) {
+          if (error instanceof ChannelConfigReloadError) {
+            removedBindings = error.removedBindings;
+            channelCleanupPersisted = true;
+            channelCleanupError = error.diagnostic ?? error.message;
+          } else {
+            channelCleanupError = error instanceof Error ? error.message : String(error);
+          }
+        }
         setDeletingAgentId(null);
         if (selectedAgentId === agentId) setSelectedAgentId(null);
         setSettingsAgent((prev) => prev?.id === agentId ? null : prev);
@@ -1154,7 +1174,21 @@ export function AgentHubPage() {
             'warning',
           );
         }
-        if (removedBindings > 0) {
+        if (channelCleanupError) {
+          showAlert(
+            t('agentHub.channelCleanupWarningTitle', '智能体已删除，但渠道清理需要处理'),
+            t(channelCleanupPersisted
+              ? 'agentHub.channelCleanupWarningMessage'
+              : 'agentHub.channelCleanupFailedMessage', {
+              count: removedBindings,
+              error: channelCleanupError,
+              defaultValue: channelCleanupPersisted
+                ? `已写入 ${removedBindings} 个渠道绑定变更，但 Gateway 未确认重新加载。请检查 Gateway 后再恢复。${channelCleanupError}`
+                : `未能完成渠道绑定清理，请检查 OpenClaw 配置和 Gateway。${channelCleanupError}`,
+            }),
+            'warning',
+          );
+        } else if (removedBindings > 0) {
           showAlert(
             t('agentHub.deleteCleanupTitle', 'Agent deleted'),
             t('agentHub.deleteCleanupMessage', { count: removedBindings, defaultValue: `Removed ${removedBindings} channel binding(s).` }),
@@ -1299,7 +1333,7 @@ export function AgentHubPage() {
   };
 
   return (
-    <PageTransition className={workspaceView ? 'h-full min-h-0' : 'p-6 space-y-6 max-w-[1200px] mx-auto'}>
+    <PageTransition className={workspaceView ? 'h-full min-h-0' : `${WORKSPACE_PAGE_FRAME_CLASS_NAME} space-y-6`}>
       {workspaceView ? (
         <div className={clsx('h-full min-h-0', settingsAgent && 'pe-[340px]')}>
           <OpenClawAgentWorkspacePanel

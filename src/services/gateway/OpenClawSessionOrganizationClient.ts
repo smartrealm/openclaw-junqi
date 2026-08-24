@@ -44,13 +44,17 @@ function confirmedPatchResult(result: unknown, sessionKey: string): Record<strin
   return result.entry;
 }
 
-/** 组织字段只能以 Gateway 已持久化的条目回执为准，不能以请求值推断成功。 */
-function requireConfirmedBoolean(
+function isConfirmedTimestamp(value: unknown): boolean {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+/** 组织字段只能以 Gateway 已持久化的时间戳回执为准，不能以请求值推断成功。 */
+function requireConfirmedTimestampState(
   entry: Record<string, unknown>,
-  field: 'pinned' | 'unread' | 'archived',
+  field: 'pinnedAt' | 'archivedAt' | 'markedUnreadAt',
   expected: boolean,
 ): void {
-  if (entry[field] !== expected) {
+  if (expected ? !isConfirmedTimestamp(entry[field]) : entry[field] !== undefined) {
     throw new SessionOrganizationResponseError();
   }
 }
@@ -73,12 +77,14 @@ export class OpenClawSessionOrganizationClient {
   private patch(
     sessionKey: string,
     patch: Record<string, boolean | string | null>,
+    expectedSessionId?: string,
   ): Promise<Record<string, unknown>> {
     const target = resolveOpenClawSessionTarget(sessionKey);
     return this.deps.runMutation(target.localKey, async () => {
       const result = await this.request<unknown>('sessions.patch', {
         key: target.key,
         ...(target.agentId ? { agentId: target.agentId } : {}),
+        ...(expectedSessionId?.trim() ? { expectedSessionId: expectedSessionId.trim() } : {}),
         ...patch,
       });
       return confirmedPatchResult(result, target.key);
@@ -86,15 +92,23 @@ export class OpenClawSessionOrganizationClient {
   }
 
   async setPinned(sessionKey: string, pinned: boolean): Promise<void> {
-    requireConfirmedBoolean(await this.patch(sessionKey, { pinned }), 'pinned', pinned);
+    requireConfirmedTimestampState(await this.patch(sessionKey, { pinned }), 'pinnedAt', pinned);
   }
 
   async setUnread(sessionKey: string, unread: boolean): Promise<void> {
-    requireConfirmedBoolean(await this.patch(sessionKey, { unread }), 'unread', unread);
+    const entry = await this.patch(sessionKey, { unread });
+    requireConfirmedTimestampState(entry, 'markedUnreadAt', unread);
+    if (!unread && !isConfirmedTimestamp(entry.lastReadAt)) {
+      throw new SessionOrganizationResponseError();
+    }
   }
 
-  async setArchived(sessionKey: string, archived: boolean): Promise<void> {
-    requireConfirmedBoolean(await this.patch(sessionKey, { archived }), 'archived', archived);
+  async setArchived(sessionKey: string, archived: boolean, expectedSessionId?: string): Promise<void> {
+    const entry = await this.patch(sessionKey, { archived }, expectedSessionId);
+    requireConfirmedTimestampState(entry, 'archivedAt', archived);
+    if (archived && entry.pinnedAt !== undefined) {
+      throw new SessionOrganizationResponseError();
+    }
   }
 
   async setCategory(sessionKey: string, category: string | null): Promise<string | null> {

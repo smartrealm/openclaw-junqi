@@ -49,6 +49,7 @@ import { useSetupEnvironmentReview } from "./useSetupEnvironmentReview";
 import { isEnvironmentReviewActionInFlight } from "./environmentReviewAction";
 import { useSetupPresentation } from "./useSetupPresentation";
 import { useSetupInstallers } from "./useSetupInstallers";
+import { shouldVisitOpenClawUpdateStep } from "./setupPreflight";
 import {
   AUTO_ADVANCE_GATEWAY_STEP,
   INITIAL_DOCKER_STEPS,
@@ -290,10 +291,26 @@ export function useSetupFlow(
     setGatewayRunning,
   });
 
-  const completeGuidedSetup = useCallback(async () => {
+  const completeGuidedSetup = useCallback(async (evidence: {
+    methodFamily: "openclaw" | "crestodian";
+    activation?: { ok: true; modelRef: string };
+  }) => {
     const client = new OpenClawGuidedSetupClient({
       requestPrivileged: (method, params) => gateway.callPrivileged(method, params),
     });
+    const modelEvidence = (() => {
+      if (evidence.methodFamily === "openclaw") {
+        return { kind: "verify-rpc" as const, verifyModel: () => client.verify() };
+      }
+      const activation = evidence.activation;
+      if (!activation) {
+        throw new Error(t(
+          "setup.handoff.model-unverified",
+          "OpenClaw 配置已存在，但当前稳定协议没有返回本次流程的模型实测证据。请重新选择模型并完成核验。",
+        ));
+      }
+      return { kind: "activation" as const, modelRef: activation.modelRef };
+    })();
     const handoff = await performOpenClawSetupHandoff({
       waitForLifecycleIdle: (boundary) => gatewayLifecycle.waitForIdle(boundary),
       isLifecycleReceiptCurrent: (receipt) => gatewayLifecycle.isIdleReceiptCurrent(receipt),
@@ -328,7 +345,7 @@ export function useSetupFlow(
     }, {
       kind: "guided",
       detectSetup: () => client.detect(),
-      verifyModel: () => client.verify(),
+      modelEvidence,
     });
     if (!handoff.ready) {
       if (handoff.diagnostic) {
@@ -385,7 +402,8 @@ export function useSetupFlow(
     requestedMode?: InstallMode,
     existingRunId?: number,
   ): Promise<boolean> => {
-    const runId = existingRunId ?? beginRun();
+    // 单独启动 Gateway 不会重新选择安装目标，保留检测到的已有安装身份供后续更新步骤使用。
+    const runId = existingRunId ?? beginOperationRun();
     setGatewayRunning(false);
     navigateSetup("checking", "push");
     reportPhase("gatewayConfig", t("setup.gatewayReadingConfig", "正在读取 Gateway 配置…"));
@@ -437,9 +455,9 @@ export function useSetupFlow(
       replaceSetupStep("error");
       return false;
     }
-  }, [beginRun, isRunActive, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForAuthenticatedGateway, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
+  }, [beginOperationRun, isRunActive, navigateSetup, replaceSetupStep, report, reportPhase, t, commitSteps, waitForAuthenticatedGateway, waitForGatewayReady, setGatewayRunning, setPostStorageStep, setSetupError, appendSetupLog, installMode]);
 
-  const continueAfterGatewayReady = useCallback(async () => {
+  const continueAfterGatewayConfiguration = useCallback(async () => {
     if (gatewayReadyContinuationInFlightRef.current) return;
     gatewayReadyContinuationInFlightRef.current = true;
     setGatewayReadyContinuation({ status: "checking", error: null });
@@ -489,6 +507,20 @@ export function useSetupFlow(
       gatewayReadyContinuationInFlightRef.current = false;
     }
   }, [appendSetupLog, gatewayRunning, navigateSetup, prepareOpenClawConfiguration, report, resolveActiveRuntimeOnboardingRequirement, setSetupError, startGatewayAction, t]);
+
+  const continueAfterGatewayReady = useCallback(async () => {
+    if (gatewayReadyContinuationInFlightRef.current) return;
+    if (shouldVisitOpenClawUpdateStep(installMode, installTarget?.tier ?? null)) {
+      setGatewayReadyContinuation({ status: "idle", error: null });
+      navigateSetup("update-openclaw", "push");
+      return;
+    }
+    await continueAfterGatewayConfiguration();
+  }, [continueAfterGatewayConfiguration, installMode, installTarget?.tier, navigateSetup]);
+
+  const continueAfterOpenClawUpdate = useCallback(async () => {
+    await continueAfterGatewayConfiguration();
+  }, [continueAfterGatewayConfiguration]);
 
   const openClassicSetup = useCallback(async () => {
     if (gatewayReadyContinuationInFlightRef.current || isWizardOperationInFlight()) return;
@@ -555,6 +587,10 @@ export function useSetupFlow(
   const performRuntimeSelection = useCallback(async (mode: InstallMode) => {
     const runId = beginRun();
     const previousMode = installMode;
+    // 失败补偿只能恢复这次切换前可复现为运行中的 Gateway，不能把缺少 OpenClaw
+    // 二进制的未启动状态伪装成可恢复服务。
+    const previousGatewayWasRunning = gatewayRunning
+      && await probeSelectedGateway().catch(() => false);
     setSetupError(null);
 
     try {
@@ -578,6 +614,7 @@ export function useSetupFlow(
           : runDockerSetup(runId),
         commit: commitSetupGatewayRuntime,
         rollbackMode: rollbackActiveGatewayRuntime,
+        shouldRestorePreviousGateway: async () => previousGatewayWasRunning,
         restoreGateway: async (runtime) => {
           if (runtime === "native") await gatewayManager.startForSetup();
           else await gatewayManager.startDockerForSetup();
@@ -623,7 +660,7 @@ export function useSetupFlow(
       report(message);
       replaceSetupStep("error");
     }
-  }, [beginRun, isRunActive, installMode, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, setActiveGatewayRuntime, commitSetupGatewayRuntime, rollbackActiveGatewayRuntime, rollbackRuntimeReconfiguration, gatewayManager, t]);
+  }, [beginRun, isRunActive, installMode, gatewayRunning, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, setActiveGatewayRuntime, commitSetupGatewayRuntime, rollbackActiveGatewayRuntime, rollbackRuntimeReconfiguration, gatewayManager, t]);
 
   const selectMode = useCallback(async (mode: InstallMode) => {
     if (runtimeSelectionInFlightRef.current || setupBackInFlightRef.current) return;
@@ -1067,6 +1104,7 @@ export function useSetupFlow(
     dashboardEntryError,
     startGateway: startGatewayAction,
     continueAfterGatewayReady,
+    continueAfterOpenClawUpdate,
     retryGateway: startGatewayAction,
     repairAndRetry,
     disablePluginsAndRetry,

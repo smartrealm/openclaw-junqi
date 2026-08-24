@@ -9,11 +9,13 @@ import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 interface StorageSetupStatus {
   configured: boolean;
   npmCacheDir: string | null;
+  npmPrefix: string | null;
 }
 
 export function NpmCacheSettingsPanel() {
   const { t } = useTranslation();
   const [configured, setConfigured] = useState(false);
+  const [npmInstallConfigured, setNpmInstallConfigured] = useState(false);
   const [savedPath, setSavedPath] = useState('');
   const [draftPath, setDraftPath] = useState('');
   const [loading, setLoading] = useState(true);
@@ -27,6 +29,7 @@ export function NpmCacheSettingsPanel() {
       .then((status) => {
         if (!active) return;
         setConfigured(status.configured);
+        setNpmInstallConfigured(Boolean(status.npmPrefix));
         const customPath = status.npmCacheDir ?? '';
         setSavedPath(customPath);
         setDraftPath(customPath);
@@ -92,6 +95,7 @@ export function NpmCacheSettingsPanel() {
   };
 
   const unchanged = draftPath.trim() === savedPath;
+  const cacheConfigurable = configured && npmInstallConfigured;
 
   return (
     <GlassCard delay={0.2}>
@@ -113,7 +117,7 @@ export function NpmCacheSettingsPanel() {
             setMessage(null);
             setError(null);
           }}
-          disabled={loading || !configured || saving}
+          disabled={loading || !cacheConfigurable || saving}
           aria-label={t('storage.npmCacheLocation', 'npm 下载缓存')}
           placeholder={t('storage.npmCacheSystemDefault', '使用 npm 系统默认位置')}
           className="min-w-0 flex-1 rounded-md border border-aegis-border bg-aegis-surface px-3 py-2 font-mono text-[11px] text-aegis-text outline-none focus:border-aegis-primary disabled:opacity-50"
@@ -121,7 +125,7 @@ export function NpmCacheSettingsPanel() {
         <button
           type="button"
           onClick={() => void chooseDirectory()}
-          disabled={loading || !configured || saving}
+          disabled={loading || !cacheConfigurable || saving}
           title={t('storage.npmCacheChoose', '选择 npm 下载缓存目录')}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-aegis-border text-aegis-text-secondary hover:bg-aegis-surface disabled:opacity-50"
         >
@@ -139,7 +143,7 @@ export function NpmCacheSettingsPanel() {
         <button
           type="button"
           onClick={() => void save()}
-          disabled={loading || !configured || saving || !draftPath.trim() || unchanged}
+          disabled={loading || !cacheConfigurable || saving || !draftPath.trim() || unchanged}
           className="inline-flex h-9 min-w-[88px] items-center justify-center gap-1.5 rounded-md bg-aegis-primary px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
         >
           {saving ? <LoadingIndicator size={13} /> : <CheckCircle2 size={13} />}
@@ -150,6 +154,11 @@ export function NpmCacheSettingsPanel() {
       {!loading && !configured && (
         <p className="mt-3 text-[11px] text-aegis-warning">
           {t('storage.npmCacheSetupRequired', '请先完成存储初始化，再修改 npm 下载缓存。')}
+        </p>
+      )}
+      {!loading && configured && !npmInstallConfigured && (
+        <p className="mt-3 text-[11px] text-aegis-warning">
+          {t('storage.npmCacheNpmInstallRequired', '请先在存储设置中选择“使用 npm 安装 OpenClaw”及安装目录。')}
         </p>
       )}
       {message && <p className="mt-3 text-[11px] text-aegis-success">{message}</p>}

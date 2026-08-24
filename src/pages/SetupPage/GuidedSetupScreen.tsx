@@ -78,6 +78,12 @@ export function GuidedSetupScreen({ flow, logs }: { flow: SetupFlow; logs: Setup
         disabled: controller.busy,
         loading: controller.busy,
         icon: "none",
+      } : controller.phase === "chat" && controller.activation?.ok ? {
+        label: t("setup.guided.finishSetup", "完成配置核验"),
+        onClick: () => { void controller.finishChat(); },
+        disabled: controller.busy,
+        loading: controller.busy,
+        icon: "next",
       } : undefined}
     >
       {waiting ? (

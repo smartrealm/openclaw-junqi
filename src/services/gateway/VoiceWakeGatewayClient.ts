@@ -1,5 +1,9 @@
 import type { VoiceWakeGatewayEventListener } from './voiceWakeEventBridge';
 import {
+  parseOpenClawAgentList,
+  resolveOpenClawExplicitAgentMainSessionKey,
+} from './OpenClawSessionProjection';
+import {
   decodeVoiceWakeRoutingSnapshot,
   decodeVoiceWakeTriggerSnapshot,
   type VoiceWakeRoutingConfig,
@@ -92,6 +96,27 @@ export class VoiceWakeGatewayClient {
       );
     }
     return config;
+  }
+
+  async resolveAgentMainSessionKey(agentId: string): Promise<string | null> {
+    const normalizedAgentId = agentId.trim();
+    if (!normalizedAgentId) {
+      throw new VoiceWakeGatewayUnavailableError(
+        'invalid_response',
+        'Voice wake agent route requires an agent id',
+      );
+    }
+    let snapshot;
+    try {
+      snapshot = parseOpenClawAgentList(await this.request('agents.list', {}));
+    } catch (cause) {
+      if (cause instanceof VoiceWakeGatewayUnavailableError) throw cause;
+      throw new VoiceWakeGatewayUnavailableError(
+        'invalid_response',
+        'Gateway returned an invalid agent list for voice wake routing',
+      );
+    }
+    return resolveOpenClawExplicitAgentMainSessionKey(snapshot, normalizedAgentId);
   }
 
   subscribe(listener: VoiceWakeGatewayEventListener): () => void {

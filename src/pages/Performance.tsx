@@ -9,6 +9,7 @@ import { gateway } from '@/services/gateway';
 import type { SystemMetricsPayload } from '@/api/tauriAdapterContracts';
 import clsx from 'clsx';
 import { GlassCard } from '@/components/shared/GlassCard';
+import { WORKSPACE_PAGE_FRAME_CLASS_NAME } from '@/components/shared/workspacePageLayout';
 import { themeHex } from '@/utils/theme-colors';
 import { formatBytes } from '@/utils/format';
 
@@ -122,7 +123,7 @@ export function Performance() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <main className="mx-auto w-full max-w-5xl p-6 space-y-4">
+        <main className={`${WORKSPACE_PAGE_FRAME_CLASS_NAME} space-y-4`}>
           {/* 系统 */}
           <GlassCard hover={false} delay={0.02}>
             <SectionTitle icon={<Server size={14} />}>{t('perf.system', '系统')}</SectionTitle>

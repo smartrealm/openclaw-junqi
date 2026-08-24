@@ -14,6 +14,7 @@ import { EnvironmentEntryScreen } from "./EnvironmentEntryScreen";
 import { GatewayStartingScreen } from "./GatewayStartingScreen";
 import { ModeSelectScreen } from "./ModeSelectScreen";
 import { ProgressScreen } from "./ProgressScreen";
+import { OpenClawUpdateScreen } from "./OpenClawUpdateScreen";
 import { OpenClawConfigurationScreen } from "./OpenClawConfigurationScreen";
 import { ReadyScreen } from "./ReadyScreen";
 import { GitMissingScreen } from "./GitMissingScreen";
@@ -90,6 +91,7 @@ export function SetupPage() {
       case "install-node":
       case "install-openclaw": return <ProgressScreen flow={flow} logs={sharedLogs} />;
       case "gateway-ready": return <ProgressScreen flow={flow} logs={sharedLogs} />;
+      case "update-openclaw": return <OpenClawUpdateScreen flow={flow} logs={sharedLogs} />;
       case "error": return <ProgressScreen flow={flow} logs={sharedLogs} />;
       case "configure-openclaw": return <OpenClawConfigurationScreen flow={flow} logs={sharedLogs} />;
       case "git-missing": return <GitMissingScreen flow={flow} logs={sharedLogs} />;

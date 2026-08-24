@@ -1,28 +1,24 @@
 // ═══════════════════════════════════════════════════════════
-// SessionViewPage — JSONL session playback with interactive bubbles
+// SessionViewPage：通过已认证 Gateway 查看 OpenClaw transcript。
 //
-// Reads Claude/Codex JSONL via `read_session_messages` (Tauri backend)
-// and renders user/assistant messages with collapsible thinking blocks
-// and expandable tool-use cards.
+// 页面只消费官方会话目录和历史响应，不接受本地会话文件路径。
 // ═══════════════════════════════════════════════════════════
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { save } from '@tauri-apps/plugin-dialog';
-import { marked } from 'marked';
 import {
   ChevronDown, ChevronRight, Wrench, Copy, Check,
   AlertCircle, ArrowLeft,
   User, Sparkles, Braces,
-  MessageSquare, Clock, FileDown,
+  MessageSquare, Clock,
   Play,
 } from 'lucide-react';
-import { debugError } from '@/utils/debugLog';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
-import { exportSessionMarkdown, readSessionMessages } from '@/api/tauri-commands';
+import { gateway } from '@/services/gateway';
+import { ChatMarkdownRenderer } from '@/components/Chat/ChatMarkdownRenderer';
 
-interface SessionContent {
+export interface SessionContent {
   type: 'text' | 'tool_use' | 'thinking';
   text?: string;
   id?: string;
@@ -210,7 +206,7 @@ function clsx2(...args: (string | false | undefined | null)[]): string {
 // AssistantMessageBlock — left-aligned with avatar + content
 // ═══════════════════════════════════════════════════════════
 
-function AssistantMessageBlock({ content, timestamp }: { content: SessionContent[]; timestamp?: string }) {
+export function AssistantMessageBlock({ content, timestamp }: { content: SessionContent[]; timestamp?: string }) {
   const textParts = content.filter((c) => c.type === 'text');
   const toolParts = content.filter((c) => c.type === 'tool_use');
   const thinkingParts = content.filter((c) => c.type === 'thinking');
@@ -242,14 +238,13 @@ function AssistantMessageBlock({ content, timestamp }: { content: SessionContent
           <ThinkingBlock key={`t-${i}`} thinking={t.thinking ?? ''} />
         ))}
 
-        {/* Text blocks — rendered with marked */}
+        {/* 会话正文复用聊天区的安全 Markdown 渲染边界，不启用原始 HTML。 */}
         {textParts.map((t, i) => (
           <div key={`tx-${i}`}
-            className="text-[13.5px] leading-relaxed prose prose-invert max-w-none mb-2"
-            dangerouslySetInnerHTML={{
-              __html: marked.parse(t.text ?? '', { async: false }) as string,
-            }}
-          />
+            className="mb-2 max-w-none text-[13.5px] leading-relaxed text-aegis-text-secondary"
+          >
+            <ChatMarkdownRenderer markdown={t.text ?? ''} />
+          </div>
         ))}
 
         {/* Tool use blocks */}
@@ -274,21 +269,21 @@ function AssistantMessageBlock({ content, timestamp }: { content: SessionContent
 // ═══════════════════════════════════════════════════════════
 
 export interface SessionViewPageProps {
-  sessionPath?: string;
+  sessionId?: string;
   embedded?: boolean;
   onBack?: () => void;
   onRun?: () => void;
 }
 
 export function SessionViewPage({
-  sessionPath: providedSessionPath,
+  sessionId: providedSessionId,
   embedded = false,
   onBack,
   onRun,
 }: SessionViewPageProps = {}) {
   const { t } = useTranslation();
   const [params] = useSearchParams();
-  const sessionPath = providedSessionPath ?? params.get('path') ?? '';
+  const sessionId = providedSessionId ?? params.get('sessionId') ?? '';
 
   const [messages, setMessages] = useState<SessionMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -296,18 +291,34 @@ export function SessionViewPage({
   const [copiedAll, setCopiedAll] = useState(false);
 
   useEffect(() => {
-    if (!sessionPath) {
-      setError('No session path provided.');
+    if (!sessionId) {
+      setError('No OpenClaw sessionId provided.');
       setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
-    readSessionMessages(sessionPath)
-      .then((msgs) => setMessages(msgs ?? []))
+    gateway.getHistoryBySessionId(sessionId)
+      .then((result) => setMessages((Array.isArray(result.messages) ? result.messages : []).flatMap((raw) => {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+        const value = raw as Record<string, unknown>;
+        const role = value.role === 'user' || value.role === 'assistant' ? value.role : null;
+        if (!role) return [];
+        const blocks = Array.isArray(value.content) ? value.content : [{ type: 'text', text: String(value.content ?? '') }];
+        const mappedBlocks: SessionContent[] = blocks.flatMap((part): SessionContent[] => {
+          if (typeof part === 'string') return [{ type: 'text' as const, text: part }];
+          if (!part || typeof part !== 'object' || Array.isArray(part)) return [];
+          const block = part as Record<string, unknown>;
+          if (block.type === 'text' && typeof block.text === 'string') return [{ type: 'text' as const, text: block.text }];
+          if (block.type === 'thinking' && typeof block.thinking === 'string') return [{ type: 'thinking' as const, thinking: block.thinking }];
+          if ((block.type === 'tool_use' || block.type === 'toolCall') && typeof block.name === 'string') return [{ type: 'tool_use' as const, name: block.name, input: JSON.stringify(block.input ?? {}) }];
+          return [];
+        });
+        return [{ role, content: mappedBlocks, timestamp: typeof value.timestamp === 'string' ? value.timestamp : undefined }];
+      })))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [sessionPath]);
+  }, [sessionId]);
 
   const handleCopyAll = async () => {
     try {
@@ -323,33 +334,6 @@ export function SessionViewPage({
       setCopiedAll(true);
       setTimeout(() => setCopiedAll(false), 1500);
     } catch { /* ignore */ }
-  };
-
-  const handleExportFile = async () => {
-    if (messages.length === 0) return;
-    const defaultName = sessionPath
-      ? sessionPath.split('/').pop()?.replace(/\.jsonl$/, '') ?? 'session'
-      : 'session';
-    try {
-      const filePath = await save({
-        defaultPath: `${defaultName}.md`,
-        filters: [{ name: 'Markdown', extensions: ['md'] }],
-      });
-      if (!filePath) return; // user cancelled
-      await exportSessionMarkdown({
-        sessionPath,
-        outputPath: filePath,
-        taskMeta: {
-          name: defaultName,
-          prompt: '',
-          agent: 'claude',
-          created_at: Math.floor(Date.now() / 1000),
-          session_id: null,
-        },
-      });
-    } catch (e) {
-      debugError('app', '[SessionViewPage] Export failed:', e);
-    }
   };
 
   const userCount = messages.filter((m) => m.role === 'user').length;
@@ -379,8 +363,8 @@ export function SessionViewPage({
           <div>
             <div className="text-[13px] font-bold text-aegis-text">{t('sessionPlayback.title', 'Session playback')}</div>
             <div className="text-[10px] font-mono text-aegis-text-dim truncate max-w-[400px]"
-              title={sessionPath}>
-              {sessionPath || t('sessionPlayback.noPath', '(no path)')}
+              title={sessionId}>
+              {sessionId || t('sessionPlayback.noPath', '(no session)')}
             </div>
           </div>
         </div>
@@ -425,14 +409,6 @@ export function SessionViewPage({
                 {copiedAll ? <Check size={13} className="text-aegis-success" /> : <Copy size={13} />}
                 <span className="hidden sm:inline">{copiedAll ? t('sessionPlayback.copied', 'Copied') : t('sessionPlayback.copy', 'Copy')}</span>
               </button>
-              <button onClick={handleExportFile}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all
-                  bg-[rgb(var(--aegis-primary)/0.08)] border border-[rgb(var(--aegis-primary)/0.15)]
-                  text-aegis-primary hover:bg-[rgb(var(--aegis-primary)/0.15)]"
-                title={t('sessionPlayback.saveMarkdown', 'Save as .md file')}>
-                <FileDown size={13} />
-                <span className="hidden sm:inline">{t('sessionPlayback.saveMarkdownShort', 'Save .md')}</span>
-              </button>
             </>
           )}
         </div>
@@ -467,7 +443,7 @@ export function SessionViewPage({
               {t('sessionPlayback.empty', 'No messages in this session.')}
             </div>
             <div className="text-[11px] text-aegis-text-dim opacity-60 font-mono max-w-md truncate">
-              {sessionPath}
+              {sessionId}
             </div>
           </div>
         )}

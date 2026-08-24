@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle2, CircleAlert, Download, ExternalLink, RefreshCw, ShieldCheck, TerminalSquare } from 'lucide-react';
 import clsx from 'clsx';
@@ -12,7 +12,15 @@ const OFFICIAL_UPDATE_GUIDE = 'https://docs.openclaw.ai/install/updating';
 export interface OpenClawUpdatePanelProps {
   currentVersion?: string | null;
   compact?: boolean;
+  autoCheck?: boolean;
+  onCheckResultChange?: (result: OpenClawUpdateCheckResult) => void;
   onUpdated?: (version: string | null) => void | Promise<void>;
+}
+
+export interface OpenClawUpdateCheckResult {
+  state: 'pending' | 'ready' | 'error';
+  available: boolean | null;
+  managedChannelPolicy: 'eligible' | 'unsupported' | 'unknown' | null;
 }
 
 async function openOfficialUpdateGuide(): Promise<void> {
@@ -27,12 +35,15 @@ async function openOfficialUpdateGuide(): Promise<void> {
 export function OpenClawUpdatePanel({
   currentVersion,
   compact = false,
+  autoCheck = false,
+  onCheckResultChange,
   onUpdated,
 }: OpenClawUpdatePanelProps) {
   const { t } = useTranslation();
   const titleId = useId();
   const update = useOpenclawUpdate();
   const [confirming, setConfirming] = useState(false);
+  const autoCheckStartedRef = useRef(false);
   const status = update.status;
   const displayedVersion = status?.installedVersion
     || update.result?.afterVersion
@@ -43,6 +54,27 @@ export function OpenClawUpdatePanel({
   const indicator = resolveOpenclawUpdateIndicator(update.phase, status);
   const available = indicator === 'available';
   const upToDate = indicator === 'current';
+
+  useEffect(() => {
+    if (!autoCheck || autoCheckStartedRef.current) return;
+    autoCheckStartedRef.current = true;
+    void update.check();
+  }, [autoCheck, update.check]);
+
+  useEffect(() => {
+    if (!onCheckResultChange) return;
+    if (update.phase === 'ready' || update.phase === 'success') {
+      onCheckResultChange({
+        state: 'ready',
+        available: status?.error ? null : (status?.available ?? null),
+        managedChannelPolicy: status?.managedChannelPolicy ?? 'unknown',
+      });
+    } else if (update.phase === 'error') {
+      onCheckResultChange({ state: 'error', available: null, managedChannelPolicy: null });
+    } else {
+      onCheckResultChange({ state: 'pending', available: null, managedChannelPolicy: null });
+    }
+  }, [onCheckResultChange, status?.available, status?.error, status?.managedChannelPolicy, update.phase]);
 
   const channelLabel = status?.channel
     ? t(`setup.openclawUpdate.channel.${status.channel}`, { defaultValue: status.channel })
@@ -58,6 +90,7 @@ export function OpenClawUpdatePanel({
     ? t(`setup.openclawUpdate.registry.${npmRegistryKind}`)
     : npmRegistry;
   const progressPercent = Math.max(0, Math.min(100, Math.round(update.progress ?? 0)));
+  const managedChannelEligible = status?.managedChannelPolicy === 'eligible';
 
   const handleUpdate = async () => {
     setConfirming(false);
@@ -67,8 +100,7 @@ export function OpenClawUpdatePanel({
     try {
       await onUpdated?.(version);
     } catch {
-      // The official update already succeeded. Runtime polling will reconcile
-      // on its next normal cycle if this immediate UI refresh fails.
+      // 官方更新已经成功；即时界面刷新失败时由后续运行时轮询收敛。
     }
   };
 
@@ -116,7 +148,7 @@ export function OpenClawUpdatePanel({
         </Button>
       );
     }
-    if (available) {
+    if (available && managedChannelEligible) {
       return (
         <Button
           size="sm"
@@ -131,6 +163,7 @@ export function OpenClawUpdatePanel({
         </Button>
       );
     }
+    if (upToDate) return null;
     return (
       <Button
         size="sm"
@@ -194,7 +227,7 @@ export function OpenClawUpdatePanel({
             {t('setup.openclawUpdate.subtitle')}
           </p>
         </div>
-        <div className="shrink-0">{action}</div>
+        {action && <div className="shrink-0">{action}</div>}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-aegis-text-dim">
@@ -240,6 +273,20 @@ export function OpenClawUpdatePanel({
             )}
           >
             {t('setup.openclawUpdate.confirmHint')}
+          </Alert>
+        </div>
+      )}
+
+      {status && status.managedChannelPolicy !== 'eligible' && !status.error && (
+        <div className="mt-3" aria-live="assertive">
+          <Alert
+            tone="danger"
+            size="sm"
+            title={t('setup.openclawUpdate.unsupportedChannelTitle')}
+          >
+            {status.managedChannelPolicy === 'unsupported'
+              ? t('setup.openclawUpdate.unsupportedChannelHint', { channel: channelLabel || status.channel })
+              : t('setup.openclawUpdate.unknownChannelHint')}
           </Alert>
         </div>
       )}
@@ -335,14 +382,29 @@ export function OpenClawUpdatePanel({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => void openOfficialUpdateGuide()}
-        className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-aegis-text-dim transition-colors hover:text-aegis-primary"
-      >
-        <ExternalLink size={12} />
-        {t('setup.openclawUpdate.officialGuide')}
-      </button>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void openOfficialUpdateGuide()}
+          className="inline-flex items-center gap-1.5 text-[11px] text-aegis-text-dim transition-colors hover:text-aegis-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50"
+        >
+          <ExternalLink size={12} />
+          {t('setup.openclawUpdate.officialGuide')}
+        </button>
+        {upToDate && (
+          <Button
+            size="xs"
+            variant="ghost"
+            leadingIcon={<RefreshCw size={12} />}
+            onClick={() => {
+              setConfirming(false);
+              void update.check();
+            }}
+          >
+            {t('setup.openclawUpdate.retry')}
+          </Button>
+        )}
+      </div>
     </section>
   );
 }

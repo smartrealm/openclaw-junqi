@@ -23,8 +23,8 @@ function hasCurrentConnectionFetch(
 }
 
 /**
- * 会话快照是工作区首屏唯一必需的 Gateway 数据。智能体列表属于后台投影，
- * 不得因为它的权限、版本或响应失败而阻塞已经可用的会话工作区。
+ * 会话快照是工作区首屏唯一的展示数据；但当前数据层先读取智能体范围再读取
+ * 会话，所以智能体请求失败时必须结束加载并显示可重试错误。
  */
 export function hasCurrentWorkspaceBootstrapData(
   state: WorkspaceBootstrapGatewayState,
@@ -48,5 +48,5 @@ export function hasCurrentWorkspaceBootstrapFailure(
     return false;
   }
 
-  return state.errors.sessions !== null;
+  return state.errors.sessions !== null || state.errors.agents !== null;
 }

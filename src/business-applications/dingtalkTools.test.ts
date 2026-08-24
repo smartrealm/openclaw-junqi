@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   collectDingTalkTools,
+  hasAvailableDingTalkRuntimeTool,
+  isDingTalkProfileAuthenticated,
   parseDingTalkBusinessEvidence,
   parseDingTalkRuntimeOutput,
   parseDingTalkToolSchemaOutput,
   parseProfileReference,
   parseToolArguments,
+  resolveDingTalkCatalogAvailability,
 } from './dingtalkTools';
 
 test('only projects effective tools owned by the DingTalk plugin', () => {
@@ -35,6 +38,20 @@ test('only projects effective tools owned by the DingTalk plugin', () => {
   assert.equal(tools[0]?.effect, 'read');
 });
 
+test('仅在当前 Session 明确提供且未拒绝钉钉运行时工具时确认授权生效', () => {
+  const runtimeTool = {
+    id: 'junqi_dingtalk_runtime_status',
+    label: '钉钉运行状态',
+    description: '读取运行状态',
+    rawDescription: '读取运行状态',
+    source: 'plugin' as const,
+    pluginId: 'junqi-dingtalk',
+  };
+  assert.equal(hasAvailableDingTalkRuntimeTool([{ tools: [runtimeTool] }]), true);
+  assert.equal(hasAvailableDingTalkRuntimeTool([{ tools: [{ ...runtimeTool, deniedBySession: true }] }]), false);
+  assert.equal(hasAvailableDingTalkRuntimeTool([{ tools: [{ ...runtimeTool, pluginId: 'other-plugin' }] }]), false);
+});
+
 test('projects the official tools.invoke AgentToolResult details', () => {
   const schema = parseDingTalkToolSchemaOutput({
     content: [{ type: 'text', text: '{}' }],
@@ -58,7 +75,7 @@ test('requires exact profile references and object arguments', () => {
   assert.throws(() => parseToolArguments('[]'), /JSON 对象/);
 });
 
-test('projects DWS login user and authorization status without accepting unsafe avatar URLs', () => {
+test('projects DWS login identity without retaining unverified domain metadata or unsafe avatar URLs', () => {
   const runtime = parseDingTalkRuntimeOutput({ output: { details: { runtime: {
     currentProfile: 'corp-a:user-a',
     profiles: [{ profile: 'corp-a:user-a', corpName: '示例组织', userName: '张三', status: 'active', authorizedDomains: ['contact'], isCurrent: true }],
@@ -67,7 +84,49 @@ test('projects DWS login user and authorization status without accepting unsafe 
   assert.equal(runtime.user?.name, '张三');
   assert.equal(runtime.available, false);
   assert.equal(runtime.user?.avatarUrl, null);
-  assert.deepEqual(runtime.profiles[0]?.authorizedDomains, ['contact']);
+  assert.equal('authorizedDomains' in (runtime.profiles[0] ?? {}), false);
+});
+
+test('仅在所选 DWS Profile 的官方登录状态为 active 时展示插件操作目录', () => {
+  const runtime = parseDingTalkRuntimeOutput({ output: { details: { runtime: {
+    available: true,
+    currentProfile: 'corp-a:user-a',
+    profiles: [
+      { profile: 'corp-a:user-a', status: 'active', isCurrent: true },
+      { profile: 'corp-b:user-b', status: 'expired', isCurrent: false },
+    ],
+    currentUser: null,
+  } } } });
+
+  assert.equal(isDingTalkProfileAuthenticated(runtime, 'corp-a:user-a'), true);
+  assert.equal(isDingTalkProfileAuthenticated(runtime, 'corp-b:user-b'), false);
+  assert.equal(isDingTalkProfileAuthenticated(runtime, 'corp-c:user-c'), false);
+  assert.equal(isDingTalkProfileAuthenticated(null, 'corp-a:user-a'), false);
+});
+
+test('DWS Profile 探针结算前保留加载态而不发布未登录空态', () => {
+  const base = {
+    sessionExists: true,
+    toolsLoading: false,
+    pluginVisibleInSession: true,
+    runtimeToolAvailable: true,
+    runtimeIdentityError: null,
+    profileAuthenticated: false,
+  } as const;
+
+  assert.equal(resolveDingTalkCatalogAvailability({
+    ...base,
+    runtimeIdentitySettled: false,
+  }), 'loading-identity');
+  assert.equal(resolveDingTalkCatalogAvailability({
+    ...base,
+    runtimeIdentitySettled: true,
+  }), 'profile-required');
+  assert.equal(resolveDingTalkCatalogAvailability({
+    ...base,
+    runtimeIdentitySettled: true,
+    profileAuthenticated: true,
+  }), 'ready');
 });
 
 test('projects DWS runtime absence as a verified unavailable state', () => {

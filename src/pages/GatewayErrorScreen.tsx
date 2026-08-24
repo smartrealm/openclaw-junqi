@@ -25,8 +25,8 @@ interface GatewayErrorScreenProps {
   logs?: { stdout: string; stderr: string };
   retrying?: boolean;
   onRetry: () => void;
-  /** Called when gateway comes back up so App.tsx can dismiss this screen */
-  onRecovered?: () => void;
+  /** 进程端点恢复后通知 App 继续核验认证连接，不能据此直接退出错误页。 */
+  onRecovered?: () => void | Promise<void>;
 }
 
 type ErrorCategory =

@@ -3,9 +3,27 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useTranslation } from 'react-i18next';
+import { BarChart3, Bot, Box, Brain, Lightbulb, Rocket, Search, Target, Wrench } from 'lucide-react';
 import { GlassCard } from '@/components/shared/GlassCard';
 import { type ByAgentEntry } from '../types';
-import { formatTokens, formatUsd, getAgentColor, getAgentIcon } from '../helpers';
+import {
+  formatTokens,
+  formatUsd,
+  getAgentColor,
+} from '../helpers';
+import { getAgentIconKind, type AgentIconKind } from '../agentIconKind';
+
+const AGENT_ICON_COMPONENTS: Record<AgentIconKind, typeof Bot> = {
+  bot: Bot,
+  search: Search,
+  box: Box,
+  brain: Brain,
+  target: Target,
+  chart: BarChart3,
+  tool: Wrench,
+  launch: Rocket,
+  idea: Lightbulb,
+};
 
 interface AgentBreakdownSectionProps {
   byAgent: ByAgentEntry[];
@@ -27,7 +45,7 @@ export function AgentBreakdownSection({ byAgent, totalCost }: AgentBreakdownSect
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
         {sorted.map((agent, i) => {
           const color    = getAgentColor(agent.agentId);
-          const icon     = getAgentIcon(agent.agentId);
+          const AgentIcon = AGENT_ICON_COMPONENTS[getAgentIconKind(agent.agentId)];
           const barPct   = maxCost > 0 ? Math.round((agent.totals.totalCost / maxCost) * 100) : 0;
           const sharePct = totalCost > 0
             ? ((agent.totals.totalCost / totalCost) * 100).toFixed(1)
@@ -48,7 +66,7 @@ export function AgentBreakdownSection({ byAgent, totalCost }: AgentBreakdownSect
                     className="w-8 h-8 rounded-[10px] flex items-center justify-center text-sm border"
                     style={{ background: `${color}15`, borderColor: `${color}25` }}
                   >
-                    {icon}
+                    <AgentIcon size={14} strokeWidth={1.75} aria-hidden="true" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[12px] font-bold truncate" style={{ color }}>

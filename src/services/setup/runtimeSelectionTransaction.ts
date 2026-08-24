@@ -19,6 +19,7 @@ export interface RuntimeSelectionTransactionPorts {
   setup: (mode: GatewayRuntimeMode) => Promise<boolean>;
   commit: (mode: GatewayRuntimeMode) => Promise<unknown>;
   rollbackMode: (mode: GatewayRuntimeMode) => Promise<void>;
+  shouldRestorePreviousGateway: () => Promise<boolean>;
   restoreGateway: (mode: GatewayRuntimeMode) => Promise<void>;
 }
 
@@ -105,7 +106,7 @@ export async function executeRuntimeSelectionTransaction(
       // candidate could relaunch the failed candidate. Fail closed instead.
       restoredPreviousGateway = false;
       previousGatewayRestoreError = new Error("Runtime mode rollback failed; previous Gateway was not restarted");
-    } else {
+    } else if (await ports.shouldRestorePreviousGateway()) {
       try {
         await ports.restoreGateway(previousMode);
       } catch (error) {

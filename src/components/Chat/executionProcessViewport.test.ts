@@ -18,7 +18,9 @@ test('execution expansion preserves the current virtual-list reading position', 
 test('initial session entry positions the hydrated history at its tail without reader-state guards', () => {
   assert.match(viewSource, /const initialHistoryTailSessionRef = useRef<string \| null>\(null\)/);
   assert.match(viewSource, /const scrollToConversationTail = useCallback/);
-  assert.match(viewSource, /initialHistoryTailSessionRef\.current === activeSessionKey/);
+  assert.match(viewSource, /shouldPositionActiveSessionTail\(\{/);
+  assert.match(viewSource, /timelineItemCount: timelineItems\.length/);
+  assert.match(viewSource, /key=\{activeSessionKey\}/);
   assert.match(viewSource, /return scrollToConversationTail\(\{ instant: true \}\)/);
   assert.match(viewSource, /if \(scrollLockedRef\.current \|\| !atBottom\) return;\s+scrollToConversationTail\(opts\);/);
 });

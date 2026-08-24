@@ -45,5 +45,5 @@ test('workspace bootstrap failure only treats the required session request as fa
   })), false);
   assert.equal(hasCurrentWorkspaceBootstrapFailure(state({
     errors: { sessions: null, agents: 'unauthorized' },
-  })), false);
+  })), true);
 });

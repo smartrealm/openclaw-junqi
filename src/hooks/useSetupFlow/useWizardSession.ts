@@ -29,6 +29,7 @@ import {
 } from "@/services/openclawWizard";
 import { cacheGatewayTarget } from "./helpers";
 import type { StepStatus, WizardRecoveryMode } from "./types";
+import { wizardFailureDestination } from "./setupPreflight";
 import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import {
   performOpenClawSetupHandoff,
@@ -157,7 +158,8 @@ export function useWizardSession({
   ): WizardRecoveryMode => {
     if (error instanceof OpenClawWizardTerminalUnknownError) return "terminal-unknown";
     if (error instanceof OpenClawWizardRecoveryVerificationError) return "session";
-    if (classifyOpenClawWizardFailure(error) === "already_running") return "reclaim";
+    const failure = classifyOpenClawWizardFailure(error);
+    if (failure === "already_running") return "reclaim";
     return fallback;
   }, []);
   const invalidateWizardOperations = useCallback(() => {
@@ -251,8 +253,8 @@ export function useWizardSession({
   }, [assertWizardOperationCurrent, refreshGatewayConnectionTarget, refreshWizardSessionScope, t]);
 
   const startManagedWizardSession = useCallback(() => {
-    // JunQi 已在运行时阶段安装并启动 Gateway。官方 Wizard 仅负责配置，
-    // 否则 QuickStart 可能重启承载该进程内 Wizard 会话的 Gateway，使终态无法回收。
+    // 主线 Runtime 显式关闭 daemon 分支；stable 若在 schema 校验阶段拒绝该
+    // 新字段，客户端会改用官方公共参数并忠实呈现其 daemon 选择步骤。
     return wizardClientRef.current!.start({ installDaemon: false });
   }, []);
 
@@ -475,12 +477,16 @@ export function useWizardSession({
     } catch (error) {
       if (error instanceof OpenClawWizardOperationSupersededError) return null;
       const message = wizardFailureMessage(error);
-      setWizardRecoveryMode(wizardRecoveryModeForFailure(error));
+      const recoveryMode = wizardRecoveryModeForFailure(error);
+      setWizardRecoveryMode(recoveryMode);
       setWizardActivity(null);
       setWizardError(message);
       setSetupError(message);
-      if (surfaceFailureOnConfigurationPage) {
-        replaceSetupStep("configure-openclaw");
+      const failureDestination = wizardFailureDestination(
+        surfaceFailureOnConfigurationPage,
+      );
+      if (failureDestination) {
+        replaceSetupStep(failureDestination);
       } else {
         throw new Error(message);
       }

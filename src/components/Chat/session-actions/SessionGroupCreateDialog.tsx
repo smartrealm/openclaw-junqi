@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { FolderPlus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { sessionActionErrorKey } from '@/utils/sessionActionError';
+import { debugError } from '@/utils/debugLog';
 
 export interface SessionGroupCreateDialogProps {
   readonly onDismiss: () => void;
@@ -9,7 +11,7 @@ export interface SessionGroupCreateDialogProps {
   readonly onCreated: () => void;
 }
 
-/** Desktop dialog for the native menu's "New group" action. */
+/** 原生会话菜单“新建分组”操作使用的桌面对话框。 */
 export function SessionGroupCreateDialog({ onDismiss, onCreate, onCreated }: SessionGroupCreateDialogProps) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -32,7 +34,8 @@ export function SessionGroupCreateDialog({ onDismiss, onCreate, onCreated }: Ses
       await onCreate(normalized);
       onCreated();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      debugError('app', '[SessionGroupCreateDialog] Session group creation failed:', cause);
+      setError(t(sessionActionErrorKey(cause)));
       setSubmitting(false);
     }
   };

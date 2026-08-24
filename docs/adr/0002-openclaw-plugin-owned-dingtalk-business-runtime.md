@@ -16,6 +16,8 @@
 
 插件只注册经过产品允许并由当前 DWS leaf schema 校验的固定工具。JunQi 业务页通过现有 `tools.effective` 获取当前 Session 的实际可用工具，通过现有 `tools.invoke` 发起一次调用；OpenClaw Agent 在 Chat 中使用同一组插件工具。所有写操作由插件 `before_tool_call` hook 请求 `plugin.approval.*`，默认只允许 `allow-once` 与 `deny`。
 
+`tools.effective` 只承担 OpenClaw Session 工具策略门禁，不是当前登录用户的钉钉业务权限目录。DWS `profile list` 负责精确身份与 token 状态，但不提供可覆盖所有业务对象和操作的用户权限清单。因此客户端只在 Profile 状态为 `active` 时展示插件操作目录，并把具体业务权限保留为调用时核验；不得从 Profile 元数据、工具注册或一次历史成功推断长期权限。
+
 ## 结果
 
 - UI 与 Chat 共用同一工具、身份、权限、审批和失败语义。

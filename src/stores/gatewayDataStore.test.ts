@@ -24,7 +24,6 @@ import {
   resolveGatewayConnectionStartedAt,
   startPolling,
   stopPolling,
-  sessionsHaveSameProjection,
   searchOpenClawSessions,
   selectSessionArtifacts,
   useGatewayDataStore,
@@ -80,23 +79,34 @@ test('会话产物缺失时复用稳定空快照', () => {
   assert.deepEqual(first, []);
 });
 
-test('会话投影相同不会因 RPC 对象重建而被视为变化', () => {
-  const previous = [{
-    key: 'agent:main:main',
-    label: '主会话',
-    placement: { status: 'active', workers: ['worker-1'] },
-  }];
-  const incoming = [{
-    key: 'agent:main:main',
-    label: '主会话',
-    placement: { status: 'active', workers: ['worker-1'] },
-  }];
+test('相同会话快照仍标记为当前连接已完成读取', () => {
+  const originalNow = Date.now;
+  const originalState = useGatewayDataStore.getState();
+  try {
+    let now = 1_000;
+    Date.now = () => now;
+    useGatewayDataStore.setState({
+      sessions: [],
+      lastFetch: { ...originalState.lastFetch, sessions: 0 },
+      loading: { ...originalState.loading, sessions: true },
+      errors: { ...originalState.errors, sessions: null },
+    });
+    const session = { key: 'agent:main:main', label: '主会话' };
+    useGatewayDataStore.getState().setSessions([session]);
 
-  assert.equal(sessionsHaveSameProjection(previous, incoming), true);
-  assert.equal(sessionsHaveSameProjection(previous, [{
-    ...incoming[0],
-    placement: { status: 'idle', workers: ['worker-1'] },
-  }]), false);
+    now = 2_000;
+    useGatewayDataStore.setState({
+      connectionStartedAt: 1_500,
+      loading: { ...useGatewayDataStore.getState().loading, sessions: true },
+    });
+    useGatewayDataStore.getState().setSessions([session]);
+
+    assert.equal(useGatewayDataStore.getState().lastFetch.sessions, 2_000);
+    assert.equal(useGatewayDataStore.getState().loading.sessions, false);
+  } finally {
+    Date.now = originalNow;
+    useGatewayDataStore.setState(originalState, true);
+  }
 });
 
 test('重型用量轮询仅在页面保留期间启动', async () => {

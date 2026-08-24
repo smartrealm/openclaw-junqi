@@ -5,15 +5,11 @@ import { setupProgressI18nParams } from "../setupProgressParams";
 import type { InstallTarget, StepState } from "./types";
 
 export const INSTALL_TARGET_KEYS = {
-  user: "setup.openclaw.userNpmPrefix",
-  userMissingPath: "setup.openclaw.userNpmPrefixMissingPath",
   custom: "setup.openclaw.customNpmPrefix",
   existing: "setup.openclaw.useExisting",
 } as const;
 
-/// The one step that means "the runtime is ready and nobody has started the
-/// local Gateway yet". Starting it is an installation transition rather than a
-/// user decision, so reaching this step starts it automatically.
+/// 该步骤表示运行时已就绪但本地 Gateway 尚未启动；进入后自动执行启动事务。
 export const AUTO_ADVANCE_GATEWAY_STEP: SetupStep = "gateway-stopped";
 
 export type SetupBackPolicy =
@@ -22,12 +18,7 @@ export type SetupBackPolicy =
   | "rollback-storage"
   | "navigate";
 
-/**
- * Declares which durable side effect, if any, a page owns when leaving via Back.
- * Keeping this exhaustive and pure prevents a generic Back handler from
- * rolling back committed runtime state merely because every screen shares the
- * same button component.
- */
+/** 声明页面返回时拥有的持久副作用，避免通用返回逻辑误回滚已提交的运行时。 */
 export function setupBackPolicy(step: SetupStep): SetupBackPolicy {
   switch (step) {
     case "detecting":
@@ -46,6 +37,7 @@ export function setupBackPolicy(step: SetupStep): SetupBackPolicy {
     case "welcome":
     case "environment-review":
     case "gateway-ready":
+    case "update-openclaw":
     case "configure-openclaw":
     case "ready":
     case "error":
@@ -67,20 +59,14 @@ export function pickInstallTargetFromProgress(
   explicitParams: Partial<Record<string, string>> = {},
 ): InstallTarget | null {
   if (
-    key !== INSTALL_TARGET_KEYS.user &&
-    key !== INSTALL_TARGET_KEYS.userMissingPath &&
     key !== INSTALL_TARGET_KEYS.custom &&
     key !== INSTALL_TARGET_KEYS.existing
   ) {
     return null;
   }
-  // Reuse the same rule table that drives i18next substitution so
-  // the UI path stays in lockstep with the message formatting.
+  // 复用 i18next 参数规则，保证界面路径与进度文案保持一致。
   const params = { ...setupProgressI18nParams(key, message), ...explicitParams };
   if (!params.path) return null;
-  if (key === INSTALL_TARGET_KEYS.userMissingPath) {
-    return { tier: "userMissingPath", path: params.path };
-  }
   if (key === INSTALL_TARGET_KEYS.custom) {
     return { tier: "custom", path: params.path };
   }
