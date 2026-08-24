@@ -5,7 +5,7 @@ runs. It owns workflow state, dispatch idempotency, recovery, audit events, and
 exact transcript delivery. JunQi is a client of the `junqi.collab.*` Gateway
 RPC surface; it is not the workflow scheduler.
 
-Current package baseline: plugin `0.5.0`, SQLite schema `15`, OpenClaw
+Current package baseline: plugin `0.5.4`, SQLite schema `15`, OpenClaw
 `>=2026.7.1`.
 
 ## Execution boundary
@@ -39,7 +39,7 @@ Build and inspect locally:
 ```bash
 npm run collab:build
 npm run collab:pack
-openclaw plugins install --force --pin npm-pack:packages/junqi-collab/dist/junqi-openclaw-collaboration-0.5.0.tgz
+openclaw plugins install --force --pin npm-pack:packages/junqi-collab/dist/junqi-openclaw-collaboration-0.5.4.tgz
 openclaw plugins inspect junqi-collab --runtime --json
 ```
 
@@ -165,11 +165,18 @@ Interventions, pending/delayed commands, per-run event sequence,
 unified command receipts, tombstones ordered by deletion time, and deletion
 policy lookups by terminal `ended_at + id`, Run-scoped active Attempt/command,
 failed Flow command, export status, deletion-job status, and workflow-template
-publication/version lookup. Schema initialization is current-version only: a
-new empty store is created from the canonical schema, while any existing store
-whose version or structural shape differs fails closed without mutation. No
-historical migration, compatibility wrapper, or inferred backfill path is
-retained. `tombstones`
+publication/version lookup. Schema initialization creates a new empty store from
+the canonical schema. Known schema 12, 13 and 14 stores are migrated atomically to
+schema 15 after a SQLite-consistent sibling backup is created and an external
+write fence is rechecked under the migration lock. The migration
+copies non-conflicting legacy delete and session-command receipts into the
+current receipt authority, rebuilds the tombstone authority constraint, and
+removes retired tables only after that copy succeeds. A legacy receipt conflict,
+an invalid tombstone, an unknown schema shape, a missing backup, or any
+transaction failure stops startup without changing the source database. The
+backup retains retired session-mutation records because schema 15 has no active
+consumer for that removed domain. Any other version or structural drift fails
+closed without mutation. `tombstones`
 includes `cleanup_status`, `cleanup_error`, `cleanup_updated_at`, and nullable
 `deletion_job_id`,
 `flow_reconciliation_command_id`, `openclaw_flow_id`,

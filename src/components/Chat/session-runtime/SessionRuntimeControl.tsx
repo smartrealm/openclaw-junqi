@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, LoaderCircle, Lock, RotateCcw } from 'lucide-react';
+import { Check, ChevronDown, LoaderCircle, Lock, RotateCcw, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { ProviderIcon, providerDisplayLabel } from '@/components/shared/provider-identity';
+import { FloatingMenuPortal, type FloatingMenuPoint } from '@/components/shared/FloatingMenuPortal';
 import { useChatStore } from '@/stores/chatStore';
 import {
   groupSessionModels,
   modelDisplayName,
   modelProviderId,
   canChangeSessionModel,
+  filterSessionModels,
   SESSION_FAST_MODES,
   SESSION_REASONING_LEVELS,
   SESSION_RESPONSE_USAGE_LEVELS,
@@ -23,6 +25,7 @@ import {
 import { useSessionRuntimeSettings } from '@/hooks/chat/useSessionRuntimeSettings';
 
 const EMPTY_MODELS: ReadonlyArray<{ id: string; label: string; alias?: string }> = [];
+type RuntimePanel = 'models' | 'settings';
 
 export function SessionRuntimeControl() {
   const { t } = useTranslation();
@@ -51,10 +54,20 @@ export function SessionRuntimeControl() {
   const [draftResponseUsage, setDraftResponseUsage] = useState<SessionResponseUsageLevel>(committed.responseUsage);
   const [draftReasoning, setDraftReasoning] = useState<SessionReasoningLevel>(committed.reasoning);
   const [providerId, setProviderId] = useState(() => committed.modelId ? modelProviderId(committed.modelId) : '');
-  const rootRef = useRef<HTMLDivElement>(null);
+  const [runtimePanel, setRuntimePanel] = useState<RuntimePanel>('models');
+  const [modelQuery, setModelQuery] = useState('');
+  const [menuPoint, setMenuPoint] = useState<FloatingMenuPoint>({ x: 8, y: 40 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const groups = useMemo(() => groupSessionModels(availableModels), [availableModels]);
   const activeModel = availableModels.find((model) => model.id === committed.modelId);
   const selectedGroup = groups.find((group) => group.providerId === providerId) ?? groups[0];
+  const visibleModels = filterSessionModels(selectedGroup?.models ?? EMPTY_MODELS, modelQuery);
+  const modelCountLabel = modelQuery.trim()
+    ? t('input.sessionRuntimeFilteredModelCount', {
+      visible: visibleModels.length,
+      total: selectedGroup?.models.length ?? 0,
+    })
+    : t('input.sessionRuntimeModelCount', { count: selectedGroup?.models.length ?? 0 });
   const hasChanges = draftModelId !== committed.modelId
     || draftThinking !== committed.thinking
     || draftFastMode !== committed.fastMode
@@ -85,22 +98,6 @@ export function SessionRuntimeControl() {
     setOpen(false);
   }, [activeSessionKey]);
 
-  useEffect(() => {
-    if (!open) return;
-    const closeOnOutside = (event: MouseEvent) => {
-      if (!saving && !rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving) setOpen(false);
-    };
-    document.addEventListener('mousedown', closeOnOutside);
-    window.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutside);
-      window.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [open, saving]);
-
   if (availableModels.length === 0) return null;
 
   const modelLabel = modelDisplayName(activeModel, committed.modelId) || t('config.notSet');
@@ -122,11 +119,23 @@ export function SessionRuntimeControl() {
   const reasoningLabel = t(`input.sessionRuntimeReasoningModes.${committed.reasoning}`);
   const committedProviderId = committed.modelId ? modelProviderId(committed.modelId) : 'other';
   const canSelectModel = canChangeSessionModel(modelSelectionLocked);
+  const toggleOpen = () => {
+    if (saving) return;
+    if (!open) {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (rect) setMenuPoint({ x: rect.left, y: rect.bottom + 8 });
+      setRuntimePanel('models');
+      setModelQuery('');
+    }
+    setOpen((value) => !value);
+  };
   return (
-    <div ref={rootRef} className="relative min-w-0 no-drag">
+    <div className="relative min-w-0 no-drag">
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => { if (!saving) setOpen((value) => !value); }}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={toggleOpen}
         aria-expanded={open}
         aria-haspopup="dialog"
         className={clsx(
@@ -156,15 +165,60 @@ export function SessionRuntimeControl() {
       </button>
 
       {open && (
-        <div
-          role="dialog"
-          aria-label={t('input.sessionRuntimeTitle')}
-          className="absolute top-full start-0 z-50 mt-2 flex w-[min(420px,calc(100vw-24px))] max-h-[min(460px,calc(100vh-96px))] flex-col overflow-hidden rounded-lg border border-aegis-menu-border bg-aegis-menu-bg"
-          style={{ boxShadow: 'var(--aegis-menu-shadow)' }}
+        <FloatingMenuPortal
+          point={menuPoint}
+          onDismiss={() => { if (!saving) setOpen(false); }}
         >
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="grid min-h-[132px] max-h-[236px] grid-cols-[136px_minmax(0,1fr)] overflow-hidden">
-              <div className="overflow-y-auto border-e border-aegis-menu-border p-1.5">
+          <div
+            role="dialog"
+            aria-label={t('input.sessionRuntimeTitle')}
+            className="flex flex-col overflow-hidden rounded-lg border border-aegis-menu-border bg-aegis-menu-bg"
+            style={{
+              width: 'calc(100vw - 16px)',
+              maxWidth: '420px',
+              height: 'calc(100vh - 16px)',
+              maxHeight: '680px',
+              boxShadow: 'var(--aegis-menu-shadow)',
+            }}
+          >
+            <div className="flex shrink-0 items-center gap-1 border-b border-aegis-menu-border p-1.5" role="tablist" aria-label={t('input.sessionRuntimeTitle')}>
+              {([
+                ['models', t('input.sessionRuntimeModelsTab')],
+                ['settings', t('input.sessionRuntimeSettingsTab')],
+              ] as const).map(([panel, label]) => (
+                <button
+                  key={panel}
+                  type="button"
+                  role="tab"
+                  id={`session-runtime-${panel}-tab`}
+                  aria-controls={`session-runtime-${panel}-panel`}
+                  aria-selected={runtimePanel === panel}
+                  onClick={() => setRuntimePanel(panel)}
+                  className={clsx(
+                    'h-7 rounded-md px-3 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
+                    runtimePanel === panel
+                      ? 'bg-aegis-primary/12 text-aegis-primary'
+                      : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.05)] hover:text-aegis-text',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+            {runtimePanel === 'models' ? (
+            <div
+              data-session-runtime-model-catalog
+              role="tabpanel"
+              id="session-runtime-models-panel"
+              aria-labelledby="session-runtime-models-tab"
+              className="grid h-full min-h-0 grid-cols-[136px_minmax(0,1fr)] overflow-hidden"
+            >
+              <div
+                tabIndex={0}
+                aria-label={t('input.sessionRuntimeProvider')}
+                className="chat-scrollbar min-h-0 overflow-y-scroll overscroll-contain border-e border-aegis-menu-border p-1.5 [scrollbar-gutter:stable_both-edges] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-aegis-primary/60"
+              >
                 <div className="px-1.5 pb-1 text-[10px] font-semibold uppercase text-aegis-text-dim">
                   {t('input.sessionRuntimeProvider')}
                 </div>
@@ -186,22 +240,43 @@ export function SessionRuntimeControl() {
                 ))}
               </div>
 
-              <div className="min-h-0 overflow-y-auto p-2">
-                <div className="px-1 pb-1 text-[10px] font-semibold uppercase text-aegis-text-dim">
-                  <span className="inline-flex items-center gap-1">
-                    {t('input.sessionRuntimeModel')}
-                    {modelSelectionLocked && (
-                      <span
-                        role="img"
-                        aria-label={t('input.sessionRuntimeModelSelectionLocked')}
-                        title={t('input.sessionRuntimeModelSelectionLocked')}
-                      >
-                        <Lock size={11} aria-hidden="true" />
-                      </span>
-                    )}
+              <div className="flex min-h-0 flex-col p-2">
+                <div className="flex shrink-0 items-center justify-between gap-2 px-1 pb-1">
+                  <div className="text-[10px] font-semibold uppercase text-aegis-text-dim">
+                    <span className="inline-flex items-center gap-1">
+                      {t('input.sessionRuntimeModel')}
+                      {modelSelectionLocked && (
+                        <span
+                          role="img"
+                          aria-label={t('input.sessionRuntimeModelSelectionLocked')}
+                          title={t('input.sessionRuntimeModelSelectionLocked')}
+                        >
+                          <Lock size={11} aria-hidden="true" />
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <span className="shrink-0 font-mono text-[10px] text-aegis-text-dim">
+                    {modelCountLabel}
                   </span>
                 </div>
-                {selectedGroup?.models.map((model) => {
+                <label className="mb-2 flex shrink-0 items-center gap-1.5 rounded-md border border-aegis-border bg-aegis-bg/70 px-2 py-1.5 focus-within:border-aegis-primary/55 focus-within:ring-1 focus-within:ring-aegis-primary/25">
+                  <Search size={12} className="shrink-0 text-aegis-text-dim" aria-hidden="true" />
+                  <span className="sr-only">{t('input.sessionRuntimeModelSearch')}</span>
+                  <input
+                    type="search"
+                    value={modelQuery}
+                    onChange={(event) => setModelQuery(event.target.value)}
+                    placeholder={t('input.sessionRuntimeModelSearchPlaceholder')}
+                    className="min-w-0 flex-1 bg-transparent text-[11px] text-aegis-text outline-none placeholder:text-aegis-text-dim"
+                  />
+                </label>
+                <div
+                  tabIndex={0}
+                  aria-label={t('input.sessionRuntimeModelCount', { count: visibleModels.length })}
+                  className="chat-scrollbar min-h-0 flex-1 overflow-y-scroll overscroll-contain [scrollbar-gutter:stable_both-edges] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-aegis-primary/60"
+                >
+                {visibleModels.map((model) => {
                   const selected = model.id === draftModelId;
                   const disabled = selected || !canSelectModel;
                   return (
@@ -231,61 +306,74 @@ export function SessionRuntimeControl() {
                     </button>
                   );
                 })}
+                {visibleModels.length === 0 && (
+                  <div role="status" className="px-2 py-3 text-[11px] text-aegis-text-dim">
+                    {t('input.sessionRuntimeNoMatchingModels')}
+                  </div>
+                )}
+                </div>
               </div>
             </div>
-
-            <div className="border-t border-aegis-menu-border px-3 py-2.5">
-              <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
-                {t('titlebar.thinking.label')}
-              </div>
-              {thinkingOptions.length === 0 ? (
-                <div role="status" className="text-[11px] text-aegis-warning">
-                  {t('input.sessionRuntimeThinkingUnavailable')}
+            ) : (
+            <div
+              data-session-runtime-settings
+              role="tabpanel"
+              id="session-runtime-settings-panel"
+              aria-labelledby="session-runtime-settings-tab"
+              className="chat-scrollbar h-full min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
+            >
+              <div className="px-3 py-2.5">
+                <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
+                  {t('titlebar.thinking.label')}
                 </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-                  <button
-                    type="button"
-                    onClick={() => setDraftThinking(null)}
-                    disabled={draftThinking === null}
-                    aria-current={draftThinking === null ? 'true' : undefined}
-                    className={clsx(
-                      'h-8 rounded-md border px-2 text-[11px] transition-colors',
-                      draftThinking === null
-                        ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
-                        : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
-                    )}
-                  >
-                    <span className="block truncate">{thinkingOptionLabel(null)}</span>
-                  </button>
-                  {thinkingOptions.map((option) => (
+                {thinkingOptions.length === 0 ? (
+                  <div role="status" className="text-[11px] text-aegis-warning">
+                    {t('input.sessionRuntimeThinkingUnavailable')}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                     <button
-                      key={option.id}
                       type="button"
-                      onClick={() => setDraftThinking(option.id)}
-                      disabled={draftThinking === option.id}
-                      aria-current={draftThinking === option.id ? 'true' : undefined}
+                      onClick={() => setDraftThinking(null)}
+                      disabled={draftThinking === null}
+                      aria-current={draftThinking === null ? 'true' : undefined}
                       className={clsx(
-                        'h-8 min-w-0 rounded-md border px-2 text-[11px] transition-colors',
-                        draftThinking === option.id
+                        'h-8 rounded-md border px-2 text-[11px] transition-colors',
+                        draftThinking === null
                           ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
                           : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
                       )}
-                      title={option.label}
                     >
-                      <span className="block truncate">{option.label}</span>
+                      <span className="block truncate">{thinkingOptionLabel(null)}</span>
                     </button>
-                  ))}
-                </div>
-              )}
-              {requiresThinkingProfileRefresh && (
-                <div role="status" className="mt-2 text-[11px] text-aegis-warning">
-                  {t('input.sessionRuntimeThinkingModelChange')}
-                </div>
-              )}
-            </div>
+                    {thinkingOptions.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setDraftThinking(option.id)}
+                        disabled={draftThinking === option.id}
+                        aria-current={draftThinking === option.id ? 'true' : undefined}
+                        className={clsx(
+                          'h-8 min-w-0 rounded-md border px-2 text-[11px] transition-colors',
+                          draftThinking === option.id
+                            ? 'cursor-default border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
+                            : 'border-aegis-border text-aegis-text-muted hover:border-aegis-border-hover hover:text-aegis-text',
+                        )}
+                        title={option.label}
+                      >
+                        <span className="block truncate">{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {requiresThinkingProfileRefresh && (
+                  <div role="status" className="mt-2 text-[11px] text-aegis-warning">
+                    {t('input.sessionRuntimeThinkingModelChange')}
+                  </div>
+                )}
+              </div>
 
-            <div className="border-t border-aegis-menu-border px-3 py-2.5">
+              <div className="border-t border-aegis-menu-border px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
                 {t('input.sessionRuntimeFastMode')}
               </div>
@@ -308,9 +396,9 @@ export function SessionRuntimeControl() {
                   </button>
                 ))}
               </div>
-            </div>
+              </div>
 
-            <div className="border-t border-aegis-menu-border px-3 py-2.5">
+              <div className="border-t border-aegis-menu-border px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
                 {t('input.sessionRuntimeVerbose')}
               </div>
@@ -333,9 +421,9 @@ export function SessionRuntimeControl() {
                   </button>
                 ))}
               </div>
-            </div>
+              </div>
 
-            <div className="border-t border-aegis-menu-border px-3 py-2.5">
+              <div className="border-t border-aegis-menu-border px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
                 {t('input.sessionRuntimeTrace')}
               </div>
@@ -363,9 +451,9 @@ export function SessionRuntimeControl() {
                   </button>
                 ))}
               </div>
-            </div>
+              </div>
 
-            <div className="border-t border-aegis-menu-border px-3 py-2.5">
+              <div className="border-t border-aegis-menu-border px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
                 {t('input.sessionRuntimeReasoning')}
               </div>
@@ -388,9 +476,9 @@ export function SessionRuntimeControl() {
                   </button>
                 ))}
               </div>
-            </div>
+              </div>
 
-            <div className="border-t border-aegis-menu-border px-3 py-2.5">
+              <div className="border-t border-aegis-menu-border px-3 py-2.5">
               <div className="mb-2 text-[10px] font-semibold uppercase text-aegis-text-dim">
                 {t('input.sessionRuntimeResponseUsage')}
               </div>
@@ -418,10 +506,12 @@ export function SessionRuntimeControl() {
                   </button>
                 ))}
               </div>
+              </div>
             </div>
-          </div>
+            )}
+            </div>
 
-          <div className="flex items-center justify-between gap-2 border-t border-aegis-menu-border px-3 py-2.5">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-t border-aegis-menu-border px-3 py-2.5">
             <button
               type="button"
               onClick={() => {
@@ -467,8 +557,9 @@ export function SessionRuntimeControl() {
                 {t('common.save')}
               </button>
             </div>
+            </div>
           </div>
-        </div>
+        </FloatingMenuPortal>
       )}
     </div>
   );

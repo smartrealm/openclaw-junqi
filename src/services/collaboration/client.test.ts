@@ -34,6 +34,28 @@ test('normalizes OpenClaw INVALID_REQUEST unknown-method responses to a typed ab
   }), false);
 });
 
+test('preserves structured collaboration service startup failures from Gateway', async () => {
+  const client = new CollaborationClient(async () => {
+    throw {
+      code: 'DATABASE_SCHEMA_UNSUPPORTED',
+      message: 'Collaboration database schema is unsupported',
+      details: {
+        actualSchemaVersion: 13,
+        expectedSchemaVersion: 15,
+      },
+    };
+  });
+
+  await assert.rejects(
+    client.capabilities(),
+    (error: unknown) => error instanceof CollaborationClientError
+      && error.code === 'DATABASE_SCHEMA_UNSUPPORTED'
+      && error.method === 'junqi.collab.capabilities'
+      && error.details?.actualSchemaVersion === 13
+      && error.details?.expectedSchemaVersion === 15,
+  );
+});
+
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'undefined';
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;

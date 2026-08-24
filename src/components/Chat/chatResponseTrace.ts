@@ -2,6 +2,7 @@ import type { DecisionOption, FileRef, SessionEvent, WorkshopEvent } from '@/typ
 import type { ResponseGroup } from '@/types/ResponseGroup';
 import type { MessageSemanticBlock } from '@/types/SemanticBlock';
 import type { ChatMessage } from '@/stores/chatStore';
+import type { OpenClawAuditEvent, OpenClawAuditListPage } from '@/services/gateway/OpenClawAuditClient';
 
 interface TraceNodeBase {
   id: string;
@@ -19,48 +20,10 @@ export interface ChatResponseTraceContext {
   model?: string;
 }
 
-export type ChatResponseTraceAuditStatus =
-  | 'started'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled'
-  | 'timed_out'
-  | 'blocked'
-  | 'unknown';
-
-export interface ChatResponseTraceAuditEvent {
-  eventType?: 'agent_run' | 'tool_action' | 'inbound_message' | 'outbound_message';
-  eventId: string;
-  sequence: number;
-  sourceSequence: number;
-  occurredAt: number;
-  kind: 'agent_run' | 'tool_action' | 'message';
-  action: string;
-  status: ChatResponseTraceAuditStatus;
-  actor: { type: string; id: string };
-  redaction: 'metadata_only';
-  agentId?: string;
-  sessionKey?: string;
-  sessionId?: string;
-  runId?: string;
-  toolCallId?: string;
-  toolName?: string;
-  direction?: 'inbound' | 'outbound';
-  channel?: string;
-  conversationKind?: 'direct' | 'group' | 'channel' | 'unknown';
-  outcome?: string;
-  reasonCode?: string;
-  errorCode?: string;
-  failureStage?: 'platform_send' | 'queue' | 'unknown';
-  deliveryKind?: 'text' | 'media' | 'other';
-  durationMs?: number;
-  resultCount?: number;
-}
-
 export interface ChatResponseTraceAuditPage {
-  events: readonly ChatResponseTraceAuditEvent[];
+  events: readonly OpenClawAuditEvent[];
   nextCursor?: string;
-  source: 'activity';
+  source: OpenClawAuditListPage['source'];
 }
 
 export type ChatResponseTraceNode =

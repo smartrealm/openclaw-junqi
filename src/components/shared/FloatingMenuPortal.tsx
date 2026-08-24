@@ -102,7 +102,8 @@ export function FloatingMenuPortal({
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-[2147483647]"
+      {...{ 'data-tauri-drag-region': false } as any}
+      className="no-drag fixed z-[2147483647]"
       style={{ left: position.x, top: position.y }}
     >
       {children}

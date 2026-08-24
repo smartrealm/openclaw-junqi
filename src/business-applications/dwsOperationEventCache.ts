@@ -31,3 +31,25 @@ export function cacheDwsOperationFinished(
 ): void {
   cache.finished[payload.operationId] = payload;
 }
+
+export function releaseDwsOperationCache(
+  cache: DwsOperationEventCache,
+  operationId: string,
+): void {
+  delete cache.output[operationId];
+  delete cache.events[operationId];
+  delete cache.finished[operationId];
+}
+
+export function rememberFinalizedDwsOperation(
+  operationIds: Set<string>,
+  operationId: string,
+  limit = 64,
+): void {
+  operationIds.add(operationId);
+  while (operationIds.size > limit) {
+    const oldest = operationIds.values().next().value as string | undefined;
+    if (!oldest) break;
+    operationIds.delete(oldest);
+  }
+}

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CollaborationError, RequestValidationError } from "./errors.js";
-import { COLLABORATION_RPC_METHODS, registerCollaborationRpc } from "./rpc.js";
+import { UnsupportedCollaborationSchemaError } from "./database-schema-initializer.js";
+import {
+  COLLABORATION_RPC_METHODS,
+  collaborationServiceStartupFailure,
+  registerCollaborationRpc,
+} from "./rpc.js";
 import type { CollaborationService } from "./service.js";
 import {
   parseJsonObject,
@@ -18,13 +23,16 @@ type RegisteredHandler = (context: {
 
 const UNKNOWN_ERROR_MESSAGE_FOR_TEST = "JunQi collaboration operation failed";
 
-function registeredRpc(getService: () => CollaborationService | null) {
+function registeredRpc(
+  getService: () => CollaborationService | null,
+  startupFailure: { code: string; message: string; details?: Record<string, unknown> } | null = null,
+) {
   const handlers = new Map<string, { handler: RegisteredHandler; scope: string }>();
   registerCollaborationRpc({
     registerGatewayMethod(method: string, handler: RegisteredHandler, options: { scope: string }) {
       handlers.set(method, { handler, scope: options.scope });
     },
-  } as never, getService);
+  } as never, () => ({ service: getService(), startupFailure }));
   return handlers;
 }
 
@@ -55,11 +63,42 @@ test("every collaboration RPC fails closed while the plugin service is unavailab
       ok: false,
       result: undefined,
       error: {
-        code: "UNAVAILABLE",
-        message: "JunQi collaboration service is not running",
+        code: "SERVICE_START_FAILED",
+        message: "The collaboration plugin service failed to start",
       },
     }], definition.method);
   }
+});
+
+test("service startup failures remain structured and do not expose internal diagnostics", async () => {
+  const failure = collaborationServiceStartupFailure(
+    new UnsupportedCollaborationSchemaError(13, 15, "13"),
+  );
+  const handlers = registeredRpc(() => null, failure);
+  const responses = await respondingInvocation(
+    handlers.get("junqi.collab.capabilities")!.handler,
+    {},
+  );
+  assert.deepEqual(responses, [{
+    ok: false,
+    result: undefined,
+    error: {
+      code: "DATABASE_SCHEMA_UNSUPPORTED",
+      message: "The collaboration database schema is not supported by this plugin",
+      details: { actualSchemaVersion: 13, expectedSchemaVersion: 15 },
+    },
+  }]);
+  assert.equal(JSON.stringify(responses).includes("collaboration.sqlite"), false);
+});
+
+test("unknown service startup failures are redacted", () => {
+  assert.deepEqual(
+    collaborationServiceStartupFailure(new Error("credential token=secret-value")),
+    {
+      code: "SERVICE_START_FAILED",
+      message: "The collaboration plugin service failed to start",
+    },
+  );
 });
 
 test("every registered RPC reaches its service handler and responds exactly once", async () => {

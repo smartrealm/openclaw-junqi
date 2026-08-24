@@ -1,35 +1,20 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, LoaderCircle, RefreshCw, Search, ShieldAlert } from 'lucide-react';
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Button } from '@/components/shared/button/Button';
 import {
+  selectBusinessAttemptsForSession,
   useBusinessActivityStore,
   type BusinessAttemptState,
 } from '@/business-applications/activityStore';
 import { useDingTalkBusinessAudit } from '@/hooks/useDingTalkBusinessAudit';
 import { useChatStore } from '@/stores/chatStore';
 import { summarizeDingTalkBusinessActivity } from './businessActivitySummary';
-import type { DingTalkAuditFailureKind } from '@/business-applications/dingtalkAuditAvailability';
-
-const STATE_LABEL: Record<BusinessAttemptState, string> = {
-  pending: '执行中',
-  approval_required: '等待 OpenClaw 审批',
-  succeeded: '已完成',
-  failed: '失败',
-  unknown: '结果待核验',
-};
+import { resolveBusinessActivityPrimaryState } from './businessActivityPresentation';
 
 type ActivityScope = 'all' | 'official' | 'window';
-
-const AUDIT_FAILURE_DESCRIPTION: Record<DingTalkAuditFailureKind, string> = {
-  disconnected: '尚未连接 OpenClaw Gateway。连接并完成身份核验后才能读取官方审计账本。',
-  'session-missing': '尚未选择可核验的 OpenClaw Session。选择 Session 后才能查询其官方工具审计。',
-  unsupported: '当前 Gateway 不支持 audit.activity.list。升级到提供官方活动审计协议的 OpenClaw 后再重新检测。',
-  unauthorized: '当前 Gateway 连接未获得 operator.read。请重新完成设备配对或连接授权后重试。',
-  'invalid-response': 'Gateway 返回的审计数据不符合当前官方协议，JunQi 已拒绝猜测或降级解析。',
-  failed: '官方审计请求失败。请检查 Gateway 状态后重试；JunQi 不会用本窗口状态替代官方记录。',
-};
 
 function StateIcon({ state }: { state: BusinessAttemptState }) {
   if (state === 'pending') return <LoaderCircle size={14} className="animate-spin text-aegis-primary" />;
@@ -54,12 +39,17 @@ function includesQuery(values: readonly (string | null | undefined)[], query: st
 }
 
 export function BusinessActivityList() {
+  const { t } = useTranslation();
   const activeSessionKey = useChatStore((state) => state.activeSessionKey);
-  const attempts = useBusinessActivityStore((state) => state.attempts);
-  const clear = useBusinessActivityStore((state) => state.clear);
+  const allAttempts = useBusinessActivityStore((state) => state.attempts);
+  const clearSession = useBusinessActivityStore((state) => state.clearSession);
   const audit = useDingTalkBusinessAudit(activeSessionKey);
   const [scope, setScope] = useState<ActivityScope>('all');
   const [search, setSearch] = useState('');
+  const attempts = useMemo(
+    () => selectBusinessAttemptsForSession(allAttempts, activeSessionKey),
+    [activeSessionKey, allAttempts],
+  );
   const summary = useMemo(() => summarizeDingTalkBusinessActivity(audit.events, attempts), [attempts, audit.events]);
   const query = search.trim().toLocaleLowerCase();
   const filteredEvents = useMemo(() => (
@@ -87,17 +77,59 @@ export function BusinessActivityList() {
   ), [attempts, query, scope]);
   const hasAnyActivity = attempts.length > 0 || audit.events.length > 0;
   const hasFilteredActivity = filteredAttempts.length > 0 || filteredEvents.length > 0;
+  const primaryState = resolveBusinessActivityPrimaryState({
+    hasAnyActivity,
+    loading: audit.loading,
+    failure: audit.failure,
+  });
+  const auditFailureDescription = audit.failure
+    ? t(`businessApplications.activity.failure.${audit.failure}`)
+    : '';
 
-  if (!hasAnyActivity && !audit.loading) {
+  if (primaryState.kind === 'loading') {
+    return (
+      <EmptyState
+        density="compact"
+        iconStyle="bare"
+        icon={<LoaderCircle size={24} className="animate-spin" />}
+        title={t('businessApplications.activity.loadingTitle')}
+        description={t('businessApplications.activity.loadingDescription')}
+      />
+    );
+  }
+
+  if (primaryState.kind === 'failure') {
+    return (
+      <EmptyState
+        density="compact"
+        iconStyle="bare"
+        icon={<AlertTriangle size={24} />}
+        title={t('businessApplications.activity.failureTitle')}
+        description={auditFailureDescription}
+        action={(
+          <Button
+            size="xs"
+            variant="outline"
+            leadingIcon={<RefreshCw size={12} />}
+            onClick={() => void audit.refresh()}
+          >
+            {t('businessApplications.activity.retry')}
+          </Button>
+        )}
+      />
+    );
+  }
+
+  if (primaryState.kind === 'empty') {
     return (
       <EmptyState
         density="compact"
         iconStyle="bare"
         icon={<Clock3 size={24} />}
-        title="当前 Session 尚无钉钉业务审计"
-        description={audit.failure
-          ? AUDIT_FAILURE_DESCRIPTION[audit.failure]
-          : '当前没有匹配的官方记录。只有钉钉工具经 OpenClaw 实际执行，并由启用的 metadata-only 审计账本记录后才会出现在这里。'}
+        title={t('businessApplications.activity.emptyTitle')}
+        description={t(audit.source === 'legacy'
+          ? 'businessApplications.activity.legacyEmptyDescription'
+          : 'businessApplications.activity.emptyDescription')}
       />
     );
   }
@@ -105,28 +137,28 @@ export function BusinessActivityList() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="grid shrink-0 grid-cols-2 border-b border-aegis-border bg-aegis-bg/35 sm:grid-cols-5">
-        <SummaryMetric label="官方审计" value={summary.official} />
-        <SummaryMetric label="本窗口投影" value={summary.local} />
-        <SummaryMetric label="参与 Agent" value={summary.agents} />
-        <SummaryMetric label="处理中" value={summary.active} />
-        <SummaryMetric label="需关注" value={summary.attention} tone="warning" />
+        <SummaryMetric label={t('businessApplications.activity.metrics.official')} value={summary.official} />
+        <SummaryMetric label={t('businessApplications.activity.metrics.local')} value={summary.local} />
+        <SummaryMetric label={t('businessApplications.activity.metrics.agents')} value={summary.agents} />
+        <SummaryMetric label={t('businessApplications.activity.metrics.active')} value={summary.active} />
+        <SummaryMetric label={t('businessApplications.activity.metrics.attention')} value={summary.attention} tone="warning" />
       </div>
       <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-2 border-b border-aegis-border px-3 py-1.5">
         <label className="flex min-w-[180px] flex-1 items-center gap-2 rounded-md border border-aegis-border bg-aegis-bg/70 px-2 py-1.5 focus-within:border-aegis-primary/55 focus-within:ring-1 focus-within:ring-aegis-primary/25">
           <Search size={12} className="shrink-0 text-aegis-text-dim" aria-hidden="true" />
-          <span className="sr-only">搜索钉钉业务审计</span>
+          <span className="sr-only">{t('businessApplications.activity.searchLabel')}</span>
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="搜索工具、Agent、run 或错误码"
+            placeholder={t('businessApplications.activity.searchPlaceholder')}
             className="min-w-0 flex-1 bg-transparent text-[10.5px] text-aegis-text outline-none placeholder:text-aegis-text-dim"
           />
         </label>
-        <div className="flex rounded-md border border-aegis-border bg-aegis-bg/70 p-0.5" aria-label="审计来源筛选">
+        <div className="flex rounded-md border border-aegis-border bg-aegis-bg/70 p-0.5" aria-label={t('businessApplications.activity.scopeLabel')}>
           {([
-            ['all', '全部'],
-            ['official', '官方'],
-            ['window', '本窗口'],
+            ['all', t('businessApplications.activity.scope.all')],
+            ['official', t('businessApplications.activity.scope.official')],
+            ['window', t('businessApplications.activity.scope.window')],
           ] as const).map(([value, label]) => (
             <button
               key={value}
@@ -143,19 +175,20 @@ export function BusinessActivityList() {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-1">
-          <Button size="xs" variant="ghost" loading={audit.loading} leadingIcon={<RefreshCw size={12} />} onClick={() => void audit.refresh()}>刷新审计</Button>
-          <Button size="xs" variant="ghost" disabled={attempts.length === 0} onClick={clear}>清空本窗口</Button>
+          <Button size="xs" variant="ghost" loading={audit.loading} leadingIcon={<RefreshCw size={12} />} onClick={() => void audit.refresh()}>{t('businessApplications.activity.refresh')}</Button>
+          <Button size="xs" variant="ghost" disabled={!activeSessionKey || attempts.length === 0} onClick={() => clearSession(activeSessionKey)}>{t('businessApplications.activity.clearWindow')}</Button>
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        {audit.failure && <div className="border-b border-aegis-warning/25 bg-aegis-warning/[0.05] px-3 py-2 text-[10px] text-aegis-warning">{AUDIT_FAILURE_DESCRIPTION[audit.failure]}</div>}
+        {audit.failure && <div className="border-b border-aegis-warning/25 bg-aegis-warning/[0.05] px-3 py-2 text-[10px] text-aegis-warning">{auditFailureDescription}</div>}
+        {audit.source === 'legacy' && <div className="border-b border-aegis-border bg-aegis-surface/35 px-3 py-2 text-[10px] text-aegis-text-dim">{t('businessApplications.activity.legacyProtocolNotice')}</div>}
         {!hasFilteredActivity && (
           <EmptyState
             density="compact"
             iconStyle="bare"
             icon={<Search size={22} />}
-            title="没有符合条件的审计记录"
-            description="调整搜索内容或来源范围后重试。"
+            title={t('businessApplications.activity.noMatchTitle')}
+            description={t('businessApplications.activity.noMatchDescription')}
           />
         )}
         {filteredEvents.map((event) => (
@@ -164,38 +197,38 @@ export function BusinessActivityList() {
             <div className="min-w-0">
               <div className="truncate text-[11.5px] font-medium text-aegis-text-secondary">{event.toolName ?? event.action}</div>
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-aegis-text-dim">
-                <span>Agent {event.agentId ?? event.actor.id}</span>
-                {event.runId && <span className="max-w-[180px] truncate font-mono" title={event.runId}>run {event.runId}</span>}
-                {event.toolCallId && <span className="max-w-[180px] truncate font-mono" title={event.toolCallId}>call {event.toolCallId}</span>}
-                {event.errorCode && <span>错误 {event.errorCode}</span>}
-                <span>官方 metadata-only</span>
+                <span>{t('businessApplications.activity.agent')} {event.agentId ?? event.actor.id}</span>
+                {event.runId && <span className="max-w-[180px] truncate font-mono" title={event.runId}>{t('businessApplications.activity.run')} {event.runId}</span>}
+                {event.toolCallId && <span className="max-w-[180px] truncate font-mono" title={event.toolCallId}>{t('businessApplications.activity.call')} {event.toolCallId}</span>}
+                {event.errorCode && <span>{t('businessApplications.activity.error')} {event.errorCode}</span>}
+                <span>{t('businessApplications.activity.officialMetadata')}</span>
               </div>
             </div>
             <div className="text-right text-[10px] text-aegis-text-dim">
-              <div>{event.status}</div>
+              <div>{t(`businessApplications.activity.auditStatus.${event.status}`, event.status)}</div>
               <time dateTime={new Date(event.occurredAt).toISOString()}>{new Date(event.occurredAt).toLocaleTimeString()}</time>
             </div>
           </div>
         ))}
-        {filteredAttempts.length > 0 && <div className="border-b border-aegis-border bg-aegis-surface/35 px-3 py-1.5 text-[9.5px] text-aegis-text-dim">本窗口调用投影：仅关联当前调用与 DWS 证据，不推断 Agent 委派关系。</div>}
+        {filteredAttempts.length > 0 && <div className="border-b border-aegis-border bg-aegis-surface/35 px-3 py-1.5 text-[9.5px] text-aegis-text-dim">{t('businessApplications.activity.localProjectionBoundary')}</div>}
         {filteredAttempts.map((attempt) => (
           <div key={attempt.id} className="grid grid-cols-[18px_minmax(0,1fr)_auto] gap-2 border-b border-aegis-border/70 px-3 py-3">
             <span className="pt-0.5"><StateIcon state={attempt.state} /></span>
             <div className="min-w-0">
               <div className="truncate text-[11.5px] font-medium text-aegis-text-secondary">{attempt.toolLabel}</div>
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-aegis-text-dim">
-                <span>{attempt.effect === 'write' ? '写入' : '读取'}</span>
-                <span>风险 {attempt.risk}</span>
-                <span>{attempt.profileRef ?? '无租户参数'}</span>
-                <span>Agent {attempt.agentId ?? '待 OpenClaw 核验'}</span>
-                {attempt.sessionId && <span className="max-w-[180px] truncate font-mono" title={attempt.sessionId}>session {attempt.sessionId}</span>}
+                <span>{t(`businessApplications.workbench.effect.${attempt.effect}`)}</span>
+                <span>{t('businessApplications.activity.risk')} {t(`businessApplications.workbench.risk.${attempt.risk}`)}</span>
+                <span>{attempt.profileRef ?? t('businessApplications.activity.noTenant')}</span>
+                <span>{t('businessApplications.activity.agent')} {attempt.agentId ?? t('businessApplications.activity.agentPending')}</span>
+                {attempt.sessionId && <span className="max-w-[180px] truncate font-mono" title={attempt.sessionId}>{t('businessApplications.activity.session')} {attempt.sessionId}</span>}
                 {attempt.evidence?.dwsCanonicalPath && <span className="max-w-[180px] truncate font-mono" title={attempt.evidence.dwsCanonicalPath}>{attempt.evidence.dwsCanonicalPath}</span>}
-                {attempt.evidence?.recoveryEventId && <span className="max-w-[150px] truncate font-mono" title={attempt.evidence.recoveryEventId}>recovery {attempt.evidence.recoveryEventId}</span>}
-                {attempt.errorCode && <span>错误 {attempt.errorCode}</span>}
+                {attempt.evidence?.recoveryEventId && <span className="max-w-[150px] truncate font-mono" title={attempt.evidence.recoveryEventId}>{t('businessApplications.activity.recovery')} {attempt.evidence.recoveryEventId}</span>}
+                {attempt.errorCode && <span>{t('businessApplications.activity.error')} {attempt.errorCode}</span>}
               </div>
             </div>
             <div className="text-right text-[10px] text-aegis-text-dim">
-              <div>{STATE_LABEL[attempt.state]}</div>
+              <div>{t(`businessApplications.activity.state.${attempt.state}`)}</div>
               <time dateTime={new Date(attempt.startedAt).toISOString()}>
                 {new Date(attempt.startedAt).toLocaleTimeString()}
               </time>
@@ -204,7 +237,7 @@ export function BusinessActivityList() {
         ))}
         {audit.nextCursor && scope !== 'window' && (
           <div className="flex justify-center border-b border-aegis-border px-3 py-2">
-            <Button size="xs" variant="ghost" loading={audit.loadingMore} onClick={() => void audit.loadMore()}>加载更早审计</Button>
+            <Button size="xs" variant="ghost" loading={audit.loadingMore} onClick={() => void audit.loadMore()}>{t('businessApplications.activity.loadMore')}</Button>
           </div>
         )}
       </div>

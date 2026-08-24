@@ -50,8 +50,8 @@ function requestPetWindowOpen(): Promise<void> {
 }
 
 function presentationPreferences(): PetPresentationPreferences {
-  const { soundEnabled, backdropContrastEnabled, captionScale } = usePetStore.getState();
-  return { soundEnabled, backdropContrastEnabled, captionScale };
+  const { soundEnabled, captionScale } = usePetStore.getState();
+  return { soundEnabled, captionScale };
 }
 
 function localizedSetupMessage(app: ReturnType<typeof useAppStore.getState>): string {

@@ -28,9 +28,24 @@
 20. 业务页只订阅共享预热快照，不再维护独立的首屏探测请求；手动刷新仍必须强制重读工具投影、DWS 身份和本机可管理插件状态。
 21. DWS `profile list`、`auth status` 和 schema 不能证明账号拥有审批、考勤、日历等业务权限。DWS PAT batch plan 也只表达行为授权计划，不能替代组织角色或数据权限；客户端不得后台逐个调用业务工具预判权限。
 22. 主目录集中说明“Session 暴露、Profile 登录和账号业务权限”三层边界，不在每一行重复展示“调用时核验”或“已暴露”。只有 OpenClaw 明确拒绝的工具才在对应行显示 Session 拒绝状态。
+23. DWS 返回的 `dingtalk://dingtalkclient/action/openapp` 与 `dingtalk://dingtalkclient/page/link` 必须保留为可点击 Markdown 链接，并由桌面系统交给钉钉客户端打开。
+24. 只允许上述两个已核验的钉钉主机与路径。其他自定义协议、其他钉钉主机或路径、含凭据、控制字符或编码换行的地址必须拒绝，不能交给系统打开器。
+25. 钉钉深链打开失败时必须在当前界面显示本地化错误；不得静默回退到 WebView `window.open`，也不得继续显示为已经可用的操作。
+26. Chat 消息与 Markdown 文件预览必须复用同一外部链接分类和桌面打开边界，不再各自维护不同的协议判断或失败回退。
+27. 浏览器开发环境只保留 HTTP、HTTPS、邮件和电话链接的普通浏览器路径；钉钉深链必须明确要求桌面运行时，不能伪造打开成功。
+28. 桌面端外链必须通过 Tauri 官方 Opener 的 `openUrl` 调用；不再使用 Shell 的已替代 `open` 路径。Opener capability 只允许 JunQi 已分类的协议和 DWS 已核验的两个钉钉深链前缀。
+29. 钉钉工作台直接执行工具时，若当前结构化 DWS 返回严格包含 `data.templates[].formName` 和安全的 `data.templates[].submitUrl`，必须与 Chat 使用同一受限打开逻辑呈现每一个提交入口；原始 JSON 继续可查看，不能以本地推断生成模板或链接。
+
+## 本轮验证记录
+
+- 已由 DWS 官方主线提交 `35c6fd95e1440e4be06f54c4cc973d9194ffd84c` 核对审批模板的完整字段契约；JunQi 只投影完整模板，重复或不完整模板不会生成提交入口。
+- Tauri Shell 的旧打开路径已删除，前端通过 `@tauri-apps/plugin-opener` 的 `openUrl` 调用，Rust 注册 Opener，capability 只保留 HTTP、HTTPS、邮件、电话和两个钉钉深链前缀。
+- 定向回归、TypeScript、完整前端测试、生产构建、Rust 格式化、Rust 检查、Rust 库测试、官方 OpenClaw 文档校验与 diff 检查均通过；真实钉钉客户端是否打开目标页面仍属于未验证边界。
 
 ## 未验证边界
 
 - macOS Keychain 中密钥仍可读取但沙箱进程不可读取时，官方迁移流程需要在可读取原登录态的终端环境执行；本次不由 JunQi 自动迁移。
 - Windows、Linux 和 Docker 的凭据库错误文本尚未实测，分类以结构化 `auth` 错误和明确语义为门禁。
 - DWS 最新公开 npm `1.0.59` 没有账号级全业务权限清单；未来若新增正式只读权限协议，必须重新审计后才能替换调用时核验语义。
+- 真实钉钉客户端是否接受 DWS 返回的每一种深链参数组合，仍需在重新打包后的 macOS 与 Windows 桌面应用分别验证。
+- Opener 只能证明系统已接收打开请求，不能证明钉钉客户端已加载目标页面；macOS、Windows 和 Linux 的协议注册与实际跳转仍需真机验证。

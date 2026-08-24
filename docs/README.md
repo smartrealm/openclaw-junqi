@@ -4,6 +4,13 @@
 
 ## 当前入口
 
+- [Gateway 管理员权限升级链路审计](quality/gateway-admin-scope-upgrade-audit-2026-08-24.md)：会话运行参数与其他管理员写入的官方设备 scope upgrade、令牌轮换、重连和原操作恢复闭环。
+- [Gateway 管理员权限升级规格](../specs/2026-08-24-gateway-admin-scope-upgrade.md)：结构化拒绝、身份围栏、安全凭据与业务重试验收条件。
+- [Gateway 管理员权限升级计划](../plans/2026-08-24-gateway-admin-scope-upgrade.md)：回归测试、统一协调器、恢复界面和验证顺序。
+- [宠物标题对比度与窗口几何审计](quality/pet-caption-contrast-audit-2026-08-24.md)：透明宠物窗口的主题底座、单行尺寸预算、操作短提示和真实桌面视觉验收边界。
+- [协作 schema 12/14 恢复与钉钉核验证据审计](quality/collaboration-schema-12-recovery-audit-2026-08-24.md)：已发布 schema 12 的升级缺口、schema 14 索引误判，以及钉钉运行页最小化核验证据展示。
+- [协作 schema 12/14 恢复规格](../specs/2026-08-24-collaboration-schema-12-recovery.md)：schema 12/14 事务迁移和钉钉技术详情的验收条件。
+- [协作 schema 12/14 恢复计划](../plans/2026-08-24-collaboration-schema-12-recovery.md)：结构门禁、回归测试、固定包重建和验证顺序。
 - [目标环境证据与副作用链路代码审查](quality/target-environment-evidence-code-audit-2026-08-24.md)：禁止代理本地环境取证后的静态审查范围、Node.js 精确契约写入缺口、DWS 已取消调用副作用和修复顺序。
 - [目标环境证据与副作用链路修复规格](../specs/2026-08-24-target-environment-evidence-bugfix.md)：Node.js 目标契约先行与 DWS 写操作中止待核验的验收条件。
 - [目标环境证据与副作用链路修复计划](../plans/2026-08-24-target-environment-evidence-bugfix.md)：P0、P1 修复顺序与验证边界。

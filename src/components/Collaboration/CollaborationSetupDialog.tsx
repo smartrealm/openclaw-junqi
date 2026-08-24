@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
 import {
   collaborationConfigurationMatches,
   type CollaborationAgentConfigurationDraft,
+  type CollaborationCapabilityFailure,
   type CollaborationSetupResult,
 } from '@/stores/collaborationSetupStore';
 import type { CollaborationCapabilities } from '@/types/collaboration';
@@ -61,6 +62,7 @@ interface CollaborationSetupPanelProps {
   probe: CollaborationBootstrapProbe | null;
   status: CollaborationBootstrapStatus | null;
   capabilities: CollaborationCapabilities | null;
+  capabilityFailure: CollaborationCapabilityFailure | null;
   agentConfiguration: CollaborationAgentConfigurationDraft;
   bundle: {
     pluginVersion: string;
@@ -116,7 +118,13 @@ function statusTone(ok: boolean): string {
   return ok ? 'text-aegis-success' : 'text-aegis-warning';
 }
 
-function DecisionMessage({ decision }: { decision: CollaborationSetupViewDecision }) {
+function DecisionMessage({
+  decision,
+  capabilityFailure,
+}: {
+  decision: CollaborationSetupViewDecision;
+  capabilityFailure: CollaborationCapabilityFailure | null;
+}) {
   const { t } = useTranslation();
   const content: Record<CollaborationSetupViewDecision['kind'], { title: string; body: string }> = {
     loading: {
@@ -138,6 +146,14 @@ function DecisionMessage({ decision }: { decision: CollaborationSetupViewDecisio
     health_pending: {
       title: t('collaboration.bootstrap.healthTitle', 'Gateway restart and health check pending'),
       body: t('collaboration.bootstrap.healthBody', 'The fixed package is applied. Restart this Gateway, reconnect, and JunQi will confirm the exact plugin capabilities automatically.'),
+    },
+    service_failed: {
+      title: capabilityFailure?.code === 'DATABASE_SCHEMA_UNSUPPORTED'
+        ? t('collaboration.bootstrap.schemaUnsupportedTitle', '协作数据版本不兼容')
+        : t('collaboration.bootstrap.serviceFailedTitle', '协作插件服务启动失败'),
+      body: capabilityFailure?.code === 'DATABASE_SCHEMA_UNSUPPORTED'
+        ? t('collaboration.bootstrap.schemaUnsupportedBody', '现有协作数据没有被修改。当前插件不能读取该数据版本，请回滚到准确的旧插件和配置。')
+        : t('collaboration.bootstrap.serviceFailedBody', 'Gateway 已恢复连接，但协作插件服务未能启动。请查看技术详情并回滚本次安装。'),
     },
     manual: {
       title: t('collaboration.bootstrap.manualTitle', 'External runtime stays read only'),
@@ -176,7 +192,7 @@ function DecisionMessage({ decision }: { decision: CollaborationSetupViewDecisio
   const loading = decision.kind === 'loading' || decision.kind === 'busy';
   const Icon = decision.kind === 'ready'
     ? CheckCircle2
-    : decision.kind === 'error' || decision.kind === 'unsupported'
+    : decision.kind === 'error' || decision.kind === 'unsupported' || decision.kind === 'service_failed'
       ? TriangleAlert
       : decision.kind === 'recovery'
         ? Wrench
@@ -185,7 +201,7 @@ function DecisionMessage({ decision }: { decision: CollaborationSetupViewDecisio
     'mt-0.5 shrink-0',
     decision.kind === 'ready'
       ? 'text-aegis-success'
-      : decision.kind === 'error'
+      : decision.kind === 'error' || decision.kind === 'service_failed'
         ? 'text-aegis-danger'
         : 'text-aegis-warning',
   );
@@ -195,7 +211,7 @@ function DecisionMessage({ decision }: { decision: CollaborationSetupViewDecisio
         'flex items-start gap-3 rounded-md border px-3 py-2.5',
         decision.kind === 'ready'
           ? 'border-aegis-success/25 bg-aegis-success/[0.055]'
-          : decision.kind === 'error' || decision.kind === 'unsupported'
+          : decision.kind === 'error' || decision.kind === 'unsupported' || decision.kind === 'service_failed'
             ? 'border-aegis-danger/25 bg-aegis-danger/[0.055]'
             : 'border-aegis-warning/25 bg-aegis-warning/[0.055]',
       )}
@@ -207,42 +223,51 @@ function DecisionMessage({ decision }: { decision: CollaborationSetupViewDecisio
       <div className="min-w-0">
         <h3 className="text-[12px] font-semibold text-aegis-text-secondary">{message.title}</h3>
         <p className="mt-0.5 max-w-[72ch] text-[10.5px] leading-4 text-aegis-text-muted">{message.body}</p>
-        {decision.blockedReason && (
-          <p className="mt-1 break-words text-[10px] leading-4 text-aegis-text-dim">{decision.blockedReason}</p>
-        )}
       </div>
     </div>
   );
 }
 
 function CollaborationGatewayProgress({
-  decision,
   mutation,
-}: Pick<CollaborationSetupPanelProps, 'decision' | 'mutation'>) {
+}: Pick<CollaborationSetupPanelProps, 'mutation'>) {
   const { t } = useTranslation();
   const gatewayProgress = useSetupProgress('gateway');
-  const active = mutation === 'apply' || mutation === 'restart' || decision.kind === 'health_pending';
+  const active = mutation === 'apply' || mutation === 'restart' || mutation === 'confirm_health';
   if (!active) return null;
-  const fallback = mutation === 'apply'
-    ? { progress: 0.28, message: t('collaboration.bootstrap.preparing', '正在准备协作能力…') }
-    : decision.kind === 'health_pending'
-      ? { progress: 0.82, message: t('collaboration.bootstrap.verifying', '正在验证 Gateway 是否已就绪…') }
-      : { progress: 0.58, message: t('gateway.progress.restart', '正在重启 OpenClaw Gateway…') };
-  // Applying the bundled archive has no Gateway event yet. Only consume live
-  // Gateway progress once the operation actually restarts or verifies it.
-  const liveProgress = mutation === 'restart' || decision.kind === 'health_pending'
+  const liveProgress = mutation === 'restart' && gatewayProgress?.status === 'running'
     ? gatewayProgress
     : null;
-  const progress = Math.round(Math.max(0, Math.min(1, liveProgress?.progress ?? fallback.progress)) * 100);
-  const message = liveProgress?.message ?? fallback.message;
+  const progress = liveProgress
+    ? Math.round(Math.max(0, Math.min(1, liveProgress.progress)) * 100)
+    : null;
+  const message = liveProgress?.message ?? (mutation === 'apply'
+    ? t('collaboration.bootstrap.preparing', '正在准备协作能力…')
+    : mutation === 'confirm_health'
+      ? t('collaboration.bootstrap.confirmingHealth', '正在核验协作插件能力…')
+      : t('gateway.progress.restart', '正在重启 OpenClaw Gateway…'));
   return (
     <section className="overflow-hidden rounded-md border border-aegis-primary/15 bg-[rgb(var(--aegis-overlay)/0.035)]" aria-label={t('collaboration.bootstrap.progress', '协作启用进度')}>
-      <div className="h-1.5 bg-aegis-surface" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
-        <div className="h-full bg-aegis-primary transition-[width] duration-300 ease-out" style={{ width: `${progress}%` }} />
+      <div
+        className="h-1.5 overflow-hidden bg-aegis-surface"
+        role="progressbar"
+        aria-valuemin={progress === null ? undefined : 0}
+        aria-valuemax={progress === null ? undefined : 100}
+        aria-valuenow={progress ?? undefined}
+      >
+        <div
+          className={cn(
+            'h-full bg-aegis-primary',
+            progress === null
+              ? 'w-full animate-pulse opacity-45 motion-reduce:animate-none'
+              : 'transition-[width] duration-300 ease-out',
+          )}
+          style={progress === null ? undefined : { width: `${progress}%` }}
+        />
       </div>
       <div className="flex items-start justify-between gap-3 px-3 py-2 text-[10px]">
         <span className="min-w-0 font-semibold leading-4 text-aegis-primary">{message}</span>
-        <span className="shrink-0 font-mono tabular-nums text-aegis-text-muted">{progress}%</span>
+        {progress !== null && <span className="shrink-0 font-mono tabular-nums text-aegis-text-muted">{progress}%</span>}
       </div>
     </section>
   );
@@ -275,6 +300,7 @@ export function CollaborationSetupPanel({
   probe,
   status,
   capabilities,
+  capabilityFailure,
   agentConfiguration,
   bundle,
   mutation,
@@ -330,8 +356,8 @@ export function CollaborationSetupPanel({
 
   return (
     <div className="min-h-0 space-y-3 overflow-y-auto px-5 pb-5">
-      <DecisionMessage decision={decision} />
-      <CollaborationGatewayProgress decision={decision} mutation={mutation} />
+      <DecisionMessage decision={decision} capabilityFailure={capabilityFailure} />
+      <CollaborationGatewayProgress mutation={mutation} />
 
       {targetVerified && (
         <button
@@ -387,6 +413,42 @@ export function CollaborationSetupPanel({
             </section>
           </div>
 
+          {capabilityFailure && (
+            <section className="rounded-md border border-aegis-danger/25 bg-aegis-danger/[0.04] px-3 py-2.5" aria-label={t('collaboration.bootstrap.failureDetails', '启动失败详情')}>
+              <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.failureDetails', '启动失败详情')}</h3>
+              <dl className="mt-2 grid grid-cols-[92px_minmax(0,1fr)] gap-x-2 gap-y-1 text-[10px] leading-4">
+                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.failureCode', '错误码')}</dt>
+                <dd className="break-all font-mono text-aegis-danger">{capabilityFailure.code}</dd>
+                {typeof capabilityFailure.details?.actualSchemaVersion === 'number' && (
+                  <>
+                    <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.actualSchema', '现有数据版本')}</dt>
+                    <dd className="font-mono text-aegis-text-muted">{capabilityFailure.details.actualSchemaVersion}</dd>
+                  </>
+                )}
+                {typeof capabilityFailure.details?.expectedSchemaVersion === 'number' && (
+                  <>
+                    <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.expectedSchema', '当前插件版本')}</dt>
+                    <dd className="font-mono text-aegis-text-muted">{capabilityFailure.details.expectedSchemaVersion}</dd>
+                  </>
+                )}
+                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.diagnostic', '诊断')}</dt>
+                <dd className="break-words font-mono text-aegis-text-muted">{capabilityFailure.message}</dd>
+              </dl>
+            </section>
+          )}
+
+          {lastResult && (
+            <section className="rounded-md border border-aegis-border px-3 py-2.5" aria-label={t('collaboration.bootstrap.operationDiagnostic', '操作诊断')}>
+              <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.operationDiagnostic', '操作诊断')}</h3>
+              <dl className="mt-2 grid grid-cols-[92px_minmax(0,1fr)] gap-x-2 gap-y-1 text-[10px] leading-4">
+                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.resultCode', '结果码')}</dt>
+                <dd className="break-all font-mono text-aegis-text-muted">{lastResult.code}</dd>
+                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.diagnostic', '诊断')}</dt>
+                <dd className="break-words font-mono text-aegis-text-muted">{lastResult.message}</dd>
+              </dl>
+            </section>
+          )}
+
           <section className="rounded-md border border-aegis-border px-3 py-2.5" aria-label={t('collaboration.bootstrap.fixedPackage', 'Fixed plugin package')}>
             <div className="flex items-center gap-2">
               <ShieldCheck size={15} className="text-aegis-primary" aria-hidden />
@@ -404,7 +466,7 @@ export function CollaborationSetupPanel({
         </>
       )}
 
-      {pluginReady && (
+      {pluginReady && decision.kind !== 'service_failed' && (
         <section
           className={cn(
             'rounded-md border px-3 py-2.5',
@@ -595,11 +657,22 @@ export function CollaborationSetupPanel({
         </section>
       )}
 
-      {decision.kind === 'health_pending' && (
-        <section className="rounded-md border border-aegis-primary/25 bg-aegis-primary/[0.045] px-3 py-2.5">
-          <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.restartRequired', 'Restart required')}</h3>
+      {(decision.kind === 'health_pending' || decision.kind === 'service_failed') && (
+        <section className={cn(
+          'rounded-md border px-3 py-2.5',
+          decision.kind === 'service_failed'
+            ? 'border-aegis-danger/25 bg-aegis-danger/[0.045]'
+            : 'border-aegis-primary/25 bg-aegis-primary/[0.045]',
+        )}>
+          <h3 className="text-[11px] font-semibold text-aegis-text-secondary">
+            {decision.kind === 'service_failed'
+              ? t('collaboration.bootstrap.rollbackRecommended', '建议恢复安装前状态')
+              : t('collaboration.bootstrap.restartRequired', '需要重启')}
+          </h3>
           <p className="mt-1 text-[10px] leading-4 text-aegis-text-muted">
-            {journal?.status === 'rolled_back'
+            {decision.kind === 'service_failed'
+              ? t('collaboration.bootstrap.rollbackPreservesData', '回滚只恢复本次事务记录的准确旧插件和配置，不会删除或迁移现有协作数据。')
+              : journal?.status === 'rolled_back'
               ? t('collaboration.bootstrap.rollbackRestart', 'Restart this verified target to activate the restored plugin and configuration state. No collaboration health confirmation is required after rollback.')
               : restartAvailable
               ? t('collaboration.bootstrap.restartAvailable', 'Restart this verified target. Health remains pending until a new Gateway connection advertises the exact durable capabilities.')
@@ -616,14 +689,14 @@ export function CollaborationSetupPanel({
               <span>{t('collaboration.bootstrap.healthRollbackConfirm', 'The applied plugin has not been confirmed healthy. Restore the exact previous plugin and configuration state.')}</span>
             </label>
           )}
-          {(restartAvailable || decision.canRecover) && (
+          {((decision.kind === 'health_pending' && restartAvailable) || decision.canRecover) && (
             <div className="mt-2 flex flex-wrap justify-end gap-2">
               {decision.canRecover && (
                 <button type="button" className={cn(buttonBase, 'border-aegis-danger/35 text-aegis-danger hover:bg-aegis-danger/[0.07]')} disabled={!rollbackConfirmed || Boolean(mutation)} onClick={() => onRecover('rollback')}>
                   <RotateCcw size={13} aria-hidden />{t('collaboration.bootstrap.rollback', 'Roll back')}
                 </button>
               )}
-              {restartAvailable && (
+              {decision.kind === 'health_pending' && restartAvailable && (
               <button type="button" className={cn(buttonBase, 'border-aegis-primary/35 bg-aegis-primary text-white hover:bg-aegis-primary/90')} disabled={Boolean(mutation)} onClick={onRestart}>
                 <RotateCcw size={13} aria-hidden />{t('collaboration.bootstrap.restartGateway', 'Restart Gateway')}
               </button>
@@ -645,7 +718,7 @@ export function CollaborationSetupPanel({
         </section>
       )}
 
-      {warnings.length > 0 && (
+      {technicalDetailsOpen && warnings.length > 0 && (
         <section className="rounded-md border border-aegis-warning/25 px-3 py-2.5" aria-label={t('collaboration.bootstrap.warnings', 'Warnings')}>
           <h3 className="flex items-center gap-1.5 text-[10.5px] font-semibold text-aegis-warning"><AlertTriangle size={13} aria-hidden />{t('collaboration.bootstrap.warnings', 'Warnings')}</h3>
           <ul className="mt-1.5 space-y-1 text-[10px] leading-4 text-aegis-text-muted">
@@ -656,12 +729,14 @@ export function CollaborationSetupPanel({
 
       {(error || (lastResult && !lastResult.ok)) && (
         <div role="alert" className="rounded-md border border-aegis-danger/25 bg-aegis-danger/[0.05] px-3 py-2 text-[10px] leading-4 text-aegis-danger">
-          {error || lastResult?.message}
+          {lastResult && !lastResult.ok
+            ? t('collaboration.bootstrap.operationFailed', '协作运行环境操作失败，请查看技术详情。')
+            : t('collaboration.bootstrap.operationFailed', '协作运行环境操作失败，请查看技术详情。')}
         </div>
       )}
-      {lastResult?.ok && (
+      {lastResult?.ok && decision.kind !== 'health_pending' && decision.kind !== 'service_failed' && (
         <div role="status" className="rounded-md border border-aegis-success/25 bg-aegis-success/[0.05] px-3 py-2 text-[10px] leading-4 text-aegis-success">
-          {lastResult.message}
+          {t('collaboration.bootstrap.operationCompleted', '协作运行环境操作已完成。')}
         </div>
       )}
 
@@ -694,7 +769,10 @@ export function CollaborationSetupDialog() {
   const decision = useMemo(() => deriveCollaborationSetupView(state), [state]);
 
   useEffect(() => {
-    if (decision.kind !== 'recovery' && !(decision.kind === 'health_pending' && decision.canRecover)) {
+    if (
+      decision.kind !== 'recovery'
+      && !((decision.kind === 'health_pending' || decision.kind === 'service_failed') && decision.canRecover)
+    ) {
       setRollbackConfirmed(false);
     }
     if (decision.kind !== 'recovery' || !decision.canAbandon) setOrphanAbandonConfirmed(false);
@@ -720,6 +798,7 @@ export function CollaborationSetupDialog() {
           probe={state.probe}
           status={state.status}
           capabilities={state.capabilities}
+          capabilityFailure={state.capabilityFailure}
           agentConfiguration={state.agentConfiguration}
           bundle={state.bundle}
           mutation={state.mutation}

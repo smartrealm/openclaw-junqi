@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { CheckCircle2, CircleAlert, Download, ExternalLink, RefreshCw, ShieldCheck, TerminalSquare } from 'lucide-react';
 import clsx from 'clsx';
 import { useOpenclawUpdate } from '@/hooks/useOpenclawUpdate';
+import { openDesktopExternalLink } from '@/runtime/desktopExternalLink';
 import { resolveOpenclawUpdateIndicator } from './openclawUpdateIndicator';
 import { Alert } from './alert';
 import { Button } from './button';
@@ -24,12 +25,7 @@ export interface OpenClawUpdateCheckResult {
 }
 
 async function openOfficialUpdateGuide(): Promise<void> {
-  try {
-    const { open } = await import('@tauri-apps/plugin-shell');
-    await open(OFFICIAL_UPDATE_GUIDE);
-  } catch {
-    window.open(OFFICIAL_UPDATE_GUIDE, '_blank', 'noopener,noreferrer');
-  }
+  await openDesktopExternalLink(OFFICIAL_UPDATE_GUIDE);
 }
 
 export function OpenClawUpdatePanel({

@@ -57,3 +57,17 @@ test("markdown headings keep Unicode anchors and disambiguate duplicates", () =>
   assert.match(html, /href="#%E8%AE%BE%E7%BD%AE"/);
   assert.doesNotMatch(html, /node="/);
 });
+
+test("markdown preview preserves verified DingTalk links and strips unknown schemes", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownPreview
+      content={[
+        "[请假申请](dingtalk://dingtalkclient/action/openapp?app_id=-4)",
+        "[危险链接](javascript:alert(1))",
+      ].join("\n\n")}
+    />,
+  );
+
+  assert.match(html, /href="dingtalk:\/\/dingtalkclient\/action\/openapp\?/);
+  assert.doesNotMatch(html, /javascript:/);
+});

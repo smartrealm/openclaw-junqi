@@ -1,4 +1,5 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useTranslation } from 'react-i18next';
 import type { DingTalkRuntimeProfileProjection } from '@/business-applications/dingtalkTools';
 
 function profileDisplayName(profile: DingTalkRuntimeProfileProjection): string {
@@ -11,7 +12,7 @@ export function DingTalkProfileSelect({
   profiles,
   disabled = false,
   triggerId = 'dingtalk-profile',
-  ariaLabel = '执行身份（DWS Profile）',
+  ariaLabel,
   onValueChange,
 }: {
   value: string;
@@ -21,6 +22,8 @@ export function DingTalkProfileSelect({
   ariaLabel?: string;
   onValueChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
+  const accessibleLabel = ariaLabel ?? t('businessApplications.workbench.detail.profileLabel');
   return (
     <Select
       value={value || undefined}
@@ -29,10 +32,10 @@ export function DingTalkProfileSelect({
     >
       <SelectTrigger
         id={triggerId}
-        aria-label={ariaLabel}
+        aria-label={accessibleLabel}
         className="mt-1 h-9 w-full rounded-lg border-aegis-border bg-aegis-bg px-2.5 text-[10.5px] text-aegis-text shadow-none focus:ring-2 focus:ring-aegis-primary/25 focus:ring-offset-0"
       >
-        <SelectValue placeholder="DWS 未返回已登录账号" />
+        <SelectValue placeholder={t('businessApplications.workbench.profile.noSignedInAccount')} />
       </SelectTrigger>
       <SelectContent
         align="start"
@@ -41,7 +44,9 @@ export function DingTalkProfileSelect({
       >
         {profiles.map((profile) => {
           const displayName = profileDisplayName(profile);
-          const optionText = profile.isCurrent ? `${displayName}（当前）` : displayName;
+          const optionText = profile.isCurrent
+            ? t('businessApplications.workbench.profile.currentOption', { profile: displayName })
+            : displayName;
           return (
             <SelectItem
               key={profile.profile}
@@ -52,7 +57,7 @@ export function DingTalkProfileSelect({
               <span className="flex min-w-0 items-center gap-2">
                 <span className="truncate">{displayName}</span>
                 {profile.isCurrent && (
-                  <span className="shrink-0 rounded border border-aegis-primary/20 bg-aegis-primary/10 px-1.5 py-0.5 text-[9px] text-aegis-primary">当前</span>
+                  <span className="shrink-0 rounded border border-aegis-primary/20 bg-aegis-primary/10 px-1.5 py-0.5 text-[9px] text-aegis-primary">{t('businessApplications.workbench.profile.current')}</span>
                 )}
               </span>
             </SelectItem>

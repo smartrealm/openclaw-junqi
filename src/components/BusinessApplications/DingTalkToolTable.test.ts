@@ -40,12 +40,13 @@ test('工具表格集中说明账号权限边界且不把每行渲染成授权�
     tools: [tool('junqi_dingtalk_approval_pending', 'approval')],
     selectedId: null,
     loading: false,
+    emptyTitle: '',
     emptyMessage: '',
     onSelect: () => {},
   }));
 
-  assert.match(html, /插件操作目录/);
-  assert.match(html, /账号业务权限由每次实际调用的钉钉结果确认/);
+  assert.match(html, /This catalog contains plugin operations OpenClaw exposed to this Session/);
+  assert.match(html, /DingTalk business permissions are confirmed by each actual invocation result/);
   assert.doesNotMatch(html, /账号权限<\/th>/);
   assert.doesNotMatch(html, /Session<\/th>/);
   assert.doesNotMatch(html, /已暴露/);
@@ -58,11 +59,12 @@ test('只有被 OpenClaw 拒绝的操作才在对应行显示 Session 状态', (
     tools: [{ ...denied, entry: { ...denied.entry, deniedBySession: true } }],
     selectedId: null,
     loading: false,
+    emptyTitle: '',
     emptyMessage: '',
     onSelect: () => {},
   }));
 
-  assert.match(html, /Session 已拒绝/);
+  assert.match(html, /Denied by policy/);
 });
 
 test('Profile 探针加载期间不显示账号无操作的终态空文案', () => {
@@ -70,12 +72,28 @@ test('Profile 探针加载期间不显示账号无操作的终态空文案', () 
     tools: [],
     selectedId: null,
     loading: true,
+    emptyTitle: '需要 DWS Profile',
     emptyMessage: '请先登录或选择状态为 active 的 DWS Profile。',
     onSelect: () => {},
   }));
 
-  assert.match(html, /正在读取插件操作目录/);
-  assert.match(html, /等待 OpenClaw 与当前 DWS Profile 的核验结果/);
+  assert.match(html, /Reading plugin operations/);
+  assert.match(html, /Waiting for OpenClaw and the current DWS Profile verification/);
   assert.doesNotMatch(html, /当前账号没有可展示的操作/);
   assert.doesNotMatch(html, /请先登录或选择状态为 active 的 DWS Profile/);
+});
+
+test('目录空状态使用调用方按真实可用性提供的标题', () => {
+  const html = renderToStaticMarkup(createElement(DingTalkToolTable, {
+    tools: [],
+    selectedId: null,
+    loading: false,
+    emptyTitle: '需要 OpenClaw Session',
+    emptyMessage: '请先创建或选择一个 OpenClaw Session。',
+    onSelect: () => {},
+  }));
+
+  assert.match(html, /需要 OpenClaw Session/);
+  assert.match(html, /请先创建或选择一个 OpenClaw Session/);
+  assert.doesNotMatch(html, /当前账号没有可展示的操作/);
 });

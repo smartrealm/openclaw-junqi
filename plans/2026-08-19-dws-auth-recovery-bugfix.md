@@ -14,6 +14,7 @@
 10. 业务审计 Hook 吞掉具体错误并统一设置为 `unavailable`，用户无法判断怎样恢复，也无法区分无记录与账本不可读。
 11. `tools.effective` 与 DWS Profile 由业务页挂载后的两个 effect 才开始读取；即使空态语义正确，用户进入页面后仍要等待完整探测。
 12. 工具表格逐行重复“账号权限：调用时核验”和“Session：已暴露”，把插件目录渲染得像已授权权限表，同时造成不必要的横向宽度。
+13. Chat Markdown 使用 `react-markdown` 默认 URL 转换，DWS 返回的 `dingtalk://` 在渲染阶段被清空；即使保留地址，Tauri Shell 默认打开范围也不允许钉钉协议。既有失败又被静默回退到 WebView `window.open`，用户只看到无响应。
 
 ## 实施顺序
 
@@ -34,6 +35,11 @@
 15. 快照按 `connectionId + sessionKey + toolsRevision` 建立请求围栏和单飞复用；切换上下文、断线或工具修订变化时丢弃迟到结果。
 16. 业务页删除首屏工具与身份探测 effect，只消费共享快照；手动刷新复用同一协调器并强制刷新工具投影。
 17. 收敛工具表格为操作、业务域、效果和风险四个信息维度；账号权限边界集中说明，Session 明确拒绝只在对应操作行展示。
+18. 增加共享桌面外部链接运行时，先按协议、主机、路径和危险字符完成分类，再调用 Tauri Shell；钉钉只允许 DWS 已证明的 `action/openapp` 与 `page/link`。
+19. 先增加深链渲染、协议拒绝、桌面调用和浏览器失败关闭回归测试，再替换 Chat 与 Markdown 文件预览中的重复打开逻辑。
+20. 将 Tauri Shell 的 `open` 校验收紧为官方默认范围加两个钉钉路径，并为真实打开失败补充三种语言的就近提示。
+21. 迁移共享外链运行时至 Tauri Opener，保留前端协议分类，并在 capability 中用最小 URL scope 覆盖 HTTP、HTTPS、邮件、电话和两个钉钉深链前缀。
+22. 为 DWS 直接工具结果增加严格的审批模板提交入口投影，只消费 `data.templates[].formName` 与 `data.templates[].submitUrl`，复用共享外链打开器并保留原始 JSON 诊断。
 
 ## 验证顺序
 
@@ -43,3 +49,11 @@
 4. macOS Apple Silicon 未签名应用与 DMG 构建、DMG 完整性校验。
 5. 亮色、暗色、窄窗口、键盘焦点和真实 Keychain 恢复流程若未人工执行，必须明确标记为未验证。
 6. 连接预热需覆盖同修订单飞、工具修订变化、连接与 Session 切换、迟到结果丢弃和失效上下文拒绝发布。
+7. 外部链接验证需覆盖钉钉两个路径、HTTP 与 HTTPS、危险协议、伪造钉钉主机或路径、控制字符、浏览器环境和 Tauri 调用失败。
+8. Opener 迁移需同时验证 JavaScript 调用名、Rust 插件注册、capability scope、前端协议拒绝和 DWS 模板结果的安全投影；真机只验证系统处理器是否被调用，不能把它当作钉钉页面加载成功。
+
+## 当前进度
+
+- 第 21 项已完成：旧 Shell 打开调用、Rust 插件注册与 capability 已由 Opener 取代，三个原有普通外链入口也复用同一受限运行时。
+- 第 22 项已完成：工具详情仅从完整 DWS 审批模板显示提交入口，点击使用同一 `openDesktopExternalLink` 边界，原始结果继续保留。
+- 自动化已完成；真实 Tauri 与钉钉客户端的系统协议处理仍待人工验收。

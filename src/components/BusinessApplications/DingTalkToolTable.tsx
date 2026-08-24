@@ -1,24 +1,11 @@
 import clsx from 'clsx';
 import { ChevronRight, Wrench } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { dingTalkDomainLabel, type DingTalkDomain, type DingTalkEffectiveTool } from '@/business-applications/dingtalkTools';
-
-function effectLabel(effect: DingTalkEffectiveTool['effect']): string {
-  if (effect === 'read') return '读取';
-  if (effect === 'write') return '写入';
-  return '未验证';
-}
-
-function riskLabel(risk: DingTalkEffectiveTool['entry']['risk']): string {
-  if (risk === 'low') return '低';
-  if (risk === 'medium') return '中';
-  if (risk === 'high') return '高';
-  return '未验证';
-}
+import { type DingTalkDomain, type DingTalkEffectiveTool } from '@/business-applications/dingtalkTools';
 
 export interface DingTalkToolTableGroup {
   readonly domain: DingTalkDomain;
-  readonly label: string;
   readonly tools: readonly DingTalkEffectiveTool[];
 }
 
@@ -31,7 +18,6 @@ export function groupDingTalkToolsForTable(tools: readonly DingTalkEffectiveTool
   }
   return [...groups.entries()].map(([domain, groupedTools]) => ({
     domain,
-    label: dingTalkDomainLabel(domain),
     tools: groupedTools,
   }));
 }
@@ -40,49 +26,63 @@ export function DingTalkToolTable({
   tools,
   selectedId,
   loading,
+  emptyTitle,
   emptyMessage,
   onSelect,
 }: {
   tools: readonly DingTalkEffectiveTool[];
   selectedId: string | null;
   loading: boolean;
+  emptyTitle: string;
   emptyMessage: string;
   onSelect: (tool: DingTalkEffectiveTool) => void;
 }) {
+  const { t } = useTranslation();
   if (tools.length === 0) {
     return (
       <EmptyState
         density="compact"
         iconStyle="bare"
         icon={<Wrench size={24} />}
-        title={loading ? '正在读取插件操作目录' : '当前账号没有可展示的操作'}
-        description={loading ? '等待 OpenClaw 与当前 DWS Profile 的核验结果。' : emptyMessage}
+        title={loading ? t('businessApplications.workbench.catalog.loadingTitle') : emptyTitle}
+        description={loading ? t('businessApplications.workbench.catalog.loadingDescription') : emptyMessage}
       />
     );
   }
   const groups = groupDingTalkToolsForTable(tools);
+  const domainLabel = (domain: DingTalkDomain) => t(`businessApplications.workbench.domain.${domain}`);
+  const effectLabel = (effect: DingTalkEffectiveTool['effect']) => (
+    effect === 'read'
+      ? t('businessApplications.workbench.effect.read')
+      : effect === 'write'
+        ? t('businessApplications.workbench.effect.write')
+        : t('businessApplications.workbench.unverified')
+  );
+  const riskLabel = (risk: DingTalkEffectiveTool['entry']['risk']) => (
+    risk ? t(`businessApplications.workbench.risk.${risk}`) : t('businessApplications.workbench.unverified')
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="shrink-0 border-b border-aegis-border bg-aegis-surface/45 px-3 py-2 text-[9.5px] leading-4 text-aegis-text-dim">
-        当前列表是 OpenClaw 向此 Session 暴露、并与已登录 DWS Profile 绑定的插件操作目录。账号业务权限由每次实际调用的钉钉结果确认。
+        {t('businessApplications.workbench.table.catalogBoundary')}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full min-w-[560px] border-collapse text-left">
           <thead className="sticky top-0 z-10 bg-aegis-surface">
             <tr className="h-8 border-b border-aegis-border text-[10.5px] font-medium text-aegis-text-dim">
-              <th className="w-[46%] px-3 font-medium">操作</th>
-              <th className="px-3 font-medium">业务域</th>
-              <th className="px-3 font-medium">效果</th>
-              <th className="px-3 font-medium">风险</th>
-              <th className="w-8" aria-label="打开详情" />
+              <th className="w-[46%] px-3 font-medium">{t('businessApplications.workbench.table.operation')}</th>
+              <th className="px-3 font-medium">{t('businessApplications.workbench.table.domain')}</th>
+              <th className="px-3 font-medium">{t('businessApplications.workbench.effectLabel')}</th>
+              <th className="px-3 font-medium">{t('businessApplications.workbench.riskLabel')}</th>
+              <th className="w-8" aria-label={t('businessApplications.workbench.table.openDetail')} />
             </tr>
           </thead>
           {groups.map((group) => (
-            <tbody key={group.domain} aria-label={`${group.label}工具`}>
+            <tbody key={group.domain} aria-label={t('businessApplications.workbench.table.groupAriaLabel', { label: domainLabel(group.domain) })}>
               <tr className="h-7 border-b border-aegis-border bg-aegis-surface/65">
                 <th colSpan={5} scope="rowgroup" className="px-3 text-[9.5px] font-semibold tracking-[0.08em] text-aegis-text-dim">
-                  {group.label}<span className="ml-2 font-normal tabular-nums">{group.tools.length}</span>
+                  {domainLabel(group.domain)}<span className="ml-2 font-normal tabular-nums">{group.tools.length}</span>
                 </th>
               </tr>
               {group.tools.map((tool) => {
@@ -111,12 +111,12 @@ export function DingTalkToolTable({
                         </button>
                         {tool.entry.deniedBySession && (
                           <span className="shrink-0 rounded border border-aegis-danger/25 bg-aegis-danger/10 px-1.5 py-0.5 text-[9px] text-aegis-danger">
-                            Session 已拒绝
+                            {t('businessApplications.workbench.sessionDenied')}
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-3 text-aegis-text-dim">{dingTalkDomainLabel(tool.domain)}</td>
+                    <td className="px-3 text-aegis-text-dim">{domainLabel(tool.domain)}</td>
                     <td className={clsx('px-3 font-medium', tool.effect === 'write' ? 'text-aegis-warning' : 'text-aegis-text-dim')}>
                       {effectLabel(tool.effect)}
                     </td>

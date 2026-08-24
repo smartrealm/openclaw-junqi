@@ -48,7 +48,7 @@ test('main and quick chat reuse the shared message preview panel', () => {
   assert.match(panelSource, /<ChatSidePanel/);
   assert.match(panelSource, /<ChatMarkdownRenderer/);
   assert.doesNotMatch(panelSource, /ReactMarkdown/);
-  assert.match(markdownRendererSource, /@tauri-apps\/plugin-shell/);
+  assert.match(markdownRendererSource, /openDesktopExternalLink/);
   assert.match(markdownRendererSource, /urlTransform=\{desktopUrlTransform\}/);
   assert.match(markdownRendererSource, /ChatVideo/);
   assert.match(markdownRendererSource, /CodeBlock/);

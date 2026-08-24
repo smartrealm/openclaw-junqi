@@ -28,7 +28,7 @@ import {
   DINGTALK_RUNTIME_STATUS_TOOL,
   DINGTALK_TOOL_SCHEMA_TOOL,
   collectDingTalkTools,
-  dingTalkDomainLabel,
+  DingTalkToolContractError,
   hasAvailableDingTalkRuntimeTool,
   isDingTalkProfileAuthenticated,
   parseDingTalkBusinessEvidence,
@@ -55,8 +55,17 @@ import {
   cacheDwsOperationFinished,
   cacheDwsOperationOutput,
   formatDwsOperationOutput,
+  releaseDwsOperationCache,
+  rememberFinalizedDwsOperation,
   type DwsOperationEventCache,
 } from '@/business-applications/dwsOperationEventCache';
+import {
+  claimDwsOperationStart,
+  isDwsOperationActive,
+  releaseDwsOperationStart,
+} from '@/business-applications/dwsOperationLifecycle';
+import { selectCurrentDingTalkRuntimeIdentitySnapshot } from '@/business-applications/dingtalkRuntimeIdentityCoordinator';
+import { DingTalkToolSchemaRequestCoordinator } from '@/business-applications/dingtalkToolRequestCoordinator';
 import { useBusinessActivityStore } from '@/business-applications/activityStore';
 import { parseBusinessApplicationsView } from '@/business-applications/businessApplicationsView';
 import {
@@ -88,7 +97,6 @@ import {
 import { gateway } from '@/services/gateway';
 import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
-import { useDingTalkApprovalTrace } from './businessApplications/useDingTalkApprovalTrace';
 
 type DomainFilter = 'all' | DingTalkDomain;
 type EffectFilter = 'all' | 'read' | 'write';
@@ -103,10 +111,6 @@ const DOMAIN_FILTERS: readonly DomainFilter[] = [
   'runtime',
 ];
 
-function domainFilterLabel(domain: DomainFilter): string {
-  return domain === 'all' ? '全部' : dingTalkDomainLabel(domain);
-}
-
 function errorCode(error: unknown): string {
   if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
     return error.code;
@@ -118,11 +122,13 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function createAttemptId(): string {
-  if (typeof globalThis.crypto?.randomUUID !== 'function') {
-    throw new Error('当前环境无法生成业务操作幂等标识');
+function createAttemptId(): string | null {
+  if (typeof globalThis.crypto?.randomUUID !== 'function') return null;
+  try {
+    return globalThis.crypto.randomUUID();
+  } catch {
+    return null;
   }
-  return globalThis.crypto.randomUUID();
 }
 
 function useRuntimeIdentitySnapshot() {
@@ -164,26 +170,33 @@ function FilterPane({
   onEffectChange: (value: EffectFilter) => void;
   onReset: () => void;
 }) {
+  const { t } = useTranslation();
+  const domainFilterLabel = (value: DomainFilter) => t(`businessApplications.workbench.domain.${value}`);
+  const effectFilterLabel = (value: EffectFilter) => (
+    value === 'all'
+      ? t('businessApplications.workbench.domain.all')
+      : t(`businessApplications.workbench.effect.${value}`)
+  );
   if (collapsed) {
     return (
       <aside className="flex min-h-0 flex-col items-center border-r border-aegis-border bg-aegis-surface/55 py-2">
-        <IconButton aria-label="展开筛选" title="展开筛选" onClick={() => onCollapsedChange(false)}>
+        <IconButton aria-label={t('businessApplications.workbench.filter.expand')} title={t('businessApplications.workbench.filter.expand')} onClick={() => onCollapsedChange(false)}>
           <Filter size={14} />
         </IconButton>
         <span className="mt-2 font-mono text-[9px] tabular-nums text-aegis-text-dim">{filteredCount}</span>
-        <span className="mt-3 text-[10px] tracking-[0.18em] text-aegis-text-dim" style={{ writingMode: 'vertical-rl' }}>筛选</span>
+        <span className="mt-3 text-[10px] tracking-[0.18em] text-aegis-text-dim" style={{ writingMode: 'vertical-rl' }}>{t('businessApplications.workbench.filter.title')}</span>
       </aside>
     );
   }
   const filtersActive = search.trim() !== '' || domain !== 'all' || effect !== 'all';
   return (
     <aside className="relative min-h-0 overflow-y-auto border-r border-aegis-border bg-aegis-surface/55 p-3">
-      <PaneResizeHandle side="left" value={width} min={208} max={340} label="调整筛选栏宽度" onChange={onWidthChange} />
+      <PaneResizeHandle side="left" value={width} min={208} max={340} label={t('businessApplications.workbench.filter.resize')} onChange={onWidthChange} />
       <div className="flex h-7 items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-aegis-text-secondary"><SlidersHorizontal size={13} />工具范围</span>
-        <IconButton aria-label="收起筛选" title="收起筛选" onClick={() => onCollapsedChange(true)}><PanelLeftClose size={14} /></IconButton>
+        <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-aegis-text-secondary"><SlidersHorizontal size={13} />{t('businessApplications.workbench.filter.title')}</span>
+        <IconButton aria-label={t('businessApplications.workbench.filter.collapse')} title={t('businessApplications.workbench.filter.collapse')} onClick={() => onCollapsedChange(true)}><PanelLeftClose size={14} /></IconButton>
       </div>
-      <label className="mt-3 block text-[10px] font-medium text-aegis-text-dim" htmlFor="dingtalk-tool-search">搜索工具</label>
+      <label className="mt-3 block text-[10px] font-medium text-aegis-text-dim" htmlFor="dingtalk-tool-search">{t('businessApplications.workbench.filter.searchLabel')}</label>
       <div className="relative mt-1">
         <Search size={12} className="pointer-events-none absolute left-2 top-2 text-aegis-text-dim" />
         <input
@@ -191,12 +204,12 @@ function FilterPane({
           type="search"
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="名称或描述"
+          placeholder={t('businessApplications.workbench.filter.searchPlaceholder')}
           className="h-7 w-full rounded-md border border-aegis-border bg-aegis-bg pl-7 pr-2 text-[10.5px] text-aegis-text outline-none placeholder:text-aegis-text-dim focus:border-aegis-primary/60 focus:ring-1 focus:ring-aegis-primary/25"
         />
       </div>
       <fieldset className="mt-4">
-        <legend className="text-[10px] font-medium text-aegis-text-dim">业务域</legend>
+        <legend className="text-[10px] font-medium text-aegis-text-dim">{t('businessApplications.workbench.filter.domain')}</legend>
         <div className="mt-1 grid grid-cols-2 gap-1">
           {DOMAIN_FILTERS.map((item) => (
             <button
@@ -218,7 +231,7 @@ function FilterPane({
         </div>
       </fieldset>
       <fieldset className="mt-4">
-        <legend className="text-[10px] font-medium text-aegis-text-dim">操作效果</legend>
+        <legend className="text-[10px] font-medium text-aegis-text-dim">{t('businessApplications.workbench.filter.effect')}</legend>
         <div className="mt-1 grid grid-cols-3 gap-1 rounded-md border border-aegis-border bg-aegis-bg/55 p-0.5">
           {(['all', 'read', 'write'] as const).map((item) => (
             <button
@@ -231,7 +244,7 @@ function FilterPane({
                 effect === item ? 'bg-aegis-surface text-aegis-text shadow-sm' : 'text-aegis-text-dim hover:bg-aegis-hover/45',
               )}
             >
-              <span>{item === 'all' ? '全部' : item === 'read' ? '读取' : '写入'}</span>
+              <span>{effectFilterLabel(item)}</span>
               <span className="font-mono tabular-nums opacity-70">{effectCounts[item]}</span>
             </button>
           ))}
@@ -239,17 +252,17 @@ function FilterPane({
       </fieldset>
       <div className="mt-4 border-t border-aegis-border pt-3">
         <div className="flex items-center justify-between gap-2 text-[9.5px] text-aegis-text-dim">
-          <span>当前结果</span>
+          <span>{t('businessApplications.workbench.filter.currentResults')}</span>
           <span className="font-mono tabular-nums">{filteredCount} / {domainCounts.all}</span>
         </div>
-        <p className="mt-1 text-[9.5px] leading-4 text-aegis-text-dim">仅筛选已绑定当前登录 DWS Profile 的插件操作目录；账号业务权限仍由实际调用核验。</p>
+        <p className="mt-1 text-[9.5px] leading-4 text-aegis-text-dim">{t('businessApplications.workbench.filter.boundCatalogBoundary')}</p>
         {filtersActive && (
           <button
             type="button"
             onClick={onReset}
             className="mt-2 text-[10px] text-aegis-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
           >
-            清除筛选
+            {t('businessApplications.workbench.filter.clear')}
           </button>
         )}
       </div>
@@ -258,13 +271,20 @@ function FilterPane({
 }
 
 export function BusinessApplicationsPage() {
+  const activeSessionKey = useChatStore((state) => state.activeSessionKey);
+  return <BusinessApplicationsWorkspace key={activeSessionKey} activeSessionKey={activeSessionKey} />;
+}
+
+function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey: string }) {
   const { t } = useTranslation();
   const location = useLocation();
   const identity = useRuntimeIdentitySnapshot();
-  const activeSessionKey = useChatStore((state) => state.activeSessionKey);
   const sessions = useGatewayDataStore((state) => state.sessions);
   const agents = useGatewayDataStore((state) => state.agents);
   const effective = useGatewayDataStore((state) => state.toolsEffective[activeSessionKey]);
+  const effectiveToolsRevision = useGatewayDataStore((state) => (
+    state.toolsEffectiveUpdatedAt[activeSessionKey] ?? 0
+  ));
   const toolsLoading = useGatewayDataStore((state) => (
     state.toolsEffectiveLoading && state.toolsEffectiveLoadingSessionKey === activeSessionKey
   ));
@@ -318,18 +338,28 @@ export function BusinessApplicationsPage() {
   const [dwsAuthorizationFailure, setDwsAuthorizationFailure] = useState<DwsAuthorizationFailureDiagnosis | null>(null);
   const dwsEventCache = useRef<DwsOperationEventCache>({ output: {}, events: {}, finished: {} });
   const dwsFinalizedOperationIds = useRef(new Set<string>());
+  const dwsStartGuard = useRef(false);
+  const schemaRequests = useRef(new DingTalkToolSchemaRequestCoordinator());
+  const previousExecutionProfile = useRef<string | null>(null);
   const [dwsCompletionRevision, setDwsCompletionRevision] = useState(0);
   const dingtalkRefreshInFlight = useRef(false);
   const runtimeIdentitySnapshot = useDingTalkRuntimeIdentitySnapshot();
 
-  const currentRuntimeIdentitySnapshot = runtimeIdentityContextKey
+  const matchingRuntimeIdentitySnapshot = runtimeIdentityContextKey
     && runtimeIdentitySnapshot?.contextKey === runtimeIdentityContextKey
+    && runtimeIdentitySnapshot.toolsRevision === effectiveToolsRevision
     ? runtimeIdentitySnapshot
     : null;
+  const currentRuntimeIdentitySnapshot = selectCurrentDingTalkRuntimeIdentitySnapshot(
+    runtimeIdentitySnapshot,
+    runtimeIdentityContextKey,
+    effectiveToolsRevision,
+  );
   const runtimeIdentity = currentRuntimeIdentitySnapshot?.runtime ?? null;
   const runtimeIdentityError = currentRuntimeIdentitySnapshot?.error ?? null;
-  const runtimeIdentitySettled = currentRuntimeIdentitySnapshot?.phase === 'settled';
-  const runtimeIdentityLoading = currentRuntimeIdentitySnapshot?.phase === 'loading';
+  const agentRuntimeVerified = runtimeIdentity !== null && runtimeIdentityError === null;
+  const runtimeIdentitySettled = matchingRuntimeIdentitySnapshot?.phase === 'settled';
+  const runtimeIdentityLoading = matchingRuntimeIdentitySnapshot?.phase === 'loading';
 
   const beginAttempt = useBusinessActivityStore((state) => state.begin);
   const settleAttempt = useBusinessActivityStore((state) => state.settle);
@@ -352,19 +382,12 @@ export function BusinessApplicationsPage() {
   });
   const catalogLoading = catalogAvailability === 'loading-tools'
     || catalogAvailability === 'loading-identity';
+  const dwsOperationActive = isDwsOperationActive(dwsOperation?.phase);
   const authenticatedCatalogTools = useMemo(
     () => profileAuthenticated ? allTools : [],
     [allTools, profileAuthenticated],
   );
   const selectedTool = authenticatedCatalogTools.find((tool) => tool.entry.id === selectedId) ?? null;
-  const approvalTrace = useDingTalkApprovalTrace({
-    activeSessionKey,
-    profile: executionProfile,
-    selectedToolId: selectedTool?.entry.id ?? null,
-    selectedDomain: selectedTool?.domain ?? null,
-    invocationOutput,
-    tools: authenticatedCatalogTools,
-  });
   const filteredTools = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return authenticatedCatalogTools.filter((tool) => {
@@ -452,7 +475,7 @@ export function BusinessApplicationsPage() {
       || runtimeIdentityLoading
       || pluginStatusLoading
       || pluginOperation !== null
-      || dwsOperation?.phase === 'running'
+      || dwsOperationActive
     ) return;
     dingtalkRefreshInFlight.current = true;
     setDingTalkRefreshPending(true);
@@ -463,7 +486,7 @@ export function BusinessApplicationsPage() {
         dingtalkRefreshInFlight.current = false;
         setDingTalkRefreshPending(false);
       });
-  }, [dwsOperation?.phase, pluginOperation, pluginStatusLoading, refreshDingTalkState, runtimeIdentityLoading, sessionExists, toolsLoading]);
+  }, [dwsOperationActive, pluginOperation, pluginStatusLoading, refreshDingTalkState, runtimeIdentityLoading, sessionExists, toolsLoading]);
 
   const restartAndRefreshDingTalkGateway = useCallback(async () => {
     const result = await gatewayLifecycle.restart('business-applications-dingtalk');
@@ -546,6 +569,7 @@ export function BusinessApplicationsPage() {
   useEffect(() => {
     const outputUnlisten = subscribeTauriEvent<DwsOperationOutput>('dws-operation-output', (event) => {
       const payload = event.payload;
+      if (dwsFinalizedOperationIds.current.has(payload.operationId)) return;
       const line = formatDwsOperationOutput(
         payload,
         t('businessApplications.dws.diagnosticPrefix'),
@@ -559,6 +583,7 @@ export function BusinessApplicationsPage() {
     });
     const finishedUnlisten = subscribeTauriEvent<DwsOperationFinished>('dws-operation-finished', (event) => {
       const payload = event.payload;
+      if (dwsFinalizedOperationIds.current.has(payload.operationId)) return;
       cacheDwsOperationFinished(dwsEventCache.current, payload);
       if (!payload.success && payload.message) {
         const cached = cacheDwsOperationOutput(dwsEventCache.current, {
@@ -581,11 +606,13 @@ export function BusinessApplicationsPage() {
   }, [finalizeDwsOperation, t]);
 
   useEffect(() => {
-    if (!dwsOperation) return;
+    if (!dwsOperation?.id) return;
     const finished = dwsEventCache.current.finished[dwsOperation.id];
     if (!finished || dwsFinalizedOperationIds.current.has(finished.operationId)) return;
-    dwsFinalizedOperationIds.current.add(finished.operationId);
-    void finalizeDwsOperation(finished);
+    rememberFinalizedDwsOperation(dwsFinalizedOperationIds.current, finished.operationId);
+    void finalizeDwsOperation(finished)
+      .catch((error) => setPluginError(errorMessage(error)))
+      .finally(() => releaseDwsOperationCache(dwsEventCache.current, finished.operationId));
   }, [dwsCompletionRevision, dwsOperation, finalizeDwsOperation]);
 
   useEffect(() => {
@@ -605,15 +632,20 @@ export function BusinessApplicationsPage() {
 
   const loadSchema = useCallback(async (tool: DingTalkEffectiveTool | null = selectedTool) => {
     if (!tool || tool.entry.id === DINGTALK_RUNTIME_STATUS_TOOL) {
+      schemaRequests.current.invalidate();
       setSchema(null);
       setSchemaError(null);
+      setSchemaLoading(false);
       return;
     }
     if (!sessionExists || !schemaToolAvailable) {
+      schemaRequests.current.invalidate();
       setSchema(null);
-      setSchemaError('当前 Session 未报告钉钉参数 schema 工具。');
+      setSchemaError(t('businessApplications.workbench.validation.schemaToolUnavailable'));
+      setSchemaLoading(false);
       return;
     }
+    const request = schemaRequests.current.begin(activeSessionKey, tool.entry.id);
     setSchemaLoading(true);
     setSchemaError(null);
     try {
@@ -622,36 +654,54 @@ export function BusinessApplicationsPage() {
         sessionKey: activeSessionKey,
         args: { toolName: tool.entry.id },
       });
-      if (!result.ok) throw new Error(result.error?.message ?? '参数 schema 读取失败');
-      setSchema(parseDingTalkToolSchemaOutput(result.output));
+      if (!result.ok) throw new Error(result.error?.message ?? t('businessApplications.workbench.validation.schemaLoadFailed'));
+      const nextSchema = parseDingTalkToolSchemaOutput(result.output);
+      if (schemaRequests.current.accepts(request, activeSessionKey, tool.entry.id)) {
+        setSchema(nextSchema);
+      }
     } catch (error) {
-      setSchema(null);
-      setSchemaError(errorMessage(error));
+      if (schemaRequests.current.accepts(request, activeSessionKey, tool.entry.id)) {
+        setSchema(null);
+        setSchemaError(
+          error instanceof DingTalkToolContractError
+            ? t('businessApplications.workbench.validation.schemaContractInvalid')
+            : errorMessage(error),
+        );
+      }
     } finally {
-      setSchemaLoading(false);
+      if (schemaRequests.current.accepts(request, activeSessionKey, tool.entry.id)) {
+        setSchemaLoading(false);
+      }
     }
-  }, [activeSessionKey, schemaToolAvailable, selectedTool, sessionExists]);
+  }, [activeSessionKey, schemaToolAvailable, selectedTool, sessionExists, t]);
 
   const selectTool = useCallback((tool: DingTalkEffectiveTool) => {
+    schemaRequests.current.invalidate();
     setSelectedId(tool.entry.id);
     setArgumentsJson('{}');
     setInvocationOutput(undefined);
     setInvocationError(null);
     setSchema(null);
     setSchemaError(null);
+    setSchemaLoading(false);
     if (rightCollapsed) setRightCollapsed(false);
   }, [rightCollapsed]);
 
   const changeProfile = useCallback((value: string) => {
     setProfile(value);
+    setArgumentsJson('{}');
     setInvocationOutput(undefined);
     setInvocationError(null);
   }, []);
 
   useEffect(() => {
+    const previous = previousExecutionProfile.current;
+    previousExecutionProfile.current = executionProfile;
+    if (previous === null || previous === executionProfile) return;
+    setArgumentsJson('{}');
     setInvocationOutput(undefined);
     setInvocationError(null);
-  }, [activeSessionKey]);
+  }, [executionProfile]);
 
   useEffect(() => {
     setProfile((current) => current === executionProfile ? current : executionProfile);
@@ -670,26 +720,32 @@ export function BusinessApplicationsPage() {
     }
   }, [argumentsJson]);
 
-  const disabledReason = useMemo(() => {
-    if (!selectedTool) return '请先选择工具。';
-    if (!sessionExists) return '需要一个真实 OpenClaw Session。';
-    if (selectedTool.entry.deniedBySession) return '当前 Session 已拒绝此工具。';
-    if (selectedTool.effect === 'unknown' || !selectedTool.entry.risk) return 'OpenClaw 未提供完整效果或风险契约。';
-    if (selectedTool.entry.id === DINGTALK_RUNTIME_STATUS_TOOL) return null;
-    if (!parseProfileReference(executionProfile)) return '执行身份必须选择有效的 DWS Profile。';
-    if (schemaLoading) return '正在核验当前 DWS 参数契约。';
-    if (schemaError) return '当前 DWS 参数契约不可用。';
-    if (!schema) return '执行前必须先读取当前 DWS 参数契约。';
-    if (parsedArguments.error || !parsedArguments.value) return parsedArguments.error;
-    const missing = schema.parameters
+  const missingRequiredParameters = useMemo(() => {
+    if (!schema || !parsedArguments.value) return [];
+    return schema.parameters
       .filter((parameter) => parameter.required)
       .map((parameter) => parameter.property ?? parameter.name)
       .filter((name) => {
         const value = parsedArguments.value?.[name];
         return value === undefined || value === null || value === '';
       });
-    return missing.length > 0 ? `缺少必填参数：${missing.join('、')}` : null;
-  }, [executionProfile, parsedArguments, schema, schemaError, schemaLoading, selectedTool, sessionExists]);
+  }, [parsedArguments.value, schema]);
+
+  const disabledReason = useMemo(() => {
+    if (!selectedTool) return t('businessApplications.workbench.validation.selectTool');
+    if (!sessionExists) return t('businessApplications.workbench.validation.sessionRequired');
+    if (selectedTool.entry.deniedBySession) return t('businessApplications.workbench.validation.sessionDenied');
+    if (selectedTool.effect === 'unknown' || !selectedTool.entry.risk) return t('businessApplications.workbench.validation.incompleteContract');
+    if (selectedTool.entry.id === DINGTALK_RUNTIME_STATUS_TOOL) return null;
+    if (!parseProfileReference(executionProfile)) return t('businessApplications.workbench.validation.profileRequired');
+    if (schemaLoading) return t('businessApplications.workbench.validation.schemaLoading');
+    if (schemaError) return t('businessApplications.workbench.validation.schemaUnavailable');
+    if (!schema) return t('businessApplications.workbench.validation.schemaRequired');
+    if (parsedArguments.error || !parsedArguments.value) return t('businessApplications.workbench.detail.argumentsInvalid');
+    return missingRequiredParameters.length > 0
+      ? t('businessApplications.workbench.detail.missingRequiredParameters', { parameters: missingRequiredParameters.join(', ') })
+      : null;
+  }, [executionProfile, missingRequiredParameters, parsedArguments, schema, schemaError, schemaLoading, selectedTool, sessionExists, t]);
 
   const performInvocation = useCallback(async () => {
     const tool = selectedTool;
@@ -700,6 +756,10 @@ export function BusinessApplicationsPage() {
     const profileRef = runtimeTool ? null : parseProfileReference(executionProfile);
     const args = runtimeTool ? {} : { profile: profileRef, arguments: parsedArguments.value };
     const attemptId = createAttemptId();
+    if (!attemptId) {
+      setInvocationError(t('businessApplications.workbench.validation.idempotencyUnavailable'));
+      return;
+    }
     beginAttempt({
       id: attemptId,
       sessionKey: activeSessionKey,
@@ -757,7 +817,7 @@ export function BusinessApplicationsPage() {
           evidence,
           finishedAt: Date.now(),
         });
-        setInvocationError(result.error?.message ?? 'OpenClaw 报告工具执行失败。');
+        setInvocationError(result.error?.message ?? t('businessApplications.workbench.validation.toolInvocationFailed'));
       }
     } catch (error) {
       const code = errorCode(error);
@@ -768,13 +828,13 @@ export function BusinessApplicationsPage() {
       });
       setInvocationError(
         tool.effect === 'write'
-          ? `写操作结果待核验：${errorMessage(error)}`
+          ? t('businessApplications.workbench.validation.writeResultUnverified', { error: errorMessage(error) })
           : errorMessage(error),
       );
     } finally {
       setInvoking(false);
     }
-  }, [activeSession, activeSessionKey, beginAttempt, disabledReason, effective?.agentId, executionProfile, identity, parsedArguments.value, selectedTool, settleAttempt]);
+  }, [activeSession, activeSessionKey, beginAttempt, disabledReason, effective?.agentId, executionProfile, identity, parsedArguments.value, selectedTool, settleAttempt, t]);
 
   const invokeSelected = useCallback(() => {
     if (!selectedTool) return;
@@ -783,14 +843,14 @@ export function BusinessApplicationsPage() {
       return;
     }
     showConfirm(
-      `确认${selectedTool.entry.label}`,
-      '此操作会写入钉钉。确认后仍需通过 OpenClaw 插件审批；断线或超时时不会自动重试。',
+      t('businessApplications.workbench.validation.writeConfirmTitle', { tool: selectedTool.entry.label }),
+      t('businessApplications.workbench.validation.writeConfirmDescription'),
       performInvocation,
     );
-  }, [performInvocation, selectedTool]);
+  }, [performInvocation, selectedTool, t]);
 
   const performPluginInstallation = useCallback(async () => {
-    setPluginInstallationProgress({ phase: 'checking', message: '正在核对当前 Gateway 安装权限' });
+    setPluginInstallationProgress({ phase: 'checking', message: t('businessApplications.pluginInstall.progress.checking') });
     const current = getCurrentRuntimeIdentity();
     if (!current?.verified || !current.desktopMutationAllowed) {
       const message = dingtalkPluginInstallBlocker(current);
@@ -799,12 +859,12 @@ export function BusinessApplicationsPage() {
       return;
     }
     setPluginOperation('installing');
-    setPluginInstallationProgress({ phase: 'installing', message: '正在校验内置插件并等待 Gateway 安装、启用' });
+    setPluginInstallationProgress({ phase: 'installing', message: t('businessApplications.pluginInstall.progress.installing') });
     try {
       const status = await installBundledDingTalkPlugin(current.targetFingerprint, current.connectionId);
       setPluginStatus(status);
       setPluginError(null);
-      setPluginInstallationProgress({ phase: 'completed', message: '插件已安装并启用。下一步：重启 Gateway' });
+      setPluginInstallationProgress({ phase: 'completed', message: t('businessApplications.pluginInstall.progress.completed') });
     } catch (error) {
       const message = errorMessage(error);
       setPluginError(message);
@@ -812,7 +872,7 @@ export function BusinessApplicationsPage() {
     } finally {
       setPluginOperation(null);
     }
-  }, []);
+  }, [t]);
 
   const installPlugin = useCallback(() => {
     setPluginInstallationProgress({ phase: 'idle', message: null });
@@ -820,14 +880,22 @@ export function BusinessApplicationsPage() {
   }, []);
 
   const runDwsOperation = useCallback((kind: DwsOperationKind, operationProfile?: string) => {
+    if (dwsOperationActive || !claimDwsOperationStart(dwsStartGuard)) return;
     const current = getCurrentRuntimeIdentity();
     if (!current?.verified || !current.desktopMutationAllowed) {
       setPluginError(dingtalkPluginInstallBlocker(current));
+      releaseDwsOperationStart(dwsStartGuard);
       return;
     }
     setPluginError(null);
     if (kind !== 'resetAuth') setDwsAuthorizationFailure(null);
     setDwsOutput([]);
+    setDwsOperation({
+      id: null,
+      kind,
+      phase: 'starting',
+      message: t('businessApplications.dws.starting'),
+    });
     void startDwsOperation(current.targetFingerprint, current.connectionId, kind, operationProfile)
       .then((started) => {
         const output = dwsEventCache.current.output[started.operationId] ?? [];
@@ -849,10 +917,11 @@ export function BusinessApplicationsPage() {
       })
       .catch((error) => {
         const message = errorMessage(error);
-        setDwsOperation({ id: 'dws-start-failed', kind, phase: 'failed', message: t('businessApplications.dws.startFailed') });
+        setDwsOperation({ id: null, kind, phase: 'failed', message: t('businessApplications.dws.startFailed') });
         setDwsOutput([message]);
-      });
-  }, [t]);
+      })
+      .finally(() => releaseDwsOperationStart(dwsStartGuard));
+  }, [dwsOperationActive, t]);
 
   const resetDwsAuth = useCallback(() => {
     showConfirm(
@@ -872,7 +941,7 @@ export function BusinessApplicationsPage() {
 
   const cancelCurrentDwsOperation = useCallback(() => {
     const current = getCurrentRuntimeIdentity();
-    if (!current?.verified || !dwsOperation || dwsOperation.phase !== 'running') return;
+    if (!current?.verified || !dwsOperation?.id || dwsOperation.phase !== 'running') return;
     void cancelDwsOperation(current.targetFingerprint, current.connectionId, dwsOperation.id)
       .catch((error) => setDwsOperation((operation) => (
         operation ? { ...operation, phase: 'failed', message: errorMessage(error) } : operation
@@ -906,7 +975,7 @@ export function BusinessApplicationsPage() {
   const authorizeSelectedAgent = useCallback(async (targetAgentId: string) => {
     const normalizedTargetAgentId = targetAgentId.trim();
     if (!normalizedTargetAgentId) {
-      setPluginError('请选择可核验的 Agent。');
+      setPluginError(t('businessApplications.readiness.agentSelectionRequired'));
       return;
     }
     setPluginOperation('authorizing');
@@ -921,7 +990,7 @@ export function BusinessApplicationsPage() {
       }
       const refreshedTools = useGatewayDataStore.getState().toolsEffective[activeSessionKey];
       if (!hasAvailableDingTalkRuntimeTool(refreshedTools?.groups)) {
-        throw new Error('钉钉授权配置已确认写入，但当前 Session 工具中仍未出现钉钉运行时工具。请刷新后查看 Gateway 返回的实际策略或插件加载错误。');
+        throw new Error(t('businessApplications.readiness.authorizationEffectMissing'));
       }
       setPluginError(null);
     } catch (error) {
@@ -944,28 +1013,33 @@ export function BusinessApplicationsPage() {
     || runtimeIdentityLoading
     || pluginStatusLoading
     || pluginOperation !== null
-    || dwsOperation?.phase === 'running';
+    || dwsOperationActive;
   const headerStatus = dingtalkRefreshPending
     ? t('businessApplications.readiness.refreshing')
     : catalogAvailability === 'ready'
-      ? `DWS Profile 已登录；${authenticatedCatalogTools.length} 项插件操作，账号业务权限按实际调用核验`
+      ? t('businessApplications.workbench.status.ready', { count: authenticatedCatalogTools.length })
       : catalogLoading
-        ? '正在同步当前 Session 工具与 DWS Profile'
+        ? t('businessApplications.workbench.status.loading')
         : catalogAvailability === 'identity-error'
-          ? 'DWS Profile 读取失败；请重新检测'
+          ? t('businessApplications.workbench.status.identityError')
           : catalogAvailability === 'profile-required'
-            ? '当前 DWS Profile 未登录或状态不是 active'
+            ? t('businessApplications.workbench.status.profileRequired')
             : pluginStatusLoading
-              ? '正在核对当前 Session 与插件状态'
+              ? t('businessApplications.workbench.status.pluginChecking')
               : pluginStatus?.installed
-                ? '插件已安装，等待 Gateway 刷新'
-                : localInstallAvailable ? '插件尚未安装' : '当前 Session 未提供钉钉工具';
+                ? t('businessApplications.workbench.status.pluginRestartPending')
+                : localInstallAvailable
+                  ? t('businessApplications.workbench.status.pluginMissing')
+                  : t('businessApplications.workbench.status.toolsMissing');
   const pageTitle = view === 'activity'
-    ? '钉钉操作审计'
-    : view === 'runtime' ? '钉钉接入与授权' : '钉钉业务工作台';
+    ? t('businessApplications.workbench.pageTitle.activity')
+    : view === 'runtime'
+      ? t('businessApplications.workbench.pageTitle.runtime')
+      : t('businessApplications.workbench.pageTitle.tools');
   const readinessProps = {
     sessionExists,
     runtimeToolAvailable,
+    agentRuntimeVerified,
     runtime: runtimeIdentity,
     runtimeError: runtimeIdentityError,
     operationError: pluginError,
@@ -982,7 +1056,7 @@ export function BusinessApplicationsPage() {
     dwsOutput,
     dwsAuthorizationFailure,
     selectedProfile: executionProfile,
-    busy: pluginOperation !== null || toolsLoading || runtimeIdentityLoading || dwsOperation?.phase === 'running',
+    busy: pluginOperation !== null || toolsLoading || runtimeIdentityLoading || dwsOperationActive,
     refreshing: dingtalkRefreshPending,
     operation: pluginOperation,
     sessionLabel: sessionExists ? activeSessionKey : null,
@@ -1072,8 +1146,8 @@ export function BusinessApplicationsPage() {
           <main className="flex min-h-0 min-w-0 flex-col bg-aegis-surface/20">
             <div className="flex h-9 shrink-0 items-center justify-between border-b border-aegis-border px-3">
               <div className="flex min-w-0 items-center gap-2 text-[10.5px] text-aegis-text-dim">
-                <span className="font-medium text-aegis-text-secondary">当前执行身份</span>
-                <span className="max-w-[320px] truncate font-mono" title={executionProfile}>{profileAuthenticated ? executionProfile : '未完成 DWS Profile 登录核验'}</span>
+                <span className="font-medium text-aegis-text-secondary">{t('businessApplications.workbench.currentProfile')}</span>
+                <span className="max-w-[320px] truncate font-mono" title={executionProfile}>{profileAuthenticated ? executionProfile : t('businessApplications.workbench.profile.unverified')}</span>
               </div>
               <span className="text-[10px] tabular-nums text-aegis-text-dim">{filteredTools.length} / {authenticatedCatalogTools.length}</span>
             </div>
@@ -1082,13 +1156,22 @@ export function BusinessApplicationsPage() {
               tools={filteredTools}
               selectedId={selectedId}
               loading={catalogLoading}
+              emptyTitle={catalogAvailability === 'no-session'
+                ? t('businessApplications.workbench.catalog.noSessionTitle')
+                : catalogAvailability === 'identity-error'
+                  ? t('businessApplications.workbench.catalog.identityErrorTitle')
+                  : catalogAvailability === 'profile-required'
+                    ? t('businessApplications.workbench.catalog.profileRequiredTitle')
+                    : catalogAvailability === 'no-runtime-tool'
+                      ? t('businessApplications.workbench.catalog.noRuntimeToolTitle')
+                      : t('businessApplications.workbench.catalog.noToolsTitle')}
               emptyMessage={catalogAvailability === 'identity-error'
-                ? 'DWS Profile 读取失败，请重新检测。'
+                ? t('businessApplications.workbench.catalog.identityErrorDescription')
                 : catalogAvailability === 'profile-required'
-                  ? '请先登录或选择状态为 active 的 DWS Profile。账号身份未核验时不会展示业务操作。'
+                  ? t('businessApplications.workbench.catalog.profileRequiredDescription')
                   : catalogAvailability === 'no-session'
-                    ? '请先创建或选择一个 OpenClaw Session。'
-                    : '当前 Session 未提供可核验的钉钉插件操作目录。'}
+                    ? t('businessApplications.workbench.catalog.noSessionDescription')
+                    : t('businessApplications.workbench.catalog.noToolsDescription')}
               onSelect={selectTool}
             />
           </main>
@@ -1106,18 +1189,14 @@ export function BusinessApplicationsPage() {
             invocationError={invocationError}
             invoking={invoking}
             disabledReason={disabledReason}
+            argumentsInvalid={Boolean(parsedArguments.error)}
+            missingRequiredParameters={missingRequiredParameters}
             onWidthChange={setRightWidth}
             onCollapsedChange={setRightCollapsed}
             onProfileChange={changeProfile}
             onArgumentsChange={setArgumentsJson}
             onLoadSchema={() => void loadSchema()}
             onInvoke={invokeSelected}
-            approvalTrace={approvalTrace.trace}
-            approvalTraceLoading={approvalTrace.loading}
-            approvalTraceError={approvalTrace.error}
-            approvalTraceRefreshAvailable={approvalTrace.refreshAvailable}
-            approvalTraceComplete={approvalTrace.complete}
-            onRefreshApprovalTrace={() => void approvalTrace.refresh()}
           />
         </div>
       )}

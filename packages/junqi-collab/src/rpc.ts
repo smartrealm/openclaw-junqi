@@ -1,4 +1,5 @@
 import { CollaborationError, RequestValidationError } from "./errors.js";
+import { UnsupportedCollaborationSchemaError } from "./database-schema-initializer.js";
 import type { OpenClawApi } from "./sdk-types.js";
 import type { CollaborationService } from "./service.js";
 
@@ -6,10 +7,32 @@ type Handler = (service: CollaborationService, params: Record<string, unknown>) 
 
 const UNKNOWN_ERROR_MESSAGE = "JunQi collaboration operation failed";
 
-interface RpcErrorPayload {
+export interface RpcErrorPayload {
   code: string;
   message: string;
   details?: Record<string, unknown>;
+}
+
+export interface CollaborationServiceAvailability {
+  service: CollaborationService | null;
+  startupFailure: RpcErrorPayload | null;
+}
+
+export function collaborationServiceStartupFailure(error: unknown): RpcErrorPayload {
+  if (error instanceof UnsupportedCollaborationSchemaError) {
+    return {
+      code: "DATABASE_SCHEMA_UNSUPPORTED",
+      message: "The collaboration database schema is not supported by this plugin",
+      details: {
+        actualSchemaVersion: error.actualSchemaVersion,
+        expectedSchemaVersion: error.expectedSchemaVersion,
+      },
+    };
+  }
+  return {
+    code: "SERVICE_START_FAILED",
+    message: "The collaboration plugin service failed to start",
+  };
 }
 
 function rpcErrorPayload(error: unknown): RpcErrorPayload {
@@ -79,17 +102,18 @@ const WRITE_METHODS: readonly RpcDefinition[] = [
 
 export const COLLABORATION_RPC_METHODS = [...READ_METHODS, ...WRITE_METHODS] as const;
 
-export function registerCollaborationRpc(api: OpenClawApi, getService: () => CollaborationService | null): void {
+export function registerCollaborationRpc(
+  api: OpenClawApi,
+  getAvailability: () => CollaborationServiceAvailability,
+): void {
   for (const definition of COLLABORATION_RPC_METHODS) {
     api.registerGatewayMethod(
       definition.method,
       async ({ params, respond }) => {
-        const service = getService();
+        const availability = getAvailability();
+        const service = availability.service;
         if (!service) {
-          respond(false, undefined, {
-            code: "UNAVAILABLE",
-            message: "JunQi collaboration service is not running",
-          });
+          respond(false, undefined, availability.startupFailure ?? collaborationServiceStartupFailure(null));
           return;
         }
         try {

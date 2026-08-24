@@ -89,7 +89,7 @@ export class CollaborationDatabase {
       this.db.exec(
         "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;",
       );
-      instanceId = new CollaborationSchemaInitializer(this.db).initialize();
+      instanceId = new CollaborationSchemaInitializer(this.db, filePath).initialize();
       this.secureDatabaseFiles();
     } catch (error) {
       this.db.close();

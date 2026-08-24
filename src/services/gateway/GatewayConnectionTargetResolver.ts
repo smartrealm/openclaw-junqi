@@ -135,18 +135,21 @@ export async function resolveGatewayConnectionTarget(
     : normalizeUrl(request.preferredUrl);
   const wsUrl = explicitUrl || savedUrl || configuredUrl || defaultGatewayWsUrl();
   const sameSelectedRuntime = Boolean(configuredUrl) && gatewayEndpointsMatch(wsUrl, configuredUrl);
+  const storedDeviceToken = request.useTokenOverride || request.targetScope === 'selected-runtime'
+    ? ''
+    : await deviceCredential(wsUrl, dependencies);
   const token = request.useTokenOverride
     ? (request.tokenOverride?.trim() ?? '')
+    : storedDeviceToken
+      ? ''
     : sameSelectedRuntime
       ? request.targetScope === 'selected-runtime'
         ? await dependencies.getToken()
         : await dependencies.getToken().catch(() => configured?.token ?? '')
       : '';
-  // OpenClaw 共享 Gateway token 已能完成设备签名握手。此时提前读取独立设备 token
-  // 既不会改变握手参数，也会在 macOS 首次启动时额外触发 Keychain 授权。
-  const deviceToken = request.useTokenOverride || token
-    ? ''
-    : await deviceCredential(wsUrl, dependencies);
+  // 首次设置仍以所选运行时凭据建立信任；后续连接优先恢复已持久化的设备权限，
+  // 避免共享令牌覆盖官方 scope upgrade 轮换后的设备授权。
+  const deviceToken = storedDeviceToken;
   const httpUrl = wsUrl.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
 
   return { wsUrl, token, deviceToken, httpUrl };

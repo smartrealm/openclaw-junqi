@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { BusinessActivityAttempt } from '@/business-applications/activityStore';
-import type { OpenClawAuditEvent } from '@/services/gateway/OpenClawAuditClient';
+import type { OpenClawAuditEvent } from '@/services/gateway/OpenClawAuditActivityCodec';
 import { summarizeDingTalkBusinessActivity } from './businessActivitySummary';
 
 function event(overrides: Partial<OpenClawAuditEvent>): OpenClawAuditEvent {

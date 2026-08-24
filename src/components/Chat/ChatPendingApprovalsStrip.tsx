@@ -60,23 +60,20 @@ export function ChatPendingApprovalsStrip({
   const description = summary.activeSessionCount > 0
     ? t('chat.pendingApprovals.activeSession', {
       count: summary.activeSessionCount,
-      defaultValue: '{{count}} approval requires a decision in this session',
     })
     : t('chat.pendingApprovals.otherSessions', {
       count: summary.otherSessionCount,
-      defaultValue: '{{count}} approval requires a decision in another session',
     });
   const otherSessions = summary.activeSessionCount > 0 && summary.otherSessionCount > 0
     ? t('chat.pendingApprovals.otherSessionsSuffix', {
       count: summary.otherSessionCount,
-      defaultValue: '{{count}} in other sessions',
     })
     : null;
 
   return (
     <section
       className="shrink-0 border-t border-aegis-warning/20 bg-aegis-warning/[0.05] px-3 py-2"
-      aria-label={t('chat.pendingApprovals.ariaLabel', 'Pending OpenClaw approvals')}
+      aria-label={t('chat.pendingApprovals.ariaLabel')}
       role="status"
     >
       <div className="mx-auto flex w-full max-w-[760px] items-center gap-2">
@@ -90,7 +87,7 @@ export function ChatPendingApprovalsStrip({
           onClick={onOpenApprovals}
           className="shrink-0 rounded-md border border-aegis-warning/35 px-2 py-1 text-[10.5px] font-medium text-aegis-warning transition-[background-color,border-color,color] duration-[var(--aegis-duration-normal)] ease-[var(--aegis-ease-standard)] hover:bg-aegis-warning/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50"
         >
-          {t('chat.pendingApprovals.open', 'Review')}
+          {t('chat.pendingApprovals.open')}
         </button>
       </div>
     </section>

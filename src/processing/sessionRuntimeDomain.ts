@@ -57,6 +57,18 @@ export function groupSessionModels(models: readonly ModelEntry[]): SessionModelG
   }));
 }
 
+/** 目录筛选只缩小当前 Gateway 返回的模型集合，不补充本地候选项。 */
+export function filterSessionModels(models: readonly ModelEntry[], query: string): ModelEntry[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return [...models];
+  return models.filter((model) => [
+    model.id,
+    model.label,
+    model.alias,
+    modelDisplayName(model, model.id),
+  ].some((value) => value?.toLocaleLowerCase().includes(normalizedQuery)));
+}
+
 /** 仅以 Gateway 会话行明确给出的锁定状态决定模型是否可改。 */
 export function canChangeSessionModel(modelSelectionLocked: boolean): boolean {
   return !modelSelectionLocked;

@@ -16,6 +16,10 @@ import type {
   GatewayOperatorScope,
 } from './GatewayConnectionPolicy';
 import {
+  GatewayScopeUpgradeCancelledError,
+  GatewayScopeUpgradeCoordinator,
+} from './GatewayScopeUpgrade';
+import {
   ChatHandler,
 } from '@/runtime/OpenClawChatEventRuntime';
 import type { ChatSessionRunObservation } from './OpenClawPendingRunWaitReconciler';
@@ -451,6 +455,23 @@ export interface GatewayMessageResponse extends Record<string, unknown> {
 
 // ── Create instances ──
 const connection = new GatewayConnection();
+const operatorScopeUpgrade = new GatewayScopeUpgradeCoordinator({
+  captureConnection: () => {
+    const connectionId = connection.getAttestedConnectionId();
+    const hello = connection.getHelloObservation();
+    if (!connection.isConnected() || !connectionId || hello?.connectionId !== connectionId) return null;
+    return { connectionId, scopes: hello.negotiatedScopes };
+  },
+  requestFenced: (method, params, connectionId, options) => connection.requestFenced(
+    method,
+    params,
+    connectionId,
+    options,
+  ),
+  applyRotatedDeviceCredential: (token, connectionId) => (
+    connection.applyRotatedDeviceCredential(token, connectionId)
+  ),
+});
 const chatSendLeafFenceCapability: GatewayChatLeafFenceCapabilityState = {
   connectionId: null,
   support: 'unknown',
@@ -822,6 +843,13 @@ export class GatewayPrivilegedSourceChangedError extends Error {
   }
 }
 
+class GatewayPrivilegedSourceRebindRequestedError extends Error {
+  constructor() {
+    super('Privileged Gateway source must be rebound after authorization recovery');
+    this.name = 'GatewayPrivilegedSourceRebindRequestedError';
+  }
+}
+
 export function assertVerifiedSessionMutationResult(
   result: unknown,
   action: 'delete' | 'reset',
@@ -881,6 +909,7 @@ export function createPrivilegedRequester(
   type AttemptResult<T> =
     | { kind: 'success'; value: T }
     | { kind: 'pairing'; issue: GatewayAuthorizationIssue }
+    | { kind: 'scope'; issue: GatewayAuthorizationIssue }
     | { kind: 'failure'; error: Error };
 
   const requestTimeoutError = (timeoutMs: number) => (
@@ -940,6 +969,10 @@ export function createPrivilegedRequester(
         onAuthorizationIssue(issue) {
           if (issue.kind === 'pairing_required') {
             finish({ kind: 'pairing', issue });
+            return;
+          }
+          if (issue.kind === 'scope_denied') {
+            finish({ kind: 'scope', issue });
             return;
           }
           finish({ kind: 'failure', error: new GatewayPrivilegedAuthorizationError(issue) });
@@ -1021,6 +1054,30 @@ export function createPrivilegedRequester(
         }
         if (result.kind === 'failure') throw result.error;
 
+        if (result.kind === 'scope') {
+          emitPrivilegedAuthorizationIssue(result.issue);
+          const waitMs = pairingDeadline - Date.now();
+          if (waitMs <= 0) throw new GatewayPrivilegedAuthorizationError(result.issue);
+          await new Promise<void>((resolve, reject) => {
+            let settled = false;
+            const finish = (outcome: 'retry' | 'cancel' | 'timeout') => {
+              if (settled) return;
+              settled = true;
+              window.clearTimeout(timer);
+              retryActivePairingNow = null;
+              if (outcome === 'retry') resolve();
+              else if (outcome === 'timeout') reject(new GatewayPrivilegedAuthorizationError(result.issue));
+              else reject(new Error('Privileged Gateway authorization was cancelled'));
+            };
+            const timer = window.setTimeout(() => finish('timeout'), waitMs);
+            retryActivePairingNow = () => finish('retry');
+            cancelActivePairingRetry = () => finish('cancel');
+          });
+          cancelActivePairingRetry = null;
+          retryActivePairingNow = null;
+          throw new GatewayPrivilegedSourceRebindRequestedError();
+        }
+
         pairingObserved = true;
         emitPrivilegedAuthorizationIssue(result.issue);
         if (Date.now() + pairingRetryMs > pairingDeadline) {
@@ -1059,20 +1116,29 @@ export function createPrivilegedRequester(
     const rpcTimeoutMs = timeoutMs === null
       ? null
       : Math.max(1_000, timeoutMs ?? 30_000);
-    // Normal short queue deadlines remain exact. Interactive/admin operations
-    // with a regular request budget reserve an additional pairing window, but
-    // every connected RPC attempt still uses only the caller's original budget.
+    // 普通短请求保持准确队列时限；交互式管理操作额外预留授权窗口，
+    // 每次已连接 RPC 仍只使用调用方原始预算。
     const normalizedTimeoutMs = rpcTimeoutMs === null
       ? null
       : rpcTimeoutMs >= 30_000
         ? rpcTimeoutMs + pairingTimeoutMs
         : rpcTimeoutMs;
     let expiredInQueue = false;
-    const execution = lane.then(() => {
+    const execution = lane.then(async () => {
       if (expiredInQueue && normalizedTimeoutMs !== null) {
         throw requestTimeoutError(normalizedTimeoutMs);
       }
-      return execute<T>(method, params, normalizedTimeoutMs, enqueuedAt, rpcTimeoutMs);
+      let sourceRebound = false;
+      for (;;) {
+        try {
+          const value = await execute<T>(method, params, normalizedTimeoutMs, enqueuedAt, rpcTimeoutMs);
+          if (sourceRebound) emitPrivilegedAuthorizationResolved();
+          return value;
+        } catch (error) {
+          if (!(error instanceof GatewayPrivilegedSourceRebindRequestedError)) throw error;
+          sourceRebound = true;
+        }
+      }
     });
     lane = execution.then(() => undefined, () => undefined);
     if (normalizedTimeoutMs === null) return execution;
@@ -1116,6 +1182,7 @@ export function createApprovalRequester(
 
 const requestPrivileged = createPrivilegedRequester(connection);
 const requestApprovals = createApprovalRequester(connection);
+let approvedOperatorScopeUpgradeAwaitingReconnect = false;
 export const openClawBrowserClient = new OpenClawBrowserClient({
   request: (method, params, timeoutMs) => requestPrivileged(method, params, timeoutMs),
 });
@@ -1862,5 +1929,53 @@ export const gateway = {
   cancelPrivilegedAuthorizationRetry() { requestPrivileged.cancelPairingRetry(); },
   cancelApprovalAuthorizationRetry() { requestApprovals.cancelPairingRetry(); },
   retryPrivilegedAuthorizationNow() { requestPrivileged.retryPairingNow(); },
+  async beginOperatorScopeUpgrade(requiredScopes: readonly string[]): Promise<string> {
+    const scopes = [...new Set(requiredScopes.map((scope) => scope.trim()).filter(Boolean))];
+    const operation = await operatorScopeUpgrade.begin(scopes);
+    emitPrivilegedAuthorizationIssue({
+      kind: 'scope_denied',
+      code: 'SCOPE_UPGRADE_PENDING',
+      message: 'Gateway scope upgrade is pending approval',
+      requestId: operation.requestId,
+      ...(scopes.length === 1 ? { missingScope: scopes[0] } : {}),
+      requiredScopes: scopes,
+      recommendedNextStep: 'approve_pairing',
+    });
+    void operation.completion.then((outcome) => {
+      if (outcome.status === 'approved') {
+        approvedOperatorScopeUpgradeAwaitingReconnect = true;
+        return;
+      }
+      emitPrivilegedAuthorizationIssue({
+        kind: 'scope_denied',
+        code: outcome.status === 'expired' ? 'SCOPE_UPGRADE_EXPIRED' : 'SCOPE_UPGRADE_REJECTED',
+        message: `Gateway scope upgrade ${outcome.status}`,
+        requestId: outcome.requestId,
+        ...(scopes.length === 1 ? { missingScope: scopes[0] } : {}),
+        requiredScopes: scopes,
+      });
+    }).catch((error) => {
+      if (error instanceof GatewayScopeUpgradeCancelledError) return;
+      emitPrivilegedAuthorizationIssue({
+        kind: 'scope_denied',
+        code: 'SCOPE_UPGRADE_FAILED',
+        message: error instanceof Error ? error.message : String(error),
+        requestId: operation.requestId,
+        ...(scopes.length === 1 ? { missingScope: scopes[0] } : {}),
+        requiredScopes: scopes,
+      });
+    });
+    return operation.requestId;
+  },
+  cancelOperatorScopeUpgrade() {
+    approvedOperatorScopeUpgradeAwaitingReconnect = false;
+    operatorScopeUpgrade.cancel();
+  },
+  resumePrivilegedAfterOperatorScopeUpgrade(): boolean {
+    if (!approvedOperatorScopeUpgradeAwaitingReconnect || !connection.isConnected()) return false;
+    approvedOperatorScopeUpgradeAwaitingReconnect = false;
+    requestPrivileged.retryPairingNow();
+    return true;
+  },
   reconnectWithToken(newToken: string) { connection.reconnectWithToken(newToken); },
 };

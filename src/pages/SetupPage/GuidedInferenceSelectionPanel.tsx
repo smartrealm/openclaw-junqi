@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import { ExternalLink, ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { open } from "@tauri-apps/plugin-shell";
 import { ProviderIcon } from "@/components/shared/provider-identity";
+import { openDesktopExternalLink } from "@/runtime/desktopExternalLink";
 import type { GuidedSetupCandidate } from "@/services/gateway/OpenClawGuidedSetupClient";
 import type { GuidedSetupController } from "@/hooks/useSetupFlow/useGuidedSetupSession";
 
@@ -206,7 +206,7 @@ function InferenceOptions({
                 type="button"
                 onClick={() => {
                   setExternalError("");
-                  void open(install.website).catch((reason: unknown) => {
+                  void openDesktopExternalLink(install.website).catch((reason: unknown) => {
                     setExternalError(reason instanceof Error ? reason.message : String(reason));
                   });
                 }}

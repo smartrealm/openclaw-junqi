@@ -1078,6 +1078,50 @@ describe('Gateway credential security regression gates', () => {
     await turn();
   });
 
+  it('先保存轮换设备令牌再清除共享令牌并重连', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection({
+      persistDeviceCredential: async (url, token) => {
+        savedDeviceTokens.push({ url, token });
+      },
+    });
+    connection.connect('ws://127.0.0.1:18789', 'shared-token', 'old-device-token');
+    const firstSocket = MemoryWebSocket.instances[0];
+    firstSocket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(firstSocket, message, 'daily-connection', ['operator.read']);
+      }
+    };
+    challenge(firstSocket);
+    await waitForSocketRequest(firstSocket, 'connect');
+    await turn();
+
+    await connection.applyRotatedDeviceCredential('rotated-device-token', 'daily-connection');
+    assert.deepEqual(savedDeviceTokens, [{
+      url: 'ws://127.0.0.1:18789',
+      token: 'rotated-device-token',
+    }]);
+    await waitForSocketCount(2);
+    const replacementSocket = MemoryWebSocket.instances[1];
+    replacementSocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      assert.deepEqual(message.params.auth, {
+        token: 'rotated-device-token',
+        deviceToken: 'rotated-device-token',
+      });
+      acceptHandshake(replacementSocket, message, 'daily-admin-connection', ['operator.admin']);
+    };
+    challenge(replacementSocket);
+    await waitForSocketRequest(replacementSocket, 'connect');
+    await turn();
+
+    assert.equal(connection.token, '');
+    assert.equal(connection.deviceToken, 'rotated-device-token');
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
   it('uses one admin-only transient socket for exactly one privileged RPC', async () => {
     resetSockets();
     assert.equal(useGatewayDataStore.getState().polling, false);
@@ -1246,6 +1290,74 @@ describe('Gateway credential security regression gates', () => {
     assert.deepEqual(await resultPromise, { sessionId: 'wizard-1' });
     unsubscribe();
     assert.deepEqual(approvedSocket.sent.map((message) => message.method), ['connect', 'wizard.start']);
+  });
+
+  it('管理员 scope 恢复后基于新主连接身份继续原操作', async () => {
+    resetSockets();
+    let connectionId = 'daily-connection';
+    let deviceToken = 'daily-device-token';
+    const source = {
+      ...sourceConnection(),
+      getAttestedConnectionId: () => connectionId,
+      get deviceToken() { return deviceToken; },
+    };
+    const requestPrivileged = createPrivilegedRequester(
+      source,
+      (connectionOptions) => createMemoryGatewayConnection(connectionOptions),
+      { pairingRetryMs: 60_000, pairingTimeoutMs: 120_000 },
+    );
+    const issues: GatewayAuthorizationIssue[] = [];
+    const unsubscribe = subscribePrivilegedAuthorizationIssues((issue) => { issues.push(issue); });
+    const resultPromise = requestPrivileged('config.patch', { patch: {} });
+    await waitForSocketCount(1);
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      socket.receive({
+        type: 'res',
+        id: message.id,
+        ok: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'scope denied',
+          details: {
+            code: 'MISSING_SCOPE',
+            missingScope: 'operator.admin',
+            requiredScopes: ['operator.admin'],
+          },
+        },
+      });
+    };
+    challenge(socket);
+
+    await turn();
+    assert.deepEqual(issues, [{
+      kind: 'scope_denied',
+      code: 'MISSING_SCOPE',
+      message: 'scope denied',
+      missingScope: 'operator.admin',
+      requiredScopes: ['operator.admin'],
+    }]);
+    assert.deepEqual(socket.sent.map((message) => message.method), ['connect']);
+
+    connectionId = 'daily-admin-connection';
+    deviceToken = 'rotated-device-token';
+    requestPrivileged.retryPairingNow();
+    await waitForSocketCount(2);
+    const adminSocket = MemoryWebSocket.instances[1];
+    adminSocket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(adminSocket, message, 'admin-connection', ['operator.admin']);
+        return;
+      }
+      assert.equal(message.method, 'config.patch');
+      adminSocket.receive({ type: 'res', id: message.id, ok: true, payload: { ok: true } });
+    };
+    challenge(adminSocket);
+
+    assert.deepEqual(await resultPromise, { ok: true });
+    unsubscribe();
+    assert.deepEqual(adminSocket.sent.map((message) => message.method), ['connect', 'config.patch']);
   });
 
   it('fails closed when the daily Gateway identity changes during privileged pairing', async () => {

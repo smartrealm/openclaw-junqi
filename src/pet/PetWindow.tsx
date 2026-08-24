@@ -22,8 +22,7 @@ import {
   subscribeTauriEventReady,
 } from '@/utils/tauriEvents';
 import { PetPositionScheduler } from './petPositionScheduler';
-import type { PetBackdropReading } from './backdropContrast';
-import { BackdropSampleScheduler } from './backdropSampleScheduler';
+import { shouldActivateMainWindow } from './petMainWindowActivation';
 import { usePrefersDark } from '@/hooks/usePrefersDark';
 
 /** Pixels the cursor must travel before a press counts as a drag, not a click. */
@@ -37,9 +36,6 @@ const SNAP_THRESHOLD = 90;
 const SNAP_MARGIN = 6;
 const DROP_CATCH_MEMORY_MS = 1_200;
 const PENDING_PACKAGE_AFTER_KEY = 'junqi:pet-package-pending-after';
-const BACKDROP_REFRESH_EVENT = 'junqi:pet-backdrop-refresh';
-const BACKDROP_SAMPLE_INTERVAL_MS = 120;
-const BACKDROP_FALLBACK_REFRESH_MS = 90_000;
 
 const createPositionScheduler = () => new PetPositionScheduler((point) =>
   invoke('set_pet_position', { x: point.x, y: point.y }),
@@ -60,7 +56,7 @@ function applyPresentationPreferences(preferences: PetPresentationPreferences | 
  *
  * Interaction:
  *   • Press & slide → drag the pet (manual JS drag via set_pet_position).
- *   • Double-click → surface & focus the main window.
+ *   • 点击后恢复并聚焦主窗口。
  *   • Right-click → native context menu (main window / next skin / hide /
  *     pomodoro control when enabled).
  *   • Hover → bubble tip visibility (no other UI affordance).
@@ -71,7 +67,7 @@ export default function PetWindow() {
   const [state, setState] = useState<PetState>(DEFAULT_PET_STATE);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
-  const [backdrop, setBackdrop] = useState<PetBackdropReading | null>(null);
+  const [mainWindowActivationFailed, setMainWindowActivationFailed] = useState(false);
   // True while the magnetic-snap glide is moving the window. The window moving
   // under a still cursor makes hovered flicker (mouseenter/leave), which would
   // make the tip bubble strobe — so we suppress hover-driven tips while snapping.
@@ -87,7 +83,6 @@ export default function PetWindow() {
   const customAsset = usePetStore((s) => s.customAsset);
   const setCustomAsset = usePetStore((s) => s.setCustomAsset);
   const customPet = usePetStore((s) => s.customPet);
-  const backdropContrastEnabled = usePetStore((s) => s.backdropContrastEnabled);
   const systemPrefersDark = usePrefersDark();
   const setCustomPet = usePetStore((s) => s.setCustomPet);
   const positionRef = useRef(position);
@@ -108,7 +103,7 @@ export default function PetWindow() {
   }, []);
 
   const drag = useRef<{ sx: number; sy: number; bx: number; by: number; moved: boolean; ready: boolean; native: boolean } | null>(null);
-  // Suppress the dblclick that the OS sometimes synthesizes right after a drag.
+  // 拖动结束后短暂忽略点击，避免系统合成的点击误触发恢复窗口。
   const justDragged = useRef(false);
   // Latest cursor + main-window bounds, written by the `aegis:drag-move`
   // listener and read by the magnetic-pull RAF loop. Module-level state
@@ -163,40 +158,6 @@ export default function PetWindow() {
       window.removeEventListener('storage', onStorage);
     };
   }, [systemPrefersDark, theme]);
-
-  useEffect(() => {
-    if (!backdropContrastEnabled) {
-      setBackdrop(null);
-      return;
-    }
-    const sampler = new BackdropSampleScheduler<PetBackdropReading>({
-      intervalMs: BACKDROP_SAMPLE_INTERVAL_MS,
-      sample: () => invoke<PetBackdropReading>('get_pet_backdrop_reading'),
-      publish: setBackdrop,
-      fail: () => setBackdrop(null),
-    });
-    const scheduleRefresh = () => sampler.request();
-    const onVisibility = () => {
-      if (!document.hidden) scheduleRefresh();
-    };
-    window.addEventListener(BACKDROP_REFRESH_EVENT, scheduleRefresh);
-    document.addEventListener('visibilitychange', onVisibility);
-    scheduleRefresh();
-    // Wallpaper changes have no portable event. This is deliberately sparse:
-    // normal updates come from pet movement/layout events, never a screenshot loop.
-    const fallbackTimer = window.setInterval(scheduleRefresh, BACKDROP_FALLBACK_REFRESH_MS);
-    return () => {
-      sampler.dispose();
-      window.clearInterval(fallbackTimer);
-      window.removeEventListener(BACKDROP_REFRESH_EVENT, scheduleRefresh);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [backdropContrastEnabled]);
-
-  useEffect(() => {
-    if (!backdropContrastEnabled) return;
-    window.dispatchEvent(new Event(BACKDROP_REFRESH_EVENT));
-  }, [backdropContrastEnabled, dragging, hovered, state.emotion, state.message, state.taskLabel]);
 
   useEffect(() => {
     document.documentElement.style.background = 'transparent';
@@ -269,7 +230,6 @@ export default function PetWindow() {
         }
         positionRef.current = e.payload;
         petPosRef.current = e.payload;
-        window.dispatchEvent(new Event(BACKDROP_REFRESH_EVENT));
       }),
     ];
     // `listen` is asynchronous. Do not request the initial state until the
@@ -665,9 +625,12 @@ export default function PetWindow() {
       .catch(() => undefined);
   };
 
-  const onDoubleClick = () => {
-    if (justDragged.current) return;
-    invoke('pet_focus_main').catch(() => undefined);
+  const onClick = () => {
+    if (!shouldActivateMainWindow(justDragged.current)) return;
+    setMainWindowActivationFailed(false);
+    invoke('pet_focus_main').catch(() => {
+      setMainWindowActivationFailed(true);
+    });
   };
 
   // Right-click → native menu built from i18n labels. Rust only pops the menu
@@ -713,7 +676,7 @@ export default function PetWindow() {
   return (
     <div
       onMouseDown={onMouseDown}
-      onDoubleClick={onDoubleClick}
+      onClick={onClick}
       onContextMenu={onContextMenu}
       onMouseEnter={() => {
         setHovered(true);
@@ -736,7 +699,14 @@ export default function PetWindow() {
         userSelect: 'none',
       }}
     >
-      <PetBubble state={state} dragging={dragging} hovered={hovered && !snapping} backdrop={backdrop} />
+      <div>
+        <PetBubble
+          state={state}
+          dragging={dragging}
+          hovered={hovered && !snapping}
+          mainWindowActivationFailed={mainWindowActivationFailed}
+        />
+      </div>
       <div style={{ position: 'relative' }}>
         <PetCharacter
           emotion={state.emotion}

@@ -9,7 +9,11 @@ import {
 } from '@/components/Collaboration/CollaborationCard';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { useCollaborationStore } from '@/stores/collaborationStore';
-import { useCollaborationSetupStore } from '@/stores/collaborationSetupStore';
+import {
+  normalizeCollaborationCapabilityFailure,
+  useCollaborationSetupStore,
+  type CollaborationCapabilityFailure,
+} from '@/stores/collaborationSetupStore';
 import type { CollaborationRunSummary } from '@/types/collaboration';
 import {
   selectableAgentHubOfficeRuns,
@@ -42,7 +46,7 @@ export function AgentHubOfficePanel({
   const refreshRun = useCollaborationStore((state) => state.refreshRun);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<CollaborationCapabilityFailure | null>(null);
   const requestRef = useRef(0);
   const selectedRunRef = useRef<string | null>(null);
 
@@ -79,7 +83,7 @@ export function AgentHubOfficePanel({
       if (next) await refreshRun(next.runId);
     } catch (cause) {
       if (requestRef.current === requestId) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(normalizeCollaborationCapabilityFailure(cause));
       }
     } finally {
       if (requestRef.current === requestId) setLoading(false);
@@ -114,7 +118,7 @@ export function AgentHubOfficePanel({
       await refreshRun(runId);
     } catch (cause) {
       if (requestRef.current === requestId) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(normalizeCollaborationCapabilityFailure(cause));
       }
     } finally {
       if (requestRef.current === requestId) setLoading(false);
@@ -192,10 +196,31 @@ export function AgentHubOfficePanel({
       {error && (
         <div role="alert" className="flex min-w-0 items-start gap-2 rounded-lg border border-aegis-danger/30 bg-aegis-danger/[0.07] px-3 py-2.5 text-xs text-aegis-danger">
           <AlertCircle size={15} className="mt-0.5 shrink-0" aria-hidden />
-          <div className="min-w-0">
-            <div className="font-medium">{t('agentHub.office.loadFailed', '读取协作运行失败')}</div>
-            <div className="mt-0.5 break-words font-mono text-[10px] opacity-85">{error}</div>
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">
+              {error.code === 'DATABASE_SCHEMA_UNSUPPORTED'
+                ? t('agentHub.office.schemaUnsupportedTitle', '协作数据版本不兼容')
+                : error.code === 'SERVICE_START_FAILED'
+                  ? t('agentHub.office.serviceFailedTitle', '协作插件服务启动失败')
+                  : t('agentHub.office.loadFailed', '读取协作运行失败')}
+            </div>
+            <div className="mt-0.5 text-[10px] leading-4 opacity-85">
+              {error.code === 'DATABASE_SCHEMA_UNSUPPORTED'
+                ? t('agentHub.office.schemaUnsupportedDescription', '现有协作数据未被修改，请打开协作设置恢复到安装前状态。')
+                : error.code === 'SERVICE_START_FAILED'
+                  ? t('agentHub.office.serviceFailedDescription', 'Gateway 已连接，但协作插件服务未启动。请打开协作设置查看诊断。')
+                  : t('agentHub.office.loadFailedDescription', '请检查协作设置和 Gateway 状态后重试。')}
+            </div>
+            <code className="mt-1 block font-mono text-[9.5px] opacity-70">{error.code}</code>
           </div>
+          <button
+            type="button"
+            onClick={() => requestCollaborationSetup('agent-office-error')}
+            className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border border-aegis-danger/30 px-2.5 text-[10px] font-medium transition-colors hover:bg-aegis-danger/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-danger/35"
+          >
+            <Settings2 size={12} aria-hidden />
+            {t('agentHub.office.openRepair', '打开协作设置')}
+          </button>
         </div>
       )}
 

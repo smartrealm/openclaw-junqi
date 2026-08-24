@@ -419,6 +419,14 @@ mod tests {
     }
 
     #[test]
+    fn open_ended_minimum_range_accepts_later_major_versions() {
+        let requirement =
+            NodeRuntimeRequirement::parse(">=25.9.0", NodeRequirementSource::RegistryPackage)
+                .unwrap();
+        assert!(requirement.supports("v26.1.0"));
+    }
+
+    #[test]
     fn release_selection_prefers_latest_compatible_lts_with_artifact() {
         let requirement = NodeRuntimeRequirement::parse(
             ">=24.15.0 <25 || >=25.9.0 <26",

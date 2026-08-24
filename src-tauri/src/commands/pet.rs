@@ -295,14 +295,18 @@ pub async fn get_pet_bounds(app: AppHandle) -> Result<serde_json::Value, String>
     }))
 }
 
-/// The pet was clicked — surface & focus the main window.
+/// 萌宠被点击后恢复并聚焦主窗口。
 #[tauri::command]
 pub async fn pet_focus_main(app: AppHandle) -> Result<(), String> {
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = main.unminimize();
-        let _ = main.show();
-        let _ = main.set_focus();
-    }
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "主窗口不可用，无法恢复窗口".to_string())?;
+    main.unminimize()
+        .map_err(|error| format!("无法取消主窗口最小化: {error}"))?;
+    main.show()
+        .map_err(|error| format!("无法显示主窗口: {error}"))?;
+    main.set_focus()
+        .map_err(|error| format!("无法聚焦主窗口: {error}"))?;
     Ok(())
 }
 
@@ -341,8 +345,7 @@ pub async fn pet_show_context_menu(app: AppHandle, items: Vec<PetMenuItem>) -> R
             .map_err(|e| e.to_string())?;
         }
     }
-    // Pop up at the cursor (which is exactly where the user right-clicked);
-    // avoids any screen↔window / HiDPI coordinate math.
+    // 菜单直接在右键光标位置弹出，避免屏幕与窗口之间的高 DPI 坐标换算。
     if let Some(win) = app.get_webview_window(PET_LABEL) {
         win.popup_menu(&menu).map_err(|e| e.to_string())?;
     }
