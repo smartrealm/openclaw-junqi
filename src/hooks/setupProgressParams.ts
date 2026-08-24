@@ -113,10 +113,6 @@ export const SETUP_PROGRESS_PARAM_RULES: readonly ParamRule[] = [
     extract: capture(/Using npm bundled with selected Node\.js:\s+(.+)$/, "path"),
   },
   {
-    suffix: [".userNpmPrefix", ".userNpmPrefixMissingPath"],
-    extract: capture(/Detected npm prefix\s+(.+?)\s+\(matches/, "path"),
-  },
-  {
     suffix: ".customNpmPrefix",
     extract: capture(/Using custom npm prefix\s+(.+)$/, "path"),
   },

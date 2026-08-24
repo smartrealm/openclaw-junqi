@@ -417,18 +417,12 @@ type TierBadgeStyles = {
 };
 
 const TIER_BADGE: Record<InstallTarget["tier"], TierBadgeStyles> = {
-  user: { border: "border-aegis-success/45", bg: "bg-aegis-success/10", text: "text-aegis-success" },
-  userMissingPath: { border: "border-amber-500/45", bg: "bg-amber-500/10", text: "text-amber-200" },
   custom: { border: "border-sky-500/45", bg: "bg-sky-500/10", text: "text-sky-200" },
   existing: { border: "border-sky-500/45", bg: "bg-sky-500/10", text: "text-sky-200" },
 };
 
 function resolveInstallNote(target: InstallTarget, t: TFunction): string {
   switch (target.tier) {
-    case "user":
-      return t("setup.installTarget.user.note", "与终端 `npm i -g` 落点一致；安装后 `openclaw` 已在你的 PATH 中");
-    case "userMissingPath":
-      return t("setup.installTarget.userMissingPath.note", "与终端 npm 的全局落点一致，但该目录尚未加入 PATH；可通过终端集成启用 `openclaw`");
     case "custom":
       return t("setup.installTarget.custom.note", "OpenClaw 将安装到你选择的 npm 全局目录；终端可用性由终端集成单独验证");
     case "existing":
@@ -454,13 +448,7 @@ export function InstallTargetCard({ target }: { target: InstallTarget }) {
   const styles = TIER_BADGE[target.tier];
   const tierLabel = t(
     `setup.installTarget.${target.tier}.tier`,
-    target.tier === "user"
-      ? "用户 npm 前缀"
-      : target.tier === "userMissingPath"
-        ? "用户 npm 前缀（未加入 PATH）"
-        : target.tier === "custom"
-          ? "自定义 npm 前缀"
-          : "已安装",
+    target.tier === "custom" ? "已选择的 npm 目录" : "已安装",
   );
   const note = resolveInstallNote(target, t);
   return (

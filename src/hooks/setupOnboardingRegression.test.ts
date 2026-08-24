@@ -380,7 +380,7 @@ test('BUG-ONB-31 the explicit dashboard action lands on the dashboard', () => {
 test('BUG-ONB-10 setup leaves system tools and npm cache at their native defaults', () => {
   assert.doesNotMatch(storageGate, /label=\{t\('storage\.runtimeLocation'/);
   assert.match(storageGate, /checked=\{customNpmCache\}/);
-  assert.match(storageGate, /npmCacheDir: customNpmCache \? npmCacheDir\.trim\(\) \|\| null : null/);
+  assert.match(storageGate, /npmCacheDir: customNpmPrefix && customNpmCache \? npmCacheDir\.trim\(\) \|\| null : null/);
   assert.match(storageGate, /npmCacheDir: string \| null/);
   assert.match(storageGate, /关闭时使用 npm 在当前系统和用户下的默认缓存位置/);
 });
@@ -474,10 +474,11 @@ test('BUG-IW-04 wizard presentation stays within the installed strict schema', (
   assert.match(wizardClient, /WIZARD_STEP_TYPES as readonly string\[\]\)\.includes\(raw\.type\)/);
   // 未知字段必须在投影阶段丢弃，不能进入界面层。
   assert.match(wizardClient, /for \(const key of WIZARD_STEP_KEYS\)/);
-  assert.match(authorization, /@tauri-apps\/plugin-shell/);
+  assert.match(authorization, /openDesktopExternalLink/);
+  assert.doesNotMatch(authorization, /plugin-shell/);
 });
 
-test('BUG-ONB-27 官方授权字段通过桌面 Shell 呈现', () => {
+test('BUG-ONB-27 官方授权字段通过受限桌面链接运行时呈现', () => {
   const wizard = readFileSync(new URL('../pages/SetupPage/wizard/WizardAuthorizationHint.tsx', import.meta.url), 'utf8');
 
   assert.match(wizard, /deviceCode\.code/);

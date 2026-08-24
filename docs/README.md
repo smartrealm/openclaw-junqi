@@ -4,13 +4,28 @@
 
 ## 当前入口
 
+- [目标环境证据与副作用链路代码审查](quality/target-environment-evidence-code-audit-2026-08-24.md)：禁止代理本地环境取证后的静态审查范围、Node.js 精确契约写入缺口、DWS 已取消调用副作用和修复顺序。
+- [目标环境证据与副作用链路修复规格](../specs/2026-08-24-target-environment-evidence-bugfix.md)：Node.js 目标契约先行与 DWS 写操作中止待核验的验收条件。
+- [目标环境证据与副作用链路修复计划](../plans/2026-08-24-target-environment-evidence-bugfix.md)：P0、P1 修复顺序与验证边界。
+- [目标运行环境 Node.js 决策审查](quality/target-runtime-node-resolution-2026-08-24.md)：目标机器探测、目标包 `engines.node`、自带 npm 配对、安装前复核与三语诊断边界。
+- [目标运行环境 Node.js 决策规格](../specs/2026-08-24-target-runtime-node-resolution.md)：现有运行时复用、不兼容提示和不得依赖开发机环境的验收条件。
+- [目标运行环境 Node.js 决策计划](../plans/2026-08-24-target-runtime-node-resolution.md)：根因、实现顺序和目标平台验证范围。
+- [钉钉工作台状态审查](quality/dingtalk-workbench-state-audit-2026-08-21.md)：目录空状态、详情权限边界、schema 异步围栏、Session 草稿隔离与 DWS 操作生命周期。
+- [钉钉工作台状态收敛规格](../specs/2026-08-21-dingtalk-workbench-state-hardening.md)：状态来源、请求代次、忙碌门禁和缓存回收的验收条件。
+- [钉钉工作台状态收敛计划](../plans/2026-08-21-dingtalk-workbench-state-hardening.md)：行为测试、实现顺序和验证范围。
+- [协作插件服务启动失败审计](quality/collaboration-service-startup-failure-audit-2026-08-21.md)：schema 不兼容、统一 Gateway 生命周期、真实进度、本地化错误和精确回滚边界。
+- [协作插件服务启动失败规范](../specs/2026-08-21-collaboration-service-startup-failure.md)：结构化失败码、数据保护、生命周期和界面验收条件。
+- [协作插件服务启动失败修复计划](../plans/2026-08-21-collaboration-service-startup-failure.md)：插件、前端、固定包和验证的实施顺序。
+- [业务审计与模型选择器状态审计](quality/business-audit-and-model-picker-state-audit-2026-08-21.md)：审计错误与空结果互斥、模型目录和运行参数的独立滚动边界。
+- [业务审计与模型选择器状态规范](../specs/2026-08-21-business-audit-and-model-picker-state.md)：互斥状态、多语言、滚动可达性和主题边界。
+- [业务审计与模型选择器状态修复计划](../plans/2026-08-21-business-audit-and-model-picker-state.md)：回归测试、实施顺序和验证范围。
 - [三点二一标签发布验证](quality/tag-release-validation-2026-08-20-v3.2.1.md)：`v3.2.1` 的补丁版本依据、不可变标签发布顺序、自动化证据和签名验收边界。
 - [三点二零标签发布验证](quality/tag-release-validation-2026-08-20.md)：`v3.2.0` 的版本依据、不可变标签发布顺序、自动化证据和签名验收边界。
 - [运行时契约收敛审计](quality/runtime-contract-convergence-audit-2026-08-20.md)：官方进度卡、DWS 终态顺序、全局语音路由、费用提示、当前配置开关和会话回放安全边界。
 - [已发布 Gateway 进度卡兼容规格](../specs/2026-08-20-openclaw-progress-card-release-compatibility.md)：持久化进度卡与官方计划流的能力门禁、竞态和清空验收条件。
 - [已发布 Gateway 进度卡兼容计划](../plans/2026-08-20-openclaw-progress-card-release-compatibility.md)：协议解码、运行事件接入、能力收敛和验证顺序。
 - [钉钉 Agent 授权收敛审计](quality/dingtalk-agent-authorization-convergence-audit-2026-08-17.md)：指定 Agent 的普通与 sandbox 工具门禁、最小配置补丁、`discovery` 与 `tool-discovery` 注册语义、有效工具投影、统一 Gateway 重启进度与工作区放行范围。
-- [DWS 安装与工作区恢复审计](quality/dws-install-and-workspace-recovery-2026-08-19.md)：DWS 安装输出、终态事件竞态、Gateway 重启后同会话快照的首屏放行及可重试失败边界。
+- [DWS 安装与工作区恢复审计](quality/dws-install-and-workspace-recovery-2026-08-19.md)：DWS 安装输出、终态事件竞态、Gateway 重启后同会话快照、Profile 预热及受限钉钉 Markdown 深链的桌面打开边界。
 - [用量仪表盘恢复记录](quality/usage-dashboard-recovery-2026-08-19.md)：OpenClaw Token 与费用边界、部分未估价时的趋势选择、Agent 图标乱码和业务错误布局修复。
 - [OpenClaw 运行时命令导航](quality/openclaw-runtime-command-navigation-2026-08-19.md)：`commands.list` 的官方目录分组、左侧导航和不可用状态边界。
 - [智能体工位空间化对齐审计](quality/agent-office-star-office-alignment-2026-08-18.md)：Star Office 的空间状态看板映射、原创像素角色与办公室素材、配置身份、协作许可和只读运行投影的边界。

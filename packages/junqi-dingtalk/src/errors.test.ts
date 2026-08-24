@@ -44,3 +44,15 @@ test("unknown DingTalk runtime error codes fail closed", () => {
     message: "DWS runtime operation failed",
   });
 });
+
+test("unverified side effects expose only the stable recovery boundary", () => {
+  const serialized = serializeRuntimeError(new DingTalkRuntimeError(
+    "DWS_SIDE_EFFECT_UNVERIFIED",
+    "write may have reached a private endpoint",
+    { token: "must-not-reach-client" },
+  ));
+  assert.deepEqual(serialized, {
+    code: "DWS_SIDE_EFFECT_UNVERIFIED",
+    message: "DWS side effect status is unverified",
+  });
+});

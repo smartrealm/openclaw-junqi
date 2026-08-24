@@ -16,20 +16,10 @@ export interface StepState {
   progress?: number;
 }
 
-export type InstallTargetTier = "user" | "userMissingPath" | "custom" | "existing";
+export type InstallTargetTier = "custom" | "existing";
 
 export interface InstallTarget {
-  /**
-   * Where the installer decided to put `openclaw`.
-   *  - "user": same dir as the user's terminal `npm i -g` (their
-   *    actual `npm config get prefix`) and its bin directory is on PATH.
-   *  - "userMissingPath": same npm prefix as the user's terminal, but
-   *    its bin directory is not currently on the login-shell PATH.
-   *  - "custom": explicit global prefix selected during setup.
-   *  - "existing": an `openclaw` install was already on disk before
-   *    setup ran, so we skipped the install. The card surfaces the
-   *    detected path and version.
-   */
+  /** OpenClaw 的安装来源只包括用户明确选择的 npm 目录或已检测到的已有安装。 */
   tier: InstallTargetTier;
   path: string;
   /** Only set for the `existing` tier, when a version string was returned. */

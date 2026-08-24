@@ -192,9 +192,15 @@ export class DwsRunner {
 
   async run(
     command: readonly string[],
-    options: { profile?: string; confirmed?: boolean; signal?: AbortSignal } = {},
+    options: { profile?: string; confirmed?: boolean; signal?: AbortSignal; sideEffect?: boolean } = {},
   ): Promise<DwsCommandResult> {
+    if (options.signal?.aborted) {
+      throw new DingTalkRuntimeError("DWS_CANCELLED", "DWS execution was cancelled before start");
+    }
     const executable = await this.resolveExecutable();
+    if (options.signal?.aborted) {
+      throw new DingTalkRuntimeError("DWS_CANCELLED", "DWS execution was cancelled before start");
+    }
     const args = buildDwsCommandArguments(command, options);
     return await new Promise<DwsCommandResult>((resolve, reject) => {
       const nodeScript = path.extname(executable).toLowerCase() === ".js";
@@ -203,6 +209,7 @@ export class DwsRunner {
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
+        ...(options.signal ? { signal: options.signal } : {}),
       });
       const stdoutChunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];
@@ -234,21 +241,27 @@ export class DwsRunner {
       }, this.config.timeoutMs);
       timer.unref();
 
-      const abort = (): void => {
-        child.kill();
-      };
-      options.signal?.addEventListener("abort", abort, { once: true });
-
       const cleanup = (): void => {
         clearTimeout(timer);
-        options.signal?.removeEventListener("abort", abort);
       };
+
+      const sideEffectUnverified = (): DingTalkRuntimeError => new DingTalkRuntimeError(
+        "DWS_SIDE_EFFECT_UNVERIFIED",
+        "DWS write operation may have started before its result became unavailable",
+      );
 
       child.once("error", () => {
         if (settled) return;
         settled = true;
         cleanup();
         if (this.executable === executable) this.executable = null;
+        if (options.signal?.aborted) {
+          reject(options.sideEffect ? sideEffectUnverified() : new DingTalkRuntimeError(
+            "DWS_CANCELLED",
+            "DWS execution was cancelled",
+          ));
+          return;
+        }
         reject(new DingTalkRuntimeError("DWS_SPAWN_FAILED", "Failed to start DWS"));
       });
 
@@ -260,18 +273,31 @@ export class DwsRunner {
         const stderr = Buffer.concat(stderrChunks);
         const recoveryEventId = stderr.toString("utf8").match(RECOVERY_EVENT_PATTERN)?.[1];
         if (overflowed) {
-          reject(new DingTalkRuntimeError("DWS_OUTPUT_LIMIT", "DWS output exceeded the configured limit"));
+          reject(options.sideEffect ? sideEffectUnverified() : new DingTalkRuntimeError(
+            "DWS_OUTPUT_LIMIT",
+            "DWS output exceeded the configured limit",
+          ));
           return;
         }
         if (options.signal?.aborted) {
-          reject(new DingTalkRuntimeError("DWS_CANCELLED", "DWS execution was cancelled"));
+          reject(options.sideEffect ? sideEffectUnverified() : new DingTalkRuntimeError(
+            "DWS_CANCELLED",
+            "DWS execution was cancelled",
+          ));
           return;
         }
         if (timedOut) {
-          reject(new DingTalkRuntimeError("DWS_TIMEOUT", "DWS execution timed out"));
+          reject(options.sideEffect ? sideEffectUnverified() : new DingTalkRuntimeError(
+            "DWS_TIMEOUT",
+            "DWS execution timed out",
+          ));
           return;
         }
         if (code !== 0) {
+          if (options.sideEffect) {
+            reject(sideEffectUnverified());
+            return;
+          }
           reject(new DingTalkRuntimeError(
             "DWS_COMMAND_FAILED",
             "DWS command failed",
@@ -286,7 +312,7 @@ export class DwsRunner {
         try {
           resolve(parseJsonOutput(stdout, recoveryEventId));
         } catch (error) {
-          reject(error);
+          reject(options.sideEffect ? sideEffectUnverified() : error);
         }
       });
     });

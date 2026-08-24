@@ -156,6 +156,7 @@ export function createJunqiDingTalkPlugin(): OpenClawPluginDefinition {
               {
                 profile,
                 confirmed: spec.confirmation === "user_required",
+                sideEffect: spec.effect === "write" || spec.effect === "destructive",
                 ...(signal ? { signal } : {}),
               },
             );

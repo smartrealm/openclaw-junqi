@@ -5,8 +5,6 @@ import { setupProgressI18nParams } from "../setupProgressParams";
 import type { InstallTarget, StepState } from "./types";
 
 export const INSTALL_TARGET_KEYS = {
-  user: "setup.openclaw.userNpmPrefix",
-  userMissingPath: "setup.openclaw.userNpmPrefixMissingPath",
   custom: "setup.openclaw.customNpmPrefix",
   existing: "setup.openclaw.useExisting",
 } as const;
@@ -61,20 +59,14 @@ export function pickInstallTargetFromProgress(
   explicitParams: Partial<Record<string, string>> = {},
 ): InstallTarget | null {
   if (
-    key !== INSTALL_TARGET_KEYS.user &&
-    key !== INSTALL_TARGET_KEYS.userMissingPath &&
     key !== INSTALL_TARGET_KEYS.custom &&
     key !== INSTALL_TARGET_KEYS.existing
   ) {
     return null;
   }
-  // Reuse the same rule table that drives i18next substitution so
-  // the UI path stays in lockstep with the message formatting.
+  // 复用 i18next 参数规则，保证界面路径与进度文案保持一致。
   const params = { ...setupProgressI18nParams(key, message), ...explicitParams };
   if (!params.path) return null;
-  if (key === INSTALL_TARGET_KEYS.userMissingPath) {
-    return { tier: "userMissingPath", path: params.path };
-  }
   if (key === INSTALL_TARGET_KEYS.custom) {
     return { tier: "custom", path: params.path };
   }

@@ -587,6 +587,10 @@ export function useSetupFlow(
   const performRuntimeSelection = useCallback(async (mode: InstallMode) => {
     const runId = beginRun();
     const previousMode = installMode;
+    // 失败补偿只能恢复这次切换前可复现为运行中的 Gateway，不能把缺少 OpenClaw
+    // 二进制的未启动状态伪装成可恢复服务。
+    const previousGatewayWasRunning = gatewayRunning
+      && await probeSelectedGateway().catch(() => false);
     setSetupError(null);
 
     try {
@@ -610,6 +614,7 @@ export function useSetupFlow(
           : runDockerSetup(runId),
         commit: commitSetupGatewayRuntime,
         rollbackMode: rollbackActiveGatewayRuntime,
+        shouldRestorePreviousGateway: async () => previousGatewayWasRunning,
         restoreGateway: async (runtime) => {
           if (runtime === "native") await gatewayManager.startForSetup();
           else await gatewayManager.startDockerForSetup();
@@ -655,7 +660,7 @@ export function useSetupFlow(
       report(message);
       replaceSetupStep("error");
     }
-  }, [beginRun, isRunActive, installMode, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, setActiveGatewayRuntime, commitSetupGatewayRuntime, rollbackActiveGatewayRuntime, rollbackRuntimeReconfiguration, gatewayManager, t]);
+  }, [beginRun, isRunActive, installMode, gatewayRunning, setInstallMode, setSetupError, appendSetupLog, report, replaceSetupStep, navigateSetup, runNativeSetup, runDockerSetup, commitSteps, setActiveGatewayRuntime, commitSetupGatewayRuntime, rollbackActiveGatewayRuntime, rollbackRuntimeReconfiguration, gatewayManager, t]);
 
   const selectMode = useCallback(async (mode: InstallMode) => {
     if (runtimeSelectionInFlightRef.current || setupBackInFlightRef.current) return;

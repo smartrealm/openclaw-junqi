@@ -916,11 +916,12 @@ pub(crate) async fn check_npm_for_node(node: &NodeStatus) -> NpmStatus {
     }
 }
 
-/// Apply the user's explicit npm cache choice to a child npm/OpenClaw process.
-/// When no override exists, leave the variable unset so npm resolves the
-/// active user's native cache location itself.
+/// 仅在用户显式选择 OpenClaw npm 安装目录时应用其缓存目录。
+/// 未选择 npm 安装方式时，缓存配置不能改变系统 npm 的行为。
 pub(crate) fn apply_configured_npm_cache(command: &mut tokio::process::Command) {
-    if let Some(cache) = paths::configured_npm_cache_dir() {
+    if paths::configured_npm_prefix().is_some()
+        && let Some(cache) = paths::configured_npm_cache_dir()
+    {
         command.env("npm_config_cache", cache);
     }
 }

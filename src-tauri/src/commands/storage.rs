@@ -2629,6 +2629,12 @@ pub async fn update_npm_cache_directory(
         );
     }
     let reset_to_default = npm_cache_dir.trim().is_empty();
+    if !reset_to_default && current.npm_prefix.is_none() {
+        return Err(
+            "Choose an OpenClaw npm installation directory before setting its npm cache directory"
+                .to_string(),
+        );
+    }
     let updated = layout_with_npm_cache(
         &current,
         (!reset_to_default).then_some(npm_cache_dir.as_str()),

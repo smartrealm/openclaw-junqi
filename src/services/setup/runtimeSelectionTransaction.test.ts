@@ -15,6 +15,7 @@ function ports(overrides: Partial<RuntimeSelectionTransactionPorts> = {}) {
     setup: async (mode) => { calls.push(`setup:${mode}`); return true; },
     commit: async (mode) => { calls.push(`commit:${mode}`); },
     rollbackMode: async (mode) => { calls.push(`rollback-mode:${mode}`); },
+    shouldRestorePreviousGateway: async () => true,
     restoreGateway: async (mode) => { calls.push(`restore:${mode}`); },
     ...overrides,
   };
@@ -48,6 +49,27 @@ test("a failed same-mode setup clears its durable staged marker", async () => {
     "rollback-locations",
     "rollback-mode:native",
     "restore:native",
+  ]);
+});
+
+test("失败安装不恢复此前未运行的 Gateway", async () => {
+  const fixture = ports({
+    setup: async () => {
+      fixture.calls.push("setup:native");
+      return false;
+    },
+    shouldRestorePreviousGateway: async () => false,
+  });
+
+  const outcome = await executeRuntimeSelectionTransaction("native", "native", fixture.value);
+
+  assert.equal(outcome.status, "rolled-back");
+  assert.deepEqual(fixture.calls, [
+    "stage:native",
+    "prepare:native",
+    "setup:native",
+    "rollback-locations",
+    "rollback-mode:native",
   ]);
 });
 
