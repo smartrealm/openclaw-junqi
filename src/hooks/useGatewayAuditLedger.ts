@@ -22,7 +22,7 @@ interface GatewayAuditLedgerState {
 const PAGE_SIZE = 100;
 
 export function useGatewayAuditLedger(
-  filters: { kind?: AuditKind; status?: AuditStatus } = {},
+  filters: { kind?: AuditKind; status?: AuditStatus; sessionKey?: string } = {},
 ): GatewayAuditLedgerState {
   const connected = useChatStore((state) => state.connected);
   const [loading, setLoading] = useState(false);
@@ -59,7 +59,7 @@ export function useGatewayAuditLedger(
     } finally {
       if (requestGeneration === generation.current) setLoading(false);
     }
-  }, [connected, filters.kind, filters.status]);
+  }, [connected, filters.kind, filters.sessionKey, filters.status]);
 
   const loadMore = useCallback(async () => {
     const cursor = nextCursor;
@@ -82,7 +82,7 @@ export function useGatewayAuditLedger(
       // but the local control must still leave its loading state.
       setLoadingMore(false);
     }
-  }, [connected, filters.kind, filters.status, loading, loadingMore, nextCursor]);
+  }, [connected, filters.kind, filters.sessionKey, filters.status, loading, loadingMore, nextCursor]);
 
   useEffect(() => { void refresh(); }, [refresh]);
   useVisibleInterval(() => { void refresh(); }, 30_000, connected, connected);

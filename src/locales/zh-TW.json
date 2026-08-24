@@ -269,6 +269,21 @@
     "startChatWithPersona": "以此人格開始對話"
   },
   "activity": {
+    "runConsole": {
+      "title": "統一運行控制台",
+      "noSession": "未選擇會話",
+      "openSession": "開啟會話",
+      "offline": "連線 Gateway 後可檢視官方運行投影。",
+      "noSessionHint": "選擇一個會話以關聯其任務、審計和有效工具。",
+      "effectiveTools": "有效工具",
+      "toolsUnavailable": "工具快照不可用",
+      "toolsPending": "等待 Gateway 快照",
+      "loadedNativeTasks": "已載入原生任務",
+      "runningTasks": "{{count}} 個排隊或運行中",
+      "recentAuditEvents": "最近運行審計",
+      "auditUnavailable": "審計目前不可用",
+      "auditMetadataOnly": "僅顯示官方 metadata-only 記錄"
+    },
     "title": "活動中心",
     "subtitle": "把聊天會話與 Gateway 後臺執行放到同一條可追蹤的時間線上。",
     "live": "實時同步",
@@ -337,6 +352,10 @@
       "statusFailed": "失敗",
       "statusCancelled": "已取消",
       "statusTimedOut": "已逾時",
+      "flowTitle": "唯讀任務流",
+      "flowAttention": "待關注",
+      "flowEmpty": "無記錄",
+      "flowMore": "另有 {{count}} 項",
       "createdAt": "建立時間",
       "updatedAt": "更新時間",
       "startedAt": "開始時間",
@@ -635,6 +654,13 @@
     "nextWakeIn": "下次喚醒 {{time}}",
     "jobDetailLoading": "正在讀取 OpenClaw 任務詳情",
     "jobDetailUnavailable": "任務詳情暫不可用，目前顯示列表快照",
+    "routineOverview": "例行工作總覽",
+    "pausedJobs": "已暫停",
+    "pausedJobsHint": "不參與下一次排程",
+    "attentionJobs": "待關注",
+    "attentionJobsHint": "以 OpenClaw 最新狀態為準",
+    "nextScheduledJob": "下一項例行工作",
+    "noUpcomingJob": "暫無可確認的下一次運行",
     "format": {
       "every": "每 {{interval}}",
       "onExit": "退出後：{{command}}",
@@ -670,7 +696,15 @@
     "pathPlaceholder": "/你的/項目/路徑",
     "open": "打開",
     "selectFile": "從變更面板選擇文件以查看差異。",
-    "project": "項目"
+    "project": "項目",
+    "noWorkspace": "尚未選擇工作區",
+    "workspaceBoundary": "由桌面端核驗的本地工作區",
+    "selectingWorkspace": "正在核驗",
+    "selectWorkspace": "選擇工作區",
+    "noWorkspaceTitle": "選擇 Git 工作區",
+    "reconfirmWorkspaceTitle": "重新確認 Git 工作區",
+    "reconfirmWorkspacePrompt": "已儲存的路徑不會在新的桌面會話中自動取得 Git 操作權限。請透過系統目錄選擇器重新確認。",
+    "workspacePrompt": "選擇一個本地目錄後，JunQi 會使用桌面端回傳的規範化路徑讀取 Git 狀態。變更操作繼續使用既有的 Git 控件與結果回饋。"
   },
   "memory": {
     "title": "記憶瀏覽器",

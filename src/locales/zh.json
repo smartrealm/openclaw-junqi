@@ -269,6 +269,21 @@
     "startChatWithPersona": "以此人格开始对话"
   },
   "activity": {
+    "runConsole": {
+      "title": "统一运行控制台",
+      "noSession": "未选择会话",
+      "openSession": "打开会话",
+      "offline": "连接 Gateway 后可查看官方运行投影。",
+      "noSessionHint": "选择一个会话以关联其任务、审计和有效工具。",
+      "effectiveTools": "有效工具",
+      "toolsUnavailable": "工具快照不可用",
+      "toolsPending": "等待 Gateway 快照",
+      "loadedNativeTasks": "已加载原生任务",
+      "runningTasks": "{{count}} 个排队或运行中",
+      "recentAuditEvents": "最近运行审计",
+      "auditUnavailable": "审计当前不可用",
+      "auditMetadataOnly": "仅显示官方 metadata-only 记录"
+    },
     "title": "活动中心",
     "subtitle": "把聊天会话与 Gateway 后台执行放到同一条可追踪的时间线上。",
     "live": "实时同步",
@@ -337,6 +352,10 @@
       "statusFailed": "失败",
       "statusCancelled": "已取消",
       "statusTimedOut": "已超时",
+      "flowTitle": "只读任务流",
+      "flowAttention": "待关注",
+      "flowEmpty": "无记录",
+      "flowMore": "另有 {{count}} 项",
       "createdAt": "创建时间",
       "updatedAt": "更新时间",
       "startedAt": "开始时间",
@@ -664,6 +683,13 @@
     "nextWakeIn": "下次唤醒 {{time}}",
     "jobDetailLoading": "正在读取 OpenClaw 任务详情",
     "jobDetailUnavailable": "任务详情暂不可用，当前显示列表快照",
+    "routineOverview": "例行工作总览",
+    "pausedJobs": "已暂停",
+    "pausedJobsHint": "不参与下一次调度",
+    "attentionJobs": "待关注",
+    "attentionJobsHint": "以 OpenClaw 最新状态为准",
+    "nextScheduledJob": "下一项例行工作",
+    "noUpcomingJob": "暂无可确认的下一次运行",
     "format": {
       "every": "每 {{interval}}",
       "onExit": "退出后：{{command}}",
@@ -699,7 +725,15 @@
     "pathPlaceholder": "/你的/项目/路径",
     "open": "打开",
     "selectFile": "从变更面板选择文件以查看差异。",
-    "project": "项目"
+    "project": "项目",
+    "noWorkspace": "尚未选择工作区",
+    "workspaceBoundary": "由桌面端核验的本地工作区",
+    "selectingWorkspace": "正在核验",
+    "selectWorkspace": "选择工作区",
+    "noWorkspaceTitle": "选择 Git 工作区",
+    "reconfirmWorkspaceTitle": "重新确认 Git 工作区",
+    "reconfirmWorkspacePrompt": "已保存的路径不会在新桌面会话中自动获得 Git 操作权限。请通过系统目录选择器重新确认。",
+    "workspacePrompt": "选择一个本地目录后，JunQi 会使用桌面端返回的规范化路径读取 Git 状态。变更操作继续使用现有的 Git 控件与结果反馈。"
   },
   "memory": {
     "title": "记忆浏览器",

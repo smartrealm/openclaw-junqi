@@ -411,8 +411,7 @@ fn record_workspace_directory(app: &AppHandle, directory: &Path) -> Result<(), S
     Ok(())
 }
 
-/// Validate and remember a directory selected by the user before it becomes a
-/// workspace root.  The UI can safely create a terminal with the returned path.
+/// 在目录成为工作区前验证并记录用户选择，同时授予当前桌面会话的 Git 工作区权限。
 #[tauri::command]
 pub fn open_terminal_workspace_directory(
     app: AppHandle,
@@ -420,6 +419,7 @@ pub fn open_terminal_workspace_directory(
 ) -> Result<TerminalWorkspaceDirectory, String> {
     let directory = resolve_terminal_workspace_directory(path)?;
     record_workspace_directory(&app, &directory)?;
+    crate::commands::git_neu::trust_git_workspace(&directory)?;
     Ok(directory_record(directory))
 }
 

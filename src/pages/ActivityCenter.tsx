@@ -40,6 +40,7 @@ import { activitySessionMetrics, mergeActivitySessions, type ActivitySessionReco
 import { resolveStatusLabel } from '@/utils/taskStatusLabels';
 import { OpenClawApprovalsPanel } from '@/components/Activity/OpenClawApprovalsPanel';
 import { OpenClawTaskLedgerPanel } from '@/components/Activity/OpenClawTaskLedgerPanel';
+import { OpenClawRunConsole } from '@/components/Activity/OpenClawRunConsole';
 import { GatewayAuditLedgerPanel } from '@/components/Activity/GatewayAuditLedgerPanel';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import {
@@ -350,6 +351,7 @@ export function ActivityCenterPage() {
       </section>
 
       <OpenClawApprovalsPanel connected={connected} />
+      <OpenClawRunConsole connected={connected} />
       <OpenClawTaskLedgerPanel connected={connected} />
 
       <section className="flex flex-wrap items-center justify-between gap-2 border-b border-aegis-border pb-3">

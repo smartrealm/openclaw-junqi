@@ -55,6 +55,54 @@ function taskTitle(task: OpenClawTaskSummary): string {
   return task.title ?? task.progressSummary ?? task.terminalSummary ?? task.id;
 }
 
+export interface OpenClawTaskFlowColumn {
+  readonly id: 'queued' | 'running' | 'completed' | 'attention';
+  readonly tasks: readonly OpenClawTaskSummary[];
+}
+
+export function projectOpenClawTaskFlow(tasks: readonly OpenClawTaskSummary[]): readonly OpenClawTaskFlowColumn[] {
+  return [
+    { id: 'queued', tasks: tasks.filter((task) => task.status === 'queued') },
+    { id: 'running', tasks: tasks.filter((task) => task.status === 'running') },
+    { id: 'completed', tasks: tasks.filter((task) => task.status === 'completed') },
+    { id: 'attention', tasks: tasks.filter((task) => task.status === 'failed' || task.status === 'cancelled' || task.status === 'timed_out') },
+  ];
+}
+
+function flowColumnLabel(column: OpenClawTaskFlowColumn['id'], t: (key: string, fallback: string) => string): string {
+  if (column === 'queued') return t('activity.tasks.statusQueued', 'Queued');
+  if (column === 'running') return t('activity.tasks.statusRunning', 'Running');
+  if (column === 'completed') return t('activity.tasks.statusCompleted', 'Completed');
+  return t('activity.tasks.flowAttention', 'Needs attention');
+}
+
+function TaskFlow({ tasks }: { tasks: readonly OpenClawTaskSummary[] }) {
+  const { t } = useTranslation();
+  const columns = projectOpenClawTaskFlow(tasks);
+  return (
+    <div className="grid gap-px border-b border-aegis-border bg-aegis-border sm:grid-cols-4" aria-label={t('activity.tasks.flowTitle', '只读任务流')}>
+      {columns.map((column) => (
+        <div key={column.id} className="min-w-0 bg-aegis-card px-3 py-2.5">
+          <div className="flex items-center justify-between gap-2 text-[10px] text-aegis-text-dim">
+            <span>{flowColumnLabel(column.id, t)}</span>
+            <span className="font-mono tabular-nums">{column.tasks.length}</span>
+          </div>
+          {column.tasks.length === 0 ? (
+            <p className="mt-2 text-[10px] text-aegis-text-dim">{t('activity.tasks.flowEmpty', '无记录')}</p>
+          ) : (
+            <ul className="mt-2 space-y-1.5" aria-label={flowColumnLabel(column.id, t)}>
+              {column.tasks.slice(0, 3).map((task) => (
+                <li key={task.id} className="truncate rounded bg-aegis-hover/55 px-1.5 py-1 text-[10px] text-aegis-text-secondary" title={taskTitle(task)}>{taskTitle(task)}</li>
+              ))}
+              {column.tasks.length > 3 && <li className="text-[9px] text-aegis-text-dim">{t('activity.tasks.flowMore', '另有 {{count}} 项', { count: column.tasks.length - 3 })}</li>}
+            </ul>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function taskDetailVisibility(expanded: boolean, hasDetail: boolean): 'expanded' | 'collapsed' {
   return expanded && hasDetail ? 'expanded' : 'collapsed';
 }
@@ -326,6 +374,7 @@ export function OpenClawTaskLedgerPanel({ connected }: { connected: boolean }) {
         <p className="px-4 py-4 text-[11px] text-aegis-text-dim">{t('activity.tasks.empty', 'No native tasks are recorded by this Gateway.')}</p>
       ) : (
         <>
+          <TaskFlow tasks={page?.tasks ?? []} />
           {error && <p className="border-b border-aegis-danger/20 bg-aegis-danger/5 px-4 py-2 text-[10.5px] text-aegis-danger" role="alert">{taskLedgerErrorLabel(error, (key, fallback) => t(key, fallback))}</p>}
           {page?.tasks.map((task) => <TaskRow key={task.id} connected={connected} task={task} />)}
           {canLoadMore && (

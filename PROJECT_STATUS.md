@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-已合并本地 `main` 到 `Blues-Code/Jarvis`，完成安装目标层级契约收敛；已按官方 Codex 源码对照完成可由 OpenClaw 正式协议支撑的聊天交互增强。
+已合并本地 `main` 到 `Blues-Code/Jarvis`，完成安装目标层级契约收敛；已按官方 Codex 源码对照完成可由 OpenClaw 正式协议支撑的聊天交互增强，并开始收敛 Cron、运行、任务与 Git 工作台投影。
 
 ## 已完成内容
 
@@ -12,6 +12,14 @@
 - 合并后安装目标类型已收敛为 `custom` 与 `existing`；同步删除旧 `user` 与 `userMissingPath` 的不可达界面、辅助函数回退和测试输入，避免 TypeScript 契约漂移。
 - 已将官方 `openai/codex` 当前 `main` 的浅克隆放入 `gui/`，固定审阅提交为 `068c49f`；该目录是参考源码，未接入 JunQi 构建。
 - 已对照 Codex 的运行历史、待处理审批、会话分支、运行时选择、多智能体工作区与中断转向模式。JunQi 已有 `ExecutionProcessGroup`、`SessionBranchesControl`、`SessionRuntimeControl`、`AgentOfficeView` 与正式 `sessions.steer` 路径；不复制 Codex TUI，也不新建平行会话、任务或审批语义。
+- Cron 页面新增例行工作总览，直接聚合现有官方 Cron 列表的活跃、暂停和待关注状态，并展示可确认的下一项运行；不从本地计时或文本生成任务终态。
+- 活动中心新增统一运行控制台，按当前 Session 关联已有 Task Ledger、`audit.activity.list` 和 `tools.effective` 快照；工具读取失败保持不可用，不显示为零工具。
+- OpenClaw Task Ledger 新增只读状态流投影，将 Gateway 原始 `queued`、`running`、`completed`、`failed`、`cancelled` 与 `timed_out` 状态分栏呈现；未增加拖放、依赖、优先级或本地调度语义。
+- Git 页面移除手工输入任意路径的入口，改由系统目录选择器与已有 Tauri `open_terminal_workspace_directory` 返回规范化路径；路径仍由每次 Git command 的后端校验约束，Git 操作继续复用既有控件和结果处理。
+- 审查发现 Git 单文件差异、暂存和取消暂存此前没有复用批量操作的相对路径校验；已在 Rust command 层拒绝绝对路径和父目录逃逸，避免未暂存文件差异回退读取工作区外路径，并新增回归测试。
+- 统一运行控制台不再把 Task Ledger 首页数量表述为任务总量，明确标记为“已加载原生任务”；审计同样标记为最近记录，避免把分页快照伪装为完整账本。
+- Git 工作区现在由 Rust 维护当前桌面会话的规范化可信路径。系统目录选择后才会登记；每次 Git command 都重新规范化并要求精确匹配，保存路径在下一桌面会话必须重新经系统选择器确认。
+- 已按用户授权停止旧单实例并启动当前开发版。真实截图确认首次设置页的语言、主题、主操作和窄窗口布局可见；开发版未完成 OpenClaw 初始配置，未伪造 Gateway 或业务页数据进入 Cron、活动中心和 Git 页。
 - 聊天 Composer 上方新增待处理 OpenClaw 审批提示条。它只复用既有审批 Store 的官方列表和实时订阅，按当前会话与其他会话汇总未决审批，并跳转至既有活动中心审批面板处理。
 - 持久化进度卡新增 OpenClaw 来源和 `updatedAt` 元信息；修订、步骤、时间与清空继续只以官方进度卡为准，无法格式化的上游时间不产生本地替代值。
 - 修复合并后钉钉插件打包阻断：当前工具规格只有 `read` 与 `write`，副作用标记不再比较不存在的 `destructive` 分支；同时补回中止执行测试遗漏的 `access` 导入。钉钉插件包与前端 metadata 已由正式构建重新生成。
@@ -169,6 +177,9 @@
 ## 已知问题与未验证边界
 
 - 本轮未运行完整 `pnpm test`、Rust 测试或生产构建；未在真实 Gateway 或 Tauri WebView 验证待处理审批提示条与进度卡在亮暗主题、窄窗口、键盘焦点和减少动态效果下的完整序列。
+- 本轮尚未在真实 Tauri WebView 验证新 Cron 总览、统一运行控制台、只读任务流和目录选择式 Git 工作区在亮暗主题、窄窗口、键盘焦点与目录选择取消或失败时的完整序列；未在 Windows 和 Linux 验证系统目录选择器与规范化路径行为。
+- 本机存在正在运行的 JunQi 单实例，`pnpm tauri dev` 被单实例保护转交后退出。为避免中断用户现有桌面会话，本轮没有强制退出该实例，因此新改动尚未完成真实 Tauri WebView 检查。
+- 开发版已经启动，但当前环境尚未完成 OpenClaw 初始配置且没有可核验的 Gateway Session、Cron、Task Ledger、审计或有效工具快照。因此 Cron、活动中心和 Git 页的真实数据序列仍未完成；不得以首次设置页截图替代这些验收。
 - 当前 DMG 使用 `--no-sign` 本地打包，未进行 Apple Developer ID 签名、公证、updater 签名或目标机器安装验收；不能作为正式发布制品。
 - 尚未在 Windows、macOS 与 Linux 的干净目标机器上分别验证：已有兼容 Node.js 复用、已存在不兼容 Node.js 的三语提示、版本管理器 PATH 选择、系统安装器权限和安装前二次复核。当前自动化与本机静态检查不替代这些目标平台验收。
 - 尚未在真实 Tauri WebView 中连续验证 schema 不兼容提示、精确回滚、Gateway 重连和回滚后旧插件恢复。
@@ -200,7 +211,7 @@
 
 ## 下一步顺序
 
-1. 在真实 Gateway 和 Tauri WebView 验证审批提示条、进度卡元信息、执行过程与活动中心审批面板的连续状态；覆盖亮暗主题、窄窗口、键盘焦点和减少动态效果。
+1. 在真实 Gateway 和 Tauri WebView 验证 Cron 总览、统一运行控制台、只读任务流、审批提示条和进度卡元信息的连续状态；覆盖亮暗主题、窄窗口、键盘焦点和减少动态效果。
 2. 在 Windows、macOS 和 Linux 的目标机器上分别验证已有兼容 Node.js 的无下载复用、已存在不兼容 Node.js 的版本范围提示、系统安装器权限和安装前二次复核。
 2. 在重新构建的真实桌面应用中点击 DWS 返回的请假提交入口，确认系统收到 Opener 打开请求；同时验证未安装客户端和无默认协议处理器时显示本地化错误。
 3. 在真实 Gateway 上验证业务审计读取失败、成功空结果、已有官方记录和本窗口投影四种互斥状态，确认刷新失败不会清空已确认记录。

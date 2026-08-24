@@ -231,6 +231,13 @@ export function CronMonitorPage() {
   }, [jobs]);
 
   const activeCount = useMemo(() => jobs.filter((job) => getStatus(job) === 'active').length, [jobs]);
+  const pausedCount = useMemo(() => jobs.filter((job) => getStatus(job) === 'paused').length, [jobs]);
+  const errorCount = useMemo(() => jobs.filter((job) => getStatus(job) === 'error').length, [jobs]);
+  const nextScheduledJob = useMemo(() => (
+    jobs
+      .filter((job) => getStatus(job) === 'active' && getNextRun(job))
+      .sort((left, right) => new Date(getNextRun(left)!).getTime() - new Date(getNextRun(right)!).getTime())[0] ?? null
+  ), [jobs]);
   const selectedJob = useMemo(() => {
     const listedJob = jobs.find(j => j.id === selectedJobId) || null;
     if (!listedJob || selectedJobDetails?.id !== listedJob.id) return listedJob;
@@ -623,6 +630,35 @@ export function CronMonitorPage() {
           </div>
         )}
       </div>
+
+      <section className="grid shrink-0 grid-cols-2 gap-px border-b border-aegis-border bg-aegis-border lg:grid-cols-4" aria-label={t('cron.routineOverview', '例行工作总览')}>
+        <div className="min-w-0 bg-aegis-card px-4 py-3">
+          <div className="text-[10px] text-aegis-text-dim">{t('cron.activeJobs')}</div>
+          <div className="mt-1 font-mono text-[18px] font-semibold tabular-nums text-aegis-text">{activeCount}</div>
+          <p className="mt-1 text-[10px] text-aegis-text-dim">{t('cron.schedulerJobs', { count: jobs.length })}</p>
+        </div>
+        <div className="min-w-0 bg-aegis-card px-4 py-3">
+          <div className="text-[10px] text-aegis-text-dim">{t('cron.pausedJobs', '已暂停')}</div>
+          <div className="mt-1 font-mono text-[18px] font-semibold tabular-nums text-aegis-text">{pausedCount}</div>
+          <p className="mt-1 text-[10px] text-aegis-text-dim">{t('cron.pausedJobsHint', '不参与下一次调度')}</p>
+        </div>
+        <div className="min-w-0 bg-aegis-card px-4 py-3">
+          <div className="text-[10px] text-aegis-text-dim">{t('cron.attentionJobs', '待关注')}</div>
+          <div className={clsx('mt-1 font-mono text-[18px] font-semibold tabular-nums', errorCount > 0 ? 'text-aegis-danger' : 'text-aegis-text')}>{errorCount}</div>
+          <p className="mt-1 text-[10px] text-aegis-text-dim">{t('cron.attentionJobsHint', '以 OpenClaw 最新状态为准')}</p>
+        </div>
+        <div className="min-w-0 bg-aegis-card px-4 py-3">
+          <div className="text-[10px] text-aegis-text-dim">{t('cron.nextScheduledJob', '下一项例行工作')}</div>
+          {nextScheduledJob ? (
+            <button type="button" onClick={() => selectJob(nextScheduledJob.id)} className="mt-1 block max-w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50">
+              <span className="block truncate text-[12px] font-semibold text-aegis-text hover:text-aegis-primary">{nextScheduledJob.name || nextScheduledJob.id}</span>
+              <span className="mt-1 block text-[10px] text-aegis-text-dim">{formatCountdown(getNextRun(nextScheduledJob))}</span>
+            </button>
+          ) : (
+            <p className="mt-1 text-[11px] text-aegis-text-dim">{t('cron.noUpcomingJob', '暂无可确认的下一次运行')}</p>
+          )}
+        </div>
+      </section>
 
       {/* Master-detail maintenance layout */}
       <div className="flex-1 grid overflow-hidden mc-grid-main">

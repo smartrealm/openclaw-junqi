@@ -5,6 +5,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -87,7 +88,27 @@ fn read_project_config_helper(_project_path: String) -> Result<ProjectConfig, St
 
 // ── Helper functions ─────────────────────────────────────────────────────────
 
-/// Validate that project_path is absolute and looks like a real project directory.
+fn trusted_git_workspace() -> &'static Mutex<Option<PathBuf>> {
+    static WORKSPACE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+    WORKSPACE.get_or_init(|| Mutex::new(None))
+}
+
+/// 只有系统目录选择器确认过的规范化路径才能成为当前会话的 Git 工作区。
+pub(crate) fn trust_git_workspace(path: &Path) -> Result<(), String> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| "Git workspace directory does not exist".to_string())?;
+    if !canonical.is_dir() {
+        return Err("Git workspace path is not a directory".to_string());
+    }
+    let mut workspace = trusted_git_workspace()
+        .lock()
+        .map_err(|_| "Git workspace trust state is unavailable".to_string())?;
+    *workspace = Some(canonical);
+    Ok(())
+}
+
+/// 每次 Git 调用都重新规范化路径，并要求其与当前会话已确认工作区一致。
 fn validate_project_path(project_path: &str) -> Result<(), String> {
     let path = Path::new(project_path);
     if !path.is_absolute() {
@@ -96,15 +117,17 @@ fn validate_project_path(project_path: &str) -> Result<(), String> {
     if !path.exists() {
         return Err("Project path does not exist".to_string());
     }
-    // Resolve symlinks / .. and ensure the path didn't escape
     let canonical = path
         .canonicalize()
         .map_err(|e| format!("Cannot resolve project path: {}", e))?;
-    if canonical != path {
-        // Allow symlinks that resolve to a valid directory, but block obvious traversal
-        if !canonical.is_dir() {
-            return Err("Project path is not a directory".to_string());
-        }
+    if !canonical.is_dir() {
+        return Err("Project path is not a directory".to_string());
+    }
+    let workspace = trusted_git_workspace()
+        .lock()
+        .map_err(|_| "Git workspace trust state is unavailable".to_string())?;
+    if workspace.as_deref() != Some(canonical.as_path()) {
+        return Err("Git workspace is not confirmed for this desktop session".to_string());
     }
     Ok(())
 }
@@ -815,6 +838,7 @@ pub async fn git_file_diff(
     file_path: String,
     staged: bool,
 ) -> Result<String, String> {
+    validate_git_relative_path(&file_path)?;
     let mut args = vec!["diff".to_string()];
     if staged {
         args.push("--cached".to_string());
@@ -861,11 +885,13 @@ pub async fn git_file_diff(
 
 #[tauri::command]
 pub async fn git_stage(project_path: String, file_path: String) -> Result<(), String> {
+    validate_git_relative_path(&file_path)?;
     run_git_check(&project_path, &["add", "--", &file_path])
 }
 
 #[tauri::command]
 pub async fn git_unstage(project_path: String, file_path: String) -> Result<(), String> {
+    validate_git_relative_path(&file_path)?;
     if git_has_head(&project_path)? {
         run_git_check(&project_path, &["restore", "--staged", "--", &file_path])
     } else {
@@ -1238,6 +1264,7 @@ pub async fn git_show_file_diff(
     commit_hash: String,
     file_path: String,
 ) -> Result<String, String> {
+    validate_git_relative_path(&file_path)?;
     let output = run_git(
         &project_path,
         &["show", "--format=", &commit_hash, "--", &file_path],
@@ -1511,7 +1538,7 @@ pub async fn git_file_diff_stats(project_path: String) -> Result<GitFileDiffResp
         files: Vec::new(),
     };
     let root_output = run_git_with_timeout(
-        project_path,
+        project_path.clone(),
         vec![
             "--no-optional-locks".to_string(),
             "rev-parse".to_string(),
@@ -1529,12 +1556,11 @@ pub async fn git_file_diff_stats(project_path: String) -> Result<GitFileDiffResp
     if root_text.is_empty() {
         return Ok(empty_response());
     }
-    let git_worktree = root_text.to_string();
     let repository_root = PathBuf::from(root_text)
         .canonicalize()
         .map_err(|error| format!("Cannot resolve git repository root: {error}"))?;
     let output = run_git_with_timeout(
-        git_worktree,
+        project_path,
         vec![
             "--no-optional-locks".to_string(),
             "diff".to_string(),
@@ -1558,7 +1584,69 @@ pub async fn git_file_diff_stats(project_path: String) -> Result<GitFileDiffResp
 
 #[cfg(test)]
 mod terminal_file_diff_tests {
-    use super::{parse_numstat_z, GitFileDiffResponse, GitFileDiffStat};
+    use super::{
+        git_file_diff_stats, parse_numstat_z, trust_git_workspace, trusted_git_workspace,
+        validate_git_relative_path, validate_project_path, GitFileDiffResponse, GitFileDiffStat,
+    };
+    use std::{fs, process::Command, sync::Mutex};
+
+    fn git_workspace_test_guard() -> &'static Mutex<()> {
+        static GUARD: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
+        GUARD.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn git_file_paths_cannot_escape_the_selected_worktree() {
+        assert!(validate_git_relative_path("src/main.rs").is_ok());
+        assert!(validate_git_relative_path("../outside.txt").is_err());
+        assert!(validate_git_relative_path("/private/outside.txt").is_err());
+    }
+
+    #[test]
+    fn git_commands_require_the_current_session_workspace_confirmation() {
+        let _guard = git_workspace_test_guard()
+            .lock()
+            .expect("test guard must work");
+        let root = std::env::temp_dir().join(format!("junqi-git-trust-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("test workspace must exist");
+        *trusted_git_workspace()
+            .lock()
+            .expect("trust lock must work") = None;
+        assert!(validate_project_path(root.to_string_lossy().as_ref()).is_err());
+        trust_git_workspace(&root).expect("test workspace must be trusted");
+        assert!(validate_project_path(root.to_string_lossy().as_ref()).is_ok());
+        *trusted_git_workspace()
+            .lock()
+            .expect("trust lock must work") = None;
+        fs::remove_dir_all(root).expect("test workspace must be removable");
+    }
+
+    #[tokio::test]
+    async fn git_file_diff_stats_keeps_a_confirmed_nested_workspace() {
+        let _guard = git_workspace_test_guard()
+            .lock()
+            .expect("test guard must work");
+        let root = std::env::temp_dir().join(format!("junqi-git-nested-{}", uuid::Uuid::new_v4()));
+        let nested = root.join("nested");
+        fs::create_dir_all(&nested).expect("nested workspace must exist");
+        let initialized = Command::new("git")
+            .arg("init")
+            .arg(&root)
+            .status()
+            .expect("git must be available for Git command tests");
+        assert!(initialized.success());
+
+        *trusted_git_workspace()
+            .lock()
+            .expect("trust lock must work") = None;
+        trust_git_workspace(&nested).expect("nested workspace must be trusted");
+        let result = git_file_diff_stats(nested.to_string_lossy().into_owned()).await;
+        assert!(result.is_ok());
+        *trusted_git_workspace()
+            .lock()
+            .expect("trust lock must work") = None;
+        fs::remove_dir_all(root).expect("test workspace must be removable");
+    }
 
     #[test]
     fn terminal_file_diff_response_exposes_tree_and_repository_roots() {

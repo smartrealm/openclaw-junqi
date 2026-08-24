@@ -269,6 +269,21 @@
     "startChatWithPersona": "Start chat with this persona"
   },
   "activity": {
+    "runConsole": {
+      "title": "Unified run console",
+      "noSession": "No session selected",
+      "openSession": "Open session",
+      "offline": "Connect to Gateway to inspect official run projections.",
+      "noSessionHint": "Select a session to relate its tasks, audit events, and effective tools.",
+      "effectiveTools": "Effective tools",
+      "toolsUnavailable": "Tool snapshot unavailable",
+      "toolsPending": "Waiting for Gateway snapshot",
+      "loadedNativeTasks": "Loaded native tasks",
+      "runningTasks": "{{count}} queued or running",
+      "recentAuditEvents": "Recent run audit",
+      "auditUnavailable": "Audit currently unavailable",
+      "auditMetadataOnly": "Official metadata-only records"
+    },
     "title": "Activity Center",
     "subtitle": "Track chat sessions and Gateway background runs on one timeline.",
     "live": "Live sync",
@@ -337,6 +352,10 @@
       "statusFailed": "Failed",
       "statusCancelled": "Cancelled",
       "statusTimedOut": "Timed out",
+      "flowTitle": "Read-only task flow",
+      "flowAttention": "Needs attention",
+      "flowEmpty": "No records",
+      "flowMore": "{{count}} more",
       "createdAt": "Created",
       "updatedAt": "Updated",
       "startedAt": "Started",
@@ -664,6 +683,13 @@
     "nextWakeIn": "Next wake {{time}}",
     "jobDetailLoading": "Reading OpenClaw job details",
     "jobDetailUnavailable": "Job details unavailable; showing the list snapshot",
+    "routineOverview": "Routine overview",
+    "pausedJobs": "Paused",
+    "pausedJobsHint": "Excluded from the next schedule",
+    "attentionJobs": "Needs attention",
+    "attentionJobsHint": "Derived from the latest OpenClaw state",
+    "nextScheduledJob": "Next routine",
+    "noUpcomingJob": "No confirmed next run",
     "format": {
       "every": "Every {{interval}}",
       "onExit": "On exit: {{command}}",
@@ -699,7 +725,15 @@
     "pathPlaceholder": "/path/to/your/project",
     "open": "Open",
     "selectFile": "Select a file from the Changes panel to view its diff.",
-    "project": "Project"
+    "project": "Project",
+    "noWorkspace": "No workspace selected",
+    "workspaceBoundary": "Desktop-validated local workspace",
+    "selectingWorkspace": "Validating",
+    "selectWorkspace": "Select workspace",
+    "noWorkspaceTitle": "Select a Git workspace",
+    "reconfirmWorkspaceTitle": "Confirm the Git workspace again",
+    "reconfirmWorkspacePrompt": "A saved path does not automatically receive Git operation permission in a new desktop session. Confirm it again through the system directory picker.",
+    "workspacePrompt": "After you select a local directory, JunQi reads Git state through the canonical path returned by the desktop runtime. Mutations continue to use the existing Git controls and result feedback."
   },
   "memory": {
     "title": "Memory Explorer",
