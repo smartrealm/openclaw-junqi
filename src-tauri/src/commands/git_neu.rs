@@ -88,12 +88,12 @@ fn read_project_config_helper(_project_path: String) -> Result<ProjectConfig, St
 
 // ── Helper functions ─────────────────────────────────────────────────────────
 
-fn trusted_git_workspace() -> &'static Mutex<Option<PathBuf>> {
-    static WORKSPACE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
-    WORKSPACE.get_or_init(|| Mutex::new(None))
+fn trusted_git_workspaces() -> &'static Mutex<HashSet<PathBuf>> {
+    static WORKSPACES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+    WORKSPACES.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
-/// 只有系统目录选择器确认过的规范化路径才能成为当前会话的 Git 工作区。
+/// 记录系统目录选择器确认过的规范化路径及其 Git 仓库根目录。
 pub(crate) fn trust_git_workspace(path: &Path) -> Result<(), String> {
     let canonical = path
         .canonicalize()
@@ -101,14 +101,24 @@ pub(crate) fn trust_git_workspace(path: &Path) -> Result<(), String> {
     if !canonical.is_dir() {
         return Err("Git workspace path is not a directory".to_string());
     }
-    let mut workspace = trusted_git_workspace()
-        .lock()
-        .map_err(|_| "Git workspace trust state is unavailable".to_string())?;
-    *workspace = Some(canonical);
+    let canonical_path = path_to_string(&canonical)?;
+    {
+        let mut workspaces = trusted_git_workspaces()
+            .lock()
+            .map_err(|_| "Git workspace trust state is unavailable".to_string())?;
+        workspaces.insert(canonical.clone());
+    }
+
+    if let Ok(repository_root) = git_worktree_root(&canonical_path) {
+        let mut workspaces = trusted_git_workspaces()
+            .lock()
+            .map_err(|_| "Git workspace trust state is unavailable".to_string())?;
+        workspaces.insert(repository_root);
+    }
     Ok(())
 }
 
-/// 每次 Git 调用都重新规范化路径，并要求其与当前会话已确认工作区一致。
+/// 每次 Git 调用都重新规范化路径，并要求其属于当前会话已确认的精确路径集合。
 fn validate_project_path(project_path: &str) -> Result<(), String> {
     let path = Path::new(project_path);
     if !path.is_absolute() {
@@ -123,10 +133,10 @@ fn validate_project_path(project_path: &str) -> Result<(), String> {
     if !canonical.is_dir() {
         return Err("Project path is not a directory".to_string());
     }
-    let workspace = trusted_git_workspace()
+    let workspaces = trusted_git_workspaces()
         .lock()
         .map_err(|_| "Git workspace trust state is unavailable".to_string())?;
-    if workspace.as_deref() != Some(canonical.as_path()) {
+    if !workspaces.contains(&canonical) {
         return Err("Git workspace is not confirmed for this desktop session".to_string());
     }
     Ok(())
@@ -1585,7 +1595,7 @@ pub async fn git_file_diff_stats(project_path: String) -> Result<GitFileDiffResp
 #[cfg(test)]
 mod terminal_file_diff_tests {
     use super::{
-        git_file_diff_stats, parse_numstat_z, trust_git_workspace, trusted_git_workspace,
+        git_file_diff_stats, parse_numstat_z, trust_git_workspace, trusted_git_workspaces,
         validate_git_relative_path, validate_project_path, GitFileDiffResponse, GitFileDiffStat,
     };
     use std::{fs, process::Command, sync::Mutex};
@@ -1609,16 +1619,46 @@ mod terminal_file_diff_tests {
             .expect("test guard must work");
         let root = std::env::temp_dir().join(format!("junqi-git-trust-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).expect("test workspace must exist");
-        *trusted_git_workspace()
+        trusted_git_workspaces()
             .lock()
-            .expect("trust lock must work") = None;
+            .expect("trust lock must work")
+            .clear();
         assert!(validate_project_path(root.to_string_lossy().as_ref()).is_err());
         trust_git_workspace(&root).expect("test workspace must be trusted");
         assert!(validate_project_path(root.to_string_lossy().as_ref()).is_ok());
-        *trusted_git_workspace()
+        trusted_git_workspaces()
             .lock()
-            .expect("trust lock must work") = None;
+            .expect("trust lock must work")
+            .clear();
         fs::remove_dir_all(root).expect("test workspace must be removable");
+    }
+
+    #[test]
+    fn git_workspace_confirmation_preserves_other_confirmed_directories() {
+        let _guard = git_workspace_test_guard()
+            .lock()
+            .expect("test guard must work");
+        let first = std::env::temp_dir().join(format!("junqi-git-first-{}", uuid::Uuid::new_v4()));
+        let second =
+            std::env::temp_dir().join(format!("junqi-git-second-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&first).expect("first test workspace must exist");
+        fs::create_dir_all(&second).expect("second test workspace must exist");
+        trusted_git_workspaces()
+            .lock()
+            .expect("trust lock must work")
+            .clear();
+
+        trust_git_workspace(&first).expect("first workspace must be trusted");
+        trust_git_workspace(&second).expect("second workspace must be trusted");
+
+        assert!(validate_project_path(first.to_string_lossy().as_ref()).is_ok());
+        assert!(validate_project_path(second.to_string_lossy().as_ref()).is_ok());
+        trusted_git_workspaces()
+            .lock()
+            .expect("trust lock must work")
+            .clear();
+        fs::remove_dir_all(first).expect("first test workspace must be removable");
+        fs::remove_dir_all(second).expect("second test workspace must be removable");
     }
 
     #[tokio::test]
@@ -1636,15 +1676,18 @@ mod terminal_file_diff_tests {
             .expect("git must be available for Git command tests");
         assert!(initialized.success());
 
-        *trusted_git_workspace()
+        trusted_git_workspaces()
             .lock()
-            .expect("trust lock must work") = None;
+            .expect("trust lock must work")
+            .clear();
         trust_git_workspace(&nested).expect("nested workspace must be trusted");
+        assert!(validate_project_path(root.to_string_lossy().as_ref()).is_ok());
         let result = git_file_diff_stats(nested.to_string_lossy().into_owned()).await;
         assert!(result.is_ok());
-        *trusted_git_workspace()
+        trusted_git_workspaces()
             .lock()
-            .expect("trust lock must work") = None;
+            .expect("trust lock must work")
+            .clear();
         fs::remove_dir_all(root).expect("test workspace must be removable");
     }
 

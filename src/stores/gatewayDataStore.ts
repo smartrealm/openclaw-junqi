@@ -224,6 +224,7 @@ interface GatewayDataState {
   toolsEffectiveLoading: boolean;
   toolsEffectiveLoadingSessionKey: string | null;
   toolsEffectiveError: string | null;
+  toolsEffectiveErrorSessionKey: string | null;
   toolsCatalog: Record<string, OpenClawToolsCatalogResult>;
   toolsCatalogUpdatedAt: Record<string, number>;
   toolsCatalogLoading: boolean;
@@ -301,7 +302,7 @@ interface GatewayDataState {
   setToolsEffective: (sessionKey: string, result: OpenClawToolsEffectiveResult) => void;
   clearToolsEffective: (sessionKey?: string) => void;
   setToolsEffectiveLoading: (sessionKey: string | null) => void;
-  setToolsEffectiveError: (value: string | null) => void;
+  setToolsEffectiveError: (value: string | null, sessionKey?: string | null) => void;
   setToolsCatalog: (agentId: string, result: OpenClawToolsCatalogResult) => void;
   clearToolsCatalog: (agentId?: string) => void;
   setToolsCatalogLoading: (agentId: string | null) => void;
@@ -371,6 +372,7 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
   toolsEffectiveLoading: false,
   toolsEffectiveLoadingSessionKey: null,
   toolsEffectiveError: null,
+  toolsEffectiveErrorSessionKey: null,
   toolsCatalog: {},
   toolsCatalogUpdatedAt: {},
   toolsCatalogLoading: false,
@@ -456,6 +458,8 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
     );
     const loadingSessionKey = get().toolsEffectiveLoadingSessionKey;
     const sessionToolsLoading = loadingSessionKey !== null && sessionKeys.has(loadingSessionKey);
+    const errorSessionKey = get().toolsEffectiveErrorSessionKey;
+    const sessionToolsError = errorSessionKey !== null && sessionKeys.has(errorSessionKey);
     const loadingArtifactsKey = get().sessionArtifactsLoadingKey;
     const sessionArtifactsLoading = loadingArtifactsKey !== null && sessionKeys.has(loadingArtifactsKey);
     set({
@@ -467,6 +471,9 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
       sessionArtifactsUpdatedAt,
       ...(loadingSessionKey !== null && !sessionToolsLoading
         ? { toolsEffectiveLoading: false, toolsEffectiveLoadingSessionKey: null }
+        : {}),
+      ...(errorSessionKey !== null && !sessionToolsError
+        ? { toolsEffectiveError: null, toolsEffectiveErrorSessionKey: null }
         : {}),
       ...(loadingArtifactsKey !== null && !sessionArtifactsLoading
         ? { sessionArtifactsLoading: false, sessionArtifactsLoadingKey: null }
@@ -508,6 +515,7 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
     toolsEffectiveLoading: false,
     toolsEffectiveLoadingSessionKey: null,
     toolsEffectiveError: null,
+    toolsEffectiveErrorSessionKey: null,
   }),
 
   clearToolsEffective: (sessionKey) => {
@@ -527,7 +535,10 @@ export const useGatewayDataStore = create<GatewayDataState>((set, get) => ({
     toolsEffectiveLoadingSessionKey: sessionKey,
   }),
 
-  setToolsEffectiveError: (value) => set({ toolsEffectiveError: value }),
+  setToolsEffectiveError: (value, sessionKey = null) => set({
+    toolsEffectiveError: value,
+    toolsEffectiveErrorSessionKey: value === null ? null : sessionKey,
+  }),
 
   setToolsCatalog: (agentId, result) => set({
     toolsCatalog: { ...get().toolsCatalog, [agentId]: result },
@@ -1576,7 +1587,7 @@ export async function refreshToolsEffective(
     if (!isCurrentToolsEffectiveRequest(ticket)) return false;
     store.clearToolsEffective(normalizedSessionKey);
     store.setToolsEffectiveLoading(null);
-    store.setToolsEffectiveError(toolsEffectiveFailureCode(error));
+    store.setToolsEffectiveError(toolsEffectiveFailureCode(error), normalizedSessionKey);
     return false;
   }
 }

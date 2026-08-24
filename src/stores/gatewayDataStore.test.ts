@@ -436,11 +436,14 @@ test('effective tool snapshots follow Session lifecycle and actual Gateway suppo
   assert.ok(useGatewayDataStore.getState().toolsEffective['agent:main:main']);
 
   store.setToolsEffectiveLoading('agent:main:main');
+  store.setToolsEffectiveError('OPENCLAW_TOOLS_EFFECTIVE_FAILED', 'agent:main:main');
   store.setSessions([]);
   const afterDeletion = useGatewayDataStore.getState();
   assert.equal(afterDeletion.toolsEffective['agent:main:main'], undefined);
   assert.equal(afterDeletion.toolsEffectiveLoading, false);
   assert.equal(afterDeletion.toolsEffectiveLoadingSessionKey, null);
+  assert.equal(afterDeletion.toolsEffectiveError, null);
+  assert.equal(afterDeletion.toolsEffectiveErrorSessionKey, null);
 
   const calls: string[] = [];
   const gateway = {
@@ -460,6 +463,7 @@ test('effective tool snapshots follow Session lifecycle and actual Gateway suppo
   try {
     assert.equal(await refreshToolsEffective('agent:main:main'), false);
     assert.equal(useGatewayDataStore.getState().toolsEffectiveError, 'OPENCLAW_TOOLS_EFFECTIVE_UNSUPPORTED');
+    assert.equal(useGatewayDataStore.getState().toolsEffectiveErrorSessionKey, 'agent:main:main');
     assert.equal(calls.includes('tools.effective'), true);
   } finally {
     stopPolling();

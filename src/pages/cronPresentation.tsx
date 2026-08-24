@@ -119,6 +119,14 @@ export function getCronDeliveryStatus(job: OpenClawCronJobDetails): 'delivered' 
   return status === 'delivered' ? 'delivered' : 'unknown';
 }
 
+export function cronRoutineProjectionAvailable(
+  connected: boolean,
+  loading: boolean,
+  error: string | null,
+): boolean {
+  return connected && !loading && error === null;
+}
+
 export function cronRunInFlight(status: 'queued' | 'waiting' | 'pending' | 'ok' | 'error' | 'skipped' | undefined): boolean {
   return status === 'queued' || status === 'waiting' || status === 'pending';
 }

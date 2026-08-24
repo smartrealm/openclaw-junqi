@@ -78,8 +78,7 @@ export function useGatewayAuditLedger(
     } catch {
       if (requestGeneration === generation.current) setUnavailable(true);
     } finally {
-      // A refresh may supersede this page request; the stale result is ignored,
-      // but the local control must still leave its loading state.
+      // 刷新可能取代当前分页请求；即使结果过期，本地控件也必须退出加载状态。
       setLoadingMore(false);
     }
   }, [connected, filters.kind, filters.sessionKey, filters.status, loading, loadingMore, nextCursor]);

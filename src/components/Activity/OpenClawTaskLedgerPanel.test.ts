@@ -22,6 +22,8 @@ test('任务流只按 Gateway 任务状态投影，不创建本地状态', () =>
     ['queued', ['queued']],
     ['running', ['running']],
     ['completed', ['completed']],
-    ['attention', ['failed', 'cancelled', 'timed_out']],
+    ['failed', ['failed']],
+    ['cancelled', ['cancelled']],
+    ['timed_out', ['timed_out']],
   ]);
 });

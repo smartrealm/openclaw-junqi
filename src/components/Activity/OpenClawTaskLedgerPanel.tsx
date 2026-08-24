@@ -56,7 +56,7 @@ function taskTitle(task: OpenClawTaskSummary): string {
 }
 
 export interface OpenClawTaskFlowColumn {
-  readonly id: 'queued' | 'running' | 'completed' | 'attention';
+  readonly id: OpenClawTaskLedgerStatus;
   readonly tasks: readonly OpenClawTaskSummary[];
 }
 
@@ -65,22 +65,26 @@ export function projectOpenClawTaskFlow(tasks: readonly OpenClawTaskSummary[]): 
     { id: 'queued', tasks: tasks.filter((task) => task.status === 'queued') },
     { id: 'running', tasks: tasks.filter((task) => task.status === 'running') },
     { id: 'completed', tasks: tasks.filter((task) => task.status === 'completed') },
-    { id: 'attention', tasks: tasks.filter((task) => task.status === 'failed' || task.status === 'cancelled' || task.status === 'timed_out') },
+    { id: 'failed', tasks: tasks.filter((task) => task.status === 'failed') },
+    { id: 'cancelled', tasks: tasks.filter((task) => task.status === 'cancelled') },
+    { id: 'timed_out', tasks: tasks.filter((task) => task.status === 'timed_out') },
   ];
 }
 
-function flowColumnLabel(column: OpenClawTaskFlowColumn['id'], t: (key: string, fallback: string) => string): string {
-  if (column === 'queued') return t('activity.tasks.statusQueued', 'Queued');
-  if (column === 'running') return t('activity.tasks.statusRunning', 'Running');
-  if (column === 'completed') return t('activity.tasks.statusCompleted', 'Completed');
-  return t('activity.tasks.flowAttention', 'Needs attention');
+function flowColumnLabel(column: OpenClawTaskFlowColumn['id'], t: (key: string) => string): string {
+  if (column === 'queued') return t('activity.tasks.statusQueued');
+  if (column === 'running') return t('activity.tasks.statusRunning');
+  if (column === 'completed') return t('activity.tasks.statusCompleted');
+  if (column === 'failed') return t('activity.tasks.statusFailed');
+  if (column === 'cancelled') return t('activity.tasks.statusCancelled');
+  return t('activity.tasks.statusTimedOut');
 }
 
 function TaskFlow({ tasks }: { tasks: readonly OpenClawTaskSummary[] }) {
   const { t } = useTranslation();
   const columns = projectOpenClawTaskFlow(tasks);
   return (
-    <div className="grid gap-px border-b border-aegis-border bg-aegis-border sm:grid-cols-4" aria-label={t('activity.tasks.flowTitle', '只读任务流')}>
+    <div className="grid gap-px border-b border-aegis-border bg-aegis-border sm:grid-cols-3 xl:grid-cols-6" aria-label={t('activity.tasks.flowTitle')}>
       {columns.map((column) => (
         <div key={column.id} className="min-w-0 bg-aegis-card px-3 py-2.5">
           <div className="flex items-center justify-between gap-2 text-[10px] text-aegis-text-dim">
@@ -88,13 +92,13 @@ function TaskFlow({ tasks }: { tasks: readonly OpenClawTaskSummary[] }) {
             <span className="font-mono tabular-nums">{column.tasks.length}</span>
           </div>
           {column.tasks.length === 0 ? (
-            <p className="mt-2 text-[10px] text-aegis-text-dim">{t('activity.tasks.flowEmpty', '无记录')}</p>
+            <p className="mt-2 text-[10px] text-aegis-text-dim">{t('activity.tasks.flowEmpty')}</p>
           ) : (
             <ul className="mt-2 space-y-1.5" aria-label={flowColumnLabel(column.id, t)}>
               {column.tasks.slice(0, 3).map((task) => (
                 <li key={task.id} className="truncate rounded bg-aegis-hover/55 px-1.5 py-1 text-[10px] text-aegis-text-secondary" title={taskTitle(task)}>{taskTitle(task)}</li>
               ))}
-              {column.tasks.length > 3 && <li className="text-[9px] text-aegis-text-dim">{t('activity.tasks.flowMore', '另有 {{count}} 项', { count: column.tasks.length - 3 })}</li>}
+              {column.tasks.length > 3 && <li className="text-[9px] text-aegis-text-dim">{t('activity.tasks.flowMore', { count: column.tasks.length - 3 })}</li>}
             </ul>
           )}
         </div>
