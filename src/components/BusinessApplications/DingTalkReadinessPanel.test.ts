@@ -6,6 +6,7 @@ test('插件已更新时优先引导重启 Gateway', () => {
   const readiness = resolveDingTalkReadiness({
     sessionExists: true,
     runtimeToolAvailable: false,
+    agentRuntimeVerified: false,
     runtime: null,
     runtimeError: null,
     pluginNeedsInstall: true,
@@ -22,6 +23,7 @@ test('插件缺失且无需重启时提供 JunQi 安装入口', () => {
   const readiness = resolveDingTalkReadiness({
     sessionExists: true,
     runtimeToolAvailable: false,
+    agentRuntimeVerified: false,
     runtime: null,
     runtimeError: null,
     pluginNeedsInstall: true,
@@ -38,6 +40,7 @@ test('DWS 缺失时保留受控安装动作', () => {
   const readiness = resolveDingTalkReadiness({
     sessionExists: true,
     runtimeToolAvailable: true,
+    agentRuntimeVerified: true,
     runtime: {
       available: false,
       currentProfile: null,
@@ -62,6 +65,7 @@ test('DWS 已安装但缺少 Profile 时保留官方授权动作', () => {
   const readiness = resolveDingTalkReadiness({
     sessionExists: true,
     runtimeToolAvailable: true,
+    agentRuntimeVerified: true,
     runtime: {
       available: true,
       currentProfile: null,
@@ -83,6 +87,7 @@ test('插件状态未返回前不误报未安装或 Agent 未授权', () => {
   const readiness = resolveDingTalkReadiness({
     sessionExists: true,
     runtimeToolAvailable: false,
+    agentRuntimeVerified: false,
     runtime: null,
     runtimeError: null,
     pluginNeedsInstall: false,
@@ -99,6 +104,7 @@ test('当前 Session 缺少有效工具时不把快照缺失冒充为 Agent 未�
   const readiness = resolveDingTalkReadiness({
     sessionExists: true,
     runtimeToolAvailable: false,
+    agentRuntimeVerified: false,
     runtime: null,
     runtimeError: null,
     pluginNeedsInstall: false,
@@ -109,5 +115,22 @@ test('当前 Session 缺少有效工具时不把快照缺失冒充为 Agent 未�
 
   assert.equal(readiness.titleKey, 'effectiveToolMissingTitle');
   assert.equal(readiness.descriptionKey, 'effectiveToolMissingDescription');
+  assert.equal(readiness.action, 'configure-agent');
+});
+
+test('目录可见但运行时探针失败时不把 Agent 授权误报为已核验', () => {
+  const readiness = resolveDingTalkReadiness({
+    sessionExists: true,
+    runtimeToolAvailable: true,
+    agentRuntimeVerified: false,
+    runtime: null,
+    runtimeError: '当前 Agent 未被钉钉插件允许。',
+    pluginNeedsInstall: false,
+    pluginStatusPending: false,
+    restartRequired: false,
+    agentId: 'main',
+  });
+
+  assert.equal(readiness.titleKey, 'agentAuthorizationPendingTitle');
   assert.equal(readiness.action, 'configure-agent');
 });

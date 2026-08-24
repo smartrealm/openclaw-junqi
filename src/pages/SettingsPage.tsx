@@ -110,7 +110,7 @@ export function SettingsPageFull() {
   const { connected, connecting } = useChatStore();
   const { voiceWake } = useJarvisVoiceRuntime();
   const prefersDark = usePrefersDark();
-  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled, backdropContrastEnabled, setBackdropContrastEnabled, captionScale: petCaptionScale, setCaptionScale: setPetCaptionScale } = usePetStore();
+  const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled, captionScale: petCaptionScale, setCaptionScale: setPetCaptionScale } = usePetStore();
   const [petUploadError, setPetUploadError] = useState<string | null>(null);
   const [petIdea, setPetIdea] = useState('');
   const [preparingPetSkill, setPreparingPetSkill] = useState(false);
@@ -879,14 +879,6 @@ export function SettingsPageFull() {
               style={{ transform: petSoundEnabled ? 'translateX(16px)' : 'translateX(0)' }}
             />
           </button>
-        </div>
-
-        <div className="flex items-center justify-between mt-4">
-          <div>
-            <div className="text-[13px] text-aegis-text">{t('pet.settings.backdropContrast', '自动调整文字对比度')}</div>
-            <div className="text-[11px] text-aegis-text-dim">{t('pet.settings.backdropContrastHint', '根据萌宠附近桌面颜色调整提示文字，不保存桌面图像')}</div>
-          </div>
-          <SettingsSwitch checked={backdropContrastEnabled} onCheckedChange={setBackdropContrastEnabled} label={t('pet.settings.backdropContrast', '背景对比增强')} />
         </div>
 
         <div className="mt-4">

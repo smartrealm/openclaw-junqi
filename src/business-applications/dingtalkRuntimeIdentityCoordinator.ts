@@ -15,6 +15,23 @@ export interface DingTalkRuntimeIdentitySnapshot {
   readonly error: string | null;
 }
 
+/**
+ * 仅发布与当前连接、会话和有效工具快照完全一致的已结算身份，避免旧 Profile
+ * 在工具策略刷新期间继续驱动目录或调用入口。
+ */
+export function selectCurrentDingTalkRuntimeIdentitySnapshot(
+  snapshot: DingTalkRuntimeIdentitySnapshot | null,
+  contextKey: string | null,
+  toolsRevision: number,
+): DingTalkRuntimeIdentitySnapshot | null {
+  if (!snapshot || !contextKey || toolsRevision <= 0) return null;
+  return snapshot.contextKey === contextKey
+    && snapshot.toolsRevision === toolsRevision
+    && snapshot.phase === 'settled'
+    ? snapshot
+    : null;
+}
+
 interface DingTalkRuntimeIdentityDependencies {
   readonly isContextCurrent: (context: DingTalkRuntimeIdentityContext) => boolean;
   readonly invokeRuntimeStatus: (sessionKey: string) => Promise<OpenClawToolsInvokeResult>;

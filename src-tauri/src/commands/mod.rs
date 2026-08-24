@@ -46,7 +46,6 @@ pub mod openclaw_repair;
 pub(crate) mod openclaw_state_dir;
 pub mod openclaw_update;
 pub mod pet;
-pub mod pet_backdrop;
 pub mod plugin_recovery;
 pub mod process_control;
 pub mod project_config;

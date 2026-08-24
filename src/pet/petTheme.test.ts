@@ -84,40 +84,32 @@ test('pet text style rejects theme readability effects', () => {
   assert.equal(solidPetTextStyle('#fff', shadow).textShadow, 'none');
 });
 
-test('pet bubble text container has no visual chrome', () => {
-  assert.deepEqual(petCaptionTextContainerStyle('#f8fafc'), {
-    WebkitTextStroke: '0 transparent',
-    WebkitTextStrokeWidth: 0,
-    WebkitTextStrokeColor: 'transparent',
-    WebkitBackgroundClip: 'border-box',
-    background: 'transparent',
-    backgroundColor: 'transparent',
-    backgroundImage: 'none',
-    boxShadow: 'none',
-    filter: 'none',
-    mixBlendMode: 'normal',
-    outline: 'none',
-    paintOrder: 'fill',
-    textDecoration: 'none',
-    textShadow: 'none',
-    WebkitFontSmoothing: 'antialiased',
-    MozOsxFontSmoothing: 'grayscale',
-    color: '#f8fafc',
-    WebkitTextFillColor: '#f8fafc',
-    caretColor: '#f8fafc',
-    border: 0,
-    isolation: 'isolate',
-    opacity: 1,
-    pointerEvents: 'none',
-  });
-});
-
-test('pet bubble text container stays effect-free in dark themes', () => {
-  const style = petCaptionTextContainerStyle('#f8fafc', 'aegis-midnight');
-  assert.equal(style.background, 'transparent');
-  assert.equal(style.boxShadow, 'none');
+test('宠物标题使用不透明主题表面，避免壁纸吞没文字', () => {
+  const style = petCaptionTextContainerStyle('#f8fafc', 1);
+  assert.equal(style.background, 'var(--aegis-bg-solid)');
+  assert.equal(style.backgroundColor, 'var(--aegis-bg-solid)');
+  assert.equal(style.border, '1px solid var(--aegis-border)');
+  assert.equal(style.borderRadius, 7);
+  assert.equal(style.boxShadow, 'var(--aegis-shadow-card)');
+  assert.equal(style.padding, '2px 6px');
   assert.equal(style.filter, 'none');
   assert.equal(style.textShadow, 'none');
+});
+
+test('宠物标题在最大字号下仍保持单行并受窗口宽高约束', () => {
+  const style = petCaptionTextContainerStyle('#f8fafc', 1.35);
+  assert.equal(style.boxSizing, 'border-box');
+  assert.equal(style.width, 'max-content');
+  assert.equal(style.maxWidth, 'calc(100vw - 12px)');
+  assert.equal(style.overflow, 'hidden');
+  assert.equal(style.textOverflow, 'ellipsis');
+  assert.equal(style.whiteSpace, 'nowrap');
+  assert.equal(style.fontSize, 15.525);
+  assert.equal(style.lineHeight, 1.25);
+
+  const captionHeight = Number(style.fontSize) * Number(style.lineHeight) + 6;
+  const occupiedHeight = captionHeight + 6 + 110;
+  assert.ok(occupiedHeight <= 154);
 });
 
 test('pet character palette changes body color by theme and skin', () => {

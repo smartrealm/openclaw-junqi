@@ -25,26 +25,6 @@ test('pet transparency is owned by the native window and every DOM root', () => 
   assert.match(petWindow, /appRoot\.style\.backgroundColor = 'transparent'/);
 });
 
-test('backdrop contrast follows pet movement through a bounded sample scheduler', () => {
-  assert.match(petWindow, /BACKDROP_SAMPLE_INTERVAL_MS = 120/);
-  assert.match(petWindow, /new BackdropSampleScheduler<PetBackdropReading>/);
-  assert.match(petWindow, /BACKDROP_FALLBACK_REFRESH_MS = 90_000/);
-  assert.match(petWindow, /subscribeTauriEvent<\{ x: number; y: number \}>\('pet-moved'/);
-  assert.match(petWindow, /new Event\(BACKDROP_REFRESH_EVENT\)/);
-  assert.doesNotMatch(petWindow, /BACKDROP_DEBOUNCE_MS/);
-  assert.doesNotMatch(petWindow, /setInterval\(scheduleRefresh, 1_800\)/);
-});
-
-test('backdrop sampling is fully disabled when the persisted preference is off', () => {
-  assert.match(petWindow, /if \(!backdropContrastEnabled\) \{\s*setBackdrop\(null\);\s*return;/);
-  assert.match(petWindow, /if \(!backdropContrastEnabled\) return;\s*window\.dispatchEvent/);
-});
-
-test('pet captions adapt their text without rendering a card or border', () => {
-  assert.doesNotMatch(petBubble, /backdropStyle\.(bubble|border|boxShadow)/);
-  assert.doesNotMatch(petBubble, /background:\s*backdropStyle/);
-});
-
 test('drag feedback scales the character instead of the transparent window root', () => {
   assert.doesNotMatch(petWindow, /transform: dragging \? 'scale\(1\.08\)'/);
   assert.match(petWindow, /dragging=\{dragging\}/);

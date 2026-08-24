@@ -16,6 +16,7 @@ export interface GatewayLifecycleRequest {
   deadline?: number;
   signal?: AbortSignal;
   restartAttemptLimit?: number;
+  restartExecutor?: () => Promise<GatewayRestartResult>;
 }
 
 export interface GatewayEnsureResult {
@@ -182,6 +183,22 @@ export class GatewayLifecycleCoordinator {
     });
   }
 
+  async restartWith(
+    source: string,
+    restartExecutor: () => Promise<GatewayRestartResult>,
+    diagnostic?: string,
+  ): Promise<GatewayLifecycleResult> {
+    const settled = await this.waitForActiveLifecycle(null);
+    if (!settled) return this.lifecycleDeadlineFailure('restart', source);
+    return this.request({
+      action: 'restart',
+      source,
+      restartExecutor,
+      restartAttemptLimit: 1,
+      ...(diagnostic ? { diagnostic } : {}),
+    });
+  }
+
   async restartAfterCurrent(
     source: string,
     diagnostic: string | undefined,
@@ -249,7 +266,9 @@ export class GatewayLifecycleCoordinator {
 
     this.lifecycleGeneration += 1;
     this.activeRestartAttemptGeneration = null;
-    const operation = this.executeSafely(request);
+    // 先发布事务占用，再在微任务中执行副作用，确保同步触发的断连观察者也能
+    // 识别当前操作属于统一生命周期。
+    const operation = Promise.resolve().then(() => this.executeSafely(request));
     this.active = operation;
     this.activeAction = request.action;
     void operation.then(() => {
@@ -503,7 +522,9 @@ export class GatewayLifecycleCoordinator {
       try {
         // 原生重启开始后必须自然收敛并持续占有进程操作锁。前端截止时间只决定
         // 是否继续重连和发布完成，不能通过丢弃原生 Promise 假装副作用已取消。
-        restarted = await this.dependencies.manager.restart();
+        restarted = await (request.restartExecutor
+          ? request.restartExecutor()
+          : this.dependencies.manager.restart());
       } catch (error) {
         restarted = { success: false, error: errorMessage(error, 'Gateway restart failed') };
       }

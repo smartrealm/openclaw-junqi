@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   collectDingTalkTools,
+  collectDingTalkSubmitLinks,
+  DingTalkToolContractError,
   hasAvailableDingTalkRuntimeTool,
   isDingTalkProfileAuthenticated,
   parseDingTalkBusinessEvidence,
@@ -10,6 +12,7 @@ import {
   parseProfileReference,
   parseToolArguments,
   resolveDingTalkCatalogAvailability,
+  shouldSurfaceDingTalkArguments,
 } from './dingtalkTools';
 
 test('only projects effective tools owned by the DingTalk plugin', () => {
@@ -68,11 +71,41 @@ test('projects the official tools.invoke AgentToolResult details', () => {
   assert.equal(schema.parameters[0]?.required, true);
 });
 
+test('marks locally invalid DWS parameter contracts with a stable error code', () => {
+  assert.throws(
+    () => parseDingTalkToolSchemaOutput({ details: {} }),
+    (error: unknown) => error instanceof DingTalkToolContractError && error.code === 'invalid-schema',
+  );
+});
+
 test('requires exact profile references and object arguments', () => {
   assert.equal(parseProfileReference('corp-a:user-b'), 'corp-a:user-b');
   assert.equal(parseProfileReference('corp-a'), null);
   assert.deepEqual(parseToolArguments('{"query":"研发"}'), { query: '研发' });
   assert.throws(() => parseToolArguments('[]'), /JSON 对象/);
+});
+
+test('参数 JSON 无效或缺少 DWS schema 必填字段时显示输入区域', () => {
+  assert.equal(shouldSurfaceDingTalkArguments({
+    runtimeTool: false,
+    argumentsInvalid: true,
+    missingRequiredParameters: [],
+  }), true);
+  assert.equal(shouldSurfaceDingTalkArguments({
+    runtimeTool: false,
+    argumentsInvalid: false,
+    missingRequiredParameters: ['start'],
+  }), true);
+  assert.equal(shouldSurfaceDingTalkArguments({
+    runtimeTool: false,
+    argumentsInvalid: false,
+    missingRequiredParameters: [],
+  }), false);
+  assert.equal(shouldSurfaceDingTalkArguments({
+    runtimeTool: true,
+    argumentsInvalid: true,
+    missingRequiredParameters: ['start'],
+  }), false);
 });
 
 test('projects DWS login identity without retaining unverified domain metadata or unsafe avatar URLs', () => {
@@ -154,4 +187,36 @@ test('projects only DWS evidence metadata from a business result', () => {
     schemaDigest: 'a'.repeat(64),
     recoveryEventId: 'recovery-a',
   });
+});
+
+test('只从完整的 DWS 审批模板投影提交入口', () => {
+  const links = collectDingTalkSubmitLinks({ output: { details: { data: {
+    templates: [
+      {
+        approveType: 'leave',
+        formName: '请假申请',
+        processCode: 'PROC-LEAVE',
+        submitUrl: 'dingtalk://dingtalkclient/action/openapp?app_id=-4',
+      },
+      {
+        approveType: 'leave',
+        formName: '重复入口',
+        processCode: 'PROC-LEAVE',
+        submitUrl: 'dingtalk://dingtalkclient/action/openapp?app_id=-4',
+      },
+      {
+        approveType: 'leave',
+        formName: '缺少流程编码',
+        submitUrl: 'dingtalk://dingtalkclient/action/openapp?app_id=-5',
+      },
+    ],
+  } } } });
+
+  assert.deepEqual(links, [{
+    approveType: 'leave',
+    formName: '请假申请',
+    processCode: 'PROC-LEAVE',
+    submitUrl: 'dingtalk://dingtalkclient/action/openapp?app_id=-4',
+  }]);
+  assert.deepEqual(collectDingTalkSubmitLinks({ output: { details: { data: { templates: [] } } } }), []);
 });

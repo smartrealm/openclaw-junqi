@@ -16,7 +16,10 @@ import { getAgentDisplayName } from '@/utils/agentDisplayName';
 import { agentIdFromSessionKey, projectSessionActivity } from '@/utils/sessionPresentation';
 import { SidebarPrimaryAction } from './SidebarPrimaryAction';
 import { collectDingTalkTools } from '@/business-applications/dingtalkTools';
-import { useBusinessActivityStore } from '@/business-applications/activityStore';
+import {
+  selectBusinessAttemptsForSession,
+  useBusinessActivityStore,
+} from '@/business-applications/activityStore';
 
 type NavigationItem = FeatureLinkedItem & { to: string; icon: React.ReactNode; label: string };
 
@@ -256,10 +259,14 @@ export function BusinessApplicationsPanel() {
   const toolsLoading = useGatewayDataStore((state) => (
     state.toolsEffectiveLoading && state.toolsEffectiveLoadingSessionKey === activeSessionKey
   ));
-  const attempts = useBusinessActivityStore((state) => state.attempts);
+  const allAttempts = useBusinessActivityStore((state) => state.attempts);
   const activeSession = sessions.find((session) => session.key === activeSessionKey) ?? null;
   const toolCount = useMemo(() => collectDingTalkTools(effective?.groups).length, [effective]);
   const agentId = effective?.agentId ?? activeSession?.agentId ?? null;
+  const attempts = useMemo(
+    () => selectBusinessAttemptsForSession(allAttempts, activeSessionKey),
+    [activeSessionKey, allAttempts],
+  );
   const latestAttempt = attempts[0] ?? null;
   const toolsMeta = toolsLoading
     ? t('businessApplications.sidebarToolsLoading', '正在读取当前 Session')

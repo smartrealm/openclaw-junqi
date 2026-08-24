@@ -19,6 +19,6 @@ test('DWS Profile 使用主题化共享下拉而不是系统原生选择器', ()
   }));
 
   assert.match(html, /<button[^>]+role="combobox"/);
-  assert.match(html, /aria-label="执行身份（DWS Profile）"/);
+  assert.match(html, /aria-label="Execution identity \(DWS Profile\)"/);
   assert.match(html, /<select aria-hidden="true"/);
 });

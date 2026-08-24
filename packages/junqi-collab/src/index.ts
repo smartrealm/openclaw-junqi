@@ -5,7 +5,11 @@ import {
 } from "openclaw/plugin-sdk/plugin-entry";
 import { CollaborationDatabase } from "./database.js";
 import { OpenClawRuntimeAdapter } from "./openclaw-adapter.js";
-import { registerCollaborationRpc } from "./rpc.js";
+import {
+  collaborationServiceStartupFailure,
+  registerCollaborationRpc,
+  type RpcErrorPayload,
+} from "./rpc.js";
 import { CollaborationService } from "./service.js";
 import type { OpenClawApi } from "./sdk-types.js";
 import type { PluginConfig } from "./types.js";
@@ -71,16 +75,19 @@ export function registerOpenClawAdapter(api: OpenClawApi): void {
   });
   let database: CollaborationDatabase | null = null;
   let service: CollaborationService | null = null;
+  let startupFailure: RpcErrorPayload | null = null;
 
-  registerCollaborationRpc(api, () => service);
+  registerCollaborationRpc(api, () => ({ service, startupFailure }));
 
   api.registerService({
     id: SERVICE_ID,
     async start(context) {
       if (service || database) return;
+      startupFailure = null;
       const dataDir = path.join(context.stateDir, PLUGIN_ID);
-      const nextDatabase = new CollaborationDatabase(path.join(dataDir, "collaboration.sqlite"));
+      let nextDatabase: CollaborationDatabase | null = null;
       try {
+        nextDatabase = new CollaborationDatabase(path.join(dataDir, "collaboration.sqlite"));
         const nextService = new CollaborationService(
           nextDatabase,
           adapter,
@@ -92,7 +99,8 @@ export function registerOpenClawAdapter(api: OpenClawApi): void {
         database = nextDatabase;
         service = nextService;
       } catch (error) {
-        nextDatabase.close();
+        startupFailure = collaborationServiceStartupFailure(error);
+        nextDatabase?.close();
         throw error;
       }
     },
@@ -101,6 +109,7 @@ export function registerOpenClawAdapter(api: OpenClawApi): void {
       const currentDatabase = database;
       service = null;
       database = null;
+      startupFailure = null;
       try {
         await currentService?.stop();
       } finally {

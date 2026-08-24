@@ -384,6 +384,10 @@ class GatewayConnectionTarget {
   withDeviceToken(deviceToken: string): GatewayConnectionTarget {
     return new GatewayConnectionTarget(this.url, this.token, deviceToken);
   }
+
+  withExclusiveDeviceToken(deviceToken: string): GatewayConnectionTarget {
+    return new GatewayConnectionTarget(this.url, '', deviceToken);
+  }
 }
 
 export class GatewayConnection {
@@ -1457,6 +1461,41 @@ export class GatewayConnection {
     ));
     this.retryPolicy.reset();
     const nextTarget = this.target.withToken(newToken);
+    this.target = nextTarget;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.target.equals(nextTarget)) return;
+      this.connect(nextTarget.url, nextTarget.token, nextTarget.deviceToken);
+    }, 300);
+  }
+
+  /** 持久化官方轮换的设备令牌后，以该设备凭据替换当前认证连接。 */
+  async applyRotatedDeviceCredential(newToken: string, expectedConnectionId: string): Promise<void> {
+    const token = newToken.trim();
+    const connectionId = expectedConnectionId.trim();
+    const url = this.url;
+    if (
+      !token
+      || !connectionId
+      || !this.isConnected()
+      || this.runtimeIdentityConnectionId !== connectionId
+    ) {
+      throw new GatewayConnectionFenceError(connectionId, this.runtimeIdentityConnectionId);
+    }
+    await this.persistDeviceCredential(url, token);
+    if (
+      !this.isConnected()
+      || this.runtimeIdentityConnectionId !== connectionId
+      || this.url !== url
+    ) {
+      throw new GatewayConnectionFenceError(connectionId, this.runtimeIdentityConnectionId);
+    }
+    this.clearTransport(new GatewayTransportLifecycleError(
+      'Gateway device credentials changed',
+      'credentials-changed',
+    ));
+    this.retryPolicy.reset();
+    const nextTarget = this.target.withExclusiveDeviceToken(token);
     this.target = nextTarget;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

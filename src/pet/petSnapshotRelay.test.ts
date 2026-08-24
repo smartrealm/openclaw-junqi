@@ -11,7 +11,6 @@ test('a ready pet window receives the latest snapshot even when it missed the in
     message: 'Preparing a response',
     presentation: {
       soundEnabled: false,
-      backdropContrastEnabled: true,
       captionScale: 1.2,
     },
   };

@@ -4,6 +4,7 @@ import type { OpenClawToolsInvokeResult } from '@/services/gateway/OpenClawTools
 import type { DingTalkRuntimeIdentityProjection } from './dingtalkTools';
 import {
   DingTalkRuntimeIdentityCoordinator,
+  selectCurrentDingTalkRuntimeIdentitySnapshot,
   type DingTalkRuntimeIdentityContext,
 } from './dingtalkRuntimeIdentityCoordinator';
 
@@ -96,6 +97,41 @@ test('工具投影修订变化后必须重新核验 DWS 身份', async () => {
 
   assert.equal(invocations, 2);
   assert.equal(coordinator.getSnapshot()?.toolsRevision, 101);
+});
+
+test('目录只能使用当前工具修订已经结算的 DWS 身份', () => {
+  const settled = {
+    contextKey: 'connection-a\u0000agent:main:main',
+    toolsRevision: 100,
+    phase: 'settled' as const,
+    runtime: runtimeA,
+    error: null,
+  };
+
+  assert.equal(
+    selectCurrentDingTalkRuntimeIdentitySnapshot(
+      settled,
+      settled.contextKey,
+      100,
+    ),
+    settled,
+  );
+  assert.equal(
+    selectCurrentDingTalkRuntimeIdentitySnapshot(
+      settled,
+      settled.contextKey,
+      101,
+    ),
+    null,
+  );
+  assert.equal(
+    selectCurrentDingTalkRuntimeIdentitySnapshot(
+      { ...settled, toolsRevision: 101, phase: 'loading' },
+      settled.contextKey,
+      101,
+    ),
+    null,
+  );
 });
 
 test('当前上下文失效时不会发布未经核验的身份结果', async () => {

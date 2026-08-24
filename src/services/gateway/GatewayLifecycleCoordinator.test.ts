@@ -99,6 +99,37 @@ test('restart success is withheld until a new attested connection settles', asyn
   assert.equal(result.connectionId, 'new-connection');
 });
 
+test('an exact target restart executor remains inside the unified lifecycle transaction', async () => {
+  const calls: string[] = [];
+  const lifecycle = coordinator({
+    restart: async () => {
+      calls.push('default-restart');
+      return { success: true };
+    },
+    reconnectSelectedRuntime: () => {
+      calls.push('reconnect-selected-runtime');
+    },
+    waitForConnection: async () => {
+      calls.push('connection');
+      return 'new-connection';
+    },
+  });
+
+  const result = await lifecycle.restartWith('collaboration-bootstrap', async () => {
+    assert.equal(lifecycle.running, true);
+    calls.push('exact-restart');
+    return { success: true, method: 'collaboration-bootstrap' };
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.method, 'collaboration-bootstrap');
+  assert.deepEqual(calls, [
+    'exact-restart',
+    'reconnect-selected-runtime',
+    'connection',
+  ]);
+});
+
 test('restart verifies the selected runtime only after the new connection settles', async () => {
   const events: string[] = [];
   const lifecycle = coordinator({

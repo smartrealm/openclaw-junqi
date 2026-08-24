@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   canChangeSessionModel,
   fastModeForGateway,
   canWriteThinkingLevel,
+  filterSessionModels,
   groupSessionModels,
   modelDisplayName,
   normalizeFastMode,
@@ -44,6 +44,19 @@ test('modelDisplayName prefers catalog metadata without model-specific rules', (
     'Alias',
   );
   assert.equal(modelDisplayName(undefined, 'provider/model'), 'model');
+});
+
+test('模型目录筛选只匹配 Gateway 返回的名称、别名和完整 id', () => {
+  const models = [
+    { id: 'vllm/gpt-5.4', label: 'GPT 5.4', alias: '旗舰' },
+    { id: 'vllm/gpt-5.4-mini', label: 'GPT 5.4 Mini' },
+    { id: 'minimax/MiniMax-M3', label: 'MiniMax M3' },
+  ];
+
+  assert.deepEqual(filterSessionModels(models, '旗舰').map((model) => model.id), ['vllm/gpt-5.4']);
+  assert.deepEqual(filterSessionModels(models, 'mini').map((model) => model.id), ['vllm/gpt-5.4-mini', 'minimax/MiniMax-M3']);
+  assert.deepEqual(filterSessionModels(models, 'vllm/gpt-5.4').map((model) => model.id), ['vllm/gpt-5.4', 'vllm/gpt-5.4-mini']);
+  assert.deepEqual(filterSessionModels(models, 'missing'), []);
 });
 
 test('thinking writes require the latest Gateway profile instead of a client fallback list', () => {
@@ -127,23 +140,4 @@ test('reasoning visibility maps exactly to the documented session override value
   assert.equal(reasoningLevelForGateway('on'), 'on');
   assert.equal(reasoningLevelForGateway('off'), 'off');
   assert.equal(reasoningLevelForGateway('stream'), 'stream');
-});
-
-test('session runtime picker follows the compact shared provider identity contract', () => {
-  const source = readFileSync(new URL('../components/Chat/session-runtime/SessionRuntimeControl.tsx', import.meta.url), 'utf8');
-  assert.match(source, /from '@\/components\/shared\/provider-identity'/);
-  assert.match(source, /w-\[min\(420px,calc\(100vw-24px\)\)\]/);
-  assert.match(source, /grid-cols-\[136px_minmax\(0,1fr\)\]/);
-  assert.match(source, /SESSION_VERBOSE_LEVELS/);
-  assert.match(source, /SESSION_TRACE_LEVELS/);
-  assert.match(source, /sessionRuntimeTraceUnsupported/);
-  assert.match(source, /SESSION_RESPONSE_USAGE_LEVELS/);
-  assert.match(source, /sessionRuntimeResponseUsageUnsupported/);
-  assert.match(source, /thinkingOptions\.map/);
-  assert.match(source, /sessionRuntimeThinkingUnavailable/);
-  assert.match(source, /requiresThinkingProfileRefresh/);
-  assert.doesNotMatch(source, /SESSION_THINKING_LEVELS/);
-  assert.doesNotMatch(source, /<span className="shrink-0">\{fastModeLabel\}<\/span>/);
-  assert.doesNotMatch(source, /w-\[min\(620px/);
-  assert.doesNotMatch(source, /Icon\.provider/);
 });

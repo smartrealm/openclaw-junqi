@@ -58,9 +58,18 @@ export function sessionSettingsErrorMessage(
   invalidResponse: string,
   modelSelectionLocked: string,
   targetRequired: string,
+  authorizationRequired = fallback,
 ): string {
   if (error instanceof SessionModelSelectionLockedError) return modelSelectionLocked;
   if (error instanceof SessionSettingsTargetError) return targetRequired;
+  if (
+    error
+    && typeof error === 'object'
+    && 'code' in error
+    && error.code === 'GATEWAY_PRIVILEGED_AUTHORIZATION_FAILED'
+  ) {
+    return authorizationRequired;
+  }
   if (
     error
     && typeof error === 'object'
@@ -234,6 +243,7 @@ export function useSessionRuntimeSettings() {
           t('chat.sessionSettingsResponseInvalid'),
           t('chat.sessionModelSelectionLocked'),
           t('chat.sessionSettingsTargetRequired'),
+          t('chat.sessionSettingsAuthorizationRequired'),
         ),
       );
       return false;

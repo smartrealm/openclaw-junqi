@@ -45,7 +45,6 @@ export interface PetPomodoroState {
  */
 export interface PetPresentationPreferences {
   soundEnabled: boolean;
-  backdropContrastEnabled: boolean;
   captionScale: number;
 }
 

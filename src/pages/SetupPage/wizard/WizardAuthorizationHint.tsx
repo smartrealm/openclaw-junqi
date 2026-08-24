@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Copy, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { QrCodeDisplay } from "@/components/shared/QrCodeDisplay";
+import { openDesktopExternalLink } from "@/runtime/desktopExternalLink";
 import type { OpenClawWizardStep } from "@/services/openclawWizard";
 
 const HTTPS_URL_PATTERN = /https:\/\/[^\s<>"'`]+/giu;
@@ -31,12 +32,7 @@ export function resolveWizardAuthorizationUrl({
 
 async function openWizardExternalUrl(value?: string): Promise<void> {
   if (!value) return;
-  const parsed = new URL(value);
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error("OpenClaw returned an unsupported authorization URL protocol.");
-  }
-  const { open } = await import("@tauri-apps/plugin-shell");
-  await open(value);
+  await openDesktopExternalLink(value);
 }
 
 export function WizardAuthorizationHint({

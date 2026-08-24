@@ -43,7 +43,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -200,7 +200,6 @@ pub fn run() {
             commands::docker::start_docker_gateway,
             // Desktop Pet (companion)
             commands::pet::emit_pet_state,
-            commands::pet_backdrop::get_pet_backdrop_reading,
             commands::pet::open_pet_window,
             commands::pet::close_pet_window,
             commands::pet::toggle_pet_window,

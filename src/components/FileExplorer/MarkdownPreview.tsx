@@ -7,7 +7,8 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toString } from "mdast-util-to-string";
-import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Components, type ExtraProps } from "react-markdown";
+import { useTranslation } from "react-i18next";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
@@ -17,6 +18,12 @@ import {
   imageDataUrl,
 } from "@/utils/filePreviewCapabilities";
 import { resolveMarkdownResourcePath } from "./fileViewerModel";
+import {
+  openDesktopExternalLink,
+  resolveDesktopExternalLink,
+} from "@/runtime/desktopExternalLink";
+import { useNotificationStore } from "@/stores/notificationStore";
+import { debugError } from "@/utils/debugLog";
 
 export type MarkdownHeading = {
   depth: number;
@@ -131,13 +138,9 @@ function LocalMarkdownImage({
   return <img src={resolvedSource} alt={alt} draggable={false} />;
 }
 
-async function openExternalLink(href: string): Promise<void> {
-  try {
-    const { open } = await import("@tauri-apps/plugin-shell");
-    await open(href);
-  } catch {
-    window.open(href, "_blank", "noopener,noreferrer");
-  }
+function markdownPreviewUrlTransform(url: string): string {
+  const external = resolveDesktopExternalLink(url);
+  return external?.kind === "dingtalk" ? external.href : defaultUrlTransform(url);
 }
 
 export function MarkdownPreview({
@@ -155,6 +158,8 @@ export function MarkdownPreview({
   onOpenLocalLink?: (href: string) => void | Promise<void>;
   resolveImageSource?: (source: string) => Promise<string | null>;
 }) {
+  const { t } = useTranslation();
+  const addToast = useNotificationStore((state) => state.addToast);
   const headingsByLine = useMemo(
     () => new Map(parseMarkdownHeadings(content).map((heading) => [heading.line, heading.id])),
     [content],
@@ -210,16 +215,33 @@ export function MarkdownPreview({
         event.currentTarget.querySelectorAll<HTMLElement>("[id]"),
       ).find((element) => element.id === id);
       target?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else if (/^https?:\/\//i.test(href)) {
-      void openExternalLink(href);
     } else {
-      void onOpenLocalLink?.(href);
+      const target = resolveDesktopExternalLink(href);
+      if (!target) {
+        void onOpenLocalLink?.(href);
+        return;
+      }
+      void openDesktopExternalLink(target.href).catch((error) => {
+        debugError("app", "[MarkdownPreview] 外部链接打开失败:", error);
+        addToast(
+          "error",
+          t("errors.externalLinkOpenFailed"),
+          target.kind === "dingtalk"
+            ? t("errors.dingTalkLinkOpenFailedDescription")
+            : t("errors.externalLinkOpenFailedDescription"),
+        );
+      });
     }
   };
 
   return (
     <div className={className} onClick={handleClick}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} skipHtml>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={components}
+        urlTransform={markdownPreviewUrlTransform}
+        skipHtml
+      >
         {content}
       </ReactMarkdown>
     </div>

@@ -1,23 +1,39 @@
 import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 import {
+  OpenClawAuditResponseError,
   parseOpenClawAuditActivityPage,
   type OpenClawAuditDirection,
+  type OpenClawAuditEvent as OpenClawAuditActivityEvent,
   type OpenClawAuditKind,
-  type OpenClawAuditListPage,
   type OpenClawAuditStatus,
 } from './OpenClawAuditActivityCodec';
+import {
+  parseAuditListPage,
+  type OpenClawAuditEvent as OpenClawLegacyAuditEvent,
+} from '@/processing/auditLedger';
 
 export {
   OpenClawAuditResponseError,
   parseOpenClawAuditActivityPage,
   type OpenClawAuditActor,
   type OpenClawAuditDirection,
-  type OpenClawAuditEvent,
   type OpenClawAuditEventType,
   type OpenClawAuditKind,
-  type OpenClawAuditListPage,
   type OpenClawAuditStatus,
 } from './OpenClawAuditActivityCodec';
+
+/** 旧 Gateway 的 audit.list 仅包含运行和工具元数据，不能冒充新版活动账本。 */
+export type OpenClawAuditLegacyEvent = OpenClawLegacyAuditEvent & {
+  readonly source: 'legacy';
+};
+
+export type OpenClawAuditEvent = OpenClawAuditActivityEvent | OpenClawAuditLegacyEvent;
+
+export interface OpenClawAuditListPage {
+  readonly events: readonly OpenClawAuditEvent[];
+  readonly nextCursor?: string;
+  readonly source: 'activity' | 'legacy';
+}
 
 export const OPENCLAW_AUDIT_ACTIVITY_METHOD = 'audit.activity.list' as const;
 
@@ -47,6 +63,10 @@ export class OpenClawAuditUnsupportedError extends Error {
     super('The connected OpenClaw Gateway does not support activity audit queries');
     this.name = 'OpenClawAuditUnsupportedError';
   }
+}
+
+function isOpenClawAuditActivityUnavailableError(error: unknown): boolean {
+  return isOpenClawUnknownMethodError(error, OPENCLAW_AUDIT_ACTIVITY_METHOD);
 }
 
 const STATUSES: readonly OpenClawAuditStatus[] = [
@@ -91,17 +111,37 @@ function requestParams(input: OpenClawAuditListInput): Record<string, unknown> {
   };
 }
 
+/** 只有旧协议原样支持的筛选条件才能使用官方兼容账本。 */
+function supportsLegacyAuditFallback(input: OpenClawAuditListInput): boolean {
+  return input.kind !== 'message' && input.direction === undefined && input.channel === undefined;
+}
+
+function parseOpenClawLegacyAuditPage(value: unknown): OpenClawAuditListPage {
+  try {
+    const page = parseAuditListPage(value);
+    return {
+      source: 'legacy',
+      events: page.events.map((event) => ({ ...event, source: 'legacy' as const })),
+      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+    };
+  } catch {
+    throw new OpenClawAuditResponseError();
+  }
+}
+
 export class OpenClawAuditClient {
   constructor(private readonly request: OpenClawAuditRequester) {}
 
   async list(input: OpenClawAuditListInput = {}): Promise<OpenClawAuditListPage> {
+    const params = requestParams(input);
     try {
       return parseOpenClawAuditActivityPage(
-        await this.request(OPENCLAW_AUDIT_ACTIVITY_METHOD, requestParams(input)),
+        await this.request(OPENCLAW_AUDIT_ACTIVITY_METHOD, params),
       );
     } catch (error) {
-      if (isOpenClawUnknownMethodError(error, OPENCLAW_AUDIT_ACTIVITY_METHOD)) {
-        throw new OpenClawAuditUnsupportedError();
+      if (isOpenClawAuditActivityUnavailableError(error)) {
+        if (!supportsLegacyAuditFallback(input)) throw new OpenClawAuditUnsupportedError();
+        return parseOpenClawLegacyAuditPage(await this.request('audit.list', params));
       }
       throw error;
     }

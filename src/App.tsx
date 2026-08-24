@@ -151,7 +151,7 @@ export default function App() {
   useEffect(() => {
     const unsubscribeIssue = subscribePrivilegedAuthorizationIssues((issue) => {
       debugWarn('app', '[App] Privileged Gateway authorization issue:', issue.code);
-      if (issue.kind !== 'pairing_required') return;
+      if (issue.kind !== 'pairing_required' && issue.kind !== 'scope_denied') return;
       pairingTriggeredRef.current = true;
       setPairingIssue(issue);
     });
@@ -872,10 +872,14 @@ export default function App() {
         }
         if (status.connected) {
           cancelGatewayMigrationRetry();
-          // The callback is installed once, so it must not rely on a captured
-          // pairing flag. Any successful handshake closes the approval surface.
-          setPairingIssue(null);
-          pairingTriggeredRef.current = false;
+          // 权限升级只有在轮换设备令牌完成重连后才能恢复原特权操作；普通配对仍由
+          // 任意成功握手收敛。状态回调只安装一次，因此通过状态更新读取当前问题。
+          const resumedPrivilegedOperation = gateway.resumePrivilegedAfterOperatorScopeUpgrade();
+          setPairingIssue((currentIssue) => {
+            if (currentIssue?.kind === 'scope_denied' && !resumedPrivilegedOperation) return currentIssue;
+            pairingTriggeredRef.current = false;
+            return null;
+          });
           const boot = useBootSequenceStore.getState();
           boot.markStageCompleted('connection', 'WebSocket handshake complete');
           startInitialWorkspaceLoad();
@@ -883,7 +887,7 @@ export default function App() {
       },
       onAuthorizationIssue: (issue) => {
         debugWarn('app', '[App] Gateway authorization issue:', issue.code);
-        if (issue.kind !== 'pairing_required') return;
+        if (issue.kind !== 'pairing_required' && issue.kind !== 'scope_denied') return;
         pairingTriggeredRef.current = true;
         setPairingIssue(issue);
       },
@@ -891,9 +895,12 @@ export default function App() {
 
     // GatewayConnectionManager 投影连接状态机，App 只订阅状态并同步界面。
     const managerUnsub = gatewayManager.onStateChange((snap) => {
-      setConnectionStatus({ connected: snap.connected, connecting: snap.connecting, error: snap.error ?? undefined });
-      setGatewayBootError(snap.error);
-      gatewayBootErrorRef.current = snap.error;
+      // 统一生命周期操作拥有预期断连；操作终态由协调器调用方发布，不能在中途
+      // 把瞬时传输错误升级为全局启动失败。
+      const visibleError = gatewayLifecycle.running ? null : snap.error;
+      setConnectionStatus({ connected: snap.connected, connecting: snap.connecting, error: visibleError ?? undefined });
+      setGatewayBootError(visibleError);
+      gatewayBootErrorRef.current = visibleError;
       setGatewayBootLogs(snap.logs);
       setGatewayRetrying(snap.retrying);
 
@@ -902,19 +909,18 @@ export default function App() {
         cancelGatewayMigrationRetry();
       }
 
-      const toastKey = `${snap.state}|${snap.connected}|${snap.connecting}|${snap.retrying}|${snap.error ?? ''}`;
+      const toastKey = `${snap.state}|${snap.connected}|${snap.connecting}|${snap.retrying}|${visibleError ?? ''}`;
       const previousToastKey = lastGatewayToastKeyRef.current;
       const previousError = lastGatewayErrorToastRef.current;
       lastGatewayToastKeyRef.current = toastKey;
-      // Normal reconnect/connecting/connected transitions are too noisy.
-      // Notify only when a real error appears, and once when that error recovers.
+      // 普通重连、连接中和已连接切换不产生通知；只在真实错误首次出现及恢复时提示。
       if (coldStartRecoveryCompletedRef.current) {
-        if (snap.error && snap.error !== previousError) {
-          lastGatewayErrorToastRef.current = snap.error;
+        if (visibleError && visibleError !== previousError) {
+          lastGatewayErrorToastRef.current = visibleError;
           void addToastLazy(
             'error',
             t('gateway.statusChanged', 'Gateway status changed'),
-            t('gateway.statusError', { error: snap.error, defaultValue: `Error: ${snap.error}` }),
+            t('gateway.statusError', { error: visibleError, defaultValue: `Error: ${visibleError}` }),
           );
         } else if (!snap.error && previousError && snap.connected && previousToastKey !== toastKey) {
           lastGatewayErrorToastRef.current = null;
@@ -996,16 +1002,25 @@ export default function App() {
 
   const handlePairingApprove = useCallback(async (requestId: string) => {
     await approveSelectedGatewayDevice(requestId);
-    // 所选 OpenClaw 运行时已经确认准确请求，立即唤醒原特权操作，
-    // 不再等待下一次定时授权探测。
-    gateway.retryPrivilegedAuthorizationNow();
-  }, []);
+    // 普通配对批准后可以立即重试；scope upgrade 必须等待官方 waiter 返回轮换令牌、
+    // 安全保存并完成主连接身份核验，不能在批准命令返回时提前发送原写操作。
+    if (pairingIssue?.kind !== 'scope_denied') gateway.retryPrivilegedAuthorizationNow();
+  }, [pairingIssue?.kind]);
+
+  const handleRequestOperatorScopeUpgrade = useCallback(async () => {
+    const scopes = [
+      ...(pairingIssue?.requiredScopes ?? []),
+      ...(pairingIssue?.missingScope ? [pairingIssue.missingScope] : []),
+    ];
+    await gateway.beginOperatorScopeUpgrade(scopes);
+  }, [pairingIssue?.missingScope, pairingIssue?.requiredScopes]);
 
   const handlePairingCancel = useCallback(() => {
     debugLog('gateway', '[App] Pairing cancelled by user');
     setPairingIssue(null);
     pairingTriggeredRef.current = false;
     gatewayManager.cancelPairing();
+    gateway.cancelOperatorScopeUpgrade();
     gateway.cancelPrivilegedAuthorizationRetry();
     gateway.cancelApprovalAuthorizationRetry();
   }, []);
@@ -1069,6 +1084,7 @@ export default function App() {
             <PairingScreen
               issue={pairingIssue}
               onApprove={handlePairingApprove}
+              onRequestScopeUpgrade={handleRequestOperatorScopeUpgrade}
               onPaired={handlePairingComplete}
               onCancel={handlePairingCancel}
             />
@@ -1132,12 +1148,13 @@ export default function App() {
           <DragDropRuntime />
         </Suspense>
 
-      {/* Pairing overlay — shown when Gateway rejects due to missing scopes */}
+      {/* Gateway 返回缺失权限时显示统一授权恢复层。 */}
         {pairingIssue && !gatewayOptionalRoute && !gatewayBootError && (
         <Suspense fallback={null}>
           <PairingScreen
             issue={pairingIssue}
             onApprove={handlePairingApprove}
+            onRequestScopeUpgrade={handleRequestOperatorScopeUpgrade}
             onPaired={handlePairingComplete}
             onCancel={handlePairingCancel}
           />

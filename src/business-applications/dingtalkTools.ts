@@ -29,6 +29,30 @@ export interface DingTalkToolSchemaProjection {
   readonly parameters: readonly DingTalkToolParameter[];
 }
 
+export type DingTalkToolContractErrorCode = 'invalid-schema';
+
+export class DingTalkToolContractError extends Error {
+  readonly code: DingTalkToolContractErrorCode;
+
+  constructor(code: DingTalkToolContractErrorCode) {
+    super(code);
+    this.name = 'DingTalkToolContractError';
+    this.code = code;
+  }
+}
+
+export function shouldSurfaceDingTalkArguments({
+  runtimeTool,
+  argumentsInvalid,
+  missingRequiredParameters,
+}: {
+  runtimeTool: boolean;
+  argumentsInvalid: boolean;
+  missingRequiredParameters: readonly string[];
+}): boolean {
+  return !runtimeTool && (argumentsInvalid || missingRequiredParameters.length > 0);
+}
+
 export interface DingTalkRuntimeProfileProjection {
   readonly profile: string;
   readonly corpName: string | null;
@@ -59,6 +83,13 @@ export interface DingTalkBusinessEvidenceProjection {
   readonly dwsCanonicalPath: string | null;
   readonly schemaDigest: string | null;
   readonly recoveryEventId: string | null;
+}
+
+export interface DingTalkSubmitLinkProjection {
+  readonly approveType: string;
+  readonly formName: string;
+  readonly processCode: string;
+  readonly submitUrl: string;
 }
 
 export type DingTalkCatalogAvailability =
@@ -95,20 +126,6 @@ export function resolveDingTalkCatalogAvailability({
   if (!runtimeIdentitySettled) return 'loading-identity';
   if (runtimeIdentityError) return 'identity-error';
   return profileAuthenticated ? 'ready' : 'profile-required';
-}
-
-const DOMAIN_LABELS: Record<DingTalkDomain, string> = {
-  contact: '通讯录',
-  approval: '审批',
-  attendance: '考勤',
-  calendar: '日历',
-  todo: '待办',
-  runtime: '运行时',
-  unknown: '未验证',
-};
-
-export function dingTalkDomainLabel(domain: DingTalkDomain): string {
-  return DOMAIN_LABELS[domain];
 }
 
 export function isDingTalkEffectiveTool(entry: OpenClawToolsEffectiveEntry): boolean {
@@ -251,6 +268,29 @@ export function parseDingTalkBusinessEvidence(output: unknown): DingTalkBusiness
   };
 }
 
+/** 只投影 DWS 审批模板的官方提交入口，其他业务结果继续按原始结果展示。 */
+export function collectDingTalkSubmitLinks(output: unknown): readonly DingTalkSubmitLinkProjection[] {
+  const invocation = record(output);
+  const toolResult = record(invocation?.output);
+  const details = record(toolResult?.details);
+  const data = record(details?.data);
+  if (!Array.isArray(data?.templates)) return [];
+
+  const seen = new Set<string>();
+  const links: DingTalkSubmitLinkProjection[] = [];
+  for (const value of data.templates) {
+    const template = record(value);
+    const approveType = optionalString(template?.approveType);
+    const formName = optionalString(template?.formName);
+    const processCode = optionalString(template?.processCode);
+    const submitUrl = optionalString(template?.submitUrl);
+    if (!approveType || !formName || !processCode || !submitUrl || seen.has(submitUrl)) continue;
+    seen.add(submitUrl);
+    links.push({ approveType, formName, processCode, submitUrl });
+  }
+  return links;
+}
+
 export function parseDingTalkToolSchemaOutput(output: unknown): DingTalkToolSchemaProjection {
   const toolResult = record(output);
   const details = record(toolResult?.details);
@@ -262,11 +302,11 @@ export function parseDingTalkToolSchemaOutput(output: unknown): DingTalkToolSche
     : '';
   const parameters = record(details?.parameters);
   if (!canonicalPath || !/^[a-f0-9]{64}$/.test(schemaDigest) || !parameters) {
-    throw new Error('OpenClaw 返回的钉钉工具参数契约无效');
+    throw new DingTalkToolContractError('invalid-schema');
   }
   const projection = Object.entries(parameters).map(([name, value]) => {
     const parameter = record(value);
-    if (!parameter) throw new Error('DWS 参数契约包含无效字段');
+    if (!parameter) throw new DingTalkToolContractError('invalid-schema');
     return {
       name,
       type: typeof parameter.type === 'string' && parameter.type.trim()

@@ -50,11 +50,12 @@ test('BUG-WRM-01 migration locks data layout but permits independent runtime loc
 
 test('BUG-WRM-02 npm prefix change runs a dedicated dynamic-prefix relocation', () => {
   assert.match(storage, /runtime_changes\.npm_prefix|changes\.npm_prefix/);
-  assert.match(setup, /OpenclawInstallMode::Relocate/);
-  assert.match(
-    setup,
-    /OpenclawInstallMode::Relocate => \{[\s\S]*?pick_install_target\(&app, step, &compatible_node\)/,
+  const relocationBranch = setup.slice(
+    setup.indexOf('OpenclawInstallMode::Relocate => {'),
+    setup.indexOf('OpenclawInstallMode::Normal =>', setup.indexOf('OpenclawInstallMode::Relocate => {')),
   );
+  assert.match(relocationBranch, /pick_install_target\(/);
+  assert.match(relocationBranch, /freeze_target\(&target\)/);
   assert.match(setupFlow, /await relocateOpenclaw\(operationId\)/);
   assert.match(api, /invoke<string>\("relocate_openclaw", \{ operationId \}\)/);
   assert.match(lib, /commands::setup::relocate_openclaw/);

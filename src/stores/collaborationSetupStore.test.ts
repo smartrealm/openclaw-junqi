@@ -14,6 +14,7 @@ import type {
   CollaborationBootstrapStatus,
 } from '@/types/collaborationBootstrap';
 import type { RuntimeIdentity } from '@/types/gatewayRuntime';
+import { CollaborationClientError } from '@/services/collaboration/client';
 import {
   collaborationConfigurationMatches,
   createHealthConfirmation,
@@ -196,9 +197,12 @@ function dependencies(options: {
   initialIdentity?: RuntimeIdentity;
   probeOverride?: CollaborationBootstrapProbe;
   statusOverride?: CollaborationBootstrapStatus;
+  capabilityFailure?: CollaborationClientError;
+  onCoordinateRestart?: () => void;
 } = {}): CollaborationSetupDependencies {
   let currentIdentity = options.initialIdentity ?? identity();
   let liveCapabilities = capabilities(false);
+  let restartWasRequested = false;
   if (options.maintenanceActive) {
     liveCapabilities = {
       ...liveCapabilities,
@@ -222,14 +226,40 @@ function dependencies(options: {
       return currentIdentity;
     },
     resolveBundle: async () => ({ ...bundle, tgzPath: '/tmp/junqi-collab.tgz' }),
-    reloadCapabilities: async () => liveCapabilities,
+    reloadCapabilities: async () => {
+      if (options.capabilityFailure) throw options.capabilityFailure;
+      return liveCapabilities;
+    },
+    coordinateRestart: async (restartExecutor) => {
+      options.onCoordinateRestart?.();
+      const result = await restartExecutor();
+      return {
+        ...result,
+        action: 'restart',
+        source: 'collaboration-bootstrap-restart',
+        ...(result.success ? { connectionId: 'connection-2', healthy: true } : {}),
+      };
+    },
     wait: async () => undefined,
     service: {
       probe: async (targetFingerprint, expectedConnectionId) => {
         options.onProbe?.(targetFingerprint, expectedConnectionId);
         return options.probeOverride ?? probe();
       },
-      status: async () => options.statusOverride ?? status(options.healthPending),
+      status: async () => {
+        const current = options.statusOverride ?? status(options.healthPending);
+        if (!restartWasRequested || !current.journal) return current;
+        return {
+          ...current,
+          journal: {
+            ...current.journal,
+            steps: [
+              ...current.journal.steps,
+              { name: 'gateway_restart', status: 'requested', atMs: 3 },
+            ],
+          },
+        };
+      },
       apply: async () => { throw new Error('not used'); },
       recover: async (params) => {
         options.onRecover?.(params);
@@ -283,6 +313,7 @@ function dependencies(options: {
       },
       restart: async (params) => {
         options.onRestart?.(params);
+        restartWasRequested = true;
         return {
           ok: true,
           code: 'GATEWAY_RESTART_REQUESTED',
@@ -382,9 +413,11 @@ test('setup store does not mutate Agent policy while collaboration maintenance i
 
 test('setup restart is fenced to the health-pending operation, target, and connection', async () => {
   let received: BootstrapRestartParams | undefined;
+  let coordinated = false;
   const store = createCollaborationSetupStore(dependencies({
     healthPending: true,
     onRestart: (params) => { received = params; },
+    onCoordinateRestart: () => { coordinated = true; },
   }));
   await store.getState().refresh();
   await store.getState().requestRestart();
@@ -394,8 +427,74 @@ test('setup restart is fenced to the health-pending operation, target, and conne
     targetFingerprint: 'target-1',
     expectedConnectionId: 'connection-1',
   });
+  assert.equal(coordinated, true);
   assert.equal(store.getState().lastResult?.code, 'GATEWAY_RESTART_REQUESTED');
   assert.equal(store.getState().restartAvailable, false);
+});
+
+test('a structured plugin startup failure ends health waiting and preserves rollback', async () => {
+  const store = createCollaborationSetupStore(dependencies({
+    healthPending: true,
+    capabilityFailure: new CollaborationClientError(
+      'DATABASE_SCHEMA_UNSUPPORTED',
+      'The collaboration database schema is not supported by this plugin',
+      'junqi.collab.capabilities',
+      { actualSchemaVersion: 13, expectedSchemaVersion: 15 },
+    ),
+  }));
+
+  await store.getState().refresh();
+
+  assert.deepEqual(store.getState().capabilityFailure, {
+    code: 'DATABASE_SCHEMA_UNSUPPORTED',
+    message: 'The collaboration database schema is not supported by this plugin',
+    details: { actualSchemaVersion: 13, expectedSchemaVersion: 15 },
+  });
+  const decision = deriveCollaborationSetupView(store.getState());
+  assert.equal(decision.kind, 'service_failed');
+  assert.equal(decision.canRecover, true);
+});
+
+test('a plugin service-unavailable response ends health waiting and preserves rollback', async () => {
+  const store = createCollaborationSetupStore(dependencies({
+    healthPending: true,
+    capabilityFailure: new CollaborationClientError(
+      'SERVICE_START_FAILED',
+      'The collaboration plugin service failed to start',
+      'junqi.collab.capabilities',
+    ),
+  }));
+
+  await store.getState().refresh();
+
+  assert.deepEqual(store.getState().capabilityFailure, {
+    code: 'SERVICE_START_FAILED',
+    message: 'The collaboration plugin service failed to start',
+  });
+  const decision = deriveCollaborationSetupView(store.getState());
+  assert.equal(decision.kind, 'service_failed');
+  assert.equal(decision.canRecover, true);
+});
+
+test('a structured startup failure remains visible without a bootstrap journal', () => {
+  const decision = deriveCollaborationSetupView({
+    identity: identity(),
+    probe: probe(),
+    status: status(),
+    capabilities: null,
+    bundle,
+    loading: false,
+    mutation: null,
+    error: null,
+    capabilityFailure: {
+      code: 'SERVICE_START_FAILED',
+      message: 'Collaboration service failed to start',
+    },
+  });
+
+  assert.equal(decision.kind, 'service_failed');
+  assert.equal(decision.canApply, false);
+  assert.equal(decision.canRecover, false);
 });
 
 test('completed health pending exposes rollback and rolled-back state remains restartable', async () => {
@@ -534,6 +633,27 @@ test('setup view refuses a loaded plugin with a different schema contract', () =
     mutation: null,
     error: null,
   });
+  assert.equal(decision.kind, 'update');
+  assert.equal(decision.canApply, true);
+});
+
+test('setup view requires updating the previous plugin patch with the schema 14 migration defect', () => {
+  const previousPluginVersion = '0.5.3';
+  const currentProbe = probe();
+  const decision = deriveCollaborationSetupView({
+    identity: identity(),
+    probe: {
+      ...currentProbe,
+      plugin: { ...currentProbe.plugin, version: previousPluginVersion },
+    },
+    status: status(false),
+    capabilities: { ...capabilities(true), pluginVersion: previousPluginVersion },
+    bundle,
+    loading: false,
+    mutation: null,
+    error: null,
+  });
+
   assert.equal(decision.kind, 'update');
   assert.equal(decision.canApply, true);
 });

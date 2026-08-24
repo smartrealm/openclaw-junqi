@@ -176,12 +176,29 @@ export function solidPetTextStyle(color: string, _textShadow = 'none'): CSSPrope
   };
 }
 
-export function petCaptionTextContainerStyle(color: string, _themeName?: PetThemeName): CSSProperties {
+export function petCaptionTextContainerStyle(color: string, captionScale = 1): CSSProperties {
+  const scale = Math.min(1.35, Math.max(0.85, captionScale));
   return {
     ...solidPetTextStyle(color),
-    border: 0,
+    background: 'var(--aegis-bg-solid)',
+    backgroundColor: 'var(--aegis-bg-solid)',
+    border: '1px solid var(--aegis-border)',
+    borderRadius: 7,
+    boxShadow: 'var(--aegis-shadow-card)',
+    boxSizing: 'border-box',
+    fontFamily: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+    fontSize: 11.5 * scale,
+    fontWeight: 650,
     isolation: 'isolate',
+    lineHeight: 1.25,
+    maxHeight: 'calc(100vh - 116px)',
+    maxWidth: 'calc(100vw - 12px)',
     opacity: 1,
+    overflow: 'hidden',
+    padding: '2px 6px',
     pointerEvents: 'none',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    width: 'max-content',
   };
 }

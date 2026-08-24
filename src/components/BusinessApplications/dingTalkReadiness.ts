@@ -23,6 +23,7 @@ function dwsRuntimeMissing(code: string | null | undefined): boolean {
 export function resolveDingTalkReadiness({
   sessionExists,
   runtimeToolAvailable,
+  agentRuntimeVerified,
   runtime,
   runtimeError,
   pluginNeedsInstall,
@@ -32,6 +33,7 @@ export function resolveDingTalkReadiness({
 }: {
   sessionExists: boolean;
   runtimeToolAvailable: boolean;
+  agentRuntimeVerified: boolean;
   runtime: DingTalkRuntimeIdentityProjection | null;
   runtimeError: string | null;
   pluginNeedsInstall: boolean;
@@ -61,9 +63,14 @@ export function resolveDingTalkReadiness({
     };
   }
   if (runtimeError) {
-    return { tone: 'pending', titleKey: 'readingTitle', rawDescription: runtimeError, action: 'refresh' };
+    return {
+      tone: 'pending',
+      titleKey: 'agentAuthorizationPendingTitle',
+      rawDescription: runtimeError,
+      action: 'configure-agent',
+    };
   }
-  if (!runtime) {
+  if (!runtime || !agentRuntimeVerified) {
     return { tone: 'pending', titleKey: 'readingTitle', descriptionKey: 'readingDescription', action: 'refresh' };
   }
   if (!runtime.available) {

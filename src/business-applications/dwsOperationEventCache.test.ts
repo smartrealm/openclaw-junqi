@@ -4,6 +4,8 @@ import {
   cacheDwsOperationFinished,
   cacheDwsOperationOutput,
   formatDwsOperationOutput,
+  releaseDwsOperationCache,
+  rememberFinalizedDwsOperation,
   type DwsOperationEventCache,
 } from './dwsOperationEventCache';
 
@@ -39,4 +41,33 @@ test('DWS 标准错误流使用中性诊断标记而非业务失败标记', () =
   }, '[DWS] ');
 
   assert.equal(line, '[DWS] Waiting for authorization...');
+});
+
+test('已结算 DWS 操作释放内部输出、事件与终态缓存', () => {
+  const cache: DwsOperationEventCache = { output: {}, events: {}, finished: {} };
+  const outputEvent = { operationId: 'dws-3', stream: 'stdout', line: 'done' } as const;
+  cacheDwsOperationOutput(cache, outputEvent, 'done');
+  cacheDwsOperationFinished(cache, {
+    operationId: 'dws-3',
+    kind: 'authorize',
+    success: true,
+    cancelled: false,
+    message: 'done',
+    dwsPath: null,
+  });
+
+  releaseDwsOperationCache(cache, 'dws-3');
+
+  assert.equal(cache.output['dws-3'], undefined);
+  assert.equal(cache.events['dws-3'], undefined);
+  assert.equal(cache.finished['dws-3'], undefined);
+});
+
+test('已结算 operation id 集合保持固定上限', () => {
+  const finalized = new Set<string>();
+  rememberFinalizedDwsOperation(finalized, 'dws-1', 2);
+  rememberFinalizedDwsOperation(finalized, 'dws-2', 2);
+  rememberFinalizedDwsOperation(finalized, 'dws-3', 2);
+
+  assert.deepEqual([...finalized], ['dws-2', 'dws-3']);
 });

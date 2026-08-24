@@ -26,7 +26,6 @@ const REVIEWED_HEX_OCCURRENCES: Readonly<Record<string, number>> = {
   'pages/SetupPage/shared.tsx': 10, // 主题色板
   'pet/PetBubble.tsx': 0,
   'pet/PetCharacter.tsx': 3,
-  'pet/backdropContrast.ts': 0,
   'pet/effects.tsx': 1,
   'pet/petTheme.ts': 44,
   'pet/pomodoroView.ts': 4,

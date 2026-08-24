@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, useId, useState, type ReactNode } from 'react';
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Copy } from 'lucide-react';
@@ -8,6 +8,12 @@ import { debugError } from '@/utils/debugLog';
 import { Icon } from '@/components/shared/icons';
 import { fileExtension, workspaceFileKind } from '@/workspace-files/domain/fileKinds';
 import { openLocalManagedFile } from '@/runtime/managedFileRuntime';
+import {
+  openDesktopExternalLink,
+  resolveDesktopExternalLink,
+  type DesktopExternalLinkKind,
+} from '@/runtime/desktopExternalLink';
+import { useNotificationStore } from '@/stores/notificationStore';
 
 const CodeBlock = lazy(() => import('./CodeBlock').then((module) => ({ default: module.CodeBlock })));
 const ChatImage = lazy(() => import('./ChatImage').then((module) => ({ default: module.ChatImage })));
@@ -164,17 +170,80 @@ function FileCard({
   );
 }
 
-async function openExternalHref(href: string): Promise<void> {
-  try {
-    const { open } = await import('@tauri-apps/plugin-shell');
-    await open(href);
-  } catch {
-    window.open(href, '_blank', 'noopener,noreferrer');
-  }
+function externalLinkFailureDescription(kind: DesktopExternalLinkKind, t: ReturnType<typeof useTranslation>['t']): string {
+  return kind === 'dingtalk'
+    ? t('errors.dingTalkLinkOpenFailedDescription')
+    : t('errors.externalLinkOpenFailedDescription');
 }
 
 function desktopUrlTransform(url: string): string {
-  return isLocalFilePath(url) ? url : defaultUrlTransform(url);
+  if (isLocalFilePath(url)) return url;
+  const external = resolveDesktopExternalLink(url);
+  return external?.kind === 'dingtalk' ? external.href : defaultUrlTransform(url);
+}
+
+function ExternalMarkdownLink({ href, children }: { href: string; children: ReactNode }) {
+  const { t } = useTranslation();
+  const addToast = useNotificationStore((state) => state.addToast);
+  const [opening, setOpening] = useState(false);
+  const [openNotice, setOpenNotice] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
+  const statusId = useId();
+  const target = resolveDesktopExternalLink(href);
+
+  const handleClick = async () => {
+    if (!target || opening) return;
+    setOpenError(null);
+    setOpenNotice(null);
+    setOpening(true);
+    try {
+      await openDesktopExternalLink(target.href);
+      setOpenNotice(target.kind === 'dingtalk'
+        ? t('errors.dingTalkLinkRequested')
+        : t('errors.externalLinkRequested'));
+    } catch (error) {
+      debugError('app', '[ChatMarkdownRenderer] 外部链接打开失败:', error);
+      const description = externalLinkFailureDescription(target.kind, t);
+      setOpenError(description);
+      addToast(
+        'error',
+        t('errors.externalLinkOpenFailed'),
+        description,
+      );
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  return (
+    <span className="inline">
+      <a
+        href={target?.href}
+        onClick={(event) => {
+          event.preventDefault();
+          void handleClick();
+        }}
+        aria-busy={opening || undefined}
+        aria-describedby={opening || openNotice || openError ? statusId : undefined}
+        title={target?.kind === 'dingtalk' ? t('chat.openInDingTalk') : undefined}
+        className="cursor-pointer text-aegis-primary underline underline-offset-2 transition-colors hover:text-aegis-primary/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aegis-primary"
+      >
+        {children}
+      </a>
+      {(opening || openNotice || openError) && (
+        <span
+          id={statusId}
+          role={openError ? 'alert' : 'status'}
+          aria-live="polite"
+          className={openError ? 'ms-1.5 text-[0.82em] text-aegis-danger' : 'ms-1.5 text-[0.82em] text-aegis-text-dim'}
+        >
+          {openError ?? openNotice ?? (target?.kind === 'dingtalk'
+            ? t('errors.dingTalkLinkOpening')
+            : t('errors.externalLinkOpening'))}
+        </span>
+      )}
+    </span>
+  );
 }
 
 const markdownComponents: Components = {
@@ -244,27 +313,12 @@ const markdownComponents: Components = {
         </Suspense>
       );
     }
-    return (
-      <a
-        href={linkHref}
-        onClick={async (event) => {
-          event.preventDefault();
-          if (!linkHref) return;
-          if (isLocalFilePath(linkHref)) {
-            await openLocalManagedFile(linkHref);
-            return;
-          }
-          await openExternalHref(linkHref);
-        }}
-        className="text-aegis-primary underline underline-offset-2 hover:text-aegis-primary/70"
-      >
-        {children}
-      </a>
-    );
+    if (!linkHref || !resolveDesktopExternalLink(linkHref)) return <span>{children}</span>;
+    return <ExternalMarkdownLink href={linkHref}>{children}</ExternalMarkdownLink>;
   },
 };
 
-/** Desktop-aware Markdown rendering shared by chat bubbles and message previews. */
+/** Chat 气泡与消息预览共用的桌面 Markdown 渲染器。 */
 export function ChatMarkdownRenderer({ markdown }: ChatMarkdownRendererProps) {
   return (
     <ReactMarkdown

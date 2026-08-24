@@ -7,15 +7,22 @@ import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 interface PairingScreenProps {
   issue: GatewayAuthorizationIssue;
   onApprove: (requestId: string) => Promise<void>;
+  onRequestScopeUpgrade: () => Promise<void>;
   onPaired: (token: string) => void;
   onCancel: () => void;
 }
 
 /**
- * 待批准设备请求由 OpenClaw 创建并持有。只有用户确认后，JunQi 才能对所选
- * 本地运行时执行官方批准命令；手工命令和共享 token 输入仅作为恢复入口。
+ * 待批准设备请求由 OpenClaw 创建并持有。scope upgrade 先通过当前已核验连接
+ * 注册准确请求；只有用户确认后才批准所选本地运行时，其他方式只作为恢复入口。
  */
-export function PairingScreen({ issue, onApprove, onPaired, onCancel }: PairingScreenProps) {
+export function PairingScreen({
+  issue,
+  onApprove,
+  onRequestScopeUpgrade,
+  onPaired,
+  onCancel,
+}: PairingScreenProps) {
   const { t, i18n } = useTranslation();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showManualToken, setShowManualToken] = useState(false);
@@ -24,6 +31,11 @@ export function PairingScreen({ issue, onApprove, onPaired, onCancel }: PairingS
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const requestId = issue.requestId?.trim() || '';
+  const scopeDenied = issue.kind === 'scope_denied';
+  const scopeUpgradePending = scopeDenied && issue.code === 'SCOPE_UPGRADE_PENDING' && Boolean(requestId);
+  const requiredScope = issue.missingScope
+    ?? issue.requiredScopes?.filter((scope) => scope.trim()).join(', ')
+    ?? '';
   const approvalCommand = useMemo(
     () => requestId
       ? `openclaw devices approve ${requestId}`
@@ -49,6 +61,19 @@ export function PairingScreen({ issue, onApprove, onPaired, onCancel }: PairingS
       await onApprove(requestId);
     } catch (error) {
       setApprovalError(error instanceof Error ? error.message : String(error));
+      setSubmitting(false);
+    }
+  };
+
+  const requestScopeUpgrade = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setApprovalError(null);
+    try {
+      await onRequestScopeUpgrade();
+    } catch (error) {
+      setApprovalError(error instanceof Error ? error.message : String(error));
+    } finally {
       setSubmitting(false);
     }
   };
@@ -90,13 +115,15 @@ export function PairingScreen({ issue, onApprove, onPaired, onCancel }: PairingS
             <ShieldCheck size={28} />
           </div>
           <h2 id="gateway-pairing-title" className="mb-2 text-[18px] font-semibold text-aegis-text">
-            {t('pairing.needsApproval')}
+            {scopeDenied ? t('pairing.scopeUpgradeNeeded') : t('pairing.needsApproval')}
           </h2>
           <p className="mb-3 text-sm leading-6 text-aegis-text-muted">
-            {t('pairing.confirmApprovalDesc')}
+            {scopeDenied
+              ? t('pairing.scopeUpgradeDesc', { scope: requiredScope || t('pairing.scopeUpgradeUnknownScope') })
+              : t('pairing.confirmApprovalDesc')}
           </p>
           <p className="mb-5 text-xs leading-5 text-aegis-text-dim">
-            {t('pairing.confirmApprovalScope')}
+            {scopeDenied ? t('pairing.scopeUpgradeRecovery') : t('pairing.confirmApprovalScope')}
           </p>
 
           {approvalError && (
@@ -106,31 +133,64 @@ export function PairingScreen({ issue, onApprove, onPaired, onCancel }: PairingS
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={() => void approveAndContinue()}
-            disabled={!requestId || submitting}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-aegis-primary px-4 py-2.5 text-sm font-semibold text-aegis-btn-primary-text transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {submitting ? <LoadingIndicator size={15} /> : <ShieldCheck size={16} />}
-            {submitting ? t('pairing.approving') : t('pairing.confirmAndContinue')}
-          </button>
+          {scopeDenied && !scopeUpgradePending && (
+            <button
+              type="button"
+              onClick={() => void requestScopeUpgrade()}
+              disabled={submitting}
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-aegis-primary px-4 py-2.5 text-sm font-semibold text-aegis-btn-primary-text transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {submitting ? <LoadingIndicator size={15} /> : <ShieldCheck size={16} />}
+              {submitting ? t('pairing.requestingScopeUpgrade') : t('pairing.requestRequiredAccess')}
+            </button>
+          )}
 
-          <div className="mt-4 flex items-center gap-2 text-xs text-aegis-text-dim">
-            <LoadingIndicator size={13} className="text-aegis-primary" />
-            <span>{t('pairing.waitingApprovalRetry')}</span>
-          </div>
+          {(!scopeDenied || scopeUpgradePending) && (
+            <>
+              <button
+                type="button"
+                onClick={() => void approveAndContinue()}
+                disabled={!requestId || submitting}
+                className="flex w-full items-center justify-center gap-2 rounded-md bg-aegis-primary px-4 py-2.5 text-sm font-semibold text-aegis-btn-primary-text transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {submitting ? <LoadingIndicator size={15} /> : <ShieldCheck size={16} />}
+                {submitting
+                  ? t('pairing.approving')
+                  : scopeDenied
+                    ? t('pairing.approveRequiredAccess')
+                    : t('pairing.confirmAndContinue')}
+              </button>
 
-          <button
-            type="button"
-            onClick={() => setShowAdvanced((value) => !value)}
-            disabled={submitting}
-            className="mt-5 flex items-center gap-2 rounded-md px-3 py-2 text-xs text-aegis-text-muted transition-colors hover:bg-aegis-glass hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40"
-            aria-expanded={showAdvanced}
-          >
-            <Terminal size={14} />
-            {showAdvanced ? t('pairing.hideAdvanced') : t('pairing.showAdvanced')}
-          </button>
+              <div className="mt-4 flex items-center gap-2 text-xs text-aegis-text-dim">
+                <LoadingIndicator size={13} className="text-aegis-primary" />
+                <span>{t('pairing.waitingApprovalRetry')}</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowAdvanced((value) => !value)}
+                disabled={submitting}
+                className="mt-5 flex items-center gap-2 rounded-md px-3 py-2 text-xs text-aegis-text-muted transition-colors hover:bg-aegis-glass hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40"
+                aria-expanded={showAdvanced}
+              >
+                <Terminal size={14} />
+                {showAdvanced ? t('pairing.hideAdvanced') : t('pairing.showAdvanced')}
+              </button>
+            </>
+          )}
+
+          {scopeDenied && !scopeUpgradePending && (
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((value) => !value)}
+              disabled={submitting}
+              className="mt-5 flex items-center gap-2 rounded-md px-3 py-2 text-xs text-aegis-text-muted transition-colors hover:bg-aegis-glass hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40"
+              aria-expanded={showAdvanced}
+            >
+              <Terminal size={14} />
+              {showAdvanced ? t('pairing.hideAdvanced') : t('pairing.showAdvanced')}
+            </button>
+          )}
 
           {showAdvanced && (
             <div className="mt-2 w-full border-t border-aegis-border pt-4 text-start">

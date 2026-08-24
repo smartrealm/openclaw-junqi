@@ -32,7 +32,7 @@ function dependencies(
   };
 }
 
-test('selected runtime token skips an unnecessary device credential lookup', async () => {
+test('普通重连优先恢复当前端点已持久化的设备权限', async () => {
   let credentialLookups = 0;
   const target = await resolveGatewayConnectionTarget({}, dependencies({
     getDeviceCredential: async () => {
@@ -44,13 +44,13 @@ test('selected runtime token skips an unnecessary device credential lookup', asy
   assert.deepEqual(target, {
     wsUrl: 'ws://127.0.0.1:18789',
     httpUrl: 'http://127.0.0.1:18789',
-    token: 'selected-runtime-token',
-    deviceToken: '',
+    token: '',
+    deviceToken: 'device-token',
   });
-  assert.equal(credentialLookups, 0);
+  assert.equal(credentialLookups, 1);
 });
 
-test('loopback aliases keep the selected runtime token after desktop restart', async () => {
+test('loopback aliases在桌面重启后继续使用端点绑定的设备权限', async () => {
   let credentialLookups = 0;
   const target = await resolveGatewayConnectionTarget({}, dependencies({
     getSavedUrl: () => 'ws://localhost:18789/',
@@ -61,9 +61,9 @@ test('loopback aliases keep the selected runtime token after desktop restart', a
   }));
 
   assert.equal(target.wsUrl, 'ws://localhost:18789/');
-  assert.equal(target.token, 'selected-runtime-token');
-  assert.equal(target.deviceToken, '');
-  assert.equal(credentialLookups, 0);
+  assert.equal(target.token, '');
+  assert.equal(target.deviceToken, 'device-token');
+  assert.equal(credentialLookups, 1);
 });
 
 test('manual endpoint never inherits the selected runtime bootstrap token', async () => {

@@ -30,10 +30,19 @@ export interface BusinessActivityAttempt {
   readonly finishedAt?: number;
 }
 
+export function selectBusinessAttemptsForSession(
+  attempts: readonly BusinessActivityAttempt[],
+  sessionKey: string,
+): readonly BusinessActivityAttempt[] {
+  if (!sessionKey) return [];
+  return attempts.filter((attempt) => attempt.sessionKey === sessionKey);
+}
+
 interface BusinessActivityState {
   attempts: BusinessActivityAttempt[];
   begin: (attempt: BusinessActivityAttempt) => void;
   settle: (id: string, patch: Partial<Pick<BusinessActivityAttempt, 'state' | 'approvalId' | 'errorCode' | 'evidence' | 'finishedAt'>>) => void;
+  clearSession: (sessionKey: string) => void;
   clear: () => void;
 }
 
@@ -47,5 +56,11 @@ export const useBusinessActivityStore = create<BusinessActivityState>((set) => (
   settle: (id, patch) => set((state) => ({
     attempts: state.attempts.map((attempt) => attempt.id === id ? { ...attempt, ...patch } : attempt),
   })),
+  clearSession: (sessionKey) => {
+    if (!sessionKey) return;
+    set((state) => ({
+      attempts: state.attempts.filter((attempt) => attempt.sessionKey !== sessionKey),
+    }));
+  },
   clear: () => set({ attempts: [] }),
 }));

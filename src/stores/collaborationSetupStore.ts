@@ -20,6 +20,12 @@ import {
   subscribeRuntimeIdentity,
 } from '@/services/gateway/runtimeIdentity';
 import { useCollaborationStore } from '@/stores/collaborationStore';
+import { CollaborationClientError } from '@/services/collaboration/client';
+import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
+import type {
+  GatewayLifecycleResult,
+  GatewayRestartResult,
+} from '@/services/gateway/GatewayLifecycleCoordinator';
 import type {
   BootstrapConfigureParams,
   BootstrapAbandonParams,
@@ -61,12 +67,19 @@ export interface CollaborationAgentConfigurationDraft {
   touched: boolean;
 }
 
+export interface CollaborationCapabilityFailure {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
 export type CollaborationSetupViewKind =
   | 'loading'
   | 'identity_unavailable'
   | 'busy'
   | 'recovery'
   | 'health_pending'
+  | 'service_failed'
   | 'manual'
   | 'runtime_not_durable'
   | 'unsupported'
@@ -114,6 +127,9 @@ export interface CollaborationSetupDependencies {
   eventTarget?: SetupEventTarget;
   bundle: CollaborationPluginBundleMetadata;
   reloadCapabilities: () => Promise<CollaborationCapabilities>;
+  coordinateRestart: (
+    restartExecutor: () => Promise<GatewayRestartResult>,
+  ) => Promise<GatewayLifecycleResult>;
   wait: (delayMs: number) => Promise<void>;
 }
 
@@ -126,6 +142,7 @@ export interface CollaborationSetupState {
   bundle: CollaborationPluginBundleMetadata;
   resolvedBundlePath: string | null;
   capabilities: CollaborationCapabilities | null;
+  capabilityFailure: CollaborationCapabilityFailure | null;
   agentConfiguration: CollaborationAgentConfigurationDraft;
   loading: boolean;
   mutation: CollaborationSetupMutation | null;
@@ -155,6 +172,29 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export function normalizeCollaborationCapabilityFailure(
+  error: unknown,
+): CollaborationCapabilityFailure {
+  if (error instanceof CollaborationClientError) {
+    return {
+      code: error.code,
+      message: error.message,
+      ...(error.details ? { details: error.details } : {}),
+    };
+  }
+  return {
+    code: 'RPC_FAILED',
+    message: errorText(error),
+  };
+}
+
+function isCollaborationServiceStartupFailure(
+  failure: CollaborationCapabilityFailure | null | undefined,
+): boolean {
+  return failure?.code === 'DATABASE_SCHEMA_UNSUPPORTED'
+    || failure?.code === 'SERVICE_START_FAILED';
+}
+
 export function parseCollaborationSetupRequest(event: Event): string | null {
   const detail = 'detail' in event ? (event as CustomEvent<unknown>).detail : null;
   if (!detail || typeof detail !== 'object') return null;
@@ -166,7 +206,7 @@ export function deriveCollaborationSetupView(
   state: Pick<
     CollaborationSetupState,
     'identity' | 'probe' | 'status' | 'bundle' | 'capabilities' | 'loading' | 'mutation' | 'error'
-  >,
+  > & { capabilityFailure?: CollaborationCapabilityFailure | null },
 ): CollaborationSetupViewDecision {
   const targetClass = state.probe?.targetClass ?? 'unknown';
   const pluginVersion = state.probe?.plugin.version?.trim() || null;
@@ -222,6 +262,20 @@ export function deriveCollaborationSetupView(
   }
   const completedHealthPending = journal?.status === 'completed' && journal.healthPending;
   const rollbackRestartPending = journal?.status === 'rolled_back' && journal.restartRequired;
+  if (completedHealthPending && isCollaborationServiceStartupFailure(state.capabilityFailure)) {
+    const sameTarget = journal.target.targetFingerprint === state.identity.targetFingerprint
+      && state.status?.targetFingerprint === state.identity.targetFingerprint;
+    return {
+      ...base,
+      kind: 'service_failed',
+      canApply: false,
+      canRecover: Boolean(
+        state.status?.recoverable
+        && sameTarget
+        && isMutableDurableTarget(targetClass),
+      ),
+    };
+  }
   if (completedHealthPending || rollbackRestartPending) {
     const sameTarget = journal.target.targetFingerprint === state.identity.targetFingerprint
       && state.status?.targetFingerprint === state.identity.targetFingerprint;
@@ -267,6 +321,14 @@ export function deriveCollaborationSetupView(
       canApply: false,
       canRecover: false,
       blockedReason: state.error || state.probe?.message,
+    };
+  }
+  if (isCollaborationServiceStartupFailure(state.capabilityFailure)) {
+    return {
+      ...base,
+      kind: 'service_failed',
+      canApply: false,
+      canRecover: false,
     };
   }
 
@@ -448,6 +510,10 @@ export function createCollaborationSetupStore(
     eventTarget: defaultEventTarget(),
     bundle: COLLABORATION_PLUGIN_BUNDLE,
     reloadCapabilities: () => useCollaborationStore.getState().bootstrap(true),
+    coordinateRestart: (restartExecutor) => gatewayLifecycle.restartWith(
+      'collaboration-bootstrap-restart',
+      restartExecutor,
+    ),
     wait: defaultWait,
   },
 ): UseBoundStore<StoreApi<CollaborationSetupState>> {
@@ -485,6 +551,7 @@ export function createCollaborationSetupStore(
     bundle: dependencies.bundle,
     resolvedBundlePath: null,
     capabilities: null,
+    capabilityFailure: null,
     agentConfiguration: { ...EMPTY_AGENT_CONFIGURATION },
     loading: false,
     mutation: null,
@@ -508,6 +575,7 @@ export function createCollaborationSetupStore(
           identity,
           ...(changed ? {
             capabilities: null,
+            capabilityFailure: null,
             agentConfiguration: { ...EMPTY_AGENT_CONFIGURATION },
           } : {}),
         });
@@ -540,19 +608,23 @@ export function createCollaborationSetupStore(
       set({
         identity,
         loading: true,
-        // Refreshes observe a new connection epoch. Diagnostics from the
-        // previous Gateway instance must not be rendered against it.
+        // 刷新会观察新的连接世代，旧 Gateway 的诊断不能投影到新连接。
         error: null,
       });
       try {
-        const [status, probe, resolvedBundle, capabilities] = await Promise.all([
+        const [status, probe, resolvedBundle, capabilityRead] = await Promise.all([
           dependencies.service.status(),
           dependencies.service.probe(
             identity?.verified ? identity.targetFingerprint : undefined,
             identity?.verified ? identity.connectionId : undefined,
           ),
           dependencies.resolveBundle().catch(() => null),
-          loadCapabilities(identity).catch(() => null),
+          loadCapabilities(identity)
+            .then((capabilities) => ({ capabilities, failure: null }))
+            .catch((error: unknown) => ({
+              capabilities: null,
+              failure: normalizeCollaborationCapabilityFailure(error),
+            })),
         ]);
         if (generation !== refreshGeneration) return;
         const liveIdentity = dependencies.getRuntimeIdentity();
@@ -566,11 +638,17 @@ export function createCollaborationSetupStore(
           || status.targetFingerprint === liveIdentity?.targetFingerprint
           || status.targetFingerprint === status.journal?.target.targetFingerprint;
         const runtimeStateMatches = probeMatchesRuntime && statusIsCoherent;
-        const acceptedCapabilities = capabilities
+        const acceptedCapabilities = capabilityRead.capabilities
           && probeMatchesRuntime
           && liveIdentity?.targetFingerprint === identity?.targetFingerprint
           && liveIdentity?.connectionId === identity?.connectionId
-          ? capabilities
+          ? capabilityRead.capabilities
+          : null;
+        const acceptedCapabilityFailure = capabilityRead.failure
+          && probeMatchesRuntime
+          && liveIdentity?.targetFingerprint === identity?.targetFingerprint
+          && liveIdentity?.connectionId === identity?.connectionId
+          ? capabilityRead.failure
           : null;
         set({
           ...(runtimeStateMatches
@@ -579,16 +657,15 @@ export function createCollaborationSetupStore(
               status: null,
               probe: null,
               capabilities: null,
+              capabilityFailure: null,
               agentConfiguration: { ...EMPTY_AGENT_CONFIGURATION },
             }),
           resolvedBundlePath: resolvedBundle?.tgzPath ?? null,
-          ...(acceptedCapabilities ? {
-            capabilities: acceptedCapabilities,
-            agentConfiguration: reconcileAgentConfiguration(
-              acceptedCapabilities,
-              get().agentConfiguration,
-            ),
-          } : {}),
+          capabilities: acceptedCapabilities,
+          capabilityFailure: acceptedCapabilityFailure,
+          agentConfiguration: acceptedCapabilities
+            ? reconcileAgentConfiguration(acceptedCapabilities, get().agentConfiguration)
+            : { ...EMPTY_AGENT_CONFIGURATION },
           loading: false,
           identity: liveIdentity,
           restartAvailable: Boolean(
@@ -598,6 +675,9 @@ export function createCollaborationSetupStore(
             && isMutableDurableTarget(probe.targetClass)
             && status.journal?.operationId
             && status.journal.restartRequired
+            && !status.journal.steps.some(
+              (step) => step.name === 'gateway_restart' && step.status === 'requested',
+            )
             && status.journal.target.targetFingerprint === liveIdentity.targetFingerprint,
           ),
         });
@@ -615,7 +695,7 @@ export function createCollaborationSetupStore(
         return;
       }
       const fingerprint = before.identity.targetFingerprint;
-      set({ mutation: 'apply', error: null, lastResult: null });
+      set({ mutation: 'apply', error: null, lastResult: null, capabilityFailure: null });
       try {
         const resolved = await dependencies.resolveBundle();
         if (
@@ -880,38 +960,57 @@ export function createCollaborationSetupStore(
         || !before.restartAvailable
         || journal.target.targetFingerprint !== identity.targetFingerprint
       ) return;
-      set({ mutation: 'restart', error: null });
-      let restartIssued = false;
+      set({ mutation: 'restart', error: null, capabilityFailure: null });
+      const restartCapture: { result: CollaborationBootstrapRestartResult | null } = { result: null };
       try {
-        const result = await dependencies.service.restart({
-          operationId: journal.operationId,
-          targetFingerprint: identity.targetFingerprint,
-          expectedConnectionId: identity.connectionId,
+        const lifecycleResult = await dependencies.coordinateRestart(async () => {
+          const result = await dependencies.service.restart({
+            operationId: journal.operationId,
+            targetFingerprint: identity.targetFingerprint,
+            expectedConnectionId: identity.connectionId,
+          });
+          restartCapture.result = result;
+          if (
+            result.operationId !== journal.operationId
+            || result.targetFingerprint !== identity.targetFingerprint
+            || result.previousConnectionId !== identity.connectionId
+          ) {
+            return {
+              success: false,
+              error: 'The restart result belongs to a different bootstrap operation or Gateway connection',
+            };
+          }
+          return {
+            success: result.ok && result.restartRequested,
+            ...(result.ok ? {} : { error: result.message }),
+            method: 'collaboration-bootstrap',
+          };
         });
-        if (
-          result.operationId !== journal.operationId
-          || result.targetFingerprint !== identity.targetFingerprint
-          || result.previousConnectionId !== identity.connectionId
-        ) {
-          throw new Error('The restart result belongs to a different bootstrap operation or Gateway connection');
-        }
-        restartIssued = result.restartRequested;
+        const restartResult = restartCapture.result;
+        if (!restartResult) throw new Error('The collaboration restart did not return a result');
         set({
-          lastResult: result,
-          error: result.ok ? null : result.message,
-          ...(restartIssued ? { restartAvailable: false } : {}),
+          lastResult: restartResult,
+          error: lifecycleResult.success
+            ? null
+            : lifecycleResult.error || restartResult.message,
+          ...(restartResult.restartRequested ? { restartAvailable: false } : {}),
         });
+        if (lifecycleResult.success) await get().refresh();
       } catch (error) {
         set({ error: errorText(error) });
       } finally {
         set({ mutation: null });
-        if (!restartIssued) await get().refresh();
+        if (!restartCapture.result?.restartRequested) await get().refresh();
       }
     },
 
     observeCapabilities: async (capabilities) => {
       if (!capabilities) {
-        set({ capabilities: null, agentConfiguration: { ...EMPTY_AGENT_CONFIGURATION } });
+        set({
+          capabilities: null,
+          capabilityFailure: null,
+          agentConfiguration: { ...EMPTY_AGENT_CONFIGURATION },
+        });
         return;
       }
       const observedIdentity = dependencies.getRuntimeIdentity();
@@ -928,6 +1027,7 @@ export function createCollaborationSetupStore(
       set({
         identity,
         capabilities,
+        capabilityFailure: null,
         agentConfiguration: reconcileAgentConfiguration(capabilities, get().agentConfiguration),
       });
       if (get().mutation) return;

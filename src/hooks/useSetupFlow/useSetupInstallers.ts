@@ -23,6 +23,7 @@ import {
   isMissingGitDependencyError,
   SetupPrerequisiteError,
 } from "./helpers";
+import { describeNodeRuntimePreparation } from "./nodeRuntimePreparation";
 import { describeOpenclawInstallFailure, requiresOpenclawRepair } from "./openclawInstallHealth";
 import type { InstallTarget, StepState, StepStatus } from "./types";
 
@@ -104,9 +105,11 @@ export function useSetupInstallers({
       setNodeRequirement(setupNode.requirement);
       if (!isRunActive(runId)) return false;
       if (!nodeStatus.available) {
-        patchStep("node", "running", t("setup.installingNode"));
+        const preparation = describeNodeRuntimePreparation(nodeStatus, setupNode.requirement);
+        const preparing = t(preparation.key, preparation.params);
+        patchStep("node", "running", preparing);
         replaceSetupStep("install-node");
-        reportPhase("node", t("setup.installingNode"), 20);
+        reportPhase("node", preparing, 20);
         setupNode = await runSetupOperation(
           runId,
           "node",

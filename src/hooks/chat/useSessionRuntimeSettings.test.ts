@@ -64,3 +64,20 @@ test('缺少活动会话时使用本地化设置错误，不伪造主会话目�
     'target-required',
   );
 });
+
+test('管理员授权恢复由统一界面承接，不泄漏底层 scope 错误', () => {
+  const error = Object.assign(new Error('missing scope: operator.admin'), {
+    code: 'GATEWAY_PRIVILEGED_AUTHORIZATION_FAILED',
+  });
+  assert.equal(
+    sessionSettingsErrorMessage(
+      error,
+      'fallback',
+      'invalid',
+      'locked',
+      'target-required',
+      'authorization-required',
+    ),
+    'authorization-required',
+  );
+});

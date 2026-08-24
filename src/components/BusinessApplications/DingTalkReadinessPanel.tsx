@@ -3,12 +3,18 @@ import { useTranslation } from 'react-i18next';
 import { CircleAlert, CircleCheck, CircleDashed, Copy, ExternalLink, RefreshCw, Square, Terminal, Wrench } from 'lucide-react';
 import { Button } from '@/components/shared/button/Button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { DingTalkRuntimeIdentityProjection } from '@/business-applications/dingtalkTools';
+import { presentDingTalkRuntimeEvidence } from '@/business-applications/dingtalkRuntimeEvidence';
+import { isDwsOperationActive, type DingTalkDwsOperationPhase } from '@/business-applications/dwsOperationLifecycle';
 import type { DwsAuthorizationFailureDiagnosis } from '@/business-applications/dwsAuthorizationFailure';
 import { DingTalkRuntimeIdentity } from './DingTalkRuntimeIdentity';
 import { resolveDingTalkReadiness } from './dingTalkReadiness';
 import { shouldHideDingTalkReadinessPanel } from './dingTalkReadinessFeedback';
 import { useSetupProgress } from '@/hooks/useSetupProgress';
+import { openDesktopExternalLink } from '@/runtime/desktopExternalLink';
+import { useNotificationStore } from '@/stores/notificationStore';
+import { debugError } from '@/utils/debugLog';
 
 const DWS_OFFICIAL_GUIDE = 'https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli#installation';
 const DWS_AUTH_GUIDE = 'https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/blob/main/README.md';
@@ -53,9 +59,9 @@ export type DingTalkPluginInstallProgress = {
 };
 
 export type DingTalkDwsOperationPresentation = {
-  readonly id: string;
+  readonly id: string | null;
   readonly kind: 'install' | 'authorize' | 'resetAuth' | 'switchProfile' | 'logoutProfile';
-  readonly phase: 'running' | 'completed' | 'failed' | 'cancelled';
+  readonly phase: DingTalkDwsOperationPhase;
   readonly message: string | null;
 };
 
@@ -67,6 +73,7 @@ export type DingTalkAuthorizationAgentOption = {
 export function DingTalkReadinessPanel({
   sessionExists,
   runtimeToolAvailable,
+  agentRuntimeVerified,
   runtime,
   runtimeError,
   operationError,
@@ -108,6 +115,7 @@ export function DingTalkReadinessPanel({
 }: {
   sessionExists: boolean;
   runtimeToolAvailable: boolean;
+  agentRuntimeVerified: boolean;
   runtime: DingTalkRuntimeIdentityProjection | null;
   runtimeError: string | null;
   operationError: string | null;
@@ -148,6 +156,7 @@ export function DingTalkReadinessPanel({
   onDismissDws: () => void;
 }) {
   const { t } = useTranslation();
+  const addToast = useNotificationStore((state) => state.addToast);
   const gatewayProgress = useSetupProgress('gateway');
   const gatewayLifecycleActive = gatewayProgress?.status === 'running';
   const [guideOpen, setGuideOpen] = useState(false);
@@ -156,6 +165,7 @@ export function DingTalkReadinessPanel({
   const readiness = resolveDingTalkReadiness({
     sessionExists,
     runtimeToolAvailable,
+    agentRuntimeVerified,
     runtime,
     runtimeError,
     pluginNeedsInstall,
@@ -176,6 +186,16 @@ export function DingTalkReadinessPanel({
       ? 'border-aegis-warning/30 bg-aegis-warning/[0.06] text-aegis-warning'
       : 'border-aegis-border bg-aegis-surface/45 text-aegis-text-dim';
   const openGuide = () => setGuideOpen(true);
+  const openOfficialGuide = (href: string) => {
+    void openDesktopExternalLink(href).catch((error) => {
+      debugError('app', '[DingTalkReadinessPanel] 打开官方文档失败:', error);
+      addToast(
+        'error',
+        t('errors.externalLinkOpenFailed'),
+        t('errors.externalLinkOpenFailedDescription'),
+      );
+    });
+  };
   const copyCommand = async (command: string) => {
     try {
       await navigator.clipboard.writeText(command);
@@ -184,7 +204,15 @@ export function DingTalkReadinessPanel({
       setCopiedCommand(null);
     }
   };
-  const dwsOperationActive = dwsOperation?.phase === 'running';
+  const dwsOperationActive = isDwsOperationActive(dwsOperation?.phase);
+  const dwsOperationRunning = dwsOperation?.phase === 'running';
+  const runtimeEvidence = presentDingTalkRuntimeEvidence({
+    sessionLabel,
+    agentId,
+    effectiveToolCount,
+    pluginVersion,
+    bundledPluginVersion,
+  });
   const refreshDisabled = !sessionExists || busy || refreshing;
   const description = readiness.action === 'install-plugin' && !installAvailable
     ? t('businessApplications.readiness.installUnavailable')
@@ -217,9 +245,9 @@ export function DingTalkReadinessPanel({
   const pluginStep: ReadinessStepState = runtimeToolAvailable
     ? 'ready'
     : restartRequired ? 'pending' : pluginNeedsInstall ? 'blocked' : 'pending';
-  const agentStep: ReadinessStepState = runtimeToolAvailable
+  const agentStep: ReadinessStepState = agentRuntimeVerified
     ? 'ready'
-    : !sessionExists || pluginNeedsInstall || restartRequired ? 'pending' : 'blocked';
+    : runtimeToolAvailable || !sessionExists || pluginNeedsInstall || restartRequired ? 'pending' : 'blocked';
   const dwsStep: ReadinessStepState = runtime?.available && runtime.currentProfile && runtime.user
     ? 'ready'
     : runtime?.available ? 'pending' : runtime ? 'blocked' : 'pending';
@@ -273,7 +301,7 @@ export function DingTalkReadinessPanel({
               {installationActive ? <CircleDashed size={12} className="animate-spin" aria-hidden="true" /> : installationProgress.phase === 'completed' ? <CircleCheck size={12} aria-hidden="true" /> : <CircleAlert size={12} aria-hidden="true" />}
               <span className={installationTone}>{installationProgress.message}</span>
             </div>
-            <div className="relative mt-1.5 h-1 overflow-hidden rounded-sm bg-aegis-border/65" role="progressbar" aria-label="钉钉业务插件安装进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={installationProgress.phase === 'completed' ? 100 : installationProgress.phase === 'failed' ? 0 : undefined} aria-valuetext={installationProgress.message ?? undefined}>
+            <div className="relative mt-1.5 h-1 overflow-hidden rounded-sm bg-aegis-border/65" role="progressbar" aria-label={t('businessApplications.pluginInstall.progressLabel')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={installationProgress.phase === 'completed' ? 100 : installationProgress.phase === 'failed' ? 0 : undefined} aria-valuetext={installationProgress.message ?? undefined}>
               {installationActive
                 ? <span className="aegis-indeterminate-progress absolute inset-y-0 w-2/5 bg-aegis-primary" />
                 : <div className="h-full bg-aegis-primary transition-[width] duration-200" style={{ width: installationProgress.phase === 'completed' ? '100%' : '0%' }} />}
@@ -290,9 +318,9 @@ export function DingTalkReadinessPanel({
           <div className="grid border-t border-aegis-border bg-aegis-bg/70 xl:grid-cols-[minmax(240px,0.85fr)_minmax(280px,1fr)_minmax(230px,0.8fr)]">
             <section className="min-w-0 border-b border-aegis-border p-3 xl:border-b-0 xl:border-r" aria-labelledby="dingtalk-readiness-checks-title">
               <h2 id="dingtalk-readiness-checks-title" className="mb-1 text-[10.5px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.accessChecks')}</h2>
-              <ReadinessStep label="OpenClaw Session" state={sessionStep} description={t(sessionExists ? 'businessApplications.readiness.sessionBound' : 'businessApplications.readiness.sessionNeeded')} />
+              <ReadinessStep label={t('businessApplications.readiness.sessionStep')} state={sessionStep} description={t(sessionExists ? 'businessApplications.readiness.sessionBound' : 'businessApplications.readiness.sessionNeeded')} />
               <ReadinessStep label={t('businessApplications.readiness.pluginStep')} state={pluginStep} description={t(runtimeToolAvailable ? 'businessApplications.readiness.pluginToolReady' : pluginNeedsInstall ? 'businessApplications.readiness.pluginInstallNeeded' : restartRequired ? 'businessApplications.readiness.pluginRestartPending' : 'businessApplications.readiness.pluginSessionPending')} />
-              <ReadinessStep label={t('businessApplications.readiness.agentStep')} state={agentStep} description={t(runtimeToolAvailable ? 'businessApplications.readiness.agentVerified' : agentId ? 'businessApplications.readiness.agentPending' : 'businessApplications.readiness.agentIdMissing', { agentId })} />
+              <ReadinessStep label={t('businessApplications.readiness.agentStep')} state={agentStep} description={t(agentRuntimeVerified ? 'businessApplications.readiness.agentVerified' : runtimeToolAvailable ? 'businessApplications.readiness.agentRuntimePending' : agentId ? 'businessApplications.readiness.agentPending' : 'businessApplications.readiness.agentIdMissing', { agentId })} />
               <ReadinessStep label={t('businessApplications.readiness.dwsIdentityStep')} state={dwsStep} description={t(runtime?.available && runtime.currentProfile && runtime.user ? 'businessApplications.readiness.dwsIdentityReady' : runtime?.available && runtime.currentProfile ? 'businessApplications.readiness.dwsUserPending' : runtime?.available ? 'businessApplications.readiness.dwsAuthorizationNeeded' : runtime ? 'businessApplications.readiness.dwsRuntimeMissing' : 'businessApplications.readiness.dwsStatusPending')} />
             </section>
             <section className="min-w-0 border-b border-aegis-border p-3 xl:border-b-0 xl:border-r" aria-labelledby="dingtalk-current-identity-title">
@@ -312,17 +340,26 @@ export function DingTalkReadinessPanel({
             <section className="min-w-0 p-3" aria-labelledby="dingtalk-runtime-evidence-title">
               <h2 id="dingtalk-runtime-evidence-title" className="mb-2 text-[10.5px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.currentEvidence')}</h2>
               <dl className="grid grid-cols-[76px_minmax(0,1fr)] gap-x-2 gap-y-2 border-y border-aegis-border py-3 text-[10px]">
-                <dt className="text-aegis-text-dim">Session</dt>
-                <dd className="truncate font-mono text-aegis-text-secondary" title={sessionLabel ?? undefined}>{sessionLabel ?? t('businessApplications.readiness.notSelected')}</dd>
-                <dt className="text-aegis-text-dim">Agent</dt>
-                <dd className="truncate font-mono text-aegis-text-secondary" title={agentId ?? undefined}>{agentId ?? t('businessApplications.readiness.notReturned')}</dd>
+                <dt className="text-aegis-text-dim">{t('businessApplications.readiness.sessionStep')}</dt>
+                <dd className="text-aegis-text-secondary">{runtimeEvidence.sessionVerified ? t('businessApplications.readiness.sessionVerified') : t('businessApplications.readiness.notSelected')}</dd>
+                <dt className="text-aegis-text-dim">{t('businessApplications.readiness.agentStep')}</dt>
+                <dd className="truncate font-mono text-aegis-text-secondary" title={runtimeEvidence.agentId ?? undefined}>{runtimeEvidence.agentId ?? t('businessApplications.readiness.notReturned')}</dd>
                 <dt className="text-aegis-text-dim">{t('businessApplications.readiness.effectiveTools')}</dt>
-                <dd className="font-mono tabular-nums text-aegis-text-secondary">{effectiveToolCount}</dd>
-                <dt className="text-aegis-text-dim">{t('businessApplications.readiness.pluginVersion')}</dt>
-                <dd className="truncate font-mono text-aegis-text-secondary" title={pluginVersion ?? undefined}>{pluginVersion ?? t('businessApplications.readiness.notRead')}</dd>
-                <dt className="text-aegis-text-dim">{t('businessApplications.readiness.bundledVersion')}</dt>
-                <dd className="truncate font-mono text-aegis-text-secondary" title={bundledPluginVersion ?? undefined}>{bundledPluginVersion ?? t('businessApplications.readiness.notRead')}</dd>
+                <dd className="font-mono tabular-nums text-aegis-text-secondary">{runtimeEvidence.effectiveToolCount}</dd>
               </dl>
+              <details className="mt-3 border border-aegis-border bg-aegis-surface/45 px-2.5 py-2">
+                <summary className="cursor-pointer text-[9.5px] font-medium text-aegis-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/60">
+                  {t('businessApplications.readiness.technicalEvidence')}
+                </summary>
+                <dl className="mt-2 grid grid-cols-[76px_minmax(0,1fr)] gap-x-2 gap-y-2 border-t border-aegis-border pt-2 text-[9.5px]">
+                  <dt className="text-aegis-text-dim">{t('businessApplications.readiness.sessionIdentity')}</dt>
+                  <dd className="truncate font-mono text-aegis-text-secondary" title={runtimeEvidence.diagnostics.sessionLabel ?? undefined}>{runtimeEvidence.diagnostics.sessionLabel ?? t('businessApplications.readiness.notSelected')}</dd>
+                  <dt className="text-aegis-text-dim">{t('businessApplications.readiness.pluginVersion')}</dt>
+                  <dd className="truncate font-mono text-aegis-text-secondary" title={runtimeEvidence.diagnostics.pluginVersion ?? undefined}>{runtimeEvidence.diagnostics.pluginVersion ?? t('businessApplications.readiness.notRead')}</dd>
+                  <dt className="text-aegis-text-dim">{t('businessApplications.readiness.bundledVersion')}</dt>
+                  <dd className="truncate font-mono text-aegis-text-secondary" title={runtimeEvidence.diagnostics.bundledPluginVersion ?? undefined}>{runtimeEvidence.diagnostics.bundledPluginVersion ?? t('businessApplications.readiness.notRead')}</dd>
+                </dl>
+              </details>
               <p className="mt-3 text-[9.5px] leading-4 text-aegis-text-dim">{t('businessApplications.readiness.evidenceBoundary')}</p>
             </section>
           </div>
@@ -347,11 +384,11 @@ export function DingTalkReadinessPanel({
               </div>
             ))}
             <div className="border-t border-aegis-border pt-3 text-[10.5px] leading-5 text-aegis-text-dim">
-              <p>{t('businessApplications.readiness.guideLoginPrefix')} <code className="font-mono text-aegis-text-secondary">dws auth login</code>{t('businessApplications.readiness.guideHeadlessPrefix')} <code className="font-mono text-aegis-text-secondary">dws auth login --device</code>。</p>
+              <p>{t('businessApplications.readiness.guideLoginPrefix')} <code className="font-mono text-aegis-text-secondary">dws auth login</code>{t('businessApplications.readiness.guideHeadlessPrefix')} <code className="font-mono text-aegis-text-secondary">dws auth login --device</code>{t('businessApplications.readiness.guideLoginSuffix')}</p>
               <p className="mt-1">{t('businessApplications.readiness.guideReturn')}</p>
             </div>
             <div className="flex flex-wrap justify-end gap-2">
-              <Button size="xs" variant="outline" tone="neutral" leadingIcon={<ExternalLink size={12} />} onClick={() => window.open(DWS_OFFICIAL_GUIDE, '_blank', 'noopener,noreferrer')}>{t('businessApplications.readiness.openOfficialDocs')}</Button>
+              <Button size="xs" variant="outline" tone="neutral" leadingIcon={<ExternalLink size={12} />} onClick={() => openOfficialGuide(DWS_OFFICIAL_GUIDE)}>{t('businessApplications.readiness.openOfficialDocs')}</Button>
               <Button size="xs" variant="solid" tone="primary" loading={refreshing} disabled={refreshDisabled} leadingIcon={<RefreshCw size={12} />} onClick={() => { setGuideOpen(false); onRefresh(); }}>{t(refreshing ? 'businessApplications.readiness.refreshing' : 'businessApplications.readiness.refresh')}</Button>
             </div>
           </div>
@@ -373,26 +410,41 @@ export function DingTalkReadinessPanel({
             </div>
             <label className="block text-[10.5px] text-aegis-text-secondary" htmlFor="dingtalk-authorization-agent">
               <span className="mb-1.5 block font-medium">{t('businessApplications.readiness.authorizationTarget')}</span>
-              <select
-                id="dingtalk-authorization-agent"
+              <Select
                 value={authorizationTargetAgentId ?? ''}
-                onChange={(event) => onAuthorizationTargetAgentChange(event.target.value)}
                 disabled={busy || authorizationAgentOptions.length === 0}
-                className="h-8 w-full rounded-md border border-aegis-border bg-aegis-bg px-2 font-mono text-[11px] text-aegis-text outline-none transition-colors focus:border-aegis-primary/50 focus-visible:ring-2 focus-visible:ring-aegis-primary/35 disabled:cursor-not-allowed disabled:opacity-50"
+                onValueChange={onAuthorizationTargetAgentChange}
               >
-                {authorizationAgentOptions.map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.name ? `${candidate.name} (${candidate.id})` : candidate.id}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  id="dingtalk-authorization-agent"
+                  aria-label={t('businessApplications.readiness.authorizationTarget')}
+                  className="h-8 w-full rounded-md border-aegis-border bg-aegis-bg px-2 font-mono text-[11px] text-aegis-text shadow-none focus:ring-2 focus:ring-aegis-primary/35 focus:ring-offset-0"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent
+                  align="start"
+                  sideOffset={4}
+                  className="border-aegis-border bg-aegis-card-solid text-aegis-text shadow-[var(--aegis-menu-shadow)]"
+                >
+                  {authorizationAgentOptions.map((candidate) => (
+                    <SelectItem
+                      key={candidate.id}
+                      value={candidate.id}
+                      className="min-h-8 py-1.5 pl-8 pr-2 font-mono text-[11px] text-aegis-text-secondary focus:bg-aegis-primary/10 focus:text-aegis-text"
+                    >
+                      {candidate.name ? `${candidate.name} (${candidate.id})` : candidate.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </label>
             {authorizationTargetAgentId && authorizationTargetAgentId !== agentId && (
               <p className="rounded-md border border-aegis-warning/25 bg-aegis-warning/[0.05] px-2.5 py-2 text-[10px] leading-5 text-aegis-warning" role="status">
                 {t('businessApplications.readiness.nonCurrentAgentVerification', { agentId: authorizationTargetAgentId })}
               </p>
             )}
-            <p className="text-[10px] leading-5 text-aegis-text-dim">{t('businessApplications.readiness.currentSession')} <code className="font-mono text-aegis-text-secondary">{sessionLabel ?? t('businessApplications.readiness.notSelected')}</code>。{t('businessApplications.readiness.agentEffectivePrefix')} <code className="font-mono text-aegis-text-secondary">tools.effective</code> {t('businessApplications.readiness.agentEffectiveSuffix')}</p>
+            <p className="text-[10px] leading-5 text-aegis-text-dim">{t('businessApplications.readiness.currentSession')} <code className="font-mono text-aegis-text-secondary">{sessionLabel ?? t('businessApplications.readiness.notSelected')}</code>{t('businessApplications.readiness.sessionStatementSeparator')}{t('businessApplications.readiness.agentEffectivePrefix')} <code className="font-mono text-aegis-text-secondary">tools.effective</code> {t('businessApplications.readiness.agentEffectiveSuffix')}</p>
           </div>
           <div className="flex justify-end gap-2 border-t border-aegis-border px-4 py-3">
             <Button size="xs" variant="outline" tone="neutral" onClick={() => setAuthorizationGuideOpen(false)}>{t('businessApplications.readiness.close')}</Button>
@@ -431,13 +483,17 @@ export function DingTalkReadinessPanel({
                       : 'businessApplications.dws.credentialMigrationRequired')}
                 </p>
                 <div className="mt-2 flex flex-wrap justify-end gap-2">
-                  <Button size="xs" variant="outline" tone="neutral" leadingIcon={<ExternalLink size={11} />} onClick={() => window.open(DWS_AUTH_GUIDE, '_blank', 'noopener,noreferrer')}>{t('businessApplications.readiness.openOfficialDocs')}</Button>
+                  <Button size="xs" variant="outline" tone="neutral" leadingIcon={<ExternalLink size={11} />} onClick={() => openOfficialGuide(DWS_AUTH_GUIDE)}>{t('businessApplications.readiness.openOfficialDocs')}</Button>
                   {dwsAuthorizationFailure.kind === 'reset-required' && <Button size="xs" variant="outline" tone="danger" disabled={dwsOperationActive} onClick={onResetDwsAuth}>{t('businessApplications.dws.resetAllCredentials')}</Button>}
                 </div>
               </div>
             )}
             <div className="flex flex-wrap justify-end gap-2">
-              {dwsOperationActive ? <Button size="xs" variant="outline" tone="danger" leadingIcon={<Square size={11} />} onClick={onCancelDws}>{t('businessApplications.readiness.cancel')}</Button> : <Button size="xs" variant="solid" tone="primary" loading={refreshing} disabled={refreshDisabled} leadingIcon={<RefreshCw size={12} />} onClick={() => { onRefresh(); onDismissDws(); }}>{t(refreshing ? 'businessApplications.readiness.refreshing' : 'businessApplications.readiness.refresh')}</Button>}
+              {dwsOperationRunning
+                ? <Button size="xs" variant="outline" tone="danger" leadingIcon={<Square size={11} />} onClick={onCancelDws}>{t('businessApplications.readiness.cancel')}</Button>
+                : dwsOperationActive
+                  ? <Button size="xs" variant="outline" tone="neutral" loading disabled>{t('businessApplications.dws.starting')}</Button>
+                  : <Button size="xs" variant="solid" tone="primary" loading={refreshing} disabled={refreshDisabled} leadingIcon={<RefreshCw size={12} />} onClick={() => { onRefresh(); onDismissDws(); }}>{t(refreshing ? 'businessApplications.readiness.refreshing' : 'businessApplications.readiness.refresh')}</Button>}
             </div>
           </div>
         </DialogContent>
