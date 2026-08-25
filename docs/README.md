@@ -4,6 +4,9 @@
 
 ## 当前入口
 
+- [协作运行时更新与混合 schema 恢复审计](quality/collaboration-runtime-update-and-mixed-schema-recovery-audit-2026-08-25.md)：旧插件启动错误封死更新入口、真实 schema 13 混合结构恢复和运行时加载闭环。
+- [协作运行时更新与混合 schema 恢复规格](../specs/2026-08-25-collaboration-runtime-update-and-mixed-schema-recovery.md)：受控更新优先级、精确混合结构门禁和错误语义验收条件。
+- [协作运行时更新与混合 schema 恢复计划](../plans/2026-08-25-collaboration-runtime-update-and-mixed-schema-recovery.md)：回归、迁移、固定包重建和真实 Gateway 验证顺序。
 - [Gateway 管理员权限升级链路审计](quality/gateway-admin-scope-upgrade-audit-2026-08-24.md)：会话运行参数与其他管理员写入的官方设备 scope upgrade、令牌轮换、重连和原操作恢复闭环。
 - [Gateway 管理员权限升级规格](../specs/2026-08-24-gateway-admin-scope-upgrade.md)：结构化拒绝、身份围栏、安全凭据与业务重试验收条件。
 - [Gateway 管理员权限升级计划](../plans/2026-08-24-gateway-admin-scope-upgrade.md)：回归测试、统一协调器、恢复界面和验证顺序。

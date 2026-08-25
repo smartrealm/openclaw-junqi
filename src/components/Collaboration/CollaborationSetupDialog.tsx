@@ -152,7 +152,7 @@ function DecisionMessage({
         ? t('collaboration.bootstrap.schemaUnsupportedTitle', '协作数据版本不兼容')
         : t('collaboration.bootstrap.serviceFailedTitle', '协作插件服务启动失败'),
       body: capabilityFailure?.code === 'DATABASE_SCHEMA_UNSUPPORTED'
-        ? t('collaboration.bootstrap.schemaUnsupportedBody', '现有协作数据没有被修改。当前插件不能读取该数据版本，请回滚到准确的旧插件和配置。')
+        ? t('collaboration.bootstrap.schemaUnsupportedBody', '现有协作数据没有被修改。请先核对当前 Gateway 实际加载的插件版本；仅在当前目标存在恢复事务时执行回滚。')
         : t('collaboration.bootstrap.serviceFailedBody', 'Gateway 已恢复连接，但协作插件服务未能启动。请查看技术详情并回滚本次安装。'),
     },
     manual: {

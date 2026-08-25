@@ -1,6 +1,6 @@
 {
   "name": "@junqi/openclaw-collaboration",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Durable multi-agent collaboration workflow for JunQi and OpenClaw",
   "type": "module",
   "license": "MIT",

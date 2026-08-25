@@ -206,7 +206,7 @@ export function AgentHubOfficePanel({
             </div>
             <div className="mt-0.5 text-[10px] leading-4 opacity-85">
               {error.code === 'DATABASE_SCHEMA_UNSUPPORTED'
-                ? t('agentHub.office.schemaUnsupportedDescription', '现有协作数据未被修改，请打开协作设置恢复到安装前状态。')
+                ? t('agentHub.office.schemaUnsupportedDescription', '当前 Gateway 加载的协作插件无法读取现有数据。请打开协作设置核对插件版本，并按受控流程更新或恢复。')
                 : error.code === 'SERVICE_START_FAILED'
                   ? t('agentHub.office.serviceFailedDescription', 'Gateway 已连接，但协作插件服务未启动。请打开协作设置查看诊断。')
                   : t('agentHub.office.loadFailedDescription', '请检查协作设置和 Gateway 状态后重试。')}

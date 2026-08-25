@@ -323,15 +323,6 @@ export function deriveCollaborationSetupView(
       blockedReason: state.error || state.probe?.message,
     };
   }
-  if (isCollaborationServiceStartupFailure(state.capabilityFailure)) {
-    return {
-      ...base,
-      kind: 'service_failed',
-      canApply: false,
-      canRecover: false,
-    };
-  }
-
   const canApply = Boolean(
     state.probe
     && state.status
@@ -351,6 +342,14 @@ export function deriveCollaborationSetupView(
   }
   if (!plugin.enabled || plugin.status !== 'loaded') {
     return { ...base, kind: 'repair', canApply, canRecover: false };
+  }
+  if (isCollaborationServiceStartupFailure(state.capabilityFailure)) {
+    return {
+      ...base,
+      kind: 'service_failed',
+      canApply: false,
+      canRecover: false,
+    };
   }
   if (!state.capabilities) {
     return {

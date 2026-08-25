@@ -41,6 +41,7 @@ const LEGACY_SCHEMA_12_OBJECTS = [
   "table:workflow_run_templates",
   "index:workflow_run_templates_template",
 ] as const;
+const COMMANDS_AVAILABLE_INDEX = "commands_available";
 const TOMBSTONES_MIGRATION_TABLE = "tombstones_schema_15_migration";
 
 export class UnsupportedCollaborationSchemaError extends Error {
@@ -157,6 +158,50 @@ function legacySchemaObjectNames(version: number): Set<string> {
 
 function sameSet(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
   return left.size === right.size && [...left].every((value) => right.has(value));
+}
+
+function normalizeIndexSql(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function hasCanonicalCommandsAvailableIndex(
+  database: DatabaseSync,
+  objects: SchemaObject[],
+): boolean {
+  const actualObject = objects.find(
+    (object) => object.type === "index" && object.name === COMMANDS_AVAILABLE_INDEX,
+  );
+  const expectedObject = currentSchemaShape().objects.find(
+    (object) => object.type === "index" && object.name === COMMANDS_AVAILABLE_INDEX,
+  );
+  if (
+    !actualObject
+    || !expectedObject
+    || normalizeIndexSql(actualObject.sql) !== normalizeIndexSql(expectedObject.sql)
+  ) {
+    return false;
+  }
+
+  const actualColumns = normalizedRows(
+    database.prepare(`PRAGMA index_xinfo(${quoteIdentifier(COMMANDS_AVAILABLE_INDEX)})`).all() as SqlRow[],
+  );
+  return stableStringify(actualColumns)
+    === stableStringify(currentSchemaShape().indexes[COMMANDS_AVAILABLE_INDEX]);
+}
+
+function matchesLegacySchema(
+  database: DatabaseSync,
+  objects: SchemaObject[],
+  version: number,
+): boolean {
+  const actualNames = new Set(objects.map((object) => `${object.type}:${object.name}`));
+  const expectedNames = legacySchemaObjectNames(version);
+  if (sameSet(actualNames, expectedNames)) return true;
+  if (version !== 13) return false;
+
+  expectedNames.add(`index:${COMMANDS_AVAILABLE_INDEX}`);
+  return sameSet(actualNames, expectedNames)
+    && hasCanonicalCommandsAvailableIndex(database, objects);
 }
 
 function requireNoReceiptConflict(
@@ -317,8 +362,7 @@ export class CollaborationSchemaInitializer {
     if (!Number.isSafeInteger(version) || !LEGACY_SCHEMA_VERSIONS.has(version)) {
       return null;
     }
-    const actualNames = new Set(objects.map((object) => `${object.type}:${object.name}`));
-    if (!sameSet(actualNames, legacySchemaObjectNames(version))) {
+    if (!matchesLegacySchema(this.database, objects, version)) {
       throw new Error(`collaboration database structure does not match known schema ${version}`);
     }
     return version;
@@ -346,6 +390,9 @@ export class CollaborationSchemaInitializer {
   }
 
   private migrateLegacySchema(version: number): string {
+    if (version === 13) {
+      this.database.exec(`DROP INDEX IF EXISTS ${quoteIdentifier(COMMANDS_AVAILABLE_INDEX)};`);
+    }
     copyLegacyReceipts(this.database, version);
     rebuildTombstones(this.database);
     this.database.exec("DROP TABLE session_mutation_commands; DROP TABLE session_mutations;");

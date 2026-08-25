@@ -658,6 +658,32 @@ test('setup view requires updating the previous plugin patch with the schema 14 
   assert.equal(decision.canApply, true);
 });
 
+test('an outdated plugin remains updateable when its service cannot read the database', () => {
+  const outdatedProbe = probe();
+  const decision = deriveCollaborationSetupView({
+    identity: identity(),
+    probe: {
+      ...outdatedProbe,
+      plugin: { ...outdatedProbe.plugin, version: '0.5.1' },
+    },
+    status: status(false),
+    capabilities: null,
+    bundle,
+    loading: false,
+    mutation: null,
+    error: null,
+    capabilityFailure: {
+      code: 'DATABASE_SCHEMA_UNSUPPORTED',
+      message: 'The loaded collaboration plugin cannot read schema 13',
+      details: { actualSchemaVersion: 13, expectedSchemaVersion: 15 },
+    },
+  });
+
+  assert.equal(decision.kind, 'update');
+  assert.equal(decision.canApply, true);
+  assert.equal(decision.canRecover, false);
+});
+
 test('an orphaned journal can be explicitly archived from a different verified target', async () => {
   const orphanStatus = status(true);
   orphanStatus.recoveryRequired = true;

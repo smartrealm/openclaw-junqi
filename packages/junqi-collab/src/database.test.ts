@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { createLegacySchema } from "./database-schema-fixture.test-helper.js";
 import { CollaborationDatabase } from "./database.js";
 import { CollaborationError } from "./errors.js";
 import { PERSISTENCE_LIMITS } from "./persistence-policy.js";
@@ -105,100 +106,6 @@ for (const unsupportedVersion of [11, SCHEMA_VERSION + 1]) {
   });
 }
 
-function createLegacySchema(filePath: string, version: 12 | 13 | 14): void {
-  const raw = new DatabaseSync(filePath);
-  try {
-    raw.exec(SCHEMA_SQL);
-    if (version <= 13) raw.exec("DROP INDEX commands_available;");
-    raw.exec("DROP TABLE tombstones;");
-    raw.exec(`
-      CREATE TABLE tombstones (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL UNIQUE,
-        actor TEXT NOT NULL,
-        content_digest TEXT NOT NULL,
-        deletion_job_id TEXT,
-        deleted_at INTEGER NOT NULL,
-        cleanup_status TEXT NOT NULL DEFAULT 'COMPLETED',
-        cleanup_error TEXT,
-        cleanup_updated_at INTEGER NOT NULL DEFAULT 0,
-        flow_reconciliation_command_id TEXT,
-        openclaw_flow_id TEXT,
-        openclaw_flow_revision INTEGER,
-        flow_reconciliation_diagnostic TEXT,
-        flow_reconciliation_abandoned_at INTEGER,
-        flow_reconciliation_abandon_reason TEXT
-      );
-      CREATE INDEX tombstones_deleted_at ON tombstones(deleted_at DESC, id DESC);
-      CREATE TABLE session_mutations (
-        id TEXT PRIMARY KEY,
-        runtime_id TEXT NOT NULL,
-        session_key TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        action TEXT NOT NULL,
-        policy TEXT NOT NULL,
-        status TEXT NOT NULL,
-        lease_expires_at INTEGER NOT NULL,
-        result_json TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      CREATE UNIQUE INDEX session_mutations_active
-      ON session_mutations(runtime_id, session_key, session_id)
-      WHERE status = 'PREPARED';
-      CREATE UNIQUE INDEX session_mutations_unresolved
-      ON session_mutations(runtime_id, session_key, session_id)
-      WHERE status IN ('PREPARED', 'EXPIRED');
-      CREATE TABLE session_mutation_commands (
-        command_id TEXT PRIMARY KEY,
-        mutation_id TEXT NOT NULL REFERENCES session_mutations(id) ON DELETE CASCADE,
-        operation TEXT NOT NULL,
-        payload_hash TEXT NOT NULL,
-        response_json TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      CREATE INDEX session_mutation_commands_mutation
-      ON session_mutation_commands(mutation_id, created_at);
-    `);
-    if (version <= 13) {
-      raw.exec(`
-        CREATE TABLE deletion_command_receipts (
-          command_id TEXT PRIMARY KEY,
-          run_id TEXT NOT NULL,
-          deletion_job_id TEXT NOT NULL,
-          payload_hash TEXT NOT NULL,
-          response_json TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
-        CREATE INDEX deletion_command_receipts_run
-        ON deletion_command_receipts(run_id, created_at);
-        CREATE TABLE command_receipt_conflicts (
-          command_id TEXT PRIMARY KEY,
-          diagnostic TEXT NOT NULL,
-          created_at INTEGER NOT NULL
-        );
-      `);
-    }
-    if (version === 12) {
-      raw.exec(`
-        DROP TABLE workflow_run_templates;
-        DROP TABLE workflow_template_versions;
-        DROP TABLE workflow_templates;
-      `);
-    }
-    raw.prepare(
-      "INSERT INTO metadata(key, value, updated_at) VALUES ('schema_version', ?, 1)",
-    ).run(String(version));
-    raw.prepare(
-      "INSERT INTO metadata(key, value, updated_at) VALUES ('collaboration_instance_id', 'instance_legacy', 1)",
-    ).run();
-  } finally {
-    raw.close();
-  }
-}
-
 test("database migrates schema 13 with a verified backup and retains mappable receipts", () => {
   const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-migrate-schema-13-"));
   const filePath = path.join(directory, "collaboration.sqlite");
@@ -242,6 +149,68 @@ test("database migrates schema 13 with a verified backup and retains mappable re
     assert.equal(backup.prepare("SELECT COUNT(*) AS count FROM deletion_command_receipts").get()?.count, 1);
   } finally {
     backup.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("database migrates the observed schema 13 shape with the canonical commands-available index", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-migrate-observed-schema-13-"));
+  const filePath = path.join(directory, "collaboration.sqlite");
+  createLegacySchema(filePath, 13);
+  const setup = new DatabaseSync(filePath);
+  try {
+    setup.exec(`
+      CREATE INDEX commands_available
+      ON commands(status, available_at, lease_expires_at, created_at);
+    `);
+  } finally {
+    setup.close();
+  }
+
+  const database = new CollaborationDatabase(filePath);
+  try {
+    assert.equal(database.getMetadata("schema_version"), String(SCHEMA_VERSION));
+    assert.equal(database.getMetadata("schema_migrated_from"), "13");
+    assert.equal(database.integrityCheck(), "ok");
+  } finally {
+    database.close();
+  }
+
+  const backupPath = `${filePath}.schema-v13-backup.sqlite`;
+  const backup = new DatabaseSync(backupPath, { readOnly: true });
+  try {
+    assert.equal(backup.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get()?.value, "13");
+    assert.equal(
+      backup.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'commands_available'").get()?.name,
+      "commands_available",
+    );
+  } finally {
+    backup.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("database refuses schema 13 with a noncanonical commands-available index", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "junqi-collab-reject-observed-schema-13-drift-"));
+  const filePath = path.join(directory, "collaboration.sqlite");
+  createLegacySchema(filePath, 13);
+  const setup = new DatabaseSync(filePath);
+  try {
+    setup.exec("CREATE INDEX commands_available ON commands(status, created_at)");
+  } finally {
+    setup.close();
+  }
+
+  assert.throws(
+    () => new CollaborationDatabase(filePath),
+    /collaboration database structure does not match known schema 13/,
+  );
+  const inspected = new DatabaseSync(filePath, { readOnly: true });
+  try {
+    assert.equal(inspected.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get()?.value, "13");
+    assert.equal(existsSync(`${filePath}.schema-v13-backup.sqlite`), false);
+  } finally {
+    inspected.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });
