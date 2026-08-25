@@ -432,14 +432,18 @@ test('setup restart is fenced to the health-pending operation, target, and conne
   assert.equal(store.getState().restartAvailable, false);
 });
 
-test('a structured plugin startup failure ends health waiting and preserves rollback', async () => {
+test('a startup failure from the pre-restart connection cannot replace the required restart', async () => {
   const store = createCollaborationSetupStore(dependencies({
     healthPending: true,
     capabilityFailure: new CollaborationClientError(
       'DATABASE_SCHEMA_UNSUPPORTED',
       'The collaboration database schema is not supported by this plugin',
       'junqi.collab.capabilities',
-      { actualSchemaVersion: 13, expectedSchemaVersion: 15 },
+      {
+        pluginVersion: '0.5.5',
+        actualSchemaVersion: 13,
+        expectedSchemaVersion: 15,
+      },
     ),
   }));
 
@@ -448,14 +452,19 @@ test('a structured plugin startup failure ends health waiting and preserves roll
   assert.deepEqual(store.getState().capabilityFailure, {
     code: 'DATABASE_SCHEMA_UNSUPPORTED',
     message: 'The collaboration database schema is not supported by this plugin',
-    details: { actualSchemaVersion: 13, expectedSchemaVersion: 15 },
+    details: {
+      pluginVersion: '0.5.5',
+      actualSchemaVersion: 13,
+      expectedSchemaVersion: 15,
+    },
   });
   const decision = deriveCollaborationSetupView(store.getState());
-  assert.equal(decision.kind, 'service_failed');
+  assert.equal(decision.kind, 'health_pending');
   assert.equal(decision.canRecover, true);
+  assert.equal(store.getState().restartAvailable, true);
 });
 
-test('a plugin service-unavailable response ends health waiting and preserves rollback', async () => {
+test('a plugin service-unavailable response cannot replace the required first restart', async () => {
   const store = createCollaborationSetupStore(dependencies({
     healthPending: true,
     capabilityFailure: new CollaborationClientError(
@@ -472,7 +481,63 @@ test('a plugin service-unavailable response ends health waiting and preserves ro
     message: 'The collaboration plugin service failed to start',
   });
   const decision = deriveCollaborationSetupView(store.getState());
+  assert.equal(decision.kind, 'health_pending');
+  assert.equal(decision.canRecover, true);
+});
+
+test('a startup failure becomes terminal only after a new Gateway connection is observed', () => {
+  const restartedStatus = status(true);
+  restartedStatus.journal = {
+    ...restartedStatus.journal!,
+    steps: [{ name: 'gateway_restart', status: 'requested', atMs: 3 }],
+  };
+  const decision = deriveCollaborationSetupView({
+    identity: identity({ connectionId: 'connection-2' }),
+    probe: { ...probe(), connectionId: 'connection-2' },
+    status: restartedStatus,
+    capabilities: null,
+    bundle,
+    loading: false,
+    mutation: null,
+    error: null,
+    capabilityFailure: {
+      code: 'DATABASE_SCHEMA_UNSUPPORTED',
+      message: 'The collaboration database schema is not supported by this plugin',
+      details: {
+        pluginVersion: bundle.pluginVersion,
+        actualSchemaVersion: 11,
+        expectedSchemaVersion: bundle.schemaVersion,
+      },
+    },
+  });
+
   assert.equal(decision.kind, 'service_failed');
+  assert.equal(decision.canRecover, true);
+});
+
+test('a new connection without the applied plugin identity remains health pending', () => {
+  const restartedStatus = status(true);
+  restartedStatus.journal = {
+    ...restartedStatus.journal!,
+    steps: [{ name: 'gateway_restart', status: 'requested', atMs: 3 }],
+  };
+  const decision = deriveCollaborationSetupView({
+    identity: identity({ connectionId: 'connection-2' }),
+    probe: { ...probe(), connectionId: 'connection-2' },
+    status: restartedStatus,
+    capabilities: null,
+    bundle,
+    loading: false,
+    mutation: null,
+    error: null,
+    capabilityFailure: {
+      code: 'DATABASE_SCHEMA_UNSUPPORTED',
+      message: 'The collaboration database schema is not supported by this plugin',
+      details: { actualSchemaVersion: 13, expectedSchemaVersion: bundle.schemaVersion },
+    },
+  });
+
+  assert.equal(decision.kind, 'health_pending');
   assert.equal(decision.canRecover, true);
 });
 

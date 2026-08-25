@@ -156,8 +156,8 @@ function DecisionMessage({
         ? t('collaboration.bootstrap.schemaUnsupportedTitle', '协作数据版本不兼容')
         : t('collaboration.bootstrap.serviceFailedTitle', '协作插件服务启动失败'),
       body: capabilityFailure?.code === 'DATABASE_SCHEMA_UNSUPPORTED'
-        ? t('collaboration.bootstrap.schemaUnsupportedBody', '现有协作数据没有被修改。请先核对当前 Gateway 实际加载的插件版本；仅在当前目标存在恢复事务时执行回滚。')
-        : t('collaboration.bootstrap.serviceFailedBody', 'Gateway 已恢复连接，但协作插件服务未能启动。请查看技术详情并回滚本次安装。'),
+        ? t('collaboration.bootstrap.schemaUnsupportedBody', 'Gateway 返回的运行插件无法读取现有协作数据。下方直接显示已返回的运行插件和数据版本证据，缺失字段保持未知。')
+        : t('collaboration.bootstrap.serviceFailedBody', 'Gateway 返回的协作插件服务未能启动。下方直接显示已返回的运行时证据，缺失字段保持未知。'),
     },
     manual: {
       title: t('collaboration.bootstrap.manualTitle', 'External runtime stays read only'),
@@ -229,6 +229,43 @@ function DecisionMessage({
         <p className="mt-0.5 max-w-[72ch] text-[10.5px] leading-4 text-aegis-text-muted">{message.body}</p>
       </div>
     </div>
+  );
+}
+
+function StartupFailureEvidence({
+  failure,
+}: {
+  failure: CollaborationCapabilityFailure;
+}) {
+  const { t } = useTranslation();
+  return (
+    <section className="rounded-md border border-aegis-danger/25 bg-aegis-danger/[0.04] px-3 py-2.5" aria-label={t('collaboration.bootstrap.failureDetails', '启动失败详情')}>
+      <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.failureDetails', '启动失败详情')}</h3>
+      <dl className="mt-2 grid grid-cols-[92px_minmax(0,1fr)] gap-x-2 gap-y-1 text-[10px] leading-4">
+        <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.failureCode', '错误码')}</dt>
+        <dd className="break-all font-mono text-aegis-danger">{failure.code}</dd>
+        {typeof failure.details?.pluginVersion === 'string' && (
+          <>
+            <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.runningPluginVersion', '运行中插件')}</dt>
+            <dd className="font-mono text-aegis-text-muted">{failure.details.pluginVersion}</dd>
+          </>
+        )}
+        {typeof failure.details?.actualSchemaVersion === 'number' && (
+          <>
+            <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.actualSchema', '现有数据版本')}</dt>
+            <dd className="font-mono text-aegis-text-muted">{failure.details.actualSchemaVersion}</dd>
+          </>
+        )}
+        {typeof failure.details?.expectedSchemaVersion === 'number' && (
+          <>
+            <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.expectedSchema', '期望数据版本')}</dt>
+            <dd className="font-mono text-aegis-text-muted">{failure.details.expectedSchemaVersion}</dd>
+          </>
+        )}
+        <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.diagnostic', '诊断')}</dt>
+        <dd className="break-words font-mono text-aegis-text-muted">{failure.message}</dd>
+      </dl>
+    </section>
   );
 }
 
@@ -417,30 +454,6 @@ export function CollaborationSetupPanel({
             </section>
           </div>
 
-          {capabilityFailure && (
-            <section className="rounded-md border border-aegis-danger/25 bg-aegis-danger/[0.04] px-3 py-2.5" aria-label={t('collaboration.bootstrap.failureDetails', '启动失败详情')}>
-              <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.failureDetails', '启动失败详情')}</h3>
-              <dl className="mt-2 grid grid-cols-[92px_minmax(0,1fr)] gap-x-2 gap-y-1 text-[10px] leading-4">
-                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.failureCode', '错误码')}</dt>
-                <dd className="break-all font-mono text-aegis-danger">{capabilityFailure.code}</dd>
-                {typeof capabilityFailure.details?.actualSchemaVersion === 'number' && (
-                  <>
-                    <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.actualSchema', '现有数据版本')}</dt>
-                    <dd className="font-mono text-aegis-text-muted">{capabilityFailure.details.actualSchemaVersion}</dd>
-                  </>
-                )}
-                {typeof capabilityFailure.details?.expectedSchemaVersion === 'number' && (
-                  <>
-                    <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.expectedSchema', '当前插件版本')}</dt>
-                    <dd className="font-mono text-aegis-text-muted">{capabilityFailure.details.expectedSchemaVersion}</dd>
-                  </>
-                )}
-                <dt className="text-aegis-text-dim">{t('collaboration.bootstrap.diagnostic', '诊断')}</dt>
-                <dd className="break-words font-mono text-aegis-text-muted">{capabilityFailure.message}</dd>
-              </dl>
-            </section>
-          )}
-
           {lastResult && (
             <section className="rounded-md border border-aegis-border px-3 py-2.5" aria-label={t('collaboration.bootstrap.operationDiagnostic', '操作诊断')}>
               <h3 className="text-[11px] font-semibold text-aegis-text-secondary">{t('collaboration.bootstrap.operationDiagnostic', '操作诊断')}</h3>
@@ -468,6 +481,10 @@ export function CollaborationSetupPanel({
             </p>
           </section>
         </>
+      )}
+
+      {capabilityFailure && (technicalDetailsOpen || decision.kind === 'service_failed') && (
+        <StartupFailureEvidence failure={capabilityFailure} />
       )}
 
       {pluginReady && decision.kind !== 'service_failed' && (
@@ -661,7 +678,7 @@ export function CollaborationSetupPanel({
         </section>
       )}
 
-      {(decision.kind === 'health_pending' || decision.kind === 'service_failed') && (
+      {(decision.kind === 'health_pending' || (decision.kind === 'service_failed' && decision.canRecover)) && (
         <section className={cn(
           'rounded-md border px-3 py-2.5',
           decision.kind === 'service_failed'
@@ -670,12 +687,12 @@ export function CollaborationSetupPanel({
         )}>
           <h3 className="text-[11px] font-semibold text-aegis-text-secondary">
             {decision.kind === 'service_failed'
-              ? t('collaboration.bootstrap.rollbackRecommended', '建议恢复安装前状态')
+              ? t('collaboration.bootstrap.rollbackOptional', '可选：恢复安装前状态')
               : t('collaboration.bootstrap.restartRequired', '需要重启')}
           </h3>
           <p className="mt-1 text-[10px] leading-4 text-aegis-text-muted">
             {decision.kind === 'service_failed'
-              ? t('collaboration.bootstrap.rollbackPreservesData', '回滚只恢复本次事务记录的准确旧插件和配置，不会删除或迁移现有协作数据。')
+              ? t('collaboration.bootstrap.rollbackDoesNotRepairData', '回滚只撤销当前安装事务，不会修复或迁移协作数据；恢复旧插件后仍需重启当前目标。')
               : journal?.status === 'rolled_back'
               ? t('collaboration.bootstrap.rollbackRestart', 'Restart this verified target to activate the restored plugin and configuration state. No collaboration health confirmation is required after rollback.')
               : restartAvailable
@@ -690,7 +707,9 @@ export function CollaborationSetupPanel({
                 onChange={(event) => onRollbackConfirmedChange(event.target.checked)}
                 className="mt-0.5 accent-[rgb(var(--aegis-danger))]"
               />
-              <span>{t('collaboration.bootstrap.healthRollbackConfirm', 'The applied plugin has not been confirmed healthy. Restore the exact previous plugin and configuration state.')}</span>
+              <span>{decision.kind === 'service_failed'
+                ? t('collaboration.bootstrap.failedRollbackConfirm', '我了解回滚不会修复协作数据，并确认仅恢复本次事务记录的旧插件和配置。')
+                : t('collaboration.bootstrap.healthRollbackConfirm', 'The applied plugin has not been confirmed healthy. Restore the exact previous plugin and configuration state.')}</span>
             </label>
           )}
           {((decision.kind === 'health_pending' && restartAvailable) || decision.canRecover) && (

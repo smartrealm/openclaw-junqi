@@ -153,7 +153,7 @@ test('unverified Gateway setup does not expose a plugin package or target metada
   assert.doesNotMatch(html, /Fixed plugin package|SHA-256|Plugin state/);
 });
 
-test('a schema startup failure is localized, recoverable, and does not render fake progress', () => {
+test('a post-restart schema failure exposes runtime evidence without presenting rollback as a fix', () => {
   const html = render(capabilities([]), [], {
     decision: {
       kind: 'service_failed',
@@ -166,14 +166,41 @@ test('a schema startup failure is localized, recoverable, and does not render fa
     capabilityFailure: {
       code: 'DATABASE_SCHEMA_UNSUPPORTED',
       message: 'The collaboration database schema is not supported by this plugin',
-      details: { actualSchemaVersion: 13, expectedSchemaVersion: 15 },
+      details: {
+        pluginVersion: '0.1.0',
+        actualSchemaVersion: 11,
+        expectedSchemaVersion: 15,
+      },
     },
   });
 
   assert.match(html, /协作数据版本不兼容|Collaboration data version is incompatible/);
-  assert.match(html, /恢复安装前状态|Restore the pre-installation state/);
+  assert.match(html, /运行中插件|Loaded plugin/);
+  assert.match(html, />11</);
+  assert.match(html, />15</);
+  assert.doesNotMatch(html, /建议恢复安装前状态|Restore the pre-installation state/);
   assert.doesNotMatch(html, /58%|82%/);
-  assert.doesNotMatch(html, /The collaboration database schema is not supported/);
+});
+
+test('a startup failure without a recovery transaction does not render a rollback section', () => {
+  const html = render(capabilities([]), [], {
+    decision: {
+      kind: 'service_failed',
+      canApply: false,
+      canRecover: false,
+      targetClass: 'system_service',
+      pluginVersion: '0.1.0',
+      expectedVersion: '0.1.0',
+    },
+    capabilityFailure: {
+      code: 'SERVICE_START_FAILED',
+      message: 'The collaboration plugin service failed to start',
+      details: { pluginVersion: '0.1.0' },
+    },
+  });
+
+  assert.match(html, /运行中插件|Loaded plugin/);
+  assert.doesNotMatch(html, /可选：恢复安装前状态|Optional: restore the pre-installation state/);
 });
 
 test('restart without a live Gateway event uses indeterminate progress', () => {

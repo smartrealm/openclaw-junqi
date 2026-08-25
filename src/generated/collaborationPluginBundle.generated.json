@@ -2,9 +2,9 @@
   "formatVersion": 1,
   "pluginId": "junqi-collab",
   "packageName": "@junqi/openclaw-collaboration",
-  "pluginVersion": "0.5.6",
+  "pluginVersion": "0.5.7",
   "schemaVersion": 15,
-  "sha256": "98120a67f389d6b0a96783bc0573645e3c3d6f038108d224d961822ec8f6099b",
+  "sha256": "3b45e38d6a56f99e665018ee06d2c51ac0c08ea62fe2a1b15e4b80fe14874805",
   "archiveFile": "junqi-collab.tgz",
   "resourcePath": "collaboration/junqi-collab.tgz"
 }

@@ -201,6 +201,7 @@ cargo test --lib
 - 修改 Tauri command 时同时验证 command 注册、Rust 签名、前端 wrapper、调用方和序列化字段。
 - 修改 generated collaboration bundle 的来源后运行 `pnpm collab:bundle`，并确认生成的前端 metadata 与 `src-tauri/resources/collaboration` 一致。
 - 修改内置插件源码、数据库迁移或运行契约时必须升级插件版本，并同步包清单、插件清单、运行时版本常量和生成元数据；不同归档内容不得共用同一插件版本。插件 service 无法启动时，Gateway 可能无法返回能力或内容摘要，版本是客户端判断是否存在可部署新构建的必要证据。
+- 插件覆盖写入后、Gateway 重启前，当前连接返回的仍可能是旧进程状态。活动健康确认事务不得让旧连接错误覆盖必需的重启门禁；只有观察到新连接，且结构化响应中的运行插件版本与事务应用版本精确一致时，才能把启动失败归因于新插件。回滚只能描述为安装事务撤销，不能描述为数据修复或迁移。
 - 自动化通过不等于真机验收。Windows NSIS/UAC/Scheduled Task/Credential Manager、Docker Desktop 冷启动、macOS Keychain/签名/公证等必须明确记录是否真实验证。
 - 不得把本机既有配置、凭据或运行状态当成其他用户环境的默认条件。
 

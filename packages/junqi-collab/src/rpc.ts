@@ -2,6 +2,7 @@ import { CollaborationError, RequestValidationError } from "./errors.js";
 import { UnsupportedCollaborationSchemaError } from "./database-schema-initializer.js";
 import type { OpenClawApi } from "./sdk-types.js";
 import type { CollaborationService } from "./service.js";
+import { PLUGIN_VERSION } from "./version.js";
 
 type Handler = (service: CollaborationService, params: Record<string, unknown>) => unknown | Promise<unknown>;
 
@@ -24,6 +25,7 @@ export function collaborationServiceStartupFailure(error: unknown): RpcErrorPayl
       code: "DATABASE_SCHEMA_UNSUPPORTED",
       message: "The collaboration database schema is not supported by this plugin",
       details: {
+        pluginVersion: PLUGIN_VERSION,
         actualSchemaVersion: error.actualSchemaVersion,
         expectedSchemaVersion: error.expectedSchemaVersion,
       },
@@ -32,6 +34,7 @@ export function collaborationServiceStartupFailure(error: unknown): RpcErrorPayl
   return {
     code: "SERVICE_START_FAILED",
     message: "The collaboration plugin service failed to start",
+    details: { pluginVersion: PLUGIN_VERSION },
   };
 }
 

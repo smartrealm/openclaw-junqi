@@ -15,6 +15,7 @@ import {
   readOptionalString,
   readString,
 } from "./util.js";
+import { PLUGIN_VERSION } from "./version.js";
 
 type RegisteredHandler = (context: {
   params: Record<string, unknown>;
@@ -65,6 +66,7 @@ test("every collaboration RPC fails closed while the plugin service is unavailab
       error: {
         code: "SERVICE_START_FAILED",
         message: "The collaboration plugin service failed to start",
+        details: { pluginVersion: PLUGIN_VERSION },
       },
     }], definition.method);
   }
@@ -85,7 +87,11 @@ test("service startup failures remain structured and do not expose internal diag
     error: {
       code: "DATABASE_SCHEMA_UNSUPPORTED",
       message: "The collaboration database schema is not supported by this plugin",
-      details: { actualSchemaVersion: 13, expectedSchemaVersion: 15 },
+      details: {
+        pluginVersion: PLUGIN_VERSION,
+        actualSchemaVersion: 13,
+        expectedSchemaVersion: 15,
+      },
     },
   }]);
   assert.equal(JSON.stringify(responses).includes("collaboration.sqlite"), false);
@@ -97,6 +103,7 @@ test("unknown service startup failures are redacted", () => {
     {
       code: "SERVICE_START_FAILED",
       message: "The collaboration plugin service failed to start",
+      details: { pluginVersion: PLUGIN_VERSION },
     },
   );
 });

@@ -196,6 +196,14 @@ function isCollaborationServiceStartupFailure(
     || failure?.code === 'SERVICE_START_FAILED';
 }
 
+function startupFailureMatchesAppliedPlugin(
+  failure: CollaborationCapabilityFailure | null | undefined,
+  pluginVersion: string,
+): boolean {
+  return typeof failure?.details?.pluginVersion === 'string'
+    && failure.details.pluginVersion.trim() === pluginVersion;
+}
+
 function bootstrapArtifactCleanupPending(
   journal: CollaborationBootstrapStatus['journal'] | undefined,
 ): boolean {
@@ -277,7 +285,20 @@ export function deriveCollaborationSetupView(
   }
   const completedHealthPending = journal?.status === 'completed' && journal.healthPending;
   const rollbackRestartPending = journal?.status === 'rolled_back' && journal.restartRequired;
-  if (completedHealthPending && isCollaborationServiceStartupFailure(state.capabilityFailure)) {
+  const appliedPluginFailureObserved = Boolean(
+    completedHealthPending
+    && state.identity.connectionId !== journal?.target.connectionId
+    && journal
+    && startupFailureMatchesAppliedPlugin(
+      state.capabilityFailure,
+      journal.package.pluginVersion,
+    ),
+  );
+  if (
+    completedHealthPending
+    && appliedPluginFailureObserved
+    && isCollaborationServiceStartupFailure(state.capabilityFailure)
+  ) {
     const sameTarget = journal.target.targetFingerprint === state.identity.targetFingerprint
       && state.status?.targetFingerprint === state.identity.targetFingerprint;
     return {

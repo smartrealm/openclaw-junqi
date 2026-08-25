@@ -5,6 +5,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { registerOpenClawAdapter } from "./index.js";
+import { PLUGIN_VERSION } from "./version.js";
 
 type RegisteredHandler = (context: {
   params: Record<string, unknown>;
@@ -64,7 +65,11 @@ test("unknown schema startup failure remains available through the registered RP
       error: {
         code: "DATABASE_SCHEMA_UNSUPPORTED",
         message: "The collaboration database schema is not supported by this plugin",
-        details: { actualSchemaVersion: 11, expectedSchemaVersion: 15 },
+        details: {
+          pluginVersion: PLUGIN_VERSION,
+          actualSchemaVersion: 11,
+          expectedSchemaVersion: 15,
+        },
       },
     }]);
 

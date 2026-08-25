@@ -40,6 +40,7 @@ test('preserves structured collaboration service startup failures from Gateway',
       code: 'DATABASE_SCHEMA_UNSUPPORTED',
       message: 'Collaboration database schema is unsupported',
       details: {
+        pluginVersion: COLLABORATION_PLUGIN_BUNDLE.pluginVersion,
         actualSchemaVersion: 13,
         expectedSchemaVersion: 15,
       },
@@ -51,6 +52,7 @@ test('preserves structured collaboration service startup failures from Gateway',
     (error: unknown) => error instanceof CollaborationClientError
       && error.code === 'DATABASE_SCHEMA_UNSUPPORTED'
       && error.method === 'junqi.collab.capabilities'
+      && error.details?.pluginVersion === COLLABORATION_PLUGIN_BUNDLE.pluginVersion
       && error.details?.actualSchemaVersion === 13
       && error.details?.expectedSchemaVersion === 15,
   );
