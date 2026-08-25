@@ -8,6 +8,7 @@ import type { CollaborationCapabilities } from '@/types/collaboration';
 import type {
   BootstrapConfigureParams,
   BootstrapAbandonParams,
+  BootstrapConfirmHealthParams,
   BootstrapRecoverParams,
   BootstrapRestartParams,
   CollaborationBootstrapProbe,
@@ -199,10 +200,13 @@ function dependencies(options: {
   statusOverride?: CollaborationBootstrapStatus;
   capabilityFailure?: CollaborationClientError;
   onCoordinateRestart?: () => void;
+  changeConnectionAfterRestart?: boolean;
+  onConfirmHealth?: (params: BootstrapConfirmHealthParams) => void;
 } = {}): CollaborationSetupDependencies {
   let currentIdentity = options.initialIdentity ?? identity();
   let liveCapabilities = capabilities(false);
   let restartWasRequested = false;
+  let healthConfirmed = false;
   if (options.maintenanceActive) {
     liveCapabilities = {
       ...liveCapabilities,
@@ -233,6 +237,9 @@ function dependencies(options: {
     coordinateRestart: async (restartExecutor) => {
       options.onCoordinateRestart?.();
       const result = await restartExecutor();
+      if (result.success && options.changeConnectionAfterRestart) {
+        currentIdentity = identity({ connectionId: 'connection-2' });
+      }
       return {
         ...result,
         action: 'restart',
@@ -244,11 +251,36 @@ function dependencies(options: {
     service: {
       probe: async (targetFingerprint, expectedConnectionId) => {
         options.onProbe?.(targetFingerprint, expectedConnectionId);
-        return options.probeOverride ?? probe();
+        return options.probeOverride ?? {
+          ...probe(),
+          connectionId: currentIdentity.connectionId,
+        };
       },
       status: async () => {
         const current = options.statusOverride ?? status(options.healthPending);
         if (!restartWasRequested || !current.journal) return current;
+        if (healthConfirmed) {
+          return {
+            ...current,
+            recoverable: false,
+            journal: {
+              ...current.journal,
+              restartRequired: false,
+              healthPending: false,
+              health: {
+                collaborationInstanceId: 'instance-1',
+                pluginVersion: bundle.pluginVersion,
+                schemaVersion: bundle.schemaVersion,
+                confirmedAtMs: 4,
+              },
+              steps: [
+                ...current.journal.steps,
+                { name: 'gateway_restart', status: 'requested', atMs: 3 },
+                { name: 'bootstrap_artifacts_cleanup', status: 'completed', atMs: 4 },
+              ],
+            },
+          };
+        }
         return {
           ...current,
           journal: {
@@ -290,7 +322,23 @@ function dependencies(options: {
           applyUnblocked: true,
         };
       },
-      confirmHealth: async () => { throw new Error('not used'); },
+      confirmHealth: async (params) => {
+        options.onConfirmHealth?.(params);
+        healthConfirmed = true;
+        return {
+          ok: true,
+          code: 'BOOTSTRAP_HEALTH_CONFIRMED',
+          message: 'health confirmed',
+          operationId: params.operationId,
+          targetFingerprint: params.targetFingerprint,
+          action: 'confirm_health',
+          plugin: null,
+          restartRequired: false,
+          healthPending: false,
+          recoverable: false,
+          warnings: [],
+        };
+      },
       configure: async (params) => {
         options.onConfigure?.(params);
         liveCapabilities = capabilities(true);
@@ -430,6 +478,24 @@ test('setup restart is fenced to the health-pending operation, target, and conne
   assert.equal(coordinated, true);
   assert.equal(store.getState().lastResult?.code, 'GATEWAY_RESTART_REQUESTED');
   assert.equal(store.getState().restartAvailable, false);
+});
+
+test('a successful restart confirms health after the new Gateway connection is published', async () => {
+  const confirmations: BootstrapConfirmHealthParams[] = [];
+  const store = createCollaborationSetupStore(dependencies({
+    healthPending: true,
+    changeConnectionAfterRestart: true,
+    onConfirmHealth: (params) => { confirmations.push(params); },
+  }));
+
+  await store.getState().refresh();
+  await store.getState().requestRestart();
+
+  assert.equal(confirmations.length, 1);
+  assert.equal(confirmations[0]?.expectedConnectionId, 'connection-2');
+  assert.equal(store.getState().mutation, null);
+  assert.equal(store.getState().status?.journal?.healthPending, false);
+  assert.equal(deriveCollaborationSetupView(store.getState()).kind, 'ready');
 });
 
 test('a startup failure from the pre-restart connection cannot replace the required restart', async () => {

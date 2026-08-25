@@ -1220,7 +1220,7 @@
       "emptyTitle": "No collaboration run",
       "emptyDescription": "There is no active collaboration run to project into the office.",
       "configuredRosterTitle": "Configured desks",
-      "configuredRosterDescription": "Configuration identity, collaboration permission, and current-run desks are shown separately. This view does not represent online or execution state.",
+      "configuredRosterDescription": "Configuration identity, collaboration permission, and current-run desks are shown separately.",
       "configuredCoordinatorZone": "Coordination desk",
       "configuredCoordinatorZoneDescription": "Configuration only. It does not claim a live run state.",
       "configuredNoCoordinator": "No coordinator configured",
@@ -1237,7 +1237,16 @@
       "configureCollaboration": "Configure collaboration permission",
       "showAgentList": "Show Agent list",
       "updatedAt": "Updated {{time}}",
-      "openRun": "Open execution details"
+      "openRun": "Open execution details",
+      "fleetActivityTitle": "Agent activity",
+      "fleetActivityDescription": "Busy/idle overview derived from OpenClaw's authoritative session state, independent of collaboration permission.",
+      "fleetBusy": "Busy",
+      "fleetIdle": "Idle",
+      "fleetActiveSessionCount": "{{count}} active session(s)",
+      "fleetBusyZone": "Busy",
+      "fleetIdleZone": "Idle",
+      "fleetNoBusy": "No Agent is currently running",
+      "fleetNoIdle": "All Agents are running"
     }
   },
   "analytics": {

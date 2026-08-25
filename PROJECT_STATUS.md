@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-当前产品优先级是完成单用户桌面端到端闭环，不实现或预留企业控制面双轨。当前直接目标是完成会话输入区的 OpenClaw 原生交互收敛：以单一固定主操作位表达空闲发送、活动运行中的转向或排队、无草稿时停止，并确保键盘、停止、历史和 Gateway 调用语义一致。
+当前产品优先级是完成单用户桌面端到端闭环，不实现或预留企业控制面双轨。当前直接目标是修复协作插件更新后 Gateway 已重连但健康确认长期停留的问题，并让用户消息中的会话分叉与多 Agent 协作入口在桌面 UI 中可见、可区分。
 
 ## 已完成内容
 
@@ -18,6 +18,8 @@
 - 已删除废弃的 `OpenClawSessionSteerClient`、专属测试和被替代的历史运行时门禁文档；没有保留降级到旧 RPC 或旧 `expectedLeafEntryId` schema 的兼容分支。
 - Stop 有精确 `runId` 时只中止该运行；缺少运行标识的非全局会话按键级中止并清理后续队列。两种情况都不删除会话、转录或草稿。
 - Stop 失败会在输入框内联显示错误；运行结束或切换会话后清除。空闲 Escape 不再复制上一条用户消息，历史浏览继续使用上下方向键，已发送消息回退和分支继续使用正式 rewind/fork 入口。
+- 协作重启状态机现在在统一生命周期成功后先释放 `restart` 写操作围栏，再刷新并通过唯一能力观察入口确认新 Gateway 连接；新连接能力即使在重启动作期间提前发布也不会永久丢失。
+- 用户消息的会话分叉继续使用 `GitFork`；多 Agent 协作改为带可见本地化名称的成员图标按钮，并以 `aegis-border` 与普通消息操作分组，不再展示两个无法区分的相同图标。
 
 ## 关键技术决策
 
@@ -27,6 +29,8 @@
 - Stop 是中止当前运行，不是暂停，不提供恢复同一次运行的按钮，也不清空会话上下文。
 - 当前安装版本和本机日志只用于复现与验证，不作为能力版本门禁或目标环境默认条件。
 - 已发送历史不能由本地 UI 直接改写；只能使用 OpenClaw 的 rewind 和 fork 契约。
+- Gateway 重启返回值只决定是否继续核验，不能直接证明插件健康；最终就绪仍要求新连接、精确目标、固定插件版本、schema 和能力契约全部通过。
+- 会话分叉与多 Agent 协作是不同业务动作，必须同时以图标、可见名称和操作分组表达差异，不能只靠 tooltip。
 
 ## 核心文件
 
@@ -43,7 +47,11 @@
 - `src/services/gateway/OpenClawSessionAbortClient.ts`
 - `src/utils/openClawSessionProjection.ts`
 - `src/stores/chatStore.ts`
+- `src/stores/collaborationSetupStore.ts`
+- `src/components/Chat/MessageBubble.tsx`
+- `src/components/Chat/MessageCollaborationActionButton.tsx`
 - `docs/quality/chat-composer-native-interaction-audit-2026-08-25.md`
+- `docs/quality/collaboration-runtime-update-and-mixed-schema-recovery-audit-2026-08-25.md`
 - `specs/2026-08-25-chat-composer-native-interaction.md`
 - `plans/2026-08-25-chat-composer-native-interaction.md`
 
@@ -51,16 +59,19 @@
 
 - 修复前回归稳定失败：缺少单一主操作状态解析，且会话投影丢弃官方队列模式。
 - 主操作状态矩阵、实际按钮结构、键盘决策、队列投影、发送事务、Gateway 分发和 Stop 策略共 31 项最终定向测试通过。
-- 最终完整前端测试 2941 项通过；脚本测试 238 项通过。
-- `pnpm lint` 通过，模块边界检查覆盖 944 个文件，四处桌面版本均为 `3.2.1`。
+- 最终完整前端测试 2949 项通过；脚本测试 238 项通过。
+- 新增协作重启竞态回归证明新连接在重启协调期间发布后会执行一次精确健康确认并进入就绪；消息协作按钮回归覆盖待启动、查看运行和身份确认三种状态。
+- `pnpm lint` 通过，模块边界检查覆盖 947 个文件，四处桌面版本均为 `3.2.1`。
 - `pnpm build` 通过，协作插件 `0.5.7` 和钉钉业务插件 `0.1.0` 契约校验、固定包重建、TypeScript 与 Vite 生产构建全部完成。
-- ARM64 macOS 本地测试包已生成：`src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/JunQi Desktop_3.2.1_aarch64.dmg`，大小 `7906941` 字节，SHA-256 为 `62eb8fb1ffff42a26a672536a4d096d820281d6eaa8304026f911f3a52a588c9`。
-- DMG 已通过 `hdiutil verify`、只读挂载、`/Applications` 链接、Mach-O ARM64、应用版本 `3.2.1`、内置协作与钉钉资源一致性以及应用 `codesign --verify --deep --strict` 校验。应用使用本地 ad-hoc 深度签名并包含资源密封，不是 Developer ID 签名、公证或 updater 签名的正式发布包。
+- ARM64 macOS 本地测试 DMG 已按最终工作区重新生成，大小为 `8000178` 字节，SHA-256 为 `31c1278215fe9671accc62b1e361ba4af9b831ffd767e0880b1e82a2a2704f34`。`hdiutil verify`、只读挂载、`/Applications` 链接、ARM64 Mach-O、版本 `3.2.1`、ad-hoc 深度签名和资源密封均通过核验。
+- 只读挂载确认协作插件为 `0.5.7`、schema 15，钉钉插件为 `0.1.0`、33 个工具；两份 metadata 与归档均和仓库资源逐字节一致。该制品不是 Developer ID 签名、公证或 updater 签名的正式发布包。
 - `git diff --check` 通过；本次修改的全部文本文件未检测到 Unicode 扩展象形字符或常见 Emoji 符号码段。
 - 已启动真实 Tauri 调试客户端，在浅色主题的标准宽窗口与 900 像素窄窗口截图中确认 Composer 无横向溢出、输入可聚焦、唯一主操作位可见且位置稳定；验证后已停止调试进程并恢复窗口尺寸。
 
 ## 已知问题与未验证边界
 
+- 已以 OpenClaw 官方最新主线 `d1134a45f2fa6bfc691645d1a42650fa64c21dba` 确认 `hello-ok.server.connId` 是每条 WebSocket 连接的世代标识。协作更新重启后长期停留在 `health_pending` 的前端竞态已修复并有回归覆盖；真实目标 Gateway 的连续重启、能力发布和设置面板收敛仍待用户安装本地测试包验证。
+- 用户消息协作按钮已完成组件级亮色与暗色共用主题 token、可访问名称、禁用态和粗指针尺寸验证；尚未在真实 Tauri 会话中完成亮色、暗色、窄窗口、悬停和键盘焦点截图验收。
 - 未经授权向用户真实 Gateway 注入测试消息，因此尚未连续实测活动运行中的转向、排队、中断并发送、Stop、失败和运行结束收敛。
 - 暗色主题自动截图未成功，应用最终保持原浅色主题；暗色、护眼和暗黑主题仍需真实桌面视觉验收。
 - 尚未在 Windows 和 Linux 验证窄窗口、输入法、修饰键和图标方向；当前真实窗口验证仅覆盖 macOS Tauri 调试客户端。
@@ -79,9 +90,11 @@
 
 ## 下一步顺序
 
-1. 经用户允许后，在真实 Gateway 发起可控长运行，连续抓取发送、活动运行、运行中输入、转向或排队、Stop 和终态收敛。
-2. 在暗色、护眼和暗黑主题重复标准宽度与窄窗口视觉验收，并核对键盘焦点和内联错误。
-3. 在 Windows 与 Linux 目标客户端验证输入法、Ctrl+Enter、窗口缩放和图标方向。
+1. 安装本轮 ARM64 本地测试包，在真实 Gateway 重启中确认协作设置自动从等待状态收敛为就绪。
+2. 在真实会话核对用户消息操作栏的会话分叉与多 Agent 协作入口，并覆盖亮色、暗色、窄窗口、悬停和键盘焦点。
+3. 经用户允许后，在真实 Gateway 发起可控长运行，连续抓取发送、活动运行、运行中输入、转向或排队、Stop 和终态收敛。
+4. 在暗色、护眼和暗黑主题重复标准宽度与窄窗口视觉验收，并核对键盘焦点和内联错误。
+5. 在 Windows 与 Linux 目标客户端验证输入法、Ctrl+Enter、窗口缩放和图标方向。
 
 ## GoClaw 对比审查
 

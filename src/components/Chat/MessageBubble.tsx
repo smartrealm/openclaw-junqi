@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronRight, AlertTriangle,
   Sparkles, Bot, FileText,
 
-  Kanban, Wrench, Brain, CheckCircle2, Info, GitFork, History,
+  Kanban, Wrench, Brain, CheckCircle2, Info, History,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@/stores/chatStore';
@@ -26,6 +26,7 @@ import { ChatIconButton } from './ChatIconButton';
 import { resolveAssistantPresentation } from './assistantPresentation';
 import { visibleDeliveryFailureDetail } from './messageDeliveryPresentation';
 import { CHAT_ASSISTANT_RESPONSE_MAX_WIDTH } from './chatResponseLayout';
+import { MessageCollaborationActionButton } from './MessageCollaborationActionButton';
 
 const ChatImage = lazy(() => import('./ChatImage').then((m) => ({ default: m.ChatImage })));
 const AudioPlayer = lazy(() => import('./AudioPlayer').then((m) => ({ default: m.AudioPlayer })));
@@ -807,42 +808,37 @@ function stripInlineCodeTicks(md: string): string {
                 </span>
               )}
             </span>
-            <div className="inline-flex items-center gap-0.5">
-            <span className="text-aegis-border text-[10px] select-none">·</span>
-            {footerActions}
-            {onEdit && !isEditing && (
-              <ActionBtn
-                icon={<Pencil size={14} />}
-                label={t('chat.editMessage')}
-                onClick={() => setIsEditing(true)}
-              />
-            )}
-            {onRetry && (
-              <ActionBtn icon={<RotateCcw size={14} />} label={t('chat.retryDelivery')}
-                onClick={onRetry} />
-            )}
-            {collaborationAction && (
-              <ActionBtn
-                icon={collaborationAction.state === 'confirming'
-                  ? <LoadingIndicator size={14} />
-                  : <GitFork size={14} />}
-                label={collaborationAction.state === 'active'
-                  ? t('collaboration.chat.viewRun')
-                  : collaborationAction.state === 'ready'
-                    ? t('collaboration.chat.startRun')
-                    : t('collaboration.chat.confirmingMessage')}
-                onClick={() => collaborationAction.onClick?.()}
-                disabled={collaborationAction.state === 'confirming' || !collaborationAction.onClick}
-              />
-            )}
-            {onDelete && !isEditing && (
-              <ActionBtn
-                icon={<Trash2 size={14} />}
-                label={t('chat.deleteMessage')}
-                onClick={onDelete}
-                danger
-              />
-            )}
+            <div className="inline-flex items-center gap-1.5">
+              <div className="inline-flex items-center gap-0.5">
+                {footerActions}
+                {onEdit && !isEditing && (
+                  <ActionBtn
+                    icon={<Pencil size={14} />}
+                    label={t('chat.editMessage')}
+                    onClick={() => setIsEditing(true)}
+                  />
+                )}
+                {onRetry && (
+                  <ActionBtn icon={<RotateCcw size={14} />} label={t('chat.retryDelivery')}
+                    onClick={onRetry} />
+                )}
+                {onDelete && !isEditing && (
+                  <ActionBtn
+                    icon={<Trash2 size={14} />}
+                    label={t('chat.deleteMessage')}
+                    onClick={onDelete}
+                    danger
+                  />
+                )}
+              </div>
+              {collaborationAction && (
+                <div className="border-s border-aegis-border/70 ps-2">
+                  <MessageCollaborationActionButton
+                    state={collaborationAction.state}
+                    onClick={collaborationAction.onClick}
+                  />
+                </div>
+              )}
             </div>
           </div>
         ) : (

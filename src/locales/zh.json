@@ -1221,7 +1221,7 @@
       "emptyTitle": "暂无协作运行",
       "emptyDescription": "当前没有可投影到办公室的未归档协作运行。",
       "configuredRosterTitle": "配置工位",
-      "configuredRosterDescription": "配置身份、协作许可和当前运行工位分别展示；这里不表示在线或执行状态。",
+      "configuredRosterDescription": "配置身份、协作许可和当前运行工位分别展示。",
       "configuredCoordinatorZone": "协调席位",
       "configuredCoordinatorZoneDescription": "仅表示配置中的协调角色。",
       "configuredNoCoordinator": "未配置协调智能体",
@@ -1238,7 +1238,16 @@
       "configureCollaboration": "配置协作许可",
       "showAgentList": "查看智能体列表",
       "updatedAt": "更新于 {{time}}",
-      "openRun": "查看执行详情"
+      "openRun": "查看执行详情",
+      "fleetActivityTitle": "智能体运行状态",
+      "fleetActivityDescription": "基于 OpenClaw 会话权威状态的忙闲总览，与协作许可无关。",
+      "fleetBusy": "忙碌",
+      "fleetIdle": "空闲",
+      "fleetActiveSessionCount": "{{count}} 个活动会话",
+      "fleetBusyZone": "忙碌",
+      "fleetIdleZone": "空闲",
+      "fleetNoBusy": "当前没有正在运行的 Agent",
+      "fleetNoIdle": "所有 Agent 都在运行中"
     }
   },
   "analytics": {

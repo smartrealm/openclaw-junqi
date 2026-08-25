@@ -9,6 +9,7 @@ import {
 } from '@/components/Collaboration/CollaborationCard';
 import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 import { useCollaborationStore } from '@/stores/collaborationStore';
+import { useGatewayDataStore } from '@/stores/gatewayDataStore';
 import {
   normalizeCollaborationCapabilityFailure,
   useCollaborationSetupStore,
@@ -20,6 +21,7 @@ import {
   selectAgentHubOfficeRun,
 } from './agentHubOfficeRunSelection';
 import { AgentHubConfiguredOffice } from './AgentHubConfiguredOffice';
+import { AgentHubFleetActivityPanel } from './AgentHubFleetActivityPanel';
 
 interface AgentHubOfficePanelProps {
   connected: boolean;
@@ -60,6 +62,8 @@ export function AgentHubOfficePanel({
   );
   const snapshot = selectedRun ? snapshotsByRunId[selectedRun.runId] : undefined;
   const configuredAgents = capabilities?.configuredAgents ?? [];
+  const gatewayAgents = useGatewayDataStore((state) => state.agents);
+  const gatewaySessions = useGatewayDataStore((state) => state.sessions);
   const text = useCallback<CollaborationTranslate>((key, fallback, values) => (
     String(t(key, { defaultValue: fallback, ...values }))
   ), [t]);
@@ -232,6 +236,8 @@ export function AgentHubOfficePanel({
 
       {!loading && !error && (
         <div className="space-y-3" data-agent-hub-office-workspace>
+          <AgentHubFleetActivityPanel agents={gatewayAgents} sessions={gatewaySessions} />
+
           {!selectedRun && (
             <>
               <AgentHubConfiguredOffice agents={configuredAgents} />

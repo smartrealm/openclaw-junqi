@@ -1012,6 +1012,7 @@ export function createCollaborationSetupStore(
       ) return;
       set({ mutation: 'restart', error: null, capabilityFailure: null });
       const restartCapture: { result: CollaborationBootstrapRestartResult | null } = { result: null };
+      let shouldConfirmHealth = false;
       try {
         const lifecycleResult = await dependencies.coordinateRestart(async () => {
           const result = await dependencies.service.restart({
@@ -1045,12 +1046,16 @@ export function createCollaborationSetupStore(
             : lifecycleResult.error || restartResult.message,
           ...(restartResult.restartRequested ? { restartAvailable: false } : {}),
         });
-        if (lifecycleResult.success) await get().refresh();
+        shouldConfirmHealth = lifecycleResult.success;
       } catch (error) {
         set({ error: errorText(error) });
       } finally {
         set({ mutation: null });
-        if (!restartCapture.result?.restartRequested) await get().refresh();
+        await get().refresh();
+        const capabilities = get().capabilities;
+        if (shouldConfirmHealth && capabilities) {
+          await get().observeCapabilities(capabilities);
+        }
       }
     },
 

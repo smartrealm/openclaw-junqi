@@ -1192,7 +1192,7 @@
       "emptyTitle": "暫無協作運行",
       "emptyDescription": "目前沒有可投影到辦公室的未歸檔協作運行。",
       "configuredRosterTitle": "配置工位",
-      "configuredRosterDescription": "配置身分、協作許可和目前運行工位分別展示；這裡不表示在線或執行狀態。",
+      "configuredRosterDescription": "配置身分、協作許可和目前運行工位分別展示。",
       "configuredCoordinatorZone": "協調席位",
       "configuredCoordinatorZoneDescription": "僅表示設定中的協調角色。",
       "configuredNoCoordinator": "未設定協調智能體",
@@ -1209,7 +1209,16 @@
       "configureCollaboration": "配置協作許可",
       "showAgentList": "查看智能體清單",
       "updatedAt": "更新於 {{time}}",
-      "openRun": "查看執行詳情"
+      "openRun": "查看執行詳情",
+      "fleetActivityTitle": "智能體運行狀態",
+      "fleetActivityDescription": "基於 OpenClaw 會話權威狀態的忙閒總覽，與協作許可無關。",
+      "fleetBusy": "忙碌",
+      "fleetIdle": "空閒",
+      "fleetActiveSessionCount": "{{count}} 個活動會話",
+      "fleetBusyZone": "忙碌",
+      "fleetIdleZone": "空閒",
+      "fleetNoBusy": "目前沒有正在運行的 Agent",
+      "fleetNoIdle": "所有 Agent 都在運行中"
     }
   },
   "analytics": {

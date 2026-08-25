@@ -75,7 +75,7 @@ export function AgentHubConfiguredOffice({
             {t('agentHub.office.configuredRosterTitle', '配置工位')}
           </h4>
           <p className="mt-0.5 text-[11px] leading-4 text-aegis-text-muted">
-            {t('agentHub.office.configuredRosterDescription', '配置身份、协作许可和当前运行工位分别展示；这里不表示在线或执行状态。')}
+            {t('agentHub.office.configuredRosterDescription', '配置身份、协作许可和当前运行工位分别展示。')}
           </p>
         </div>
       </div>
