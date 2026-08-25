@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Activity, ArrowUpRight, BarChart3, BookOpenText, Bot, Brain, Building2, Calendar, CircleAlert, Clock, Cpu, Database, FileText, Folder, History, ListChecks, MessageSquare, Plus, Puzzle, RefreshCw, Settings, Settings2, Terminal, Wrench } from 'lucide-react';
+import { Activity, ArrowUpRight, BarChart3, BookOpenText, Bot, Brain, Building2, Calendar, CircleAlert, Clock, Cpu, Database, FileText, Folder, History, ListChecks, MessageSquare, PanelsTopLeft, Plus, Puzzle, RefreshCw, Settings, Settings2, Terminal, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { useChatStore } from '@/stores/chatStore';
@@ -54,16 +54,17 @@ function settingsGroups(t: ReturnType<typeof useTranslation>['t']): ReadonlyArra
 
 function agentToolLinks(t: ReturnType<typeof useTranslation>['t']): ReadonlyArray<NavigationItem> {
   return [
+    { to: '/agents',   icon: <PanelsTopLeft size={14} />, label: t('nav.agentOffice', '协作办公室'), feature: 'agents' },
     { to: '/config',   icon: <Bot size={14} />,           label: t('nav.agentConfig', '智能体配置'), feature: 'configManager' },
     { to: '/sessions', icon: <MessageSquare size={14} />, label: t('nav.sessionManager', '会话管理'), feature: 'sessions' },
     { to: '/memory',   icon: <Brain size={14} />,         label: t('nav.memory', '记忆管理'), feature: 'memory' },
-    { to: '/agents/live', icon: <Bot size={14} />,        label: t('nav.liveAgents', '多智能体视图'), feature: 'liveAgents' },
   ];
 }
 
 export function AgentsPanel() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const agents = useGatewayDataStore((st) => st.agents);
   const sessions = useChatStore((st) => st.sessions);
   const activeSessionKey = useChatStore((st) => st.activeSessionKey);
@@ -181,7 +182,13 @@ export function AgentsPanel() {
         )}
         <SidebarSection label={t('nav.agentTools', '智能体工具')}>
           {filterEnabledNavigationItems(agentToolLinks(t)).map((it) => (
-            <SidebarRow key={it.to} icon={it.icon} title={it.label} onClick={() => navigate(it.to)} />
+            <SidebarRow
+              key={it.to}
+              icon={it.icon}
+              title={it.label}
+              active={location.pathname === it.to}
+              onClick={() => navigate(it.to)}
+            />
           ))}
         </SidebarSection>
         {skillEntries.length > 0 && (

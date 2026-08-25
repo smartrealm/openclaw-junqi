@@ -6,6 +6,7 @@
 import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/react/shallow';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   RefreshCw,
@@ -139,7 +140,19 @@ export function DashboardPage() {
     thinkingBySession,
     sendingBySession,
     compactionStatusBySession,
-  } = useChatStore();
+  } = useChatStore(useShallow((state) => ({
+    connected: state.connected,
+    connecting: state.connecting,
+    availableModels: state.availableModels,
+    modelsLoading: state.modelsLoading,
+    sessions: state.sessions,
+    activeSessionKey: state.activeSessionKey,
+    typingBySession: state.typingBySession,
+    typingStartedAtBySession: state.typingStartedAtBySession,
+    thinkingBySession: state.thinkingBySession,
+    sendingBySession: state.sendingBySession,
+    compactionStatusBySession: state.compactionStatusBySession,
+  })));
   const budgetLimit = useSettingsStore((s) => s.budgetLimit);
   const hasProviders = availableModels.length > 0;
   const [chartMetricPreference, setChartMetricPreference] = useState<DashboardChartMetricPreference>('auto');

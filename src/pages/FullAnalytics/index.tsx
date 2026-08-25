@@ -31,7 +31,7 @@ const ChartsSection = lazy(() => import('./components/ChartsSection').then((m) =
 // ─────────────────────────────────────────────────────────────
 export function FullAnalyticsPage() {
   const { t }         = useTranslation();
-  const { connected } = useChatStore();
+  const connected = useChatStore((state) => state.connected);
 
   const {
     costData,

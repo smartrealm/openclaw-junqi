@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Check, ChevronDown, CircleStop, Download, Folder, Gauge, ListTodo, MessageSquareText, Plus, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { useShallow } from 'zustand/react/shallow';
 import clsx from 'clsx';
 import { gateway } from '@/services/gateway';
 import { useChatStore } from '@/stores/chatStore';
@@ -103,7 +104,13 @@ function WorkspacePicker({ agentId, current }: { agentId: string; current?: stri
 
 export function SessionContextBar() {
   const { t } = useTranslation();
-  const { tokenUsage, renderBlocks, activeSessionKey, sessions, compactionStatusBySession } = useChatStore();
+  const { tokenUsage, renderBlocks, activeSessionKey, sessions, compactionStatusBySession } = useChatStore(useShallow((state) => ({
+    tokenUsage: state.tokenUsage,
+    renderBlocks: state.renderBlocks,
+    activeSessionKey: state.activeSessionKey,
+    sessions: state.sessions,
+    compactionStatusBySession: state.compactionStatusBySession,
+  })));
   const agents = useGatewayDataStore((s) => s.agents);
   const defaultAgentId = useGatewayDataStore((s) => s.defaultAgentId);
   const navigate = useNavigate();

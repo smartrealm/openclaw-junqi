@@ -1,6 +1,10 @@
 import { useCallback, type SetStateAction } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { getDirection } from '@/i18n';
 import { selectActiveSessionTyping, useChatStore } from '@/stores/chatStore';
+import {
+  selectMessageInputRuntime,
+} from '@/stores/chatHighFrequencySelectors';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { ComposerAttachmentOverlays } from './message-input/ComposerAttachmentOverlays';
 import { ComposerAttachmentTray } from './message-input/ComposerAttachmentTray';
@@ -18,6 +22,8 @@ import {
 } from '@/utils/confirmedEmptyTranscript';
 import { resolveComposerQueueMode } from './message-input/composerPrimaryAction';
 
+const readComposerMessages = () => useChatStore.getState().messages;
+
 export function MessageInput() {
   const { language } = useSettingsStore();
   const dir = getDirection(language);
@@ -25,9 +31,9 @@ export function MessageInput() {
     setIsSending,
     connected,
     activeSessionKey,
-    messages,
+    messageCount,
     historyLoader,
-  } = useChatStore();
+  } = useChatStore(useShallow(selectMessageInputRuntime));
   const isTyping = useChatStore(selectActiveSessionTyping);
   const isSending = useChatStore((state) => Boolean(state.sendingBySession[activeSessionKey]));
   const isLoadingHistory = useChatStore((state) => Boolean(state.loadingHistoryBySession[activeSessionKey]));
@@ -38,7 +44,7 @@ export function MessageInput() {
   const activeSessionHasConfirmedEmptyTranscript = hasConfirmedEmptyTranscript(activeSession);
   const text = useChatStore((state) => state.drafts[activeSessionKey] || '');
   const historyLoading = connected && isLoadingHistory && shouldWarmUpHistoryBeforeFirstSend({
-    messageCount: messages.length,
+    messageCount,
     confirmedEmptyTranscript: activeSessionHasConfirmedEmptyTranscript,
   });
   const setText = useCallback((next: SetStateAction<string>) => {
@@ -50,7 +56,7 @@ export function MessageInput() {
   const suggestions = useComposerSuggestions({
     activeSessionKey,
     connected,
-    messages,
+    getMessages: readComposerMessages,
     text,
     setText,
   });
@@ -74,7 +80,7 @@ export function MessageInput() {
     },
     historyLoader: historyLoader ?? undefined,
     isSending,
-    messageCount: messages.length,
+    messageCount,
     files: attachments.files,
     text,
     textareaRef: suggestions.textareaRef,

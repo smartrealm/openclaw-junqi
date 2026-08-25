@@ -173,7 +173,7 @@ export interface AnalyticsData {
 // Hook
 // ═══════════════════════════════════════════════════════════
 export function useAnalyticsData(): AnalyticsData {
-  const { connected } = useChatStore();
+  const connected = useChatStore((state) => state.connected);
 
   // ── Core data state ──
   const [costData,     setCostData]     = useState<CostSummary | null>(null);

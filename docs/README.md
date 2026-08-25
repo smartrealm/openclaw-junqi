@@ -8,6 +8,9 @@
 - [会话输入区原生交互审计](quality/chat-composer-native-interaction-audit-2026-08-25.md)：单一主操作位、有效队列模式、键盘操作、停止语义和废弃转向入口的修复依据。
 - [会话输入区原生交互规格](../specs/2026-08-25-chat-composer-native-interaction.md)：空闲、运行、排队、转向、中断和历史输入的 UI 与协议验收条件。
 - [会话输入区原生交互计划](../plans/2026-08-25-chat-composer-native-interaction.md)：状态回归、组件收敛、发送统一、遗留删除和连续视觉验证顺序。
+- [智能体中心统一多 Agent 视图审计](quality/agent-hub-unified-multi-agent-view-audit-2026-08-25.md)：旧独立空页面与现有协作办公室的重复职责、轮询和导航缺陷，以及单一入口收敛依据。
+- [智能体中心统一多 Agent 视图规格](../specs/2026-08-25-agent-hub-unified-multi-agent-view.md)：唯一入口、真实运行投影、空状态、本地化和桌面布局验收条件。
+- [智能体中心统一多 Agent 视图计划](../plans/2026-08-25-agent-hub-unified-multi-agent-view.md)：路由回归、遗留删除、导航接入和验证顺序。
 - [协作运行时更新与混合 schema 恢复审计](quality/collaboration-runtime-update-and-mixed-schema-recovery-audit-2026-08-25.md)：旧插件启动错误封死更新入口、真实 schema 13 混合结构恢复和运行时加载闭环。
 - [协作运行时更新与混合 schema 恢复规格](../specs/2026-08-25-collaboration-runtime-update-and-mixed-schema-recovery.md)：受控更新优先级、精确混合结构门禁和错误语义验收条件。
 - [协作运行时更新与混合 schema 恢复计划](../plans/2026-08-25-collaboration-runtime-update-and-mixed-schema-recovery.md)：回归、迁移、固定包重建和真实 Gateway 验证顺序。

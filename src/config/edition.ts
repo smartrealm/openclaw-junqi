@@ -19,7 +19,6 @@ export type EditionFeatureKey =
   | 'configManager'
   | 'sessions'
   | 'logs'
-  | 'liveAgents'
   | 'files'
   | 'git'
   | 'calendar'
@@ -55,7 +54,6 @@ const allEnabled = (): EditionFeatures => ({
   configManager: true,
   sessions: true,
   logs: true,
-  liveAgents: true,
   files: true,
   git: true,
   calendar: true,
@@ -132,7 +130,6 @@ const APP_ROUTE_ORDER: { feature: EditionFeatureKey; path: string }[] = [
   { feature: 'configManager', path: '/config' },
   { feature: 'sessions', path: '/sessions' },
   { feature: 'logs', path: '/logs' },
-  { feature: 'liveAgents', path: '/agents/live' },
   { feature: 'files', path: '/files' },
   { feature: 'git', path: '/git' },
   { feature: 'calendar', path: '/calendar' },
@@ -148,9 +145,8 @@ export function getFirstEnabledAppPath(): string {
   return '/settings';
 }
 
-/** Map pathname prefix to feature (longer paths first for /agents/live). */
+/** 路由前缀必须先匹配更具体的路径。 */
 const PATH_PREFIXES: { prefix: string; feature: EditionFeatureKey }[] = [
-  { prefix: '/agents/live', feature: 'liveAgents' },
   { prefix: '/analytics', feature: 'analytics' },
   { prefix: '/channels', feature: 'configManager' },
   { prefix: '/business-applications', feature: 'businessApplications' },

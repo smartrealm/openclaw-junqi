@@ -5,8 +5,8 @@
 //   'pill'  — compact inline trigger (TitleBar)
 //   'field' — full-width form field trigger (ConfigManager)
 //
-// Model data comes from useChatStore().availableModels, already
-// kept in sync by App.tsx polling — no extra gateway calls.
+// 模型数据通过最小 store 选择器读取 availableModels。
+// App.tsx 已负责同步，不在组件内重复调用 Gateway。
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useEffect, useRef } from 'react';
@@ -58,7 +58,7 @@ export function ModelDropdown({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const { availableModels } = useChatStore();
+  const availableModels = useChatStore((state) => state.availableModels);
 
   const modelList = onlyAliased
     ? availableModels.filter((m) => m.alias)

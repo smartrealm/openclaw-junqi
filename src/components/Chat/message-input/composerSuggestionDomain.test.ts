@@ -6,6 +6,7 @@ import {
   buildUserMessageHistory,
   parseGatewaySkills,
   replaceCommandArgumentCompletion,
+  shouldNavigateComposerHistory,
   toComposerSlashCommands,
 } from './composerSuggestionDomain';
 
@@ -89,4 +90,31 @@ test('input history is newest-first and de-duplicated', () => {
     { role: 'user', content: 'first' },
     { role: 'user', content: 'latest' },
   ]), ['latest', 'first']);
+});
+
+test('历史浏览在首次召回后继续接管方向键，用户编辑后退出浏览', () => {
+  assert.equal(shouldNavigateComposerHistory({
+    key: 'ArrowUp',
+    text: '',
+    historyIndex: -1,
+    pickerOpen: false,
+  }), true);
+  assert.equal(shouldNavigateComposerHistory({
+    key: 'ArrowUp',
+    text: '已召回内容',
+    historyIndex: 0,
+    pickerOpen: false,
+  }), true);
+  assert.equal(shouldNavigateComposerHistory({
+    key: 'ArrowUp',
+    text: '用户正在编辑',
+    historyIndex: -1,
+    pickerOpen: false,
+  }), false);
+  assert.equal(shouldNavigateComposerHistory({
+    key: 'ArrowDown',
+    text: '',
+    historyIndex: -1,
+    pickerOpen: true,
+  }), false);
 });

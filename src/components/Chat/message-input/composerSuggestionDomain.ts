@@ -147,3 +147,14 @@ export function buildUserMessageHistory(messages: readonly ComposerMessage[]): s
   }
   return history;
 }
+
+export function shouldNavigateComposerHistory(input: {
+  readonly key: string;
+  readonly text: string;
+  readonly historyIndex: number;
+  readonly pickerOpen: boolean;
+}): boolean {
+  return !input.pickerOpen
+    && (input.key === 'ArrowUp' || input.key === 'ArrowDown')
+    && (input.historyIndex >= 0 || !input.text.trim());
+}

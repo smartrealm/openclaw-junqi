@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/react/shallow';
 import clsx from 'clsx';
 import { showConfirm } from '@/components/shared/alertStore';
 import type { Session } from '@/stores/chatStore';
@@ -105,7 +106,17 @@ export function SessionActionsMenu({
     sessionGroupCatalog,
     refreshSessionGroupCatalog,
     defaultMainSessionKey,
-  } = useChatStore();
+  } = useChatStore(useShallow((state) => ({
+    sessions: state.sessions,
+    togglePinSession: state.togglePinSession,
+    setSessionUnread: state.setSessionUnread,
+    setSessionArchived: state.setSessionArchived,
+    setSessionCategory: state.setSessionCategory,
+    ensureSessionGroup: state.ensureSessionGroup,
+    sessionGroupCatalog: state.sessionGroupCatalog,
+    refreshSessionGroupCatalog: state.refreshSessionGroupCatalog,
+    defaultMainSessionKey: state.defaultMainSessionKey,
+  })));
   const menuRef = useRef<HTMLDivElement>(null);
   const groupTriggerRef = useRef<HTMLButtonElement>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);

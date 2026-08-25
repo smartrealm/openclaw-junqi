@@ -1,24 +1,27 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { MessageCollaborationActionButton } from './MessageCollaborationActionButton';
 
-test('message collaboration action is visibly distinct from transcript forking', () => {
-  const ready = renderToStaticMarkup(
-    <MessageCollaborationActionButton state="ready" onClick={() => undefined} />,
+function renderAction(state: 'confirming' | 'ready' | 'active', onClick?: () => void) {
+  return renderToStaticMarkup(
+    <TooltipProvider>
+      <MessageCollaborationActionButton state={state} onClick={onClick} />
+    </TooltipProvider>,
   );
-  const active = renderToStaticMarkup(
-    <MessageCollaborationActionButton state="active" onClick={() => undefined} />,
-  );
-  const confirming = renderToStaticMarkup(
-    <MessageCollaborationActionButton state="confirming" />,
-  );
+}
 
-  assert.match(ready, />Start collaboration</);
+test('消息协作仅在可操作时显示紧凑且独立的入口', () => {
+  const ready = renderAction('ready', () => undefined);
+  const active = renderAction('active', () => undefined);
+  const confirming = renderAction('confirming');
+
   assert.match(ready, /aria-label="Start collaboration"/);
   assert.match(ready, /lucide-users-round/);
   assert.doesNotMatch(ready, /lucide-git-fork/);
-  assert.match(active, />View collaboration</);
-  assert.match(confirming, /disabled=""/);
-  assert.match(confirming, />Confirming message identity</);
+  assert.doesNotMatch(ready, />Start collaboration</);
+  assert.match(active, /aria-label="View collaboration"/);
+  assert.match(active, /lucide-users-round/);
+  assert.equal(confirming, '');
 });

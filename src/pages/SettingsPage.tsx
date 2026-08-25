@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useShallow } from 'zustand/react/shallow';
 import {
   Settings, Bell, BellOff, Globe, Volume2, VolumeX,
   Wifi, WifiOff, CheckCircle, Copy, Sun, Moon,
@@ -107,7 +108,10 @@ export function SettingsPageFull() {
   useEffect(() => {
     if (budgetLimit > 0) void ensureGroupFresh('cost');
   }, [budgetLimit]);
-  const { connected, connecting } = useChatStore();
+  const { connected, connecting } = useChatStore(useShallow((state) => ({
+    connected: state.connected,
+    connecting: state.connecting,
+  })));
   const { voiceWake } = useJarvisVoiceRuntime();
   const prefersDark = usePrefersDark();
   const { enabled: petEnabled, setEnabled: setPetEnabled, skin: petSkin, setSkin: setPetSkin, customAsset: petCustomAsset, setCustomAsset: setPetCustomAsset, customPet, setCustomPet, pomodoro: petPomodoro, setPomodoro: setPetPomodoro, petVisible, soundEnabled: petSoundEnabled, setSoundEnabled: setPetSoundEnabled, captionScale: petCaptionScale, setCaptionScale: setPetCaptionScale } = usePetStore();

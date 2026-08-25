@@ -236,7 +236,7 @@ export function AgentHubOfficePanel({
 
       {!loading && !error && (
         <div className="space-y-3" data-agent-hub-office-workspace>
-          <AgentHubFleetActivityPanel agents={gatewayAgents} sessions={gatewaySessions} />
+          <AgentHubFleetActivityPanel agents={gatewayAgents} sessions={gatewaySessions} text={text} />
 
           {!selectedRun && (
             <>

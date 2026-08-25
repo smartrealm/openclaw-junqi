@@ -22,6 +22,7 @@ import {
   groupSlashCommands,
   parseGatewaySkills,
   replaceCommandArgumentCompletion,
+  shouldNavigateComposerHistory,
   toComposerSlashCommands,
   type ArgumentCompletion,
   type ComposerMessage,
@@ -45,7 +46,7 @@ export interface ArgumentPickerState extends PickerState {
 interface UseComposerSuggestionsOptions {
   activeSessionKey: string;
   connected: boolean;
-  messages: ComposerMessage[];
+  getMessages: () => ComposerMessage[];
   text: string;
   setText: (next: SetStateAction<string>) => void;
 }
@@ -56,7 +57,7 @@ const CLOSED_ARGUMENT_PICKER: ArgumentPickerState = { ...CLOSED_PICKER, cmd: '',
 export function useComposerSuggestions({
   activeSessionKey,
   connected,
-  messages,
+  getMessages,
   text,
   setText,
 }: UseComposerSuggestionsOptions) {
@@ -111,7 +112,11 @@ export function useComposerSuggestions({
 
   useEffect(() => {
     setHistoryIndex(-1);
-  }, [activeSessionKey, messages.length]);
+  }, [activeSessionKey]);
+
+  useEffect(() => {
+    if (!text) setHistoryIndex(-1);
+  }, [text]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -158,7 +163,6 @@ export function useComposerSuggestions({
     setArgumentPicker((state) => ({ ...state, idx: Math.min(state.idx, Math.max(0, argumentCompletions.length - 1)) }));
   }, [argumentCompletions.length]);
 
-  const userMessageHistory = useMemo(() => buildUserMessageHistory(messages), [messages]);
   const pickSlash = useCallback((command: SlashCommand) => {
     setSlashPicker(CLOSED_PICKER);
     setText(`${command.cmd} `);
@@ -254,8 +258,14 @@ export function useComposerSuggestions({
       const delta = event.key === 'ArrowDown' ? 1 : -1;
       setState((current) => ({ ...(current as object), idx: (state.idx + delta + length) % length } as T));
     };
-    if (!argumentPicker.open && !slashPicker.open && !mentionPicker.open && !text.trim()
-      && userMessageHistory.length > 0 && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    if (shouldNavigateComposerHistory({
+      key: event.key,
+      text,
+      historyIndex,
+      pickerOpen: argumentPicker.open || slashPicker.open || mentionPicker.open,
+    })) {
+      const userMessageHistory = buildUserMessageHistory(getMessages());
+      if (userMessageHistory.length === 0) return;
       event.preventDefault();
       if (event.key === 'ArrowUp') {
         const next = Math.min(historyIndex + 1, userMessageHistory.length - 1);
@@ -329,6 +339,7 @@ export function useComposerSuggestions({
   }, [
     argumentCompletions,
     argumentPicker,
+    getMessages,
     historyIndex,
     matchedSlash,
     mentionItems,
@@ -339,7 +350,6 @@ export function useComposerSuggestions({
     setText,
     slashPicker,
     text,
-    userMessageHistory,
   ]);
 
   return {

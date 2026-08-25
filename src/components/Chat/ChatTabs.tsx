@@ -4,6 +4,7 @@ import { Shield, X, Zap, FilePlus, Bot, ChevronDown, ChevronLeft, ChevronRight, 
 import { Icon } from '@/components/shared/icons';
 import { IconButton } from '@/components/shared/button/Button';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/react/shallow';
 import { showConfirm } from '@/components/shared/AlertDialog';
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -922,7 +923,22 @@ export function ChatTabs() {
     tokenUsage,
     currentThinking,
     sessionDefaults,
-  } = useChatStore();
+  } = useChatStore(useShallow((state) => ({
+    openTabs: state.openTabs,
+    activeSessionKey: state.activeSessionKey,
+    sessions: state.sessions,
+    messagesPerSession: state.messagesPerSession,
+    openTab: state.openTab,
+    closeTab: state.closeTab,
+    reorderTabs: state.reorderTabs,
+    defaultMainSessionKey: state.defaultMainSessionKey,
+    setActiveSession: state.setActiveSession,
+    connected: state.connected,
+    connecting: state.connecting,
+    tokenUsage: state.tokenUsage,
+    currentThinking: state.currentThinking,
+    sessionDefaults: state.sessionDefaults,
+  })));
 
   // ── 会话页签拖拽传感器 ──
   const dndSensors = useSensors(

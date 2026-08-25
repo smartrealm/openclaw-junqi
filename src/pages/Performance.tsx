@@ -2,6 +2,7 @@
 // Data from the Rust sysinfo background thread via the "system-metrics" stream.
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/react/shallow';
 import { Activity, RefreshCw, Cpu, MemoryStick, HardDrive, Network, Server, Users } from 'lucide-react';
 import { useChatStore } from '@/stores/chatStore';
 import { useGatewayDataStore } from '@/stores/gatewayDataStore';
@@ -74,7 +75,11 @@ function AgentStat({ label, value, color, pulse }: { label: string; value: numbe
 
 export function Performance() {
   const { t } = useTranslation();
-  const { connected, tokenUsage, sessions } = useChatStore();
+  const { connected, tokenUsage, sessions } = useChatStore(useShallow((state) => ({
+    connected: state.connected,
+    tokenUsage: state.tokenUsage,
+    sessions: state.sessions,
+  })));
   const agents = useGatewayDataStore((s) => s.agents);
   const [ping, setPing] = useState<number | null>(null);
   const [m, setM] = useState<SystemMetricsPayload>({

@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useCallback, useState, useRef, lazy } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/react/shallow';
 import { shouldDeferColdGatewayRecovery, useAppStore } from '@/stores/app-store';
 import { useTheme } from '@/theme/useTheme';
 import { projectChatNotification } from '@/services/gateway/chatNotificationProjection';
@@ -14,6 +15,7 @@ const DynamicIslandRuntime = lazy(() => import('@/dynamic-island/DynamicIslandRu
 const OpenClawSessionViewerPresenceRuntime = lazy(() => import('@/runtime/OpenClawSessionViewerPresenceRuntime'));
 const NotificationPreferencesRuntime = lazy(() => import('@/runtime/NotificationPreferencesRuntime'));
 import { useChatStore } from '@/stores/chatStore';
+import { selectAppChatRuntime } from '@/stores/chatHighFrequencySelectors';
 import { configureChatGatewayOperations } from '@/stores/chatGatewayOperations';
 import { useCollaborationStore } from '@/stores/collaborationStore';
 import { usePetStore } from '@/stores/petStore';
@@ -139,7 +141,7 @@ export default function App() {
     setSessionModelsLoading,
     clearSessionAvailableModels,
     setDefaultMainSessionKey,
-  } = useChatStore();
+  } = useChatStore(useShallow(selectAppChatRuntime));
   const officialMainSessionKey = useGatewayDataStore((state) => state.mainSessionKey);
 
   // 自动配对状态。

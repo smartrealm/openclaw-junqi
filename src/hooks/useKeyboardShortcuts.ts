@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useShallow } from 'zustand/react/shallow';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { APP_PLATFORM } from '@/components/Terminal/platform';
@@ -13,7 +14,12 @@ const NAV_ROUTES = ['/', '/chat', '/workshop', '/analytics', '/cron', '/agents',
 export function useKeyboardShortcuts() {
   const navigate = useNavigate();
   const { setCommandPaletteOpen, commandPaletteOpen } = useSettingsStore();
-  const { openTabs, activeSessionKey, openTab, closeTab } = useChatStore();
+  const { openTabs, activeSessionKey, openTab, closeTab } = useChatStore(useShallow((state) => ({
+    openTabs: state.openTabs,
+    activeSessionKey: state.activeSessionKey,
+    openTab: state.openTab,
+    closeTab: state.closeTab,
+  })));
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

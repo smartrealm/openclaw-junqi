@@ -6,8 +6,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/react/shallow';
 import i18n from '@/i18n';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { RotateCcw, ChevronDown, Zap, AlertCircle, Bot, Search, Code2, Brain, Plus, Trash2, Settings2, MessageSquare, Puzzle, FolderOpen, Activity, ClipboardList, GitBranch, LayoutGrid, FileArchive, Share2, X, PanelsTopLeft } from 'lucide-react';
 import { ArrowsClockwise, Brain as BrainPh, Broom, FloppyDisk, ChartBar, Newspaper, BookOpen, CurrencyDollar, Lightning, Clock, Cube, MagnifyingGlass, Robot, Monitor, SoccerBall } from '@phosphor-icons/react';
 import { showAlert } from '@/components/shared/AlertDialog';
@@ -68,6 +69,9 @@ import {
 } from './viewStability';
 import { AgentHubOfficePanel } from './AgentHubOfficePanel';
 import { DEFAULT_AGENT_HUB_VIEW } from './agentHubOfficeRunSelection';
+import {
+  useAgentTreeConnectorGeometry,
+} from './useAgentTreeConnectorGeometry';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -350,6 +354,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, defaultAgent
   onAgentClick?: (agent: AgentInfo) => void;
 }) {
   const { t } = useTranslation();
+  const reduceMotion = useReducedMotion();
   const runningSubAgents = useGatewayDataStore((s) => s.runningSubAgents);
   const agentCount = registeredAgents.length;
   const mainName = agents.find(a => a.id === defaultAgentId)?.name || t('agents.mainAgent', 'Main Agent');
@@ -375,33 +380,84 @@ function TreeView({ mainSession, registeredAgents, workers, agents, defaultAgent
     return counts;
   }, [defaultAgentId, registeredAgents, workersByAgent]);
 
-  // Calculate child X positions for SVG (viewBox 0-1000)
-  const agentPositions = useMemo(() =>
-    registeredAgents.map((_, i) => Math.round(((i + 0.5) / Math.max(agentCount, 1)) * 1000)),
-    [registeredAgents, agentCount]
-  );
-
-  // Flatten all depth-2 workers with their parent X
+  // 展平所有 Depth-2 工作会话，并记录其所属的 Depth-1 Agent id。
   const depth2Layout = useMemo(() => {
-    const items: { worker: SessionInfo; parentX: number }[] = [];
-    registeredAgents.forEach((agent, ai) => {
+    const items: { worker: SessionInfo; parentAgentId: string | null }[] = [];
+    registeredAgents.forEach((agent) => {
       const ws = workersByAgent[agent.id] || [];
-      ws.forEach(w => items.push({ worker: w, parentX: agentPositions[ai] }));
+      ws.forEach(w => items.push({ worker: w, parentAgentId: agent.id }));
     });
-    // 没有注册席位归属的工作会话仅归到 Gateway 默认智能体。
+    // 没有注册席位归属的工作会话仅归到 Gateway 默认智能体（由 mainRect 兜底连线）。
     const mainWorkers = defaultAgentId ? workersByAgent[defaultAgentId] || [] : [];
-    mainWorkers.forEach(w => items.push({ worker: w, parentX: 500 }));
+    mainWorkers.forEach(w => items.push({ worker: w, parentAgentId: null }));
     return items;
-  }, [agentPositions, defaultAgentId, registeredAgents, workersByAgent]);
-
-  // X positions for depth-2 nodes
-  const depth2Positions = useMemo(() => {
-    if (depth2Layout.length === 0) return [];
-    return depth2Layout.map((_, i) => Math.round(((i + 0.5) / depth2Layout.length) * 1000));
-  }, [depth2Layout]);
+  }, [defaultAgentId, registeredAgents, workersByAgent]);
+  const connectorAgentOrder = useMemo(
+    () => registeredAgents.map((agent) => agent.id),
+    [registeredAgents],
+  );
+  const connectorWorkers = useMemo(
+    () => depth2Layout.map(({ worker, parentAgentId }) => ({
+      key: worker.key,
+      parentAgentId,
+    })),
+    [depth2Layout],
+  );
+  const {
+    geometry,
+    containerRef,
+    mainCardRef,
+    setAgentCardRef,
+    setWorkerCardRef,
+  } = useAgentTreeConnectorGeometry({
+    agentOrder: connectorAgentOrder,
+    workers: connectorWorkers,
+  });
 
   return (
-    <div className="px-4 py-6 overflow-y-auto">
+    <div ref={containerRef} className="relative px-4 py-6 overflow-y-auto">
+      {/* ── SVG 连线覆盖层：使用真实卡片矩形计算，随布局变化（含换行）实时重算 ── */}
+      {geometry && (geometry.mainToAgentPaths.length > 0 || geometry.agentToWorkerPaths.length > 0) && (
+        <svg
+          className="pointer-events-none absolute left-0 top-0"
+          width={geometry.width}
+          height={geometry.height}
+          viewBox={`0 0 ${geometry.width} ${geometry.height}`}
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <defs>
+            <linearGradient id="grad-main-tree" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor={mainColor()} stopOpacity={0.6} />
+              <stop offset="100%" stopColor={mainColor()} stopOpacity={0.25} />
+            </linearGradient>
+          </defs>
+          {geometry.mainToAgentPaths.map((path, i) => (
+            <g key={`mc-${path.key}`}>
+              <path d={path.d} stroke="url(#grad-main-tree)" strokeWidth={1.5} fill="none" strokeDasharray="4,3" />
+              {!reduceMotion && i % 2 === 0 && (
+                <circle r={3} fill={mainColor()} opacity={0.7}>
+                  <animateMotion dur={`${3 + i * 0.5}s`} repeatCount="indefinite" path={path.d} />
+                </circle>
+              )}
+            </g>
+          ))}
+          {geometry.agentToWorkerPaths.map((path, i) => {
+            const entry = depth2Layout.find(({ worker }) => worker.key === path.key);
+            const meta = entry ? getWorkerMeta(entry.worker.label, entry.worker.type) : { color: mainColor() };
+            return (
+              <g key={`wc-${path.key}`}>
+                <path d={path.d} stroke={meta.color} strokeOpacity={0.5} strokeWidth={1.2} fill="none" strokeDasharray="3,3" />
+                {!reduceMotion && i < 6 && (
+                  <circle r={2.5} fill={meta.color} opacity={0.6}>
+                    <animateMotion dur={`${2 + i * 0.6}s`} repeatCount="indefinite" path={path.d} />
+                  </circle>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      )}
 
       {/* ── Depth 0: Main Agent ── */}
       <div className="text-center mb-2">
@@ -409,8 +465,8 @@ function TreeView({ mainSession, registeredAgents, workers, agents, defaultAgent
           {t('agentHub.depth0', 'Depth 0 — Orchestrator')}
         </span>
       </div>
-      <div className="flex justify-center mb-0">
-        <div className="relative">
+      <div className="flex justify-center mb-6">
+        <div className="relative" ref={mainCardRef}>
           {/* Spawn badge */}
           {defaultAgentId && (spawnCounts[defaultAgentId] || 0) > 0 && (
             <div className="absolute -top-1.5 -end-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-extrabold border-2 border-[var(--aegis-bg-solid)] z-10"
@@ -460,37 +516,10 @@ function TreeView({ mainSession, registeredAgents, workers, agents, defaultAgent
         </div>
       </div>
 
-      {/* ── SVG Connectors: Main → Agents ── */}
-      {agentCount > 0 && (
-        <div className="relative h-14">
-          <svg viewBox="0 0 1000 56" preserveAspectRatio="none" className="w-full h-full">
-            <defs>
-              <linearGradient id="grad-main-tree" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor={mainColor()} stopOpacity={0.6} />
-                <stop offset="100%" stopColor={mainColor()} stopOpacity={0.25} />
-              </linearGradient>
-            </defs>
-            {agentPositions.map((cx, i) => (
-              <g key={`mc${i}`}>
-                <path d={`M 500,0 L 500,20 L ${cx},20 L ${cx},56`}
-                  stroke="url(#grad-main-tree)" strokeWidth={1.5} fill="none" strokeDasharray="4,3" />
-                {/* Animated dot — key by path so SMIL animation isn't rebuilt on re-render */}
-                {i % 2 === 0 && (
-                  <circle r={3} fill={mainColor()} opacity={0.7}>
-                    <animateMotion key={`mc-anim-${cx}`} dur={`${3 + i * 0.5}s`} repeatCount="indefinite"
-                      path={`M 500,0 L 500,20 L ${cx},20 L ${cx},56`} />
-                  </circle>
-                )}
-              </g>
-            ))}
-          </svg>
-        </div>
-      )}
-
       {/* ── Depth 1: Specialist Agents ── */}
       {agentCount > 0 && (
         <>
-          <div className="text-center mb-2">
+          <div className="text-center mb-2 mt-6">
             <span className="text-[9px] uppercase tracking-[2px] font-bold text-aegis-text-muted">
               {t('agentHub.depth1', 'Depth 1 — Specialists')}
             </span>
@@ -506,7 +535,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, defaultAgent
               const isRunning = activeSessions.length > 0 || spawned;
 
               return (
-                <div key={agent.id} className="relative">
+                <div key={agent.id} className="relative" ref={(el) => setAgentCardRef(agent.id, el)}>
                   {/* Spawn badge */}
                   {childCount > 0 && (
                     <div className="absolute -top-1.5 -end-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-extrabold border-2 border-[var(--aegis-bg-solid)] z-10"
@@ -561,34 +590,10 @@ function TreeView({ mainSession, registeredAgents, workers, agents, defaultAgent
         </>
       )}
 
-      {/* ── SVG Connectors: Agents → Workers ── */}
-      {depth2Layout.length > 0 && (
-        <div className="relative h-12 mt-1">
-          <svg viewBox="0 0 1000 48" preserveAspectRatio="none" className="w-full h-full">
-            {depth2Layout.map((item, i) => {
-              const childX = depth2Positions[i];
-              const meta = getWorkerMeta(item.worker.label, item.worker.type);
-              return (
-                <g key={`wc${i}`}>
-                  <path d={`M ${item.parentX},0 L ${item.parentX},18 L ${childX},18 L ${childX},48`}
-                    stroke={meta.color} strokeOpacity={0.5} strokeWidth={1.2} fill="none" strokeDasharray="3,3" />
-                  {i < 6 && (
-                    <circle r={2.5} fill={meta.color} opacity={0.6}>
-                      <animateMotion key={`wc-anim-${item.parentX}-${childX}`} dur={`${2 + i * 0.6}s`} repeatCount="indefinite"
-                        path={`M ${item.parentX},0 L ${item.parentX},18 L ${childX},18 L ${childX},48`} />
-                    </circle>
-                  )}
-                </g>
-              );
-            })}
-          </svg>
-        </div>
-      )}
-
       {/* ── Depth 2: Workers ── */}
       {depth2Layout.length > 0 && (
         <>
-          <div className="text-center mb-2">
+          <div className="text-center mb-2 mt-6">
             <span className="text-[9px] uppercase tracking-[2px] font-bold text-aegis-text-muted">
               {t('agentHub.depth2', 'Depth 2 — Workers')}
             </span>
@@ -598,6 +603,7 @@ function TreeView({ mainSession, registeredAgents, workers, agents, defaultAgent
               const meta = getWorkerMeta(worker.label, worker.type);
               return (
                 <div key={worker.key}
+                  ref={(el) => setWorkerCardRef(worker.key, el)}
                   className="relative rounded-xl border px-4 py-2.5 min-w-[170px] max-w-[200px] overflow-hidden transition-all hover:-translate-y-0.5"
                   style={{ background: `linear-gradient(135deg, ${meta.color}10, ${meta.color}04)`, borderColor: `${meta.color}30` }}>
                   <div className="absolute top-0 inset-x-0 h-[2px] opacity-30"
@@ -731,7 +737,10 @@ function ActivityFeed({ sessions, agents, defaultAgentId }: { sessions: SessionI
 export function AgentHubPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { connected, availableModels } = useChatStore();
+  const { connected, availableModels } = useChatStore(useShallow((state) => ({
+    connected: state.connected,
+    availableModels: state.availableModels,
+  })));
   const rawSessions = useGatewayDataStore((s) => s.sessions);
   const agents = useGatewayDataStore((s) => s.agents) as AgentInfo[];
   const defaultAgentId = useGatewayDataStore((s) => s.defaultAgentId);

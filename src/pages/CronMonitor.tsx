@@ -90,7 +90,7 @@ const agentIdFromSelectValue = (value: string): string =>
 
 export function CronMonitorPage() {
   const { t, i18n } = useTranslation();
-  const { connected } = useChatStore();
+  const connected = useChatStore((state) => state.connected);
   const present = useCallback(
     (key: string, options?: Record<string, unknown>) => t(key, options),
     [t],

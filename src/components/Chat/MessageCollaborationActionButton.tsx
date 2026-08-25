@@ -1,6 +1,6 @@
 import { UsersRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
+import { ChatIconButton } from './ChatIconButton';
 
 interface MessageCollaborationActionButtonProps {
   state: 'confirming' | 'ready' | 'active';
@@ -12,27 +12,21 @@ export function MessageCollaborationActionButton({
   onClick,
 }: MessageCollaborationActionButtonProps) {
   const { t } = useTranslation();
+  if (state === 'confirming' || !onClick) return null;
+
   const label = state === 'active'
     ? t('collaboration.chat.viewRun')
-    : state === 'ready'
-      ? t('collaboration.chat.startRun')
-      : t('collaboration.chat.confirmingMessage');
-  const disabled = state === 'confirming' || !onClick;
+    : t('collaboration.chat.startRun');
 
   return (
-    <button
+    <ChatIconButton
       type="button"
       data-message-collaboration-action
-      aria-label={label}
-      title={label}
-      disabled={disabled}
+      label={label}
       onClick={onClick}
-      className="inline-flex min-h-7 items-center gap-1.5 whitespace-nowrap rounded-md border border-aegis-primary/25 px-2 text-[10px] font-medium text-aegis-primary transition-colors hover:bg-aegis-primary/[0.07] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aegis-primary disabled:cursor-wait disabled:opacity-45 disabled:hover:bg-transparent [@media(pointer:coarse)]:min-h-10 [@media(pointer:coarse)]:px-3"
+      className="inline-flex size-7 items-center justify-center rounded text-aegis-text-muted transition-all duration-150 hover:bg-[rgb(var(--aegis-overlay)/0.08)] hover:text-aegis-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-aegis-primary [@media(pointer:coarse)]:size-10"
     >
-      {state === 'confirming'
-        ? <LoadingIndicator size={13} />
-        : <UsersRound size={13} aria-hidden="true" />}
-      <span>{label}</span>
-    </button>
+      <UsersRound size={14} aria-hidden="true" />
+    </ChatIconButton>
   );
 }

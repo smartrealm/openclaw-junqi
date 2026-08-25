@@ -822,6 +822,12 @@ function stripInlineCodeTicks(md: string): string {
                   <ActionBtn icon={<RotateCcw size={14} />} label={t('chat.retryDelivery')}
                     onClick={onRetry} />
                 )}
+                {collaborationAction && (
+                  <MessageCollaborationActionButton
+                    state={collaborationAction.state}
+                    onClick={collaborationAction.onClick}
+                  />
+                )}
                 {onDelete && !isEditing && (
                   <ActionBtn
                     icon={<Trash2 size={14} />}
@@ -831,14 +837,6 @@ function stripInlineCodeTicks(md: string): string {
                   />
                 )}
               </div>
-              {collaborationAction && (
-                <div className="border-s border-aegis-border/70 ps-2">
-                  <MessageCollaborationActionButton
-                    state={collaborationAction.state}
-                    onClick={collaborationAction.onClick}
-                  />
-                </div>
-              )}
             </div>
           </div>
         ) : (

@@ -52,7 +52,7 @@ export function CommandPalette() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { commandPaletteOpen, setCommandPaletteOpen, language, setLanguage, notificationsEnabled, setNotificationsEnabled } = useSettingsStore();
-  const { connected } = useChatStore();
+  const connected = useChatStore((state) => state.connected);
   const [query, setQuery] = useState('');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
