@@ -147,6 +147,10 @@ function DecisionMessage({
       title: t('collaboration.bootstrap.healthTitle', 'Gateway restart and health check pending'),
       body: t('collaboration.bootstrap.healthBody', 'The fixed package is applied. Restart this Gateway, reconnect, and JunQi will confirm the exact plugin capabilities automatically.'),
     },
+    cleanup_pending: {
+      title: t('collaboration.bootstrap.cleanupPendingTitle', 'Temporary plugin files need cleanup'),
+      body: t('collaboration.bootstrap.cleanupPendingBody', 'The new plugin is healthy and rollback is closed, but JunQi could not yet remove every temporary update file. Refresh to retry safe cleanup.'),
+    },
     service_failed: {
       title: capabilityFailure?.code === 'DATABASE_SCHEMA_UNSUPPORTED'
         ? t('collaboration.bootstrap.schemaUnsupportedTitle', '协作数据版本不兼容')
@@ -192,7 +196,7 @@ function DecisionMessage({
   const loading = decision.kind === 'loading' || decision.kind === 'busy';
   const Icon = decision.kind === 'ready'
     ? CheckCircle2
-    : decision.kind === 'error' || decision.kind === 'unsupported' || decision.kind === 'service_failed'
+    : decision.kind === 'error' || decision.kind === 'unsupported' || decision.kind === 'service_failed' || decision.kind === 'cleanup_pending'
       ? TriangleAlert
       : decision.kind === 'recovery'
         ? Wrench
@@ -201,7 +205,7 @@ function DecisionMessage({
     'mt-0.5 shrink-0',
     decision.kind === 'ready'
       ? 'text-aegis-success'
-      : decision.kind === 'error' || decision.kind === 'service_failed'
+      : decision.kind === 'error' || decision.kind === 'service_failed' || decision.kind === 'cleanup_pending'
         ? 'text-aegis-danger'
         : 'text-aegis-warning',
   );
@@ -211,7 +215,7 @@ function DecisionMessage({
         'flex items-start gap-3 rounded-md border px-3 py-2.5',
         decision.kind === 'ready'
           ? 'border-aegis-success/25 bg-aegis-success/[0.055]'
-          : decision.kind === 'error' || decision.kind === 'unsupported' || decision.kind === 'service_failed'
+          : decision.kind === 'error' || decision.kind === 'unsupported' || decision.kind === 'service_failed' || decision.kind === 'cleanup_pending'
             ? 'border-aegis-danger/25 bg-aegis-danger/[0.055]'
             : 'border-aegis-warning/25 bg-aegis-warning/[0.055]',
       )}

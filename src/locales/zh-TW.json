@@ -5255,6 +5255,8 @@
       "recoveryBody": "上一次操作未正常結束。你可以繼續執行，或恢復操作前的外掛和設定。",
       "healthTitle": "等待重啟 Gateway 並確認健康狀態",
       "healthBody": "固定外掛套件已經套用。重啟並重新連接後，JunQi 會自動核驗外掛的精確能力。",
+      "cleanupPendingTitle": "需要清理外掛暫存檔案",
+      "cleanupPendingBody": "新外掛已通過健康核驗，回復入口也已關閉，但部分更新暫存檔案尚未安全刪除。請重新整理以重試清理。",
       "schemaUnsupportedTitle": "協作資料版本不相容",
       "schemaUnsupportedBody": "現有協作資料沒有被修改。請先核對目前 Gateway 實際載入的外掛版本；僅在目前目標存在恢復交易時執行回復。",
       "serviceFailedTitle": "協作外掛服務啟動失敗",

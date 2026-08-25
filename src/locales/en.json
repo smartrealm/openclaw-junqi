@@ -5611,6 +5611,8 @@
       "recoveryBody": "An earlier operation did not finish cleanly. Resume it or restore the exact previous plugin state.",
       "healthTitle": "Gateway restart and health check pending",
       "healthBody": "The fixed package is applied. Restart this Gateway, reconnect, and JunQi will confirm the exact plugin capabilities automatically.",
+      "cleanupPendingTitle": "Temporary plugin files need cleanup",
+      "cleanupPendingBody": "The new plugin is healthy and rollback is closed, but JunQi could not yet remove every temporary update file. Refresh to retry safe cleanup.",
       "schemaUnsupportedTitle": "Collaboration data version is incompatible",
       "schemaUnsupportedBody": "Existing collaboration data was not changed. First verify the plugin version actually loaded by the current Gateway; roll back only when the current target has an active recovery transaction.",
       "serviceFailedTitle": "Collaboration plugin service failed to start",

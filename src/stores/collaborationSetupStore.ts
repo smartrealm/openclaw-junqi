@@ -79,6 +79,7 @@ export type CollaborationSetupViewKind =
   | 'busy'
   | 'recovery'
   | 'health_pending'
+  | 'cleanup_pending'
   | 'service_failed'
   | 'manual'
   | 'runtime_not_durable'
@@ -195,6 +196,20 @@ function isCollaborationServiceStartupFailure(
     || failure?.code === 'SERVICE_START_FAILED';
 }
 
+function bootstrapArtifactCleanupPending(
+  journal: CollaborationBootstrapStatus['journal'] | undefined,
+): boolean {
+  return Boolean(
+    journal?.status === 'completed'
+    && (journal.operation === 'apply' || journal.operation === 'recover_resume')
+    && journal.health
+    && !journal.healthPending
+    && !journal.steps.some(
+      (step) => step.name === 'bootstrap_artifacts_cleanup' && step.status === 'completed',
+    ),
+  );
+}
+
 export function parseCollaborationSetupRequest(event: Event): string | null {
   const detail = 'detail' in event ? (event as CustomEvent<unknown>).detail : null;
   if (!detail || typeof detail !== 'object') return null;
@@ -293,6 +308,15 @@ export function deriveCollaborationSetupView(
       ...(!sameTarget ? { blockedReason: 'Reconnect to the runtime that was updated.' } : {}),
     };
   }
+  if (bootstrapArtifactCleanupPending(journal)) {
+    return {
+      ...base,
+      kind: 'cleanup_pending',
+      canApply: false,
+      canRecover: false,
+      blockedReason: 'The plugin update is healthy, but its temporary transaction artifacts still need safe cleanup.',
+    };
+  }
   if (targetClass === 'external_local' || targetClass === 'external_remote') {
     return { ...base, kind: 'manual', canApply: false, canRecover: false };
   }
@@ -382,10 +406,11 @@ export function createHealthConfirmation(
   const journal = status.journal;
   const featureEvidence = capabilities.featureEvidence;
   const capabilityContractValid = collaborationCapabilityIssue(capabilities, bundle) === null;
+  const artifactCleanupPending = bootstrapArtifactCleanupPending(journal);
   if (
     !journal
     || journal.status !== 'completed'
-    || !journal.healthPending
+    || (!journal.healthPending && !artifactCleanupPending)
     || (journal.operation !== 'apply' && journal.operation !== 'recover_resume')
     || !identity?.verified
     || identity.persistence !== 'desktop_independent'
@@ -400,6 +425,11 @@ export function createHealthConfirmation(
     || journal.package.sha256.toLowerCase() !== bundle.sha256
     || capabilities.pluginVersion !== bundle.pluginVersion
     || capabilities.schemaVersion !== bundle.schemaVersion
+    || (!journal.healthPending && (
+      journal.health?.collaborationInstanceId !== capabilities.collaborationInstanceId
+      || journal.health?.pluginVersion !== capabilities.pluginVersion
+      || journal.health?.schemaVersion !== capabilities.schemaVersion
+    ))
     || !capabilityContractValid
     || !featureEvidence
   ) {

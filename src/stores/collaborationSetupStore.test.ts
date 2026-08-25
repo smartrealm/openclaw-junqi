@@ -762,3 +762,54 @@ test('health confirmation requires a new connection with the exact bundle and du
     null,
   );
 });
+
+test('a confirmed update retries artifact cleanup without reopening rollback', () => {
+  const cleanupPending = status(true);
+  const currentCapabilities = capabilities(true);
+  const reconnected = identity({ connectionId: 'connection-2', methods: [] });
+  cleanupPending.recoverable = false;
+  const journal: NonNullable<CollaborationBootstrapStatus['journal']> = {
+    ...cleanupPending.journal!,
+    restartRequired: false,
+    healthPending: false,
+    health: {
+      collaborationInstanceId: currentCapabilities.collaborationInstanceId,
+      pluginVersion: bundle.pluginVersion,
+      schemaVersion: currentCapabilities.schemaVersion,
+      confirmedAtMs: 3,
+    },
+    steps: [
+      { name: 'bootstrap_artifacts_cleanup', status: 'failed', atMs: 4 },
+    ],
+  };
+  cleanupPending.journal = journal;
+
+  const decision = deriveCollaborationSetupView({
+    identity: reconnected,
+    probe: probe(),
+    status: cleanupPending,
+    capabilities: currentCapabilities,
+    bundle,
+    loading: false,
+    mutation: null,
+    error: null,
+  });
+  assert.equal(decision.kind, 'cleanup_pending');
+  assert.equal(decision.canRecover, false);
+  assert.ok(createHealthConfirmation(
+    cleanupPending,
+    reconnected,
+    currentCapabilities,
+    bundle,
+  ));
+
+  journal.steps = [
+    { name: 'bootstrap_artifacts_cleanup', status: 'completed', atMs: 5 },
+  ];
+  assert.equal(createHealthConfirmation(
+    cleanupPending,
+    reconnected,
+    currentCapabilities,
+    bundle,
+  ), null);
+});

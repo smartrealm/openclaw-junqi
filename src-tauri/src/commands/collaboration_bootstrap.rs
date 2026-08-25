@@ -1838,7 +1838,7 @@ fn target_artifact_dirs(
     Ok((host_dir, cli_dir))
 }
 
-fn cleanup_preflight_artifacts(
+fn cleanup_bootstrap_artifacts(
     control: &CollaborationControlState,
     target: &MutationTarget,
     operation_id: &str,
@@ -1920,7 +1920,7 @@ fn message_with_preflight_cleanup(
     message: impl Into<String>,
 ) -> String {
     let message = message.into();
-    match cleanup_preflight_artifacts(control, target, operation_id) {
+    match cleanup_bootstrap_artifacts(control, target, operation_id) {
         Ok(()) => message,
         Err(cleanup_error) => format!(
             "{message}; some bootstrap artifacts may be retained because safe cleanup failed: {cleanup_error}"
@@ -2954,14 +2954,72 @@ async fn uninstall_if_present(
 }
 
 fn existing_journal_blocks_apply(journal: Option<&CollaborationBootstrapJournal>) -> bool {
+    journal.map(bootstrap_recovery_available).unwrap_or(false)
+}
+
+fn bootstrap_recovery_available(journal: &CollaborationBootstrapJournal) -> bool {
+    matches!(
+        journal.status,
+        BootstrapJournalStatus::Running | BootstrapJournalStatus::RecoveryRequired
+    ) || (journal.status == BootstrapJournalStatus::Completed && journal.health_pending)
+}
+
+fn bootstrap_artifact_cleanup_completed(journal: &CollaborationBootstrapJournal) -> bool {
     journal
-        .map(|journal| {
-            matches!(
-                journal.status,
-                BootstrapJournalStatus::Running | BootstrapJournalStatus::RecoveryRequired
-            ) || (journal.status == BootstrapJournalStatus::Completed && journal.health_pending)
-        })
-        .unwrap_or(false)
+        .steps
+        .iter()
+        .rev()
+        .any(|step| step.name == "bootstrap_artifacts_cleanup" && step.status == "completed")
+}
+
+fn remove_bootstrap_recovery_references(journal: &mut CollaborationBootstrapJournal) {
+    journal.package.source_tgz_path.clear();
+    journal.package.host_tgz_path.clear();
+    journal.package.tgz_path.clear();
+    journal.original_plugin.source = None;
+    journal.original_plugin.root_dir = None;
+    journal.original_plugin.install_record = None;
+    journal.original_plugin_backup_tgz_path = None;
+    journal.original_plugin_backup_host_tgz_path = None;
+    journal.original_plugin_backup_sha256 = None;
+    journal.original_plugin_content_sha256 = None;
+    journal.original_config_backup_path = None;
+}
+
+fn close_bootstrap_recovery_window(
+    control: &CollaborationControlState,
+    target: &MutationTarget,
+    journal: &mut CollaborationBootstrapJournal,
+) -> Result<(), String> {
+    journal.restart_required = false;
+    journal.health_pending = false;
+    remove_bootstrap_recovery_references(journal);
+    if !journal
+        .steps
+        .iter()
+        .any(|step| step.name == "bootstrap_recovery_window" && step.status == "closed")
+    {
+        journal.record_step("bootstrap_recovery_window", "closed", None);
+    }
+    control.save_journal(journal)?;
+
+    if bootstrap_artifact_cleanup_completed(journal) {
+        return Ok(());
+    }
+    match cleanup_bootstrap_artifacts(control, target, &journal.operation_id) {
+        Ok(()) => {
+            journal.record_step("bootstrap_artifacts_cleanup", "completed", None);
+            control.save_journal(journal)
+        }
+        Err(error) => {
+            journal.record_step("bootstrap_artifacts_cleanup", "failed", Some(error.clone()));
+            journal.add_diagnostic(format!("BOOTSTRAP_ARTIFACT_CLEANUP_FAILED: {error}"));
+            control.save_journal(journal).map_err(|save_error| {
+                format!("{error}; failed to persist the artifact cleanup failure: {save_error}")
+            })?;
+            Err(error)
+        }
+    }
 }
 
 #[expect(
@@ -4404,12 +4462,14 @@ pub async fn collaboration_bootstrap_restart(
 
     let rollback_completed = journal.status == BootstrapJournalStatus::RolledBack;
     journal.record_step("gateway_restart", "requested", Some(connection_id.clone()));
-    if rollback_completed {
+    let journal_save_error = if rollback_completed {
         journal.restart_required = false;
         journal.health_pending = false;
         journal.record_step("rollback_restart", "completed", None);
-    }
-    let journal_save_error = control.save_journal(&journal).err();
+        close_bootstrap_recovery_window(&control, &target, &mut journal).err()
+    } else {
+        control.save_journal(&journal).err()
+    };
     let runtime_mode = match target.class {
         BootstrapTargetClass::SystemService => {
             crate::state::gateway_process::GatewayRuntimeMode::SystemService
@@ -4479,7 +4539,7 @@ pub async fn collaboration_bootstrap_status(
             .unwrap_or(false);
     let recoverable = journal
         .as_ref()
-        .map(|journal| journal.status != BootstrapJournalStatus::RolledBack)
+        .map(bootstrap_recovery_available)
         .unwrap_or(false);
     Ok(CollaborationBootstrapStatus {
         busy,
@@ -4560,6 +4620,27 @@ fn validate_confirmed_capabilities(
         ));
     }
     Ok(())
+}
+
+async fn confirmed_health_target(
+    journal: &CollaborationBootstrapJournal,
+    identity: RuntimeIdentity,
+) -> Result<MutationTarget, (String, String)> {
+    let target = resolve_mutation_target(identity, &journal.target.target_fingerprint).await?;
+    validate_durable_mutation_target(&target)?;
+    if deployment_name(target.identity.deployment_kind) != journal.target.deployment_kind
+        || ownership_name(target.identity.ownership) != journal.target.ownership
+        || target.cli.binary.to_string_lossy() != journal.target.binary_path
+        || target.identity.local_state_dir != journal.target.state_dir
+        || target.identity.local_config_path != journal.target.config_path
+    {
+        return Err((
+            "HEALTH_TARGET_CHANGED".to_string(),
+            "The confirmed Gateway no longer matches the plugin update target or its runtime paths"
+                .to_string(),
+        ));
+    }
+    Ok(target)
 }
 
 #[tauri::command]
@@ -4691,7 +4772,8 @@ pub async fn collaboration_bootstrap_confirm_health(
             true,
         ));
     }
-    if !journal.health_pending {
+    let already_confirmed = !journal.health_pending;
+    if already_confirmed {
         let instance_id = params.collaboration_instance_id.trim();
         let replay_matches = identity
             .methods
@@ -4712,27 +4794,7 @@ pub async fn collaboration_bootstrap_confirm_health(
                 false,
             ));
         }
-        return Ok(CollaborationBootstrapResult {
-            ok: true,
-            code: "BOOTSTRAP_HEALTH_ALREADY_CONFIRMED".to_string(),
-            message: "Collaboration health was already confirmed for this operation".to_string(),
-            operation_id: Some(journal.operation_id),
-            target_fingerprint: Some(identity.target_fingerprint),
-            action: Some("confirm_health".to_string()),
-            plugin: Some(BootstrapPluginSnapshot {
-                installed: true,
-                enabled: true,
-                status: Some("gateway_healthy".to_string()),
-                version: Some(journal.package.plugin_version),
-                ..BootstrapPluginSnapshot::default()
-            }),
-            restart_required: false,
-            health_pending: false,
-            recoverable: true,
-            warnings: Vec::new(),
-        });
-    }
-    if !identity
+    } else if !identity
         .methods
         .iter()
         .any(|method| method == "junqi.collab.capabilities")
@@ -4749,43 +4811,77 @@ pub async fn collaboration_bootstrap_confirm_health(
         ));
     }
     let instance_id = params.collaboration_instance_id.trim();
-    if instance_id.is_empty() || instance_id.len() > 128 {
-        let code = "COLLABORATION_INSTANCE_ID_INVALID";
-        let message = "The collaboration capability response omitted a valid runtime instance id";
-        journal_failure(&control, &mut journal, code, message)?;
+    if !already_confirmed {
+        if instance_id.is_empty() || instance_id.len() > 128 {
+            let code = "COLLABORATION_INSTANCE_ID_INVALID";
+            let message =
+                "The collaboration capability response omitted a valid runtime instance id";
+            journal_failure(&control, &mut journal, code, message)?;
+            return Ok(mutation_error(
+                code,
+                message,
+                Some(identity.target_fingerprint),
+                Some(journal.operation_id),
+                true,
+            ));
+        }
+        if let Err((code, message)) = validate_confirmed_capabilities(&params, &journal) {
+            journal_failure(&control, &mut journal, &code, &message)?;
+            return Ok(mutation_error(
+                code,
+                message,
+                Some(identity.target_fingerprint),
+                Some(journal.operation_id),
+                true,
+            ));
+        }
+    }
+    let target = match confirmed_health_target(&journal, identity.clone()).await {
+        Ok(target) => target,
+        Err((code, message)) => {
+            return Ok(mutation_error(
+                code,
+                message,
+                Some(identity.target_fingerprint),
+                Some(journal.operation_id),
+                !already_confirmed,
+            ));
+        }
+    };
+    if !already_confirmed {
+        journal.health = Some(BootstrapHealthSnapshot {
+            collaboration_instance_id: instance_id.to_string(),
+            plugin_version: params.plugin_version.trim().to_string(),
+            schema_version: params.schema_version,
+            confirmed_at_ms: chrono::Utc::now().timestamp_millis(),
+        });
+        journal.record_step("gateway_capabilities", "confirmed", None);
+    }
+    if let Err(message) = close_bootstrap_recovery_window(&control, &target, &mut journal) {
         return Ok(mutation_error(
-            code,
-            message,
+            "BOOTSTRAP_ARTIFACT_CLEANUP_FAILED",
+            format!(
+                "Collaboration health was confirmed, but the temporary plugin update artifacts could not be removed safely: {message}"
+            ),
             Some(identity.target_fingerprint),
             Some(journal.operation_id),
-            true,
+            false,
         ));
     }
-    if let Err((code, message)) = validate_confirmed_capabilities(&params, &journal) {
-        journal_failure(&control, &mut journal, &code, &message)?;
-        return Ok(mutation_error(
-            code,
-            message,
-            Some(identity.target_fingerprint),
-            Some(journal.operation_id),
-            true,
-        ));
-    }
-
-    journal.health_pending = false;
-    journal.restart_required = false;
-    journal.health = Some(BootstrapHealthSnapshot {
-        collaboration_instance_id: instance_id.to_string(),
-        plugin_version: params.plugin_version.trim().to_string(),
-        schema_version: params.schema_version,
-        confirmed_at_ms: chrono::Utc::now().timestamp_millis(),
-    });
-    journal.record_step("gateway_capabilities", "confirmed", None);
-    control.save_journal(&journal)?;
     Ok(CollaborationBootstrapResult {
         ok: true,
-        code: "BOOTSTRAP_HEALTH_CONFIRMED".to_string(),
-        message: "The active Gateway loaded the expected durable collaboration plugin".to_string(),
+        code: if already_confirmed {
+            "BOOTSTRAP_HEALTH_ALREADY_CONFIRMED".to_string()
+        } else {
+            "BOOTSTRAP_HEALTH_CONFIRMED".to_string()
+        },
+        message: if already_confirmed {
+            "Collaboration health was already confirmed and no rollback artifacts remain"
+                .to_string()
+        } else {
+            "The active Gateway loaded the expected durable collaboration plugin and the temporary rollback artifacts were removed"
+                .to_string()
+        },
         operation_id: Some(journal.operation_id),
         target_fingerprint: Some(identity.target_fingerprint),
         action: Some("confirm_health".to_string()),
@@ -4798,7 +4894,7 @@ pub async fn collaboration_bootstrap_confirm_health(
         }),
         restart_required: false,
         health_pending: false,
-        recoverable: true,
+        recoverable: false,
         warnings: Vec::new(),
     })
 }
@@ -5770,6 +5866,15 @@ pub async fn collaboration_bootstrap_recover(
             true,
         ));
     }
+    if !bootstrap_recovery_available(&journal) {
+        return Ok(mutation_error(
+            "BOOTSTRAP_NOT_RECOVERABLE",
+            "The collaboration plugin update has reached a terminal state and no rollback artifacts remain",
+            Some(params.target_fingerprint),
+            Some(operation_id),
+            false,
+        ));
+    }
     let Some(identity) = current_identity(&identity_state)? else {
         return Ok(mutation_error(
             "RUNTIME_IDENTITY_UNAVAILABLE",
@@ -5838,56 +5943,6 @@ pub async fn collaboration_bootstrap_recover(
             true,
         ));
     }
-    if journal.status == BootstrapJournalStatus::RolledBack {
-        let config_path = Path::new(&journal.target.config_path);
-        let verification = verify_restored_config_snapshot(&journal, config_path)
-            .and_then(|_| verify_bootstrap_owned_config(&journal, config_path))
-            .and_then(|_| {
-                (journal.bootstrap_owned_config_sha256.as_deref()
-                    == Some(journal.original_config_sha256.as_str()))
-                .then_some(())
-                .ok_or_else(|| {
-                    "The rolled-back journal does not own the original config snapshot".to_string()
-                })
-            });
-        let plugin_verification = match verification {
-            Ok(()) => inspect_plugin(&target.cli)
-                .await
-                .and_then(|(plugin, warnings)| {
-                    verify_restored_plugin_snapshot(&journal.original_plugin, &plugin)?;
-                    verify_restored_plugin_content(&journal, &plugin)?;
-                    Ok((plugin, warnings))
-                }),
-            Err(message) => Err(message),
-        };
-        match plugin_verification {
-            Ok((plugin, warnings)) => {
-                return Ok(CollaborationBootstrapResult {
-                    ok: true,
-                    code: "BOOTSTRAP_ALREADY_ROLLED_BACK".to_string(),
-                    message: "The previous bootstrap operation is already rolled back and its exact plugin/config state was re-verified"
-                        .to_string(),
-                    operation_id: Some(operation_id),
-                    target_fingerprint: Some(journal.target.target_fingerprint),
-                    action: Some("rollback".to_string()),
-                    plugin: Some(plugin),
-                    restart_required: journal.restart_required,
-                    health_pending: journal.health_pending,
-                    recoverable: false,
-                    warnings,
-                });
-            }
-            Err(message) => {
-                journal_failure(
-                    &control,
-                    &mut journal,
-                    "ROLLBACK_STATE_VERIFICATION_FAILED",
-                    &message,
-                )?;
-            }
-        }
-    }
-
     match params.strategy {
         BootstrapRecoveryStrategy::Resume => {
             if journal.status == BootstrapJournalStatus::Completed {
@@ -6047,6 +6102,8 @@ mod tests {
     use super::*;
     use crate::state::runtime_identity::RuntimeDeploymentKind;
     use std::io::Write;
+
+    mod terminal_cleanup_tests;
 
     fn create_test_tgz(root: &Path, id: &str, version: &str) -> PathBuf {
         let path = root.join("plugin.tgz");
@@ -7257,7 +7314,7 @@ mod tests {
         assert!(!outside.join("op-1").exists());
 
         let target = test_mutation_target(&root, RuntimeDeploymentKind::SystemService);
-        let cleanup_error = cleanup_preflight_artifacts(&control, &target, "op-1").unwrap_err();
+        let cleanup_error = cleanup_bootstrap_artifacts(&control, &target, "op-1").unwrap_err();
         assert!(cleanup_error.contains("backup root"));
         assert!(!outside.join("op-1").exists());
         let _ = std::fs::remove_dir_all(root);
@@ -7284,7 +7341,7 @@ mod tests {
         let error = target_artifact_dirs(&control, &target, "op-1").unwrap_err();
         assert!(error.contains("staging root"));
         assert!(!outside.join("op-1").exists());
-        let cleanup_error = cleanup_preflight_artifacts(&control, &target, "op-1").unwrap_err();
+        let cleanup_error = cleanup_bootstrap_artifacts(&control, &target, "op-1").unwrap_err();
         assert!(cleanup_error.contains("staging root"));
         assert!(!outside.join("op-1").exists());
         let _ = std::fs::remove_dir_all(root);
@@ -7382,7 +7439,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_preflight_does_not_create_missing_artifact_directories() {
+    fn cleanup_does_not_create_missing_artifact_directories() {
         let root = std::env::temp_dir().join(format!(
             "junqi-cleanup-missing-artifacts-{}",
             uuid::Uuid::new_v4()
@@ -7390,7 +7447,7 @@ mod tests {
         let control = CollaborationControlState::with_journal_path(root.join("journal.json"));
         let target = test_mutation_target(&root, RuntimeDeploymentKind::SystemService);
 
-        assert!(cleanup_preflight_artifacts(&control, &target, "op-1").is_ok());
+        assert!(cleanup_bootstrap_artifacts(&control, &target, "op-1").is_ok());
         assert!(!root.exists());
     }
 
