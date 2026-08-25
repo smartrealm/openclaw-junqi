@@ -1,4 +1,5 @@
-import { useCallback, useEffect, type RefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, useState, type RefObject } from 'react';
+import { useTranslation } from 'react-i18next';
 import { gateway } from '@/services/gateway';
 import { voiceRuntime } from '@/runtime/VoiceRuntime';
 import { selectSessionRequestActive, useChatStore } from '@/stores/chatStore';
@@ -10,9 +11,9 @@ interface UseComposerInterruptionOptions {
   activeSessionId?: string;
   activeMenu: ComposerMenuId;
   closeMenu: () => void;
+  responseActive: boolean;
   voiceOutputActive: boolean;
   textareaRef: RefObject<HTMLTextAreaElement>;
-  setText: (next: SetStateAction<string>) => void;
 }
 
 export function shouldStopComposerResponse(
@@ -28,17 +29,30 @@ export function useComposerInterruption({
   activeSessionId,
   activeMenu,
   closeMenu,
+  responseActive,
   voiceOutputActive,
   textareaRef,
-  setText,
 }: UseComposerInterruptionOptions) {
+  const { t } = useTranslation();
+  const [stopError, setStopError] = useState<string | null>(null);
+
+  useEffect(() => setStopError(null), [activeSessionKey]);
+  useEffect(() => {
+    if (!responseActive) setStopError(null);
+  }, [responseActive]);
+
   const stopActiveResponse = useCallback(async () => {
+    setStopError(null);
     voiceRuntime.interruptGlobally(activeSessionKey);
     const state = useChatStore.getState();
     if (!selectSessionRequestActive(state, activeSessionKey)) return;
-    await gateway.abortChat(activeSessionKey, activeSessionId)
-      .catch((error) => debugError('gateway', '[ComposerInterruption] Unable to stop response:', error));
-  }, [activeSessionId, activeSessionKey]);
+    try {
+      await gateway.abortChat(activeSessionKey, activeSessionId);
+    } catch (error) {
+      debugError('gateway', '[ComposerInterruption] Unable to stop response:', error);
+      setStopError(t('input.stopFailed'));
+    }
+  }, [activeSessionId, activeSessionKey, t]);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -56,14 +70,6 @@ export function useComposerInterruption({
         void stopActiveResponse();
         return;
       }
-      if (document.activeElement !== textareaRef.current) return;
-
-      const messages = state.messagesPerSession[activeSessionKey] ?? [];
-      const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
-      if (!lastUserMessage) return;
-      event.preventDefault();
-      setText(lastUserMessage.content);
-      textareaRef.current?.focus();
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
@@ -71,11 +77,10 @@ export function useComposerInterruption({
     activeMenu,
     activeSessionKey,
     closeMenu,
-    setText,
     stopActiveResponse,
     textareaRef,
     voiceOutputActive,
   ]);
 
-  return stopActiveResponse;
+  return { stopActiveResponse, stopError };
 }

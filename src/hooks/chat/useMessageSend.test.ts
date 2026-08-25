@@ -2,16 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GatewayRpcError } from '@/services/gateway/Connection';
 import {
-  composerDeliveryOptions,
+  composerQueueModeOptions,
   shouldRefreshHistoryAfterMessageSendFailure,
 } from './useMessageSend';
 
 test('normal Composer delivery leaves busy-session queue selection to OpenClaw', () => {
-  assert.deepEqual(composerDeliveryOptions('normal'), {});
+  assert.deepEqual(composerQueueModeOptions(undefined), {});
 });
 
-test('explicit Composer steering retains the native interrupt-and-steer delivery', () => {
-  assert.deepEqual(composerDeliveryOptions('steer'), { delivery: 'steer' });
+test('explicit Composer steering uses the official chat.send queue mode', () => {
+  assert.deepEqual(composerQueueModeOptions('steer'), { queueMode: 'steer' });
 });
 
 test('发送失败只为官方 leaf 冲突或已确认空会话首发读取权威历史', () => {

@@ -24,6 +24,25 @@ test('拒绝 OpenClaw 未定义的负数创建时间，避免排序伪造有效�
   );
 });
 
+test('会话投影只保留官方队列模式', () => {
+  assert.deepEqual(projectOpenClawSession({
+    key: 'agent:main:queue-mode',
+    queueMode: 'followup',
+    effectiveQueueMode: 'steer',
+  }), {
+    key: 'agent:main:queue-mode',
+    queueMode: 'followup',
+    effectiveQueueMode: 'steer',
+  });
+  assert.deepEqual(projectOpenClawSession({
+    key: 'agent:main:unknown-queue-mode',
+    queueMode: 'future-mode',
+    effectiveQueueMode: 1,
+  }), {
+    key: 'agent:main:unknown-queue-mode',
+  });
+});
+
 test('显式智能体主会话同时服从官方会话范围和智能体列表', () => {
   const snapshot = parseOpenClawAgentList({
     defaultId: 'main',

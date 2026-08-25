@@ -924,6 +924,7 @@ function ChatViewContent() {
       message: payload.text,
       clientMessageId,
       sessionId: payload.sessionId ?? activeSessionId,
+      queueMode: payload.queueMode,
       attachments: payload.attachments,
       displayAttachments: payload.displayAttachments,
       optimisticMessage: false,

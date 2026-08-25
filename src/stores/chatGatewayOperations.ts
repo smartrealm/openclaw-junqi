@@ -1,5 +1,6 @@
 import type { GatewayAttachment } from '@/services/chat/types';
 import type { OpenClawSessionGroup } from '@/services/gateway/OpenClawSessionGroupsClient';
+import type { OpenClawQueueMode } from '@/services/gateway/OpenClawQueueMode';
 
 export interface ChatGatewayOperations {
   setSessionPinned(pinned: boolean, sessionKey: string): Promise<unknown>;
@@ -16,7 +17,7 @@ export interface ChatGatewayOperations {
       clientMessageId?: string;
       sessionId?: string;
       expectedLeafEntryId?: string | null;
-      delivery?: 'send' | 'steer';
+      queueMode?: OpenClawQueueMode;
     },
   ): Promise<unknown>;
 }

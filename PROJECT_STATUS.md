@@ -4,102 +4,110 @@
 
 ## 当前目标
 
-当前目标是完成协作插件受控更新闭环：确保旧进程的数据库错误不会跳过新插件必需的 Gateway 重启，真实新插件失败具备运行版本和 schema 证据，并通过新桌面安装包完成实际 Gateway 更新、数据库迁移、制品清理和智能体办公室恢复验收。
+当前产品优先级是完成单用户桌面端到端闭环，不实现或预留企业控制面双轨。当前直接目标是完成会话输入区的 OpenClaw 原生交互收敛：以单一固定主操作位表达空闲发送、活动运行中的转向或排队、无草稿时停止，并确保键盘、停止、历史和 Gateway 调用语义一致。
 
 ## 已完成内容
 
-- 已确认审计开始时桌面安装包内协作插件为 `0.5.4`，但实际运行中 Gateway 加载的仍是 `0.5.1`；冷态安装记录不能替代运行时插件身份。
-- 无活动恢复事务时，插件缺失、版本落后和未加载状态先于能力启动错误处理；活动 `health-pending` 事务中，应用前连接或缺少本次应用插件身份的错误不再覆盖首次重启门禁。
-- 数据库门禁只新增一种经实证的候选：历史 schema 13 对象集合加当前权威 `commands_available` 索引。错误 SQL、错误列或其他结构漂移继续拒绝。
-- 协作插件已升为 `0.5.7`；所有启动失败响应包含运行插件版本，schema 不兼容同时包含实际与期望 schema。只有新 Gateway 连接且错误版本与事务应用版本一致时，客户端才进入真实服务失败终态。
-- 设置界面默认直接展示运行插件版本、实际 schema、期望 schema 和错误码；回滚改为可选安装事务撤销，并明确不会修复或迁移协作数据。
-- OpenClaw 对同一 `junqi-collab` 标识执行受控覆盖，运行时只维护一份活动插件；旧插件归档、配置备份和新包暂存只在健康确认前用于精确失败补偿。
-- 真实 Gateway 确认目标、插件版本、schema 和能力契约后，事务永久关闭恢复入口，删除旧插件归档、配置备份、暂存包和操作目录，并清除当前日志及其备份中的制品引用；回滚重启成功后执行同样清理。
-- 健康确认后的安全删除失败会返回 `BOOTSTRAP_ARTIFACT_CLEANUP_FAILED`，但不会重新开放缺少完整制品的回滚动作；重复确认可重试清理。
-- 使用 `thermo-nuclear-code-quality-review` 完成严格复审；数据库主测试文件从新增后的 1060 行收敛到 967 行，历史 schema 构造器提取为测试专用夹具。
-- `main` 已包含 Jarvis 的 Cron 例行工作总览、当前会话运行控制台、只读 Task Ledger 状态流和目录选择式 Git 工作区。
-- 依据最新版 OpenClaw 官方主线 `b8d6e799a31` 的 Task Ledger schema，任务流按 `queued`、`running`、`completed`、`failed`、`cancelled`、`timed_out` 六种状态原样分栏，不再合并为客户端自定义状态。
-- 运行控制台在任务账本、审计或有效工具快照未返回和读取失败时保留未知语义，不再把未知数据展示为零；有效工具错误绑定产生错误的精确 Session。
-- Cron 例行工作总览在断线、加载和读取失败时保留未知语义，只在当前 Cron 列表已确认时发布数量和下一次运行。
-- Git 工作区只通过系统目录选择器确认。Rust 在当前进程会话内保存多个规范化工作区，并仅额外信任 Git 校验出的仓库根目录；已保存路径不会跨桌面会话自动取得权限。
-- Git 单文件差异、暂存、取消暂存和历史文件读取继续拒绝绝对路径与父目录逃逸。
-- `main` 同时保留 Gateway 生命周期串行化、管理员 scope 升级、设备凭据轮换、钉钉业务审计和宠物窗口修复。
+- 以更新后的 OpenClaw 官方主线 `610fefdabbce28584d5bec940936083b248550f0` 核对 `chat.send.queueMode`、`sessions.abort`、运行中输入、键盘和官方 Composer 行为。
+- 以官方 Codex 源码确认中断是当前 Turn 的终态，后续继续是新 Turn；没有把参考动图中的播放图标实现为恢复同一次运行。
+- Composer 已从发送、转向、停止三个并排按钮收敛为一个固定主操作位：空闲无内容时为禁用发送，有内容时为发送，活动运行无内容时为停止，有内容时按有效队列模式显示转向、加入后续队列或停止当前运行并发送。
+- 主操作继续复用现有 `aegis-surface`、`aegis-border`、`aegis-primary`、`aegis-danger`、文本和焦点主题 token，控件保持既有 34 像素尺寸、圆角、减少动态效果和可访问名称。
+- Enter 普通发送，Shift+Enter 换行，输入法组合期间不发送；活动运行中 Ctrl+Enter 或 Command+Enter 明确请求 `steer`。
+- `Session` 投影新增官方 `queueMode` 和 `effectiveQueueMode`，只接受 `steer`、`followup`、`collect` 和 `interrupt`，未知值不默认。
+- 所有会话消息统一经 `chat.send`；普通发送省略队列覆盖，显式转向携带 `queueMode: "steer"` 并省略 `expectedLeafEntryId`。
+- 已删除废弃的 `OpenClawSessionSteerClient`、专属测试和被替代的历史运行时门禁文档；没有保留降级到旧 RPC 或旧 `expectedLeafEntryId` schema 的兼容分支。
+- Stop 有精确 `runId` 时只中止该运行；缺少运行标识的非全局会话按键级中止并清理后续队列。两种情况都不删除会话、转录或草稿。
+- Stop 失败会在输入框内联显示错误；运行结束或切换会话后清除。空闲 Escape 不再复制上一条用户消息，历史浏览继续使用上下方向键，已发送消息回退和分支继续使用正式 rewind/fork 入口。
 
 ## 关键技术决策
 
-- OpenClaw 是任务、审计、工具、会话、Cron 和运行终态的唯一权威；JunQi 仅展示可追溯投影，不增加本地任务状态或成功推断。
-- OpenClaw 能力核对以更新后的官方仓库主线为准；当前项目依赖和自动化环境仅用于复现与验证，不作为目标环境事实或版本门禁。
-- Gateway 写操作、权限升级和重启绑定已核验连接与运行时身份；超时、断线或失败不推断远端副作用终态。
-- Git 信任仅存在于当前桌面进程。嵌套目录的仓库根目录必须由该已确认目录内执行的 Git 命令返回，并通过包含关系校验。
-- 普通 Gateway 连接保持最小权限，管理员权限只通过 OpenClaw 官方设备 scope 升级流程取得。
-- 插件包版本、schema 能力和数据库 metadata 是不同契约；能力不能按本机安装版本硬编码门禁，更新后必须重启实际 Gateway 并做运行时检查。
-- 协作插件源码、迁移或运行契约发生变化时必须发布新的插件版本；不得让不同归档内容共用同一版本，否则服务启动失败时 Gateway 无法提供内容摘要供客户端区分构建。
-- 插件覆盖写入后、Gateway 重启前的错误属于旧进程证据。健康事务必须同时核对连接世代和启动错误中的运行插件版本，不能把旧连接错误归因于新包。
-- 混合 schema 恢复不使用通用兼容层，只接受权威索引定义完全匹配的已证实形态，并继续沿私有备份和单事务迁移执行。
-- 插件更新回滚窗口只存在于真实 Gateway 健康确认前。终态只保留插件版本、包摘要、目标身份和健康结果等最小审计事实，不保留旧插件文件、配置副本、暂存包或可恢复语义。
-- 数据库迁移前备份与插件回滚归档是不同生命周期：数据库备份继续承担持久化数据保护，插件归档在更新事务终止后必须删除。
+- OpenClaw 是会话、运行、队列和中止语义的唯一权威；JunQi 只投影 Gateway 返回的有效队列模式。
+- 单一主操作位是 UI 不变量。任何状态都不能同时出现多个发送或停止主按钮。
+- 普通点击和 Enter 不强制覆盖 Gateway 当前队列策略；只有明确的修饰键交互发送 `queueMode: "steer"`。
+- Stop 是中止当前运行，不是暂停，不提供恢复同一次运行的按钮，也不清空会话上下文。
+- 当前安装版本和本机日志只用于复现与验证，不作为能力版本门禁或目标环境默认条件。
+- 已发送历史不能由本地 UI 直接改写；只能使用 OpenClaw 的 rewind 和 fork 契约。
 
 ## 核心文件
 
-- `src/components/Activity/OpenClawRunConsole.tsx`
-- `src/components/Activity/OpenClawTaskLedgerPanel.tsx`
-- `src/pages/CronMonitor.tsx`
-- `src/pages/cronPresentation.tsx`
-- `src/pages/GitPage.tsx`
-- `src/stores/gatewayDataStore.ts`
-- `src-tauri/src/commands/git_neu.rs`
-- `src/stores/collaborationSetupStore.ts`
-- `src-tauri/src/commands/collaboration_bootstrap.rs`
-- `src-tauri/src/commands/collaboration_bootstrap/tests/terminal_cleanup_tests.rs`
-- `packages/junqi-collab/src/database-schema-initializer.ts`
-- `packages/junqi-collab/src/database-schema-fixture.test-helper.ts`
-- `src/components/Collaboration/CollaborationSetupDialog.tsx`
-- `src/pages/AgentHub/AgentHubOfficePanel.tsx`
-- `docs/quality/collaboration-runtime-update-and-mixed-schema-recovery-audit-2026-08-25.md`
-- `specs/2026-08-25-collaboration-runtime-update-and-mixed-schema-recovery.md`
-- `docs/design/openclaw-workspace-projections-2026-08-24.md`
-- `specs/2026-08-24-openclaw-workspace-projections.md`
+- `src/components/Chat/MessageInput.tsx`
+- `src/components/Chat/message-input/ComposerInputSurface.tsx`
+- `src/components/Chat/message-input/ComposerPrimaryActionButton.tsx`
+- `src/components/Chat/message-input/composerPrimaryAction.ts`
+- `src/hooks/chat/useComposerSuggestions.ts`
+- `src/hooks/chat/useComposerInterruption.ts`
+- `src/hooks/chat/useMessageSend.ts`
+- `src/services/chat/sendTransaction.ts`
+- `src/services/gateway/index.ts`
+- `src/services/gateway/OpenClawQueueMode.ts`
+- `src/services/gateway/OpenClawSessionAbortClient.ts`
+- `src/utils/openClawSessionProjection.ts`
+- `src/stores/chatStore.ts`
+- `docs/quality/chat-composer-native-interaction-audit-2026-08-25.md`
+- `specs/2026-08-25-chat-composer-native-interaction.md`
+- `plans/2026-08-25-chat-composer-native-interaction.md`
 
 ## 测试与验证
 
-- 任务流、运行控制台和 Cron 未知状态定向回归通过，共 5 项。
-- Git 工作区定向 Rust 测试 8 项通过，覆盖未确认目录、多工作区保留、嵌套仓库根目录和相对路径逃逸。
-- 使用项目锁定的 `pnpm@9.15.9` 完成本轮验证：前端测试 2936 项、脚本测试 238 项、协作插件完整测试全部通过。
-- Rust 格式检查、`cargo check --lib` 和库测试通过；Rust 测试 658 项通过，1 项按既有条件忽略。
-- `pnpm lint`、`pnpm build`、`pnpm collab:validate`、`pnpm verify:openclaw-docs` 和 `git diff --check` 通过。
-- 旧插件更新决策、应用前连接错误保持重启、新连接缺少插件身份保持待确认、新插件真实失败、health-pending 回滚、schema 12、13、14 标准迁移、精确混合 schema 13 和错误索引拒绝回归通过。
-- 插件事务制品清理定向回归 2 项通过：健康确认删除旧插件归档、配置备份和暂存包并关闭恢复状态；符号链接替换目录时拒绝越界删除且保持不可恢复。
-- 本轮 Rust 库测试 661 项中 660 项通过、1 项按既有条件忽略；`cargo check --lib` 与格式检查通过，仍输出既有未使用函数 `current_search_path` 警告。
-- `0.5.5` 版本碰撞回归在修复前稳定得到 `service_failed`，版本升为 `0.5.6` 并重建固定包后得到可应用的 `update`；协作插件完整测试 367 项通过。
-- 本轮根前端 2933 项、脚本 238 项、Rust 660 项通过，Rust 另有 1 项按既有条件忽略；`pnpm lint` 与 Tauri 生产构建通过。
-- 对现有数据库只读复制后，在独立临时目录使用最终编译代码迁移成功：schema 15、`schema_migrated_from=13`、完整性 `ok`，迁移前备份权限为 `0600`；原数据库未修改。
-- 当前固定归档已重建为协作插件 `0.5.7`、schema 15 和 SHA-256 `3b45e38d6a56f99e665018ee06d2c51ac0c08ea62fe2a1b15e4b80fe14874805`；两份元数据与归档字节一致。
-- 本轮只完成自动化和构建验证，没有把当前机器的 Node.js、npm、Git、Gateway、配置、凭据或操作系统状态当作目标环境证据。
-- 已从真实 Tauri 客户端窗口取得智能体办公室截图；当前已安装客户端仍返回 `DATABASE_SCHEMA_UNSUPPORTED`，因此该截图只证明既有安装包未通过协作恢复验收，不能替代当前源码重新打包后的复测。
-- 已基于当前源码生成 macOS Apple Silicon 本地测试 DMG。应用版本为 `3.2.1`，二进制为 ARM64，DMG 大小为 7907297 字节，SHA-256 为 `a8e8835806b4950bc23d0f469975f6cda13083245426f9235995bd3a7b2258af`；`hdiutil verify` 和只读挂载后的应用 `codesign --verify --deep --strict` 通过。
-- DMG 只读挂载确认内嵌协作插件为 `0.5.7`、schema 15，归档 SHA-256 为 `3b45e38d6a56f99e665018ee06d2c51ac0c08ea62fe2a1b15e4b80fe14874805`，metadata 与仓库受控资源逐字节一致。
+- 修复前回归稳定失败：缺少单一主操作状态解析，且会话投影丢弃官方队列模式。
+- 主操作状态矩阵、实际按钮结构、键盘决策、队列投影、发送事务、Gateway 分发和 Stop 策略共 31 项最终定向测试通过。
+- 最终完整前端测试 2941 项通过；脚本测试 238 项通过。
+- `pnpm lint` 通过，模块边界检查覆盖 944 个文件，四处桌面版本均为 `3.2.1`。
+- `pnpm build` 通过，协作插件 `0.5.7` 和钉钉业务插件 `0.1.0` 契约校验、固定包重建、TypeScript 与 Vite 生产构建全部完成。
+- ARM64 macOS 本地测试包已生成：`src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/JunQi Desktop_3.2.1_aarch64.dmg`，大小 `7906941` 字节，SHA-256 为 `62eb8fb1ffff42a26a672536a4d096d820281d6eaa8304026f911f3a52a588c9`。
+- DMG 已通过 `hdiutil verify`、只读挂载、`/Applications` 链接、Mach-O ARM64、应用版本 `3.2.1`、内置协作与钉钉资源一致性以及应用 `codesign --verify --deep --strict` 校验。应用使用本地 ad-hoc 深度签名并包含资源密封，不是 Developer ID 签名、公证或 updater 签名的正式发布包。
+- `git diff --check` 通过；本次修改的全部文本文件未检测到 Unicode 扩展象形字符或常见 Emoji 符号码段。
+- 已启动真实 Tauri 调试客户端，在浅色主题的标准宽窗口与 900 像素窄窗口截图中确认 Composer 无横向溢出、输入可聚焦、唯一主操作位可见且位置稳定；验证后已停止调试进程并恢复窗口尺寸。
 
 ## 已知问题与未验证边界
 
-- 尚未通过新 DMG 对实际 Gateway 执行受控插件更新，因此实际运行时仍未证明已加载 `0.5.7`，实际数据库也未执行迁移；当前不能宣称用户现场错误已经消失。
-- 当前 ARM64 本地测试 DMG 已包含 `0.5.7` 固定包，但尚未在目标 Gateway 核对实际加载、数据库迁移和旧插件归档删除。
-- 常规 Tauri 打包在 DMG 落盘后因缺少 updater 私钥返回非零；本地 `.app` 随后使用 ad-hoc 深度签名并由 Tauri 生成的 DMG 脚本重建。该候选没有 Developer ID 签名、公证或 updater 签名。
-- 尚未在真实 Gateway 完成运行控制台、Task Ledger、Cron、scope 申请、用户批准、凭据轮换、重连和原操作继续的完整序列。
-- 尚未在真实 Tauri WebView 连续验证亮色、暗色、窄窗口、键盘焦点、加载、空数据和失败状态；当前只有协作数据版本失败状态的单帧截图，没有完整序列或当前源码安装包的复测证据。
-- 尚未在 macOS、Windows 和 Linux 目标环境验证目录选择、嵌套仓库操作、系统凭据、Gateway 重启、钉钉协议和宠物窗口行为。
-- 完整测试仍输出既有的 Node.js `module.register()` 弃用提示和 Radix Select 服务端渲染提示；Rust 检查仍报告既有未使用函数 `current_search_path`。这些提示未导致本轮验证失败，也未在本任务中扩散。
-- 合并前生成的安装制品已于 2026-08-25 移入废纸篓；当前已生成新的 ARM64 本地测试 DMG，但仅使用 ad-hoc 签名，没有 Developer ID 签名、updater 签名或公证，不能作为正式发布包。
-- 未跟踪的 `.pnpm-store/` 与 `outputs/` 是用户既有内容，本轮未修改、删除或纳入提交。
+- 未经授权向用户真实 Gateway 注入测试消息，因此尚未连续实测活动运行中的转向、排队、中断并发送、Stop、失败和运行结束收敛。
+- 暗色主题自动截图未成功，应用最终保持原浅色主题；暗色、护眼和暗黑主题仍需真实桌面视觉验收。
+- 尚未在 Windows 和 Linux 验证窄窗口、输入法、修饰键和图标方向；当前真实窗口验证仅覆盖 macOS Tauri 调试客户端。
+- 完整测试继续输出既有 Node.js `module.register()` 弃用提示和 Radix Select 服务端渲染提示；Rust 调试构建继续报告既有未使用函数 `current_search_path`。这些提示未导致本轮验证失败。
+- 当前 pnpm 9.15.9 会输出 `package.json#pnpm` 字段忽略警告；本轮没有变更依赖或锁文件，构建使用现有冻结依赖完成。
+- 本地 DMG 通过生成脚本的 `--skip-jenkins` 模式重建，保留可安装应用与 `/Applications` 链接，但未执行依赖 Finder 的背景图和图标位置编排；不影响本地安装验证，不能据此宣称完成正式发布视觉验收。
+- 未跟踪的 `.pnpm-store/`、`dogfood-output/` 和 `outputs/` 是用户既有内容，本轮未修改、删除或纳入变更。
 
 ## 失败方案
 
-- 未保留 Jarvis 将三个原生任务终态合并为 `attention` 的实现，因为它改变了 OpenClaw Task Ledger 的状态语义。
-- 未保留单个全局 Git 工作区信任槽位，因为确认第二个目录会错误撤销第一个目录，并阻断嵌套工作区派生的仓库根目录操作。
-- 未把未加载任务、审计、工具和 Cron 数据显示为零，因为零代表已确认空集合，而不是未知状态。
-- 不通过手工路径输入、持久化前端标记、目录前缀匹配或目标机器环境猜测扩大 Git 权限。
+- 未保留三个并排主按钮，因为它使鼠标和 Enter 存在竞争动作，并压缩窄窗口输入空间。
+- 未把参考动图的播放按钮实现为恢复同一次运行，因为 OpenClaw 没有对应暂停和恢复 RPC。
+- 未保留 `sessions.steer` 或旧 Gateway 参数拒绝 fallback，因为最新版官方协议已提供统一 `chat.send.queueMode` 契约。
+- 未从 `hello-ok.features.methods`、版本号、超时、空结果或本地状态猜测队列能力和运行终态。
+- 未通过测试专用 Gateway 状态或硬编码会话字段生成活动运行截图。
 
 ## 下一步顺序
 
-1. 在真实 Gateway 与 Tauri WebView 验证活动中心和 Cron 从加载到结果的连续状态、Session 切换和失败恢复。
-2. 在目标平台验证 Git 目录选择、多工作区、嵌套仓库及写操作确认，并记录平台差异。
-3. 安装当前 ARM64 本地测试 DMG，在协作设置执行受控更新，核对首次状态保持“需要重启”、重启后实际 Gateway 运行时插件为 `0.5.7`、实际数据库为 schema 15、数据库迁移备份存在、插件更新事务制品已清理且智能体办公室恢复；正式分发前另行完成 Developer ID 签名、公证与 updater 签名。
+1. 经用户允许后，在真实 Gateway 发起可控长运行，连续抓取发送、活动运行、运行中输入、转向或排队、Stop 和终态收敛。
+2. 在暗色、护眼和暗黑主题重复标准宽度与窄窗口视觉验收，并核对键盘焦点和内联错误。
+3. 在 Windows 与 Linux 目标客户端验证输入法、Ctrl+Enter、窗口缩放和图标方向。
+
+## GoClaw 对比审查
+
+- 已只读审查 GoClaw `dev` 分支 `fc8a35eebda4232eaa1ebcbe72066edd616022eb`，并确认本地分支与远端 `dev` 一致；同时重新拉取 OpenClaw 官方主线 `041d48eccbc591c8a46b904c31358388cf563ae4` 作为当前协议依据。
+- GoClaw 是独立 Go 语言重实现，不是 OpenClaw 插件或兼容发行包。它拥有自己的 Agent 循环、PostgreSQL/SQLite 存储、WebSocket v3、HTTP API、Web 管理台和 Wails 桌面端。
+- GoClaw 连接参数仍使用顶层 `token`、`user_id`、`tenant_id` 等字段，协议常量为 v3；官方 OpenClaw 普通客户端当前要求 v4，并使用正式客户端身份、角色、scope、认证和设备证明握手。因此 GoClaw 不能替换 JunQi 当前 Gateway 而保持协议兼容。
+- JunQi 当前已有 112 个 OpenClaw 命名的 Gateway 模块、252 个 Gateway TypeScript 模块、60 个涉及 OpenClaw 的 Rust 文件；接入 GoClaw 属于新增独立运行时和客户端协议，不是局部改造。
+- GoClaw Standard 的 PostgreSQL 多租户、RBAC、租户 API key、用量门禁、审计、追踪、备份恢复和集中 Web 管理台更接近共享企业服务端。官方 OpenClaw 明确采用单一可信操作员边界，敌对租户需要每租户独立 Gateway cell。
+- GoClaw Lite 桌面版本关闭 RBAC、多租户、知识图谱、向量检索和渠道能力，并限制五个 Agent、一个团队和五名成员，不能用 Lite 的桌面体验代表 Standard 的企业能力。
+- GoClaw 根许可证为 CC BY-NC 4.0，当前中文版 README 徽章却标示 MIT；商业产品采用前必须取得明确授权并修正许可证识别。其主 CI 还允许契约测试因缺少服务而跳过，Tailscale 和 Redis 在变更日志中标记为未做真实生产验证。
+- 本次未运行 GoClaw 全量测试、PostgreSQL 集成测试、租户渗透测试、并发压测、故障恢复演练或目标平台桌面验收，不能据源码结构宣称其已达到企业生产准入标准。
+- 当前建议是不把 GoClaw 伪装成 OpenClaw Gateway。若继续评估，应先解决商业授权，再选择独立 GoClaw 产品模式；若保持 JunQi 的 OpenClaw 客户端定位，则优先建设每租户 Gateway cell 的企业控制面。
+
+## 企业控制面实现设计
+
+- 已以 OpenClaw 官方主线 `041d48eccbc591c8a46b904c31358388cf563ae4` 核对多租户、Gateway 客户端、可信代理认证、设备配对、审计、用量和宿主挂起契约。
+- 企业控制面与 Gateway 数据面必须分离：控制面拥有租户、企业身份、成员与角色、Cell 注册表、生命周期操作、准入票据、审计索引和配额策略；每个租户使用独立完整 Gateway Cell，OpenClaw 继续拥有会话、运行、工具、渠道、设备配对和业务审计事实。
+- 官方 Fleet 仅是实验性的单机 Docker 或 Podman 生命周期工具，不支持远程宿主、租户自助门户、计费或委派管理。单机验证可通过固定版本 Fleet 适配器完成；生产多机部署需要独立 Cell Controller，通过编排平台管理官方镜像、隔离状态卷、独立认证密钥卷、网络策略和资源限制。
+- JunQi 企业登录采用系统浏览器中的 OIDC Authorization Code 与 PKCE。企业会话和刷新凭据只进入系统凭据库；控制面签发的短期 Cell 连接票据只用于企业接入层的 WebSocket Upgrade，不得写入 OpenClaw `connect.token`、URL、日志或前端持久存储。
+- 现有 WebView `WebSocket` 无法可靠携带企业授权头。企业模式需要 Rust 原生透明 WebSocket 隧道：上游连接携带短期企业票据，下游只在随机回环端口转发原始帧；OpenClaw v4 握手、设备签名、配对、RPC 和事件语义仍由现有 TypeScript Gateway 客户端处理。
+- 企业接入层验证票据和 Cell 授权后，删除客户端提供的转发与身份头，写入可信代理身份、转发地址和最小 `x-openclaw-scopes` 上限，再路由到唯一 Cell。Gateway 使用官方 `trusted-proxy` 模式；该头只限制权限，不授予权限。
+- Cell 启用官方 `gateway.roles` 并使用最小默认角色。控制面将企业成员角色同步为 Gateway 命名角色，再通过 `users.setRole` 绑定可信代理创建的持久用户 Profile；角色同时约束他人会话可见性、可用 Agent 和 scope 上限，但不替代租户间 Cell 隔离。
+- JunQi 是自定义 WebSocket 客户端，不能使用仅适用于 Control UI 与 WebChat 的自动设备批准。首次连接仍携带官方设备身份并处理精确配对请求；控制面只在请求设备身份、租户、Cell、用户和请求权限全部匹配时，通过每 Cell 管理身份调用官方配对 RPC。启用命名角色后，身份认证的 operator 连接不会取得可复用的非个人绑定设备或 bootstrap token，JunQi 每次连接都必须重新通过企业接入层验证身份。
+- 企业角色不等于 OpenClaw scope。普通角色只包含 `operator.read`、`operator.write`、`operator.approvals` 等已确认权限；管理员角色才包含 `operator.admin`。企业接入层再用短期票据和 `x-openclaw-scopes` 对当前连接做进一步收窄，不能借该头扩大 Gateway 角色或设备已经授予的权限。
+- 用户被移出租户或设备被吊销时，接入层立即拒绝新连接并关闭对应隧道，控制面同步清除 Gateway 角色绑定，并在存在配对记录时调用官方移除或令牌吊销 RPC 收敛 Cell 状态。仅撤销控制面登录而不处理 Gateway 侧身份与设备状态不构成完整闭环。
+- 配额必须在拥有真实执行权的边界强制：连接和请求频率在接入层限制，CPU、内存、进程和存储在 Cell 编排层限制，模型费用通过每租户 Provider 项目额度或统一模型代理限制。官方 `usage.status`、`usage.cost` 与会话用量接口只用于观测，JunQi UI 不能充当硬配额执行器。
+- 控制面审计与 Gateway 审计分别保存并关联。控制面记录登录、成员、角色、Cell 生命周期、设备授权、配置和配额变更；Gateway 的 `audit.activity.list` 与 `audit.run.inspect` 保持业务事实权威。关联键只保存 Cell、Gateway 实例、设备、Session、Run 和 revision 等必要引用，不复制密钥、提示词或工具结果。
+- 本次仅完成权威契约核对和实现边界设计，尚未创建控制面服务、Cell Controller、Rust 隧道、企业页面、数据库或部署清单，也未执行企业身份、跨租户隔离、故障恢复、配额和目标平台验证。
+- 产品决策已收敛到 `docs/adr/0003-defer-enterprise-control-plane-and-complete-single-user-desktop.md`：企业控制面整体延期，当前不新增企业接口、配置开关、占位页面或兼容分支；研发优先完成单用户安装、Gateway、权限、会话、工作台、桌面系统行为和发布质量闭环。

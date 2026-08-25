@@ -16,6 +16,7 @@ import {
   hasConfirmedEmptyTranscript,
   shouldWarmUpHistoryBeforeFirstSend,
 } from '@/utils/confirmedEmptyTranscript';
+import { resolveComposerQueueMode } from './message-input/composerPrimaryAction';
 
 export function MessageInput() {
   const { language } = useSettingsStore();
@@ -56,6 +57,10 @@ export function MessageInput() {
   const attachments = useComposerAttachments(activeSessionKey, suggestions.textareaRef);
   const menu = useComposerMenu(activeSessionKey);
   const voice = useJarvisVoiceRuntime();
+  const responseActive = isTyping
+    || isSending
+    || activeSession?.hasActiveRun === true
+    || voice.outputActive;
   const send = useMessageSend({
     activeSessionKey,
     activeSessionId,
@@ -75,34 +80,14 @@ export function MessageInput() {
     textareaRef: suggestions.textareaRef,
     setIsSending,
   });
-  const steer = useMessageSend({
-    activeSessionKey,
-    activeSessionId,
-    connected,
-    historyLoading,
-    isConfirmedEmptyTranscript: () => {
-      const current = useChatStore.getState().sessions.find((session) => session.key === activeSessionKey);
-      return current?.sessionId === activeSessionId
-        && current?.agentId === activeSession?.agentId
-        && hasConfirmedEmptyTranscript(current);
-    },
-    historyLoader: historyLoader ?? undefined,
-    isSending,
-    messageCount: messages.length,
-    files: attachments.files,
-    text,
-    textareaRef: suggestions.textareaRef,
-    setIsSending,
-    deliveryMode: 'steer',
-  });
-  const stop = useComposerInterruption({
+  const interruption = useComposerInterruption({
     activeSessionKey,
     activeSessionId,
     activeMenu: menu.active,
     closeMenu: menu.close,
+    responseActive,
     voiceOutputActive: voice.outputActive,
     textareaRef: suggestions.textareaRef,
-    setText,
   });
 
   return (
@@ -126,9 +111,13 @@ export function MessageInput() {
           connected={connected}
           historyLoading={historyLoading}
           text={text}
-          isTyping={isTyping}
+          responseActive={responseActive}
           isSending={isSending}
-          voiceOutputActive={voice.outputActive}
+          effectiveQueueMode={resolveComposerQueueMode({
+            queueMode: activeSession?.queueMode,
+            effectiveQueueMode: activeSession?.effectiveQueueMode,
+          })}
+          stopError={interruption.stopError}
           attachments={attachments}
           suggestions={suggestions}
           menu={menu}
@@ -136,8 +125,7 @@ export function MessageInput() {
           onStartRecording={voice.startRecording}
           onToggleTalk={voice.toggleTalk}
           onSend={send}
-          onSteer={steer}
-          onStop={stop}
+          onStop={interruption.stopActiveResponse}
         />
       )}
 

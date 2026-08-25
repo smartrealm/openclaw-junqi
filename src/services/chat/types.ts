@@ -1,3 +1,5 @@
+import type { OpenClawQueueMode } from '@/services/gateway/OpenClawQueueMode';
+
 export interface GatewayAttachment {
   type?: 'image' | 'file' | 'base64';
   mimeType: string;
@@ -22,6 +24,7 @@ export interface DisplayAttachment {
 export interface OutboundChatPayload {
   text: string;
   sessionId?: string;
+  queueMode?: OpenClawQueueMode;
   attachments?: GatewayAttachment[];
   displayAttachments?: DisplayAttachment[];
 }

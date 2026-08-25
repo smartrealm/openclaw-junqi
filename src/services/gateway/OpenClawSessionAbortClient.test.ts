@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   OpenClawSessionAbortClient,
   OpenClawSessionAbortResponseError,
+  openClawSessionAbortInputForStop,
 } from './OpenClawSessionAbortClient';
 
 test('sends the native sessions.abort fields and decodes an exact aborted run', async () => {
@@ -61,6 +62,27 @@ test('allows explicit queue clearing but does not add it by default', async () =
     { key: 'agent:main:main' },
     { key: 'agent:main:main', clearQueued: true },
   ]);
+});
+
+test('Stop 按精确运行中止，并只在非全局键级中止时清理队列', () => {
+  assert.deepEqual(openClawSessionAbortInputForStop({
+    key: 'agent:main:main',
+    runId: 'run-1',
+  }), {
+    key: 'agent:main:main',
+    runId: 'run-1',
+  });
+  assert.deepEqual(openClawSessionAbortInputForStop({ key: 'agent:main:main' }), {
+    key: 'agent:main:main',
+    clearQueued: true,
+  });
+  assert.deepEqual(openClawSessionAbortInputForStop({
+    key: 'global',
+    agentId: 'main',
+  }), {
+    key: 'global',
+    agentId: 'main',
+  });
 });
 
 test('rejects unverifiable responses and invalid targets', async () => {

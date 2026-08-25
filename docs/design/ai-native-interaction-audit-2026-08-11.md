@@ -163,9 +163,9 @@
   `queueMode`，由 Gateway 的有效会话配置决定 `steer`、`followup`、`collect` 或 `interrupt`；客户端
   不得自行合并、截断、丢弃或模拟上游队列。当前 `messageQueue` 只在会话删除、重置等破坏性变更的
   本地交接窗口暂存尚未发送的用户输入，不能当作 Gateway 的已接纳队列，也没有权限编辑或取消上游项。
-  当前 Stop 使用已核验 `runId` 的 `sessions.abort`，只停止该 Run；已被 Gateway 接纳的后续输入按上游
-  队列继续处理。若产品需要“停止并丢弃后续输入”，必须调用官方 key-only `sessions.abort` 且
-  `clearQueued: true`，并以独立、明确的用户操作表达，不能复用现有本地清空按钮。
+  当前 Stop 有已核验 `runId` 时只停止该 Run；重连后缺少精确运行标识的非全局会话按官方 Control UI
+  使用 key-only `sessions.abort` 且 `clearQueued: true`，避免用户停止后待发内容重新启动运行。两种分支
+  都不删除会话、转录或草稿，也不把中止展示为可恢复的暂停。
 - 交接窗口现已从通用“排队”呈现中拆出：仅在本地持有、尚未提交给 OpenClaw 的消息存在时显示
   `SessionMutationHandoffPanel`，并明确允许编辑或放弃的范围只限这些本地消息。重试消息使用 `held`
   状态，不再复用 Gateway `queued` 状态；Gateway 已确认接收的 `queued` 状态仍只说明等待其处理，不对
@@ -186,7 +186,7 @@
 | --- | --- | --- |
 | 运行中的历史单元、工具摘要与详情 | `ExecutionProcessGroup`、`ToolCallBubble`、`ChatResponseTracePanel` | 保持唯一执行投影，补齐进度卡来源与更新时间。 |
 | 跨线程待处理审批 | `OpenClawApprovalsPanel`、审批 Store | 在 Composer 上方增加跨会话未决审批提示条，决策仍在原生审批面板。 |
-| 线程分支、运行时选择和中断转向 | `SessionBranchesControl`、`SessionRuntimeControl`、`sessions.steer` 分发 | 已有正式 Gateway 边界，未增加本地 fork、队列或运行状态。 |
+| 线程分支、运行时选择和运行中转向 | `SessionBranchesControl`、`SessionRuntimeControl`、`chat.send queueMode` 分发 | 已有正式 Gateway 边界，未增加本地 fork、队列或运行状态。 |
 | 多智能体工作区 | `AgentOfficeView` 与协作快照投影 | 已有只读办公室；不把配置席位表示为实时在线或执行状态。 |
 | 结构化追问 | 仅官方引导设置存在已核验的结构化问题 | 聊天协议无对应契约，本轮不实现。 |
 

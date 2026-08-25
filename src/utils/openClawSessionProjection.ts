@@ -83,6 +83,8 @@ export function projectOpenClawSessionForChat(value: unknown): Session {
     lastRunError: parseGatewaySessionLastRunError(source.lastRunError),
     ...(activeLeafEntryId !== undefined ? { activeLeafEntryId } : {}),
     hasActiveRun: boolean(source.hasActiveRun),
+    queueMode: source.queueMode,
+    effectiveQueueMode: source.effectiveQueueMode,
     hasActiveSubagentRun: boolean(source.hasActiveSubagentRun),
     subagentRunState: text(source.subagentRunState),
     systemSent: source.systemSent === true,

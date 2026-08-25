@@ -4,6 +4,10 @@
 
 ## 当前入口
 
+- [延期企业控制面，优先完成单用户桌面闭环](adr/0003-defer-enterprise-control-plane-and-complete-single-user-desktop.md)：确认企业化需要独立服务端与每租户 Gateway Cell，但当前不预留双轨代码，研发优先完成单用户安装、连接、会话、恢复、桌面交互和发布质量。
+- [会话输入区原生交互审计](quality/chat-composer-native-interaction-audit-2026-08-25.md)：单一主操作位、有效队列模式、键盘操作、停止语义和废弃转向入口的修复依据。
+- [会话输入区原生交互规格](../specs/2026-08-25-chat-composer-native-interaction.md)：空闲、运行、排队、转向、中断和历史输入的 UI 与协议验收条件。
+- [会话输入区原生交互计划](../plans/2026-08-25-chat-composer-native-interaction.md)：状态回归、组件收敛、发送统一、遗留删除和连续视觉验证顺序。
 - [协作运行时更新与混合 schema 恢复审计](quality/collaboration-runtime-update-and-mixed-schema-recovery-audit-2026-08-25.md)：旧插件启动错误封死更新入口、真实 schema 13 混合结构恢复和运行时加载闭环。
 - [协作运行时更新与混合 schema 恢复规格](../specs/2026-08-25-collaboration-runtime-update-and-mixed-schema-recovery.md)：受控更新优先级、精确混合结构门禁和错误语义验收条件。
 - [协作运行时更新与混合 schema 恢复计划](../plans/2026-08-25-collaboration-runtime-update-and-mixed-schema-recovery.md)：回归、迁移、固定包重建和真实 Gateway 验证顺序。
@@ -40,7 +44,6 @@
 - [OpenClaw 运行时命令导航](quality/openclaw-runtime-command-navigation-2026-08-19.md)：`commands.list` 的官方目录分组、左侧导航和不可用状态边界。
 - [智能体工位空间化对齐审计](quality/agent-office-star-office-alignment-2026-08-18.md)：Star Office 的空间状态看板映射、原创像素角色与办公室素材、配置身份、协作许可和只读运行投影的边界。
 - [消息预览宽度调整](quality/chat-message-preview-resize-2026-08-18.md)：主会话预览分隔条、可访问键盘调整、宽度边界与窄窗口覆盖式行为。
-- [OpenClaw 消息队列运行时对齐审计](quality/openclaw-native-message-queue-alignment-2026-08-18.md)：官方 `queueMode` 契约、当前 Gateway 参数拒绝、发送与会话变更原子门禁及未验证边界。
 - [工作区布局与结构化会话记录审计](quality/workspace-layout-and-structured-transcript-audit-2026-08-14.md)：主要工作区页面的动态宽度契约、长工具结果的原始结构恢复和通用格式化边界。
 - [会话组织与 transcript 展示审计](quality/session-transcript-and-organization-audit-2026-08-14.md)：会话操作回执、历史定位、新建空会话和结构化内容展示的当前契约与缺陷。
 - [OpenClaw 原生安装对齐审计](quality/openclaw-native-installation-alignment-audit-2026-08-12.md)：最新版默认 guided inference、正式 setup RPC、经典 Wizard、npm 安装与 JunQi 当前差异。

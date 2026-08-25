@@ -89,10 +89,13 @@ import {
   type OpenClawApprovalDecision,
   type OpenClawApprovalHistoryRequest,
 } from './OpenClawApprovalClient';
-import { OpenClawSessionSteerClient } from './OpenClawSessionSteerClient';
+import type { OpenClawQueueMode } from './OpenClawQueueMode';
 import { OpenClawSessionCompactionClient } from './OpenClawSessionCompactionClient';
 import { OpenClawSessionCompactionCheckpointsClient } from './OpenClawSessionCompactionCheckpointsClient';
-import { OpenClawSessionAbortClient } from './OpenClawSessionAbortClient';
+import {
+  OpenClawSessionAbortClient,
+  openClawSessionAbortInputForStop,
+} from './OpenClawSessionAbortClient';
 import { SessionTranscriptHistoryClient } from './SessionTranscriptHistoryClient';
 import { OpenClawSessionObserverClient } from './OpenClawSessionObserverClient';
 import { OpenClawSessionViewerPresenceClient } from './OpenClawSessionViewerPresenceClient';
@@ -320,7 +323,7 @@ export interface GatewayChatMessageDispatchInput {
   clientMessageId: string;
   sessionId?: string;
   expectedLeafEntryId?: string | null;
-  delivery?: 'send' | 'steer';
+  queueMode?: OpenClawQueueMode;
 }
 
 export interface GatewayChatDispatchTransport {
@@ -328,74 +331,23 @@ export interface GatewayChatDispatchTransport {
   request(method: string, params: GatewayRequestParams): Promise<unknown>;
 }
 
-export interface GatewayChatLeafFenceCapabilityState {
-  connectionId: string | null;
-  support: 'unknown' | 'supported' | 'unsupported';
-}
-
-export function isChatSendLeafFenceUnsupportedError(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && error.code === 'INVALID_REQUEST'
-    && error.message === "invalid chat.send params: at root: unexpected property 'expectedLeafEntryId'";
-}
-
 export async function dispatchGatewayChatMessage(
   transport: GatewayChatDispatchTransport,
-  steerClient: Pick<OpenClawSessionSteerClient, 'steer'>,
   input: GatewayChatMessageDispatchInput,
 ): Promise<unknown> {
   if (!transport.isConnected()) throw new GatewayDisconnectedError();
-  if (input.delivery === 'steer') {
-    return steerClient.steer({
-      key: input.sessionKey,
-      ...(input.agentId ? { agentId: input.agentId } : {}),
-      message: input.message,
-      idempotencyKey: input.clientMessageId,
-      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
-    });
-  }
   return transport.request('chat.send', {
     sessionKey: input.sessionKey,
     ...(input.agentId ? { agentId: input.agentId } : {}),
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-    ...(input.expectedLeafEntryId !== undefined
+    ...(input.queueMode !== 'steer' && input.expectedLeafEntryId !== undefined
       ? { expectedLeafEntryId: input.expectedLeafEntryId }
       : {}),
+    ...(input.queueMode ? { queueMode: input.queueMode } : {}),
     message: input.message,
     idempotencyKey: input.clientMessageId,
     ...(input.attachments?.length ? { attachments: input.attachments } : {}),
   });
-}
-
-export async function dispatchGatewayChatMessageWithLeafFenceNegotiation(
-  transport: GatewayChatDispatchTransport,
-  steerClient: Pick<OpenClawSessionSteerClient, 'steer'>,
-  input: GatewayChatMessageDispatchInput,
-  connectionId: string | null,
-  capability: GatewayChatLeafFenceCapabilityState,
-): Promise<unknown> {
-  if (capability.connectionId !== connectionId) {
-    capability.connectionId = connectionId;
-    capability.support = 'unknown';
-  }
-  if (input.delivery === 'steer' || input.expectedLeafEntryId === undefined) {
-    return dispatchGatewayChatMessage(transport, steerClient, input);
-  }
-  if (capability.support === 'unsupported') {
-    const { expectedLeafEntryId: _expectedLeafEntryId, ...withoutLeafFence } = input;
-    return dispatchGatewayChatMessage(transport, steerClient, withoutLeafFence);
-  }
-  try {
-    const result = await dispatchGatewayChatMessage(transport, steerClient, input);
-    capability.support = 'supported';
-    return result;
-  } catch (error) {
-    if (!isChatSendLeafFenceUnsupportedError(error)) throw error;
-    capability.support = 'unsupported';
-    const { expectedLeafEntryId: _expectedLeafEntryId, ...withoutLeafFence } = input;
-    // 严格参数校验已经证明首个请求未进入处理器；沿用同一幂等键重发正式旧 schema。
-    return dispatchGatewayChatMessage(transport, steerClient, withoutLeafFence);
-  }
 }
 
 export interface GatewayAgentCreateResult {
@@ -472,10 +424,6 @@ const operatorScopeUpgrade = new GatewayScopeUpgradeCoordinator({
     connection.applyRotatedDeviceCredential(token, connectionId)
   ),
 });
-const chatSendLeafFenceCapability: GatewayChatLeafFenceCapabilityState = {
-  connectionId: null,
-  support: 'unknown',
-};
 const chatHandler = new ChatHandler(connection);
 const transcriptSubscription = new OpenClawSessionTranscriptSubscription(connection);
 export const openClawSessionObserverClient = new OpenClawSessionObserverClient({
@@ -1242,9 +1190,6 @@ const cronStatusClient = new OpenClawCronStatusClient(
 const cronManagementClient = new OpenClawCronManagementClient(
   (method, params) => requestPrivileged(method, { ...params }),
 );
-const sessionSteer = new OpenClawSessionSteerClient(
-  (method, params) => connection.request(method, params),
-);
 const sessionAbort = new OpenClawSessionAbortClient(
   (method, params) => connection.request(method, params),
 );
@@ -1459,7 +1404,7 @@ export const gateway = {
       clientMessageId?: string;
       sessionId?: string;
       expectedLeafEntryId?: string | null;
-      delivery?: 'send' | 'steer';
+      queueMode?: OpenClawQueueMode;
     } = {},
   ) {
     const target = resolveOpenClawSessionTarget(sessionKey);
@@ -1477,14 +1422,13 @@ export const gateway = {
     });
 
     const clientMessageId = identity.clientMessageId ?? `junqi-${crypto.randomUUID()}`;
-    const isSteer = identity.delivery === 'steer';
     chatHandler.beginPendingSend(target.localKey, clientMessageId);
     let requestDispatched = false;
     try {
       const dispatch = async () => {
         // 上层协调器提供稳定幂等键；传输层只提交当前请求，不维护本地重试或消息队列。
         requestDispatched = true;
-        return dispatchGatewayChatMessageWithLeafFenceNegotiation(connection, sessionSteer, {
+        return dispatchGatewayChatMessage(connection, {
           message,
           attachments: gwAttachments,
           sessionKey: target.key,
@@ -1492,16 +1436,10 @@ export const gateway = {
           clientMessageId,
           sessionId: identity.sessionId,
           expectedLeafEntryId: identity.expectedLeafEntryId,
-          delivery: isSteer ? 'steer' : 'send',
-        }, connection.getAttestedConnectionId(), chatSendLeafFenceCapability);
+          queueMode: identity.queueMode,
+        });
       };
-      // sessions.steer 自身即为 OpenClaw 的中断并发送控制操作，不能等待长时间 chat.send 请求。
-      const dispatched = isSteer
-        ? await dispatch()
-        : await sessionCommandCoordinator.runMutation(target.localKey, dispatch);
-      const result = isSteer
-        ? (dispatched as Awaited<ReturnType<OpenClawSessionSteerClient['steer']>>).response
-        : dispatched;
+      const result = await sessionCommandCoordinator.runMutation(target.localKey, dispatch);
       const acknowledgement = chatHandler.reconcileSendAcknowledgement(
         target.localKey,
         clientMessageId,
@@ -1513,11 +1451,6 @@ export const gateway = {
       }
       return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
     } catch (error) {
-      // sessions.steer 的原生准入可能已经尝试中断活动 Run 后才失败。
-      // 单独的 RPC 错误无法区分该情况与请求被拒绝，故交由带围栏的历史解析器确认。
-      if (isSteer && requestDispatched) {
-        void sessionRunReconciler.reconcile(target.localKey);
-      }
       if (chatHandler.isSendObserved(target.localKey, clientMessageId)) {
         return { deliveryObserved: true, runId: clientMessageId } satisfies GatewayChatSendDeliveryObserved;
       }
@@ -1781,11 +1714,11 @@ export const gateway = {
     const target = resolveOpenClawSessionTarget(sessionKey);
     // 普通会话只投影 OpenClaw 的中止回执，不能为聊天临时状态创建本地任务终态。
     const runId = chatHandler.abortRunId(target.localKey);
-    const result = await sessionAbort.abort({
+    const result = await sessionAbort.abort(openClawSessionAbortInputForStop({
       key: target.key,
       ...(target.agentId ? { agentId: target.agentId } : {}),
       ...(runId ? { runId } : {}),
-    });
+    }));
     return chatHandler.reconcileSessionAbortAcknowledgement(target.localKey, result);
   },
   async compactSession(sessionKey: string) {

@@ -28,6 +28,8 @@ import {
   type GatewaySkill,
   type MentionItem,
 } from '@/components/Chat/message-input/composerSuggestionDomain';
+import { resolveComposerEnterAction } from '@/components/Chat/message-input/composerPrimaryAction';
+import type { OpenClawQueueMode } from '@/services/gateway/OpenClawQueueMode';
 
 export interface PickerState {
   open: boolean;
@@ -243,7 +245,11 @@ export function useComposerSuggestions({
     setArgumentPicker(CLOSED_ARGUMENT_PICKER);
   }, [historyIndex, setText, slashCommands]);
 
-  const onKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>, send: () => void) => {
+  const onKeyDown = useCallback((
+    event: KeyboardEvent<HTMLTextAreaElement>,
+    responseActive: boolean,
+    send: (queueModeOverride?: OpenClawQueueMode) => void,
+  ) => {
     const move = <T,>(state: PickerState, setState: (value: SetStateAction<T>) => void, length: number) => {
       const delta = event.key === 'ArrowDown' ? 1 : -1;
       setState((current) => ({ ...(current as object), idx: (state.idx + delta + length) % length } as T));
@@ -304,13 +310,22 @@ export function useComposerSuggestions({
       }
       if (event.key === 'Escape') { event.preventDefault(); setMentionPicker(CLOSED_PICKER); return; }
     }
-    if (event.key !== 'Enter' || event.shiftKey) return;
-    if (composingRef.current || (event.nativeEvent as { isComposing?: boolean }).isComposing) {
-      event.preventDefault();
+    const composing = composingRef.current
+      || (event.nativeEvent as { isComposing?: boolean }).isComposing === true;
+    const enterAction = resolveComposerEnterAction({
+      key: event.key,
+      shiftKey: event.shiftKey,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+      composing,
+      responseActive,
+    });
+    if (enterAction === 'none') {
+      if (event.key === 'Enter' && composing) event.preventDefault();
       return;
     }
     event.preventDefault();
-    send();
+    send(enterAction === 'steer' ? 'steer' : undefined);
   }, [
     argumentCompletions,
     argumentPicker,

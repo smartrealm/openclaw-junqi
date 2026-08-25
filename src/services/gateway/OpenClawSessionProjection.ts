@@ -1,4 +1,8 @@
 import { createOpenClawGlobalSessionAlias } from './OpenClawSessionTarget';
+import {
+  parseOpenClawQueueMode,
+  type OpenClawQueueMode,
+} from './OpenClawQueueMode';
 
 export interface OpenClawSessionProjection extends Record<string, unknown> {
   readonly key: string;
@@ -17,6 +21,8 @@ export interface OpenClawSessionProjection extends Record<string, unknown> {
   readonly pinned?: boolean;
   readonly archived?: boolean;
   readonly unread?: boolean;
+  readonly queueMode?: OpenClawQueueMode;
+  readonly effectiveQueueMode?: OpenClawQueueMode;
 }
 
 export interface OpenClawAgentListProjection {
@@ -98,6 +104,8 @@ export function projectOpenClawSession(value: unknown): OpenClawSessionProjectio
     pinned: rawPinned,
     archived: rawArchived,
     unread: rawUnread,
+    queueMode: rawQueueMode,
+    effectiveQueueMode: rawEffectiveQueueMode,
     ...extra
   } = value;
   const key = text(rawKey);
@@ -109,6 +117,8 @@ export function projectOpenClawSession(value: unknown): OpenClawSessionProjectio
   const pinned = optionalBoolean(rawPinned, 'pinned');
   const archived = optionalBoolean(rawArchived, 'archived');
   const unread = optionalBoolean(rawUnread, 'unread');
+  const queueMode = parseOpenClawQueueMode(rawQueueMode);
+  const effectiveQueueMode = parseOpenClawQueueMode(rawEffectiveQueueMode);
   return {
     ...extra,
     key,
@@ -127,6 +137,8 @@ export function projectOpenClawSession(value: unknown): OpenClawSessionProjectio
     ...(pinned !== undefined ? { pinned } : {}),
     ...(archived !== undefined ? { archived } : {}),
     ...(unread !== undefined ? { unread } : {}),
+    ...(queueMode ? { queueMode } : {}),
+    ...(effectiveQueueMode ? { effectiveQueueMode } : {}),
   };
 }
 

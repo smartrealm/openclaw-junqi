@@ -32,6 +32,7 @@ import type { GatewaySessionContextBudgetStatus } from '@/processing/sessionCont
 import type { GatewaySessionGoal } from '@/services/gateway/sessionGoal';
 import { getChatGatewayOperations } from './chatGatewayOperations';
 import type { ModelEntry } from '@/services/gateway/modelLoaders';
+import type { OpenClawQueueMode } from '@/services/gateway/OpenClawQueueMode';
 
 // ═══════════════════════════════════════════════════════════
 // Chat Store — Message, Session, Tabs & Usage State
@@ -333,6 +334,10 @@ export interface Session {
   /** Gateway 当前 transcript 分支 leaf；缺失表示当前客户端尚未取得该事实。 */
   activeLeafEntryId?: string | null;
   hasActiveRun?: boolean;
+  /** Gateway 当前会话的显式队列覆盖；缺失时不得推测。 */
+  queueMode?: OpenClawQueueMode;
+  /** Gateway 已解析的实际队列模式；输入区据此描述活动运行中的发送动作。 */
+  effectiveQueueMode?: OpenClawQueueMode;
   hasActiveSubagentRun?: boolean;
   subagentRunState?: string;
   systemSent?: boolean;

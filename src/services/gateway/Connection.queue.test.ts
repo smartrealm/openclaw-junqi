@@ -165,7 +165,12 @@ describe('GatewayConnection request identity', () => {
     };
     connection.connected = true;
     const controller = new AbortController();
-    const request = connection.request('sessions.steer', { key: 'session', message: 'continue' }, {
+    const request = connection.request('chat.send', {
+      sessionKey: 'session',
+      message: 'continue',
+      idempotencyKey: 'message-1',
+      queueMode: 'steer',
+    }, {
       signal: controller.signal,
     });
     assert.equal(sent.length, 1);

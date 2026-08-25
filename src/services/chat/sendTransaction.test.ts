@@ -116,7 +116,7 @@ test('CHAT-02 活跃会话的普通消息交给 Gateway', async () => {
   assert.deepEqual(typing, [true]);
 });
 
-test('普通发送使用当前 Gateway transcript leaf，steer 不伪造该围栏', async () => {
+test('普通发送使用当前 Gateway transcript leaf，steer 不附加该围栏', async () => {
   const identities: Array<Record<string, unknown> | undefined> = [];
   const coordinator = new ChatSendCoordinator(
     {
@@ -138,12 +138,13 @@ test('普通发送使用当前 Gateway transcript leaf，steer 不伪造该围�
     sessionKey: 'session-a', message: 'continue', clientMessageId: 'leaf-normal',
   });
   await coordinator.send({
-    sessionKey: 'session-a', message: 'redirect', clientMessageId: 'leaf-steer', delivery: 'steer',
+    sessionKey: 'session-a', message: 'redirect', clientMessageId: 'leaf-steer', queueMode: 'steer',
   });
 
   assert.equal(identities[0]?.expectedLeafEntryId, 'leaf-current');
   assert.equal('queueMode' in (identities[0] ?? {}), false);
   assert.equal(identities[1]?.expectedLeafEntryId, undefined);
+  assert.equal(identities[1]?.queueMode, 'steer');
 });
 
 test('已确认空 transcript 的首发传递 null leaf，并在 Gateway 受理后失效本地事实', async () => {
@@ -176,14 +177,14 @@ test('已确认空 transcript 的首发传递 null leaf，并在 Gateway 受理�
   assert.deepEqual(invalidatedLeaves, [undefined]);
 });
 
-test('原生会话转向使用中断并转向通道', async () => {
+test('原生会话转向使用 chat.send 的 steer 队列模式', async () => {
   const messages = new Map<string, ChatMessage>();
   const typing: boolean[] = [];
   const calls: Array<{
     message: string;
     sessionKey: string;
     clientMessageId?: string;
-    delivery?: 'send' | 'steer';
+    queueMode?: 'steer' | 'followup' | 'collect' | 'interrupt';
   }> = [];
   const coordinator = new ChatSendCoordinator(
     {
@@ -193,7 +194,7 @@ test('原生会话转向使用中断并转向通道', async () => {
           message,
           sessionKey: sessionKey ?? '',
           clientMessageId,
-          delivery: identity?.delivery,
+          queueMode: identity?.queueMode,
         });
         return { runId: clientMessageId, status: 'started', interruptedActiveRun: true };
       },
@@ -213,17 +214,45 @@ test('原生会话转向使用中断并转向通道', async () => {
     sessionKey: 'session-a',
     message: 'focus on the failing Windows path',
     clientMessageId: 'client-steer',
-    delivery: 'steer',
+    queueMode: 'steer',
   });
 
   assert.deepEqual(calls, [{
     message: 'focus on the failing Windows path',
     sessionKey: 'session-a',
     clientMessageId: 'client-steer',
-    delivery: 'steer',
+    queueMode: 'steer',
   }]);
   assert.equal(messages.get('client-steer')?.status, 'sent');
   assert.deepEqual(typing, [true]);
+});
+
+test('转向发送失败时保留原始队列模式供无损重试', async () => {
+  const messages = new Map<string, ChatMessage>();
+  const coordinator = new ChatSendCoordinator(
+    { sendMessage: async () => { throw new Error('offline'); } },
+    () => ({
+      addMessage(message) { messages.set(message.id, message); },
+      updateMessage(_sessionKey, id, patch) {
+        const current = messages.get(id);
+        if (current) messages.set(id, { ...current, ...patch });
+      },
+      setIsTyping() {},
+      typingBySession: {},
+    }),
+  );
+
+  await assert.rejects(coordinator.send({
+    sessionKey: 'session-a',
+    message: 'redirect',
+    clientMessageId: 'failed-steer',
+    queueMode: 'steer',
+  }), /offline/);
+
+  assert.deepEqual(messages.get('failed-steer')?.retryPayload, {
+    text: 'redirect',
+    queueMode: 'steer',
+  });
 });
 
 test('CHAT-02 attachment failures retain the complete payload for lossless retry', async () => {

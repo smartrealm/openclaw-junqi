@@ -11,6 +11,22 @@ export interface OpenClawSessionAbortResult {
   readonly status: 'aborted' | 'no-active-run';
 }
 
+/** Stop 优先按精确运行中止；缺少运行标识时只为非全局会话清理后续队列。 */
+export function openClawSessionAbortInputForStop(input: {
+  key: string;
+  agentId?: string;
+  runId?: string;
+}): OpenClawSessionAbortInput {
+  const globalTarget = input.key.trim().toLowerCase() === 'global';
+  return {
+    key: input.key,
+    ...(input.agentId ? { agentId: input.agentId } : {}),
+    ...(input.runId
+      ? { runId: input.runId }
+      : !globalTarget ? { clearQueued: true } : {}),
+  };
+}
+
 export type OpenClawSessionAbortRequester = <T>(
   method: string,
   params: Record<string, unknown>,
@@ -76,10 +92,7 @@ export function parseOpenClawSessionAbortResult(value: unknown): OpenClawSession
   };
 }
 
-/**
- * Narrow client for the operator.write native session abort RPC. `clearQueued`
- * is opt-in so the ordinary Stop action preserves OpenClaw followup queues.
- */
+/** 仅封装 OpenClaw 原生会话中止请求，不创建客户端运行终态。 */
 export class OpenClawSessionAbortClient {
   constructor(private readonly request: OpenClawSessionAbortRequester) {}
 

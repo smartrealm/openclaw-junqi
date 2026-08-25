@@ -19,6 +19,7 @@ import { debugError } from '@/utils/debugLog';
 import { isOpenClawActiveLeafChangedError } from '@/services/gateway/activeLeafEntryId';
 import { shouldWarmUpHistoryBeforeFirstSend } from '@/utils/confirmedEmptyTranscript';
 import { useAttachmentErrorMessage } from './useAttachmentErrorMessage';
+import type { OpenClawQueueMode } from '@/services/gateway/OpenClawQueueMode';
 
 interface UseMessageSendOptions {
   activeSessionKey: string;
@@ -33,14 +34,13 @@ interface UseMessageSendOptions {
   text: string;
   textareaRef: RefObject<HTMLTextAreaElement>;
   setIsSending: (sending: boolean, sessionKey?: string) => void;
-  deliveryMode?: 'normal' | 'steer';
 }
 
-/** Normal Composer sends let the Gateway apply its current session queue mode. */
-export function composerDeliveryOptions(
-  deliveryMode: NonNullable<UseMessageSendOptions['deliveryMode']>,
-): Pick<ChatSendRequest, 'delivery'> {
-  return deliveryMode === 'steer' ? { delivery: 'steer' } : {};
+/** 普通发送不覆盖 Gateway 当前策略，只有明确交互才附加队列模式。 */
+export function composerQueueModeOptions(
+  queueModeOverride: OpenClawQueueMode | undefined,
+): Pick<ChatSendRequest, 'queueMode'> {
+  return queueModeOverride ? { queueMode: queueModeOverride } : {};
 }
 
 /** 失败后只在官方并发冲突或已确认空会话首发时读取历史，不推断远端终态。 */
@@ -64,12 +64,11 @@ export function useMessageSend({
   text,
   textareaRef,
   setIsSending,
-  deliveryMode = 'normal',
 }: UseMessageSendOptions) {
   const { t } = useTranslation();
   const attachmentErrorMessage = useAttachmentErrorMessage();
 
-  return useCallback(async () => {
+  return useCallback(async (queueModeOverride?: OpenClawQueueMode) => {
     const sessionKey = activeSessionKey;
     const sendFiles = [...files];
     const rawText = textareaRef.current?.value ?? text;
@@ -127,7 +126,7 @@ export function useMessageSend({
         attachments: attachments.length ? attachments : undefined,
         displayAttachments: displayAttachments(sendFiles),
         optimisticMessage: { timestamp: new Date().toISOString() },
-        ...composerDeliveryOptions(deliveryMode),
+        ...composerQueueModeOptions(queueModeOverride),
       });
       if (!isChatSendDispatchCancelled(delivery)) {
         const state = useChatStore.getState();
@@ -169,6 +168,5 @@ export function useMessageSend({
     t,
     text,
     textareaRef,
-    deliveryMode,
   ]);
 }

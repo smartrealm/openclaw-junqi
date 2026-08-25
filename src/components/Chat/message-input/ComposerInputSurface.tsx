@@ -1,4 +1,4 @@
-import { AtSign, Camera, CornerUpRight, Mic, Paperclip, Plus, Radio, Send, Square } from 'lucide-react';
+import { AtSign, Camera, Mic, Paperclip, Plus, Radio } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { ComposerActionMenu, ComposerActionMenuItem } from './ComposerActionMenu';
@@ -6,6 +6,12 @@ import { ComposerSuggestionMenus } from './ComposerSuggestionMenus';
 import type { useComposerAttachments } from '@/hooks/chat/useComposerAttachments';
 import type { useComposerMenu } from './useComposerMenu';
 import type { useComposerSuggestions } from '@/hooks/chat/useComposerSuggestions';
+import {
+  resolveComposerPrimaryAction,
+  type ComposerPrimaryActionLabel,
+} from './composerPrimaryAction';
+import type { OpenClawQueueMode } from '@/services/gateway/OpenClawQueueMode';
+import { ComposerPrimaryActionButton } from './ComposerPrimaryActionButton';
 
 interface ComposerInputSurfaceProps {
   activeSessionKey: string;
@@ -13,17 +19,17 @@ interface ComposerInputSurfaceProps {
   connected: boolean;
   historyLoading: boolean;
   text: string;
-  isTyping: boolean;
+  responseActive: boolean;
   isSending: boolean;
-  voiceOutputActive: boolean;
+  effectiveQueueMode?: OpenClawQueueMode;
+  stopError: string | null;
   attachments: ReturnType<typeof useComposerAttachments>;
   suggestions: ReturnType<typeof useComposerSuggestions>;
   menu: ReturnType<typeof useComposerMenu>;
   talkActive: boolean;
   onStartRecording: () => void;
   onToggleTalk: () => void;
-  onSend: () => Promise<void>;
-  onSteer: () => Promise<void>;
+  onSend: (queueModeOverride?: OpenClawQueueMode) => Promise<void>;
   onStop: () => Promise<void>;
 }
 
@@ -33,9 +39,10 @@ export function ComposerInputSurface({
   connected,
   historyLoading,
   text,
-  isTyping,
+  responseActive,
   isSending,
-  voiceOutputActive,
+  effectiveQueueMode,
+  stopError,
   attachments,
   suggestions,
   menu,
@@ -43,13 +50,25 @@ export function ComposerInputSurface({
   onStartRecording,
   onToggleTalk,
   onSend,
-  onSteer,
   onStop,
 }: ComposerInputSurfaceProps) {
   const { t } = useTranslation();
   const disabled = !connected || historyLoading;
   const canSend = Boolean(text.trim() || attachments.files.length > 0);
-  const canSteer = isTyping && canSend && !isSending && !disabled;
+  const primaryAction = resolveComposerPrimaryAction({
+    hasContent: canSend,
+    responseActive,
+    sendDisabled: disabled || isSending,
+    effectiveQueueMode,
+  });
+  const actionLabels: Record<ComposerPrimaryActionLabel, string> = {
+    send: historyLoading ? t('input.historyLoading') : t('input.send'),
+    stop: t('input.stop'),
+    steer: t('input.steer'),
+    queue: t('input.queue'),
+    interrupt: t('input.interruptAndSend'),
+  };
+  const actionLabel = actionLabels[primaryAction.label];
 
   return (
     <div data-tour="chat-composer" className="mx-auto flex w-full max-w-[784px] min-w-0 items-end gap-2 px-3 pb-3 pt-2" dir={dir}>
@@ -122,7 +141,11 @@ export function ComposerInputSurface({
             onChange={suggestions.onChange}
             onCompositionStart={() => { suggestions.composingRef.current = true; }}
             onCompositionEnd={() => { window.setTimeout(() => { suggestions.composingRef.current = false; }, 0); }}
-            onKeyDown={(event) => suggestions.onKeyDown(event, () => { void onSend(); })}
+            onKeyDown={(event) => suggestions.onKeyDown(
+              event,
+              responseActive,
+              (queueModeOverride) => { void onSend(queueModeOverride); },
+            )}
             onPaste={attachments.paste}
             placeholder={historyLoading
               ? t('input.placeholderHistoryLoading')
@@ -171,47 +194,20 @@ export function ComposerInputSurface({
             </ComposerActionMenuItem>
           </ComposerActionMenu>
 
-          <button
-            type="button"
-            onClick={() => { void onSend(); }}
-            disabled={!canSend || disabled}
-            className={clsx(
-              'relative grid size-[34px] shrink-0 place-items-center rounded-lg transition-[background-color,color,box-shadow,transform] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
-              canSend
-                ? 'bg-aegis-primary text-[rgb(var(--aegis-btn-primary-text))] hover:bg-aegis-primary-hover active:scale-[0.98]'
-                : 'text-aegis-text-muted hover:bg-[rgb(var(--aegis-overlay)/0.06)] hover:text-aegis-text',
-              'disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none',
-            )}
-            title={historyLoading ? t('input.historyLoading') : t('input.send')}
-            aria-label={historyLoading ? t('input.historyLoading') : t('input.send')}
-          >
-            <Send size={16} className={dir === 'rtl' ? 'rotate-180' : ''} />
-          </button>
-
-          {canSteer && (
-            <button
-              type="button"
-              onClick={() => { void onSteer(); }}
-              className="grid size-[34px] shrink-0 place-items-center rounded-lg bg-aegis-warning/12 text-aegis-warning transition-colors motion-reduce:transition-none hover:bg-aegis-warning/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-warning/60"
-              title={t('input.steer')}
-              aria-label={t('input.steer')}
-            >
-              <CornerUpRight size={16} />
-            </button>
-          )}
-
-          {(isTyping || isSending || voiceOutputActive) && (
-            <button
-              type="button"
-              onClick={() => { void onStop(); }}
-              className="grid size-[34px] shrink-0 place-items-center rounded-lg bg-aegis-danger/80 text-[rgb(var(--aegis-btn-primary-text))] transition-colors motion-reduce:transition-none hover:bg-aegis-danger focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-danger/60"
-              title={t('input.stop')}
-              aria-label={t('input.stop')}
-            >
-              <Square size={12} fill="currentColor" />
-            </button>
-          )}
+          <ComposerPrimaryActionButton
+            action={primaryAction}
+            canSend={canSend}
+            dir={dir}
+            label={actionLabel}
+            onSend={() => { void onSend(); }}
+            onStop={() => { void onStop(); }}
+          />
         </div>
+        {stopError && (
+          <p className="px-1.5 pt-1 text-xs text-aegis-danger" role="alert">
+            {stopError}
+          </p>
+        )}
       </div>
     </div>
   );

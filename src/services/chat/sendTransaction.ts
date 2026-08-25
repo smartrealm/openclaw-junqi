@@ -3,6 +3,7 @@ import { isOpenClawChatSendDeliveryUncertain } from '@/processing/openClawChatEv
 import type { GatewayAttachment } from './types';
 import { sessionMutationGate } from './sessionMutationGate';
 import { requireOpenClawSessionTarget } from '@/services/gateway/OpenClawSessionTarget';
+import type { OpenClawQueueMode } from '@/services/gateway/OpenClawQueueMode';
 
 export interface ChatSendGateway {
   sendMessage(
@@ -13,7 +14,7 @@ export interface ChatSendGateway {
       clientMessageId?: string;
       sessionId?: string;
       expectedLeafEntryId?: string | null;
-      delivery?: 'send' | 'steer';
+      queueMode?: OpenClawQueueMode;
       supersededRunId?: string;
     },
   ): Promise<unknown>;
@@ -38,6 +39,7 @@ export interface ChatSendMessage {
   retryPayload?: {
     text: string;
     sessionId?: string;
+    queueMode?: OpenClawQueueMode;
     attachments?: GatewayAttachment[];
     displayAttachments?: ChatSendMessage['attachments'];
   };
@@ -69,7 +71,7 @@ export interface ChatSendRequest {
   displayAttachments?: ChatSendMessage['attachments'];
   clientMessageId?: string;
   optimisticMessage?: Partial<ChatSendMessage> | false;
-  delivery?: 'steer';
+  queueMode?: OpenClawQueueMode;
   model?: string | null;
 }
 
@@ -122,6 +124,7 @@ export class ChatSendCoordinator {
     const retryPayload = {
       text: request.message,
       ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+      ...(request.queueMode ? { queueMode: request.queueMode } : {}),
       ...(request.attachments?.length ? { attachments: request.attachments } : {}),
       ...(request.displayAttachments?.length
         ? { displayAttachments: request.displayAttachments }
@@ -160,7 +163,7 @@ export class ChatSendCoordinator {
       });
       state.setIsTyping(true, sessionKey);
       const session = state.sessions?.find((candidate) => candidate.key === sessionKey);
-      const expectedLeafEntryId = request.delivery === 'steer'
+      const expectedLeafEntryId = request.queueMode === 'steer'
         ? undefined
         : session?.activeLeafEntryId;
       const result = await this.gatewayPort.sendMessage(
@@ -173,7 +176,7 @@ export class ChatSendCoordinator {
           ...(expectedLeafEntryId !== undefined
             ? { expectedLeafEntryId }
             : {}),
-          ...(request.delivery === 'steer' ? { delivery: 'steer' as const } : {}),
+          ...(request.queueMode ? { queueMode: request.queueMode } : {}),
         },
       );
       if (expectedLeafEntryId === null) {
