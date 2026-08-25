@@ -200,6 +200,7 @@ cargo test --lib
 - 先运行最小相关测试，再根据影响范围运行完整 TypeScript、Rust、脚本和构建验证。
 - 修改 Tauri command 时同时验证 command 注册、Rust 签名、前端 wrapper、调用方和序列化字段。
 - 修改 generated collaboration bundle 的来源后运行 `pnpm collab:bundle`，并确认生成的前端 metadata 与 `src-tauri/resources/collaboration` 一致。
+- 修改内置插件源码、数据库迁移或运行契约时必须升级插件版本，并同步包清单、插件清单、运行时版本常量和生成元数据；不同归档内容不得共用同一插件版本。插件 service 无法启动时，Gateway 可能无法返回能力或内容摘要，版本是客户端判断是否存在可部署新构建的必要证据。
 - 自动化通过不等于真机验收。Windows NSIS/UAC/Scheduled Task/Credential Manager、Docker Desktop 冷启动、macOS Keychain/签名/公证等必须明确记录是否真实验证。
 - 不得把本机既有配置、凭据或运行状态当成其他用户环境的默认条件。
 
