@@ -1,6 +1,6 @@
 # JunQi 项目状态
 
-更新时间：2026-08-24
+更新时间：2026-08-25
 
 ## 当前目标
 
@@ -45,14 +45,15 @@
 - `pnpm lint`、`pnpm build`、`pnpm collab:validate`、`pnpm verify:openclaw-docs` 和 `git diff --check` 通过。
 - 生产构建重新生成并核对协作插件 `0.5.4`、schema 15 和固定归档 SHA-256 `458a2ca1c457db32e90e7cfcb4326bc26595dd33445b03bbb53e9772375f132c`，生成文件无新增差异。
 - 本轮只完成自动化和构建验证，没有把当前机器的 Node.js、npm、Git、Gateway、配置、凭据或操作系统状态当作目标环境证据。
+- 已从真实 Tauri 客户端窗口取得智能体办公室截图；当前已安装客户端仍返回 `DATABASE_SCHEMA_UNSUPPORTED`，因此该截图只证明既有安装包未通过协作恢复验收，不能替代当前源码重新打包后的复测。
 
 ## 已知问题与未验证边界
 
 - 尚未在真实 Gateway 完成运行控制台、Task Ledger、Cron、scope 申请、用户批准、凭据轮换、重连和原操作继续的完整序列。
-- 尚未在真实 Tauri WebView 连续验证亮色、暗色、窄窗口、键盘焦点、加载、空数据和失败状态；当前没有真机截图或录屏证据。
+- 尚未在真实 Tauri WebView 连续验证亮色、暗色、窄窗口、键盘焦点、加载、空数据和失败状态；当前只有协作数据版本失败状态的单帧截图，没有完整序列或当前源码安装包的复测证据。
 - 尚未在 macOS、Windows 和 Linux 目标环境验证目录选择、嵌套仓库操作、系统凭据、Gateway 重启、钉钉协议和宠物窗口行为。
 - 完整测试仍输出既有的 Node.js `module.register()` 弃用提示和 Radix Select 服务端渲染提示；Rust 检查仍报告既有未使用函数 `current_search_path`。这些提示未导致本轮验证失败，也未在本任务中扩散。
-- 合并前生成的 DMG 不包含本轮 Jarvis 代码，当前尚未重新打包；既有包也未使用 Developer ID 签名或公证。
+- 合并前生成的 DMG 不包含本轮 Jarvis 代码，且仓库内既有本地安装制品已于 2026-08-25 移入废纸篓；当前尚未重新打包。
 - 未跟踪的 `.pnpm-store/` 与 `outputs/` 是用户既有内容，本轮未修改、删除或纳入提交。
 
 ## 失败方案
