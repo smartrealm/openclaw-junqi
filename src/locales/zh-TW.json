@@ -1547,11 +1547,17 @@
       "untitled": "未命名分支"
     },
     "messageCut": {
-      "rewind": "重繞到此訊息",
+      "editAndResend": "編輯並重新傳送",
+      "moreActions": "更多訊息操作",
       "fork": "從此訊息分叉",
-      "rewindConfirmTitle": "重繞到此訊息？",
-      "rewindConfirmMessage": "OpenClaw 將移除這條訊息之後的目前會話路徑，並把這條訊息恢復到輸入框。",
-      "rewindFailedTitle": "會話重繞失敗",
+      "disabledAction": "{{action}}：{{reason}}",
+      "unavailableDisconnected": "Gateway 未連線",
+      "unavailableRunning": "智能體執行期間不可用",
+      "unavailableLoading": "會話歷史載入期間不可用",
+      "unavailableMutation": "另一項會話結構操作正在進行",
+      "rewindConfirmTitle": "編輯並重新傳送這則訊息？",
+      "rewindConfirmMessage": "OpenClaw 會將目前會話分支回退到這則訊息之前，並把該訊息恢復到輸入框。目前分支的後續記錄將不再作為活動路徑，但既有記錄仍會保留；檔案和工具產生的副作用不會撤銷。",
+      "rewindFailedTitle": "無法編輯並重新傳送",
       "forkConfirmTitle": "從此訊息建立分叉？",
       "forkConfirmMessage": "OpenClaw 將在這條訊息之前建立新會話，並在新分頁中開啟。",
       "forkFailedTitle": "建立會話分叉失敗"

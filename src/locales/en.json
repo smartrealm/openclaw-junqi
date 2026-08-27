@@ -1578,11 +1578,17 @@
       "untitled": "Untitled branch"
     },
     "messageCut": {
-      "rewind": "Rewind to this message",
+      "editAndResend": "Edit and resend",
+      "moreActions": "More message actions",
       "fork": "Fork from this message",
-      "rewindConfirmTitle": "Rewind to this message?",
-      "rewindConfirmMessage": "OpenClaw will remove the current session path after this message and restore it to the composer.",
-      "rewindFailedTitle": "Session rewind failed",
+      "disabledAction": "{{action}}: {{reason}}",
+      "unavailableDisconnected": "Gateway is disconnected",
+      "unavailableRunning": "Unavailable while the agent is running",
+      "unavailableLoading": "Unavailable while session history is loading",
+      "unavailableMutation": "Another session structure action is in progress",
+      "rewindConfirmTitle": "Edit and resend this message?",
+      "rewindConfirmMessage": "OpenClaw will rewind the active branch to just before this message and restore the message to the composer. Later records on this branch will no longer be active, but existing records remain preserved. File and tool side effects are not undone.",
+      "rewindFailedTitle": "Unable to edit and resend",
       "forkConfirmTitle": "Create a fork from this message?",
       "forkConfirmMessage": "OpenClaw will create a new session before this message and open it in a new tab.",
       "forkFailedTitle": "Creating the session fork failed"

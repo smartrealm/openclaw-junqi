@@ -182,7 +182,7 @@ function CollapsedMeta({ items }: { items: MetaItem[] }) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// Message Bubble — Interactive design with proper action bar
+// 消息气泡交互与操作栏
 // ═══════════════════════════════════════════════════════════
 
 interface MessageBubbleProps {
@@ -203,6 +203,7 @@ interface MessageBubbleProps {
   onRewind?: () => void;
   onFork?: () => void;
   messageCutDisabled?: boolean;
+  messageCutDisabledReason?: string;
   collaborationAction?: {
     state: 'confirming' | 'ready' | 'active';
     onClick?: () => void;
@@ -436,7 +437,7 @@ export const MessageBubble = memo(function MessageBubble({
   block, sessionKey, onEdit, onDelete, onRetry, onErrorAction, collaborationAction,
   deliveryStatus, deliveryError, outboundAttachments,
   historyTruncated, historyTruncationReason, onLoadFullMessage, onOpenPreview, onRewind, onFork,
-  messageCutDisabled,
+  messageCutDisabled, messageCutDisabledReason,
   groupPosition = 'standalone',
 }: MessageBubbleProps) {
   const { t, i18n } = useTranslation();
@@ -507,9 +508,10 @@ function stripInlineCodeTicks(md: string): string {
       onPreview={() => {
         if (messagePreview) onOpenPreview?.(messagePreview);
       }}
-      onRewind={isUser ? onRewind : undefined}
+      onEditAndResend={isUser ? onRewind : undefined}
       onFork={isUser ? onFork : undefined}
       messageCutDisabled={messageCutDisabled}
+      messageCutDisabledReason={messageCutDisabledReason}
     />
   ) : null;
   const hasBubbleActions = !isUser && Boolean(messageActions);
@@ -822,12 +824,6 @@ function stripInlineCodeTicks(md: string): string {
                   <ActionBtn icon={<RotateCcw size={14} />} label={t('chat.retryDelivery')}
                     onClick={onRetry} />
                 )}
-                {collaborationAction && (
-                  <MessageCollaborationActionButton
-                    state={collaborationAction.state}
-                    onClick={collaborationAction.onClick}
-                  />
-                )}
                 {onDelete && !isEditing && (
                   <ActionBtn
                     icon={<Trash2 size={14} />}
@@ -837,6 +833,14 @@ function stripInlineCodeTicks(md: string): string {
                   />
                 )}
               </div>
+              {collaborationAction && (
+                <div className="ms-1 inline-flex items-center border-s border-aegis-border/70 ps-1">
+                  <MessageCollaborationActionButton
+                    state={collaborationAction.state}
+                    onClick={collaborationAction.onClick}
+                  />
+                </div>
+              )}
             </div>
           </div>
         ) : (

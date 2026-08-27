@@ -4,7 +4,7 @@
 
 ## 当前目标
 
-当前产品优先级是完成单用户桌面端到端闭环，不实现或预留企业控制面双轨。当前直接目标是收敛会话消息操作、降低输入时的高频渲染扩散，并删除与智能体中心重复的旧多 Agent 独立页面，使协作办公室成为唯一入口。最新窗口修复将主窗口红色关闭收敛为退出整个应用，并统一最小化、隐藏及辅助窗口的恢复入口；DWS 授权弹窗的关闭、Escape 和遮罩关闭现在都请求终止 JunQi 所有的本地 DWS 命令，而不是静默失效或仅隐藏界面。真实桌面连续交互仍待新客户端启动后验证。已发送消息的协议调用正确，但“编辑并重新发送”仍被不直观的回转图标和“重绕”术语遮蔽，交互修正尚未实施。
+当前产品优先级是完成单用户桌面端到端闭环，不实现或预留企业控制面双轨。当前直接目标是收敛会话消息操作、降低输入时的高频渲染扩散，并删除与智能体中心重复的旧多 Agent 独立页面，使协作办公室成为唯一入口。最新窗口修复将主窗口红色关闭收敛为退出整个应用，并统一最小化、隐藏及辅助窗口的恢复入口；DWS 授权弹窗的关闭、Escape 和遮罩关闭现在都请求终止 JunQi 所有的本地 DWS 命令，而不是静默失效或仅隐藏界面。已发送用户消息现以可见的“编辑并重新发送”表达官方 `sessions.rewind`，复制保持直接操作，分叉进入更多菜单，多 Agent 协作独立分组。真实桌面连续交互仍待新客户端启动后验证。
 
 ## 已完成内容
 
@@ -76,6 +76,8 @@
 - `src/stores/chatHighFrequencySelectors.ts`
 - `src/stores/collaborationSetupStore.ts`
 - `src/components/Chat/MessageBubble.tsx`
+- `src/components/Chat/MessageBubbleActions.tsx`
+- `src/components/Chat/messageBubbleActionLayout.ts`
 - `src/components/Chat/MessageCollaborationActionButton.tsx`
 - `src/AppRouteTree.tsx`
 - `src/components/Layout/NavSidebarPanels.tsx`
@@ -114,18 +116,19 @@
 - `pnpm build` 通过，协作插件 `0.5.7` 和钉钉业务插件 `0.1.0` 契约校验、固定包重建、TypeScript 与 Vite 生产构建全部完成。
 - 已基于提交 `9eee11a5` 生成 ARM64 macOS 本地测试 DMG，包含本轮会话和智能体中心变更；此前未密封资源的 Tauri 原始镜像已移入废纸篓，不再作为安装候选。
 - 本轮生产构建重新生成协作插件 `0.5.7`、schema 15 与钉钉插件 `0.1.0`、33 个工具的固定包并完成契约校验；这只证明仓库构建闭环，不等于已生成或验证新的安装包。
-- 当前本地测试 DMG 为 `src-tauri/target/release/bundle/dmg/JunQi Desktop_3.2.1_aarch64.dmg`，大小 8000459 字节，SHA-256 为 `dfe8d4a24790e8fc8ca77a2b94302c5d8ed1107d28944a1377e808b362015249`。镜像 CRC、只读挂载、ARM64 架构、版本 `3.2.1`、应用标识、Applications 链接和 ad-hoc 深度签名严格校验通过。
+- 当前本地测试 DMG 为 `src-tauri/target/release/bundle/dmg/JunQi Desktop_3.2.1_aarch64.dmg`，大小 8000455 字节，SHA-256 为 `4697d389ee63fcbb94fe6a2961de60fcf8406541336cc19829c2db991c060326`。镜像 CRC、只读挂载、ARM64 架构、版本 `3.2.1`、应用标识、Applications 链接和 ad-hoc 深度签名严格校验通过。
 - DMG 内协作插件与钉钉插件的归档和 metadata 已分别与 `src-tauri/resources/collaboration`、`src-tauri/resources/dingtalk` 逐字节核对一致；协作 schema 为 15，钉钉工具数为 33。
 - `git diff --check` 通过；本次修改的全部文本文件未检测到 Unicode 扩展象形字符或常见 Emoji 符号码段。
 - 本轮尝试启动独立 Tauri 调试客户端时被已运行的单实例应用接管，所得窗口不是当前源码，因此没有把截图计为视觉验证；系统辅助功能输入自动化也未取得授权。
 - DWS 取消定向 TypeScript 回归覆盖活动阶段、关闭动作与启动守卫，Tauri IPC 契约回归覆盖取消仅传递 `operationId`；Rust DWS 操作测试、`cargo fmt -- --check`、`cargo check --lib`、`pnpm lint`、完整前端 2959 项、脚本 238 项、完整 Rust 663 项通过、1 项既有忽略、`pnpm build` 和无 updater 的本地候选打包均通过。
+- 消息操作层级的修复前回归因缺少布局模型稳定失败；修复后层级与三种语言回归及既有消息预览回归通过。完整 `pnpm test`、`pnpm lint` 和 `pnpm build` 通过，模块边界检查覆盖 950 个文件，协作插件 `0.5.7`、schema 15 与钉钉插件 `0.1.0` 的固定包契约和 Vite 生产构建完成。
 
 ## 已知问题与未验证边界
 
 - 主窗口红色关闭退出和统一恢复已经通过 Rust 行为回归、编译、静态检查与生产构建；为避免中断当前用户 Gateway 和会话，本轮没有重启正在运行的客户端，因此 macOS 原生关闭、最小化、Command+H、Dock、托盘和单实例连续真机验证仍待执行。Windows 与 Linux 的退出和恢复也未实测。
 - 已以 OpenClaw 官方最新主线 `d1134a45f2fa6bfc691645d1a42650fa64c21dba` 确认 `hello-ok.server.connId` 是每条 WebSocket 连接的世代标识。协作更新重启后长期停留在 `health_pending` 的前端竞态已修复并有回归覆盖；真实目标 Gateway 的连续重启、能力发布和设置面板收敛仍待用户安装本地测试包验证。
 - 用户消息协作按钮已完成组件级亮色与暗色共用主题 token、可访问名称、禁用态和粗指针尺寸验证；尚未在真实 Tauri 会话中完成亮色、暗色、窄窗口、悬停和键盘焦点截图验收。
-- 已发送用户消息当前依次展示回退、分叉、复制和协作四个无文字图标。回退与分叉正确调用官方 `sessions.rewind` 和 `sessions.fork`，但回退实际承担“恢复原文到输入框”的编辑流程，当前图标和“重绕”文案不符合用户意图；铅笔只对尚未进入 transcript 的发送失败消息出现。该问题已记录，尚未修改代码。
+- 已发送用户消息已改为“编辑并重新发送”可见文字入口、复制直接图标和包含“从此消息分叉”的更多菜单，多 Agent 协作通过主题分隔线独立分组。底层仍调用官方 `sessions.rewind` 和 `sessions.fork`；真实 Tauri 的四主题、窄窗口、菜单定位、键盘焦点以及确认后输入框恢复尚未连续实测。
 - 智能体中心统一入口已通过路由、语言资源、特性注册和生产构建验证；尚未在当前源码的真实 Tauri 窗口中核对侧栏选中态、办公室空态、窄窗口滚动和四种主题。
 - 智能体树状连线已通过纯几何测试证明滚动与换行坐标契约，并遵循系统减少动态效果偏好；尚未通过当前源码的真实 Tauri 连续抓帧核对滚动、缩放和卡片晚到时的视觉稳定性。
 - 当前 DMG 仅使用 ad-hoc 本地测试签名，没有 Developer ID 签名、公证或 updater 签名，不能作为正式发布包；尚未执行安装后的真实 Gateway、输入法和四主题视觉验收。
@@ -150,11 +153,10 @@
 
 1. 安装包含本轮 DWS 取消修复的新客户端，连续验证授权弹窗关闭、Escape、遮罩、显式取消、启动早期取消和终态收敛；同时确认浏览器和 DWS 外部授权状态没有被本地 UI 误报。
 2. 连续验证 macOS 原生关闭、最小化、Command+H、Dock、托盘、萌宠和再次启动恢复。
-3. 将已发送消息的回退入口改为明确的“编辑并重新发送”，仍使用官方 `sessions.rewind`；把低频分叉放入带文字的更多菜单，并补充行为与视觉回归。
-4. 在当前源码对应的真实 Tauri 窗口核对侧栏“协作办公室”选中态、办公室空态、树状、网格和活动视图，覆盖标准与窄窗口。
-5. 在真实会话连续核对中文输入法、用户消息操作栏、转向或排队、Stop 和终态收敛，并覆盖亮色、暗色、护眼和暗黑主题。
-6. 在真实 Gateway 重启中确认协作设置从等待状态收敛为就绪。
-7. 在 Windows 与 Linux 目标客户端验证窗口恢复、输入法、Ctrl+Enter、窗口缩放和图标方向。
+3. 在当前源码对应的真实 Tauri 窗口核对侧栏“协作办公室”选中态、办公室空态、树状、网格和活动视图，覆盖标准与窄窗口。
+4. 在真实会话连续核对中文输入法、“编辑并重新发送”、更多菜单、协作分组、转向或排队、Stop 和终态收敛，并覆盖亮色、暗色、护眼和暗黑主题。
+5. 在真实 Gateway 重启中确认协作设置从等待状态收敛为就绪。
+6. 在 Windows 与 Linux 目标客户端验证窗口恢复、输入法、Ctrl+Enter、窗口缩放和图标方向。
 
 ## GoClaw 对比审查
 

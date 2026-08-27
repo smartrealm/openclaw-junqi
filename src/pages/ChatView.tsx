@@ -1191,6 +1191,15 @@ function ChatViewContent() {
           || activeSessionHasRun
           || isLoadingHistory
           || sessionMutationGate.isBlocked(activeSessionKey);
+        const messageCutDisabledReason = !connected
+          ? t('chat.messageCut.unavailableDisconnected')
+          : isTyping || activeSessionHasRun
+            ? t('chat.messageCut.unavailableRunning')
+            : isLoadingHistory
+              ? t('chat.messageCut.unavailableLoading')
+              : sessionMutationGate.isBlocked(activeSessionKey)
+                ? t('chat.messageCut.unavailableMutation')
+                : undefined;
         return (
           <Suspense fallback={<MessageBubbleFallback block={block} groupPosition={groupPosition} />}>
             <MessageBubble
@@ -1223,6 +1232,7 @@ function ChatViewContent() {
                 ? () => handleForkMessage(sourceMessage)
                 : undefined}
               messageCutDisabled={messageCutDisabled}
+              messageCutDisabledReason={messageCutDisabledReason}
               collaborationAction={block.role === 'user'
                 ? collaboration.getMessageAction(sourceMessage)
                 : undefined}
