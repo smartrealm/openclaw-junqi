@@ -1,4 +1,5 @@
 mod commands;
+mod main_window_lifecycle;
 mod paths;
 mod platform;
 mod state;
@@ -37,10 +38,8 @@ pub fn run() {
             },
         )
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
+            if let Err(error) = main_window_lifecycle::restore_main_window(app) {
+                eprintln!("[main-window-lifecycle] single-instance restore failed: {error}");
             }
         }))
         .plugin(tauri_plugin_opener::init())
@@ -521,6 +520,7 @@ pub fn run() {
             let first_run_marker = desktop_dir.join(".junqi-window-initialized");
             let preferred_size_marker = desktop_dir.join(".junqi-window-size-v2");
             if let Some(window) = app.get_webview_window("main") {
+                main_window_lifecycle::install_close_to_exit(app.handle(), &window);
                 window_adaptation::initialize(window, first_run_marker, preferred_size_marker);
             } else {
                 eprintln!("[window-adaptation] main window is unavailable during setup");
@@ -553,21 +553,19 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
-        // macOS: clicking the Dock icon should re-show a hidden main window.
-        // RunEvent::Reopen is only available on macOS in Tauri.
+        // macOS Dock 图标再次激活应用时，统一恢复被隐藏或最小化的主窗口。
+        // Tauri 仅在 macOS 提供 RunEvent::Reopen。
         #[cfg(target_os = "macos")]
         {
             if let RunEvent::Reopen { .. } = event {
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
+                if let Err(error) = main_window_lifecycle::restore_main_window(app_handle) {
+                    eprintln!("[main-window-lifecycle] dock restore failed: {error}");
                 }
             }
         }
         if let RunEvent::Exit = event {
             commands::terminal_keep_awake::shutdown();
-            // Kill the gateway child process on app exit
+            // 应用退出时终止 JunQi 自己拥有的 Gateway 子进程。
             let state = app_handle.state::<GatewayProcess>();
             if let Ok(mut child_lock) = state.child.lock() {
                 if let Some(ref mut child) = *child_lock {

@@ -6,7 +6,7 @@ import {
   type AgentFleetActivityAgentInput,
   type AgentFleetActivitySessionInput,
 } from '@/processing/agentFleetActivityProjection';
-import { AgentOfficeCharacter, AgentOfficeFurniture } from '@/components/Collaboration/AgentOfficeArtwork';
+import { AgentOfficeDeskScene, AgentOfficeFurniture } from '@/components/Collaboration/AgentOfficeArtwork';
 import type { CollaborationTranslate } from '@/components/Collaboration/CollaborationCard';
 
 interface AgentHubFleetActivityPanelProps {
@@ -33,38 +33,36 @@ function FleetDesk({
           : text('agentHub.office.fleetIdle', '空闲'),
       })}
       className={cn(
-        'relative min-w-0 rounded-lg border px-2.5 pb-2.5 pt-2 transition-[transform,border-color,box-shadow] duration-200 motion-reduce:transform-none motion-reduce:transition-none',
+        'relative min-w-0 rounded-lg border pb-2 pt-1.5 transition-[transform,border-color,box-shadow] duration-200 motion-reduce:transform-none motion-reduce:transition-none',
         'hover:-translate-y-px hover:shadow-[0_12px_24px_rgb(var(--aegis-overlay)/0.07)] motion-reduce:hover:translate-y-0',
         entry.active
           ? 'border-aegis-primary/35 bg-aegis-elevated-solid ring-1 ring-aegis-primary/20'
           : 'border-aegis-border bg-aegis-elevated-solid',
       )}
     >
-      <div className="flex min-w-0 items-start gap-2">
+      <div className={cn(
+        'flex min-w-0 justify-center',
+        entry.active ? 'text-aegis-primary' : 'text-aegis-text-muted',
+      )}>
+        <AgentOfficeDeskScene
+          agentId={entry.agentId}
+          state={entry.active ? 'active' : 'waiting'}
+          className="h-16 w-20"
+        />
+      </div>
+      <div className="min-w-0 px-2.5 text-center">
+        <h4 className="truncate text-[11px] font-semibold text-aegis-text-secondary" title={entry.displayName}>
+          {entry.displayName}
+        </h4>
         <div className={cn(
-          'relative grid size-12 shrink-0 place-items-center rounded-md border bg-aegis-surface-solid',
-          entry.active ? 'border-aegis-primary/35 text-aegis-primary' : 'border-aegis-border text-aegis-text-muted',
+          'mt-0.5 flex items-center justify-center gap-1 text-[9px] font-medium',
+          entry.active ? 'text-aegis-primary' : 'text-aegis-text-muted',
         )}>
-          <AgentOfficeCharacter
-            agentId={entry.agentId}
-            state={entry.active ? 'active' : 'waiting'}
-            className="h-11 w-10"
-          />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h4 className="truncate text-[11px] font-semibold text-aegis-text-secondary" title={entry.displayName}>
-            {entry.displayName}
-          </h4>
-          <div className={cn(
-            'mt-1 flex items-center gap-1 text-[9px] font-medium',
-            entry.active ? 'text-aegis-primary' : 'text-aegis-text-muted',
-          )}>
-            <span className="truncate">
-              {entry.active
-                ? text('agentHub.office.fleetActiveSessionCount', '{{count}} 个活动会话', { count: entry.activeSessionCount })
-                : text('agentHub.office.fleetIdle', '空闲')}
-            </span>
-          </div>
+          <span className="truncate">
+            {entry.active
+              ? text('agentHub.office.fleetActiveSessionCount', '{{count}} 个活动会话', { count: entry.activeSessionCount })
+              : text('agentHub.office.fleetIdle', '空闲')}
+          </span>
         </div>
       </div>
     </article>
@@ -130,7 +128,7 @@ export function AgentHubFleetActivityPanel({
                 {busy.length}
               </span>
             </header>
-            <div className="relative mt-4 grid min-w-0 gap-2 sm:grid-cols-2">
+            <div className="relative mt-4 grid min-w-0 gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-4">
               {busy.length > 0
                 ? busy.map((entry) => <FleetDesk key={entry.agentId} entry={entry} text={text} />)
                 : (
@@ -159,7 +157,7 @@ export function AgentHubFleetActivityPanel({
                 {idle.length}
               </span>
             </header>
-            <div className="relative mt-4 grid min-w-0 gap-2 sm:grid-cols-2">
+            <div className="relative mt-4 grid min-w-0 gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-4">
               {idle.length > 0
                 ? idle.map((entry) => <FleetDesk key={entry.agentId} entry={entry} text={text} />)
                 : (

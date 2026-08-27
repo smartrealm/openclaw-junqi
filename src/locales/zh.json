@@ -6260,6 +6260,7 @@
       "starting": "正在启动 DWS 官方流程",
       "installRunning": "正在将 DWS 安装到当前 OpenClaw 运行时。",
       "authorizeRunning": "本机运行时会打开浏览器扫码；Docker 或无界面运行时请按设备码完成授权。",
+      "cancelling": "正在取消 DWS 官方流程，等待本地命令退出。",
       "resetRunning": "正在执行 DWS 官方登录态重置命令。此操作不会自动完成重新授权。",
       "switchProfileRunning": "正在执行 DWS 官方 Profile 切换命令。",
       "logoutProfileRunning": "正在执行 DWS 官方单账号退出命令。",

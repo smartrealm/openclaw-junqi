@@ -298,16 +298,7 @@ pub async fn get_pet_bounds(app: AppHandle) -> Result<serde_json::Value, String>
 /// 萌宠被点击后恢复并聚焦主窗口。
 #[tauri::command]
 pub async fn pet_focus_main(app: AppHandle) -> Result<(), String> {
-    let main = app
-        .get_webview_window("main")
-        .ok_or_else(|| "主窗口不可用，无法恢复窗口".to_string())?;
-    main.unminimize()
-        .map_err(|error| format!("无法取消主窗口最小化: {error}"))?;
-    main.show()
-        .map_err(|error| format!("无法显示主窗口: {error}"))?;
-    main.set_focus()
-        .map_err(|error| format!("无法聚焦主窗口: {error}"))?;
-    Ok(())
+    crate::main_window_lifecycle::restore_main_window(&app).map_err(|error| error.to_string())
 }
 
 // ── Right-click context menu ────────────────────────────────────────────────

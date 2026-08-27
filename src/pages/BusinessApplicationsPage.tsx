@@ -339,6 +339,8 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
   const dwsEventCache = useRef<DwsOperationEventCache>({ output: {}, events: {}, finished: {} });
   const dwsFinalizedOperationIds = useRef(new Set<string>());
   const dwsStartGuard = useRef(false);
+  const dwsCancellationRequested = useRef(false);
+  const dwsDismissAfterCancellation = useRef(false);
   const schemaRequests = useRef(new DingTalkToolSchemaRequestCoordinator());
   const previousExecutionProfile = useRef<string | null>(null);
   const [dwsCompletionRevision, setDwsCompletionRevision] = useState(0);
@@ -521,6 +523,10 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
               : 'businessApplications.dws.failed'),
           }
         : current);
+      if (payload.cancelled && dwsDismissAfterCancellation.current) {
+        dwsDismissAfterCancellation.current = false;
+        setDwsOperation(null);
+      }
       await refreshDingTalkState();
       return;
     }
@@ -889,6 +895,8 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
     }
     setPluginError(null);
     if (kind !== 'resetAuth') setDwsAuthorizationFailure(null);
+    dwsCancellationRequested.current = false;
+    dwsDismissAfterCancellation.current = false;
     setDwsOutput([]);
     setDwsOperation({
       id: null,
@@ -899,23 +907,40 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
     void startDwsOperation(current.targetFingerprint, current.connectionId, kind, operationProfile)
       .then((started) => {
         const output = dwsEventCache.current.output[started.operationId] ?? [];
+        const cancellationRequested = dwsCancellationRequested.current;
         setDwsOperation({
           id: started.operationId,
           kind: started.kind,
-          phase: 'running',
-          message: started.kind === 'install'
-            ? t('businessApplications.dws.installRunning')
-            : started.kind === 'resetAuth'
-              ? t('businessApplications.dws.resetRunning')
-              : started.kind === 'switchProfile'
-                ? t('businessApplications.dws.switchProfileRunning')
-                : started.kind === 'logoutProfile'
-                  ? t('businessApplications.dws.logoutProfileRunning')
-                  : t('businessApplications.dws.authorizeRunning'),
+          phase: cancellationRequested ? 'cancelling' : 'running',
+          message: cancellationRequested
+            ? t('businessApplications.dws.cancelling')
+            : started.kind === 'install'
+              ? t('businessApplications.dws.installRunning')
+              : started.kind === 'resetAuth'
+                ? t('businessApplications.dws.resetRunning')
+                : started.kind === 'switchProfile'
+                  ? t('businessApplications.dws.switchProfileRunning')
+                  : started.kind === 'logoutProfile'
+                    ? t('businessApplications.dws.logoutProfileRunning')
+                    : t('businessApplications.dws.authorizeRunning'),
         });
         setDwsOutput(output);
+        if (cancellationRequested) {
+          void cancelDwsOperation(started.operationId)
+            .catch((error) => {
+              dwsCancellationRequested.current = false;
+              dwsDismissAfterCancellation.current = false;
+              setDwsOperation((operation) => (
+                operation?.id === started.operationId
+                  ? { ...operation, phase: 'failed', message: errorMessage(error) }
+                  : operation
+              ));
+            });
+        }
       })
       .catch((error) => {
+        dwsCancellationRequested.current = false;
+        dwsDismissAfterCancellation.current = false;
         const message = errorMessage(error);
         setDwsOperation({ id: null, kind, phase: 'failed', message: t('businessApplications.dws.startFailed') });
         setDwsOutput([message]);
@@ -939,14 +964,24 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
     );
   }, [runDwsOperation, t]);
 
-  const cancelCurrentDwsOperation = useCallback(() => {
-    const current = getCurrentRuntimeIdentity();
-    if (!current?.verified || !dwsOperation?.id || dwsOperation.phase !== 'running') return;
-    void cancelDwsOperation(current.targetFingerprint, current.connectionId, dwsOperation.id)
-      .catch((error) => setDwsOperation((operation) => (
-        operation ? { ...operation, phase: 'failed', message: errorMessage(error) } : operation
-      )));
-  }, [dwsOperation]);
+  const cancelCurrentDwsOperation = useCallback((dismissWhenCancelled = false) => {
+    const operation = dwsOperation;
+    if (!operation || !isDwsOperationActive(operation.phase) || operation.phase === 'cancelling') return;
+    dwsCancellationRequested.current = true;
+    dwsDismissAfterCancellation.current ||= dismissWhenCancelled;
+    setDwsOperation((current) => current === operation
+      ? { ...current, phase: 'cancelling', message: t('businessApplications.dws.cancelling') }
+      : current);
+    if (!operation.id) return;
+    void cancelDwsOperation(operation.id)
+      .catch((error) => {
+        dwsCancellationRequested.current = false;
+        dwsDismissAfterCancellation.current = false;
+        setDwsOperation((current) => current?.id === operation.id
+          ? { ...current, phase: 'failed', message: errorMessage(error) }
+          : current);
+      });
+  }, [dwsOperation, t]);
 
   const restartGateway = useCallback(async () => {
     setPluginOperation('restarting');
@@ -1075,7 +1110,10 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
     onSwitchDwsProfile: (operationProfile: string) => runDwsOperation('switchProfile', operationProfile),
     onLogoutDwsProfile: logoutDwsProfile,
     onCancelDws: cancelCurrentDwsOperation,
-    onDismissDws: () => setDwsOperation(null),
+    onDismissDws: () => {
+      dwsDismissAfterCancellation.current = false;
+      setDwsOperation(null);
+    },
   };
 
   return (

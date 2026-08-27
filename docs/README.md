@@ -4,6 +4,9 @@
 
 ## 当前入口
 
+- [主窗口生命周期恢复审计](quality/main-window-lifecycle-recovery-audit-2026-08-26.md)：原生关闭、最小化、Dock、托盘、单实例和辅助窗口恢复链路的根因、统一恢复边界与跨平台验证要求。
+- [主窗口生命周期恢复规格](../specs/2026-08-26-main-window-lifecycle-recovery.md)：红色关闭退出、最小化恢复、统一恢复顺序和失败语义的验收条件。
+- [主窗口生命周期恢复计划](../plans/2026-08-26-main-window-lifecycle-recovery.md)：关闭拦截、调用方收敛、回归和真机验证顺序。
 - [延期企业控制面，优先完成单用户桌面闭环](adr/0003-defer-enterprise-control-plane-and-complete-single-user-desktop.md)：确认企业化需要独立服务端与每租户 Gateway Cell，但当前不预留双轨代码，研发优先完成单用户安装、连接、会话、恢复、桌面交互和发布质量。
 - [会话输入区原生交互审计](quality/chat-composer-native-interaction-audit-2026-08-25.md)：单一主操作位、有效队列模式、键盘操作、停止语义和废弃转向入口的修复依据。
 - [会话输入区原生交互规格](../specs/2026-08-25-chat-composer-native-interaction.md)：空闲、运行、排队、转向、中断和历史输入的 UI 与协议验收条件。

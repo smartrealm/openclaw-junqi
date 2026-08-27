@@ -1,7 +1,7 @@
 use tauri::{
     menu::{Menu, MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, Runtime,
+    AppHandle, Runtime,
 };
 
 const TRAY_ID: &str = "main-tray";
@@ -72,13 +72,8 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "toggle" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    if window.is_visible().unwrap_or(false) {
-                        let _ = window.hide();
-                    } else {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+                if let Err(error) = crate::main_window_lifecycle::toggle_main_window(app) {
+                    eprintln!("[main-window-lifecycle] tray toggle failed: {error}");
                 }
             }
             "toggle-pet" => {
@@ -108,10 +103,8 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             } = event
             {
                 let app = tray.app_handle();
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.unminimize();
-                    let _ = w.show();
-                    let _ = w.set_focus();
+                if let Err(error) = crate::main_window_lifecycle::restore_main_window(app) {
+                    eprintln!("[main-window-lifecycle] tray restore failed: {error}");
                 }
             }
         })

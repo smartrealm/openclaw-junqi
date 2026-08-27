@@ -5939,6 +5939,7 @@
       "starting": "正在啟動 DWS 官方流程",
       "installRunning": "正在將 DWS 安裝到目前 OpenClaw 執行階段。",
       "authorizeRunning": "本機執行階段會開啟瀏覽器掃碼；Docker 或無介面執行階段請依裝置碼完成授權。",
+      "cancelling": "正在取消 DWS 官方流程，等待本機命令結束。",
       "resetRunning": "正在執行 DWS 官方登入狀態重設命令。此操作不會自動完成重新授權。",
       "switchProfileRunning": "正在執行 DWS 官方 Profile 切換命令。",
       "logoutProfileRunning": "正在執行 DWS 官方單帳號退出命令。",

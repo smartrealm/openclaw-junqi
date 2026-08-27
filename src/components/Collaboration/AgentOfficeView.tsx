@@ -28,7 +28,7 @@ import {
   collaborationWorkItemStatusLabel,
   type CollaborationTranslate,
 } from './CollaborationCard';
-import { AgentOfficeCharacter, AgentOfficeFurniture } from './AgentOfficeArtwork';
+import { AgentOfficeDeskScene, AgentOfficeFurniture } from './AgentOfficeArtwork';
 
 interface AgentOfficeViewProps {
   snapshot: CollaborationRunSnapshot;
@@ -146,7 +146,7 @@ function AgentDesk({
   return (
     <article
       className={cn(
-        'relative min-w-0 rounded-lg border px-2.5 pb-2.5 pt-2 transition-[transform,border-color,box-shadow] duration-200 motion-reduce:transform-none motion-reduce:transition-none',
+        'relative min-w-0 rounded-lg border pb-2.5 pt-1.5 transition-[transform,border-color,box-shadow] duration-200 motion-reduce:transform-none motion-reduce:transition-none',
         'hover:-translate-y-px hover:shadow-[0_12px_24px_rgb(var(--aegis-overlay)/0.07)] motion-reduce:hover:translate-y-0',
         ZONE_PRESENTATION[zone].deskClassName,
         active && 'ring-1 ring-aegis-primary/20',
@@ -159,37 +159,32 @@ function AgentDesk({
         state: stateCopy,
       })}
     >
-      <div className="flex min-w-0 items-start gap-2">
-        <div className={cn('relative grid size-12 shrink-0 place-items-center rounded-md border border-aegis-border bg-aegis-surface-solid', stateTone(agent.state), active && 'border-aegis-primary/35')}>
-          <AgentOfficeCharacter
-            agentId={agent.agentId}
-            state={artworkState(agent.state)}
-            coordinator={agent.coordinator}
-            className="h-11 w-10"
-          />
-          <span className={cn('absolute -bottom-1 -end-1 grid size-4 place-items-center rounded-sm border border-aegis-border bg-aegis-surface-solid', stateTone(agent.state))}>
-            {STATE_ICON[agent.state]}
-          </span>
+      <div className={cn('flex min-w-0 justify-center', stateTone(agent.state))}>
+        <AgentOfficeDeskScene
+          agentId={agent.agentId}
+          state={artworkState(agent.state)}
+          coordinator={agent.coordinator}
+          className="h-16 w-20"
+        />
+      </div>
+      <div className="min-w-0 px-2.5">
+        <div className="flex min-w-0 items-center justify-center gap-1.5">
+          <h4 className="min-w-0 flex-1 truncate text-center text-[11px] font-semibold text-aegis-text-secondary" title={agent.displayName}>
+            {agent.displayName}
+          </h4>
+          {agent.coordinator && (
+            <span className="shrink-0 rounded-sm bg-aegis-primary/[0.1] px-1 py-0.5 text-[8px] font-medium text-aegis-primary">
+              {text('collaboration.office.coordinator', 'Coordinator')}
+            </span>
+          )}
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <h4 className="min-w-0 flex-1 truncate text-[11px] font-semibold text-aegis-text-secondary" title={agent.displayName}>
-              {agent.displayName}
-            </h4>
-            {agent.coordinator && (
-              <span className="shrink-0 rounded-sm bg-aegis-primary/[0.1] px-1 py-0.5 text-[8px] font-medium text-aegis-primary">
-                {text('collaboration.office.coordinator', 'Coordinator')}
-              </span>
-            )}
-          </div>
-          <div className={cn('mt-1 flex items-center gap-1 text-[9px] font-medium', stateTone(agent.state))}>
-            {STATE_ICON[agent.state]}
-            <span className="truncate">{stateCopy}</span>
-          </div>
+        <div className={cn('mt-1 flex items-center justify-center gap-1 text-[9px] font-medium', stateTone(agent.state))}>
+          {STATE_ICON[agent.state]}
+          <span className="truncate">{stateCopy}</span>
         </div>
       </div>
 
-      <div className="mt-2 min-h-9 border-t border-aegis-border/80 pt-2">
+      <div className="mx-2.5 mt-2 min-h-9 border-t border-aegis-border/80 pt-2">
         {workItem ? (
           <>
             <p className="line-clamp-2 break-words text-[10px] font-medium leading-4 text-aegis-text-secondary">
@@ -213,7 +208,7 @@ function AgentDesk({
         )}
       </div>
 
-      <div className="mt-2 flex items-center justify-between gap-2 border-t border-aegis-border/70 pt-1.5 text-[8px] text-aegis-text-dim">
+      <div className="mx-2.5 mt-2 flex items-center justify-between gap-2 border-t border-aegis-border/70 pt-1.5 text-[8px] text-aegis-text-dim">
         <span>{text('collaboration.office.runtime', 'Runtime')}</span>
         <span className="min-w-0 truncate font-mono text-aegis-text-muted" title={agent.runtimeType}>
           {agent.runtimeType ?? text('collaboration.office.runtimeUnknown', 'Not projected')}
@@ -238,29 +233,24 @@ function ConfiguredDesk({
   const displayName = agent.name?.trim() || agent.id;
   return (
     <article
-      className="relative min-w-0 rounded-lg border border-dashed border-aegis-border bg-aegis-surface-solid/80 px-2.5 pb-2.5 pt-2"
+      className="relative min-w-0 rounded-lg border border-dashed border-aegis-border bg-aegis-surface-solid/80 pb-2.5 pt-1.5"
       data-office-configured-agent-id={agent.id}
       data-office-seat="configured"
       aria-label={text('collaboration.office.configuredDeskLabel', '{{agent}}, configured desk; no current run participation', { agent: displayName })}
     >
-      <div className="flex min-w-0 items-start gap-2">
-        <div className="relative grid size-12 shrink-0 place-items-center rounded-md border border-aegis-border bg-aegis-surface-solid text-aegis-text-muted">
-          <AgentOfficeCharacter
-            agentId={agent.id}
-            state="configured"
-            coordinator={agent.coordinator}
-            className="h-11 w-10"
-          />
-          <span className="absolute -bottom-1 -end-1 rounded-sm border border-aegis-border bg-aegis-surface-solid px-1 py-0.5 text-[7px] font-medium text-aegis-text-dim">
-            {text('collaboration.office.configuredDeskBadge', 'Configured')}
-          </span>
-        </div>
-        <div className="min-w-0 flex-1">
-          <h4 className="truncate text-[11px] font-semibold text-aegis-text-secondary" title={displayName}>{displayName}</h4>
-          <p className="mt-1 truncate text-[9px] text-aegis-text-muted">{label}</p>
-        </div>
+      <div className="flex min-w-0 justify-center text-aegis-text-muted">
+        <AgentOfficeDeskScene
+          agentId={agent.id}
+          state="configured"
+          coordinator={agent.coordinator}
+          className="h-16 w-20"
+        />
       </div>
-      <p className="mt-2 border-t border-aegis-border/70 pt-2 text-[9px] leading-4 text-aegis-text-dim">
+      <div className="min-w-0 px-2.5 text-center">
+        <h4 className="truncate text-[11px] font-semibold text-aegis-text-secondary" title={displayName}>{displayName}</h4>
+        <p className="mt-0.5 truncate text-[9px] text-aegis-text-muted">{label}</p>
+      </div>
+      <p className="mx-2.5 mt-2 border-t border-aegis-border/70 pt-2 text-[9px] leading-4 text-aegis-text-dim">
         {text('collaboration.office.configuredDeskDescription', 'Configured seat only. It does not claim current run participation, live presence, or execution state.')}
       </p>
     </article>
@@ -311,8 +301,8 @@ function OfficeZone({
       </header>
 
       <div className={cn(
-        'relative mt-4 grid min-w-0 gap-2',
-        activeZone ? 'sm:grid-cols-2 xl:grid-cols-3' : 'sm:grid-cols-2',
+        'relative mt-4 grid min-w-0 gap-2 grid-cols-2',
+        activeZone ? 'sm:grid-cols-3 xl:grid-cols-4' : 'sm:grid-cols-3',
       )}>
         {agents.map((agent) => <AgentDesk key={agent.agentId} agent={agent} text={text} zone={zone} />)}
         {configuredAgents.map((agent) => <ConfiguredDesk key={agent.id} agent={agent} text={text} />)}

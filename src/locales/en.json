@@ -6237,6 +6237,7 @@
       "starting": "Starting the official DWS flow",
       "installRunning": "Installing DWS into the selected OpenClaw runtime.",
       "authorizeRunning": "The native runtime opens a browser for QR authorization. Docker and headless runtimes use the device-code prompt.",
+      "cancelling": "Cancelling the official DWS flow and waiting for the local command to exit.",
       "resetRunning": "Running the official DWS sign-in reset command. This does not reauthorize DWS.",
       "switchProfileRunning": "Running the official DWS Profile switch command.",
       "logoutProfileRunning": "Running the official DWS single-account sign-out command.",

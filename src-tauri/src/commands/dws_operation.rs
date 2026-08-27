@@ -711,13 +711,9 @@ pub async fn start_dws_operation(
 
 #[tauri::command]
 pub fn cancel_dws_operation(
-    state: State<'_, RuntimeIdentityState>,
     operations: State<'_, DwsOperationState>,
-    target_fingerprint: String,
-    expected_connection_id: String,
     operation_id: String,
 ) -> Result<(), String> {
-    validated_target(&state, &target_fingerprint, &expected_connection_id)?;
     let mut active = operations
         .active
         .lock()

@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { DingTalkRuntimeIdentityProjection } from '@/business-applications/dingtalkTools';
 import { presentDingTalkRuntimeEvidence } from '@/business-applications/dingtalkRuntimeEvidence';
-import { isDwsOperationActive, type DingTalkDwsOperationPhase } from '@/business-applications/dwsOperationLifecycle';
+import { isDwsOperationActive, resolveDwsDialogDismissAction, type DingTalkDwsOperationPhase } from '@/business-applications/dwsOperationLifecycle';
 import type { DwsAuthorizationFailureDiagnosis } from '@/business-applications/dwsAuthorizationFailure';
 import { DingTalkRuntimeIdentity } from './DingTalkRuntimeIdentity';
 import { resolveDingTalkReadiness } from './dingTalkReadiness';
@@ -152,7 +152,7 @@ export function DingTalkReadinessPanel({
   onSelectedProfileChange: (profile: string) => void;
   onSwitchDwsProfile: (profile: string) => void;
   onLogoutDwsProfile: (profile: string) => void;
-  onCancelDws: () => void;
+  onCancelDws: (dismissWhenCancelled?: boolean) => void;
   onDismissDws: () => void;
 }) {
   const { t } = useTranslation();
@@ -205,7 +205,6 @@ export function DingTalkReadinessPanel({
     }
   };
   const dwsOperationActive = isDwsOperationActive(dwsOperation?.phase);
-  const dwsOperationRunning = dwsOperation?.phase === 'running';
   const runtimeEvidence = presentDingTalkRuntimeEvidence({
     sessionLabel,
     agentId,
@@ -452,7 +451,14 @@ export function DingTalkReadinessPanel({
           </div>
         </DialogContent>
       </Dialog>
-      <Dialog open={Boolean(dwsOperation)} onOpenChange={(open) => { if (!open && !dwsOperationActive) onDismissDws(); }}>
+      <Dialog open={Boolean(dwsOperation)} onOpenChange={(open) => {
+        if (open) return;
+        if (resolveDwsDialogDismissAction(dwsOperation?.phase) === 'request-cancel') {
+          onCancelDws(true);
+          return;
+        }
+        onDismissDws();
+      }}>
         <DialogContent className="max-h-[min(80vh,640px)] w-[min(720px,calc(100vw-24px))] min-w-0 max-w-none overflow-hidden border-aegis-border bg-aegis-bg-solid p-0 text-aegis-text">
           <DialogHeader className="min-w-0 border-b border-aegis-border px-4 py-3 pr-11 text-left">
             <DialogTitle className="flex min-w-0 items-center gap-2 text-[13px]"><Terminal size={14} className="shrink-0" />{t(dwsOperation?.kind === 'install'
@@ -489,11 +495,11 @@ export function DingTalkReadinessPanel({
               </div>
             )}
             <div className="flex flex-wrap justify-end gap-2">
-              {dwsOperationRunning
-                ? <Button size="xs" variant="outline" tone="danger" leadingIcon={<Square size={11} />} onClick={onCancelDws}>{t('businessApplications.readiness.cancel')}</Button>
-                : dwsOperationActive
-                  ? <Button size="xs" variant="outline" tone="neutral" loading disabled>{t('businessApplications.dws.starting')}</Button>
-                  : <Button size="xs" variant="solid" tone="primary" loading={refreshing} disabled={refreshDisabled} leadingIcon={<RefreshCw size={12} />} onClick={() => { onRefresh(); onDismissDws(); }}>{t(refreshing ? 'businessApplications.readiness.refreshing' : 'businessApplications.readiness.refresh')}</Button>}
+              {dwsOperationActive
+                ? dwsOperation?.phase === 'cancelling'
+                  ? <Button size="xs" variant="outline" tone="neutral" loading disabled>{t('businessApplications.dws.cancelling')}</Button>
+                  : <Button size="xs" variant="outline" tone="danger" leadingIcon={<Square size={11} />} onClick={() => onCancelDws(false)}>{t('businessApplications.readiness.cancel')}</Button>
+                : <Button size="xs" variant="solid" tone="primary" loading={refreshing} disabled={refreshDisabled} leadingIcon={<RefreshCw size={12} />} onClick={() => { onRefresh(); onDismissDws(); }}>{t(refreshing ? 'businessApplications.readiness.refreshing' : 'businessApplications.readiness.refresh')}</Button>}
             </div>
           </div>
         </DialogContent>

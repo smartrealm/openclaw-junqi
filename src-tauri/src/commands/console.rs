@@ -278,14 +278,10 @@ pub async fn open_control_ui(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Called by the injected button: surface the main window and close the console.
+/// 控制窗口中的返回按钮恢复主窗口，并在成功后关闭控制窗口。
 #[tauri::command]
 pub async fn return_to_desktop(app: AppHandle) -> Result<(), String> {
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = main.show();
-        let _ = main.unminimize();
-        let _ = main.set_focus();
-    }
+    crate::main_window_lifecycle::restore_main_window(&app).map_err(|error| error.to_string())?;
     if let Some(console) = app.get_webview_window(CONTROL_UI_LABEL) {
         let _ = console.close();
     }

@@ -2,7 +2,7 @@ import { Bot, CircleSlash, Crown, ShieldCheck, UsersRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import type { CollaborationCapabilityAgent } from '@/types/collaboration';
-import { AgentOfficeCharacter, AgentOfficeFurniture } from '@/components/Collaboration/AgentOfficeArtwork';
+import { AgentOfficeDeskScene, AgentOfficeFurniture } from '@/components/Collaboration/AgentOfficeArtwork';
 import { buildConfiguredOfficeRoster } from './agentHubConfiguredOfficeRoster';
 
 export function AgentHubConfiguredOffice({
@@ -36,27 +36,25 @@ export function AgentHubConfiguredOffice({
         data-agent-hub-configured-agent-id={agent.id}
         data-agent-hub-configured-seat-state={seatState}
         aria-label={`${agent.displayName}，${configurationLabel}`}
-        className="relative flex min-w-0 items-center gap-2.5 px-2 py-2.5"
+        className="relative min-w-0 pb-2 pt-1.5"
       >
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className={cn('relative grid size-12 shrink-0 place-items-center rounded-md border bg-aegis-surface-solid', agent.allowed || agent.coordinator ? 'border-aegis-primary/25 text-aegis-primary' : 'border-aegis-border text-aegis-text-muted')}>
-            <AgentOfficeCharacter
-              agentId={agent.id}
-              state="configured"
-              coordinator={agent.coordinator}
-              className="h-11 w-10"
-            />
-            <span className="absolute -bottom-1 -end-1 grid size-4 place-items-center rounded-sm border border-aegis-border bg-aegis-surface-solid text-aegis-text-muted">
-              {agent.coordinator ? <Crown size={9} aria-hidden /> : agent.allowed ? <ShieldCheck size={9} aria-hidden /> : <CircleSlash size={9} aria-hidden />}
-            </span>
-          </div>
-          <div className="min-w-0 flex-1">
+        <div className={cn('flex min-w-0 justify-center', agent.allowed || agent.coordinator ? 'text-aegis-primary' : 'text-aegis-text-muted')}>
+          <AgentOfficeDeskScene
+            agentId={agent.id}
+            state="configured"
+            coordinator={agent.coordinator}
+            className="h-16 w-20"
+          />
+        </div>
+        <div className="min-w-0 px-2 text-center">
+          <div className="flex min-w-0 items-center justify-center gap-1">
             <h5 className="truncate text-xs font-semibold text-aegis-text" title={agent.displayName}>{agent.displayName}</h5>
-            <p className={cn('mt-0.5 truncate text-[10px] font-medium', agent.allowed || agent.coordinator ? 'text-aegis-primary' : 'text-aegis-text-dim')}>
-              {configurationLabel}
-            </p>
+            {agent.coordinator ? <Crown size={10} className="shrink-0 text-aegis-primary" aria-hidden /> : agent.allowed ? <ShieldCheck size={10} className="shrink-0 text-aegis-primary" aria-hidden /> : <CircleSlash size={10} className="shrink-0 text-aegis-text-muted" aria-hidden />}
           </div>
-          <p className="max-w-[14rem] truncate text-[10px] text-aegis-text-muted" title={agent.description ?? agent.runtimeType ?? undefined}>
+          <p className={cn('mt-0.5 truncate text-[10px] font-medium', agent.allowed || agent.coordinator ? 'text-aegis-primary' : 'text-aegis-text-dim')}>
+            {configurationLabel}
+          </p>
+          <p className="mt-0.5 truncate text-[9.5px] text-aegis-text-muted" title={agent.description ?? agent.runtimeType ?? undefined}>
             {agent.description ?? agent.runtimeType ?? t('agentHub.office.configuredNoDescription', '未提供角色说明')}
           </p>
         </div>
@@ -90,7 +88,7 @@ export function AgentHubConfiguredOffice({
           </header>
           <p className="mt-1 text-[9.5px] leading-4 text-aegis-text-dim">{t('agentHub.office.configuredCoordinatorZoneDescription', '仅表示配置中的协调角色。')}</p>
           </div>
-          <div className="border-t border-aegis-primary/15">{coordinator.length > 0 ? coordinator.map(renderDesk) : <span className="block px-3 py-3 text-[10px] text-aegis-text-dim">{t('agentHub.office.configuredNoCoordinator', '未配置协调智能体')}</span>}</div>
+          <div className="grid grid-cols-2 gap-2 border-t border-aegis-primary/15 p-2">{coordinator.length > 0 ? coordinator.map(renderDesk) : <span className="col-span-full block px-1 py-3 text-[10px] text-aegis-text-dim">{t('agentHub.office.configuredNoCoordinator', '未配置协调智能体')}</span>}</div>
         </section>
         <section className="relative overflow-hidden rounded-lg border border-aegis-border bg-aegis-surface" aria-labelledby="agent-hub-work-zone">
           <AgentOfficeFurniture kind="waiting" className="pointer-events-none absolute right-2 top-2 h-14 w-24 text-aegis-text-muted opacity-30" />
@@ -101,9 +99,9 @@ export function AgentHubConfiguredOffice({
           </header>
           <p className="mt-1 text-[9.5px] leading-4 text-aegis-text-dim">{t('agentHub.office.configuredWorkZoneDescription', '这些 Agent 已通过当前协作插件许可；仍不表示已有运行分派。')}</p>
           </div>
-          <div className="divide-y divide-aegis-border border-t border-aegis-border">
+          <div className="grid grid-cols-2 gap-2 border-t border-aegis-border p-2 sm:grid-cols-3">
             {allowed.length > 0 && allowed.map(renderDesk)}
-            {allowed.length === 0 && <span className="block px-3 py-3 text-[10px] text-aegis-text-dim">{t('agentHub.office.configuredNoAuthorizedWorkers', '尚无已获协作许可的 Agent')}</span>}
+            {allowed.length === 0 && <span className="col-span-full block px-1 py-3 text-[10px] text-aegis-text-dim">{t('agentHub.office.configuredNoAuthorizedWorkers', '尚无已获协作许可的 Agent')}</span>}
           </div>
         </section>
         <section className="relative overflow-hidden rounded-lg border border-dashed border-aegis-border bg-[rgb(var(--aegis-overlay)/0.018)]" aria-labelledby="agent-hub-configured-only-zone">
@@ -115,9 +113,9 @@ export function AgentHubConfiguredOffice({
             </header>
             <p className="mt-1 text-[9.5px] leading-4 text-aegis-text-dim">{t('agentHub.office.configuredOnlyZoneDescription', '这些是 OpenClaw 已配置 Agent；当前协作插件没有将它们列为可参与成员。')}</p>
           </div>
-          <div className="divide-y divide-aegis-border border-t border-aegis-border">
+          <div className="grid grid-cols-2 gap-2 border-t border-aegis-border p-2">
             {configuredOnly.length > 0 && configuredOnly.map(renderDesk)}
-            {configuredOnly.length === 0 && <span className="block px-3 py-3 text-[10px] text-aegis-text-dim">{t('agentHub.office.configuredNoConfiguredOnly', '所有配置 Agent 均已纳入当前协作许可')}</span>}
+            {configuredOnly.length === 0 && <span className="col-span-full block px-1 py-3 text-[10px] text-aegis-text-dim">{t('agentHub.office.configuredNoConfiguredOnly', '所有配置 Agent 均已纳入当前协作许可')}</span>}
           </div>
         </section>
       </div>

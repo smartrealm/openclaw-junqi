@@ -401,12 +401,7 @@ pub async fn dynamic_island_focus_main(
         }
         let _ = app.emit("dynamic-island:navigate", route);
     }
-    let main = app
-        .get_webview_window("main")
-        .ok_or_else(|| "Main window is unavailable".to_string())?;
-    main.show().map_err(|error| error.to_string())?;
-    main.unminimize().map_err(|error| error.to_string())?;
-    main.set_focus().map_err(|error| error.to_string())
+    crate::main_window_lifecycle::restore_main_window(&app).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

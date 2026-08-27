@@ -142,7 +142,7 @@ test('智能体资料包装器保留独立持久化命令和字段边界', async
   );
 });
 
-test('设备签名和钉钉操作保持网关身份与操作标识的嵌套边界', async () => {
+test('设备签名与 DWS 启动保持网关身份边界，取消只绑定本地操作标识', async () => {
   const signatureParams: GatewayDeviceChallengeParams = {
     nonce: 'nonce-1',
     signedAt: 1_700_000_000_000,
@@ -178,7 +178,7 @@ test('设备签名和钉钉操作保持网关身份与操作标识的嵌套边�
         { operationId: 'operation-1', kind: 'authorize' },
       );
       await startDwsOperation('runtime-1', 'connection-1', 'switchProfile', 'corp-a:user-a');
-      await cancelDwsOperation('runtime-1', 'connection-1', 'operation-1');
+      await cancelDwsOperation('operation-1');
       assert.deepEqual(calls, [
         { command: 'sign_gateway_device_challenge', args: { params: signatureParams } },
         { command: 'approve_selected_gateway_device', args: { requestId: 'request-1' } },
@@ -203,8 +203,6 @@ test('设备签名和钉钉操作保持网关身份与操作标识的嵌套边�
         {
           command: 'cancel_dws_operation',
           args: {
-            targetFingerprint: 'runtime-1',
-            expectedConnectionId: 'connection-1',
             operationId: 'operation-1',
           },
         },

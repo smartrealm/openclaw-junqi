@@ -667,15 +667,7 @@ export const startDwsOperation = (
   profile: profile ?? null,
 });
 
-export const cancelDwsOperation = (
-  targetFingerprint: string,
-  expectedConnectionId: string,
-  operationId: string,
-) => invoke<void>('cancel_dws_operation', {
-  targetFingerprint,
-  expectedConnectionId,
-  operationId,
-});
+export const cancelDwsOperation = (operationId: string) => invoke<void>('cancel_dws_operation', { operationId });
 export const setActiveGatewayRuntime = (mode: GatewayRuntimeMode) => (
   invoke<void>("set_active_gateway_runtime", { mode })
 );
