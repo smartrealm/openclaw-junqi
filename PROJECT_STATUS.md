@@ -1,10 +1,10 @@
 # JunQi 项目状态
 
-更新时间：2026-08-27
+更新时间：2026-08-31
 
 ## 当前目标
 
-当前产品优先级是完成单用户桌面端到端闭环，不实现或预留企业控制面双轨。当前直接目标是收敛会话消息操作、降低输入时的高频渲染扩散，并删除与智能体中心重复的旧多 Agent 独立页面，使协作办公室成为唯一入口。最新窗口修复将主窗口红色关闭收敛为退出整个应用，并统一最小化、隐藏及辅助窗口的恢复入口；DWS 授权弹窗的关闭、Escape 和遮罩关闭现在都请求终止 JunQi 所有的本地 DWS 命令，而不是静默失效或仅隐藏界面。已发送用户消息现以可见的“编辑并重新发送”表达官方 `sessions.rewind`，复制保持直接操作，分叉进入更多菜单，多 Agent 协作独立分组。真实桌面连续交互仍待新客户端启动后验证。
+当前产品优先级是完成单用户桌面端到端闭环，不实现或预留企业控制面双轨。当前直接目标是以补丁版本 `3.2.2` 发布自 `v3.2.1` 以来已经提交的运行时安装、协作插件更新与迁移、Gateway 重启、桌面窗口、DWS 取消、会话输入和消息操作修复。发布必须先取得精确源提交的远端 `main` CI 成功证据，再创建不可变 `v3.2.2` 标签并由标签工作流生成 Release；本地构建结果不能替代线上发布证据。
 
 ## 已完成内容
 
@@ -86,6 +86,7 @@
 - `src/pages/AgentHub/agentTreeConnectorGeometry.ts`
 - `src/pages/AgentHub/useAgentTreeConnectorGeometry.ts`
 - `docs/quality/chat-composer-native-interaction-audit-2026-08-25.md`
+- `docs/quality/tag-release-validation-2026-08-31-v3.2.2.md`
 - `docs/quality/agent-hub-unified-multi-agent-view-audit-2026-08-25.md`
 - `docs/quality/collaboration-runtime-update-and-mixed-schema-recovery-audit-2026-08-25.md`
 - `specs/2026-08-25-chat-composer-native-interaction.md`
@@ -122,6 +123,7 @@
 - 本轮尝试启动独立 Tauri 调试客户端时被已运行的单实例应用接管，所得窗口不是当前源码，因此没有把截图计为视觉验证；系统辅助功能输入自动化也未取得授权。
 - DWS 取消定向 TypeScript 回归覆盖活动阶段、关闭动作与启动守卫，Tauri IPC 契约回归覆盖取消仅传递 `operationId`；Rust DWS 操作测试、`cargo fmt -- --check`、`cargo check --lib`、`pnpm lint`、完整前端 2959 项、脚本 238 项、完整 Rust 663 项通过、1 项既有忽略、`pnpm build` 和无 updater 的本地候选打包均通过。
 - 消息操作层级的修复前回归因缺少布局模型稳定失败；修复后层级与三种语言回归及既有消息预览回归通过。完整 `pnpm test`、`pnpm lint` 和 `pnpm build` 通过，模块边界检查覆盖 950 个文件，协作插件 `0.5.7`、schema 15 与钉钉插件 `0.1.0` 的固定包契约和 Vite 生产构建完成。
+- `3.2.2` 四处版本已同步，远端 `main` CI、`v3.2.2` 标签、`Tagged Desktop Release` 和 GitHub Release 尚未执行；不得提前描述为发布成功。
 
 ## 已知问题与未验证边界
 
@@ -152,11 +154,13 @@
 ## 下一步顺序
 
 1. 安装包含本轮 DWS 取消修复的新客户端，连续验证授权弹窗关闭、Escape、遮罩、显式取消、启动早期取消和终态收敛；同时确认浏览器和 DWS 外部授权状态没有被本地 UI 误报。
-2. 连续验证 macOS 原生关闭、最小化、Command+H、Dock、托盘、萌宠和再次启动恢复。
-3. 在当前源码对应的真实 Tauri 窗口核对侧栏“协作办公室”选中态、办公室空态、树状、网格和活动视图，覆盖标准与窄窗口。
-4. 在真实会话连续核对中文输入法、“编辑并重新发送”、更多菜单、协作分组、转向或排队、Stop 和终态收敛，并覆盖亮色、暗色、护眼和暗黑主题。
-5. 在真实 Gateway 重启中确认协作设置从等待状态收敛为就绪。
-6. 在 Windows 与 Linux 目标客户端验证窗口恢复、输入法、Ctrl+Enter、窗口缩放和图标方向。
+2. 将 `3.2.2` 发布源提交推送到远端 `main`，等待精确提交的 `CI` 成功，再创建并推送 `v3.2.2` 标签。
+3. 跟踪 `Tagged Desktop Release` 到终态，核验 Release 身份、标签目标和附件清单，并回写线上结果。
+4. 连续验证 macOS 原生关闭、最小化、Command+H、Dock、托盘、萌宠和再次启动恢复。
+5. 在当前源码对应的真实 Tauri 窗口核对侧栏“协作办公室”选中态、办公室空态、树状、网格和活动视图，覆盖标准与窄窗口。
+6. 在真实会话连续核对中文输入法、“编辑并重新发送”、更多菜单、协作分组、转向或排队、Stop 和终态收敛，并覆盖亮色、暗色、护眼和暗黑主题。
+7. 在真实 Gateway 重启中确认协作设置从等待状态收敛为就绪。
+8. 在 Windows 与 Linux 目标客户端验证窗口恢复、输入法、Ctrl+Enter、窗口缩放和图标方向。
 
 ## GoClaw 对比审查
 
