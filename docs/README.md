@@ -44,6 +44,7 @@
 - [业务审计与模型选择器状态修复计划](../plans/2026-08-21-business-audit-and-model-picker-state.md)：回归测试、实施顺序和验证范围。
 - [三点二二标签发布验证](quality/tag-release-validation-2026-08-31-v3.2.2.md)：`v3.2.2` 的补丁版本依据、精确主线 CI、不可变标签和三平台 Release 验证边界。
 - [三点三零标签发布验证](quality/tag-release-validation-2026-09-01-v3.3.0.md)：OpenClaw 2.0 桌面兼容功能版本的发布依据、不可变标签、三平台制品和验证边界。
+- [三点三一标签发布验证](quality/tag-release-validation-2026-09-01-v3.3.1.md)：修复干净依赖安装下 OpenClaw transcript 子路径声明缺失，并以新标签重新执行发布门禁。
 - [三点二一标签发布验证](quality/tag-release-validation-2026-08-20-v3.2.1.md)：`v3.2.1` 的补丁版本依据、不可变标签发布顺序、自动化证据和签名验收边界。
 - [三点二零标签发布验证](quality/tag-release-validation-2026-08-20.md)：`v3.2.0` 的版本依据、不可变标签发布顺序、自动化证据和签名验收边界。
 - [运行时契约收敛审计](quality/runtime-contract-convergence-audit-2026-08-20.md)：官方进度卡、DWS 终态顺序、全局语音路由、费用提示、当前配置开关和会话回放安全边界。

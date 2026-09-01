@@ -1,26 +1,44 @@
-import type { OpenClawConfig } from "openclaw/plugin-sdk/plugin-entry";
-
 declare module "openclaw/plugin-sdk/session-transcript-runtime" {
-  export interface SessionTranscriptAssistantMirrorAppendParams {
-    agentId: string;
+  import type { OpenClawConfig } from "openclaw/plugin-sdk/plugin-entry";
+
+  export type SessionTranscriptEvent = unknown;
+
+  export interface SessionTranscriptReadParams {
+    agentId?: string;
+    sessionId: string;
     sessionKey: string;
-    sessionId?: string;
+  }
+
+  export interface SessionTranscriptAssistantMirrorAppendParams {
+    agentId?: string;
     config?: OpenClawConfig;
-    deliveryMirror?: {
-      kind: "channel-final";
-      sourceMessageId?: string;
-    };
+    deliveryMirror?:
+      | {
+          kind: "channel-final";
+          sourceMessageId?: string;
+        }
+      | {
+          kind: "channel-final-suppressed";
+          reason: "stale-foreground";
+          sourceMessageId?: string;
+        };
     idempotencyKey?: string;
     mediaUrls?: string[];
+    sessionId: string;
+    sessionKey: string;
     text?: string;
-    updateMode?: "inline" | "none";
+    updateMode?: "inline" | "file-only" | "none";
   }
 
   export type SessionTranscriptMirrorAppendResult =
     | { ok: true; messageId: string }
-    | { ok: false; code?: string; reason: string };
+    | { ok: false; code?: "blocked" | "session-rebound"; reason: string };
 
   export function appendAssistantMirrorMessageByIdentity(
     params: SessionTranscriptAssistantMirrorAppendParams,
   ): Promise<SessionTranscriptMirrorAppendResult>;
+
+  export function readSessionTranscriptEvents(
+    params: SessionTranscriptReadParams,
+  ): Promise<SessionTranscriptEvent[]>;
 }

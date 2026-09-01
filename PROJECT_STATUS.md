@@ -4,12 +4,12 @@
 
 ## 当前目标
 
-以 OpenClaw 官方 `v2026.8.1` 为当前契约基线，发布包含插件编译、首次设置协议和结构化提问桌面交互对齐的 JunQi Desktop `v3.3.0`。JunQi 只呈现官方能力，不以版本分支、旧方法 fallback、本地状态或硬编码业务数据模拟能力。
+以 OpenClaw 官方 `v2026.8.1` 为当前契约基线，修复 `v3.3.0` 在线生产构建暴露的 transcript 子路径类型声明缺口，并通过不可变新标签发布 JunQi Desktop `v3.3.1`。JunQi 只呈现官方能力，不以版本分支、旧方法 fallback、本地状态或硬编码业务数据模拟能力。
 
 ## 已完成内容
 
 - 已更新并核对 OpenClaw 官方 tag `v2026.8.1`，目标提交为 `ea806575e6450e4d1efdfc72c19f04be982a1b9b`。
-- 协作插件升级到 `0.5.8`，钉钉插件升级到 `0.1.1`；两者以 OpenClaw `2026.8.1` 作为开发、插件 API 和最低 Gateway 基线，并已重建固定归档与生成元数据。
+- 协作插件升级到 `0.5.9`，钉钉插件保持 `0.1.1`；两者以 OpenClaw `2026.8.1` 作为开发、插件 API 和最低 Gateway 基线，并已重建固定归档与生成元数据。
 - 协作插件已适配 2.0 SDK 类型变化和 Agent wait 的 `pending` 状态；助手镜像继续调用官方 transcript helper，没有复制 transcript 写入逻辑。
 - 首次设置只调用最新版 `openclaw.setup.*` 与官方 Classic Wizard；已删除 `crestodian.setup.*` 方法族、`installDaemon` 降参重试、旧激活结果交接和对应过时文档。
 - 活动审计只调用正式 `audit.activity.list`；已删除旧 `audit.list` 回退、旧来源投影、提示文案和专属测试。
@@ -22,6 +22,8 @@
 - Quick Chat 的 Enter 发送增加输入法组合态保护，避免中文候选确认被误提交。
 - 官方真实 Gateway 结构验证基线更新为 `ghcr.io/openclaw/openclaw:2026.8.1@sha256:e7849cb6c1ef1ead39ab4be7d85edb2df89611f486e283284c7cf35ce39a20d4`。
 - OpenClaw 版本与不可变 Gateway 镜像只保存在协作插件构建元数据中；插件校验器、真实 Gateway 验证器及其测试均读取该来源，不再复制版本或摘要。
+- `v3.3.0` 已准确指向提交 `804809227cb51ce68cbafecc811ee580288e2d28`，但主线 CI 运行 `33471619664` 发现 OpenClaw 正式包缺少 transcript 子路径入口声明，标签发布运行 `33471629203` 已停止且没有创建失败 Release。
+- transcript 补充声明已从依赖既有类型的模块增强改为独立正式模块声明，覆盖当前使用的两个官方函数及其精确参数和结果类型；协作包 TypeScript 配置明确纳入声明文件，插件版本随新归档升级到 `0.5.9`。
 
 ## 关键技术决策
 
@@ -47,6 +49,8 @@
 - `src/services/openclawWizard.ts`
 - `src/services/setup/openClawSetupHandoff.ts`
 - `packages/junqi-collab/`
+- `packages/junqi-collab/src/openclaw-session-transcript-runtime.d.ts`
+- `docs/quality/tag-release-validation-2026-09-01-v3.3.1.md`
 - `packages/junqi-dingtalk/`
 - `docs/quality/openclaw-2026-8-1-desktop-compatibility-audit-2026-09-01.md`
 - `specs/2026-09-01-openclaw-2026-8-1-desktop-compatibility.md`
@@ -69,7 +73,7 @@
 - 尚未在真实 Tauri 窗口连续验证亮色、暗色、窄窗口、键盘焦点、展开折叠、多个请求切换和输入法交互。
 - 尚未运行固定 digest 的真实 Gateway 容器结构验证，也未执行 Windows、Linux 和移动端目标平台验证。
 - 本次没有 Rust 源码改动，因此未运行 Rust 测试。
-- `session-transcript-runtime` 的正式 JavaScript subpath 存在，但 `2026.8.1` 发布包排除了入口声明文件；当前只补充了所用官方 helper 的精确类型声明，等待上游发布完整声明后应删除该本地声明。
+- `session-transcript-runtime` 的正式 JavaScript subpath 存在，但 `2026.8.1` 发布包排除了入口声明文件；当前只补充所用官方 helper 的精确类型声明，等待上游正式包包含入口声明后删除该本地声明。
 - 未跟踪的 `.easycode/`、`.pnpm-store/`、`dogfood-output/` 和 `outputs/` 属于既有工作区内容，本次未修改、删除或纳入变更。
 
 ## 失败方案与已删除路径
@@ -82,7 +86,8 @@
 
 ## 下一步顺序
 
-1. 提交并推送 `v3.3.0` 发布源到远端 `main`。
-2. 创建并推送准确指向发布源提交的带注释标签 `v3.3.0`。
-3. 核对同一提交的主线 CI、标签工作流、GitHub Release 和附件清单。
-4. 在目标 Tauri 客户端继续验证结构化问题、亮暗主题、窄窗口、键盘焦点和中文输入法。
+1. 完成 `v3.3.1` 的协作插件构建、完整静态检查、测试和生产构建。
+2. 提交并推送 `v3.3.1` 发布源到远端 `main`，等待同一提交的主线 CI 通过。
+3. 创建并推送准确指向发布源提交的带注释标签 `v3.3.1`。
+4. 核对标签工作流、GitHub Release、附件清单和 updater 元数据。
+5. 在目标 Tauri 客户端继续验证结构化问题、亮暗主题、窄窗口、键盘焦点和中文输入法。
