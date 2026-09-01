@@ -33,4 +33,30 @@
 
 ## 当前状态
 
-- 声明修复和版本更新已进入发布前验证，主线提交、远端标签、工作流、Release 与附件结果待发布事务完成后回写。
+- 发布源提交为 `a5cbe79435d1f37b5ea825903b2eeacd33d13f06`，远端带注释标签 `v3.3.1` 解引用后精确指向该提交。
+- 同一提交的主线 CI `33472625972` 已通过，覆盖前端类型检查与生产构建、桌面与协作测试、Rust 格式、Clippy、检查和库测试。
+- 标签发布工作流 `33472911707` 已通过，标签源校验、macOS ARM64、macOS x64、Windows x64、制品签名校验、updater 清单生成和 Release 创建均成功。
+- GitHub Release `JunQi Desktop 3.3.1` 已于 `2026-09-01T05:42:46Z` 发布，不是草稿或预发布版本：<https://github.com/smartrealm/openclaw-junqi/releases/tag/v3.3.1>。
+- Release 共包含 11 个附件：两种 macOS 架构的 DMG、updater 归档及其签名，Windows x64 NSIS 安装器及 updater 签名，Windows 内部测试证书及说明，以及 `latest.json`。
+- GitHub 返回的 11 个附件均为 `uploaded` 状态并提供 SHA-256 摘要；发布工作流已根据精确下载制品生成并校验 `latest.json`。
+- `v3.3.0` 仍保留为不可变失败标签，没有对应 GitHub Release；没有删除、覆盖或移动该标签。
+
+## 发布制品
+
+- `JunQi.Desktop_3.3.1_aarch64.dmg`
+- `JunQi.Desktop_3.3.1_aarch64.app.tar.gz`
+- `JunQi.Desktop_3.3.1_aarch64.app.tar.gz.sig`
+- `JunQi.Desktop_3.3.1_x64.dmg`
+- `JunQi.Desktop_3.3.1_x64.app.tar.gz`
+- `JunQi.Desktop_3.3.1_x64.app.tar.gz.sig`
+- `JunQi.Desktop_3.3.1_x64-setup.exe`
+- `JunQi.Desktop_3.3.1_x64-setup.exe.sig`
+- `junqi-internal-test-signing.cer`
+- `junqi-internal-test-signing-info.txt`
+- `latest.json`
+
+## 发布后边界
+
+- 本次已完成代码、主线 CI、标签工作流和线上 Release 验证。
+- 尚未完成 macOS 与 Windows 目标设备上的真实安装、升级、系统信任、权限、凭据库、输入法和 Gateway 端到端验收。
+- macOS 与 Windows 的签名信任边界保持本记录前述约束，不得把流水线通过描述为 Apple 公证或公共证书信任。
