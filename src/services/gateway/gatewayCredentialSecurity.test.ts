@@ -398,7 +398,7 @@ describe('Gateway credential security regression gates', () => {
       clientId: 'openclaw-control-ui',
       clientMode: 'ui',
       role: 'operator',
-      scopes: ['operator.read', 'operator.write', 'operator.talk'],
+      scopes: ['operator.read', 'operator.write', 'operator.questions', 'operator.talk'],
       token: 'daily-token',
       platform: 'windows',
       deviceFamily: null,
@@ -969,7 +969,12 @@ describe('Gateway credential security regression gates', () => {
     challenge(socket);
 
     const handshake = await waitForSocketRequest(socket, 'connect');
-    assert.deepEqual(handshake.params.scopes, ['operator.read', 'operator.write', 'operator.talk']);
+    assert.deepEqual(handshake.params.scopes, [
+      'operator.read',
+      'operator.write',
+      'operator.questions',
+      'operator.talk',
+    ]);
     assert.deepEqual(handshake.params.auth, { token: 'daily-token' });
     assert.deepEqual(savedDeviceTokens, []);
 

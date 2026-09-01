@@ -127,7 +127,10 @@ class FakeRuntime implements RuntimeAdapter {
   readonly cancelledRunIds: string[] = [];
   readOriginBarrier?: () => Promise<void>;
   runAgentReturnBarrier?: () => Promise<void>;
-  waitForRunHook: (() => Promise<{ status: "ok" | "error" | "timeout"; error?: string }>) | undefined;
+  waitForRunHook: (() => Promise<{
+    status: "ok" | "error" | "timeout" | "pending";
+    error?: string;
+  }>) | undefined;
   messagesBarrier?: () => Promise<void>;
   cancelBarrier?: () => Promise<void>;
   appendBarrier?: () => Promise<void>;
@@ -299,7 +302,7 @@ class FakeRuntime implements RuntimeAdapter {
 
   async waitForRun(runId: string) {
     this.waitForRunCalls += 1;
-    let result: { status: "ok" | "error" | "timeout"; error?: string };
+    let result: { status: "ok" | "error" | "timeout" | "pending"; error?: string };
     if (this.waitForRunHook) {
       result = await this.waitForRunHook();
     } else if (this.waitMode === "timeout") {
@@ -8099,8 +8102,8 @@ test("waitForRun is only a wakeup hint while persistent Task state remains autho
   }
 });
 
-test("persistent Task success overrides timeout and error wait hints", async (t) => {
-  for (const hint of ["timeout", "error"] as const) {
+test("persistent Task success overrides non-terminal and stale wait hints", async (t) => {
+  for (const hint of ["timeout", "error", "pending"] as const) {
     await t.test(hint, async () => {
       const directory = mkdtempSync(path.join(os.tmpdir(), `junqi-collab-task-authority-${hint}-`));
       const database = new CollaborationDatabase(":memory:");
@@ -8124,7 +8127,7 @@ test("persistent Task success overrides timeout and error wait hints", async (t)
           runtime.waitMode = "ok";
           return hint === "error"
             ? { status: "error", error: "stale process-local waiter" }
-            : { status: "timeout" };
+            : { status: hint };
         };
         await waitUntil(() => database.getRunSummary(runId).status === "COMPLETED");
         const firstWorker = database.db

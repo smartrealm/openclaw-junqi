@@ -42,12 +42,9 @@ function guidedEvidence(events: string[], setupComplete = true) {
       events.push("detect");
       return { setupComplete };
     },
-    modelEvidence: {
-      kind: "verify-rpc" as const,
-      verifyModel: async () => {
-        events.push("verify");
-        return { ok: true as const };
-      },
+    verifyModel: async () => {
+      events.push("verify");
+      return { ok: true as const };
     },
   };
 }
@@ -217,12 +214,9 @@ test("模型核验失败时保留官方诊断并停留在交接阶段", async ()
       events.push("detect");
       return { setupComplete: true, configuredModel: "openai/gpt-5.6-sol" };
     },
-    modelEvidence: {
-      kind: "verify-rpc",
-      verifyModel: async () => {
-        events.push("verify");
-        return { ok: false as const, error: "provider rejected credential" };
-      },
+    verifyModel: async () => {
+      events.push("verify");
+      return { ok: false as const, error: "provider rejected credential" };
     },
   });
 
@@ -230,39 +224,6 @@ test("模型核验失败时保留官方诊断并停留在交接阶段", async ()
     ready: false,
     reason: "model-unverified",
     diagnostic: "provider rejected credential",
-  });
-});
-
-test("稳定 Guided 激活结果作为本次流程的官方模型实测证据", async () => {
-  const events: string[] = [];
-  const result = await performOpenClawSetupHandoff(createPorts(events), {
-    kind: "guided",
-    detectSetup: async () => {
-      events.push("detect");
-      return { setupComplete: true, configuredModel: "openai/gpt-5.6-sol" };
-    },
-    modelEvidence: { kind: "activation", modelRef: "openai/gpt-5.6-sol" },
-  });
-
-  assert.deepEqual(result, { ready: true });
-  assert.deepEqual(events, ["attested", "config", "probe", "detect", "config"]);
-});
-
-test("稳定 Guided 的最终模型与激活证据不一致时停止交接", async () => {
-  const events: string[] = [];
-  const result = await performOpenClawSetupHandoff(createPorts(events), {
-    kind: "guided",
-    detectSetup: async () => ({
-      setupComplete: true,
-      configuredModel: "anthropic/claude-opus-4-8",
-    }),
-    modelEvidence: { kind: "activation", modelRef: "openai/gpt-5.6-sol" },
-  });
-
-  assert.deepEqual(result, {
-    ready: false,
-    reason: "model-unverified",
-    diagnostic: "OpenClaw stable setup detection did not confirm the activated model.",
   });
 });
 

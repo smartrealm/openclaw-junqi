@@ -58,13 +58,8 @@ export interface GuidedSetupController {
 
 interface GuidedSetupSessionPorts {
   enabled: boolean;
-  onComplete: (evidence: GuidedSetupSessionCompletionEvidence) => Promise<void>;
+  onComplete: () => Promise<void>;
   onUnsupported: () => void;
-}
-
-export interface GuidedSetupSessionCompletionEvidence {
-  methodFamily: GuidedSetupDetection['methodFamily'];
-  activation?: Extract<GuidedSetupActivation, { ok: true }>;
 }
 
 export type GuidedProviderWizardDisposition =
@@ -124,7 +119,6 @@ export function useGuidedSetupSession({
   const preparedRef = useRef(false);
   const providerPrepareRef = useRef<string | null>(null);
   const chatSessionIdRef = useRef<string | null>(null);
-  const activationEvidenceRef = useRef<Extract<GuidedSetupActivation, { ok: true }> | null>(null);
   const detectionEvidenceRef = useRef<GuidedSetupDetection | null>(null);
   const guidedClientRef = useRef<OpenClawGuidedSetupClient | null>(null);
   const wizardClientRef = useRef<OpenClawWizardClient | null>(null);
@@ -155,10 +149,7 @@ export function useGuidedSetupSession({
     setPhase("completing");
     const currentDetection = detectionEvidenceRef.current;
     if (!currentDetection) throw new Error("OpenClaw guided setup detection evidence is missing.");
-    await onComplete({
-      methodFamily: currentDetection.methodFamily,
-      ...(activationEvidenceRef.current ? { activation: activationEvidenceRef.current } : {}),
-    });
+    await onComplete();
   }, [assertCurrent, onComplete]);
 
   const applyChatResult = useCallback(async (result: GuidedSetupChatResult, operation: number) => {
@@ -188,7 +179,6 @@ export function useGuidedSetupSession({
     assertCurrent(operation);
     detectionEvidenceRef.current = result;
     setDetection(result);
-    guidedClientRef.current!.useMethodFamily(result.methodFamily);
     if (result.setupComplete) {
       await completeHandoff(operation);
       return;
@@ -208,7 +198,6 @@ export function useGuidedSetupSession({
     });
     assertCurrent(operation);
     if (ladder.activated) {
-      activationEvidenceRef.current = ladder.result;
       setActivation(ladder.result);
       setActiveCandidate(ladder.candidate);
       setPhase("confirming");
@@ -229,7 +218,6 @@ export function useGuidedSetupSession({
     const operation = beginOperation();
     setPhase("activating");
     setActivation(null);
-    activationEvidenceRef.current = null;
     setActiveCandidate(null);
     try {
       const result = await guidedClientRef.current!.activate(params);
@@ -240,7 +228,6 @@ export function useGuidedSetupSession({
         setError(result.error);
         return;
       }
-      activationEvidenceRef.current = result;
       await startOnboardingChat(operation);
     } catch (cause) {
       if (operation === operationRef.current) {
@@ -256,7 +243,6 @@ export function useGuidedSetupSession({
     const operation = beginOperation();
     setPhase("detecting");
     setActivation(null);
-    activationEvidenceRef.current = null;
     setActiveCandidate(null);
     setChat(null);
     setWizardStep(null);
@@ -282,11 +268,9 @@ export function useGuidedSetupSession({
     preparedRef.current = true;
     setPhase("detecting");
     setActivation(null);
-    activationEvidenceRef.current = null;
     setActiveCandidate(null);
     setChat(null);
     setWizardStep(null);
-    guidedClientRef.current!.useMethodFamily(result.methodFamily);
     try {
       await continueFromDetection(result, operation);
     } catch (cause) {

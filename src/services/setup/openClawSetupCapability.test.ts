@@ -4,7 +4,6 @@ import type { GuidedSetupDetection } from "@/services/gateway/OpenClawGuidedSetu
 import { resolveOpenClawSetupCapability } from "./openClawSetupCapability";
 
 const detection: GuidedSetupDetection = {
-  methodFamily: "openclaw",
   setupComplete: false,
   workspace: "/workspace",
   candidates: [],

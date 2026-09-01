@@ -1,7 +1,6 @@
 import {
   definePluginEntry,
   type OpenClawPluginApi,
-  type OpenClawPluginDefinition,
 } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "typebox";
 import { DwsRunner, normalizeRunnerConfig, validateProfileReference } from "./dws-runner.js";
@@ -70,7 +69,7 @@ export function shouldRegisterDingTalkTools(
   );
 }
 
-export function createJunqiDingTalkPlugin(): OpenClawPluginDefinition {
+export function createJunqiDingTalkPlugin() {
   return definePluginEntry({
     id: PLUGIN_ID,
     name: PLUGIN_NAME,
@@ -199,7 +198,7 @@ export function createJunqiDingTalkPlugin(): OpenClawPluginDefinition {
   });
 }
 
-const plugin: OpenClawPluginDefinition = createJunqiDingTalkPlugin();
+const plugin = createJunqiDingTalkPlugin();
 
 export default plugin;
 export {

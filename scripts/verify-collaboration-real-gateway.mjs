@@ -18,11 +18,24 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIRECTORY = path.dirname(SCRIPT_PATH);
 
 export const REPOSITORY_ROOT = path.resolve(SCRIPT_DIRECTORY, '..');
-export const OFFICIAL_OPENCLAW_VERSION = '2026.7.1';
-export const OFFICIAL_OPENCLAW_IMAGE_DIGEST =
-  'sha256:6a31d44b2944e7adcd2b582bf6fb463111264ebca97a0201795b799135bd102c';
-export const OFFICIAL_OPENCLAW_IMAGE =
-  `ghcr.io/openclaw/openclaw:${OFFICIAL_OPENCLAW_VERSION}@${OFFICIAL_OPENCLAW_IMAGE_DIGEST}`;
+const COLLABORATION_PACKAGE_METADATA = JSON.parse(await readFile(path.join(
+  REPOSITORY_ROOT,
+  'packages',
+  'junqi-collab',
+  'package.json',
+), 'utf8'));
+const OPENCLAW_BUILD_METADATA = COLLABORATION_PACKAGE_METADATA.openclaw?.build;
+const OPENCLAW_IMAGE_MATCH = typeof OPENCLAW_BUILD_METADATA?.gatewayImage === 'string'
+  ? /^(.+):([^@]+)@(sha256:[a-f0-9]{64})$/.exec(OPENCLAW_BUILD_METADATA.gatewayImage)
+  : null;
+if (typeof OPENCLAW_BUILD_METADATA?.openclawVersion !== 'string'
+  || !OPENCLAW_IMAGE_MATCH
+  || OPENCLAW_IMAGE_MATCH[2] !== OPENCLAW_BUILD_METADATA.openclawVersion) {
+  throw new Error('Collaboration package OpenClaw build metadata is invalid');
+}
+export const OFFICIAL_OPENCLAW_VERSION = OPENCLAW_BUILD_METADATA.openclawVersion;
+export const OFFICIAL_OPENCLAW_IMAGE_DIGEST = OPENCLAW_IMAGE_MATCH[3];
+export const OFFICIAL_OPENCLAW_IMAGE = OPENCLAW_BUILD_METADATA.gatewayImage;
 export const DEFAULT_USER_GATEWAY_PORT = 18_789;
 export const COLLABORATION_ARCHIVE_DESTINATION = '/run/junqi-input/junqi-collab.tgz';
 export const DETERMINISTIC_PROVIDER_DESTINATION = '/run/junqi-provider/provider.mjs';

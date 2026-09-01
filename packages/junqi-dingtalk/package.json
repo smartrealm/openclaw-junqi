@@ -1,6 +1,6 @@
 {
   "name": "@junqi/openclaw-dingtalk-business",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenClaw-owned DingTalk business tools backed by DWS",
   "type": "module",
   "license": "MIT",
@@ -32,7 +32,7 @@
     "typebox": "1.3.3"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.7.1"
+    "openclaw": ">=2026.8.1"
   },
   "peerDependenciesMeta": {
     "openclaw": {
@@ -44,15 +44,15 @@
       "./dist/index.js"
     ],
     "compat": {
-      "pluginApi": ">=2026.7.1",
-      "minGatewayVersion": "2026.7.1"
+      "pluginApi": ">=2026.8.1",
+      "minGatewayVersion": "2026.8.1"
     },
     "build": {
-      "openclawVersion": "2026.7.1",
-      "pluginSdkVersion": "2026.7.1"
+      "openclawVersion": "2026.8.1",
+      "pluginSdkVersion": "2026.8.1"
     }
   },
   "devDependencies": {
-    "openclaw": "2026.7.1-2"
+    "openclaw": "2026.8.1"
   }
 }

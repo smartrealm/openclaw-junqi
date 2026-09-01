@@ -28,10 +28,18 @@ assert.deepEqual(packageJson.exports, {
 });
 assert.equal(packageJson.engines?.node, ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0");
 // OpenClaw 使用该语义化版本下限声明外部插件 API 的兼容范围。
-const supportedOpenClawRange = ">=2026.7.1";
+const supportedOpenClawVersion = packageJson.devDependencies?.openclaw;
+assert.match(supportedOpenClawVersion, /^\d{4}\.\d+\.\d+$/);
+const supportedOpenClawRange = `>=${supportedOpenClawVersion}`;
 assert.equal(packageJson.peerDependencies?.openclaw, supportedOpenClawRange);
 assert.equal(packageJson.openclaw?.compat?.pluginApi, supportedOpenClawRange);
-assert.equal(packageJson.openclaw?.compat?.minGatewayVersion, "2026.7.1");
+assert.equal(packageJson.openclaw?.compat?.minGatewayVersion, supportedOpenClawVersion);
+assert.equal(packageJson.openclaw?.build?.openclawVersion, supportedOpenClawVersion);
+assert.equal(packageJson.openclaw?.build?.pluginSdkVersion, supportedOpenClawVersion);
+assert.match(
+  packageJson.openclaw?.build?.gatewayImage,
+  new RegExp(`:${supportedOpenClawVersion.replaceAll('.', '\\.')}@sha256:[a-f0-9]{64}$`),
+);
 assert.deepEqual(packageJson.dependencies ?? {}, {});
 assert.deepEqual(packageJson.optionalDependencies ?? {}, {});
 

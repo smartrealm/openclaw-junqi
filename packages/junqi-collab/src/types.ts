@@ -313,7 +313,10 @@ export interface RuntimeAdapter {
     expectedIdempotencyKey?: string;
     taskRuntime?: AgentTaskRuntime;
   }): Promise<AgentTaskLookupResult>;
-  waitForRun(runId: string, timeoutMs: number): Promise<{ status: "ok" | "error" | "timeout"; error?: string }>;
+  waitForRun(
+    runId: string,
+    timeoutMs: number,
+  ): Promise<{ status: "ok" | "error" | "timeout" | "pending"; error?: string }>;
   getSessionMessages(sessionKey: string, limit: number): Promise<unknown[]>;
   cancelRun(params: {
     ownerSessionKey: string;

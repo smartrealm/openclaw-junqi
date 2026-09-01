@@ -26,7 +26,14 @@ assert.deepEqual(manifest.contracts?.tools, registeredToolNames);
 assert.deepEqual(manifest.configSchema?.properties?.allowedAgentIds?.default, []);
 assert.deepEqual(packageJson.openclaw?.extensions, ["./dist/index.js"]);
 assert.equal(packageJson.dependencies?.typebox, "1.3.3");
-assert.equal(packageJson.peerDependencies?.openclaw, ">=2026.7.1");
+const supportedOpenClawVersion = packageJson.devDependencies?.openclaw;
+assert.match(supportedOpenClawVersion, /^\d{4}\.\d+\.\d+$/);
+const supportedOpenClawRange = `>=${supportedOpenClawVersion}`;
+assert.equal(packageJson.peerDependencies?.openclaw, supportedOpenClawRange);
+assert.equal(packageJson.openclaw?.compat?.pluginApi, supportedOpenClawRange);
+assert.equal(packageJson.openclaw?.compat?.minGatewayVersion, supportedOpenClawVersion);
+assert.equal(packageJson.openclaw?.build?.openclawVersion, supportedOpenClawVersion);
+assert.equal(packageJson.openclaw?.build?.pluginSdkVersion, supportedOpenClawVersion);
 
 for (const file of ["dist/index.js", "dist/index.d.ts", "dist/dws-runner.js", "dist/schema-contract.js", "dist/tool-specs.js"]) {
   await access(path.join(root, file));

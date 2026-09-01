@@ -1,19 +1,11 @@
 /**
- * QuickChatPage — compact single-session chat surface.
+ * Quick Chat 是独立 Tauri 窗口中的紧凑单会话界面。
  *
- * Hosted in its own Tauri WebviewWindow ("quickchat" label). No sidebar,
- * no workbench — just one focused conversation with the dropped file(s)
- * attached as context.
+ * 窗口只承载当前会话和拖入资源，不创建另一套 Gateway 或会话语义。挂载时接收
+ * 桌面端投递的资源，卸载时释放当前窗口的客户端租约和语音输出；会话历史仍由
+ * Gateway 持有，但不会作为主窗口已打开标签持久化。
  *
- * Lifecycle:
- *  - On mount: listen for `quickchat:seed` (Rust emits the dropped paths
- *    after a 450ms warm-up so React is ready).
- *  - On unmount / close: release this WebView's client lease and voice output.
- *    Gateway retains conversation history, but the session is never persisted
- *    as an open main-window tab.
- *
- * Window itself is frameless + transparent + always_on_top (see Rust
- * quickchat.rs builder), so we render our own draggable title bar.
+ * 窗口使用无边框透明外壳，因此标题栏和拖拽区域由当前组件负责呈现。
  */
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -67,6 +59,7 @@ const DecisionCard = lazy(() => import('@/components/Chat/ResultCards').then((mo
 const FileResultCard = lazy(() => import('@/components/Chat/ResultCards').then((module) => ({ default: module.FileResultCard })));
 const SessionEventCard = lazy(() => import('@/components/Chat/ResultCards').then((module) => ({ default: module.SessionEventCard })));
 const WorkshopEventCard = lazy(() => import('@/components/Chat/ResultCards').then((module) => ({ default: module.WorkshopEventCard })));
+const ChatQuestionDock = lazy(() => import('@/components/Chat/ChatQuestionDock').then((module) => ({ default: module.ChatQuestionDock })));
 
 function normalizeDroppedPath(input: string): string {
   if (!input.startsWith('file:')) return input;
@@ -96,6 +89,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
+  const [questionDockExpanded, setQuestionDockExpanded] = useState(false);
   const [fallbackSessionKey] = useState(() => `quickchat:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`);
   const sessionKey = ownedSessionKey || fallbackSessionKey;
   const sessionId = useChatStore((state) => state.sessions.find((session) => session.key === sessionKey)?.sessionId);
@@ -124,10 +118,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
 
-  // Subscribe to the seed event from Rust. The webview window we live in
-  // has its own event bus, separate from the main window — that's exactly
-  // what we want, so per-window fresh sessions don't pollute the main
-  // store's seed key.
+  // 独立 WebView 使用自己的事件总线，避免临时会话的资源种子污染主窗口状态。
   const applySeed = useCallback(async (paths: string[]) => {
     const inspected = await Promise.allSettled(paths.map(inspectSeedFile));
     const parsed = inspected.flatMap((result) => (
@@ -171,7 +162,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
     };
   }, [applySeed]);
 
-  // Drag-region for the frameless title bar.
+  // 无边框窗口通过该属性声明原生拖拽区域。
   const titleDragRegion = 'data-tauri-drag-region';
 
   const handleSend = useCallback(async () => {
@@ -189,8 +180,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
       ? `${t('pet.quickChat.attachmentIntro')}\n${directoryLines}\n\n${trimmed}`
       : trimmed;
 
-    // The session is created at mount so Gateway callbacks can be scoped before
-    // the first request is sent.
+    // 会话在挂载阶段创建，使首次发送前到达的 Gateway 回调也能绑定正确身份。
     const key = sessionKey;
 
     try {
@@ -379,6 +369,7 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
   }, [renderQuickChatBlock, sidePanel.openResponseTrace, t]);
 
   const handleKey = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void handleSend();
@@ -490,8 +481,21 @@ export function QuickChatPage({ sessionKey: ownedSessionKey }: { sessionKey?: st
         {sendError && <div className="mt-2 text-[11px] text-aegis-danger">{sendError}</div>}
       </div>
 
+      <Suspense fallback={null}>
+        <ChatQuestionDock
+          connected={connected}
+          activeSessionKey={sessionKey}
+          onExpandedChange={setQuestionDockExpanded}
+        />
+      </Suspense>
+
       {/* 输入区保持稳定的桌面表面，发送状态只改变控件本身。 */}
-      <div className="border-t border-aegis-border/60 bg-aegis-surface p-2.5">
+      <div
+        className={clsx(
+          'border-t border-aegis-border/60 bg-aegis-surface p-2.5',
+          questionDockExpanded && 'hidden',
+        )}
+      >
         <textarea
           ref={inputRef}
           value={text}

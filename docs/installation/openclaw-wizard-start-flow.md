@@ -1,13 +1,12 @@
 # OpenClaw `wizard.start` 流程与 JunQi 适配边界
 
-更新时间：2026-08-14
+更新时间：2026-09-01
 
 本文整理 OpenClaw Gateway 交互式 Wizard 的正式协议、服务端会话状态机、完整配置流程和 JunQi 当前适配方式。它是实现与排障依据，不是客户端自定义向导规范。
 
 ## 依据与版本边界
 
-- 最新上游依据为 2026-08-14 核验的 OpenClaw `main`，提交 `b3d5265f58522bab67e06168d436b3b328cbae60`。
-- 本机相邻 `Openclaw` 工作树已抓取该上游提交。本文仍只把提交号作为审计证据，不把本地工作树或提交号写成客户端能力开关。
+- 最新上游依据为 OpenClaw 官方 tag `v2026.8.1`，提交 `ea806575e6450e4d1efdfc72c19f04be982a1b9b`。
 - OpenClaw 实际安装版本只用于复现兼容差异。JunQi 不按版本号猜测字段，也不把本文记录的提交号写成能力开关。
 - 请求对象使用封闭 schema。目标 Runtime 不接受某个最新字段时，客户端必须保留真实失败，不得静默改发另一套自定义协议。
 
@@ -62,23 +61,24 @@ sequenceDiagram
 
 ## 二、`wizard.start` 请求
 
-官方主线参数如下；npm stable 2026.7.1-2 的公开 schema 只接受 `mode` 与 `workspace`：
+OpenClaw `v2026.8.1` 的正式参数如下：
 
 | 字段 | 类型 | 语义 |
 | --- | --- | --- |
 | `mode` | `local` 或 `remote` | 完整配置流程的运行方式 |
 | `workspace` | 字符串 | 可选工作区输入，由官方流程继续校验和解析 |
-| `installDaemon` | 布尔值 | 主线字段；是否在官方收尾阶段处理后台服务安装 |
-| `flow` | `setup` 或 `channels` | 主线字段；缺省为完整 `setup`，`channels` 只运行渠道配置流程 |
-| `channel` | 非空字符串 | 主线字段；`channels` 流程的预选渠道，不代表最终一定配置成功 |
+| `installDaemon` | 布尔值 | 是否在官方收尾阶段处理后台服务安装 |
+| `flow` | `setup` 或 `channels` | 缺省为完整 `setup`，`channels` 只运行渠道配置流程 |
+| `channel` | 非空字符串 | `channels` 流程的预选渠道，不代表最终一定配置成功 |
 
-JunQi 首次请求保留主线 `installDaemon:false`。只有 stable 在创建会话前精确拒绝该字段时，客户端才以公共字段重试一次；stable 省略字段后的 daemon 分支仍由官方 Wizard 拥有。渠道专用 flow 不做这种降参，因为 stable 没有对应公开参数，当前界面应保留正式不可用或官方终端交接语义。
+JunQi 已经通过统一生命周期拥有所选 Runtime，因此完整首次配置提交 `installDaemon:false`。Gateway 拒绝正式参数时保留该次结构化失败，不删除字段重放，也不根据版本号改换请求。渠道专用 flow 只提交 `flow` 与可选 `channel`。
 
 完整首次配置的最小请求示例：
 
 ```json
 {
-  "mode": "local"
+  "mode": "local",
+  "installDaemon": false
 }
 ```
 
@@ -87,7 +87,8 @@ JunQi 首次请求保留主线 `installDaemon:false`。只有 stable 在创建�
 ```json
 {
   "mode": "local",
-  "workspace": "/resolved/by/runtime"
+  "workspace": "/resolved/by/runtime",
+  "installDaemon": false
 }
 ```
 

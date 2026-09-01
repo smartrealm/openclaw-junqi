@@ -127,9 +127,7 @@ export function BusinessActivityList() {
         iconStyle="bare"
         icon={<Clock3 size={24} />}
         title={t('businessApplications.activity.emptyTitle')}
-        description={t(audit.source === 'legacy'
-          ? 'businessApplications.activity.legacyEmptyDescription'
-          : 'businessApplications.activity.emptyDescription')}
+        description={t('businessApplications.activity.emptyDescription')}
       />
     );
   }
@@ -181,7 +179,6 @@ export function BusinessActivityList() {
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {audit.failure && <div className="border-b border-aegis-warning/25 bg-aegis-warning/[0.05] px-3 py-2 text-[10px] text-aegis-warning">{auditFailureDescription}</div>}
-        {audit.source === 'legacy' && <div className="border-b border-aegis-border bg-aegis-surface/35 px-3 py-2 text-[10px] text-aegis-text-dim">{t('businessApplications.activity.legacyProtocolNotice')}</div>}
         {!hasFilteredActivity && (
           <EmptyState
             density="compact"

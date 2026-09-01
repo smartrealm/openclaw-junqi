@@ -14,7 +14,6 @@ function createGuidedFlow(): SetupFlow {
     guidedSetup: {
       phase: 'selecting',
       detection: {
-        methodFamily: 'openclaw',
         candidates: [{
           kind: 'codex-cli',
           brandId: 'test-provider',

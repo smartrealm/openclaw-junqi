@@ -253,8 +253,7 @@ export function useWizardSession({
   }, [assertWizardOperationCurrent, refreshGatewayConnectionTarget, refreshWizardSessionScope, t]);
 
   const startManagedWizardSession = useCallback(() => {
-    // 主线 Runtime 显式关闭 daemon 分支；stable 若在 schema 校验阶段拒绝该
-    // 新字段，客户端会改用官方公共参数并忠实呈现其 daemon 选择步骤。
+    // JunQi 已拥有所选 Runtime 的生命周期，因此通过最新版官方字段关闭向导内的 daemon 安装分支。
     return wizardClientRef.current!.start({ installDaemon: false });
   }, []);
 

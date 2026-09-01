@@ -291,26 +291,10 @@ export function useSetupFlow(
     setGatewayRunning,
   });
 
-  const completeGuidedSetup = useCallback(async (evidence: {
-    methodFamily: "openclaw" | "crestodian";
-    activation?: { ok: true; modelRef: string };
-  }) => {
+  const completeGuidedSetup = useCallback(async () => {
     const client = new OpenClawGuidedSetupClient({
       requestPrivileged: (method, params) => gateway.callPrivileged(method, params),
     });
-    const modelEvidence = (() => {
-      if (evidence.methodFamily === "openclaw") {
-        return { kind: "verify-rpc" as const, verifyModel: () => client.verify() };
-      }
-      const activation = evidence.activation;
-      if (!activation) {
-        throw new Error(t(
-          "setup.handoff.model-unverified",
-          "OpenClaw 配置已存在，但当前稳定协议没有返回本次流程的模型实测证据。请重新选择模型并完成核验。",
-        ));
-      }
-      return { kind: "activation" as const, modelRef: activation.modelRef };
-    })();
     const handoff = await performOpenClawSetupHandoff({
       waitForLifecycleIdle: (boundary) => gatewayLifecycle.waitForIdle(boundary),
       isLifecycleReceiptCurrent: (receipt) => gatewayLifecycle.isIdleReceiptCurrent(receipt),
@@ -345,7 +329,7 @@ export function useSetupFlow(
     }, {
       kind: "guided",
       detectSetup: () => client.detect(),
-      modelEvidence,
+      verifyModel: () => client.verify(),
     });
     if (!handoff.ready) {
       if (handoff.diagnostic) {

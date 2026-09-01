@@ -29,6 +29,7 @@ import type {
 } from "./types.js";
 
 type UnknownRecord = Record<string, unknown>;
+type AgentWaitStatus = "ok" | "error" | "timeout" | "pending";
 
 interface PersistentAgentTaskView {
   id: string;
@@ -45,6 +46,11 @@ interface PersistentAgentTaskView {
 
 function isRecord(value: unknown): value is UnknownRecord {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isAgentWaitStatus(value: unknown): value is AgentWaitStatus {
+  if (typeof value !== "string") return false;
+  return value === "ok" || value === "error" || value === "timeout" || value === "pending";
 }
 
 function taskLookupFound(task: PersistentAgentTaskView): Extract<AgentTaskLookupResult, { kind: "FOUND" }> {
@@ -500,10 +506,13 @@ export class OpenClawRuntimeAdapter implements RuntimeAdapter {
   waitForRun(
     runId: string,
     timeoutMs: number,
-  ): Promise<{ status: "ok" | "error" | "timeout"; error?: string }> {
+  ): Promise<{ status: "ok" | "error" | "timeout" | "pending"; error?: string }> {
     if (this.#acpRunIds.has(runId) && typeof this.runtime.gateway?.request === "function") {
       return this.runtime.gateway.request<unknown>("agent.wait", { runId, timeoutMs }).then((value) => {
-        if (!isRecord(value) || (value.status !== "ok" && value.status !== "error" && value.status !== "timeout")) {
+        if (
+          !isRecord(value)
+          || !isAgentWaitStatus(value.status)
+        ) {
           throw new CollaborationError("INVALID_RESPONSE", "OpenClaw ACP wait returned an invalid Gateway response");
         }
         return {

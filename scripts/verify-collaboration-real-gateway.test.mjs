@@ -62,7 +62,7 @@ function capabilities(instanceId = 'instance-structural-smoke') {
     pluginId: 'junqi-collab',
     pluginVersion: '0.3.0',
     schemaVersion: 10,
-    runtimeVersion: '2026.7.1',
+    runtimeVersion: OFFICIAL_OPENCLAW_VERSION,
     databaseIntegrity: 'ok',
     configured: true,
     durableState: true,
@@ -213,7 +213,7 @@ class FakeDockerRuntime {
 
   async openclawVersion() {
     if (this.failAtVersion) throw new Error(`version probe failed with ${this.token}`);
-    return 'OpenClaw 2026.7.1 (test)';
+    return `OpenClaw ${OFFICIAL_OPENCLAW_VERSION} (test)`;
   }
 
   async gatewayCall() {
@@ -303,14 +303,11 @@ describe('collaboration bundle verification', () => {
 
 describe('Docker isolation contract', () => {
   test('pins the reviewed official OpenClaw release by immutable digest', () => {
-    assert.equal(OFFICIAL_OPENCLAW_VERSION, '2026.7.1');
-    assert.equal(
-      OFFICIAL_OPENCLAW_IMAGE_DIGEST,
-      'sha256:6a31d44b2944e7adcd2b582bf6fb463111264ebca97a0201795b799135bd102c',
-    );
-    assert.equal(
+    assert.match(OFFICIAL_OPENCLAW_VERSION, /^\d{4}\.\d+\.\d+$/);
+    assert.match(OFFICIAL_OPENCLAW_IMAGE_DIGEST, /^sha256:[a-f0-9]{64}$/);
+    assert.match(
       OFFICIAL_OPENCLAW_IMAGE,
-      `ghcr.io/openclaw/openclaw:${OFFICIAL_OPENCLAW_VERSION}@${OFFICIAL_OPENCLAW_IMAGE_DIGEST}`,
+      new RegExp(`:${OFFICIAL_OPENCLAW_VERSION.replaceAll('.', '\\.')}@${OFFICIAL_OPENCLAW_IMAGE_DIGEST}$`),
     );
   });
 

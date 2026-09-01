@@ -103,6 +103,7 @@ const HISTORY_STARTUP_RETRY_MAX_MS = 12_000;
 const InlineButtonBar = lazy(() => import('@/components/Chat/InlineButtonBar').then((m) => ({ default: m.InlineButtonBar })));
 const DecisionCard = lazy(() => import('@/components/Chat/ResultCards').then((m) => ({ default: m.DecisionCard })));
 const ProgressCard = lazy(() => import('@/components/Chat/ProgressCard').then((m) => ({ default: m.ProgressCard })));
+const ChatQuestionDock = lazy(() => import('@/components/Chat/ChatQuestionDock').then((m) => ({ default: m.ChatQuestionDock })));
 const ChatPendingApprovalsStrip = lazy(() => import('@/components/Chat/ChatPendingApprovalsStrip').then((m) => ({ default: m.ChatPendingApprovalsStrip })));
 const FileResultCard = lazy(() => import('@/components/Chat/ResultCards').then((m) => ({ default: m.FileResultCard })));
 const AssistantResponseAvatar = lazy(() => import('@/components/Chat/MessageBubble').then((m) => ({ default: m.AssistantResponseAvatar })));
@@ -249,6 +250,7 @@ function ChatViewContent() {
   );
 
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const [questionDockExpanded, setQuestionDockExpanded] = useState(false);
   const progressCard = useOpenClawProgressCard(activeSessionKey);
   const sessionHistoryCapabilities = useGatewaySessionHistoryCapabilities();
   const sidePanel = useChatSidePanel(activeSessionKey);
@@ -1546,7 +1548,7 @@ function ChatViewContent() {
       </div>
 
       {/* Quick Reply buttons */}
-      {quickReplies.length > 0 && !isTyping && !latestGroupHasDecision && (
+      {quickReplies.length > 0 && !isTyping && !latestGroupHasDecision && !questionDockExpanded && (
         <Suspense fallback={null}>
           <QuickReplyBar
             buttons={quickReplies}
@@ -1585,6 +1587,14 @@ function ChatViewContent() {
       )}
 
       <Suspense fallback={null}>
+        <ChatQuestionDock
+          connected={connected}
+          activeSessionKey={activeSessionKey}
+          onExpandedChange={setQuestionDockExpanded}
+        />
+      </Suspense>
+
+      <Suspense fallback={null}>
         <ChatPendingApprovalsStrip
           connected={connected}
           activeSessionKey={activeSessionKey}
@@ -1592,9 +1602,11 @@ function ChatViewContent() {
         />
       </Suspense>
 
-      <Suspense fallback={<div className="h-[76px] border-t border-aegis-border/20" />}>
-        <MessageInput />
-      </Suspense>
+      {!questionDockExpanded && (
+        <Suspense fallback={<div className="h-[76px] border-t border-aegis-border/20" />}>
+          <MessageInput />
+        </Suspense>
+      )}
     </div>
       {sidePanel.panel?.kind === 'message-preview' && (
         <ChatMessagePreviewPanel

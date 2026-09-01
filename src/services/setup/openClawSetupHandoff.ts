@@ -49,9 +49,7 @@ export type OpenClawSetupCompletionEvidence =
   | {
     kind: "guided";
     detectSetup: () => Promise<{ setupComplete: boolean; configuredModel?: string }>;
-    modelEvidence:
-      | { kind: "verify-rpc"; verifyModel: () => Promise<{ ok: true } | { ok: false; error: string }> }
-      | { kind: "activation"; modelRef: string };
+    verifyModel: () => Promise<{ ok: true } | { ok: false; error: string }>;
   }
   | { kind: "classic-wizard-terminal" };
 
@@ -114,9 +112,8 @@ export async function performOpenClawSetupHandoff(
       return { ready: false, reason: "connection-unavailable" };
     }
 
-    // Classic Wizard 的 done 是稳定协议给出的官方终态，不要求 Runtime 同时实现
-    // Guided 方法。Guided 则使用当前方法族提供的 verify，或本次 activate 的
-    // 真实模型调用结果；两种终态共享连接和 Runtime 身份门禁。
+    // Classic Wizard 的 done 是官方终态，不要求 Runtime 同时实现 Guided 方法。
+    // Guided 必须通过正式 verify RPC 核验，两种终态共享连接和 Runtime 身份门禁。
     if (evidence.kind === "guided") {
       const detection = await awaitWithinHandoffDeadline(() => evidence.detectSetup(), transaction);
       if (!detection.settled) return configurationApplicationTimeout(finalDiagnostic);
@@ -128,32 +125,21 @@ export async function performOpenClawSetupHandoff(
         return { ready: false, reason: "setup-incomplete" };
       }
 
-      const modelEvidence = evidence.modelEvidence;
-      if (modelEvidence.kind === "activation") {
-        if (detection.value.configuredModel?.trim() !== modelEvidence.modelRef) {
-          return {
-            ready: false,
-            reason: "model-unverified",
-            diagnostic: "OpenClaw stable setup detection did not confirm the activated model.",
-          };
-        }
-      } else {
-        const verification = await awaitWithinHandoffDeadline(
-          () => modelEvidence.verifyModel(),
-          transaction,
-        );
-        if (!verification.settled) return configurationApplicationTimeout(finalDiagnostic);
-        if (!isLifecycleReceiptCurrent(ports, transaction)) continue;
-        if (!ports.isAttestedConnectionCurrent(connectionId)) {
-          return { ready: false, reason: "connection-unavailable" };
-        }
-        if (!verification.value.ok) {
-          return {
-            ready: false,
-            reason: "model-unverified",
-            diagnostic: verification.value.error,
-          };
-        }
+      const verification = await awaitWithinHandoffDeadline(
+        () => evidence.verifyModel(),
+        transaction,
+      );
+      if (!verification.settled) return configurationApplicationTimeout(finalDiagnostic);
+      if (!isLifecycleReceiptCurrent(ports, transaction)) continue;
+      if (!ports.isAttestedConnectionCurrent(connectionId)) {
+        return { ready: false, reason: "connection-unavailable" };
+      }
+      if (!verification.value.ok) {
+        return {
+          ready: false,
+          reason: "model-unverified",
+          diagnostic: verification.value.error,
+        };
       }
     }
 

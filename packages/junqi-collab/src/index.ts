@@ -1,8 +1,5 @@
 import path from "node:path";
-import {
-  definePluginEntry,
-  type OpenClawPluginDefinition,
-} from "openclaw/plugin-sdk/plugin-entry";
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { CollaborationDatabase } from "./database.js";
 import { OpenClawRuntimeAdapter } from "./openclaw-adapter.js";
 import {
@@ -119,7 +116,7 @@ export function registerOpenClawAdapter(api: OpenClawApi): void {
   });
 }
 
-export function createJunqiCollaborationPlugin(): OpenClawPluginDefinition {
+export function createJunqiCollaborationPlugin() {
   return definePluginEntry({
     id: PLUGIN_ID,
     name: PLUGIN_NAME,
@@ -135,6 +132,6 @@ export type {
   OpenClawAdapterOptions,
 } from "./sdk-types.js";
 
-const plugin: OpenClawPluginDefinition = createJunqiCollaborationPlugin();
+const plugin = createJunqiCollaborationPlugin();
 
 export default plugin;

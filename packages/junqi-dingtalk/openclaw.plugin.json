@@ -1,7 +1,7 @@
 {
   "id": "junqi-dingtalk",
   "name": "JunQi DingTalk Business",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DingTalk business tools executed by DWS through the OpenClaw Gateway.",
   "activation": {
     "onStartup": true

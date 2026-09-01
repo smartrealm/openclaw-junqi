@@ -1,7 +1,6 @@
 import { debugWarn } from '@/utils/debugLog';
 import { wizardRuntimeScopeKey } from '@/services/setup/wizardRuntimeScope';
 import { isOpenClawSetupAdmissionBusy } from '@/services/setup/openClawSetupAdmission';
-import { GatewayRpcError } from '@/services/gateway/Connection';
 
 export type OpenClawWizardStepType =
   | 'note'
@@ -538,29 +537,7 @@ export class OpenClawWizardClient {
             : {}),
         };
     const requestOptions = { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS };
-    let rawResult: unknown;
-    try {
-      rawResult = await this.callGateway('wizard.start', startParams, requestOptions);
-    } catch (error) {
-      if (
-        this.startOptions.flow === 'channels'
-        || typeof this.startOptions.installDaemon !== 'boolean'
-        || !isInstallDaemonStartParamUnsupported(error)
-      ) {
-        throw error;
-      }
-      // stable 在创建会话前以封闭 schema 拒绝该主线新增字段，因此这里只重试
-      // 公共参数。其他错误不能证明零副作用，必须原样失败。
-      this.assertOperationCurrent(operation);
-      debugWarn(
-        'gateway',
-        'OpenClaw stable wizard.start does not accept installDaemon; retrying the official common parameter set.',
-      );
-      rawResult = await this.callGateway('wizard.start', {
-        mode: 'local' as const,
-        ...(this.startOptions.workspace ? { workspace: this.startOptions.workspace } : {}),
-      }, requestOptions);
-    }
+    const rawResult = await this.callGateway('wizard.start', startParams, requestOptions);
     const result = parseOpenClawWizardStartResult(rawResult);
     this.assertOperationCurrent(operation);
     const returnedSessionId = result.sessionId;
@@ -745,12 +722,6 @@ export function classifyOpenClawWizardFailure(error: unknown): OpenClawWizardFai
   if (isOpenClawSetupAdmissionBusy(error)) return 'already_running';
   if (normalized.includes('request timeout')) return 'request_timeout';
   return 'unknown';
-}
-
-function isInstallDaemonStartParamUnsupported(error: unknown): boolean {
-  return error instanceof GatewayRpcError
-    && error.code === 'INVALID_REQUEST'
-    && error.message === "invalid wizard.start params: at root: unexpected property 'installDaemon'";
 }
 
 export function isOpenClawWizardSessionLost(error: unknown): boolean {

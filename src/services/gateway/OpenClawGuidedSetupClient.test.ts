@@ -9,7 +9,6 @@ import {
 } from './OpenClawGuidedSetupClient';
 
 const detection = {
-  methodFamily: 'openclaw' as const,
   candidates: [{
     kind: 'codex-cli',
     brandId: 'openai',
@@ -91,7 +90,6 @@ test('guided setup client rejects chat questions that drift from the official sc
       },
     }),
   });
-  client.useMethodFamily('openclaw');
   await assert.rejects(
     client.chat({ sessionId: 'chat-1' }),
     OpenClawGuidedSetupResponseError,
@@ -125,7 +123,7 @@ test('guided setup detection preserves provider-owned structured options', () =>
   );
 });
 
-test('guided setup client classifies both official method families missing on a runtime', async () => {
+test('guided setup client classifies the official setup method as unavailable', async () => {
   const client = new OpenClawGuidedSetupClient({
     requestPrivileged: async (method) => {
       throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
@@ -133,60 +131,8 @@ test('guided setup client classifies both official method families missing on a 
   });
   await assert.rejects(client.detect(), (error: unknown) => (
     error instanceof OpenClawGuidedSetupMethodUnavailableError
-    && error.method === 'crestodian.setup.detect'
+    && error.method === 'openclaw.setup.detect'
   ));
-});
-
-test('guided setup client negotiates the official stable Crestodian methods', async () => {
-  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
-  const client = new OpenClawGuidedSetupClient({
-    requestPrivileged: async (method, params) => {
-      calls.push({ method, params });
-      if (method === 'openclaw.setup.detect') {
-        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
-      }
-      if (method === 'crestodian.setup.detect') {
-        return {
-          candidates: detection.candidates,
-          manualProviders: detection.manualProviders,
-          workspace: detection.workspace,
-          setupComplete: false,
-        };
-      }
-      if (method === 'crestodian.setup.activate') {
-        return { ok: true, modelRef: 'openai/gpt-5.6-sol', latencyMs: 200, lines: [] };
-      }
-      if (method === 'crestodian.chat') {
-        return { sessionId: 'chat-1', reply: 'Ready', action: 'none' };
-      }
-      throw new Error(`unexpected method ${method}`);
-    },
-  });
-
-  const stableDetection = await client.detect();
-  assert.equal(stableDetection.methodFamily, 'crestodian');
-  assert.deepEqual(stableDetection.unavailableCandidates, []);
-  assert.deepEqual(stableDetection.authOptions, []);
-  assert.deepEqual(stableDetection.recommendedInstalls, []);
-  await client.activate({
-    kind: 'codex-cli',
-    modelRef: 'openai/gpt-5.6-sol',
-    workspace: '/tmp/openclaw-workspace',
-  });
-  await client.chat({ sessionId: 'chat-1', welcomeVariant: 'onboarding' });
-
-  assert.deepEqual(calls, [
-    { method: 'openclaw.setup.detect', params: {} },
-    { method: 'crestodian.setup.detect', params: {} },
-    {
-      method: 'crestodian.setup.activate',
-      params: { kind: 'codex-cli', workspace: '/tmp/openclaw-workspace' },
-    },
-    {
-      method: 'crestodian.chat',
-      params: { sessionId: 'chat-1', welcomeVariant: 'onboarding' },
-    },
-  ]);
 });
 
 test('guided setup client starts provider-owned auth and prepare wizard sessions', async () => {
@@ -197,7 +143,6 @@ test('guided setup client starts provider-owned auth and prepare wizard sessions
       return { sessionId: String(params.sessionId), done: false, status: 'running' };
     },
   });
-  client.useMethodFamily('openclaw');
   assert.equal((await client.startAuth({
     sessionId: 'auth-1',
     authChoice: 'openai-oauth',
@@ -222,8 +167,6 @@ test('guided setup chat forwards the official embedded wizard cancellation', asy
       return { sessionId: 'chat-1', reply: 'Cancelled', action: 'none' };
     },
   });
-  client.useMethodFamily('openclaw');
-
   await client.chat({ sessionId: 'chat-1', wizardCancel: { stepId: 'provider-auth' } });
   assert.deepEqual(calls, [{
     method: 'openclaw.chat',

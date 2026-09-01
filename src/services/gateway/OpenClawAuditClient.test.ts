@@ -29,8 +29,6 @@ const activityEvent = {
   redaction: 'metadata_only',
 };
 
-const { eventType: _eventType, schemaVersion: _schemaVersion, ...legacyAuditEvent } = activityEvent;
-
 describe('OpenClawAuditClient', () => {
   it('queries only the versioned activity ledger', async () => {
     const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -49,24 +47,7 @@ describe('OpenClawAuditClient', () => {
     assert.equal(page.events[0]?.errorCode, 'tool_cancelled');
   });
 
-  it('活动审计缺失时为运行和工具筛选回退到官方兼容账本', async () => {
-    const methods: string[] = [];
-    const client = new OpenClawAuditClient(async <T>(method: string) => {
-      methods.push(method);
-      if (method === 'audit.activity.list') {
-        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
-      }
-      return { events: [legacyAuditEvent] } as T;
-    });
-
-    const page = await client.list({ runId: 'run-1', kind: 'tool_action' });
-
-    assert.deepEqual(methods, ['audit.activity.list', 'audit.list']);
-    assert.equal(page.source, 'legacy');
-    assert.equal(page.events[0]?.source, 'legacy');
-  });
-
-  it('消息筛选不能越过旧协议能力边界', async () => {
+  it('活动审计明确缺失时返回不支持且不重放其他方法', async () => {
     const methods: string[] = [];
     const client = new OpenClawAuditClient(async (method: string) => {
       methods.push(method);
@@ -74,24 +55,10 @@ describe('OpenClawAuditClient', () => {
     });
 
     await assert.rejects(
-      client.list({ kind: 'message', direction: 'inbound' }),
+      client.list({ runId: 'run-1', kind: 'tool_action' }),
       (error: unknown) => error instanceof OpenClawAuditUnsupportedError,
     );
     assert.deepEqual(methods, ['audit.activity.list']);
-  });
-
-  it('旧协议返回不符合精确 schema 时拒绝发布账本', async () => {
-    const client = new OpenClawAuditClient(async <T>(method: string) => {
-      if (method === 'audit.activity.list') {
-        throw new GatewayRpcError(`unknown method: ${method}`, 'INVALID_REQUEST');
-      }
-      return { events: [{ ...legacyAuditEvent, sequence: 1.5 }] } as T;
-    });
-
-    await assert.rejects(
-      client.list({ kind: 'tool_action' }),
-      (error: unknown) => error instanceof OpenClawAuditResponseError,
-    );
   });
 
   it('权限错误必须保留，不能根据错误文本降级为旧账本', async () => {

@@ -5,8 +5,8 @@ runs. It owns workflow state, dispatch idempotency, recovery, audit events, and
 exact transcript delivery. JunQi is a client of the `junqi.collab.*` Gateway
 RPC surface; it is not the workflow scheduler.
 
-Current package baseline: plugin `0.5.7`, SQLite schema `15`, OpenClaw
-`>=2026.7.1`.
+Current package baseline: plugin `0.5.8`, SQLite schema `15`, OpenClaw
+`>=2026.8.1`.
 
 ## Execution boundary
 
@@ -30,7 +30,7 @@ execution never calls `managedFlows.runTask()`.
 Requirements:
 
 - Node.js `>=22.22.3 <23`, `>=24.15.0 <25`, or `>=25.9.0`
-- OpenClaw `>=2026.7.1`
+- OpenClaw `>=2026.8.1`
 - A persistent Gateway runtime
 - Explicit `coordinatorAgentId` and `allowedAgentIds` plugin configuration
 
@@ -39,13 +39,13 @@ Build and inspect locally:
 ```bash
 npm run collab:build
 npm run collab:pack
-openclaw plugins install --force --pin npm-pack:packages/junqi-collab/dist/junqi-openclaw-collaboration-0.5.7.tgz
+openclaw plugins install --force --pin npm-pack:packages/junqi-collab/dist/junqi-openclaw-collaboration-0.5.8.tgz
 openclaw plugins inspect junqi-collab --runtime --json
 ```
 
 Do not install a development build into a user's active OpenClaw profile for
 tests. `OPENCLAW_STATE_DIR` and `OPENCLAW_CONFIG_PATH` alone are not a sufficient
-isolation boundary: with OpenClaw 2026.7.1, `gateway run --dev` was observed
+isolation boundary: with OpenClaw 2026.8.1, `gateway run --dev` was observed
 accessing default `~/.openclaw` despite both variables. Use a disposable
 container/OS account, or independently isolate `HOME`, XDG directories, and
 `TMPDIR`; use the final hash-verified tgz and do not use `--dev` or the default

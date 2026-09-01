@@ -103,6 +103,14 @@ import {
   openClawSessionObserverStream,
   routeOpenClawSessionObserverEvent,
 } from './sessionObserverEventBridge';
+import {
+  OpenClawQuestionClient,
+  type OpenClawQuestionAnswers,
+} from './OpenClawQuestionClient';
+import {
+  publishGatewayQuestionEvent,
+  subscribeGatewayQuestionEvents,
+} from './questionEventBridge';
 import { OpenClawCronRunClient } from './OpenClawCronRunClient';
 import { OpenClawCronStatusClient } from './OpenClawCronStatusClient';
 import { OpenClawTtsClient } from './OpenClawTtsClient';
@@ -1153,6 +1161,12 @@ function acquireGatewayApprovalEvents(): () => void {
     if (approvalEventConsumers === 0) approvalEventSubscription.stop();
   };
 }
+
+const questionClient = new OpenClawQuestionClient({
+  request: (method, params) => connection.request(method, params),
+});
+
+export { subscribeGatewayQuestionEvents };
 const sessionSettings = new SessionSettingsClient({
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
   request: (method, params) => connection.request(method, params),
@@ -1280,7 +1294,8 @@ connection.onEvent = (msg: unknown) => routeTalkGatewayEvent(
       voiceWakeRemainder,
       (progressCardRemainder) => routeOpenClawSessionObserverEvent(
         progressCardRemainder,
-        (event) => routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+        (event) => publishGatewayQuestionEvent(event)
+          || routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
       ),
     ),
   ),
@@ -1671,6 +1686,16 @@ export const gateway = {
   async resolveApproval(approval: OpenClawApproval, decision: OpenClawApprovalDecision) {
     return approvalClient.resolve(approval, decision);
   },
+  async listPendingQuestions() { return questionClient.list(); },
+  async getPendingQuestion(id: string) { return questionClient.get(id); },
+  async resolveQuestion(
+    id: string,
+    answers: OpenClawQuestionAnswers,
+    secretStoreAllowedHosts?: readonly string[],
+  ) {
+    return questionClient.resolve(id, answers, secretStoreAllowedHosts);
+  },
+  async cancelQuestion(id: string) { return questionClient.cancel(id); },
   async createAgent(agent: GatewayAgentCreatePayload) { return agentManagement.create(agent); },
   async updateAgent(agentId: string, patch: GatewayAgentUpdateParams) {
     return confirmOpenClawAgentUpdate(
@@ -1861,7 +1886,10 @@ export const gateway = {
   cancelActivePrivilegedRequest() { requestPrivileged.cancelActiveRequest(); },
   cancelPrivilegedAuthorizationRetry() { requestPrivileged.cancelPairingRetry(); },
   cancelApprovalAuthorizationRetry() { requestApprovals.cancelPairingRetry(); },
-  retryPrivilegedAuthorizationNow() { requestPrivileged.retryPairingNow(); },
+  retryPrivilegedAuthorizationNow() {
+    requestPrivileged.retryPairingNow();
+    requestApprovals.retryPairingNow();
+  },
   async beginOperatorScopeUpgrade(requiredScopes: readonly string[]): Promise<string> {
     const scopes = [...new Set(requiredScopes.map((scope) => scope.trim()).filter(Boolean))];
     const operation = await operatorScopeUpgrade.begin(scopes);
@@ -1908,6 +1936,7 @@ export const gateway = {
     if (!approvedOperatorScopeUpgradeAwaitingReconnect || !connection.isConnected()) return false;
     approvedOperatorScopeUpgradeAwaitingReconnect = false;
     requestPrivileged.retryPairingNow();
+    requestApprovals.retryPairingNow();
     return true;
   },
   reconnectWithToken(newToken: string) { connection.reconnectWithToken(newToken); },

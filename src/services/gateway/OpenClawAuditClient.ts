@@ -1,16 +1,11 @@
 import { isOpenClawUnknownMethodError } from './GatewayProtocolEvidence';
 import {
-  OpenClawAuditResponseError,
   parseOpenClawAuditActivityPage,
   type OpenClawAuditDirection,
   type OpenClawAuditEvent as OpenClawAuditActivityEvent,
   type OpenClawAuditKind,
   type OpenClawAuditStatus,
 } from './OpenClawAuditActivityCodec';
-import {
-  parseAuditListPage,
-  type OpenClawAuditEvent as OpenClawLegacyAuditEvent,
-} from '@/processing/auditLedger';
 
 export {
   OpenClawAuditResponseError,
@@ -22,17 +17,12 @@ export {
   type OpenClawAuditStatus,
 } from './OpenClawAuditActivityCodec';
 
-/** 旧 Gateway 的 audit.list 仅包含运行和工具元数据，不能冒充新版活动账本。 */
-export type OpenClawAuditLegacyEvent = OpenClawLegacyAuditEvent & {
-  readonly source: 'legacy';
-};
-
-export type OpenClawAuditEvent = OpenClawAuditActivityEvent | OpenClawAuditLegacyEvent;
+export type OpenClawAuditEvent = OpenClawAuditActivityEvent;
 
 export interface OpenClawAuditListPage {
   readonly events: readonly OpenClawAuditEvent[];
   readonly nextCursor?: string;
-  readonly source: 'activity' | 'legacy';
+  readonly source: 'activity';
 }
 
 export const OPENCLAW_AUDIT_ACTIVITY_METHOD = 'audit.activity.list' as const;
@@ -111,24 +101,6 @@ function requestParams(input: OpenClawAuditListInput): Record<string, unknown> {
   };
 }
 
-/** 只有旧协议原样支持的筛选条件才能使用官方兼容账本。 */
-function supportsLegacyAuditFallback(input: OpenClawAuditListInput): boolean {
-  return input.kind !== 'message' && input.direction === undefined && input.channel === undefined;
-}
-
-function parseOpenClawLegacyAuditPage(value: unknown): OpenClawAuditListPage {
-  try {
-    const page = parseAuditListPage(value);
-    return {
-      source: 'legacy',
-      events: page.events.map((event) => ({ ...event, source: 'legacy' as const })),
-      ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
-    };
-  } catch {
-    throw new OpenClawAuditResponseError();
-  }
-}
-
 export class OpenClawAuditClient {
   constructor(private readonly request: OpenClawAuditRequester) {}
 
@@ -139,10 +111,7 @@ export class OpenClawAuditClient {
         await this.request(OPENCLAW_AUDIT_ACTIVITY_METHOD, params),
       );
     } catch (error) {
-      if (isOpenClawAuditActivityUnavailableError(error)) {
-        if (!supportsLegacyAuditFallback(input)) throw new OpenClawAuditUnsupportedError();
-        return parseOpenClawLegacyAuditPage(await this.request('audit.list', params));
-      }
+      if (isOpenClawAuditActivityUnavailableError(error)) throw new OpenClawAuditUnsupportedError();
       throw error;
     }
   }

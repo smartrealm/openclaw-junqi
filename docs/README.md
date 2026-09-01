@@ -4,6 +4,9 @@
 
 ## 当前入口
 
+- [OpenClaw 2026.8.1 桌面兼容与交互审计](quality/openclaw-2026-8-1-desktop-compatibility-audit-2026-09-01.md)：2.0 插件编译与真实 Gateway 基线、结构化提问、最小权限和升级边界。
+- [OpenClaw 2026.8.1 桌面兼容规格](../specs/2026-09-01-openclaw-2026-8-1-desktop-compatibility.md)：插件认证、问题卡、密钥边界、输入法与可访问性验收条件。
+- [OpenClaw 2026.8.1 桌面兼容计划](../plans/2026-09-01-openclaw-2026-8-1-desktop-compatibility.md)：协议回归、事件链路、可视化、固定包和验证顺序。
 - [主窗口生命周期恢复审计](quality/main-window-lifecycle-recovery-audit-2026-08-26.md)：原生关闭、最小化、Dock、托盘、单实例和辅助窗口恢复链路的根因、统一恢复边界与跨平台验证要求。
 - [主窗口生命周期恢复规格](../specs/2026-08-26-main-window-lifecycle-recovery.md)：红色关闭退出、最小化恢复、统一恢复顺序和失败语义的验收条件。
 - [主窗口生命周期恢复计划](../plans/2026-08-26-main-window-lifecycle-recovery.md)：关闭拦截、调用方收敛、回归和真机验证顺序。
@@ -40,6 +43,7 @@
 - [业务审计与模型选择器状态规范](../specs/2026-08-21-business-audit-and-model-picker-state.md)：互斥状态、多语言、滚动可达性和主题边界。
 - [业务审计与模型选择器状态修复计划](../plans/2026-08-21-business-audit-and-model-picker-state.md)：回归测试、实施顺序和验证范围。
 - [三点二二标签发布验证](quality/tag-release-validation-2026-08-31-v3.2.2.md)：`v3.2.2` 的补丁版本依据、精确主线 CI、不可变标签和三平台 Release 验证边界。
+- [三点三零标签发布验证](quality/tag-release-validation-2026-09-01-v3.3.0.md)：OpenClaw 2.0 桌面兼容功能版本的发布依据、不可变标签、三平台制品和验证边界。
 - [三点二一标签发布验证](quality/tag-release-validation-2026-08-20-v3.2.1.md)：`v3.2.1` 的补丁版本依据、不可变标签发布顺序、自动化证据和签名验收边界。
 - [三点二零标签发布验证](quality/tag-release-validation-2026-08-20.md)：`v3.2.0` 的版本依据、不可变标签发布顺序、自动化证据和签名验收边界。
 - [运行时契约收敛审计](quality/runtime-contract-convergence-audit-2026-08-20.md)：官方进度卡、DWS 终态顺序、全局语音路由、费用提示、当前配置开关和会话回放安全边界。

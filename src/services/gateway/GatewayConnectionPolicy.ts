@@ -17,6 +17,7 @@ export type GatewayOperatorScope =
 export const DAILY_OPERATOR_SCOPES: readonly GatewayOperatorScope[] = Object.freeze([
   'operator.read',
   'operator.write',
+  'operator.questions',
   'operator.talk',
 ]);
 

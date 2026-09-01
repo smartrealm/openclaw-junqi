@@ -920,6 +920,48 @@ test("ACP wait uses the official agent.wait Gateway RPC after task identity is o
   assert.deepEqual(calls, ["agent.wait"]);
 });
 
+test("ACP wait preserves the official pending state as a non-terminal hint", async () => {
+  const adapter = adapterWithRuntime({
+    config: {
+      current: () => ({
+        agents: {
+          list: [
+            { id: "coordinator", subagents: { allowAgents: ["coordinator", "worker"] } },
+            { id: "worker", runtime: { type: "acp", acp: { agent: "codex" } } },
+          ],
+        },
+      }),
+    },
+    gateway: {
+      request: async () => ({ runId: "acp-run-pending", status: "pending" }),
+    },
+    tasks: {
+      runs: {
+        bindSession: () => ({
+          list: () => [{
+            id: "task-acp-pending",
+            runtime: "acp",
+            ownerKey: "agent:worker:main",
+            childSessionKey: "agent:codex:acp:pending-1",
+            runId: "acp-run-pending",
+            status: "running",
+          }],
+        }),
+      },
+    },
+  }, {
+    coordinatorAgentId: "coordinator",
+    allowedAgentIds: ["coordinator", "worker"],
+  });
+  await adapter.findAgentTask({
+    ownerSessionKey: "agent:worker:main",
+    childSessionKey: "agent:codex:acp:pending-1",
+    expectedRunId: "acp-run-pending",
+  });
+
+  assert.deepEqual(await adapter.waitForRun("acp-run-pending", 500), { status: "pending" });
+});
+
 test("worker dispatch rejects a child session owned by another agent", async () => {
   const adapter = adapterWithRuntime({ version: "2026.7.1" });
   await assert.rejects(

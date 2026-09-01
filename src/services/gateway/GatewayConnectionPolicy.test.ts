@@ -44,10 +44,11 @@ test('Gateway 连接策略拒绝不完整的附件字段', () => {
   }), null);
 });
 
-test('日常连接显式声明 Talk 权限', () => {
+test('日常连接显式声明已实现的 Talk 与结构化提问权限', () => {
   assert.deepEqual(DAILY_OPERATOR_SCOPES, [
     'operator.read',
     'operator.write',
+    'operator.questions',
     'operator.talk',
   ]);
 });
