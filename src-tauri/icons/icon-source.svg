@@ -1,66 +1,56 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  JunQi Desktop app icon: matches the in-app brand mark and current
-  product visual language:
-    Outer: rounded square with a subtle gradient border
-      (blue to cyan to green): restrained, not rainbow
-    Inner: opaque dark navy card (matches aegis-bg = #1d212a)
-    Center: bold "JQ" wordmark in white (matches in-app brand mark
-      at src/pages/SettingsPage.tsx)
-    Subtle 1px highlight on the inner card top edge for depth
-      (paper-stack discipline)
+  JunQi Desktop 应用图标。
 
-  Source size: 1024x1024. Down-scaled by rsvg-convert to the bundle
-  variants in tauri.conf.json. Regenerate with:
+  设计约束：
+  - 使用应用内同一份大侠集团官方徽记，不重新描摹或改变徽记结构；
+  - 不使用文字，保证任务栏和 Dock 小尺寸下仍能快速识别；
+  - 以深靛蓝渐变承载品牌橙色，保持桌面工作台的克制和专业感；
+  - 主体居中并保留安全留白，兼顾 macOS、Windows 和 Linux 的系统裁切。
+
+  源尺寸为 1024 x 1024，生成平台资源时运行：
     bash scripts/render-app-icon.sh
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
-    <!-- Outer gradient border: blue → cyan → green, restrained -->
-    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#7f9aff"/>
-      <stop offset="50%" stop-color="#38bdf8"/>
-      <stop offset="100%" stop-color="#4ade80"/>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#263565"/>
+      <stop offset="0.52" stop-color="#172448"/>
+      <stop offset="1" stop-color="#0c1329"/>
     </linearGradient>
-    <!-- Top edge highlight (1px line on inner card top for paper-stack depth) -->
-    <linearGradient id="topHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.08"/>
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    <radialGradient id="focus" cx="0.42" cy="0.34" r="0.78">
+      <stop offset="0" stop-color="#6f83d8" stop-opacity="0.34"/>
+      <stop offset="0.55" stop-color="#32477f" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#0c1329" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.035"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
-    <!-- Mask: keep the gradient stroke OUTSIDE the inner card so the
-         border stays 1px-thick visually (paper-stack: outer = border,
-         inner = opaque card). -->
-    <mask id="cardMask">
-      <rect width="1024" height="1024" fill="black"/>
-      <!-- The visible area is the gradient ring = outer rounded square
-           minus inner rounded square -->
-      <rect x="0" y="0" width="1024" height="1024" rx="220" ry="220" fill="white"/>
-      <rect x="70" y="70" width="884" height="884" rx="170" ry="170" fill="black"/>
-    </mask>
+    <clipPath id="iconMask">
+      <rect x="96" y="88" width="832" height="832" rx="190"/>
+    </clipPath>
+    <clipPath id="emblemCrop">
+      <rect x="262" y="262" width="500" height="500"/>
+    </clipPath>
   </defs>
 
-  <!-- macOS Dock icons need optical breathing room around the artwork. -->
-  <g transform="translate(92 92) scale(0.82)">
-    <!-- Layer 1: gradient border ring (the outside of the icon) -->
-    <g mask="url(#cardMask)">
-      <rect width="1024" height="1024" rx="220" ry="220" fill="url(#borderGrad)"/>
-    </g>
-
-    <!-- Layer 2: inner dark navy card (matches aegis-bg #1d212a) -->
-    <rect x="70" y="70" width="884" height="884" rx="170" ry="170" fill="#1d212a"/>
-
-    <!-- Layer 3: top-edge highlight (paper-stack depth, very subtle) -->
-    <rect x="70" y="70" width="884" height="884" rx="170" ry="170" fill="url(#topHighlight)"/>
-
-    <!-- Layer 4: JQ wordmark (white, bold, matches in-app brand) -->
-    <text
-      x="512" y="512"
-      font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif"
-      font-size="460"
-      font-weight="800"
-      letter-spacing="-12"
-      text-anchor="middle"
-      dominant-baseline="central"
-      fill="#ffffff">JQ</text>
+  <rect x="104" y="108" width="816" height="816" rx="184" fill="#050919" opacity="0.3"/>
+  <g clip-path="url(#iconMask)">
+    <rect x="96" y="88" width="832" height="832" fill="url(#background)"/>
+    <rect x="96" y="88" width="832" height="832" fill="url(#focus)"/>
+    <path d="M96 88H928V198C712 264 405 250 96 182Z" fill="url(#edge)"/>
+    <ellipse cx="512" cy="735" rx="238" ry="48" fill="#050919" opacity="0.24"/>
+    <image
+      x="262"
+      y="262"
+      width="1737"
+      height="500"
+      preserveAspectRatio="xMidYMid meet"
+      clip-path="url(#emblemCrop)"
+      xlink:href="../../src/assets/brand/daxia-group-light.png"
+    />
   </g>
+  <rect x="97" y="89" width="830" height="830" rx="189" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
 </svg>

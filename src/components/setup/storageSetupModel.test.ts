@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  classifyStorageSetupError,
   initialStorageLocationsVisibility,
   storageSubmissionPresentation,
 } from './storageSetupModel';
@@ -30,4 +31,12 @@ test('提交存储位置时保留当前表单并锁定交互', () => {
     loading: true,
     action: 'prepare-new',
   });
+});
+
+test('把 OpenClaw 核验失败与普通存储错误分开呈现', () => {
+  assert.equal(
+    classifyStorageSetupError('OpenClaw is not available to verify the selected official Gateway service; storage changes were not started'),
+    'openclaw-unavailable',
+  );
+  assert.equal(classifyStorageSetupError('permission denied'), 'generic');
 });

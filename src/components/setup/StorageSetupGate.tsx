@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { SetupShell, StatusPanel } from '@/components/setup/SetupFlowPanels';
 import {
+  classifyStorageSetupError,
   initialStorageLocationsVisibility,
   storageSubmissionPresentation,
   type StorageCompletion,
@@ -267,6 +268,10 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
   const usingSourceLocation = useMemo(
     () => Boolean(status && targetDir === sourceDir),
     [sourceDir, status, targetDir],
+  );
+  const errorKind = useMemo(
+    () => error ? classifyStorageSetupError(error) : null,
+    [error],
   );
 
   const chooseDirectory = useCallback(async () => {
@@ -689,21 +694,26 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
                   />
                 </label>
                 {customNpmPrefix && (
-                  <div className="mt-3 flex items-center gap-2">
-                    <input
-                      value={npmPrefix}
-                      onChange={(event) => setNpmPrefix(event.target.value)}
-                      aria-label={t('storage.customNpmPrefix', '自定义 OpenClaw npm 安装目录')}
-                      className="min-w-0 flex-1 rounded-md border border-aegis-border bg-aegis-surface px-3 py-2 font-mono text-[11px] text-aegis-text outline-none focus:border-aegis-primary"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void chooseExactDirectory(t('storage.npmPrefixChoose', '选择 npm 全局安装目录'), setNpmPrefix)}
-                      title={t('storage.npmPrefixChoose', '选择 npm 全局安装目录')}
-                      className="flex h-9 w-9 items-center justify-center rounded-md border border-aegis-border text-aegis-text-secondary hover:bg-aegis-surface"
-                    >
-                      <FolderOpen size={15} />
-                    </button>
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={npmPrefix}
+                        onChange={(event) => setNpmPrefix(event.target.value)}
+                        aria-label={t('storage.customNpmPrefix', '由 JunQi 单独安装 OpenClaw')}
+                        className="min-w-0 flex-1 rounded-md border border-aegis-border bg-aegis-surface px-3 py-2 font-mono text-[11px] text-aegis-text outline-none focus:border-aegis-primary"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void chooseExactDirectory(t('storage.npmPrefixChoose', '选择 npm 全局安装目录'), setNpmPrefix)}
+                        title={t('storage.npmPrefixChoose', '选择 npm 全局安装目录')}
+                        className="flex h-9 w-9 items-center justify-center rounded-md border border-aegis-border text-aegis-text-secondary hover:bg-aegis-surface"
+                      >
+                        <FolderOpen size={15} />
+                      </button>
+                    </div>
+                    <p className="text-[11px] leading-5 text-aegis-text-secondary" role="note">
+                      {t('storage.customNpmPrefixActiveHint', '当前只校验此目录。已有 OpenClaw 若安装在其他位置，请关闭此项并返回上一步重新检测；保留开启则会在后续步骤安装一份独立版本。')}
+                    </p>
                   </div>
                 )}
               </div>
@@ -783,7 +793,31 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
           )}
         </div>
 
-        {error && <p className="mt-5 break-all border-l-2 border-aegis-danger pl-3 text-sm text-aegis-danger">{error}</p>}
+        {error && (
+          <div className="mt-5 flex gap-3 border-l-2 border-aegis-danger bg-aegis-danger/5 px-3 py-2.5 text-aegis-danger" role="alert">
+            <CircleAlert size={17} className="mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">
+                {errorKind === 'openclaw-unavailable'
+                  ? t('storage.openclawUnavailableTitle', '未核验到当前选择的 OpenClaw')
+                  : t('storage.errorTitle', '当前设置未生效')}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-aegis-text-secondary">
+                {errorKind === 'openclaw-unavailable'
+                  ? customNpmPrefix
+                    ? t('storage.openclawUnavailableCustomHint', '所选独立 npm 目录中还没有可用的 OpenClaw，因此没有开始迁移。已有安装在其他位置时，请关闭上方选项并返回上一步重新检测；需要独立安装时保留开启。')
+                    : t('storage.openclawUnavailableExistingHint', '当前环境没有检测到可用于官方 Gateway 的 OpenClaw，因此没有开始迁移。请返回上一步重新检测现有安装。')
+                  : t('storage.errorHint', '没有写入当前更改，请查看技术详情后重试。')}
+              </p>
+              <details className="mt-1.5 text-[11px] text-aegis-text-dim">
+                <summary className="cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/60">
+                  {t('storage.technicalDetails', '查看技术详情')}
+                </summary>
+                <p className="mt-1 break-words font-mono leading-5">{error}</p>
+              </details>
+            </div>
+          </div>
+        )}
 
       </fieldset>
     </SetupShell>

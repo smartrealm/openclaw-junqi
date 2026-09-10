@@ -15,6 +15,16 @@ export interface StorageSubmissionPresentation {
   action: 'continue' | 'confirm-current' | 'prepare-new';
 }
 
+export type StorageSetupErrorKind = 'openclaw-unavailable' | 'generic';
+
+const OPENCLAW_UNAVAILABLE_ERROR = 'OpenClaw is not available to verify the selected official Gateway service; storage changes were not started';
+
+export function classifyStorageSetupError(message: string): StorageSetupErrorKind {
+  return message.trim() === OPENCLAW_UNAVAILABLE_ERROR
+    ? 'openclaw-unavailable'
+    : 'generic';
+}
+
 export function storageSubmissionPresentation(
   applying: boolean,
   usingSourceLocation: boolean,
