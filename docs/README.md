@@ -4,6 +4,9 @@
 
 ## 当前入口
 
+- [钉钉桌面工作台 UI 审查](quality/dingtalk-desktop-workbench-ui-audit-2026-09-10.md)：信息层级、控件密度、对齐、响应式焦点和技术证据渐进披露。
+- [钉钉桌面工作台 UI 规格](../specs/2026-09-10-dingtalk-desktop-workbench-ui.md)：目录与检查器、可访问选择、固定主操作区和主题验收条件。
+- [钉钉桌面工作台 UI 计划](../plans/2026-09-10-dingtalk-desktop-workbench-ui.md)：测试先行、遗留删除、实施范围和验证顺序。
 - [钉钉 DWS 工作流扩展审计](quality/dingtalk-dws-workflow-expansion-audit-2026-09-09.md)：现有写操作核验缺口、最新版 OpenClaw 与 DWS 依据、九阶段边界和未验证项。
 - [钉钉 DWS 工作流扩展规格](../specs/2026-09-09-dingtalk-dws-workflow-expansion.md)：写后权威重读、只读优先、草稿先行、事件运行时和高敏业务域验收条件。
 - [钉钉 DWS 工作流扩展计划](../plans/2026-09-09-dingtalk-dws-workflow-expansion.md)：阶段顺序、第一阶段文件范围和验证门禁。

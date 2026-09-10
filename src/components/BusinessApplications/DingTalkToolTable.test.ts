@@ -53,6 +53,27 @@ test('工具表格集中说明账号权限边界且不把每行渲染成授权�
   assert.doesNotMatch(html, />有效</);
 });
 
+test('工具目录使用单一可访问入口并直接展示操作说明', () => {
+  const base = tool('junqi_dingtalk_calendar_list', 'calendar');
+  const selected = {
+    ...base,
+    entry: { ...base.entry, description: '读取当前账号可见的日程' },
+  };
+  const html = renderToStaticMarkup(createElement(DingTalkToolTable, {
+    tools: [selected],
+    selectedId: selected.entry.id,
+    loading: false,
+    emptyTitle: '',
+    emptyMessage: '',
+    onSelect: () => {},
+  }));
+
+  assert.equal((html.match(/<button/g) ?? []).length, 1);
+  assert.match(html, /aria-current="true"/);
+  assert.match(html, /读取当前账号可见的日程/);
+  assert.doesNotMatch(html, /<th[^>]*>Domain<\/th>/);
+});
+
 test('只有被 OpenClaw 拒绝的操作才在对应行显示 Session 状态', () => {
   const denied = tool('junqi_dingtalk_approval_pending', 'approval');
   const html = renderToStaticMarkup(createElement(DingTalkToolTable, {

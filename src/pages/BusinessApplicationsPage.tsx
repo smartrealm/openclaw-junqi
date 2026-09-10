@@ -1,19 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import clsx from 'clsx';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Building2,
-  Filter,
-  PanelLeftClose,
   RefreshCw,
   Search,
   SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import { PageTransition } from '@/components/shared/PageTransition';
-import { IconButton } from '@/components/shared/button/Button';
+import { Button, IconButton } from '@/components/shared/button/Button';
 import { showConfirm } from '@/components/shared/AlertDialog';
-import { PaneResizeHandle } from '@/components/BusinessApplications/PaneResizeHandle';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DingTalkToolTable } from '@/components/BusinessApplications/DingTalkToolTable';
 import { DingTalkToolDetail } from '@/components/BusinessApplications/DingTalkToolDetail';
 import { DingTalkRuntimeIdentity } from '@/components/BusinessApplications/DingTalkRuntimeIdentity';
@@ -84,7 +83,10 @@ import {
 } from '@/business-applications/dingtalkEventSnapshotCoordinator';
 import { useBusinessActivityStore } from '@/business-applications/activityStore';
 import { resolveDingTalkInvocationOutcome } from '@/business-applications/dingtalkInvocationOutcome';
-import { parseBusinessApplicationsView } from '@/business-applications/businessApplicationsView';
+import {
+  parseBusinessApplicationsView,
+  shouldStartDingTalkDetailCollapsed,
+} from '@/business-applications/businessApplicationsView';
 import {
   invokeOpenClawTool,
   refreshAll,
@@ -173,32 +175,24 @@ function useRuntimeIdentitySnapshot() {
   );
 }
 
-function FilterPane({
-  width,
-  collapsed,
+function CatalogToolbar({
   search,
   domain,
   effect,
   domainCounts,
   effectCounts,
   filteredCount,
-  onWidthChange,
-  onCollapsedChange,
   onSearchChange,
   onDomainChange,
   onEffectChange,
   onReset,
 }: {
-  width: number;
-  collapsed: boolean;
   search: string;
   domain: DomainFilter;
   effect: EffectFilter;
   domainCounts: Readonly<Record<DomainFilter, number>>;
   effectCounts: Readonly<Record<EffectFilter, number>>;
   filteredCount: number;
-  onWidthChange: (value: number) => void;
-  onCollapsedChange: (value: boolean) => void;
   onSearchChange: (value: string) => void;
   onDomainChange: (value: DomainFilter) => void;
   onEffectChange: (value: EffectFilter) => void;
@@ -211,62 +205,49 @@ function FilterPane({
       ? t('businessApplications.workbench.domain.all')
       : t(`businessApplications.workbench.effect.${value}`)
   );
-  if (collapsed) {
-    return (
-      <aside className="flex min-h-0 flex-col items-center border-r border-aegis-border bg-aegis-surface/55 py-2">
-        <IconButton aria-label={t('businessApplications.workbench.filter.expand')} title={t('businessApplications.workbench.filter.expand')} onClick={() => onCollapsedChange(false)}>
-          <Filter size={14} />
-        </IconButton>
-        <span className="mt-2 font-mono text-[9px] tabular-nums text-aegis-text-dim">{filteredCount}</span>
-        <span className="mt-3 text-[10px] tracking-[0.18em] text-aegis-text-dim" style={{ writingMode: 'vertical-rl' }}>{t('businessApplications.workbench.filter.title')}</span>
-      </aside>
-    );
-  }
   const filtersActive = search.trim() !== '' || domain !== 'all' || effect !== 'all';
   return (
-    <aside className="relative min-h-0 overflow-y-auto border-r border-aegis-border bg-aegis-surface/55 p-3">
-      <PaneResizeHandle side="left" value={width} min={208} max={340} label={t('businessApplications.workbench.filter.resize')} onChange={onWidthChange} />
-      <div className="flex h-7 items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-aegis-text-secondary"><SlidersHorizontal size={13} />{t('businessApplications.workbench.filter.title')}</span>
-        <IconButton aria-label={t('businessApplications.workbench.filter.collapse')} title={t('businessApplications.workbench.filter.collapse')} onClick={() => onCollapsedChange(true)}><PanelLeftClose size={14} /></IconButton>
-      </div>
-      <label className="mt-3 block text-[10px] font-medium text-aegis-text-dim" htmlFor="dingtalk-tool-search">{t('businessApplications.workbench.filter.searchLabel')}</label>
-      <div className="relative mt-1">
-        <Search size={12} className="pointer-events-none absolute left-2 top-2 text-aegis-text-dim" />
-        <input
-          id="dingtalk-tool-search"
-          type="search"
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder={t('businessApplications.workbench.filter.searchPlaceholder')}
-          className="h-7 w-full rounded-md border border-aegis-border bg-aegis-bg pl-7 pr-2 text-[10.5px] text-aegis-text outline-none placeholder:text-aegis-text-dim focus:border-aegis-primary/60 focus:ring-1 focus:ring-aegis-primary/25"
-        />
-      </div>
-      <fieldset className="mt-4">
-        <legend className="text-[10px] font-medium text-aegis-text-dim">{t('businessApplications.workbench.filter.domain')}</legend>
-        <div className="mt-1 grid grid-cols-2 gap-1">
-          {DOMAIN_FILTERS.map((item) => (
-            <button
-              key={item}
-              type="button"
-              aria-pressed={domain === item}
-              onClick={() => onDomainChange(item)}
-              className={clsx(
-                'flex h-7 items-center justify-between gap-2 rounded-md border px-2 text-left text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
-                domain === item
-                  ? 'border-aegis-primary/35 bg-aegis-primary/10 text-aegis-primary'
-                  : 'border-transparent text-aegis-text-dim hover:border-aegis-border hover:bg-aegis-hover/45',
-              )}
-            >
-              <span className="truncate">{domainFilterLabel(item)}</span>
-              <span className="shrink-0 font-mono tabular-nums opacity-75">{domainCounts[item]}</span>
-            </button>
-          ))}
-        </div>
-      </fieldset>
-      <fieldset className="mt-4">
-        <legend className="text-[10px] font-medium text-aegis-text-dim">{t('businessApplications.workbench.filter.effect')}</legend>
-        <div className="mt-1 grid grid-cols-3 gap-1 rounded-md border border-aegis-border bg-aegis-bg/55 p-0.5">
+    <section className="shrink-0 border-b border-aegis-border bg-aegis-surface/35 px-3 py-2.5" aria-label={t('businessApplications.workbench.filter.title')}>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="relative min-w-[220px] flex-1" htmlFor="dingtalk-tool-search">
+          <span className="sr-only">{t('businessApplications.workbench.filter.searchLabel')}</span>
+          <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-aegis-text-dim" aria-hidden="true" />
+          <input
+            id="dingtalk-tool-search"
+            type="search"
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder={t('businessApplications.workbench.filter.searchPlaceholder')}
+            className="h-8 w-full rounded-md border border-aegis-border bg-aegis-input pl-8 pr-3 text-[12px] text-aegis-text outline-none placeholder:text-aegis-text-dim focus:border-aegis-primary/60 focus:ring-2 focus:ring-aegis-primary/20"
+          />
+        </label>
+        <Select value={domain} onValueChange={(value) => onDomainChange(value as DomainFilter)}>
+          <SelectTrigger
+            aria-label={t('businessApplications.workbench.filter.domain')}
+            className="h-8 min-w-[168px] rounded-md border-aegis-border bg-aegis-input px-2.5 text-[11px] text-aegis-text-secondary shadow-none focus:ring-2 focus:ring-aegis-primary/25 focus:ring-offset-0"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <SlidersHorizontal size={13} className="shrink-0 text-aegis-text-dim" aria-hidden="true" />
+              <SelectValue />
+            </span>
+          </SelectTrigger>
+          <SelectContent
+            align="start"
+            sideOffset={4}
+            className="border-aegis-border bg-aegis-card-solid text-aegis-text shadow-[var(--aegis-menu-shadow)]"
+          >
+            {DOMAIN_FILTERS.map((item) => (
+              <SelectItem
+                key={item}
+                value={item}
+                className="min-h-8 rounded-md py-1.5 pl-8 pr-2 text-[11px] text-aegis-text-secondary focus:bg-aegis-primary/10 focus:text-aegis-text"
+              >
+                {domainFilterLabel(item)} ({domainCounts[item]})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="flex h-8 items-center rounded-md border border-aegis-border bg-aegis-input p-0.5" aria-label={t('businessApplications.workbench.filter.effect')}>
           {(['all', 'read', 'write'] as const).map((item) => (
             <button
               key={item}
@@ -274,33 +255,27 @@ function FilterPane({
               aria-pressed={effect === item}
               onClick={() => onEffectChange(item)}
               className={clsx(
-                'flex h-7 min-w-0 items-center justify-center gap-1 rounded px-1 text-[9.5px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
-                effect === item ? 'bg-aegis-surface text-aegis-text shadow-sm' : 'text-aegis-text-dim hover:bg-aegis-hover/45',
+                'flex h-6 items-center gap-1.5 rounded px-2 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35',
+                effect === item
+                  ? 'bg-aegis-primary/12 font-medium text-aegis-primary'
+                  : 'text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text-secondary',
               )}
             >
               <span>{effectFilterLabel(item)}</span>
-              <span className="font-mono tabular-nums opacity-70">{effectCounts[item]}</span>
+              <span className="font-mono text-[10px] tabular-nums opacity-70">{effectCounts[item]}</span>
             </button>
           ))}
         </div>
-      </fieldset>
-      <div className="mt-4 border-t border-aegis-border pt-3">
-        <div className="flex items-center justify-between gap-2 text-[9.5px] text-aegis-text-dim">
-          <span>{t('businessApplications.workbench.filter.currentResults')}</span>
-          <span className="font-mono tabular-nums">{filteredCount} / {domainCounts.all}</span>
-        </div>
-        <p className="mt-1 text-[9.5px] leading-4 text-aegis-text-dim">{t('businessApplications.workbench.filter.boundCatalogBoundary')}</p>
         {filtersActive && (
-          <button
-            type="button"
-            onClick={onReset}
-            className="mt-2 text-[10px] text-aegis-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
-          >
+          <Button size="sm" variant="ghost" tone="neutral" leadingIcon={<X size={13} />} onClick={onReset}>
             {t('businessApplications.workbench.filter.clear')}
-          </button>
+          </Button>
         )}
+        <span className="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-aegis-text-dim">
+          {filteredCount} / {domainCounts.all}
+        </span>
       </div>
-    </aside>
+    </section>
   );
 }
 
@@ -347,10 +322,10 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
   const runtimeToolAvailable = hasAvailableDingTalkRuntimeTool(effective?.groups);
 
   const view = parseBusinessApplicationsView(location.search);
-  const [leftWidth, setLeftWidth] = useState(228);
   const [rightWidth, setRightWidth] = useState(382);
-  const [leftCollapsed, setLeftCollapsed] = useState(true);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(() => (
+    typeof window !== 'undefined' && shouldStartDingTalkDetailCollapsed(window.innerWidth)
+  ));
   const [search, setSearch] = useState('');
   const [domain, setDomain] = useState<DomainFilter>('all');
   const [effect, setEffect] = useState<EffectFilter>('all');
@@ -883,16 +858,6 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
     setSelectedId(authenticatedCatalogTools[0]?.entry.id ?? null);
   }, [authenticatedCatalogTools, selectedTool]);
 
-  useEffect(() => {
-    const onResize = () => {
-      if (window.innerWidth < 980) setLeftCollapsed(true);
-      if (window.innerWidth < 1160) setRightCollapsed(true);
-    };
-    onResize();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
   const loadSchema = useCallback(async (tool: DingTalkEffectiveTool | null = selectedTool) => {
     if (!tool || tool.entry.id === DINGTALK_RUNTIME_STATUS_TOOL) {
       schemaRequests.current.invalidate();
@@ -1412,11 +1377,11 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
 
   return (
     <PageTransition className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-aegis-bg">
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-aegis-border bg-aegis-surface/55 px-3">
-        <span className="flex h-7 w-7 items-center justify-center rounded-md border border-aegis-primary/25 bg-aegis-primary/10 text-aegis-primary"><Building2 size={15} /></span>
+      <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-aegis-border bg-aegis-surface/55 px-4 py-2.5">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-aegis-primary/25 bg-aegis-primary/10 text-aegis-primary"><Building2 size={16} aria-hidden="true" /></span>
         <div className="min-w-0">
-          <h1 className="truncate text-[12.5px] font-semibold text-aegis-text">{pageTitle}</h1>
-          <p className="truncate text-[9.5px] text-aegis-text-dim">{headerStatus}</p>
+          <h1 className="truncate text-[15px] font-semibold leading-5 text-aegis-text">{pageTitle}</h1>
+          <p className="truncate text-[11px] leading-4 text-aegis-text-dim">{headerStatus}</p>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
           <DingTalkRuntimeIdentity runtime={runtimeIdentity} />
@@ -1476,35 +1441,39 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
         <main className="flex min-h-0 flex-1 bg-aegis-surface/20"><BusinessActivityList /></main>
       ) : (
         <div
-          className="grid min-h-0 flex-1"
+          className={clsx(
+            'grid min-h-0 flex-1',
+            rightCollapsed
+              ? 'grid-cols-[minmax(0,1fr)_40px] max-xl:grid-cols-1'
+              : 'grid-cols-[minmax(360px,1fr)_minmax(340px,var(--dingtalk-detail-width))] max-xl:grid-cols-1',
+          )}
           style={{
-            gridTemplateColumns: `${leftCollapsed ? 40 : leftWidth}px minmax(0,1fr) ${rightCollapsed ? 40 : rightWidth}px`,
-          }}
+            '--dingtalk-detail-width': `${rightWidth}px`,
+          } as CSSProperties}
         >
-          <FilterPane
-            width={leftWidth}
-            collapsed={leftCollapsed}
-            search={search}
-            domain={domain}
-            effect={effect}
-            domainCounts={domainCounts}
-            effectCounts={effectCounts}
-            filteredCount={filteredTools.length}
-            onWidthChange={setLeftWidth}
-            onCollapsedChange={setLeftCollapsed}
-            onSearchChange={setSearch}
-            onDomainChange={setDomain}
-            onEffectChange={setEffect}
-            onReset={clearFilters}
-          />
-          <main className="flex min-h-0 min-w-0 flex-col bg-aegis-surface/20">
-            <div className="flex h-9 shrink-0 items-center justify-between border-b border-aegis-border px-3">
-              <div className="flex min-w-0 items-center gap-2 text-[10.5px] text-aegis-text-dim">
-                <span className="font-medium text-aegis-text-secondary">{t('businessApplications.workbench.currentProfile')}</span>
-                <span className="max-w-[320px] truncate font-mono" title={executionProfile}>{profileAuthenticated ? executionProfile : t('businessApplications.workbench.profile.unverified')}</span>
+          <main className={clsx(
+            'flex min-h-0 min-w-0 flex-col bg-aegis-surface/20',
+            !rightCollapsed && 'max-xl:hidden',
+          )}>
+            <div className="flex min-h-11 shrink-0 items-center justify-between gap-3 border-b border-aegis-border px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2 text-[11px] text-aegis-text-dim">
+                <span className="shrink-0 font-medium text-aegis-text-secondary">{t('businessApplications.workbench.currentProfile')}</span>
+                <span className="max-w-[360px] truncate font-mono text-[11px]" title={executionProfile}>{profileAuthenticated ? executionProfile : t('businessApplications.workbench.profile.unverified')}</span>
               </div>
-              <span className="text-[10px] tabular-nums text-aegis-text-dim">{filteredTools.length} / {authenticatedCatalogTools.length}</span>
+              <span className="shrink-0 rounded-md border border-aegis-border bg-aegis-bg/60 px-2 py-1 text-[10px] tabular-nums text-aegis-text-dim">{authenticatedCatalogTools.length}</span>
             </div>
+            <CatalogToolbar
+              search={search}
+              domain={domain}
+              effect={effect}
+              domainCounts={domainCounts}
+              effectCounts={effectCounts}
+              filteredCount={filteredTools.length}
+              onSearchChange={setSearch}
+              onDomainChange={setDomain}
+              onEffectChange={setEffect}
+              onReset={clearFilters}
+            />
             {toolsError && <div className="border-b border-aegis-danger/25 bg-aegis-danger/[0.06] px-3 py-1.5 text-[10px] text-aegis-danger">{toolsError}</div>}
             <DingTalkToolTable
               tools={filteredTools}
@@ -1529,29 +1498,31 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
               onSelect={selectTool}
             />
           </main>
-          <DingTalkToolDetail
-            tool={selectedTool}
-            width={rightWidth}
-            collapsed={rightCollapsed}
-            profile={executionProfile}
-            profiles={runtimeIdentity?.profiles ?? []}
-            argumentsJson={argumentsJson}
-            schema={schema}
-            schemaLoading={schemaLoading}
-            schemaError={schemaError}
-            invocationOutput={invocationOutput}
-            invocationError={invocationError}
-            invoking={invoking}
-            disabledReason={disabledReason}
-            argumentsInvalid={Boolean(parsedArguments.error)}
-            missingRequiredParameters={missingRequiredParameters}
-            onWidthChange={setRightWidth}
-            onCollapsedChange={setRightCollapsed}
-            onProfileChange={changeProfile}
-            onArgumentsChange={setArgumentsJson}
-            onLoadSchema={() => void loadSchema()}
-            onInvoke={invokeSelected}
-          />
+          <div className={clsx('min-h-0 min-w-0', rightCollapsed && 'max-xl:hidden')}>
+            <DingTalkToolDetail
+              tool={selectedTool}
+              width={rightWidth}
+              collapsed={rightCollapsed}
+              profile={executionProfile}
+              profiles={runtimeIdentity?.profiles ?? []}
+              argumentsJson={argumentsJson}
+              schema={schema}
+              schemaLoading={schemaLoading}
+              schemaError={schemaError}
+              invocationOutput={invocationOutput}
+              invocationError={invocationError}
+              invoking={invoking}
+              disabledReason={disabledReason}
+              argumentsInvalid={Boolean(parsedArguments.error)}
+              missingRequiredParameters={missingRequiredParameters}
+              onWidthChange={setRightWidth}
+              onCollapsedChange={setRightCollapsed}
+              onProfileChange={changeProfile}
+              onArgumentsChange={setArgumentsJson}
+              onLoadSchema={() => void loadSchema()}
+              onInvoke={invokeSelected}
+            />
+          </div>
         </div>
       )}
     </PageTransition>

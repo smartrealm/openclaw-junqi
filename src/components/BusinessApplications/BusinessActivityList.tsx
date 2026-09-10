@@ -13,6 +13,7 @@ import { useDingTalkBusinessAudit } from '@/hooks/useDingTalkBusinessAudit';
 import { useChatStore } from '@/stores/chatStore';
 import { summarizeDingTalkBusinessActivity } from './businessActivitySummary';
 import { resolveBusinessActivityPrimaryState } from './businessActivityPresentation';
+import { BusinessActivityEvidence } from './BusinessActivityEvidence';
 
 type ActivityScope = 'all' | 'official' | 'window';
 
@@ -26,9 +27,9 @@ function StateIcon({ state }: { state: BusinessAttemptState }) {
 
 function SummaryMetric({ label, value, tone = 'neutral' }: { label: string; value: number; tone?: 'neutral' | 'warning' }) {
   return (
-    <div className="min-w-0 border-r border-aegis-border px-3 py-2 last:border-r-0">
-      <div className="text-[9.5px] text-aegis-text-dim">{label}</div>
-      <div className={clsx('mt-0.5 font-mono text-[15px] font-semibold tabular-nums', tone === 'warning' && value > 0 ? 'text-aegis-warning' : 'text-aegis-text-secondary')}>{value}</div>
+    <div className="min-w-0 border-r border-aegis-border px-4 py-3 last:border-r-0">
+      <div className="text-[11px] leading-4 text-aegis-text-dim">{label}</div>
+      <div className={clsx('mt-0.5 font-mono text-[18px] font-semibold leading-6 tabular-nums', tone === 'warning' && value > 0 ? 'text-aegis-warning' : 'text-aegis-text-secondary')}>{value}</div>
     </div>
   );
 }
@@ -134,25 +135,25 @@ export function BusinessActivityList() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid shrink-0 grid-cols-2 border-b border-aegis-border bg-aegis-bg/35 sm:grid-cols-5">
+      <div className="grid shrink-0 grid-cols-2 border-b border-aegis-border bg-aegis-bg/35 sm:grid-cols-3 xl:grid-cols-5">
         <SummaryMetric label={t('businessApplications.activity.metrics.official')} value={summary.official} />
         <SummaryMetric label={t('businessApplications.activity.metrics.local')} value={summary.local} />
         <SummaryMetric label={t('businessApplications.activity.metrics.agents')} value={summary.agents} />
         <SummaryMetric label={t('businessApplications.activity.metrics.active')} value={summary.active} />
         <SummaryMetric label={t('businessApplications.activity.metrics.attention')} value={summary.attention} tone="warning" />
       </div>
-      <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-2 border-b border-aegis-border px-3 py-1.5">
-        <label className="flex min-w-[180px] flex-1 items-center gap-2 rounded-md border border-aegis-border bg-aegis-bg/70 px-2 py-1.5 focus-within:border-aegis-primary/55 focus-within:ring-1 focus-within:ring-aegis-primary/25">
-          <Search size={12} className="shrink-0 text-aegis-text-dim" aria-hidden="true" />
+      <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-aegis-border px-3 py-2">
+        <label className="flex h-8 min-w-[220px] flex-1 items-center gap-2 rounded-md border border-aegis-border bg-aegis-input px-2.5 focus-within:border-aegis-primary/55 focus-within:ring-2 focus-within:ring-aegis-primary/20">
+          <Search size={14} className="shrink-0 text-aegis-text-dim" aria-hidden="true" />
           <span className="sr-only">{t('businessApplications.activity.searchLabel')}</span>
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder={t('businessApplications.activity.searchPlaceholder')}
-            className="min-w-0 flex-1 bg-transparent text-[10.5px] text-aegis-text outline-none placeholder:text-aegis-text-dim"
+            className="min-w-0 flex-1 bg-transparent text-[12px] text-aegis-text outline-none placeholder:text-aegis-text-dim"
           />
         </label>
-        <div className="flex rounded-md border border-aegis-border bg-aegis-bg/70 p-0.5" aria-label={t('businessApplications.activity.scopeLabel')}>
+        <div className="flex h-8 rounded-md border border-aegis-border bg-aegis-input p-0.5" aria-label={t('businessApplications.activity.scopeLabel')}>
           {([
             ['all', t('businessApplications.activity.scope.all')],
             ['official', t('businessApplications.activity.scope.official')],
@@ -164,8 +165,8 @@ export function BusinessActivityList() {
               aria-pressed={scope === value}
               onClick={() => setScope(value)}
               className={clsx(
-                'rounded px-2 py-1 text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60',
-                scope === value ? 'bg-aegis-primary/15 text-aegis-primary' : 'text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text',
+                'rounded px-2.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/35',
+                scope === value ? 'bg-aegis-primary/12 font-medium text-aegis-primary' : 'text-aegis-text-dim hover:bg-aegis-hover hover:text-aegis-text',
               )}
             >
               {label}
@@ -189,50 +190,54 @@ export function BusinessActivityList() {
           />
         )}
         {filteredEvents.map((event) => (
-          <div key={`${event.eventId}:${event.sequence}`} className="grid grid-cols-[18px_minmax(0,1fr)_auto] gap-2 border-b border-aegis-border/70 px-3 py-3">
-            <span className="pt-0.5"><ShieldAlert size={14} className={event.status === 'succeeded' ? 'text-aegis-success' : event.status === 'failed' || event.status === 'blocked' ? 'text-aegis-danger' : 'text-aegis-warning'} /></span>
+          <article key={`${event.eventId}:${event.sequence}`} className="grid grid-cols-[20px_minmax(0,1fr)_auto] gap-3 border-b border-aegis-border/70 px-4 py-3.5">
+            <span className="pt-0.5"><ShieldAlert size={15} className={event.status === 'succeeded' ? 'text-aegis-success' : event.status === 'failed' || event.status === 'blocked' ? 'text-aegis-danger' : 'text-aegis-warning'} /></span>
             <div className="min-w-0">
-              <div className="truncate text-[11.5px] font-medium text-aegis-text-secondary">{event.toolName ?? event.action}</div>
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-aegis-text-dim">
+              <div className="truncate text-[12.5px] font-medium leading-5 text-aegis-text-secondary">{event.toolName ?? event.action}</div>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-4 text-aegis-text-dim">
                 <span>{t('businessApplications.activity.agent')} {event.agentId ?? event.actor.id}</span>
-                {event.runId && <span className="max-w-[180px] truncate font-mono" title={event.runId}>{t('businessApplications.activity.run')} {event.runId}</span>}
-                {event.toolCallId && <span className="max-w-[180px] truncate font-mono" title={event.toolCallId}>{t('businessApplications.activity.call')} {event.toolCallId}</span>}
                 {event.errorCode && <span>{t('businessApplications.activity.error')} {event.errorCode}</span>}
                 <span>{t('businessApplications.activity.officialMetadata')}</span>
               </div>
+              <BusinessActivityEvidence items={[
+                { label: t('businessApplications.activity.run'), value: event.runId },
+                { label: t('businessApplications.activity.call'), value: event.toolCallId },
+              ]} />
             </div>
-            <div className="text-right text-[10px] text-aegis-text-dim">
-              <div>{t(`businessApplications.activity.auditStatus.${event.status}`, event.status)}</div>
+            <div className="text-right text-[10.5px] leading-4 text-aegis-text-dim">
+              <div className="font-medium text-aegis-text-secondary">{t(`businessApplications.activity.auditStatus.${event.status}`, event.status)}</div>
               <time dateTime={new Date(event.occurredAt).toISOString()}>{new Date(event.occurredAt).toLocaleTimeString()}</time>
             </div>
-          </div>
+          </article>
         ))}
         {filteredAttempts.length > 0 && <div className="border-b border-aegis-border bg-aegis-surface/35 px-3 py-1.5 text-[9.5px] text-aegis-text-dim">{t('businessApplications.activity.localProjectionBoundary')}</div>}
         {filteredAttempts.map((attempt) => (
-          <div key={attempt.id} className="grid grid-cols-[18px_minmax(0,1fr)_auto] gap-2 border-b border-aegis-border/70 px-3 py-3">
+          <article key={attempt.id} className="grid grid-cols-[20px_minmax(0,1fr)_auto] gap-3 border-b border-aegis-border/70 px-4 py-3.5">
             <span className="pt-0.5"><StateIcon state={attempt.state} /></span>
             <div className="min-w-0">
-              <div className="truncate text-[11.5px] font-medium text-aegis-text-secondary">{attempt.toolLabel}</div>
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-aegis-text-dim">
+              <div className="truncate text-[12.5px] font-medium leading-5 text-aegis-text-secondary">{attempt.toolLabel}</div>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-4 text-aegis-text-dim">
                 <span>{t(`businessApplications.workbench.effect.${attempt.effect}`)}</span>
                 <span>{t('businessApplications.activity.risk')} {t(`businessApplications.workbench.risk.${attempt.risk}`)}</span>
                 <span>{attempt.profileRef ?? t('businessApplications.activity.noTenant')}</span>
                 <span>{t('businessApplications.activity.agent')} {attempt.agentId ?? t('businessApplications.activity.agentPending')}</span>
-                {attempt.sessionId && <span className="max-w-[180px] truncate font-mono" title={attempt.sessionId}>{t('businessApplications.activity.session')} {attempt.sessionId}</span>}
-                {attempt.evidence?.dwsCanonicalPath && <span className="max-w-[180px] truncate font-mono" title={attempt.evidence.dwsCanonicalPath}>{attempt.evidence.dwsCanonicalPath}</span>}
-                {attempt.evidence?.verifierCanonicalPath && <span className="max-w-[180px] truncate font-mono" title={attempt.evidence.verifierCanonicalPath}>{t('businessApplications.activity.verifier')} {attempt.evidence.verifierCanonicalPath}</span>}
-                {attempt.evidence?.resourceId && <span className="max-w-[150px] truncate font-mono" title={attempt.evidence.resourceId}>{t('businessApplications.activity.resource')} {attempt.evidence.resourceId}</span>}
-                {attempt.evidence?.recoveryEventId && <span className="max-w-[150px] truncate font-mono" title={attempt.evidence.recoveryEventId}>{t('businessApplications.activity.recovery')} {attempt.evidence.recoveryEventId}</span>}
                 {attempt.errorCode && <span>{t('businessApplications.activity.error')} {attempt.errorCode}</span>}
               </div>
+              <BusinessActivityEvidence items={[
+                { label: t('businessApplications.activity.session'), value: attempt.sessionId },
+                { label: t('businessApplications.workbench.detail.dwsPath'), value: attempt.evidence?.dwsCanonicalPath },
+                { label: t('businessApplications.activity.verifier'), value: attempt.evidence?.verifierCanonicalPath },
+                { label: t('businessApplications.activity.resource'), value: attempt.evidence?.resourceId },
+                { label: t('businessApplications.activity.recovery'), value: attempt.evidence?.recoveryEventId },
+              ]} />
             </div>
-            <div className="text-right text-[10px] text-aegis-text-dim">
-              <div>{t(`businessApplications.activity.state.${attempt.state}`)}</div>
+            <div className="text-right text-[10.5px] leading-4 text-aegis-text-dim">
+              <div className="font-medium text-aegis-text-secondary">{t(`businessApplications.activity.state.${attempt.state}`)}</div>
               <time dateTime={new Date(attempt.startedAt).toISOString()}>
                 {new Date(attempt.startedAt).toLocaleTimeString()}
               </time>
             </div>
-          </div>
+          </article>
         ))}
         {audit.nextCursor && scope !== 'window' && (
           <div className="flex justify-center border-b border-aegis-border px-3 py-2">

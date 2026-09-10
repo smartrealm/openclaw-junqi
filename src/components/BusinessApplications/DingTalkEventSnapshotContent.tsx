@@ -29,14 +29,14 @@ export function DingTalkEventSnapshotContent({
   return (
     <>
       {error && (
-        <div className="mt-2 flex items-start gap-1.5 rounded-md border border-aegis-danger/25 bg-aegis-danger/[0.05] px-2.5 py-2 text-[10px] text-aegis-danger" role="alert">
+        <div className="mt-2 flex items-start gap-1.5 rounded-md border border-aegis-danger/25 bg-aegis-danger/[0.05] px-2.5 py-2 text-[10.5px] text-aegis-danger" role="alert">
           <AlertCircle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
           <span className="break-words">{error}</span>
         </div>
       )}
 
       {!snapshot && !error && (
-        <p className="mt-2 text-[9.5px] text-aegis-text-dim" role="status">
+        <p className="mt-2 text-[10.5px] text-aegis-text-dim" role="status">
           {loading
             ? t('businessApplications.events.snapshot.loading')
             : t('businessApplications.events.snapshot.notRead')}
@@ -45,7 +45,7 @@ export function DingTalkEventSnapshotContent({
 
       {snapshot && (
         <div className="mt-2 space-y-2">
-          <dl className="grid gap-1.5 text-[9.5px] sm:grid-cols-2 xl:grid-cols-4">
+          <dl className="grid gap-2 text-[10.5px] sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded border border-aegis-border/70 bg-aegis-bg/60 px-2 py-1.5">
               <dt className="text-aegis-text-dim">{t('businessApplications.events.snapshot.phase')}</dt>
               <dd className="mt-0.5 font-medium text-aegis-text-secondary">{t(`businessApplications.events.snapshot.phases.${snapshot.phase}`)}</dd>
@@ -65,19 +65,19 @@ export function DingTalkEventSnapshotContent({
           </dl>
 
           {snapshot.lastErrorCode && (
-            <p className="rounded-md border border-aegis-warning/25 bg-aegis-warning/[0.05] px-2.5 py-2 font-mono text-[9.5px] text-aegis-warning" role="status">
+            <p className="rounded-md border border-aegis-warning/25 bg-aegis-warning/[0.05] px-2.5 py-2 font-mono text-[10.5px] text-aegis-warning" role="status">
               {t('businessApplications.events.snapshot.lastError', { code: snapshot.lastErrorCode })}
             </p>
           )}
 
           <div>
-            <div className="text-[9.5px] font-medium text-aegis-text-secondary">{t('businessApplications.events.snapshot.records')}</div>
+            <div className="text-[10.5px] font-medium text-aegis-text-secondary">{t('businessApplications.events.snapshot.records')}</div>
             {snapshot.events.length === 0 ? (
-              <p className="mt-1 text-[9.5px] text-aegis-text-dim">{t('businessApplications.events.snapshot.empty')}</p>
+              <p className="mt-1 text-[10.5px] text-aegis-text-dim">{t('businessApplications.events.snapshot.empty')}</p>
             ) : (
               <ol className="mt-1 space-y-1" aria-label={t('businessApplications.events.snapshot.records')}>
                 {snapshot.events.map((event) => (
-                  <li key={event.sequence} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded border border-aegis-border/70 bg-aegis-bg/60 px-2 py-1.5 text-[9.5px]">
+                  <li key={event.sequence} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border border-aegis-border/70 bg-aegis-bg/60 px-2.5 py-2 text-[10.5px]">
                     <span className="font-mono text-aegis-text-secondary">#{event.sequence}</span>
                     <span className="break-all text-aegis-text-secondary">{event.eventType}</span>
                     <time dateTime={event.receivedAt} className="ml-auto font-mono text-aegis-text-dim">{event.receivedAt}</time>

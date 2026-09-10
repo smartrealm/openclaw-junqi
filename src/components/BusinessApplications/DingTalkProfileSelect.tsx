@@ -33,7 +33,7 @@ export function DingTalkProfileSelect({
       <SelectTrigger
         id={triggerId}
         aria-label={accessibleLabel}
-        className="mt-1 h-9 w-full rounded-lg border-aegis-border bg-aegis-bg px-2.5 text-[10.5px] text-aegis-text shadow-none focus:ring-2 focus:ring-aegis-primary/25 focus:ring-offset-0"
+        className="mt-1.5 h-8 w-full rounded-md border-aegis-border bg-aegis-input px-2.5 text-[11px] text-aegis-text shadow-none focus:ring-2 focus:ring-aegis-primary/25 focus:ring-offset-0"
       >
         <SelectValue placeholder={t('businessApplications.workbench.profile.noSignedInAccount')} />
       </SelectTrigger>
@@ -52,7 +52,7 @@ export function DingTalkProfileSelect({
               key={profile.profile}
               value={profile.profile}
               textValue={optionText}
-              className="min-h-9 rounded-md py-2 pl-8 pr-2 text-[10.5px] text-aegis-text-secondary focus:bg-aegis-primary/10 focus:text-aegis-text"
+              className="min-h-8 rounded-md py-1.5 pl-8 pr-2 text-[11px] text-aegis-text-secondary focus:bg-aegis-primary/10 focus:text-aegis-text"
             >
               <span className="flex min-w-0 items-center gap-2">
                 <span className="truncate">{displayName}</span>

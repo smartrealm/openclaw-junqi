@@ -5,3 +5,7 @@ export function parseBusinessApplicationsView(search: string): BusinessApplicati
   if (view === 'activity' || view === 'runtime') return view;
   return 'tools';
 }
+
+export function shouldStartDingTalkDetailCollapsed(viewportWidth: number): boolean {
+  return viewportWidth < 1280;
+}

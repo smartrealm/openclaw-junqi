@@ -13,7 +13,7 @@ export function DingTalkToolContractSummary({ tool }: { tool: DingTalkEffectiveT
     : t('businessApplications.workbench.unverified');
 
   return (
-    <dl className="mt-3 grid grid-cols-[76px_minmax(0,1fr)] gap-y-1.5 border-y border-aegis-border py-2 text-[10px]">
+    <dl className="mt-4 grid grid-cols-[84px_minmax(0,1fr)] gap-y-2 border-y border-aegis-border py-3 text-[11px]">
       <dt className="text-aegis-text-dim">{t('businessApplications.workbench.effectLabel')}</dt>
       <dd className="text-aegis-text-secondary">{effect}</dd>
       <dt className="text-aegis-text-dim">{t('businessApplications.workbench.riskLabel')}</dt>

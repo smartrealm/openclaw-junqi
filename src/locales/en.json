@@ -5953,6 +5953,7 @@
       "verifier": "verification",
       "resource": "resource",
       "loadMore": "Load earlier audit records",
+      "technicalDetails": "Technical evidence",
       "state": {
         "pending": "Running",
         "approval_required": "Waiting for OpenClaw approval",

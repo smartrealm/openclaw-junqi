@@ -33,8 +33,8 @@ export function DingTalkRuntimeIdentity({
   const { t } = useTranslation();
   if (!runtime) {
     return mode === 'full'
-      ? <div className="flex min-h-32 items-center justify-center border border-dashed border-aegis-border px-4 text-center text-[10.5px] text-aegis-text-dim">{t('businessApplications.runtimeIdentity.notReadFull')}</div>
-      : <span className="text-[9.5px] text-aegis-text-dim">{t('businessApplications.runtimeIdentity.notRead')}</span>;
+      ? <div className="flex min-h-32 items-center justify-center rounded-md border border-dashed border-aegis-border px-4 text-center text-[11px] text-aegis-text-dim">{t('businessApplications.runtimeIdentity.notReadFull')}</div>
+      : <span className="text-[10.5px] text-aegis-text-dim">{t('businessApplications.runtimeIdentity.notRead')}</span>;
   }
   const current = runtime.profiles.find((profile) => profile.isCurrent) ?? runtime.profiles.find((profile) => profile.profile === runtime.currentProfile);
   const profileActionState = resolveDwsProfileActionState(
@@ -59,15 +59,15 @@ export function DingTalkRuntimeIdentity({
 
   if (mode === 'full') {
     return (
-      <div className="border border-aegis-border bg-aegis-surface/45">
-        <div className="flex items-center gap-3 border-b border-aegis-border px-3 py-3">
+      <div className="overflow-hidden rounded-md border border-aegis-border bg-aegis-surface/45">
+        <div className="flex items-center gap-3 border-b border-aegis-border px-4 py-3">
           {avatar}
           <div className="min-w-0">
-            <div className="truncate text-[12px] font-semibold text-aegis-text">{user?.name ?? current?.userName ?? t('businessApplications.runtimeIdentity.userPending')}</div>
-            <div className="mt-0.5 truncate text-[10px] text-aegis-text-dim">{user?.organization ?? current?.corpName ?? t('businessApplications.runtimeIdentity.organizationPending')}</div>
+            <div className="truncate text-[13px] font-semibold text-aegis-text">{user?.name ?? current?.userName ?? t('businessApplications.runtimeIdentity.userPending')}</div>
+            <div className="mt-0.5 truncate text-[11px] text-aegis-text-dim">{user?.organization ?? current?.corpName ?? t('businessApplications.runtimeIdentity.organizationPending')}</div>
           </div>
         </div>
-        <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-y-2 px-3 py-3 text-[10px]">
+        <dl className="grid grid-cols-[96px_minmax(0,1fr)] gap-y-2.5 px-4 py-3 text-[11px]">
           <dt className="text-aegis-text-dim">{t('businessApplications.runtimeIdentity.currentProfile')}</dt>
           <dd className="truncate font-mono text-aegis-text-secondary" title={current?.profile ?? runtime.currentProfile ?? undefined}>{current?.profile ?? runtime.currentProfile ?? t('businessApplications.runtimeIdentity.notReturned')}</dd>
           <dt className="text-aegis-text-dim">{t('businessApplications.runtimeIdentity.identityStatus')}</dt>
@@ -78,8 +78,8 @@ export function DingTalkRuntimeIdentity({
           <dd className="text-aegis-text-secondary">{current?.expiresAt ?? t('businessApplications.runtimeIdentity.notReturned')}</dd>
         </dl>
         {runtime.profiles.length > 0 && onSelectedProfileChange && onAddProfile && onSwitchProfile && onLogoutProfile && (
-          <div className="border-t border-aegis-border px-3 py-3">
-            <div className="block text-[10px] text-aegis-text-secondary">
+          <div className="border-t border-aegis-border px-4 py-3">
+            <div className="block text-[11px] text-aegis-text-secondary">
               <span className="mb-1.5 block font-medium">{t('businessApplications.runtimeIdentity.accountProfile')}</span>
               <DingTalkProfileSelect
                 triggerId="dingtalk-runtime-profile"
@@ -90,7 +90,7 @@ export function DingTalkRuntimeIdentity({
                 disabled={operationActive || !profileOperationsAvailable}
               />
             </div>
-            <p className="mt-1.5 text-[9.5px] leading-4 text-aegis-text-dim">
+            <p className="mt-1.5 text-[10.5px] leading-4 text-aegis-text-dim">
               {profileActionState.onlyOneProfile
                 ? t('businessApplications.runtimeIdentity.singleProfileHint')
                 : t('businessApplications.runtimeIdentity.profileActionsBoundary')}
@@ -140,17 +140,17 @@ export function DingTalkRuntimeIdentity({
   }
 
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-md border border-aegis-border bg-aegis-bg/55 px-2 py-1.5" title={current?.profile ?? undefined}>
+    <div className="flex min-w-0 items-center gap-2 rounded-md border border-aegis-border bg-aegis-bg/55 px-2.5 py-1" title={current?.profile ?? undefined}>
       {avatarUrl ? (
         <img className="h-6 w-6 rounded-full border border-aegis-border object-cover" src={avatarUrl} alt={t('businessApplications.runtimeIdentity.avatarAlt')} />
       ) : (
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-aegis-border bg-aegis-surface text-aegis-text-dim" role="img" aria-label={t('businessApplications.runtimeIdentity.avatarMissing')} title={t('businessApplications.runtimeIdentity.avatarMissing')}><UserRound size={12} aria-hidden="true" /></span>
       )}
       <div className="hidden min-w-0 leading-3.5 lg:block">
-        <div className="truncate text-[10px] font-medium text-aegis-text-secondary">{primaryLabel}</div>
-        <div className="truncate font-mono text-[9px] text-aegis-text-dim">{secondaryLabel}</div>
+        <div className="truncate text-[11px] font-medium text-aegis-text-secondary">{primaryLabel}</div>
+        <div className="truncate font-mono text-[10px] text-aegis-text-dim">{secondaryLabel}</div>
       </div>
-      {current && <span className="ml-auto hidden shrink-0 text-[9px] text-aegis-text-dim 2xl:block" title={t('businessApplications.runtimeIdentity.identityStatus')}>{current.status ?? t('businessApplications.runtimeIdentity.read')}</span>}
+      {current && <span className="ml-auto hidden shrink-0 text-[10px] text-aegis-text-dim 2xl:block" title={t('businessApplications.runtimeIdentity.identityStatus')}>{current.status ?? t('businessApplications.runtimeIdentity.read')}</span>}
     </div>
   );
 }

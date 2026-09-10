@@ -5655,6 +5655,7 @@
       "verifier": "核驗",
       "resource": "資源",
       "loadMore": "載入更早審計",
+      "technicalDetails": "技術證據",
       "state": {
         "pending": "執行中",
         "approval_required": "等待 OpenClaw 審批",

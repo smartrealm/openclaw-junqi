@@ -64,24 +64,20 @@ export function DingTalkToolTable({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-aegis-border bg-aegis-surface/45 px-3 py-2 text-[9.5px] leading-4 text-aegis-text-dim">
-        {t('businessApplications.workbench.table.catalogBoundary')}
-      </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full min-w-[560px] border-collapse text-left">
+        <table className="w-full min-w-[440px] border-collapse text-left">
           <thead className="sticky top-0 z-10 bg-aegis-surface">
-            <tr className="h-8 border-b border-aegis-border text-[10.5px] font-medium text-aegis-text-dim">
-              <th className="w-[46%] px-3 font-medium">{t('businessApplications.workbench.table.operation')}</th>
-              <th className="px-3 font-medium">{t('businessApplications.workbench.table.domain')}</th>
+            <tr className="h-9 border-b border-aegis-border text-[11px] font-medium text-aegis-text-dim">
+              <th className="w-[64%] px-4 font-medium">{t('businessApplications.workbench.table.operation')}</th>
               <th className="px-3 font-medium">{t('businessApplications.workbench.effectLabel')}</th>
               <th className="px-3 font-medium">{t('businessApplications.workbench.riskLabel')}</th>
-              <th className="w-8" aria-label={t('businessApplications.workbench.table.openDetail')} />
+              <th className="w-9" aria-label={t('businessApplications.workbench.table.openDetail')} />
             </tr>
           </thead>
           {groups.map((group) => (
             <tbody key={group.domain} aria-label={t('businessApplications.workbench.table.groupAriaLabel', { label: domainLabel(group.domain) })}>
-              <tr className="h-7 border-b border-aegis-border bg-aegis-surface/65">
-                <th colSpan={5} scope="rowgroup" className="px-3 text-[9.5px] font-semibold tracking-[0.08em] text-aegis-text-dim">
+              <tr className="h-8 border-b border-aegis-border bg-aegis-surface/65">
+                <th colSpan={4} scope="rowgroup" className="px-4 text-[10px] font-semibold tracking-[0.06em] text-aegis-text-dim">
                   {domainLabel(group.domain)}<span className="ml-2 font-normal tabular-nums">{group.tools.length}</span>
                 </th>
               </tr>
@@ -91,32 +87,29 @@ export function DingTalkToolTable({
                   <tr
                     key={tool.entry.id}
                     aria-selected={selected}
-                    onClick={() => onSelect(tool)}
                     className={clsx(
-                      'h-11 cursor-pointer border-b border-aegis-border/70 text-[11px] transition-colors',
-                      selected ? 'bg-aegis-primary/[0.08]' : 'hover:bg-aegis-hover/45',
+                      'h-14 border-b border-aegis-border/70 text-[11px] transition-colors',
+                      selected ? 'bg-aegis-primary/[0.08]' : 'hover:bg-aegis-hover/35',
                     )}
                   >
-                    <td className="max-w-0 px-3">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onSelect(tool);
-                          }}
-                          className="block min-w-0 flex-1 truncate text-left font-medium text-aegis-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-aegis-primary/60"
-                        >
-                          {tool.entry.label}
-                        </button>
+                    <td className="max-w-0 p-0">
+                      <button
+                        type="button"
+                        aria-current={selected ? 'true' : undefined}
+                        onClick={() => onSelect(tool)}
+                        className="flex min-h-14 w-full min-w-0 items-center gap-2 px-4 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-aegis-primary/50"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[12px] font-medium leading-4 text-aegis-text-secondary">{tool.entry.label}</span>
+                          <span className="mt-0.5 block truncate text-[10.5px] leading-4 text-aegis-text-dim">{tool.entry.description}</span>
+                        </span>
                         {tool.entry.deniedBySession && (
-                          <span className="shrink-0 rounded border border-aegis-danger/25 bg-aegis-danger/10 px-1.5 py-0.5 text-[9px] text-aegis-danger">
+                          <span className="shrink-0 rounded-md border border-aegis-danger/25 bg-aegis-danger/10 px-1.5 py-0.5 text-[10px] text-aegis-danger">
                             {t('businessApplications.workbench.sessionDenied')}
                           </span>
                         )}
-                      </div>
+                      </button>
                     </td>
-                    <td className="px-3 text-aegis-text-dim">{domainLabel(tool.domain)}</td>
                     <td className={clsx('px-3 font-medium', tool.effect === 'write' ? 'text-aegis-warning' : 'text-aegis-text-dim')}>
                       {effectLabel(tool.effect)}
                     </td>
@@ -131,6 +124,9 @@ export function DingTalkToolTable({
           ))}
         </table>
       </div>
+      <p className="shrink-0 border-t border-aegis-border bg-aegis-surface/45 px-4 py-2 text-[10px] leading-4 text-aegis-text-dim">
+        {t('businessApplications.workbench.table.catalogBoundary')}
+      </p>
     </div>
   );
 }

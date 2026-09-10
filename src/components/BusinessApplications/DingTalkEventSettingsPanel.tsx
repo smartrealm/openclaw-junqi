@@ -83,12 +83,12 @@ export function DingTalkEventSettingsPanel({
 
   if (!configuration) {
     return (
-      <section className="m-3 rounded-md border border-aegis-border bg-aegis-bg/70 p-3" aria-labelledby="dingtalk-event-settings-title">
+      <section className="m-4 rounded-lg border border-aegis-border bg-aegis-bg/70 p-4" aria-labelledby="dingtalk-event-settings-title">
         <div className="flex items-center gap-2">
           <Radio size={14} className="text-aegis-primary" aria-hidden="true" />
-          <h2 id="dingtalk-event-settings-title" className="text-[11px] font-semibold text-aegis-text-secondary">{t('businessApplications.events.title')}</h2>
+          <h2 id="dingtalk-event-settings-title" className="text-[13px] font-semibold text-aegis-text-secondary">{t('businessApplications.events.title')}</h2>
         </div>
-        <p className="mt-2 text-[10px] leading-4 text-aegis-text-dim">
+        <p className="mt-2 text-[11px] leading-5 text-aegis-text-dim">
           {loading ? t('businessApplications.events.loading') : error ?? t('businessApplications.events.unavailable')}
         </p>
         {!loading && (
@@ -145,25 +145,25 @@ export function DingTalkEventSettingsPanel({
   };
 
   return (
-    <section className="m-3 rounded-md border border-aegis-border bg-aegis-bg/70" aria-labelledby="dingtalk-event-settings-title">
-      <div className="flex items-start justify-between gap-3 border-b border-aegis-border px-3 py-3">
+    <section className="m-4 rounded-lg border border-aegis-border bg-aegis-bg/70" aria-labelledby="dingtalk-event-settings-title">
+      <div className="flex items-start justify-between gap-3 border-b border-aegis-border px-4 py-3.5">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Radio size={14} className="text-aegis-primary" aria-hidden="true" />
-            <h2 id="dingtalk-event-settings-title" className="text-[11px] font-semibold text-aegis-text-secondary">{t('businessApplications.events.title')}</h2>
+            <h2 id="dingtalk-event-settings-title" className="text-[13px] font-semibold text-aegis-text-secondary">{t('businessApplications.events.title')}</h2>
           </div>
-          <p className="mt-1 text-[9.5px] leading-4 text-aegis-text-dim">{t('businessApplications.events.description')}</p>
+          <p className="mt-1 text-[11px] leading-5 text-aegis-text-dim">{t('businessApplications.events.description')}</p>
         </div>
         <IconButton aria-label={t('businessApplications.events.reload')} title={t('businessApplications.events.reload')} disabled={busy || loading} loading={loading} onClick={onReload}>
           <RefreshCw size={13} />
         </IconButton>
       </div>
 
-      <div className="space-y-4 px-3 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-aegis-border bg-aegis-surface/45 px-3 py-2.5">
+      <div className="space-y-4 px-4 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-aegis-border bg-aegis-surface/45 px-3.5 py-3">
           <div>
-            <div className="text-[10.5px] font-medium text-aegis-text-secondary">{t('businessApplications.events.enabled')}</div>
-            <div className="mt-0.5 text-[9.5px] text-aegis-text-dim">{t('businessApplications.events.enabledHint')}</div>
+            <div className="text-[12px] font-medium text-aegis-text-secondary">{t('businessApplications.events.enabled')}</div>
+            <div className="mt-0.5 text-[10.5px] text-aegis-text-dim">{t('businessApplications.events.enabledHint')}</div>
           </div>
           <Switch
             checked={configuration.enabled}
@@ -177,7 +177,7 @@ export function DingTalkEventSettingsPanel({
         {configuration.enabled && (
           <>
             <div className="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_140px]">
-              <label className="block text-[10px] text-aegis-text-secondary" htmlFor="dingtalk-event-profile">
+              <label className="block text-[11px] text-aegis-text-secondary" htmlFor="dingtalk-event-profile">
                 <span className="font-medium">{t('businessApplications.events.profile')}</span>
                 <DingTalkProfileSelect
                   triggerId="dingtalk-event-profile"
@@ -188,7 +188,7 @@ export function DingTalkEventSettingsPanel({
                   onValueChange={(profile) => onChange({ ...configuration, profile })}
                 />
               </label>
-              <label className="block text-[10px] text-aegis-text-secondary" htmlFor="dingtalk-event-buffer-size">
+              <label className="block text-[11px] text-aegis-text-secondary" htmlFor="dingtalk-event-buffer-size">
                 <span className="font-medium">{t('businessApplications.events.bufferSize')}</span>
                 <input
                   id="dingtalk-event-buffer-size"
@@ -199,7 +199,7 @@ export function DingTalkEventSettingsPanel({
                   value={configuration.bufferSize}
                   disabled={formDisabled}
                   onChange={(event) => onChange({ ...configuration, bufferSize: Number(event.target.value) })}
-                  className="mt-1 h-9 w-full rounded-lg border border-aegis-border bg-aegis-bg px-2.5 text-[10.5px] text-aegis-text outline-none focus:border-aegis-primary/60 focus:ring-1 focus:ring-aegis-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-1.5 h-8 w-full rounded-md border border-aegis-border bg-aegis-input px-2.5 text-[11px] text-aegis-text outline-none focus:border-aegis-primary/60 focus:ring-2 focus:ring-aegis-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </label>
             </div>
@@ -209,7 +209,7 @@ export function DingTalkEventSettingsPanel({
                 <div key={`${index}:${subscription.category}`} className="rounded-md border border-aegis-border bg-aegis-surface/35 p-3">
                   <div className="flex items-center gap-2">
                     <div className="min-w-0 flex-1">
-                      <label className="block text-[10px] font-medium text-aegis-text-secondary" htmlFor={`dingtalk-event-category-${index}`}>{t('businessApplications.events.category')}</label>
+                      <label className="block text-[11px] font-medium text-aegis-text-secondary" htmlFor={`dingtalk-event-category-${index}`}>{t('businessApplications.events.category')}</label>
                       <Select value={subscription.category} disabled={formDisabled} onValueChange={(value) => changeCategory(index, value as DingTalkEventCategory)}>
                         <SelectTrigger id={`dingtalk-event-category-${index}`} aria-label={t('businessApplications.events.category')} className="mt-1 h-8 w-full rounded-md border-aegis-border bg-aegis-bg px-2 text-[10px] text-aegis-text shadow-none focus:ring-2 focus:ring-aegis-primary/25 focus:ring-offset-0">
                           <SelectValue />
@@ -238,10 +238,10 @@ export function DingTalkEventSettingsPanel({
                   </div>
 
                   <fieldset className="mt-3">
-                    <legend className="text-[10px] font-medium text-aegis-text-secondary">{t('businessApplications.events.eventTypes')}</legend>
+                    <legend className="text-[11px] font-medium text-aegis-text-secondary">{t('businessApplications.events.eventTypes')}</legend>
                     <div className="mt-1.5 grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
                       {eventKeysForCategory(subscription.category).map((key) => (
-                        <label key={key} className="flex min-w-0 items-start gap-2 rounded border border-aegis-border/70 bg-aegis-bg/60 px-2 py-1.5 text-[9.5px] leading-4 text-aegis-text-dim">
+                        <label key={key} className="flex min-w-0 items-start gap-2 rounded-md border border-aegis-border/70 bg-aegis-bg/60 px-2.5 py-2 text-[10.5px] leading-4 text-aegis-text-dim">
                           <input
                             type="checkbox"
                             checked={subscription.eventKeys.includes(key)}
@@ -310,10 +310,10 @@ export function DingTalkEventSettingsPanel({
 
                   {subscription.category === 'todo' && (
                     <fieldset className="mt-3">
-                      <legend className="text-[10px] font-medium text-aegis-text-secondary">{t('businessApplications.events.todoRoles')}</legend>
+                      <legend className="text-[11px] font-medium text-aegis-text-secondary">{t('businessApplications.events.todoRoles')}</legend>
                       <div className="mt-1.5 flex flex-wrap gap-2">
                         {DINGTALK_TODO_ROLES.map((role) => (
-                          <label key={role} className="flex items-center gap-2 rounded border border-aegis-border bg-aegis-bg/60 px-2 py-1.5 text-[9.5px] text-aegis-text-dim">
+                          <label key={role} className="flex items-center gap-2 rounded-md border border-aegis-border bg-aegis-bg/60 px-2.5 py-2 text-[10.5px] text-aegis-text-dim">
                             <input type="checkbox" checked={subscription.roleTypes?.includes(role) ?? false} disabled={formDisabled} onChange={(event) => toggleRole(index, role, event.target.checked)} className="accent-[rgb(var(--aegis-primary))]" />
                             {t(`businessApplications.events.todoRole.${role}`)}
                           </label>
@@ -356,7 +356,7 @@ export function DingTalkEventSettingsPanel({
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-aegis-border pt-3">
-          <p className="max-w-3xl text-[9.5px] leading-4 text-aegis-text-dim">{t('businessApplications.events.writeBoundary')}</p>
+          <p className="max-w-3xl text-[10.5px] leading-4 text-aegis-text-dim">{t('businessApplications.events.writeBoundary')}</p>
           <div className="flex gap-2">
             <Button size="xs" variant="outline" tone="neutral" disabled={busy || loading} onClick={onReload}>{t('businessApplications.events.reload')}</Button>
             <Button size="xs" variant="solid" tone="primary" loading={busy} disabled={!editable || !profileAvailable || !canSaveDingTalkEventConfiguration(configuration, dirty)} onClick={onSave}>{t('businessApplications.events.saveAndRestart')}</Button>

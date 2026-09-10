@@ -5976,6 +5976,7 @@
       "verifier": "核验",
       "resource": "资源",
       "loadMore": "加载更早审计",
+      "technicalDetails": "技术证据",
       "state": {
         "pending": "执行中",
         "approval_required": "等待 OpenClaw 审批",

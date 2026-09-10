@@ -1,14 +1,12 @@
 import { useRef, useState } from 'react';
 
 export function PaneResizeHandle({
-  side,
   value,
   min,
   max,
   label,
   onChange,
 }: {
-  side: 'left' | 'right';
   value: number;
   min: number;
   max: number;
@@ -36,7 +34,7 @@ export function PaneResizeHandle({
         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
         event.preventDefault();
         const delta = event.key === 'ArrowRight' ? 12 : -12;
-        onChange(Math.min(max, Math.max(min, value + (side === 'left' ? delta : -delta))));
+        onChange(Math.min(max, Math.max(min, value - delta)));
       }}
       onPointerDown={(event) => {
         event.preventDefault();
@@ -48,12 +46,12 @@ export function PaneResizeHandle({
         const state = drag.current;
         if (!state || state.pointerId !== event.pointerId) return;
         const delta = event.clientX - state.x;
-        const next = state.value + (side === 'left' ? delta : -delta);
+        const next = state.value - delta;
         onChange(Math.min(max, Math.max(min, next)));
       }}
       onPointerUp={(event) => finish(event.currentTarget, event.pointerId)}
       onPointerCancel={(event) => finish(event.currentTarget, event.pointerId)}
-      className={`absolute inset-y-0 z-20 w-[7px] touch-none cursor-col-resize focus-visible:outline-none focus-visible:bg-aegis-primary/35 ${side === 'left' ? '-right-1' : '-left-1'} ${active ? 'bg-aegis-primary/35' : 'bg-transparent hover:bg-aegis-primary/20'}`}
+      className={`absolute inset-y-0 -left-1 z-20 hidden w-[7px] touch-none cursor-col-resize focus-visible:outline-none focus-visible:bg-aegis-primary/35 xl:block ${active ? 'bg-aegis-primary/35' : 'bg-transparent hover:bg-aegis-primary/20'}`}
     />
   );
 }

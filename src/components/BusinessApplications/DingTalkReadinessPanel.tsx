@@ -42,13 +42,13 @@ function ReadinessStep({
     ? 'text-aegis-success'
     : state === 'blocked' ? 'text-aegis-warning' : 'text-aegis-text-dim';
   return (
-    <div className="grid grid-cols-[18px_minmax(0,1fr)_auto] gap-x-2 border-b border-aegis-border/70 py-2 last:border-b-0">
+    <div className="grid grid-cols-[20px_minmax(0,1fr)_auto] gap-x-2.5 border-b border-aegis-border/70 py-2.5 last:border-b-0">
       <Icon size={14} className={`mt-0.5 ${stateClass}`} aria-hidden="true" />
       <div className="min-w-0">
-        <div className="text-[10.5px] font-medium text-aegis-text-secondary">{label}</div>
-        <div className="mt-0.5 text-[9.5px] leading-4 text-aegis-text-dim">{description}</div>
+        <div className="text-[11.5px] font-medium text-aegis-text-secondary">{label}</div>
+        <div className="mt-0.5 text-[10.5px] leading-4 text-aegis-text-dim">{description}</div>
       </div>
-      <span className={`text-[9.5px] ${stateClass}`}>{stateLabel}</span>
+      <span className={`text-[10.5px] ${stateClass}`}>{stateLabel}</span>
     </div>
   );
 }
@@ -251,7 +251,7 @@ export function DingTalkReadinessPanel({
     ? 'ready'
     : runtime?.available ? 'pending' : runtime ? 'blocked' : 'pending';
   const sectionClass = variant === 'workspace'
-    ? 'm-3 overflow-hidden rounded-md border'
+    ? 'm-4 overflow-hidden rounded-lg border'
     : 'mx-3 mt-2 shrink-0 overflow-hidden rounded-md border';
   return (
     <>
@@ -276,11 +276,11 @@ export function DingTalkReadinessPanel({
             <span className="aegis-indeterminate-progress absolute inset-y-0 w-2/5 bg-aegis-primary" />
           </div>
         )}
-        <div className="flex shrink-0 items-center gap-2 px-2.5 py-2">
-          <Icon size={15} className="shrink-0" aria-hidden="true" />
+        <div className={variant === 'workspace' ? 'flex shrink-0 items-center gap-3 px-4 py-3' : 'flex shrink-0 items-center gap-2 px-2.5 py-2'}>
+          <Icon size={variant === 'workspace' ? 17 : 15} className="shrink-0" aria-hidden="true" />
           <div className="min-w-0 flex-1">
-            <p className="text-[10.5px] font-medium">{title}</p>
-            <p className="mt-0.5 text-[9.5px] leading-4 text-aegis-text-dim">{description}</p>
+            <p className={variant === 'workspace' ? 'text-[13px] font-semibold' : 'text-[10.5px] font-medium'}>{title}</p>
+            <p className={variant === 'workspace' ? 'mt-0.5 text-[11px] leading-5 text-aegis-text-dim' : 'mt-0.5 text-[9.5px] leading-4 text-aegis-text-dim'}>{description}</p>
           </div>
           {action && <div className="shrink-0">{action}</div>}
         </div>
@@ -315,15 +315,15 @@ export function DingTalkReadinessPanel({
         )}
         {variant === 'workspace' && (
           <div className="grid border-t border-aegis-border bg-aegis-bg/70 xl:grid-cols-[minmax(240px,0.85fr)_minmax(280px,1fr)_minmax(230px,0.8fr)]">
-            <section className="min-w-0 border-b border-aegis-border p-3 xl:border-b-0 xl:border-r" aria-labelledby="dingtalk-readiness-checks-title">
-              <h2 id="dingtalk-readiness-checks-title" className="mb-1 text-[10.5px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.accessChecks')}</h2>
+            <section className="min-w-0 border-b border-aegis-border p-4 xl:border-b-0 xl:border-r" aria-labelledby="dingtalk-readiness-checks-title">
+              <h2 id="dingtalk-readiness-checks-title" className="mb-1 text-[12px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.accessChecks')}</h2>
               <ReadinessStep label={t('businessApplications.readiness.sessionStep')} state={sessionStep} description={t(sessionExists ? 'businessApplications.readiness.sessionBound' : 'businessApplications.readiness.sessionNeeded')} />
               <ReadinessStep label={t('businessApplications.readiness.pluginStep')} state={pluginStep} description={t(runtimeToolAvailable ? 'businessApplications.readiness.pluginToolReady' : pluginNeedsInstall ? 'businessApplications.readiness.pluginInstallNeeded' : restartRequired ? 'businessApplications.readiness.pluginRestartPending' : 'businessApplications.readiness.pluginSessionPending')} />
               <ReadinessStep label={t('businessApplications.readiness.agentStep')} state={agentStep} description={t(agentRuntimeVerified ? 'businessApplications.readiness.agentVerified' : runtimeToolAvailable ? 'businessApplications.readiness.agentRuntimePending' : agentId ? 'businessApplications.readiness.agentPending' : 'businessApplications.readiness.agentIdMissing', { agentId })} />
               <ReadinessStep label={t('businessApplications.readiness.dwsIdentityStep')} state={dwsStep} description={t(runtime?.available && runtime.currentProfile && runtime.user ? 'businessApplications.readiness.dwsIdentityReady' : runtime?.available && runtime.currentProfile ? 'businessApplications.readiness.dwsUserPending' : runtime?.available ? 'businessApplications.readiness.dwsAuthorizationNeeded' : runtime ? 'businessApplications.readiness.dwsRuntimeMissing' : 'businessApplications.readiness.dwsStatusPending')} />
             </section>
-            <section className="min-w-0 border-b border-aegis-border p-3 xl:border-b-0 xl:border-r" aria-labelledby="dingtalk-current-identity-title">
-              <h2 id="dingtalk-current-identity-title" className="mb-2 text-[10.5px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.currentIdentity')}</h2>
+            <section className="min-w-0 border-b border-aegis-border p-4 xl:border-b-0 xl:border-r" aria-labelledby="dingtalk-current-identity-title">
+              <h2 id="dingtalk-current-identity-title" className="mb-2 text-[12px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.currentIdentity')}</h2>
               <DingTalkRuntimeIdentity
                 runtime={runtime}
                 mode="full"
@@ -336,9 +336,9 @@ export function DingTalkReadinessPanel({
                 onLogoutProfile={onLogoutDwsProfile}
               />
             </section>
-            <section className="min-w-0 p-3" aria-labelledby="dingtalk-runtime-evidence-title">
-              <h2 id="dingtalk-runtime-evidence-title" className="mb-2 text-[10.5px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.currentEvidence')}</h2>
-              <dl className="grid grid-cols-[76px_minmax(0,1fr)] gap-x-2 gap-y-2 border-y border-aegis-border py-3 text-[10px]">
+            <section className="min-w-0 p-4" aria-labelledby="dingtalk-runtime-evidence-title">
+              <h2 id="dingtalk-runtime-evidence-title" className="mb-2 text-[12px] font-semibold text-aegis-text-secondary">{t('businessApplications.readiness.currentEvidence')}</h2>
+              <dl className="grid grid-cols-[84px_minmax(0,1fr)] gap-x-2 gap-y-2.5 border-y border-aegis-border py-3 text-[11px]">
                 <dt className="text-aegis-text-dim">{t('businessApplications.readiness.sessionStep')}</dt>
                 <dd className="text-aegis-text-secondary">{runtimeEvidence.sessionVerified ? t('businessApplications.readiness.sessionVerified') : t('businessApplications.readiness.notSelected')}</dd>
                 <dt className="text-aegis-text-dim">{t('businessApplications.readiness.agentStep')}</dt>
@@ -346,11 +346,11 @@ export function DingTalkReadinessPanel({
                 <dt className="text-aegis-text-dim">{t('businessApplications.readiness.effectiveTools')}</dt>
                 <dd className="font-mono tabular-nums text-aegis-text-secondary">{runtimeEvidence.effectiveToolCount}</dd>
               </dl>
-              <details className="mt-3 border border-aegis-border bg-aegis-surface/45 px-2.5 py-2">
-                <summary className="cursor-pointer text-[9.5px] font-medium text-aegis-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/60">
+              <details className="mt-3 rounded-md border border-aegis-border bg-aegis-surface/45 px-3 py-2.5">
+                <summary className="cursor-pointer text-[10.5px] font-medium text-aegis-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/60">
                   {t('businessApplications.readiness.technicalEvidence')}
                 </summary>
-                <dl className="mt-2 grid grid-cols-[76px_minmax(0,1fr)] gap-x-2 gap-y-2 border-t border-aegis-border pt-2 text-[9.5px]">
+                <dl className="mt-2 grid grid-cols-[84px_minmax(0,1fr)] gap-x-2 gap-y-2 border-t border-aegis-border pt-2 text-[10.5px]">
                   <dt className="text-aegis-text-dim">{t('businessApplications.readiness.sessionIdentity')}</dt>
                   <dd className="truncate font-mono text-aegis-text-secondary" title={runtimeEvidence.diagnostics.sessionLabel ?? undefined}>{runtimeEvidence.diagnostics.sessionLabel ?? t('businessApplications.readiness.notSelected')}</dd>
                   <dt className="text-aegis-text-dim">{t('businessApplications.readiness.pluginVersion')}</dt>
@@ -359,7 +359,7 @@ export function DingTalkReadinessPanel({
                   <dd className="truncate font-mono text-aegis-text-secondary" title={runtimeEvidence.diagnostics.bundledPluginVersion ?? undefined}>{runtimeEvidence.diagnostics.bundledPluginVersion ?? t('businessApplications.readiness.notRead')}</dd>
                 </dl>
               </details>
-              <p className="mt-3 text-[9.5px] leading-4 text-aegis-text-dim">{t('businessApplications.readiness.evidenceBoundary')}</p>
+              <p className="mt-3 text-[10.5px] leading-4 text-aegis-text-dim">{t('businessApplications.readiness.evidenceBoundary')}</p>
             </section>
           </div>
         )}

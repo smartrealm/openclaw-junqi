@@ -1,10 +1,10 @@
 # JunQi 项目状态
 
-更新时间：2026-09-09
+更新时间：2026-09-10
 
 ## 当前目标
 
-持续评估并扩展钉钉 DWS 集成，按 P0、P1、P2 顺序完成契约准入、写入核验、实时事件、日常工作流和高敏业务域。当前代码阶段已完成 P0 底座、DWS 完整叶子参数与可用性失败关闭、写入请求与回执资源 ID 围栏、受控日程和待办写入验收入口、审批与日报模板只读预检、DWS 字符串列表参数修复、聊天严格完整性读回、事件配置专用表单、事件类型归属失败关闭、操作员只读快照与桌面自动重读、目标事件验收入口、每日四源工作助理、会议创建变更取消闭环、指定听记搜索、同 ID 完整逐字稿门禁与同任务四阶段目标验收、日报周报安全提交、上游明确可用业务域的最小只读入口、固定归档的隔离 Gateway 关闭态与确定性插件调用链、正式目标 Gateway 当前用户读取、核心与扩展只读权限矩阵、固定 17 项高敏只读 Gateway 矩阵、日历创建更新取消的目标 Gateway 三审批验收，以及待办创建更新首次完成重开最终完成的目标 Gateway 五审批验收。当前最紧急门禁是在 Docker 可用的受控测试机依次跑通两层隔离 Gateway 验收，再以正式 DWS 和受控钉钉租户执行目标 Gateway 当前用户、普通只读、高敏只读、日历和待办写入矩阵，完成真实权限、读写、事件和跨工具工作流验收。
+持续评估并扩展钉钉 DWS 集成，按 P0、P1、P2 顺序完成契约准入、写入核验、实时事件、日常工作流和高敏业务域。当前代码阶段已完成 P0 底座、主要读写与目标 Gateway 验收入口，并完成钉钉桌面工作台的信息层级、目录检查器布局、窄窗口聚焦、活动证据渐进披露和接入页视觉一致性重构。当前最紧急门禁是在 Docker 可用的受控测试机跑通两层隔离 Gateway 验收，以正式 DWS 和受控钉钉租户执行目标读写矩阵，同时在真实 Tauri 窗口完成宽窄布局、状态序列和目标平台视觉验收。
 
 ## 已完成内容
 
@@ -56,6 +56,8 @@
 - 新增目标 Gateway 待办验收 `dingtalk:gateway:target-todo`。它固定投影内部 Schema、核心五项读取和待办创建、更新、完成、重开四个写工具，先完成九个业务 Schema 与参数预检，再用四次不带 `confirm` 的调用证明只报告审批边界且没有执行工具。核心读取全部通过后，创建、更新、首次完成、重开和最终完成分别使用 `confirm=true` 等待独立所有人审批，并要求统一成功信封、`verified` 写后重读和同一 taskId；执行人必须等于 Profile userId，拒绝、未知结果或 ID 漂移立即停止且禁止自动重放，完整成功只保留 ID 摘要。
 - 新增目标 DWS 全量契约维护入口 `dingtalk:verify-target-contracts`，只接受显式绝对 DWS 路径，以固定并发 4 复用插件同一 Schema registry、81 工具规格和审计器；输出不含路径、Profile、Schema 原文或业务 payload。缺参、相对路径和额外 Profile 参数在 DWS 解析前失败关闭。
 - AI 表格、合同、招聘和目标管理已加入 17 个最小只读工具；这些域的写入、删除、导入、分享、权限和流程变更均未注册。HRbrain 当前没有可注册的已审阅可用 Shortcut。
+- 钉钉桌面工作台从筛选、目录、详情三栏收敛为目录与检查器主从结构。搜索、业务域和读写筛选进入统一目录工具栏；工具项直接显示说明并使用单一可访问按钮，宽窗口并排、窄窗口按任务切换，写入风险与主操作保持邻近。
+- 操作审计默认突出操作、来源、状态、账号、影响和时间，Session、run、tool call、DWS 路径、核验路径和资源 ID 改为默认收起的技术证据；接入、事件和身份组件统一使用既有 Aegis 主题层级与 32 像素控件基线。
 - 已完成实现审计、行为规格和实施计划，并记录最新版 OpenClaw 与 DWS 官方提交依据。
 
 ## 关键技术决策
@@ -78,6 +80,7 @@
 - OpenClaw 正式要求 `tools.invoke` 使用 `operator.write`，因此桌面事件自动刷新不借用内部 Agent 工具；按照插件事件文档的建议，失效通知后通过插件 `operator.read` Gateway method 重读规范投影。
 - 事件快照 RPC 仍依赖目标身份数据，因此显式保留 OpenClaw 默认的 `profileAccess: required`。每个事件服务实例拥有独立运行代际 UUID，并对 Profile、缓冲区、每组 EventKey、目标和角色的完整规范化配置计算 SHA-256；通知与操作员快照同时携带两项证据。桌面按相同规范重算摘要，并把响应绑定 connectionId、运行代际、完整配置、请求游标和通知最低 revision。同一代际的重复、倒退 revision 或摘要漂移会被丢弃，新代际才允许序号重置。
 - consumer 意外退出只进入 `degraded` 并上报服务健康失败，不自动重建订阅。当前 DWS 官方仍未给出建立订阅后的 Stream 自动重连闭环，客户端不得绕过正式重试预算。
+- 钉钉桌面工作台只重排当前 Session 已核验投影，不用 UI 常量补齐工具、权限、Profile 或执行结果。低频技术证据采用原生 `details` 渐进披露；目录选择以一个按钮和 `aria-current` 表达，避免整行点击与嵌套操作形成双重入口。
 
 ## 核心文件
 
@@ -107,7 +110,10 @@
 - `src/services/gateway/dingTalkEventBridge.ts`
 - `src/services/gateway/OpenClawDingTalkEventClient.ts`
 - `src/pages/BusinessApplicationsPage.tsx`
+- `src/components/BusinessApplications/DingTalkToolTable.tsx`
+- `src/components/BusinessApplications/DingTalkToolDetail.tsx`
 - `src/components/BusinessApplications/BusinessActivityList.tsx`
+- `src/components/BusinessApplications/BusinessActivityEvidence.tsx`
 - `src/components/BusinessApplications/DingTalkEventSettingsPanel.tsx`
 - `src/components/BusinessApplications/DingTalkEventSnapshotStatus.tsx`
 - `scripts/verify-dingtalk-real-gateway.mjs`
@@ -116,6 +122,9 @@
 - `docs/quality/dingtalk-dws-workflow-expansion-audit-2026-09-09.md`
 - `specs/2026-09-09-dingtalk-dws-workflow-expansion.md`
 - `plans/2026-09-09-dingtalk-dws-workflow-expansion.md`
+- `docs/quality/dingtalk-desktop-workbench-ui-audit-2026-09-10.md`
+- `specs/2026-09-10-dingtalk-desktop-workbench-ui.md`
+- `plans/2026-09-10-dingtalk-desktop-workbench-ui.md`
 
 ## 测试与验证
 
@@ -123,6 +132,7 @@
 - DWS 官方主线源码已刷新到提交 `bea76da8ba5091154a31779e2850d652c212aef6`。相对上一审阅提交的变化集中在聊天读取，待办生命周期实现未变化；创建、更新、完成和重开继续以稳定 taskId 完成写后读取并返回 `verified=true`。当前受控工具链仍无法构建最新主线，因此 81 工具动态审计证据继续限定在上一条已成功构建的官方提交，不能描述为最新主线动态通过。
 - 同一官方 Schema 二进制确认扩展只读预检新增的听记、知识库、日报周报、邮件、消息、招聘和目标管理七个叶子均为 `available`、`read`、`low`、`not_required`、`idempotent`，且没有必填业务参数；同时确认高敏预检覆盖的 17 个 AI 表格、合同、招聘和目标工具均为相同的可用、低风险、无需确认和幂等读取契约，并按正式 Schema 提取必填参数。
 - OpenClaw 官方主线已刷新到提交 `66e4de2205e9995d5a26480da9218751c084133b`；本轮核对到的工具注册表获取与取消跟踪调整没有改变审批契约。`tools.effective` 继续要求真实 Session 与 `operator.read`，`tools.invoke` 继续要求 `operator.write` 并进入最终工具策略和 Hook 路径；不带 `confirm=true` 的调用以报告模式返回审批需求而不执行工具，显式 `confirm=true` 才请求审批并在批准后执行。认证后的 Gateway 与正式客户端帧上限均为 25 MiB，JunQi 目标高敏矩阵的闭合输入与合同正文继续限制为 1 MiB。
+- 钉钉桌面工作台 UI 审查前已把 OpenClaw 官方仓库更新到提交 `ff1d91f6711b301ad0bb8f8f9485bfb05d770d84`，并确认本轮只调整当前运行时投影的客户端呈现，不新增工具、RPC、状态或权限推断。上一条详细协议证据的适用提交仍单独保留，不能由 UI 审查替代。
 - DWS 官方 `chat +messages-mget` 的 ID 隔离、系统错误停止扇出和完整性投影定向 Go 测试通过。链接仍有 safechat 静态库目标版本警告，因此只作为源码契约证据。
 - 钉钉插件完整测试通过，共 165 项；新增用例覆盖合同分析内联 JSON 到 `--file -` 标准输入的插件边界，以及高敏共享调用计划只允许该工具接收内联对象，并继续覆盖听记四阶段、完整叶子 Schema、参数语义、统一信封门禁、日程和待办内嵌核心只读门禁、事件配置、`operator.read` 快照 RPC、13 个审批摘要与核验策略、高敏只读预检和既有工作流边界。
 - 听记验收 CLI 的错误确认串进程级检查通过，在读取 fixture、解析目标 DWS 路径、核验 Schema 和启动任何业务子进程前失败关闭。
@@ -145,12 +155,13 @@
 - 目标 DWS 全量契约维护入口 2 项测试通过，覆盖直接调用与 pnpm 分隔符形式的绝对路径、缺参、相对路径和额外参数失败关闭。以 DWS 官方提交 `d4098a72dbcbbf8bdb286dcca96994bc5a9f462f` 构建的显式绝对路径二进制执行完整 Schema 真实子进程审计，81 个业务工具全部通过；新增逐字稿叶子同时通过正式结果 Schema 与参数语义核验。该结果仍不代替目标部署版本和租户权限验收。
 - 真实执行 `corepack pnpm dingtalk:gateway:smoke` 时，固定归档校验通过，随后在 `docker-preflight` 因 Docker 守护进程不可连接而停止；未创建卷、网络或容器，清理结果无残留。该结果不是插件安装或 Gateway RPC 失败，动态基线仍未通过。
 - 上一次真实执行 `corepack pnpm dingtalk:gateway:chain-smoke` 时使用固定 `0.26.0` 归档，摘要校验后在 `docker-preflight` 因 Docker 守护进程不可连接而停止，且没有创建预声明容器、网络或卷。当前归档已升级为 `0.27.0`，必须在 Docker 可用的受控测试机重新执行；当前确定性真实 Gateway 链路仍未动态通过。
-- `corepack pnpm lint` 通过，包含 965 个生产文件的模块边界检查、桌面版本一致性和 TypeScript 检查。
+- `corepack pnpm lint` 通过，包含 966 个生产文件的模块边界检查、桌面版本一致性和 TypeScript 检查。
 - `corepack pnpm dingtalk:validate` 通过。
 - 插件包契约现在显式检查共享 DWS 成功信封、共享读取结果核验、目标事件、听记四阶段验收和 17 项高敏只读预检的编译产物，避免维护 CLI 已声明但固定包缺失执行模块。
 - `corepack pnpm verify:openclaw-docs` 通过，`commands.list` 校验已对齐新的官方 operator methods 页面。
 - `corepack pnpm test` 全仓测试通过；前端与运行时测试 3001 项通过，全部脚本测试 309 项通过。目标 Gateway 当前用户读取、普通只读矩阵、高敏只读矩阵、日历写入和待办写入验收共 52 项定向测试通过。
 - `corepack pnpm build` 通过，协作与钉钉插件固定包、TypeScript 和 Vite 生产构建均完成。
+- 钉钉 UI 定向测试通过，覆盖 1280 像素宽桌面断点、工具项唯一按钮与 `aria-current`、说明直显、业务域列去重、技术证据默认折叠和三语言资源一致性。636 像素交互式静态预览完成暗色、亮色、键盘焦点、回车进入详情、回车返回目录和写操作风险邻近检查。
 - 固定钉钉插件归档已重建；两份元数据字节一致，均为版本 `0.27.0`、工具数 `85`、摘要 `5b9dea8641bb32da7ac301f7ad94462422b12b80774ed3c0d21fc89f73b2858f`。归档包含 96 个文件，新增合同分析安全标准输入转换和共享 17 项高敏调用计划，并继续包含完整叶子 Schema、参数语义和跨参数约束准入、统一结果信封、目标验收、日程和待办内嵌核心只读门禁、配置摘要、运行代际围栏、两类写策略、13 个有界审批摘要、日报有界 stdin、高敏预检、目标事件验收，以及显式 Profile 授权的无业务载荷操作员快照逻辑，且不含任何 HRbrain 工具注册项。
 - 同一源码连续两次打包的 SHA-256 一致，排除当前固定包非确定性。
 - `git diff --check` 通过。
@@ -182,6 +193,7 @@
 - DWS 官方仍把建立订阅后的 Stream 重连韧性列为未完成范围，当前 consumer 意外退出不会自动重启。
 - AI 表格、合同、招聘和目标管理只有只读入口，尚未完成目标租户权限、敏感字段和最小数据范围验收。HRbrain 的 4 个已审阅 Shortcut 在当前官方主线均为 `availability=unavailable`，不能通过开通目标租户权限绕过，也未在 JunQi 注册。
 - UI 复用既有 `Button`、`IconButton`、`Switch`、主题化 `Select`、`DingTalkProfileSelect` 和活动列表，以及 `aegis-bg`、`aegis-surface`、`aegis-border`、`aegis-text`、`aegis-primary` 和状态色。最近事件通知与快照使用同一主题 token、就地 `role=status` 和 `role=alert`，不新增本地业务终态。自动化覆盖配置、连接隔离、严格快照解码、自动读取结果和提示语义，尚未在真实 Tauri 窗口完成亮色、暗色、窄窗口、键盘焦点、加载、失败和空配置视觉验收。
+- 新版钉钉目录与检查器已在静态预览完成亮色、暗色、636 像素窄窗口和键盘切换验证；浏览器因缺少 Tauri 持久化能力无法进入实际应用业务路由，因此宽窗口真实装配、加载到结果连续帧、正式 Gateway 与 DWS 状态仍未验证。Windows、Linux、高对比度和屏幕阅读器也需目标平台实测。
 
 ## 失败方案与已删除路径
 
@@ -232,6 +244,10 @@
 - 固定包后置检查首次误读不存在的 `version` 字段，且组合命令没有启用立即失败，导致该子检查失败后仍继续执行后续只读命令。命令没有改写制品；随后依据生成元数据的正式 `pluginVersion` 字段并启用立即失败与管道错误传播重跑，确认两份元数据、0.27.0、85 个工具、归档摘要和 96 个文件全部一致。后续组合验证必须在首行启用立即失败，并从生成器或现有结构读取字段名。
 - 本轮包级错误确认串的首次外层断言错误地要求 `corepack pnpm` 只输出子进程 JSON，忽略了 pnpm 生命周期前后文；业务脚本已经按预期以稳定错误码退出。复跑改为同时核对退出码和结构化错误码片段。生产构建还发现把仓库维护命令写入插件 README 会在没有运行时代码变化时改变固定归档摘要；该说明已移到仓库审计，插件 README 恢复后重建确认 0.27.0 摘要不变。后续仓库维护入口说明不得无意进入插件发布内容。
 - 本轮首次制品只读核对误猜了不存在的插件包内元数据路径，命令在文件比较阶段退出且没有改写文件。复跑改为使用生成器实际维护的 `src/generated/dingtalkPluginBundle.generated.json` 与 Tauri 资源元数据，确认二者字节一致且归档摘要匹配。后续制品核对必须先从生成器或仓库文件图确认元数据来源，不能按目录结构猜测。
+- 本轮 UI 审查最初按常见路径查找 `src/index.css` 和 `src/router`，两个路径均不存在且没有改写文件；随后依据仓库文件图定位到 `src/styles/` 和实际路由调用方。后续样式与路由调查先用全局文件检索确认入口，不按常见工程目录推断。
+- 首次为网格样式传入自定义 CSS 变量时，TypeScript 不接受未声明属性；改为在局部样式对象使用 `CSSProperties` 契约后通过类型检查。生产构建确认响应式网格类和变量可生成。
+- 实际应用的浏览器预览因缺少 Tauri 持久化能力停在首次设置流程，没有据此推断产品页成功；改用明确标注结构示意的静态预览验证视觉和键盘交互，真实桌面装配继续列为未验证。
+- 生产构建重打协作插件归档时产生了与本任务无关的摘要差异；确认没有协作插件源码变化后，只撤销该归档及两份元数据的构建噪声，不把无关制品变更纳入 UI 提交。
 
 ## 下一步顺序
 
