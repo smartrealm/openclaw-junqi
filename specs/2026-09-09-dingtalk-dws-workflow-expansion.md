@@ -152,6 +152,18 @@
 - 完整成功只保留被删除 eventId 的 SHA-256 和结构性证明；成功与失败证据均不得保留 Gateway URL、令牌、Session、Agent、Profile、fixture、审批描述或业务 payload。
 - 该验收要求目标 Gateway 已连接一个可处理插件所有人审批的授权界面。纯令牌 CLI 不能证明认证 Profile 身份同步，自动化模拟也不能证明目标租户权限、真实审批呈现或日历最终状态。
 
+## 目标 Gateway 待办写入验收
+
+- 范围固定为内部 Schema 工具、核心五项只读工具，以及待办创建、更新、完成和重开四个写工具。必须一次性核对全部十个工具的唯一投影、插件归属、Session 可见性、安全标签和风险等级；任一投影不成立时不得调用 Schema 或业务工具。
+- 命令必须显式指定目标 Gateway、OpenClaw `package.json` 和 JunQi 钉钉插件 `package.json`。Gateway 令牌只允许通过环境变量进入正式客户端；同一 Agent、Session、精确 Profile 和闭合待办 fixture 必须通过不超过 16 KiB 的标准输入传入。
+- fixture 只允许执行人、唯一测试标题和不同的更新标题。执行人必须与精确 Profile 中的 userId 相同，确保验收记录只分配给当前测试身份；参数必须由目标 Gateway 当前 Schema 和同一插件参数校验器全部通过后才能进入业务调用。
+- 必须先读取并核验核心五项与四个待办写工具的全部九个业务叶子 Schema。随后对四个写入分别调用不带 `confirm` 的 `tools.invoke`，只接受 OpenClaw 的 `requires_approval` 报告；该阶段不得创建审批请求或执行工具。任一报告不成立时，核心读取和真实写入都保持为零。
+- 四个审批边界全部成立后，按固定顺序完成核心五项读取。单项失败后继续形成完整脱敏矩阵，但真实写入保持为零。
+- 创建、更新、首次完成、重开和最终完成必须分别以 `confirm=true` 调用 `tools.invoke`，由五个独立的 OpenClaw 所有人审批决定。每次成功都必须核对插件归属、工具、canonical path、Profile、Schema 摘要、DWS 统一成功信封、`verification.status=verified`、对应核验工具和稳定资源 ID；后四步必须使用并返回创建得到的同一 taskId。
+- 审批拒绝在工具执行前终止。创建前拒绝时不得声称发生写入；创建后拒绝任何后续审批时，必须返回已知 taskId 供人工恢复。传输异常、非审批工具错误、写响应不完整、摘要漂移或读回不一致均进入 `unknown`，立即停止且不得自动重放；只有 taskId 已被权威结果确认时才可把它作为恢复标识，否则按唯一测试标题人工调查。
+- 完整成功只保留 taskId 的 SHA-256 和结构性证明；目标租户会保留一条最终为完成状态的合成待办，必须在执行前接受该留痕。成功与失败证据均不得保留 Gateway URL、令牌、Session、Agent、Profile、fixture、审批描述或业务 payload。
+- 该验收要求目标 Gateway 已连接一个可处理插件所有人审批的授权界面。纯令牌 CLI 不能证明认证 Profile 身份同步，自动化模拟也不能证明目标租户权限、真实审批呈现或待办最终状态。
+
 ## 高敏业务域验收
 
 - AI 表格、合同、招聘和目标管理第一批只允许 `availability=available`、`read`、`low`、`not_required`、`idempotent` 工具。

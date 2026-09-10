@@ -24,7 +24,11 @@ P0-C 现已补充固定 17 项的目标 Gateway 高敏只读矩阵 `dingtalk:gat
 
 P0-D 现已补充目标 Gateway 日历全链路验收 `dingtalk:gateway:target-calendar`。它一次核对内部 Schema、核心五项读取和三个日历写入的最终 Session 投影，随后读取全部八个业务叶子 Schema 并使用插件同一参数校验器验证闭合 fixture。三个不带 `confirm` 的 `tools.invoke` 必须只返回 `requires_approval`，从而在核心读取和真实写入前证明 OpenClaw 审批边界没有执行工具；任一失败保持零业务调用。核心五项全部执行且通过后，创建、更新和取消分别使用 `confirm=true` 并等待三个独立所有人审批，每步都要求插件身份、统一成功信封、Schema 摘要、`verified` 核验和同一 eventId。拒绝与传输或核验不确定性会立即停止，既有写入只返回最小恢复 ID，完整成功只保留已删除 ID 的摘要，不自动重放任何写入。该入口仍需目标 Gateway、可处理审批的授权界面、正式 DWS 与受控租户真实执行。
 
+P0-D 同时补充目标 Gateway 待办全生命周期验收 `dingtalk:gateway:target-todo`。它一次核对内部 Schema、核心五项读取和四个待办写入的最终 Session 投影，先完成九个业务叶子 Schema 与全部参数预检，再用四个不带 `confirm` 的调用证明报告式审批边界。核心五项全部执行且通过后，创建、更新、首次完成、重开和最终完成分别使用 `confirm=true` 等待五个独立所有人审批，每步要求统一成功信封、`verified` 核验和同一 taskId。执行人被限制为精确 Profile 的 userId；拒绝、传输异常、核验不确定性或资源 ID 漂移都会立即停止且不自动重放。完整成功只保留 taskId 摘要，但目标租户会保留一条最终完成的合成待办，因此仍需在受控租户明确接受留痕后执行。
+
 维护者以 `corepack pnpm dingtalk:gateway:target-calendar -- --gateway-url <ws-or-wss-root> --openclaw-package <absolute-openclaw-package-json> --dingtalk-package <absolute-junqi-dingtalk-package-json> --acknowledge-calendar-writes JUNQI_DINGTALK_TARGET_GATEWAY_CALENDAR_CREATE_UPDATE_CANCEL < controlled-gateway-calendar-input.json` 执行。标准输入必须闭合为 `agentId`、`sessionKey`、`profile` 和日历 `fixture`，完整字段见同日规格；令牌只通过 `OPENCLAW_GATEWAY_TOKEN` 环境变量进入正式客户端。
+
+待办验收使用 `corepack pnpm dingtalk:gateway:target-todo -- --gateway-url <ws-or-wss-root> --openclaw-package <absolute-openclaw-package-json> --dingtalk-package <absolute-junqi-dingtalk-package-json> --acknowledge-todo-writes JUNQI_DINGTALK_TARGET_GATEWAY_TODO_CREATE_UPDATE_COMPLETE_REOPEN_COMPLETE < controlled-gateway-todo-input.json`。标准输入闭合为 `agentId`、`sessionKey`、`profile` 和只含 `executor`、`title`、`updatedTitle` 的 fixture；令牌边界与日历验收相同。
 
 同时纠正认证 Profile 边界：OpenClaw 主线的 `profileAccess: required` 并非让所有纯令牌客户端都必须携带 Profile。当前路由只在连接已经声明 `authenticatedGitHubIdentitySync`、但尚未解析出 `authenticatedUserProfile` 时等待同步，并在同步失败或仍无 Profile 时返回 `UNAVAILABLE`、`AUTHENTICATED_PROFILE_UNAVAILABLE`。纯令牌 CLI 没有身份同步句柄，因此不能用它证明认证 Profile 正向或负向门禁；这项验收必须保留给真实带身份同步的目标客户端。
 
@@ -38,13 +42,13 @@ P0-D 现已补充目标 Gateway 日历全链路验收 `dingtalk:gateway:target-c
 
 本次核对以下最新版官方主线：
 
-- OpenClaw 官方仓库提交 `329c12d11475589ac06c4bc0c9bc8d197a47489f`。
+- OpenClaw 官方仓库提交 `66e4de2205e9995d5a26480da9218751c084133b`。
 - OpenClaw 固定基线 `v2026.8.1` 的 [`gateway-runtime.ts`](https://github.com/openclaw/openclaw/blob/v2026.8.1/src/plugin-sdk/gateway-runtime.ts)、[`gateway-rpc.ts`](https://github.com/openclaw/openclaw/blob/v2026.8.1/src/cli/gateway-rpc.ts) 与 [`server-methods.ts`](https://github.com/openclaw/openclaw/blob/v2026.8.1/src/gateway/server-methods.ts)。
-- DWS 官方仓库最新源码提交 `44a23c5ab891822aa4099fa73c701721422e597c`；81 工具动态 Schema 审计仍以已成功构建的官方提交 `d4098a72dbcbbf8bdb286dcca96994bc5a9f462f` 为可复现基线。
+- DWS 官方仓库最新源码提交 `bea76da8ba5091154a31779e2850d652c212aef6`；81 工具动态 Schema 审计仍以已成功构建的官方提交 `d4098a72dbcbbf8bdb286dcca96994bc5a9f462f` 为可复现基线。
 
 OpenClaw 的 `tools.invoke` 仍由 Gateway 统一执行工具并承载 `before_tool_call` 审批。插件只能在正式工具与 Hook 扩展点内增加钉钉能力。当前主线的 `requireApproval` Hook 只允许插件提交 `title`、`description`、范围、安全级别、超时和决策集合；Gateway 的插件审批视图、TUI、频道转发和移动推送均使用该 `description`，不会自动附带原始工具参数。`description` 的正式上限为 512 字符，`timeoutBehavior` 已标记废弃且未决审批始终失败关闭，因此插件不再提交该废弃字段。
 
-当前主线的 `tools.invoke` 在 `confirm` 不是 `true` 时使用报告模式：插件要求审批会返回 `requires_approval`，不会创建审批请求，也不会执行工具。只有显式 `confirm=true` 才使用请求模式并等待插件审批；批准后才继续执行，拒绝在工具执行前终止。这一正式行为是目标 Gateway 日历验收把“审批边界探针”和三个真实写入分离的依据。
+当前主线的 `tools.invoke` 在 `confirm` 不是 `true` 时使用报告模式：插件要求审批会返回 `requires_approval`，不会创建审批请求，也不会执行工具。只有显式 `confirm=true` 才使用请求模式并等待插件审批；批准后才继续执行，拒绝在工具执行前终止。本轮核对到的工具注册表获取与取消跟踪调整没有改变上述审批语义。这一正式行为是目标 Gateway 日历和待办验收把“审批边界探针”与真实写入分离的依据。
 
 OpenClaw 最新主线的插件清单继续正式支持 `skills` 路径数组并从插件根目录加载 Skill。加载器要求 Skill 路径位于插件根目录内、`SKILL.md` 是普通文件，并要求 frontmatter 包含非空 `name` 和 `description`。该扩展点只提供 Agent 工作流指令，不增加工具权限，也不改变 Gateway 工具执行和审批边界。本次刷新中与插件服务、工具和 Skill 加载相关的契约未发现破坏性变化。
 
@@ -83,9 +87,9 @@ DWS 最新主线提供以下可验证契约：
 
 | 优先级 | 项目 | 当前结论 | 完成门禁 |
 |---|---|---|---|
-| P0 | 写入结果与审批可信 | 13 个副作用工具全部有显式审批摘要与核验策略；审批前核验 Profile、完整 Schema、类型、枚举、已知格式、CLI 必填与跨参数约束，展示目标、改动与完整参数指纹；缺少任一策略时失败关闭；已补齐请求 ID 与核验回执 ID 围栏，并增加日历创建、更新、取消的目标 Gateway 三审批全链路验收 | 目标租户通过真实 OpenClaw 审批界面核对摘要并跑通日历 Gateway 验收，再执行待办和逐域真实写入、权威读回与人工清理 |
+| P0 | 写入结果与审批可信 | 13 个副作用工具全部有显式审批摘要与核验策略；审批前核验 Profile、完整 Schema、类型、枚举、已知格式、CLI 必填与跨参数约束，展示目标、改动与完整参数指纹；缺少任一策略时失败关闭；已补齐请求 ID 与核验回执 ID 围栏，并增加日历三写与待办五阶段目标 Gateway 全链路验收 | 目标租户通过真实 OpenClaw 审批界面核对摘要并跑通日历与待办 Gateway 验收，再执行其余逐域真实写入、权威读回与人工清理 |
 | P0 | 目标 DWS 契约准入 | 已有 81 工具全量审计入口，`availability` 与既有契约均纳入失败关闭校验，官方主线构建逐项通过 | 每个目标运行时安装后重新审计，失败时不得执行业务工具 |
-| P0 | Gateway 到 DWS 调用链 | 已有关闭态基线、确定性夹具链路、正式目标 Gateway 当前用户读取、五项与十二项普通只读矩阵、固定 17 项高敏只读矩阵和日历三写全链路验收；覆盖 Session 工具投影、最小 scopes、`tools.invoke`、报告式与请求式审批、插件归属、Schema、全参数预检、摘要一致性、DWS 结果信封与敏感证据丢弃 | 在 Docker 可用的受控测试机跑通两层隔离验收；随后对正式 DWS 和测试租户执行当前用户、两档普通只读、高敏矩阵和日历三审批验收，并用带身份同步的客户端核对认证 Profile 门禁 |
+| P0 | Gateway 到 DWS 调用链 | 已有关闭态基线、确定性夹具链路、正式目标 Gateway 当前用户读取、五项与十二项普通只读矩阵、固定 17 项高敏只读矩阵、日历三写和待办五阶段全链路验收；覆盖 Session 工具投影、最小 scopes、`tools.invoke`、报告式与请求式审批、插件归属、Schema、全参数预检、摘要一致性、DWS 结果信封与敏感证据丢弃 | 在 Docker 可用的受控测试机跑通两层隔离验收；随后对正式 DWS 和测试租户执行当前用户、两档普通只读、高敏矩阵、日历三审批和待办五审批验收，并用带身份同步的客户端核对认证 Profile 门禁 |
 | P0 | 审批模板准入 | 已有失败关闭的五契约、两读取预检，不执行任何审批写入 | 目标租户提供安全模板、字段值、审批人和人工清理方案后再执行真实写入 |
 | P0 | 日报模板准入 | 已有失败关闭的四契约、两读取预检，要求唯一精确模板并校验内容与接收人，不执行日报写入 | 目标租户读取真实模板定义并逐字段人工核对后，再单独审批提交一份可留痕测试日报 |
 | P0 | 事件生命周期 | 服务、专用配置表单、ready、Profile、Schema、事件类型归属、去重、缓冲、优雅退出、正式 Gateway 命名、显式 Profile 授权的 `operator.read` 快照方法、桌面自动重读、连接与配置围栏、游标完整性和直接目标验收入口已实现；通知只显示为有新事件可读 | 先在目标租户执行单事件直接验收，再验证真实 Gateway 广播、桌面通知、快照自动重读、断线、退出退订和 Gateway 重启 |
@@ -151,7 +155,7 @@ DWS 最新主线提供以下可验证契约：
 ## 未验证边界
 
 - 当前没有目标钉钉租户的授权与真实业务数据，自动化只能验证命令构造、状态机、结构化输出和禁止重放，不能证明目标租户权限已开通。目标事件验收入口已经实现，但尚未获得真实 Profile 和外部事件触发条件执行。
-- 受控日程和待办 DWS 直连写入验收入口已经实现，并在代码内强制同一 DWS、同一 Profile 的核心五项只读门禁，但尚未获得目标 Profile 执行。日历另有目标 Gateway 三审批入口，但同样未取得目标 Gateway、授权审批界面和受控租户执行；待办仍缺少对应 Gateway 全链路验收。两者均不覆盖桌面活动投影或其他业务域，待办成功路径还会保留一条已完成的合成记录。
+- 受控日程和待办 DWS 直连写入验收入口已经实现，并在代码内强制同一 DWS、同一 Profile 的核心五项只读门禁，但尚未获得目标 Profile 执行。两者也已分别具备目标 Gateway 三审批与五审批入口，但同样未取得目标 Gateway、授权审批界面和受控租户执行。两者均不覆盖桌面活动投影或其他业务域，待办成功路径还会保留一条已完成的合成记录。
 - 审批模板预检入口已经实现，但尚未获得目标 processCode、部门 ID 和真实字段执行。即使预检通过，也只代表表单 Schema 与流程预测可读取，不能替代人工核对自选审批节点或证明审批写入和清理安全。
 - 日报模板预检入口已经实现，但尚未获得目标模板名、字段内容和真实接收人执行。即使预检通过，也只代表唯一精确模板可定位、模板定义可读取且计划参数符合当前 CLI Schema；不能证明字段与模板语义一致，也不能证明提交、可见性或收件人终态。
 - 同任务听记四阶段验收入口已经实现，但尚未获得目标 Profile、受控 query 和稳定 taskUuid 执行。自动化只能证明全量预校验、唯一搜索、详情与逐字稿身份完整性、行动项数组和 payload 丢弃；行动项正式结果没有身份字段，不能单独证明响应属于同一任务。
@@ -179,8 +183,8 @@ DWS 最新主线提供以下可验证契约：
 - 目标事件验收 CLI 使用错误确认串的进程级检查通过，在 DWS 路径解析、Schema 核验和订阅创建前失败关闭。真实子进程夹具同时验证了 Schema、ready、事件接收、局部通知、等待计时器及时清理和 `stopped` 终态。
 - 事件配置、保存与重启协调、默认订阅、保存门禁、Gateway 通知路由、连接围栏、提示语义和三语言键集合共 20 个定向测试全部通过。
 - 事件快照客户端、通知桥和展示的定向测试继续通过；事件读取协调器 4 项测试覆盖连接配置绑定、完整配置摘要、运行代际、最低 revision 和迟到请求拒绝，通知桥额外覆盖同代际去重、倒退、摘要漂移和新代际序号重置。三语言钉钉资源与资源装载的 6 项定向测试通过。
-- OpenClaw 官方主线提交 `329c12d11475589ac06c4bc0c9bc8d197a47489f` 的源码确认 `tools.effective` 继续要求 `operator.read` 和真实 `sessionKey`，`tools.invoke` 继续要求 `operator.write`，并把调用交给最终工具策略与 Hook 路径；插件 Gateway 方法选项仍进入正式描述符，`profileAccess: required` 仍触发认证 Profile 门禁，服务事件宿主仍校验局部名和 operator scope 并添加 `plugin.<pluginId>.` 前缀。认证后的 Gateway 与正式客户端帧上限均为 25 MiB。该源码核对不能替代目标 Gateway、正式 DWS 和租户的动态验收。
-- 全仓测试通过；前端与运行时测试 3001 项通过。增加目标 Gateway 日历验收后再次执行全部脚本测试，297 项全部通过。
+- OpenClaw 官方主线提交 `66e4de2205e9995d5a26480da9218751c084133b` 的源码确认 `tools.effective` 继续要求 `operator.read` 和真实 `sessionKey`，`tools.invoke` 继续要求 `operator.write`，并把调用交给最终工具策略与 Hook 路径；插件 Gateway 方法选项仍进入正式描述符，`profileAccess: required` 仍触发认证 Profile 门禁，服务事件宿主仍校验局部名和 operator scope 并添加 `plugin.<pluginId>.` 前缀。认证后的 Gateway 与正式客户端帧上限均为 25 MiB。该源码核对不能替代目标 Gateway、正式 DWS 和租户的动态验收。
+- 全仓测试通过；前端与运行时测试 3001 项通过。增加目标 Gateway 待办验收并收敛日历与待办共享写入断言后再次执行全部脚本测试，309 项全部通过；五类目标 Gateway 定向测试共 52 项通过。
 - 965 个生产文件的模块边界、版本一致性和 TypeScript 静态检查通过。
 - 插件包契约显式检查统一 DWS 成功信封、共享读取结果核验、目标事件、听记四阶段验收与 17 项高敏只读预检的编译产物，维护 CLI 不会在固定包缺失对应执行模块时仍通过校验。
 - 当前钉钉固定包为 `0.27.0`，注册 81 个业务工具和 4 个内部工具，共 85 个工具，并注册一个显式要求已认证 Profile 的操作员只读事件快照 RPC。两份元数据字节一致，归档摘要为 `5b9dea8641bb32da7ac301f7ad94462422b12b80774ed3c0d21fc89f73b2858f`；归档包含 96 个文件，新增合同分析安全标准输入转换和共享 17 项高敏调用计划，并继续包含完整叶子 Schema、参数语义和跨参数约束准入、统一结果信封、目标验收、日程和待办内嵌核心只读门禁、配置摘要、运行代际围栏、两类写策略、13 个有界审批摘要、日报有界 stdin、高敏预检、目标事件验收和无业务载荷快照逻辑，且不含任何 HRbrain 工具注册项。
@@ -188,9 +192,10 @@ DWS 最新主线提供以下可验证契约：
 - 目标 Gateway 当前用户读取入口 11 项测试全部通过，覆盖闭合命令与标准输入、URL 凭据拒绝、4 KiB 上限、官方包导出边界、Session 工具归属与拒绝态、最小 scopes、DWS 成功信封、文本详情一致性、失败后禁止调用、稳定错误码和进程级敏感信息脱敏；进程级夹具同时证明 OpenClaw 模块加载前已从环境删除令牌。包级错误确认串检查也在读取标准输入、解析 OpenClaw 包或连接网络前以稳定错误码失败。该自动化没有连接目标 Gateway 或钉钉租户。
 - 目标 Gateway 高敏只读矩阵 9 项测试全部通过，覆盖固定 17 项与共享插件计划一致、闭合参数和 1 MiB 输入边界、全部 Schema 先于业务读取、Schema 或参数失败零业务读取、单项读取失败后继续、摘要漂移拒绝、显式包根、模块加载前删除令牌、fixture 与业务 payload 丢弃和稳定错误码。包级错误确认串也在读取标准输入、解析包根或连接网络前以稳定错误码失败。该自动化没有连接目标 Gateway 或钉钉租户。
 - 目标 Gateway 日历验收 12 项测试全部通过，覆盖固定核心五项与三个写契约、共享插件注册表一致性、闭合 fixture 和 16 KiB 输入边界、一次工具投影、全部 Schema 与参数预检、三个报告式审批探针、核心读取失败零写入、三个独立请求式审批、同 eventId 串联、拒绝与未知结果停止且不重放、显式包根、模块加载前删除令牌和敏感证据丢弃。包级错误确认串在读取标准输入、解析包根或连接网络前以稳定错误码失败。该自动化没有连接目标 Gateway、真实审批界面或钉钉租户。
+- 目标 Gateway 待办验收 12 项测试全部通过，覆盖固定核心五项与四个写契约、共享插件注册表一致性、执行人与 Profile 绑定、闭合 fixture 和 16 KiB 输入边界、一次工具投影、九个 Schema 与全部参数预检、四个报告式审批探针、核心读取失败零写入、五个独立请求式审批、同 taskId 串联、拒绝与未知结果停止且不重放、资源 ID 漂移拒绝、显式包根、模块加载前删除令牌和敏感证据丢弃。该自动化没有连接目标 Gateway、真实审批界面或钉钉租户。
 - 目标 DWS 全量契约维护入口的 2 项回归测试通过，覆盖直接调用与 pnpm 参数分隔符两种形式的绝对路径解析，以及缺参、相对路径和额外 Profile 参数在 DWS 解析前失败关闭。以官方提交 `d4098a72dbcbbf8bdb286dcca96994bc5a9f462f` 构建的绝对路径二进制执行 81 工具完整 Schema 真实子进程审计，最终 81 项全部通过；新增逐字稿叶子也通过完整结果 Schema 和参数语义核验。这仍不是目标部署版本或租户权限证据。
 - `corepack pnpm dingtalk:gateway:smoke` 的真实执行完成固定包校验后，在 `docker-preflight` 因 Docker 守护进程不可连接失败；证据位于 `.artifacts/dingtalk-real-gateway/20260909092154-3a50767b3b/evidence.json`。该结果只证明验收基础设施正确失败并完成清理，不证明插件安装、Gateway RPC 或目标钉钉能力。
 - 对同一源码连续执行两次插件打包，两个归档的 SHA-256 一致，没有发现固定包非确定性。
 - 当前验证进程不在包声明的 Node engines 范围内，发布前仍需在声明支持的 Node 范围复跑。
-- DWS 官方主线源码已刷新到 `44a23c5ab891822aa4099fa73c701721422e597c`，合同标准输入路径由实现、Schema 与官方测试共同证明。该提交要求 Go 1.25.9，当前受控工具链未能构建最新主线二进制，因此 81 工具动态 Schema 审计仍明确限定在已成功构建的官方提交 `d4098a72dbcbbf8bdb286dcca96994bc5a9f462f`，不能描述为最新主线动态通过。
+- DWS 官方主线源码已刷新到 `bea76da8ba5091154a31779e2850d652c212aef6`。相对上一审阅提交的变化集中在聊天读取，待办生命周期实现未变化；创建、更新、完成和重开仍以稳定 taskId 完成写后读取并返回 `verified=true`。该提交继续要求当前受控环境无法满足的新版 Go 工具链，因此 81 工具动态 Schema 审计仍明确限定在已成功构建的官方提交 `d4098a72dbcbbf8bdb286dcca96994bc5a9f462f`，不能描述为最新主线动态通过。
 - 未执行 Rust 测试、真实 Tauri 窗口视觉验收和目标钉钉租户验收。

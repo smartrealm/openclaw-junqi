@@ -24,16 +24,18 @@ import {
   assertDingTalkTargetVerifiedWrite,
   dingTalkTargetWriteFailure,
   isDingTalkTargetApprovalStop,
+  isTargetGatewayRecord,
   resolveDingTalkWriteVerifierRuntime,
+  targetGatewayWriteInvariant,
 } from './dingtalk-target-gateway-write-verifier.mjs';
 
 const SCRIPT_PATH = await realpath(new URL(import.meta.url));
 const INPUT_LIMIT_BYTES = 16_384;
 const WRITE_TIMEOUT = '330000';
-const PREFLIGHT_EVENT_ID = 'calendar-gateway-preflight-event';
+const PREFLIGHT_TASK_ID = 'todo-gateway-preflight-task';
 
-export const DINGTALK_TARGET_GATEWAY_CALENDAR_ACKNOWLEDGEMENT =
-  'JUNQI_DINGTALK_TARGET_GATEWAY_CALENDAR_CREATE_UPDATE_CANCEL';
+export const DINGTALK_TARGET_GATEWAY_TODO_ACKNOWLEDGEMENT =
+  'JUNQI_DINGTALK_TARGET_GATEWAY_TODO_CREATE_UPDATE_COMPLETE_REOPEN_COMPLETE';
 
 const READ_CONTRACTS = DINGTALK_TARGET_GATEWAY_READONLY_CONTRACTS_BY_SCOPE.core.map((contract) => ({
   ...contract,
@@ -43,109 +45,95 @@ const READ_CONTRACTS = DINGTALK_TARGET_GATEWAY_READONLY_CONTRACTS_BY_SCOPE.core.
   idempotency: 'idempotent',
 }));
 
-export const DINGTALK_TARGET_GATEWAY_CALENDAR_WRITE_CONTRACTS = [
+export const DINGTALK_TARGET_GATEWAY_TODO_WRITE_CONTRACTS = [
   {
-    toolName: 'junqi_dingtalk_calendar_create',
-    canonicalPath: 'calendar.shortcut_create',
+    toolName: 'junqi_dingtalk_todo_create',
+    canonicalPath: 'todo.shortcut_create',
     effect: 'write',
     risk: 'medium',
     confirmation: 'user_required',
-    idempotency: 'unknown',
+    idempotency: 'non_idempotent',
     step: 'create',
   },
   {
-    toolName: 'junqi_dingtalk_calendar_update',
-    canonicalPath: 'calendar.shortcut_update',
+    toolName: 'junqi_dingtalk_todo_update',
+    canonicalPath: 'todo.shortcut_update',
     effect: 'write',
     risk: 'medium',
     confirmation: 'user_required',
-    idempotency: 'unknown',
+    idempotency: 'idempotent',
     step: 'update',
   },
   {
-    toolName: 'junqi_dingtalk_calendar_cancel',
-    canonicalPath: 'calendar.shortcut_cancel_event',
-    effect: 'destructive',
-    risk: 'high',
+    toolName: 'junqi_dingtalk_todo_complete',
+    canonicalPath: 'todo.shortcut_complete',
+    effect: 'write',
+    risk: 'medium',
     confirmation: 'user_required',
-    idempotency: 'unknown',
-    step: 'cancel',
+    idempotency: 'idempotent',
+    step: 'complete',
+  },
+  {
+    toolName: 'junqi_dingtalk_todo_reopen',
+    canonicalPath: 'todo.shortcut_reopen',
+    effect: 'write',
+    risk: 'medium',
+    confirmation: 'user_required',
+    idempotency: 'idempotent',
+    step: 'reopen',
   },
 ];
 
-export const DINGTALK_TARGET_GATEWAY_CALENDAR_CONTRACTS = [
+export const DINGTALK_TARGET_GATEWAY_TODO_CONTRACTS = [
   ...READ_CONTRACTS,
-  ...DINGTALK_TARGET_GATEWAY_CALENDAR_WRITE_CONTRACTS,
+  ...DINGTALK_TARGET_GATEWAY_TODO_WRITE_CONTRACTS,
 ];
 
-function invariant(condition, code, message) {
-  if (!condition) throw new DingTalkTargetGatewayReadFailure(code, message);
-}
-
-function isRecord(value) {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function assertClosedKeys(value, requiredKeys, optionalKeys, code, label) {
-  const required = new Set(requiredKeys);
-  const allowed = new Set([...requiredKeys, ...optionalKeys]);
-  const actual = Object.keys(value);
-  invariant(
-    requiredKeys.every((key) => Object.hasOwn(value, key))
-      && actual.every((key) => allowed.has(key))
-      && actual.length >= required.size,
+function assertClosedKeys(value, requiredKeys, code, label) {
+  const actual = Object.keys(value).sort();
+  targetGatewayWriteInvariant(
+    JSON.stringify(actual) === JSON.stringify([...requiredKeys].sort()),
     code,
     `${label} fields do not match the closed contract`,
   );
 }
 
 function normalizedText(value, field, maximumLength) {
-  invariant(typeof value === 'string', 'TARGET_GATEWAY_CALENDAR_INPUT_INVALID', `${field} must be a string`);
+  targetGatewayWriteInvariant(typeof value === 'string', 'TARGET_GATEWAY_TODO_INPUT_INVALID', `${field} must be a string`);
   const normalized = value.trim();
-  invariant(normalized.length > 0, 'TARGET_GATEWAY_CALENDAR_INPUT_INVALID', `${field} must not be empty`);
-  invariant(normalized.length <= maximumLength, 'TARGET_GATEWAY_CALENDAR_INPUT_INVALID', `${field} is too long`);
-  invariant(!/[\r\n\0]/.test(normalized), 'TARGET_GATEWAY_CALENDAR_INPUT_INVALID', `${field} contains forbidden characters`);
+  targetGatewayWriteInvariant(normalized.length > 0, 'TARGET_GATEWAY_TODO_INPUT_INVALID', `${field} must not be empty`);
+  targetGatewayWriteInvariant(normalized.length <= maximumLength, 'TARGET_GATEWAY_TODO_INPUT_INVALID', `${field} is too long`);
+  targetGatewayWriteInvariant(!/[\r\n\0]/.test(normalized), 'TARGET_GATEWAY_TODO_INPUT_INVALID', `${field} contains forbidden characters`);
   return normalized;
 }
 
-function normalizedTimestamp(value, field) {
-  const normalized = normalizedText(value, field, 128);
-  invariant(
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(normalized)
-      && !Number.isNaN(Date.parse(normalized)),
-    'TARGET_GATEWAY_CALENDAR_INPUT_INVALID',
-    `${field} must be an RFC3339 timestamp with an explicit offset`,
-  );
-  return normalized;
-}
-
-export function parseDingTalkTargetGatewayCalendarArguments(argv) {
+export function parseDingTalkTargetGatewayTodoArguments(argv) {
   const normalized = argv[0] === '--' ? argv.slice(1) : argv;
-  invariant(normalized.length % 2 === 0, 'TARGET_GATEWAY_CALENDAR_ARGUMENTS_INVALID', 'Every flag requires one value');
+  targetGatewayWriteInvariant(normalized.length % 2 === 0, 'TARGET_GATEWAY_TODO_ARGUMENTS_INVALID', 'Every flag requires one value');
   const supported = new Set([
     '--gateway-url',
     '--openclaw-package',
     '--dingtalk-package',
-    '--acknowledge-calendar-writes',
+    '--acknowledge-todo-writes',
   ]);
   const values = new Map();
   for (let index = 0; index < normalized.length; index += 2) {
     const flag = normalized[index];
     const value = normalized[index + 1];
-    invariant(supported.has(flag), 'TARGET_GATEWAY_CALENDAR_ARGUMENTS_INVALID', 'Unsupported target Gateway calendar argument');
-    invariant(!values.has(flag), 'TARGET_GATEWAY_CALENDAR_ARGUMENTS_INVALID', 'Duplicate target Gateway calendar argument');
-    invariant(typeof value === 'string' && value.length > 0, 'TARGET_GATEWAY_CALENDAR_ARGUMENTS_INVALID', 'Target Gateway calendar argument value is missing');
+    targetGatewayWriteInvariant(supported.has(flag), 'TARGET_GATEWAY_TODO_ARGUMENTS_INVALID', 'Unsupported target Gateway Todo argument');
+    targetGatewayWriteInvariant(!values.has(flag), 'TARGET_GATEWAY_TODO_ARGUMENTS_INVALID', 'Duplicate target Gateway Todo argument');
+    targetGatewayWriteInvariant(typeof value === 'string' && value.length > 0, 'TARGET_GATEWAY_TODO_ARGUMENTS_INVALID', 'Target Gateway Todo argument value is missing');
     values.set(flag, value);
   }
-  invariant(values.size === supported.size, 'TARGET_GATEWAY_CALENDAR_ARGUMENTS_INVALID', 'Target Gateway calendar arguments are incomplete');
-  invariant(
-    values.get('--acknowledge-calendar-writes') === DINGTALK_TARGET_GATEWAY_CALENDAR_ACKNOWLEDGEMENT,
-    'TARGET_GATEWAY_CALENDAR_ACKNOWLEDGEMENT_INVALID',
-    'Target Gateway calendar write acknowledgement is invalid',
+  targetGatewayWriteInvariant(values.size === supported.size, 'TARGET_GATEWAY_TODO_ARGUMENTS_INVALID', 'Target Gateway Todo arguments are incomplete');
+  targetGatewayWriteInvariant(
+    values.get('--acknowledge-todo-writes') === DINGTALK_TARGET_GATEWAY_TODO_ACKNOWLEDGEMENT,
+    'TARGET_GATEWAY_TODO_ACKNOWLEDGEMENT_INVALID',
+    'Target Gateway Todo write acknowledgement is invalid',
   );
   const dingtalkPackageJsonPath = values.get('--dingtalk-package');
-  invariant(path.isAbsolute(dingtalkPackageJsonPath), 'DINGTALK_PACKAGE_PATH_INVALID', 'DingTalk package.json path must be absolute');
-  invariant(path.basename(dingtalkPackageJsonPath) === 'package.json', 'DINGTALK_PACKAGE_PATH_INVALID', 'DingTalk package path must identify package.json');
+  targetGatewayWriteInvariant(path.isAbsolute(dingtalkPackageJsonPath), 'DINGTALK_PACKAGE_PATH_INVALID', 'DingTalk package.json path must be absolute');
+  targetGatewayWriteInvariant(path.basename(dingtalkPackageJsonPath) === 'package.json', 'DINGTALK_PACKAGE_PATH_INVALID', 'DingTalk package path must identify package.json');
   return {
     ...parseDingTalkTargetGatewayConnection(
       values.get('--gateway-url'),
@@ -155,96 +143,68 @@ export function parseDingTalkTargetGatewayCalendarArguments(argv) {
   };
 }
 
-export function parseDingTalkTargetGatewayCalendarInput(value) {
-  invariant(isRecord(value), 'TARGET_GATEWAY_CALENDAR_INPUT_INVALID', 'Target Gateway calendar input must be an object');
-  assertClosedKeys(
-    value,
-    ['agentId', 'sessionKey', 'profile', 'fixture'],
-    [],
-    'TARGET_GATEWAY_CALENDAR_INPUT_INVALID',
-    'Target Gateway calendar input',
-  );
-  invariant(isRecord(value.fixture), 'TARGET_GATEWAY_CALENDAR_INPUT_INVALID', 'Target Gateway calendar fixture must be an object');
-  assertClosedKeys(
-    value.fixture,
-    ['title', 'updatedTitle', 'start', 'end'],
-    ['timezone'],
-    'TARGET_GATEWAY_CALENDAR_INPUT_INVALID',
-    'Target Gateway calendar fixture',
-  );
+export function parseDingTalkTargetGatewayTodoInput(value) {
+  targetGatewayWriteInvariant(isTargetGatewayRecord(value), 'TARGET_GATEWAY_TODO_INPUT_INVALID', 'Target Gateway Todo input must be an object');
+  assertClosedKeys(value, ['agentId', 'sessionKey', 'profile', 'fixture'], 'TARGET_GATEWAY_TODO_INPUT_INVALID', 'Target Gateway Todo input');
+  targetGatewayWriteInvariant(isTargetGatewayRecord(value.fixture), 'TARGET_GATEWAY_TODO_INPUT_INVALID', 'Target Gateway Todo fixture must be an object');
+  assertClosedKeys(value.fixture, ['executor', 'title', 'updatedTitle'], 'TARGET_GATEWAY_TODO_INPUT_INVALID', 'Target Gateway Todo fixture');
   const connection = parseDingTalkTargetGatewayReadInput({
     agentId: value.agentId,
     sessionKey: value.sessionKey,
     profile: value.profile,
   });
+  const executor = normalizedText(value.fixture.executor, 'fixture.executor', 512);
   const title = normalizedText(value.fixture.title, 'fixture.title', 2_048);
   const updatedTitle = normalizedText(value.fixture.updatedTitle, 'fixture.updatedTitle', 2_048);
-  invariant(title !== updatedTitle, 'TARGET_GATEWAY_CALENDAR_INPUT_INVALID', 'Calendar titles must differ');
-  const start = normalizedTimestamp(value.fixture.start, 'fixture.start');
-  const end = normalizedTimestamp(value.fixture.end, 'fixture.end');
-  invariant(Date.parse(start) < Date.parse(end), 'TARGET_GATEWAY_CALENDAR_INPUT_INVALID', 'Calendar end must be after start');
-  let timezone;
-  if (value.fixture.timezone !== undefined) {
-    timezone = normalizedText(value.fixture.timezone, 'fixture.timezone', 128);
-    invariant(
-      /^[A-Za-z_]+(?:\/[A-Za-z0-9_+.-]+)+$/.test(timezone),
-      'TARGET_GATEWAY_CALENDAR_INPUT_INVALID',
-      'Calendar timezone must be an IANA timezone name',
-    );
-  }
-  return {
-    ...connection,
-    fixture: {
-      title,
-      updatedTitle,
-      start,
-      end,
-      ...(timezone ? { timezone } : {}),
-    },
-  };
+  const profileUser = connection.profile.slice(connection.profile.indexOf(':') + 1);
+  targetGatewayWriteInvariant(executor === profileUser, 'TARGET_GATEWAY_TODO_INPUT_INVALID', 'Todo executor must equal the user in profile');
+  targetGatewayWriteInvariant(title !== updatedTitle, 'TARGET_GATEWAY_TODO_INPUT_INVALID', 'Todo titles must differ');
+  return { ...connection, fixture: { executor, title, updatedTitle } };
 }
 
-export async function readDingTalkTargetGatewayCalendarInput(stream) {
+export async function readDingTalkTargetGatewayTodoInput(stream) {
   const chunks = [];
   let bytes = 0;
   for await (const chunk of stream) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     bytes += buffer.length;
-    invariant(bytes <= INPUT_LIMIT_BYTES, 'TARGET_GATEWAY_CALENDAR_INPUT_TOO_LARGE', 'Target Gateway calendar input exceeds 16 KiB');
+    targetGatewayWriteInvariant(bytes <= INPUT_LIMIT_BYTES, 'TARGET_GATEWAY_TODO_INPUT_TOO_LARGE', 'Target Gateway Todo input exceeds 16 KiB');
     chunks.push(buffer);
   }
-  invariant(bytes > 0, 'TARGET_GATEWAY_CALENDAR_INPUT_REQUIRED', 'Target Gateway calendar input is required');
+  targetGatewayWriteInvariant(bytes > 0, 'TARGET_GATEWAY_TODO_INPUT_REQUIRED', 'Target Gateway Todo input is required');
   let document;
   try {
     document = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
-    throw new DingTalkTargetGatewayReadFailure('TARGET_GATEWAY_CALENDAR_INPUT_INVALID', 'Target Gateway calendar input must be JSON');
+    throw new DingTalkTargetGatewayReadFailure('TARGET_GATEWAY_TODO_INPUT_INVALID', 'Target Gateway Todo input must be JSON');
   }
-  return parseDingTalkTargetGatewayCalendarInput(document);
+  return parseDingTalkTargetGatewayTodoInput(document);
 }
 
-function createArguments(fixture) {
-  return {
-    title: fixture.title,
-    start: fixture.start,
-    end: fixture.end,
-    ...(fixture.timezone ? { timezone: fixture.timezone } : {}),
-  };
+function writeArguments(contract, fixture, taskId) {
+  if (contract.step === 'create') return { title: fixture.title, executors: [fixture.executor] };
+  if (contract.step === 'update') return { 'task-id': taskId, title: fixture.updatedTitle };
+  return { 'task-id': taskId };
 }
 
-function writeArguments(contract, fixture, eventId) {
-  if (contract.step === 'create') return createArguments(fixture);
-  if (contract.step === 'update') return { event: eventId, title: fixture.updatedTitle };
-  return { event: eventId };
+function writeStages() {
+  const contracts = new Map(DINGTALK_TARGET_GATEWAY_TODO_WRITE_CONTRACTS.map((contract) => [contract.step, contract]));
+  return [
+    { name: 'create', contract: contracts.get('create') },
+    { name: 'update', contract: contracts.get('update') },
+    { name: 'complete_initial', contract: contracts.get('complete') },
+    { name: 'reopen', contract: contracts.get('reopen') },
+    { name: 'complete_final', contract: contracts.get('complete') },
+  ];
 }
 
 function evidence(input) {
   return {
     formatVersion: 1,
-    kind: 'JUNQI_DINGTALK_TARGET_GATEWAY_CALENDAR_CREATE_UPDATE_CANCEL',
+    kind: 'JUNQI_DINGTALK_TARGET_GATEWAY_TODO_CREATE_UPDATE_COMPLETE_REOPEN_COMPLETE',
     status: input.status,
     state: input.state,
-    checkedContractCount: DINGTALK_TARGET_GATEWAY_CALENDAR_CONTRACTS.length,
+    checkedContractCount: DINGTALK_TARGET_GATEWAY_TODO_CONTRACTS.length,
     schemaVerifiedCount: input.schemaVerifiedCount,
     argumentValidatedCount: input.argumentValidatedCount,
     approvalPreflightCount: input.approvalPreflightCount,
@@ -267,14 +227,14 @@ function evidence(input) {
       gatewayToken: false,
       sessionKey: false,
       profileRef: false,
-      calendarFixture: false,
+      todoFixture: false,
       businessPayload: false,
     },
   };
 }
 
-export async function runDingTalkTargetGatewayCalendar(options) {
-  const input = parseDingTalkTargetGatewayCalendarInput(options.input);
+export async function runDingTalkTargetGatewayTodo(options) {
+  const input = parseDingTalkTargetGatewayTodoInput(options.input);
   const token = validateDingTalkTargetGatewayToken(options.gatewayToken);
   const effective = await options.callGatewayFromCli(
     'tools.effective',
@@ -286,7 +246,7 @@ export async function runDingTalkTargetGatewayCalendar(options) {
   for (const contract of READ_CONTRACTS) {
     assertDingTalkTargetEffectiveReadToolContract(effective, input.agentId, contract);
   }
-  for (const contract of DINGTALK_TARGET_GATEWAY_CALENDAR_WRITE_CONTRACTS) {
+  for (const contract of DINGTALK_TARGET_GATEWAY_TODO_WRITE_CONTRACTS) {
     assertDingTalkTargetEffectiveSideEffectTool(effective, input.agentId, contract);
   }
 
@@ -294,7 +254,7 @@ export async function runDingTalkTargetGatewayCalendar(options) {
   const failures = [];
   let schemaVerifiedCount = 0;
   let argumentValidatedCount = 0;
-  for (const contract of DINGTALK_TARGET_GATEWAY_CALENDAR_CONTRACTS) {
+  for (const contract of DINGTALK_TARGET_GATEWAY_TODO_CONTRACTS) {
     try {
       const result = await options.callGatewayFromCli(
         'tools.invoke',
@@ -307,18 +267,13 @@ export async function runDingTalkTargetGatewayCalendar(options) {
         },
         { deviceIdentity: null, progress: false, scopes: ['operator.write'], sharedStateMode: 'read-only' },
       );
-      const verified = assertDingTalkTargetSchemaInvocation(
-        result,
-        options.schemaToolName,
-        contract,
-        'TARGET_GATEWAY_CALENDAR_SCHEMA_INVALID',
-      );
+      const verified = assertDingTalkTargetSchemaInvocation(result, options.schemaToolName, contract, 'TARGET_GATEWAY_TODO_SCHEMA_INVALID');
       schemaVerifiedCount += 1;
       schemas.set(contract.toolName, verified);
-      const argumentsValue = contract.effect === 'read'
-        ? {}
-        : writeArguments(contract, input.fixture, PREFLIGHT_EVENT_ID);
-      options.buildSchemaValidatedArguments(verified.schema, argumentsValue);
+      options.buildSchemaValidatedArguments(
+        verified.schema,
+        contract.effect === 'read' ? {} : writeArguments(contract, input.fixture, PREFLIGHT_TASK_ID),
+      );
       argumentValidatedCount += 1;
     } catch (error) {
       failures.push(dingTalkTargetWriteFailure(contract, schemas.has(contract.toolName) ? 'arguments' : 'schema', error));
@@ -341,7 +296,7 @@ export async function runDingTalkTargetGatewayCalendar(options) {
   }
 
   let approvalPreflightCount = 0;
-  for (const contract of DINGTALK_TARGET_GATEWAY_CALENDAR_WRITE_CONTRACTS) {
+  for (const contract of DINGTALK_TARGET_GATEWAY_TODO_WRITE_CONTRACTS) {
     try {
       const result = await options.callGatewayFromCli(
         'tools.invoke',
@@ -350,18 +305,14 @@ export async function runDingTalkTargetGatewayCalendar(options) {
           name: contract.toolName,
           args: {
             profile: input.profile,
-            arguments: writeArguments(contract, input.fixture, PREFLIGHT_EVENT_ID),
+            arguments: writeArguments(contract, input.fixture, PREFLIGHT_TASK_ID),
           },
           sessionKey: input.sessionKey,
           agentId: input.agentId,
         },
         { deviceIdentity: null, progress: false, scopes: ['operator.write'], sharedStateMode: 'read-only' },
       );
-      assertDingTalkTargetApprovalPreflight(
-        result,
-        contract,
-        'TARGET_GATEWAY_CALENDAR_APPROVAL_PREFLIGHT_INVALID',
-      );
+      assertDingTalkTargetApprovalPreflight(result, contract, 'TARGET_GATEWAY_TODO_APPROVAL_PREFLIGHT_INVALID');
       approvalPreflightCount += 1;
     } catch (error) {
       failures.push(dingTalkTargetWriteFailure(contract, 'approval_preflight', error));
@@ -400,9 +351,9 @@ export async function runDingTalkTargetGatewayCalendar(options) {
         { deviceIdentity: null, progress: false, scopes: ['operator.write'], sharedStateMode: 'read-only' },
       );
       const verified = assertDingTalkTargetReadInvocationContract(result, input.profile, contract);
-      invariant(
+      targetGatewayWriteInvariant(
         verified.schemaDigest === schemas.get(contract.toolName)?.digest,
-        'TARGET_GATEWAY_CALENDAR_SCHEMA_CHANGED',
+        'TARGET_GATEWAY_TODO_SCHEMA_CHANGED',
         'DingTalk Schema changed between preflight and core read',
       );
       readPassedCount += 1;
@@ -427,10 +378,10 @@ export async function runDingTalkTargetGatewayCalendar(options) {
   }
 
   const completedSteps = [];
-  let eventId;
+  let taskId;
   let writeRequestCount = 0;
-  for (const contract of DINGTALK_TARGET_GATEWAY_CALENDAR_WRITE_CONTRACTS) {
-    const argumentsValue = writeArguments(contract, input.fixture, eventId);
+  for (const stage of writeStages()) {
+    const argumentsValue = writeArguments(stage.contract, input.fixture, taskId);
     writeRequestCount += 1;
     let result;
     try {
@@ -438,7 +389,7 @@ export async function runDingTalkTargetGatewayCalendar(options) {
         'tools.invoke',
         { url: options.gatewayUrl, token, timeout: WRITE_TIMEOUT, json: true },
         {
-          name: contract.toolName,
+          name: stage.contract.toolName,
           args: { profile: input.profile, arguments: argumentsValue },
           sessionKey: input.sessionKey,
           agentId: input.agentId,
@@ -457,15 +408,15 @@ export async function runDingTalkTargetGatewayCalendar(options) {
         readPassedCount,
         writeRequestCount,
         completedSteps,
-        failedStage: contract.step,
-        ...(eventId ? { resourceId: eventId } : {}),
-        failures: [dingTalkTargetWriteFailure(contract, 'write', error)],
-        recovery: eventId
-          ? 'inspect_exact_event_before_any_action'
+        failedStage: stage.name,
+        ...(taskId ? { resourceId: taskId } : {}),
+        failures: [dingTalkTargetWriteFailure(stage.contract, 'write', error)],
+        recovery: taskId
+          ? 'inspect_exact_task_before_any_action'
           : 'inspect_by_unique_title_before_any_retry',
       });
     }
-    if (isDingTalkTargetApprovalStop(result, contract)) {
+    if (isDingTalkTargetApprovalStop(result, stage.contract)) {
       return evidence({
         status: 'FAILED',
         state: completedSteps.length === 0 ? 'failed_before_write' : 'stopped_after_verified_write',
@@ -476,14 +427,14 @@ export async function runDingTalkTargetGatewayCalendar(options) {
         readPassedCount,
         writeRequestCount,
         completedSteps,
-        failedStage: contract.step,
-        ...(eventId ? { resourceId: eventId } : {}),
-        failures: [dingTalkTargetWriteFailure(contract, 'approval', new DingTalkTargetGatewayReadFailure(
-          'TARGET_GATEWAY_CALENDAR_APPROVAL_NOT_GRANTED',
-          'Calendar approval was not granted',
+        failedStage: stage.name,
+        ...(taskId ? { resourceId: taskId } : {}),
+        failures: [dingTalkTargetWriteFailure(stage.contract, 'approval', new DingTalkTargetGatewayReadFailure(
+          'TARGET_GATEWAY_TODO_APPROVAL_NOT_GRANTED',
+          'Todo approval was not granted',
         ))],
-        recovery: eventId
-          ? 'inspect_exact_event_before_any_action'
+        recovery: taskId
+          ? 'inspect_exact_task_before_any_action'
           : 'request_fresh_approval_before_retry',
       });
     }
@@ -492,16 +443,16 @@ export async function runDingTalkTargetGatewayCalendar(options) {
       verified = assertDingTalkTargetVerifiedWrite(
         result,
         input.profile,
-        contract,
-        schemas.get(contract.toolName)?.digest,
-        'eventId',
-        'TARGET_GATEWAY_CALENDAR_WRITE_UNKNOWN',
+        stage.contract,
+        schemas.get(stage.contract.toolName)?.digest,
+        'taskId',
+        'TARGET_GATEWAY_TODO_WRITE_UNKNOWN',
       );
-      if (eventId) {
-        invariant(
-          verified.resourceId === eventId,
-          'TARGET_GATEWAY_CALENDAR_RESOURCE_MISMATCH',
-          'Calendar write returned a different eventId',
+      if (taskId) {
+        targetGatewayWriteInvariant(
+          verified.resourceId === taskId,
+          'TARGET_GATEWAY_TODO_RESOURCE_MISMATCH',
+          'Todo write returned a different taskId',
         );
       }
     } catch (error) {
@@ -515,16 +466,16 @@ export async function runDingTalkTargetGatewayCalendar(options) {
         readPassedCount,
         writeRequestCount,
         completedSteps,
-        failedStage: contract.step,
-        ...(eventId ? { resourceId: eventId } : {}),
-        failures: [dingTalkTargetWriteFailure(contract, 'write_verification', error)],
-        recovery: eventId
-          ? 'inspect_exact_event_before_any_action'
+        failedStage: stage.name,
+        ...(taskId ? { resourceId: taskId } : {}),
+        failures: [dingTalkTargetWriteFailure(stage.contract, 'write_verification', error)],
+        recovery: taskId
+          ? 'inspect_exact_task_before_any_action'
           : 'inspect_by_unique_title_before_any_retry',
       });
     }
-    eventId = verified.resourceId;
-    completedSteps.push(contract.step);
+    taskId = verified.resourceId;
+    completedSteps.push(stage.name);
   }
 
   return evidence({
@@ -537,16 +488,16 @@ export async function runDingTalkTargetGatewayCalendar(options) {
     readPassedCount,
     writeRequestCount,
     completedSteps,
-    resourceIdSha256: createHash('sha256').update(eventId).digest('hex'),
+    resourceIdSha256: createHash('sha256').update(taskId).digest('hex'),
     failures: [],
     recovery: 'none',
   });
 }
 
-export function serializeDingTalkTargetGatewayCalendarFailure(error) {
+export function serializeDingTalkTargetGatewayTodoFailure(error) {
   return {
     formatVersion: 1,
-    kind: 'JUNQI_DINGTALK_TARGET_GATEWAY_CALENDAR_CREATE_UPDATE_CANCEL',
+    kind: 'JUNQI_DINGTALK_TARGET_GATEWAY_TODO_CREATE_UPDATE_COMPLETE_REOPEN_COMPLETE',
     status: 'FAILED',
     code: stableDingTalkTargetGatewayFailureCode(error),
   };
@@ -554,15 +505,15 @@ export function serializeDingTalkTargetGatewayCalendarFailure(error) {
 
 if (process.argv[1] && await realpath(process.argv[1]).catch(() => null) === SCRIPT_PATH) {
   try {
-    const args = parseDingTalkTargetGatewayCalendarArguments(process.argv.slice(2));
-    const input = await readDingTalkTargetGatewayCalendarInput(process.stdin);
+    const args = parseDingTalkTargetGatewayTodoArguments(process.argv.slice(2));
+    const input = await readDingTalkTargetGatewayTodoInput(process.stdin);
     const gatewayToken = validateDingTalkTargetGatewayToken(process.env.OPENCLAW_GATEWAY_TOKEN);
     delete process.env.OPENCLAW_GATEWAY_TOKEN;
     const [openClawRuntime, dingtalkRuntime] = await Promise.all([
       resolveOpenClawGatewayRuntime(args.packageJsonPath),
       resolveDingTalkWriteVerifierRuntime(args.dingtalkPackageJsonPath),
     ]);
-    const result = await runDingTalkTargetGatewayCalendar({
+    const result = await runDingTalkTargetGatewayTodo({
       callGatewayFromCli: openClawRuntime.callGatewayFromCli,
       gatewayUrl: args.gatewayUrl,
       gatewayToken,
@@ -577,7 +528,7 @@ if (process.argv[1] && await realpath(process.argv[1]).catch(() => null) === SCR
     }, null, 2));
     if (result.status !== 'PASSED') process.exitCode = 1;
   } catch (error) {
-    console.error(JSON.stringify(serializeDingTalkTargetGatewayCalendarFailure(error)));
+    console.error(JSON.stringify(serializeDingTalkTargetGatewayTodoFailure(error)));
     process.exitCode = 1;
   }
 }

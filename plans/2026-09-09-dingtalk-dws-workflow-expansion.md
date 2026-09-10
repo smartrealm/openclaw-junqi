@@ -47,6 +47,7 @@
 43. 已增加目标 Gateway 核心五项与扩展十二项只读权限矩阵 `dingtalk:gateway:target-readonly`。它一次性证明范围内全部工具的 Session 投影，再按固定顺序串行通过 `tools.invoke` 读取；投影缺失时零调用，单项读取失败时继续完成权限矩阵，证据只保留工具、canonical path、Schema 摘要和稳定错误码。
 44. 已修复合同分析在 OpenClaw 插件调用边界无法安全传递正文的问题。工具只接受字段闭合、可序列化且不超过 1 MiB 的内联 JSON 对象，插件规范化后经 DWS 正式 `--file -` 标准输入执行；同时新增固定 17 项高敏只读目标 Gateway 矩阵，在任何业务读取前核对内部 Schema 工具与全部业务工具投影、逐项读取 Schema 并预校验全部参数，失败时保持零业务读取。
 45. 已为 P0-D 增加目标 Gateway 日历创建、更新和取消验收。入口先核对内部 Schema、核心五项读取和三个日历写入的最终工具投影，再完成全部 Schema 与参数预检；三个不带 `confirm` 的调用必须只报告审批边界，核心五项全部执行后才允许三个带 `confirm=true` 的独立审批写入。每步要求同一 eventId、统一成功信封和 `verified` 读回，拒绝与未知结果立即停止且不自动重放，证据只保留必要恢复标识或最终删除 ID 的摘要。
+46. 已为 P0-D 增加目标 Gateway 待办创建、更新、首次完成、重开和最终完成验收。入口先核对内部 Schema、核心五项读取和四个待办写入的最终工具投影，再完成全部 Schema 与参数预检；四个不带 `confirm` 的调用必须只报告审批边界，核心五项全部执行后才允许五个带 `confirm=true` 的独立审批写入。每步要求同一 taskId、统一成功信封和 `verified` 读回，拒绝、未知结果与资源 ID 漂移立即停止且不自动重放，完整成功只保留 ID 摘要。
 
 ## 第一阶段文件范围
 
@@ -95,7 +96,7 @@
 1. P0-A：在 Docker 守护进程可用的受控测试机依次运行 `corepack pnpm dingtalk:gateway:smoke` 与 `corepack pnpm dingtalk:gateway:chain-smoke`。前者完成固定 `0.27.0` 归档安装、配置校验、插件检查、关闭态 scope 和重启代际验收；后者完成 Session、实际工具投影、`tools.invoke`、插件、Schema、DWS 子进程和结果投影链路。两项都不证明认证 Profile、正式 DWS、租户权限或线上事件。
 2. P0-B：先对目标 DWS 绝对路径运行 `corepack pnpm dingtalk:verify-target-contracts -- --dws-path <absolute-path>`；然后设置仅进入环境的 `OPENCLAW_GATEWAY_TOKEN`，把 `agentId`、`sessionKey` 和 Profile 作为闭合 JSON 标准输入传给 `corepack pnpm dingtalk:gateway:target-read -- --gateway-url <ws-or-wss-root> --openclaw-package <absolute-openclaw-package-json> --acknowledge-target-read JUNQI_DINGTALK_TARGET_GATEWAY_CURRENT_USER_READ`，完成正式 DWS 与受控租户的最小 Gateway 当前用户读取。通过后对同一连接先后运行 `dingtalk:gateway:target-readonly` 的 `core` 和 `extended` 范围，确认串为 `JUNQI_DINGTALK_TARGET_GATEWAY_READONLY_MATRIX`；最后在真实带身份同步的客户端核对 `profileAccess: required` 门禁，纯令牌 CLI 结果不得冒充该证明。
 3. P0-C：先使用受控 Profile 和真实 fixture 执行 DWS 直连 17 项高敏只读预检，再通过同一 Agent、Session、Profile 和 fixture 执行 `dingtalk:gateway:target-sensitive-readonly`，逐域核对 AI 表格、合同、招聘和目标管理的 Gateway 投影、Schema、参数、权限、对象存在性、敏感字段和最小数据范围；最后用带身份同步的真实客户端单独验收 Profile 门禁。持续跟踪 HRbrain 上游可用性，但不可用期间不接入。
-4. P0-D：先使用已内嵌同 Profile 核心只读门禁的 DWS 直连接口执行受控日程创建、同 ID 更新和同 ID 取消；通过后在同一目标通过 `dingtalk:gateway:target-calendar` 验证最终工具投影、报告式审批边界、三个独立所有人审批、同 ID 读回和禁止未知写重放。随后执行自分配待办创建、同 ID 更新、完成、重开和最终完成，并补齐对应 Gateway 全链路验收。
+4. P0-D：先使用已内嵌同 Profile 核心只读门禁的 DWS 直连接口执行受控日程创建、同 ID 更新和同 ID 取消；通过后在同一目标通过 `dingtalk:gateway:target-calendar` 验证最终工具投影、报告式审批边界、三个独立所有人审批、同 ID 读回和禁止未知写重放。随后先运行待办 DWS 直连验收，再通过 `dingtalk:gateway:target-todo` 对同一自分配待办执行创建、同 ID 更新、首次完成、重开和最终完成，核对四个报告式审批边界、五个独立所有人审批和禁止未知写重放；成功后目标租户会保留一条已完成的合成待办记录。
 5. P0-E：使用审批只读预检核对目标模板字段和流程预测，并使用日报模板预检唯一定位模板、读取字段定义和校验计划内容与接收人；由人工分别确认模板、审批人、接收人和留痕方案后，再按审批、日报周报和当前用户文本消息顺序执行真实写入、读回和人工确认。
 6. P0-F：先用显式确认的目标事件验收入口验证单一最小事件的 Schema、ready、类型约束、事件到达、局部通知和干净停机，再通过专用表单验证真实 Gateway 前缀广播、`operator.read` scope、认证 Profile 门禁、桌面连接绑定、快照重读、去重、Gateway 重启、断线和退出退订。
 7. P1：先用受控 query 与稳定 taskUuid 执行同任务听记四阶段验收，再以真实 OpenClaw 会话验证每日助理、会议闭环、听记转待办和草稿链路的部分成功语义。

@@ -64,6 +64,7 @@
     "dingtalk:gateway:target-readonly": "node scripts/verify-dingtalk-target-gateway-readonly.mjs",
     "dingtalk:gateway:target-sensitive-readonly": "node scripts/verify-dingtalk-target-gateway-sensitive-readonly.mjs",
     "dingtalk:gateway:target-calendar": "node scripts/verify-dingtalk-target-gateway-calendar.mjs",
+    "dingtalk:gateway:target-todo": "node scripts/verify-dingtalk-target-gateway-todo.mjs",
     "test:dingtalk:gateway:smoke": "node --test scripts/verify-dingtalk-real-gateway.test.mjs",
     "dingtalk:bundle": "node scripts/build-dingtalk-plugin-bundle.mjs"
   },
