@@ -41,7 +41,9 @@ test("global Back is single-flight and fences automatic forward effects", () => 
   assert.match(setupFlow, /const setupNavigationLeavingRef = useRef\(false\)/);
   assert.match(setupFlow, /if \(setupNavigationLeavingRef\.current \|\| autoStartedGatewayRef\.current\) return/);
   assert.match(setupFlow, /const performGoBack[\s\S]*?setupNavigationLeavingRef\.current = true;[\s\S]*?rollbackRuntimeReconfiguration\(\)/);
-  assert.match(setupFlow, /const goBack[\s\S]*?setupBackInFlightRef\.current[\s\S]*?isPluginRecoveryInFlight\(\)[\s\S]*?isWizardOperationInFlight\(\)[\s\S]*?await performGoBack\(\)/);
+  assert.match(setupFlow, /const navigateBack[\s\S]*?setupBackInFlightRef\.current[\s\S]*?isPluginRecoveryInFlight\(\)[\s\S]*?isWizardOperationInFlight\(\)[\s\S]*?await performGoBack\(preserveRuntimeRecovery\)/);
+  assert.match(setupFlow, /const goBack[\s\S]*?navigateBack\(false\)/);
+  assert.match(setupFlow, /const leaveRuntimeRecovery[\s\S]*?navigateBack\(true\)/);
   assert.doesNotMatch(wizardSession, /wizardAutoStartRef/);
 });
 

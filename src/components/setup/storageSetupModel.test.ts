@@ -3,6 +3,8 @@ import test from 'node:test';
 import {
   classifyStorageSetupError,
   initialStorageLocationsVisibility,
+  nodeRequirementFromRuntimeRecoveryError,
+  portFromRuntimeRecoveryError,
   storageSubmissionPresentation,
 } from './storageSetupModel';
 
@@ -39,4 +41,24 @@ test('把 OpenClaw 核验失败与普通存储错误分开呈现', () => {
     'openclaw-unavailable',
   );
   assert.equal(classifyStorageSetupError('permission denied'), 'generic');
+});
+
+test('从运行时恢复错误中提取 OpenClaw 要求的 Node.js 范围', () => {
+  assert.equal(
+    nodeRequirementFromRuntimeRecoveryError(
+      'OpenClaw requires Node.js >=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0; no compatible runtime was found',
+    ),
+    '>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0',
+  );
+  assert.equal(nodeRequirementFromRuntimeRecoveryError('Gateway recovery failed'), null);
+});
+
+test('从运行时恢复错误中提取被占用的候选 Gateway 端口', () => {
+  assert.equal(
+    portFromRuntimeRecoveryError(
+      'Candidate Gateway port 18789 is occupied by a process JunQi cannot verify or stop; stop that Gateway, then retry recovery',
+    ),
+    18789,
+  );
+  assert.equal(portFromRuntimeRecoveryError('Gateway recovery failed'), null);
 });

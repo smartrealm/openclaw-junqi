@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SetupStep } from "@/stores/setup-navigation";
-import { cacheGatewayTarget, setupBackPolicy } from "./helpers";
+import {
+  cacheGatewayTarget,
+  shouldRollbackRuntimeReconfigurationOnBack,
+  setupBackPolicy,
+} from "./helpers";
 
 const ALL_SETUP_STEPS: SetupStep[] = [
   "welcome",
@@ -55,4 +59,10 @@ test("setup caches only the selected Gateway endpoint in its dedicated preferenc
 
   assert.equal(localStorage.getItem("aegis-gateway-url"), "ws://127.0.0.1:28789");
   assert.equal(localStorage.getItem("aegis-config"), null);
+});
+
+test("运行时恢复失败页返回时保留待恢复事务并退出当前页面", () => {
+  assert.equal(shouldRollbackRuntimeReconfigurationOnBack("storage", false), true);
+  assert.equal(shouldRollbackRuntimeReconfigurationOnBack("storage", true), false);
+  assert.equal(shouldRollbackRuntimeReconfigurationOnBack("choosing-mode", true), true);
 });

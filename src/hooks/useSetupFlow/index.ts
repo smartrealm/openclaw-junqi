@@ -55,6 +55,7 @@ import {
   INITIAL_DOCKER_STEPS,
   INITIAL_NATIVE_STEPS,
   cacheGatewayTarget,
+  shouldRollbackRuntimeReconfigurationOnBack,
   setupBackPolicy,
 } from "./helpers";
 import type {
@@ -779,7 +780,7 @@ export function useSetupFlow(
     }
   }, [installMode, isPluginRecoveryInFlight, isWizardOperationInFlight, setSetupError, setNeedsGit, runDockerSetup, runNativeSetup]);
 
-  const performGoBack = useCallback(async () => {
+  const performGoBack = useCallback(async (preserveRuntimeRecovery = false) => {
     setupNavigationLeavingRef.current = true;
     invalidateWizardOperations();
     setWizardSubmitting(false);
@@ -807,7 +808,10 @@ export function useSetupFlow(
       // 只有数据位置页和未操作的运行方式选择页可以持有待处理的位置备忘。
       // 运行方式选择会同步阻止返回，并在解除门禁前提交或补偿暂存事务；
       // 后续页面不得回滚已经提交的状态。
-      if (backPolicy === "rollback-storage") {
+      if (shouldRollbackRuntimeReconfigurationOnBack(
+        setupStep,
+        preserveRuntimeRecovery,
+      )) {
         await rollbackRuntimeReconfiguration();
       }
     } catch (rollbackError) {
@@ -842,7 +846,7 @@ export function useSetupFlow(
     setupNavigationLeavingRef.current = false;
   }, [setupStep, invalidateActiveRun, invalidateWizardOperations, setSetupError, setNeedsGit, goBackSetup, presentSetupStep, rollbackRuntimeReconfiguration, appendSetupLog, report, replaceSetupStep, setForceStorageSelection]);
 
-  const goBack = useCallback(async () => {
+  const navigateBack = useCallback(async (preserveRuntimeRecovery: boolean) => {
     if (
       (setupStep === "environment-review" && (
         isEnvironmentReviewActionInFlight(environmentActionStateRef.current) || dockerDetectingRef.current
@@ -862,13 +866,23 @@ export function useSetupFlow(
       return;
     }
     try {
-      await performGoBack();
+      await performGoBack(preserveRuntimeRecovery);
     } finally {
       setupNavigationLeavingRef.current = false;
       finishEnvironmentAction();
       setupBackInFlightRef.current = false;
     }
   }, [beginEnvironmentNavigation, finishEnvironmentAction, isPluginRecoveryInFlight, isWizardOperationInFlight, performGoBack, setupStep]);
+
+  const goBack = useCallback(
+    () => navigateBack(false),
+    [navigateBack],
+  );
+
+  const leaveRuntimeRecovery = useCallback(
+    () => navigateBack(true),
+    [navigateBack],
+  );
 
   const cancelSetupRun = useCallback(async () => {
     if (
@@ -1106,6 +1120,7 @@ export function useSetupFlow(
     detectDocker,
     refreshRuntime,
     goBack,
+    leaveRuntimeRecovery,
     cancelSetupRun,
     retryGit,
     retryNode,

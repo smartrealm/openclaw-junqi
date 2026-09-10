@@ -1435,23 +1435,25 @@ async fn stop_all_locked(
         selected_service,
     )
     .await
+    .map(|_| ())
 }
 
-/// Stop managed processes and, when needed, a verified official service using
-/// an explicit runtime contract. Recovery supplies the previous contract here
-/// because a candidate Node/npm installation may not exist yet.
+/// 停止当前句柄拥有的进程，并在需要时用明确运行时契约停止已核验的官方服务。
+/// 返回值只表示本次确实拥有可停止的运行时；候选 Node/npm 尚未就绪时，恢复流程会传入先前契约。
 async fn stop_all_locked_with_service_runtime(
     state: &State<'_, GatewayProcess>,
     service_runtime: Option<&crate::commands::system::NativeOpenclawRuntime>,
     state_dir: &Path,
     service_config_path: &Path,
     selected_service: bool,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let child = state.child.lock().ok().and_then(|mut child| child.take());
+    let had_managed_child = child.is_some();
     if let Some(mut child) = child {
         crate::commands::gateway_supervisor::terminate_owned_gateway(&mut child).await;
     }
-    if matches!(paths::active_runtime_mode(), OpenClawRuntimeMode::Docker) {
+    let had_selected_docker = matches!(paths::active_runtime_mode(), OpenClawRuntimeMode::Docker);
+    if had_selected_docker {
         crate::commands::docker::stop_docker_gateway_locked().await?;
     }
     if selected_service {
@@ -1478,7 +1480,7 @@ async fn stop_all_locked_with_service_runtime(
         None,
         "storage migration: all managed runtimes stopped",
     );
-    Ok(())
+    Ok(had_managed_child || had_selected_docker || selected_service)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1594,6 +1596,25 @@ fn merge_reverified_gateway_service(
             .map(crate::commands::system::NativeOpenclawRuntime::gateway_service_launch_contract);
     }
     pending
+}
+
+fn pending_gateway_recovery_requires_service_runtime(
+    pending: &paths::PendingGatewayRecovery,
+) -> bool {
+    pending.selected_service_installed || pending.selected_service_was_running
+}
+
+/// 未停止任何可证明归属的运行时时，端口占用不能成为终止未知进程的权限。
+fn candidate_port_recovery_blocker(
+    port: u16,
+    stopped_owned_runtime: bool,
+    port_available: bool,
+) -> Option<String> {
+    (!stopped_owned_runtime && !port_available).then(|| {
+        format!(
+            "Candidate Gateway port {port} is occupied by a process JunQi cannot verify or stop; stop that Gateway, then retry recovery"
+        )
+    })
 }
 
 fn selected_runtime_restored_by_service(
@@ -2321,6 +2342,7 @@ async fn recover_pending_runtime_reconfiguration(
                     contract,
                 )?,
             ),
+            None if !pending_gateway_recovery_requires_service_runtime(&snapshot) => None,
             None => match candidate
                 .npm_prefix
                 .as_deref()
@@ -2382,7 +2404,7 @@ async fn recover_pending_runtime_reconfiguration(
         let should_stop_service = observed_service.running
             || (gateway_recovery.selected_service_was_running
                 && gateway_recovery.selected_service_installed);
-        stop_all_locked_with_service_runtime(
+        let stopped_owned_runtime = stop_all_locked_with_service_runtime(
             state,
             service_runtime.as_ref(),
             &previous_layout.state_dir,
@@ -2395,6 +2417,13 @@ async fn recover_pending_runtime_reconfiguration(
                 "Could not stop the candidate runtime; previous locations were left unchanged: {error}"
             )
         })?;
+        if let Some(error) = candidate_port_recovery_blocker(
+            gateway_recovery.port,
+            stopped_owned_runtime,
+            crate::commands::gateway_supervisor::is_port_available(gateway_recovery.port).await,
+        ) {
+            return Err(error);
+        }
         crate::commands::gateway_supervisor::wait_for_port_free(
             gateway_recovery.port,
             30_000,
@@ -3359,6 +3388,33 @@ mod tests {
         assert!(reconciled.selected_service_installed);
         assert!(reconciled.selected_service_was_running);
         assert_eq!(reconciled.native_service_launch(), Some(&contract));
+    }
+
+    #[test]
+    fn recovery_without_a_selected_service_does_not_require_a_native_service_runtime() {
+        let pending = paths::PendingGatewayRecovery {
+            selected_runtime: OpenClawRuntimeMode::Native,
+            port: 18_789,
+            selected_runtime_was_running: false,
+            selected_service_installed: false,
+            selected_service_was_running: false,
+            native_service_launch: None,
+        };
+
+        assert!(!pending_gateway_recovery_requires_service_runtime(&pending));
+    }
+
+    #[test]
+    fn occupied_candidate_port_without_owned_runtime_fails_immediately() {
+        assert_eq!(
+            candidate_port_recovery_blocker(18_789, false, false),
+            Some(
+                "Candidate Gateway port 18789 is occupied by a process JunQi cannot verify or stop; stop that Gateway, then retry recovery"
+                    .to_string(),
+            ),
+        );
+        assert_eq!(candidate_port_recovery_blocker(18_789, true, false), None);
+        assert_eq!(candidate_port_recovery_blocker(18_789, false, true), None);
     }
 
     #[test]

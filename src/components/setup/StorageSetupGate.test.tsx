@@ -11,6 +11,7 @@ test('存储步骤初次读取时保持表单几何且不闪现技术状态', ()
       activeStage={1}
       onReady={() => { completions += 1; }}
       onBack={() => undefined}
+      onRecoveryBack={() => undefined}
       logs={[]}
     />,
   );

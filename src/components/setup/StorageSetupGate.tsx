@@ -8,6 +8,8 @@ import { SetupShell, StatusPanel } from '@/components/setup/SetupFlowPanels';
 import {
   classifyStorageSetupError,
   initialStorageLocationsVisibility,
+  nodeRequirementFromRuntimeRecoveryError,
+  portFromRuntimeRecoveryError,
   storageSubmissionPresentation,
   type StorageCompletion,
 } from '@/components/setup/storageSetupModel';
@@ -53,6 +55,7 @@ interface StorageSetupStepProps {
   activeStage: SetupFlow['presentation']['stage'];
   onReady: (result?: StorageCompletion) => void;
   onBack: () => void | Promise<void>;
+  onRecoveryBack: () => void | Promise<void>;
   logs: SetupLog[];
   forceConfigure?: boolean;
 }
@@ -153,7 +156,7 @@ function StorageFormSkeleton() {
   );
 }
 
-export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConfigure = false }: StorageSetupStepProps) {
+export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack, logs, forceConfigure = false }: StorageSetupStepProps) {
   const { t } = useTranslation();
   const storageDraft = useAppStore((state) => state.storageDraft);
   const setStorageDraft = useAppStore((state) => state.setStorageDraft);
@@ -272,6 +275,21 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
   const errorKind = useMemo(
     () => error ? classifyStorageSetupError(error) : null,
     [error],
+  );
+  const runtimeRecoveryError = status?.runtimeReconfigurationRecoveryError
+    ? error ?? status.runtimeReconfigurationRecoveryError
+    : null;
+  const recoveryNodeRequirement = useMemo(
+    () => runtimeRecoveryError
+      ? nodeRequirementFromRuntimeRecoveryError(runtimeRecoveryError)
+      : null,
+    [runtimeRecoveryError],
+  );
+  const recoveryOccupiedPort = useMemo(
+    () => runtimeRecoveryError
+      ? portFromRuntimeRecoveryError(runtimeRecoveryError)
+      : null,
+    [runtimeRecoveryError],
   );
 
   const chooseDirectory = useCallback(async () => {
@@ -398,11 +416,11 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
     backInFlightRef.current = true;
     try {
       if (status) rememberDraft();
-      await onBack();
+      await (status?.runtimeReconfigurationRecoveryError ? onRecoveryBack() : onBack());
     } finally {
       backInFlightRef.current = false;
     }
-  }, [onBack, recoveringRuntime, rememberDraft, status]);
+  }, [onBack, onRecoveryBack, recoveringRuntime, rememberDraft, status]);
 
   const recoverRuntimeReconfiguration = useCallback(async () => {
     if (recoveringRuntime) return;
@@ -492,8 +510,30 @@ export function StorageSetupStep({ activeStage, onReady, onBack, logs, forceConf
               ? <LoaderCircle size={22} className="animate-spin motion-reduce:animate-none" />
               : <CircleAlert size={22} />}
             tone={recoveringRuntime ? "warning" : "danger"}
-            title={t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')}
-            message={error ?? status.runtimeReconfigurationRecoveryError}
+            title={recoveringRuntime
+              ? t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')
+              : t('storage.runtimeRecoveryFailedTitle', '上一次运行时更改恢复失败')}
+            message={recoveringRuntime
+              ? t('storage.runtimeRecoveryRunningHint', '正在恢复原来的数据位置和 Gateway 状态，请稍候。')
+              : recoveryNodeRequirement
+                ? t('storage.runtimeRecoveryNodeHint', {
+                  requirement: recoveryNodeRequirement,
+                  defaultValue: '当前没有满足 OpenClaw 要求（{{requirement}}）的 Node.js。你可以返回环境检测修复 Node.js，再回到这里重试；不需要手动重复下载 JunQi。',
+                })
+                : recoveryOccupiedPort
+                  ? t('storage.runtimeRecoveryPortHint', {
+                    port: recoveryOccupiedPort,
+                    defaultValue: 'Gateway 端口 {{port}} 正被另一个无法核验归属的进程占用。请先关闭正在使用该端口的 OpenClaw Gateway，再点击“重试恢复”。JunQi 不会强制结束未知进程。',
+                  })
+                : t('storage.runtimeRecoveryFailedHint', '恢复尚未完成。你可以重试，或返回环境检测处理依赖问题后再回来。')}
+            footer={!recoveringRuntime && runtimeRecoveryError ? (
+              <details className="text-[11px] text-aegis-text-dim">
+                <summary className="cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/60">
+                  {t('storage.technicalDetails', '查看技术详情')}
+                </summary>
+                <p className="mt-1 break-words font-mono leading-5">{runtimeRecoveryError}</p>
+              </details>
+            ) : undefined}
           />
         </div>
       </SetupShell>

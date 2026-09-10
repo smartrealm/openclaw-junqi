@@ -82,14 +82,13 @@ test("BUG-WIN-CANCEL-03 stale runtime selection cannot commit or compensate a ne
 });
 
 test("BUG-WIN-CANCEL-04 Back compensates only a page-owned durable transaction", () => {
-  // `cancelSetupRun`, which follows this callback, deliberately compensates
-  // the staged install mode after invalidating the active run.
+  // 后续 `cancelSetupRun` 会在作废活动运行后补偿暂存的运行方式。
   const goBack = flow.slice(
     flow.indexOf("const performGoBack = useCallback"),
     flow.indexOf("const goBack = useCallback"),
   );
   assert.match(goBack, /const backPolicy = setupBackPolicy\(setupStep\)/);
-  assert.match(goBack, /if \(backPolicy === "rollback-storage"\)/);
+  assert.match(goBack, /shouldRollbackRuntimeReconfigurationOnBack\([\s\S]*?setupStep,[\s\S]*?preserveRuntimeRecovery/);
   assert.match(goBack, /await rollbackRuntimeReconfiguration\(\)/);
   assert.doesNotMatch(goBack, /rollbackActiveGatewayRuntime/);
   assert.ok(goBack.indexOf("rollbackRuntimeReconfiguration") < goBack.lastIndexOf("goBackSetup"));

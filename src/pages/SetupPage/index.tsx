@@ -82,7 +82,7 @@ export function SetupPage() {
       case "welcome": return <EnvironmentEntryScreen flow={flow} logs={sharedLogs} phase="welcome" />;
       case "detecting": return <EnvironmentEntryScreen flow={flow} logs={sharedLogs} phase="detecting" />;
       case "environment-review": return <EnvironmentEntryScreen flow={flow} logs={sharedLogs} phase="review" />;
-      case "storage": return <StorageSetupStep activeStage={flow.presentation.stage} logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={flow.goBack} forceConfigure={flow.forceStorageSelection} />;
+      case "storage": return <StorageSetupStep activeStage={flow.presentation.stage} logs={sharedLogs} onReady={flow.completeStorageSetup} onBack={flow.goBack} onRecoveryBack={flow.leaveRuntimeRecovery} forceConfigure={flow.forceStorageSelection} />;
       case "gateway-stopped": return <GatewayStartingScreen flow={flow} logs={sharedLogs} />;
       case "choosing-mode": return <ModeSelectScreen flow={flow} logs={sharedLogs} />;
       case "ready": return <ReadyScreen flow={flow} logs={sharedLogs} />;

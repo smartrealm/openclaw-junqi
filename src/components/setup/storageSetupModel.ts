@@ -25,6 +25,18 @@ export function classifyStorageSetupError(message: string): StorageSetupErrorKin
     : 'generic';
 }
 
+export function nodeRequirementFromRuntimeRecoveryError(message: string): string | null {
+  const match = message.match(/OpenClaw requires Node\.js (.+?); no compatible runtime was found/);
+  return match?.[1]?.trim() || null;
+}
+
+export function portFromRuntimeRecoveryError(message: string): number | null {
+  const match = message.match(/Candidate Gateway port (\d+) is occupied by a process JunQi cannot verify or stop/);
+  if (!match?.[1]) return null;
+  const port = Number(match[1]);
+  return Number.isInteger(port) && port > 0 && port <= 65_535 ? port : null;
+}
+
 export function storageSubmissionPresentation(
   applying: boolean,
   usingSourceLocation: boolean,

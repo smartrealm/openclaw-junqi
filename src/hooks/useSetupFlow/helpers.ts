@@ -45,6 +45,14 @@ export function setupBackPolicy(step: SetupStep): SetupBackPolicy {
   }
 }
 
+export function shouldRollbackRuntimeReconfigurationOnBack(
+  step: SetupStep,
+  preserveRuntimeRecovery: boolean,
+): boolean {
+  return setupBackPolicy(step) === "rollback-storage"
+    && !(step === "storage" && preserveRuntimeRecovery);
+}
+
 /** A prerequisite the user must resolve before setup can be retried. */
 export class SetupPrerequisiteError extends Error {
   constructor(readonly step: Extract<SetupStep, "git-missing" | "node-missing">, message: string) {

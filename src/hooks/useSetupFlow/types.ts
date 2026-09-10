@@ -90,6 +90,7 @@ export interface SetupFlow {
     needsOnboarding: boolean;
   }>;
   goBack: () => Promise<void>;
+  leaveRuntimeRecovery: () => Promise<void>;
   /** Abort a running install and return to the last user-selected screen. */
   cancelSetupRun: () => Promise<void>;
   retryGit: () => void;
