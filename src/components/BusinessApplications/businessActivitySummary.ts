@@ -28,6 +28,10 @@ export function summarizeDingTalkBusinessActivity(
     active: events.filter((event) => event.status === 'started').length
       + attempts.filter((attempt) => attempt.state === 'pending' || attempt.state === 'approval_required').length,
     attention: events.filter((event) => ['failed', 'blocked', 'timed_out', 'unknown'].includes(event.status)).length
-      + attempts.filter((attempt) => attempt.state === 'failed' || attempt.state === 'unknown').length,
+      + attempts.filter((attempt) => (
+        attempt.state === 'failed'
+        || attempt.state === 'unknown'
+        || attempt.state === 'succeeded_unverified'
+      )).length,
   };
 }

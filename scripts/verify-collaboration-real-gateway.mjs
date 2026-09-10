@@ -432,6 +432,15 @@ export function assertNoDevFlag(args) {
   );
 }
 
+export function assertPluginArchiveDestination(value) {
+  invariant(
+    typeof value === 'string'
+      && /^\/run\/junqi-input\/[a-z0-9][a-z0-9_.-]{0,127}\.tgz$/.test(value),
+    'BUNDLE_DESTINATION_INVALID',
+    'Plugin archive destination must be an approved isolated tgz path',
+  );
+}
+
 export function buildIsolationDockerArgs({
   containerName,
   networkName,
@@ -440,12 +449,14 @@ export function buildIsolationDockerArgs({
   kind,
   autoRemove,
   archivePath,
+  archiveDestination = COLLABORATION_ARCHIVE_DESTINATION,
   forwardGatewayToken = false,
 }) {
   for (const [field, value] of Object.entries({ containerName, networkName, volumeName })) {
     assertDockerName(value, field);
   }
   invariant(!archivePath || !archivePath.includes(','), 'BUNDLE_PATH_INVALID', 'Archive path cannot contain a comma');
+  if (archivePath) assertPluginArchiveDestination(archiveDestination);
 
   const args = [
     'run',
@@ -467,7 +478,7 @@ export function buildIsolationDockerArgs({
   if (archivePath) {
     args.push(
       '--mount',
-      `type=bind,source=${archivePath},target=${COLLABORATION_ARCHIVE_DESTINATION},readonly`,
+      `type=bind,source=${archivePath},target=${archiveDestination},readonly`,
     );
   }
   return args;
@@ -669,12 +680,18 @@ export function assertRuntimeMountAllowlist(mounts, volumeName) {
   return mounts.map(mountProjection);
 }
 
-export function assertInstallMountAllowlist(mounts, volumeName, archivePath) {
+export function assertInstallMountAllowlist(
+  mounts,
+  volumeName,
+  archivePath,
+  archiveDestination = COLLABORATION_ARCHIVE_DESTINATION,
+) {
+  assertPluginArchiveDestination(archiveDestination);
   invariant(Array.isArray(mounts) && mounts.length === 2, 'MOUNT_ALLOWLIST_FAILED', 'Installer has unexpected mounts', {
     mounts: Array.isArray(mounts) ? mounts.map(mountProjection) : mounts,
   });
   const homeMount = mounts.find((mount) => mount.Destination === CONTAINER_HOME);
-  const archiveMount = mounts.find((mount) => mount.Destination === COLLABORATION_ARCHIVE_DESTINATION);
+  const archiveMount = mounts.find((mount) => mount.Destination === archiveDestination);
   invariant(homeMount?.Type === 'volume' && homeMount.Name === volumeName && homeMount.RW === true, 'MOUNT_ALLOWLIST_FAILED', 'Installer home mount is invalid');
   invariant(archiveMount?.Type === 'bind' && archiveMount.RW === false, 'MOUNT_ALLOWLIST_FAILED', 'Installer archive mount is not read-only');
   const expectedSource = path.resolve(archivePath);
@@ -842,6 +859,52 @@ if (!response.ok) {
 console.log(text);
 `;
 
+const SCOPED_GATEWAY_CALL_SCRIPT = `
+import { callGatewayFromCli } from "openclaw/plugin-sdk/gateway-runtime";
+
+const [url, method, serializedParams, serializedScopes] = process.argv.slice(1);
+const token = process.env.OPENCLAW_GATEWAY_TOKEN;
+const params = JSON.parse(serializedParams);
+const scopes = JSON.parse(serializedScopes);
+
+try {
+  const result = await callGatewayFromCli(
+    method,
+    { url, token, timeout: "10000", json: true },
+    params,
+    {
+      deviceIdentity: null,
+      progress: false,
+      scopes,
+      sharedStateMode: "read-only",
+    },
+  );
+  console.log(JSON.stringify({ ok: true, result }));
+} catch (error) {
+  const rawDetails = error && typeof error === "object" ? error.details : undefined;
+  const details = rawDetails && typeof rawDetails === "object"
+    && rawDetails.code === "MISSING_SCOPE"
+    && typeof rawDetails.missingScope === "string"
+    && Array.isArray(rawDetails.requiredScopes)
+    && rawDetails.requiredScopes.every((scope) => typeof scope === "string")
+      ? {
+          code: rawDetails.code,
+          missingScope: rawDetails.missingScope,
+          requiredScopes: rawDetails.requiredScopes,
+        }
+      : undefined;
+  console.log(JSON.stringify({
+    ok: false,
+    error: {
+      code: error && typeof error === "object" && typeof error.code === "string"
+        ? error.code
+        : "UNKNOWN",
+      ...(details ? { details } : {}),
+    },
+  }));
+}
+`;
+
 export class DockerRuntime {
   constructor({ runner = new ProcessRunner(), token, runId, dockerBinary = 'docker' }) {
     this.runner = runner;
@@ -996,6 +1059,35 @@ export class DockerRuntime {
       '--json',
     ], { timeoutMs: GATEWAY_RPC_TIMEOUT_MS + 10_000 });
     return parseJsonOutput(result.stdout, `gateway call ${method}`);
+  }
+
+  async gatewayCallWithScopes(name, gatewayPort, method, params, scopes) {
+    invariant(
+      Number.isSafeInteger(gatewayPort) && gatewayPort >= 49_152 && gatewayPort <= 65_535,
+      'GATEWAY_PORT_INVALID',
+      'Scoped Gateway call requires a dynamic isolated port',
+    );
+    invariant(
+      typeof method === 'string' && /^[a-z0-9_.-]+$/i.test(method),
+      'GATEWAY_METHOD_INVALID',
+      'Scoped Gateway call method is invalid',
+    );
+    invariant(
+      Array.isArray(scopes)
+        && scopes.length > 0
+        && scopes.every((scope) => typeof scope === 'string' && /^operator\.[a-z.]+$/.test(scope)),
+      'GATEWAY_SCOPES_INVALID',
+      'Scoped Gateway call scopes are invalid',
+    );
+    const result = await this.run([
+      'exec', name,
+      'node', '--input-type=module', '--eval', SCOPED_GATEWAY_CALL_SCRIPT,
+      `ws://127.0.0.1:${gatewayPort}`,
+      method,
+      JSON.stringify(params ?? {}),
+      JSON.stringify(scopes),
+    ], { timeoutMs: GATEWAY_RPC_TIMEOUT_MS + 10_000 });
+    return parseJsonOutput(result.stdout, `scoped gateway call ${method}`);
   }
 
   async gatewayHealth(name) {

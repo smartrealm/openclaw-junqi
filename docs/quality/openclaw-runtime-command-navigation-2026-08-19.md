@@ -4,7 +4,7 @@
 
 ## 上游依据
 
-OpenClaw Gateway 官方 `commands.list` 是按 Agent、Provider、Scope 返回运行时命令目录的 `operator.read` 方法。官方协议明确 `category`、`textAliases`、`nativeName` 与参数详情都由 Gateway 返回；JunQi 不维护本地命令注册表。
+OpenClaw Gateway 官方 [`commands.list`](https://docs.openclaw.ai/gateway/protocol/operator-methods#operator-helper-methods) 是按 Agent、Provider、Scope 返回运行时命令目录的 `operator.read` 方法。官方协议明确 `category`、`textAliases`、`nativeName` 与参数详情都由 Gateway 返回；JunQi 不维护本地命令注册表。
 
 ## 当前行为
 

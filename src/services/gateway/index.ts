@@ -40,6 +40,12 @@ import type { GatewayHelloObservation } from '@/types/gatewayRuntime';
 import { voiceFileRuntime } from '@/runtime/voiceFileRuntime';
 import type { GatewayAgentCreatePayload } from '@/utils/gatewayAgentFlow';
 import { routeGatewayEvent } from './collaborationEventBridge';
+import {
+  getLatestDingTalkEventInvalidation,
+  routeDingTalkGatewayEvent,
+  subscribeDingTalkEventInvalidations,
+} from './dingTalkEventBridge';
+import { OpenClawDingTalkEventClient } from './OpenClawDingTalkEventClient';
 import { GatewayApprovalEventSubscription } from './approvalEventBridge';
 import { VoiceWakeGatewayClient } from './VoiceWakeGatewayClient';
 import {
@@ -415,6 +421,17 @@ export interface GatewayMessageResponse extends Record<string, unknown> {
 
 // ── Create instances ──
 const connection = new GatewayConnection();
+export const openClawDingTalkEventClient = new OpenClawDingTalkEventClient({
+  captureConnectionId: () => connection.getAttestedConnectionId(),
+  isConnectionCurrent: (connectionId) => (
+    connection.isConnected() && connection.getAttestedConnectionId() === connectionId
+  ),
+  requestFenced: (method, params, expectedConnectionId) => connection.requestFenced(
+    method,
+    params,
+    expectedConnectionId,
+  ),
+});
 const operatorScopeUpgrade = new GatewayScopeUpgradeCoordinator({
   captureConnection: () => {
     const connectionId = connection.getAttestedConnectionId();
@@ -1166,7 +1183,11 @@ const questionClient = new OpenClawQuestionClient({
   request: (method, params) => connection.request(method, params),
 });
 
-export { subscribeGatewayQuestionEvents };
+export {
+  getLatestDingTalkEventInvalidation,
+  subscribeDingTalkEventInvalidations,
+  subscribeGatewayQuestionEvents,
+};
 const sessionSettings = new SessionSettingsClient({
   runMutation: (sessionKey, operation) => sessionCommandCoordinator.runMutation(sessionKey, operation),
   request: (method, params) => connection.request(method, params),
@@ -1294,8 +1315,15 @@ connection.onEvent = (msg: unknown) => routeTalkGatewayEvent(
       voiceWakeRemainder,
       (progressCardRemainder) => routeOpenClawSessionObserverEvent(
         progressCardRemainder,
-        (event) => publishGatewayQuestionEvent(event)
-          || routeGatewayEvent(event, (chatEvent) => chatHandler.handleEvent(chatEvent)),
+        (event) => routeDingTalkGatewayEvent(
+          event,
+          connection.getAttestedConnectionId(),
+          (dingTalkRemainder) => publishGatewayQuestionEvent(dingTalkRemainder)
+            || routeGatewayEvent(
+              dingTalkRemainder,
+              (chatEvent) => chatHandler.handleEvent(chatEvent),
+            ),
+        ),
       ),
     ),
   ),

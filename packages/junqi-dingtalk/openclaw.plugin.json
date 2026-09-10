@@ -1,15 +1,20 @@
 {
   "id": "junqi-dingtalk",
   "name": "JunQi DingTalk Business",
-  "version": "0.1.1",
+  "version": "0.27.0",
   "description": "DingTalk business tools executed by DWS through the OpenClaw Gateway.",
   "activation": {
     "onStartup": true
   },
+  "skills": [
+    "./skills"
+  ],
   "contracts": {
     "tools": [
       "junqi_dingtalk_runtime_status",
       "junqi_dingtalk_tool_schema",
+      "junqi_dingtalk_contract_audit",
+      "junqi_dingtalk_event_snapshot",
       "junqi_dingtalk_contact_me",
       "junqi_dingtalk_contact_search_users",
       "junqi_dingtalk_contact_search_departments",
@@ -30,15 +35,65 @@
       "junqi_dingtalk_calendar_event",
       "junqi_dingtalk_calendar_busy",
       "junqi_dingtalk_calendar_rooms",
+      "junqi_dingtalk_calendar_suggested_times",
+      "junqi_dingtalk_calendar_attendees",
+      "junqi_dingtalk_calendar_today",
       "junqi_dingtalk_todo_tasks",
       "junqi_dingtalk_todo_detail",
+      "junqi_dingtalk_todo_overdue",
+      "junqi_dingtalk_todo_due_today",
+      "junqi_dingtalk_minutes_latest",
+      "junqi_dingtalk_minutes_search",
+      "junqi_dingtalk_minutes_detail",
+      "junqi_dingtalk_minutes_transcript",
+      "junqi_dingtalk_minutes_action_items",
+      "junqi_dingtalk_doc_search",
+      "junqi_dingtalk_doc_fetch",
+      "junqi_dingtalk_wiki_spaces",
+      "junqi_dingtalk_wiki_space_search",
+      "junqi_dingtalk_wiki_node_search",
+      "junqi_dingtalk_report_inbox",
+      "junqi_dingtalk_report_outbox",
+      "junqi_dingtalk_report_latest",
+      "junqi_dingtalk_report_template_search",
+      "junqi_dingtalk_report_template",
+      "junqi_dingtalk_report_detail",
+      "junqi_dingtalk_report_submit",
+      "junqi_dingtalk_mail_triage",
+      "junqi_dingtalk_mail_search",
+      "junqi_dingtalk_mail_message",
+      "junqi_dingtalk_chat_unread",
+      "junqi_dingtalk_chat_at_me",
+      "junqi_dingtalk_chat_search",
+      "junqi_dingtalk_chat_send_status",
+      "junqi_dingtalk_chat_messages_by_ids",
+      "junqi_dingtalk_chat_send",
+      "junqi_dingtalk_aitable_base_search",
+      "junqi_dingtalk_aitable_schema",
+      "junqi_dingtalk_aitable_tables",
+      "junqi_dingtalk_aitable_records",
+      "junqi_dingtalk_contract_projects",
+      "junqi_dingtalk_contract_project",
+      "junqi_dingtalk_contract_subjects",
+      "junqi_dingtalk_contract_subject",
+      "junqi_dingtalk_contract_risk",
+      "junqi_dingtalk_contract_review_analysis",
+      "junqi_dingtalk_contract_review_result",
+      "junqi_dingtalk_recruit_jobs",
+      "junqi_dingtalk_recruit_job",
+      "junqi_dingtalk_goal_user_rules",
+      "junqi_dingtalk_goal_templates",
+      "junqi_dingtalk_goal_statistics",
+      "junqi_dingtalk_goal_report_detail",
       "junqi_dingtalk_calendar_create",
       "junqi_dingtalk_calendar_update",
+      "junqi_dingtalk_calendar_cancel",
       "junqi_dingtalk_todo_create",
       "junqi_dingtalk_todo_update",
-      "junqi_dingtalk_todo_set_done",
+      "junqi_dingtalk_todo_complete",
+      "junqi_dingtalk_todo_reopen",
       "junqi_dingtalk_approval_create",
-      "junqi_dingtalk_approval_approve",
+      "junqi_dingtalk_approval_approve_by",
       "junqi_dingtalk_approval_reject",
       "junqi_dingtalk_approval_revoke"
     ]
@@ -68,6 +123,78 @@
         "minimum": 65536,
         "maximum": 8388608,
         "default": 2097152
+      },
+      "eventProfile": {
+        "type": "string",
+        "pattern": "^[^:\\s]+:[^:\\s]+$"
+      },
+      "eventSubscriptions": {
+        "type": "array",
+        "maxItems": 8,
+        "default": [],
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["eventKeys"],
+          "properties": {
+            "eventKeys": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 27,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "user_im_message_receive_at",
+                  "user_im_message_receive_o2o",
+                  "user_im_message_receive_group",
+                  "user_im_message_receive_user",
+                  "user_im_message_receive_o2o_all",
+                  "user_im_message_receive_group_all",
+                  "user_im_message_read_o2o",
+                  "user_im_message_read_group",
+                  "user_im_message_recall_o2o",
+                  "user_im_message_recall_group",
+                  "user_im_message_reaction_o2o",
+                  "user_im_message_reaction_group",
+                  "user_im_group_updated",
+                  "user_im_group_member_added",
+                  "user_im_group_member_exited",
+                  "user_im_group_disbanded",
+                  "user_oa_approval_task_created",
+                  "user_oa_approval_task_finished",
+                  "user_oa_approval_task_redirected",
+                  "user_oa_approval_instance_started",
+                  "user_oa_approval_instance_cc",
+                  "user_oa_approval_instance_terminated",
+                  "user_oa_approval_instance_finished",
+                  "user_voip_call_receive_invite",
+                  "user_todo_task_create",
+                  "user_todo_task_update",
+                  "user_todo_task_delete"
+                ]
+              }
+            },
+            "user": { "type": "string", "minLength": 1 },
+            "openDingTalkId": { "type": "string", "minLength": 1 },
+            "group": { "type": "string", "minLength": 1 },
+            "roleTypes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": ["creator", "executor", "participant"]
+              }
+            }
+          }
+        }
+      },
+      "eventBufferSize": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200,
+        "default": 100
       }
     }
   },
@@ -85,6 +212,18 @@
     },
     "maxOutputBytes": {
       "label": "Maximum output bytes"
+    },
+    "eventProfile": {
+      "label": "DingTalk event profile",
+      "help": "Exact <corpId>:<userId> profile used for every configured event subscription."
+    },
+    "eventSubscriptions": {
+      "label": "DingTalk event subscriptions",
+      "help": "Optional reviewed event groups. Empty disables the event runtime. Category and target rules are validated before startup."
+    },
+    "eventBufferSize": {
+      "label": "DingTalk event memory buffer",
+      "help": "Maximum number of event payloads retained only for the current Gateway lifecycle."
     }
   }
 }

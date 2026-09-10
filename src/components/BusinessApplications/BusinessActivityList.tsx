@@ -19,8 +19,8 @@ type ActivityScope = 'all' | 'official' | 'window';
 function StateIcon({ state }: { state: BusinessAttemptState }) {
   if (state === 'pending') return <LoaderCircle size={14} className="animate-spin text-aegis-primary" />;
   if (state === 'approval_required') return <ShieldAlert size={14} className="text-aegis-warning" />;
-  if (state === 'succeeded') return <CheckCircle2 size={14} className="text-aegis-success" />;
-  if (state === 'unknown') return <AlertTriangle size={14} className="text-aegis-warning" />;
+  if (state === 'succeeded' || state === 'verified') return <CheckCircle2 size={14} className="text-aegis-success" />;
+  if (state === 'succeeded_unverified' || state === 'unknown') return <AlertTriangle size={14} className="text-aegis-warning" />;
   return <AlertTriangle size={14} className="text-aegis-danger" />;
 }
 
@@ -220,6 +220,8 @@ export function BusinessActivityList() {
                 <span>{t('businessApplications.activity.agent')} {attempt.agentId ?? t('businessApplications.activity.agentPending')}</span>
                 {attempt.sessionId && <span className="max-w-[180px] truncate font-mono" title={attempt.sessionId}>{t('businessApplications.activity.session')} {attempt.sessionId}</span>}
                 {attempt.evidence?.dwsCanonicalPath && <span className="max-w-[180px] truncate font-mono" title={attempt.evidence.dwsCanonicalPath}>{attempt.evidence.dwsCanonicalPath}</span>}
+                {attempt.evidence?.verifierCanonicalPath && <span className="max-w-[180px] truncate font-mono" title={attempt.evidence.verifierCanonicalPath}>{t('businessApplications.activity.verifier')} {attempt.evidence.verifierCanonicalPath}</span>}
+                {attempt.evidence?.resourceId && <span className="max-w-[150px] truncate font-mono" title={attempt.evidence.resourceId}>{t('businessApplications.activity.resource')} {attempt.evidence.resourceId}</span>}
                 {attempt.evidence?.recoveryEventId && <span className="max-w-[150px] truncate font-mono" title={attempt.evidence.recoveryEventId}>{t('businessApplications.activity.recovery')} {attempt.evidence.recoveryEventId}</span>}
                 {attempt.errorCode && <span>{t('businessApplications.activity.error')} {attempt.errorCode}</span>}
               </div>

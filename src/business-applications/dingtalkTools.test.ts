@@ -41,6 +41,22 @@ test('only projects effective tools owned by the DingTalk plugin', () => {
   assert.equal(tools[0]?.effect, 'read');
 });
 
+test('projects reviewed high-sensitivity read domains without collapsing them to unknown', () => {
+  const domains = ['aitable', 'contract', 'recruit', 'goal'] as const;
+  const tools = collectDingTalkTools([{ tools: domains.map((domain) => ({
+    id: `junqi_dingtalk_${domain}_read`,
+    label: domain,
+    description: domain,
+    rawDescription: domain,
+    source: 'plugin' as const,
+    pluginId: 'junqi-dingtalk',
+    risk: 'low' as const,
+    tags: ['dingtalk', domain, 'read'],
+  })) }]);
+  assert.deepEqual(new Set(tools.map((tool) => tool.domain)), new Set(domains));
+  assert.equal(tools.every((tool) => tool.effect === 'read'), true);
+});
+
 test('仅在当前 Session 明确提供且未拒绝钉钉运行时工具时确认授权生效', () => {
   const runtimeTool = {
     id: 'junqi_dingtalk_runtime_status',
@@ -180,12 +196,25 @@ test('projects only DWS evidence metadata from a business result', () => {
     dwsCanonicalPath: 'contact.user.get_self',
     schemaDigest: 'a'.repeat(64),
     recoveryEventId: 'recovery-a',
+    verification: {
+      status: 'verified',
+      verifierToolName: 'junqi_dingtalk_calendar_event',
+      verifierCanonicalPath: 'calendar.get_calendar_detail',
+      verifierSchemaDigest: 'b'.repeat(64),
+      resourceId: 'event-a',
+    },
     data: { mobile: '13800000000' },
   } } });
   assert.deepEqual(evidence, {
     dwsCanonicalPath: 'contact.user.get_self',
     schemaDigest: 'a'.repeat(64),
     recoveryEventId: 'recovery-a',
+    verificationStatus: 'verified',
+    verifierToolName: 'junqi_dingtalk_calendar_event',
+    verifierCanonicalPath: 'calendar.get_calendar_detail',
+    verifierSchemaDigest: 'b'.repeat(64),
+    resourceId: 'event-a',
+    verificationReasonCode: null,
   });
 });
 

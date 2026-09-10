@@ -346,7 +346,7 @@ export function BusinessApplicationsPanel() {
           >
             <span className={clsx(
               'mt-1 h-1.5 w-1.5 shrink-0 rounded-full',
-              latestAttempt?.state === 'succeeded'
+              latestAttempt?.state === 'succeeded' || latestAttempt?.state === 'verified'
                 ? 'bg-aegis-success'
                 : latestAttempt?.state === 'failed'
                   ? 'bg-aegis-danger'

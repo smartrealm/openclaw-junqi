@@ -2,9 +2,9 @@
   "formatVersion": 1,
   "pluginId": "junqi-dingtalk",
   "packageName": "@junqi/openclaw-dingtalk-business",
-  "pluginVersion": "0.1.1",
-  "toolCount": 33,
-  "sha256": "a1845a26c7c17e14ca821506d139f7c3f4cab32452fdedf033b9a6afc3fe5383",
+  "pluginVersion": "0.27.0",
+  "toolCount": 85,
+  "sha256": "5b9dea8641bb32da7ac301f7ad94462422b12b80774ed3c0d21fc89f73b2858f",
   "archiveFile": "junqi-dingtalk.tgz",
   "resourcePath": "dingtalk/junqi-dingtalk.tgz"
 }

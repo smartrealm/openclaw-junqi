@@ -76,3 +76,37 @@ test('本窗口投影只属于创建它的精确 Session，清理不跨越其他
     ['attempt-session-b'],
   );
 });
+
+test('写入活动只保留最小核验证据', () => {
+  useBusinessActivityStore.getState().clear();
+  useBusinessActivityStore.getState().begin({
+    id: 'attempt-write',
+    sessionKey: 'agent:main:main',
+    sessionId: 'session-a',
+    agentId: 'main',
+    runtimeFingerprint: 'runtime-a',
+    runtimeConnectionId: 'connection-a',
+    toolName: 'junqi_dingtalk_calendar_create',
+    toolLabel: '创建日程',
+    profileRef: 'corp:user',
+    effect: 'write',
+    risk: 'medium',
+    state: 'pending',
+    startedAt: 1,
+  });
+  useBusinessActivityStore.getState().settle('attempt-write', {
+    state: 'verified',
+    evidence: {
+      verificationStatus: 'verified',
+      verifierToolName: 'junqi_dingtalk_calendar_event',
+      verifierCanonicalPath: 'calendar.get_calendar_detail',
+      verifierSchemaDigest: 'a'.repeat(64),
+      resourceId: 'event-a',
+    },
+    finishedAt: 2,
+  });
+  const attempt = useBusinessActivityStore.getState().attempts[0];
+  assert.equal(attempt?.state, 'verified');
+  assert.equal(attempt?.evidence?.resourceId, 'event-a');
+  assert.equal(Object.prototype.hasOwnProperty.call(attempt?.evidence ?? {}, 'data'), false);
+});

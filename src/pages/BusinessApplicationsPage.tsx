@@ -23,7 +23,15 @@ import {
   type DingTalkPluginInstallProgress,
 } from '@/components/BusinessApplications/DingTalkReadinessPanel';
 import { DingTalkPluginInstallDialog } from '@/components/BusinessApplications/DingTalkPluginInstallDialog';
+import { DingTalkEventSettingsPanel } from '@/components/BusinessApplications/DingTalkEventSettingsPanel';
 import { BusinessActivityList } from '@/components/BusinessApplications/BusinessActivityList';
+import {
+  loadDingTalkEventConfiguration,
+  normalizeDingTalkEventConfiguration,
+  applyDingTalkEventConfiguration,
+  DingTalkEventConfigurationAppliedError,
+  type DingTalkEventConfiguration,
+} from '@/business-applications/dingtalkEventConfiguration';
 import {
   DINGTALK_RUNTIME_STATUS_TOOL,
   DINGTALK_TOOL_SCHEMA_TOOL,
@@ -66,7 +74,16 @@ import {
 } from '@/business-applications/dwsOperationLifecycle';
 import { selectCurrentDingTalkRuntimeIdentitySnapshot } from '@/business-applications/dingtalkRuntimeIdentityCoordinator';
 import { DingTalkToolSchemaRequestCoordinator } from '@/business-applications/dingtalkToolRequestCoordinator';
+import {
+  assertDingTalkEventSnapshotContext,
+  createDingTalkEventSnapshotReadContext,
+  digestDingTalkEventConfiguration,
+  DingTalkEventSnapshotContextError,
+  DingTalkEventSnapshotRequestCoordinator,
+  selectDingTalkEventConfigurationForConnection,
+} from '@/business-applications/dingtalkEventSnapshotCoordinator';
 import { useBusinessActivityStore } from '@/business-applications/activityStore';
+import { resolveDingTalkInvocationOutcome } from '@/business-applications/dingtalkInvocationOutcome';
 import { parseBusinessApplicationsView } from '@/business-applications/businessApplicationsView';
 import {
   invokeOpenClawTool,
@@ -94,7 +111,14 @@ import {
   getCurrentRuntimeIdentity,
   subscribeRuntimeIdentity,
 } from '@/services/gateway/runtimeIdentity';
-import { gateway } from '@/services/gateway';
+import {
+  gateway,
+  getLatestDingTalkEventInvalidation,
+  openClawDingTalkEventClient,
+  openClawRuntimeConfigClient,
+  subscribeDingTalkEventInvalidations,
+} from '@/services/gateway';
+import type { OpenClawDingTalkEventSnapshot } from '@/services/gateway/OpenClawDingTalkEventClient';
 import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { subscribeTauriEvent } from '@/utils/tauriEvents';
 
@@ -108,6 +132,16 @@ const DOMAIN_FILTERS: readonly DomainFilter[] = [
   'attendance',
   'calendar',
   'todo',
+  'minutes',
+  'doc',
+  'wiki',
+  'report',
+  'mail',
+  'chat',
+  'aitable',
+  'contract',
+  'recruit',
+  'goal',
   'runtime',
 ];
 
@@ -279,6 +313,11 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
   const { t } = useTranslation();
   const location = useLocation();
   const identity = useRuntimeIdentitySnapshot();
+  const latestDingTalkEventInvalidation = useSyncExternalStore(
+    subscribeDingTalkEventInvalidations,
+    getLatestDingTalkEventInvalidation,
+    () => null,
+  );
   const sessions = useGatewayDataStore((state) => state.sessions);
   const agents = useGatewayDataStore((state) => state.agents);
   const effective = useGatewayDataStore((state) => state.toolsEffective[activeSessionKey]);
@@ -336,6 +375,19 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
   const [dwsOperation, setDwsOperation] = useState<DingTalkDwsOperationPresentation | null>(null);
   const [dwsOutput, setDwsOutput] = useState<string[]>([]);
   const [dwsAuthorizationFailure, setDwsAuthorizationFailure] = useState<DwsAuthorizationFailureDiagnosis | null>(null);
+  const [eventConfiguration, setEventConfiguration] = useState<DingTalkEventConfiguration | null>(null);
+  const [savedEventConfiguration, setSavedEventConfiguration] = useState<DingTalkEventConfiguration | null>(null);
+  const [eventConfigurationConnectionId, setEventConfigurationConnectionId] = useState<string | null>(null);
+  const [eventConfigurationLoading, setEventConfigurationLoading] = useState(false);
+  const [eventConfigurationSaving, setEventConfigurationSaving] = useState(false);
+  const [eventConfigurationError, setEventConfigurationError] = useState<string | null>(null);
+  const [eventConfigurationNotice, setEventConfigurationNotice] = useState<string | null>(null);
+  const [eventSnapshot, setEventSnapshot] = useState<OpenClawDingTalkEventSnapshot | null>(null);
+  const [eventSnapshotLoading, setEventSnapshotLoading] = useState(false);
+  const [eventSnapshotError, setEventSnapshotError] = useState<string | null>(null);
+  const eventConfigurationRequest = useRef(0);
+  const eventSnapshotRequests = useRef(new DingTalkEventSnapshotRequestCoordinator());
+  const eventSnapshotContextRef = useRef<ReturnType<typeof createDingTalkEventSnapshotReadContext>>(null);
   const dwsEventCache = useRef<DwsOperationEventCache>({ output: {}, events: {}, finished: {} });
   const dwsFinalizedOperationIds = useRef(new Set<string>());
   const dwsStartGuard = useRef(false);
@@ -407,6 +459,16 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
       attendance: 0,
       calendar: 0,
       todo: 0,
+      minutes: 0,
+      doc: 0,
+      wiki: 0,
+      report: 0,
+      mail: 0,
+      chat: 0,
+      aitable: 0,
+      contract: 0,
+      recruit: 0,
+      goal: 0,
       runtime: 0,
       unknown: 0,
     };
@@ -496,6 +558,201 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
     await refreshAll();
     await refreshDingTalkState();
   }, [refreshDingTalkState, t]);
+
+  const currentEventConnectionId = identity?.verified ? identity.connectionId : null;
+  const eventConfigurationForCurrentConnection = selectDingTalkEventConfigurationForConnection(
+    eventConfiguration,
+    eventConfigurationConnectionId,
+    currentEventConnectionId,
+  );
+  const savedEventConfigurationForCurrentConnection = selectDingTalkEventConfigurationForConnection(
+    savedEventConfiguration,
+    eventConfigurationConnectionId,
+    currentEventConnectionId,
+  );
+  const currentDingTalkEventInvalidation = identity?.verified
+    && savedEventConfigurationForCurrentConnection?.enabled
+    && latestDingTalkEventInvalidation?.connectionId === identity.connectionId
+    ? latestDingTalkEventInvalidation
+    : null;
+  const eventSnapshotReadContext = useMemo(() => (
+    view === 'runtime'
+      && identity?.verified
+      && savedEventConfigurationForCurrentConnection?.enabled
+      ? createDingTalkEventSnapshotReadContext({
+          connectionId: identity.connectionId,
+          configuration: savedEventConfigurationForCurrentConnection,
+          minimumRevision: currentDingTalkEventInvalidation?.revision ?? null,
+          runtimeGeneration: currentDingTalkEventInvalidation?.runtimeGeneration ?? null,
+          invalidationConfigurationDigest:
+            currentDingTalkEventInvalidation?.configurationDigest ?? null,
+        })
+      : null
+  ), [
+    currentDingTalkEventInvalidation?.revision,
+    currentDingTalkEventInvalidation?.runtimeGeneration,
+    currentDingTalkEventInvalidation?.configurationDigest,
+    identity?.connectionId,
+    identity?.verified,
+    savedEventConfigurationForCurrentConnection,
+    view,
+  ]);
+  eventSnapshotContextRef.current = eventSnapshotReadContext;
+
+  const reloadEventConfiguration = useCallback(async () => {
+    const connectionId = identity?.verified ? identity.connectionId : null;
+    const requestId = ++eventConfigurationRequest.current;
+    eventSnapshotRequests.current.invalidate();
+    eventSnapshotContextRef.current = null;
+    setEventConfigurationNotice(null);
+    setEventConfigurationConnectionId(null);
+    setEventConfiguration(null);
+    setSavedEventConfiguration(null);
+    if (!connectionId) {
+      setEventConfigurationError(null);
+      setEventConfigurationLoading(false);
+      return;
+    }
+    setEventConfigurationLoading(true);
+    try {
+      const loaded = await loadDingTalkEventConfiguration(openClawRuntimeConfigClient);
+      if (
+        requestId !== eventConfigurationRequest.current
+        || getCurrentRuntimeIdentity()?.connectionId !== connectionId
+      ) return;
+      setEventConfiguration(loaded);
+      setSavedEventConfiguration(loaded);
+      setEventConfigurationConnectionId(connectionId);
+      setEventConfigurationError(null);
+    } catch (error) {
+      if (
+        requestId !== eventConfigurationRequest.current
+        || getCurrentRuntimeIdentity()?.connectionId !== connectionId
+      ) return;
+      setEventConfiguration(null);
+      setSavedEventConfiguration(null);
+      setEventConfigurationError(errorMessage(error));
+    } finally {
+      if (requestId === eventConfigurationRequest.current) setEventConfigurationLoading(false);
+    }
+  }, [identity?.connectionId, identity?.verified]);
+
+  const reloadEventSnapshot = useCallback(async () => {
+    const context = eventSnapshotReadContext;
+    if (!context) {
+      eventSnapshotRequests.current.invalidate();
+      setEventSnapshot(null);
+      setEventSnapshotError(null);
+      setEventSnapshotLoading(false);
+      return;
+    }
+    const request = eventSnapshotRequests.current.begin(context);
+    setEventSnapshotLoading(true);
+    setEventSnapshotError(null);
+    try {
+      const configurationDigest = await digestDingTalkEventConfiguration(
+        context.configurationCanonical,
+      );
+      if (
+        configurationDigest !== context.invalidationConfigurationDigest
+        && context.runtimeGeneration !== null
+      ) {
+        throw new DingTalkEventSnapshotContextError();
+      }
+      if (!eventSnapshotRequests.current.accepts(request, eventSnapshotContextRef.current)) return;
+      const snapshot = await openClawDingTalkEventClient.get(context.afterSequence, 20);
+      assertDingTalkEventSnapshotContext(snapshot, context, configurationDigest);
+      if (!eventSnapshotRequests.current.accepts(request, eventSnapshotContextRef.current)) return;
+      setEventSnapshot(snapshot);
+    } catch (error) {
+      if (!eventSnapshotRequests.current.accepts(request, eventSnapshotContextRef.current)) return;
+      setEventSnapshotError(errorMessage(error));
+    } finally {
+      if (eventSnapshotRequests.current.accepts(request, eventSnapshotContextRef.current)) {
+        setEventSnapshotLoading(false);
+      }
+    }
+  }, [eventSnapshotReadContext]);
+
+  useEffect(() => {
+    if (view !== 'runtime') return;
+    void reloadEventConfiguration();
+    return () => {
+      eventConfigurationRequest.current += 1;
+    };
+  }, [reloadEventConfiguration, view]);
+
+  const persistEventConfiguration = useCallback(async () => {
+    if (
+      !eventConfiguration
+      || !identity?.verified
+      || !identity.desktopMutationAllowed
+      || eventConfigurationConnectionId !== identity.connectionId
+    ) return;
+    const connectionId = identity.connectionId;
+    const targetFingerprint = identity.targetFingerprint;
+    eventSnapshotRequests.current.invalidate();
+    eventSnapshotContextRef.current = null;
+    setEventSnapshot(null);
+    setEventSnapshotError(null);
+    setEventSnapshotLoading(false);
+    setEventConfigurationSaving(true);
+    setEventConfigurationError(null);
+    setEventConfigurationNotice(null);
+    try {
+      const desired = normalizeDingTalkEventConfiguration(eventConfiguration);
+      if (desired.enabled && !runtimeIdentity?.profiles.some((candidate) => (
+        candidate.status === 'active' && candidate.profile === desired.profile
+      ))) {
+        throw new Error(t('businessApplications.events.activeProfileRequired'));
+      }
+      const result = await applyDingTalkEventConfiguration({
+        client: openClawRuntimeConfigClient,
+        value: desired,
+        expectedConnectionId: connectionId,
+        expectedTargetFingerprint: targetFingerprint,
+        currentIdentity: getCurrentRuntimeIdentity,
+        restart: restartAndRefreshDingTalkGateway,
+      });
+      setEventConfiguration(result.configuration);
+      setSavedEventConfiguration(result.configuration);
+      const confirmedIdentity = getCurrentRuntimeIdentity();
+      setEventConfigurationConnectionId(
+        confirmedIdentity?.verified ? confirmedIdentity.connectionId : null,
+      );
+      if (!result.changed) {
+        setEventConfigurationNotice(t('businessApplications.events.unchanged'));
+        return;
+      }
+      setEventConfigurationNotice(t('businessApplications.events.saved'));
+    } catch (error) {
+      if (error instanceof DingTalkEventConfigurationAppliedError) {
+        setEventConfiguration(error.configuration);
+        setSavedEventConfiguration(error.configuration);
+        setEventConfigurationConnectionId(null);
+        setEventConfigurationError(error.reason === 'runtime_changed'
+          ? t('businessApplications.events.runtimeChanged')
+          : t('businessApplications.events.savedRestartFailed', {
+              error: errorMessage(error),
+            }));
+      } else {
+        setEventConfigurationError(errorMessage(error));
+      }
+    } finally {
+      setEventConfigurationSaving(false);
+    }
+  }, [eventConfiguration, eventConfigurationConnectionId, identity, restartAndRefreshDingTalkGateway, runtimeIdentity?.profiles, t]);
+
+  const saveEventConfiguration = useCallback(() => {
+    if (!eventConfiguration) return;
+    showConfirm(
+      t('businessApplications.events.saveConfirmTitle'),
+      t(eventConfiguration.enabled
+        ? 'businessApplications.events.saveConfirmMessage'
+        : 'businessApplications.events.disableConfirmMessage'),
+      () => { void persistEventConfiguration(); },
+    );
+  }, [eventConfiguration, persistEventConfiguration, t]);
 
   const finalizeDwsOperation = useCallback(async (payload: DwsOperationFinished) => {
     if (payload.cancelled || !payload.success) {
@@ -799,6 +1056,11 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
         ...(dwsEvidence.dwsCanonicalPath ? { dwsCanonicalPath: dwsEvidence.dwsCanonicalPath } : {}),
         ...(dwsEvidence.schemaDigest ? { schemaDigest: dwsEvidence.schemaDigest } : {}),
         ...(dwsEvidence.recoveryEventId ? { recoveryEventId: dwsEvidence.recoveryEventId } : {}),
+        ...(dwsEvidence.verificationStatus ? { verificationStatus: dwsEvidence.verificationStatus } : {}),
+        ...(dwsEvidence.verifierToolName ? { verifierToolName: dwsEvidence.verifierToolName } : {}),
+        ...(dwsEvidence.verifierCanonicalPath ? { verifierCanonicalPath: dwsEvidence.verifierCanonicalPath } : {}),
+        ...(dwsEvidence.verifierSchemaDigest ? { verifierSchemaDigest: dwsEvidence.verifierSchemaDigest } : {}),
+        ...(dwsEvidence.resourceId ? { resourceId: dwsEvidence.resourceId } : {}),
       };
       setInvocationOutput(result);
       if (runtimeTool && result.ok && identity?.connectionId) {
@@ -814,16 +1076,27 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
           ...(result.approvalId ? { approvalId: result.approvalId } : {}),
           evidence,
         });
-      } else if (result.ok) {
-        settleAttempt(attemptId, { state: 'succeeded', evidence, finishedAt: Date.now() });
       } else {
+        const outcome = resolveDingTalkInvocationOutcome({
+          effect: tool.effect,
+          ok: result.ok,
+          requiresApproval: false,
+          ...(result.error?.code ? { errorCode: result.error.code } : {}),
+          evidence: dwsEvidence,
+        });
         settleAttempt(attemptId, {
-          state: 'failed',
-          errorCode: result.error?.code ?? 'OPENCLAW_TOOL_FAILED',
+          state: outcome.state,
+          ...(outcome.errorCode ? { errorCode: outcome.errorCode } : {}),
           evidence,
           finishedAt: Date.now(),
         });
-        setInvocationError(result.error?.message ?? t('businessApplications.workbench.validation.toolInvocationFailed'));
+        if (!result.ok) {
+          setInvocationError(result.error?.message ?? t('businessApplications.workbench.validation.toolInvocationFailed'));
+        } else if (outcome.state === 'unknown') {
+          setInvocationError(t('businessApplications.workbench.validation.writeVerificationUnknown'));
+        } else if (outcome.state === 'succeeded_unverified') {
+          setInvocationError(t('businessApplications.workbench.validation.writePostconditionUnverified'));
+        }
       }
     } catch (error) {
       const code = errorCode(error);
@@ -1049,6 +1322,27 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
     || pluginStatusLoading
     || pluginOperation !== null
     || dwsOperationActive;
+  const eventConfigurationDirty = Boolean(
+    eventConfigurationForCurrentConnection
+    && savedEventConfigurationForCurrentConnection
+    && JSON.stringify(eventConfigurationForCurrentConnection) !== JSON.stringify(savedEventConfigurationForCurrentConnection),
+  );
+  const eventConfigurationBusy = eventConfigurationSaving
+    || pluginOperation !== null
+    || dwsOperationActive
+    || !identity?.verified
+    || !identity.desktopMutationAllowed
+    || eventConfigurationConnectionId !== identity.connectionId;
+  useEffect(() => {
+    if (!eventSnapshotReadContext) {
+      eventSnapshotRequests.current.invalidate();
+      setEventSnapshot(null);
+      setEventSnapshotError(null);
+      setEventSnapshotLoading(false);
+      return;
+    }
+    void reloadEventSnapshot();
+  }, [eventSnapshotReadContext, reloadEventSnapshot]);
   const headerStatus = dingtalkRefreshPending
     ? t('businessApplications.readiness.refreshing')
     : catalogAvailability === 'ready'
@@ -1155,6 +1449,28 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
       {view === 'runtime' ? (
         <main className="min-h-0 flex-1 overflow-auto bg-aegis-surface/20">
           <DingTalkReadinessPanel {...readinessProps} variant="workspace" />
+          <DingTalkEventSettingsPanel
+            configuration={eventConfigurationForCurrentConnection}
+            profiles={runtimeIdentity?.profiles ?? []}
+            loading={eventConfigurationLoading}
+            busy={eventConfigurationBusy}
+            editable={Boolean(identity?.verified && identity.desktopMutationAllowed)}
+            dirty={eventConfigurationDirty}
+            error={eventConfigurationError}
+            notice={eventConfigurationNotice}
+            latestInvalidation={currentDingTalkEventInvalidation}
+            eventSnapshot={eventSnapshot}
+            eventSnapshotLoading={eventSnapshotLoading}
+            eventSnapshotError={eventSnapshotError}
+            onChange={(configuration) => {
+              setEventConfiguration(configuration);
+              setEventConfigurationError(null);
+              setEventConfigurationNotice(null);
+            }}
+            onReload={() => { void reloadEventConfiguration(); }}
+            onReloadEventSnapshot={() => { void reloadEventSnapshot(); }}
+            onSave={saveEventConfiguration}
+          />
         </main>
       ) : view === 'activity' ? (
         <main className="flex min-h-0 flex-1 bg-aegis-surface/20"><BusinessActivityList /></main>

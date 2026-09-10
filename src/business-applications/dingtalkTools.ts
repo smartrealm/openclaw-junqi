@@ -7,7 +7,24 @@ export const DINGTALK_TOOL_SCHEMA_TOOL = 'junqi_dingtalk_tool_schema';
 export const DINGTALK_APPROVAL_RECORDS_TOOL = 'junqi_dingtalk_approval_records';
 export const DINGTALK_APPROVAL_TASKS_TOOL = 'junqi_dingtalk_approval_tasks';
 
-export type DingTalkDomain = 'contact' | 'approval' | 'attendance' | 'calendar' | 'todo' | 'runtime' | 'unknown';
+export type DingTalkDomain =
+  | 'contact'
+  | 'approval'
+  | 'attendance'
+  | 'calendar'
+  | 'todo'
+  | 'minutes'
+  | 'doc'
+  | 'wiki'
+  | 'report'
+  | 'mail'
+  | 'chat'
+  | 'aitable'
+  | 'contract'
+  | 'recruit'
+  | 'goal'
+  | 'runtime'
+  | 'unknown';
 export type DingTalkEffect = 'read' | 'write' | 'unknown';
 
 export interface DingTalkEffectiveTool {
@@ -83,6 +100,12 @@ export interface DingTalkBusinessEvidenceProjection {
   readonly dwsCanonicalPath: string | null;
   readonly schemaDigest: string | null;
   readonly recoveryEventId: string | null;
+  readonly verificationStatus: 'verified' | 'succeeded_unverified' | 'unknown' | null;
+  readonly verifierToolName: string | null;
+  readonly verifierCanonicalPath: string | null;
+  readonly verifierSchemaDigest: string | null;
+  readonly resourceId: string | null;
+  readonly verificationReasonCode: string | null;
 }
 
 export interface DingTalkSubmitLinkProjection {
@@ -145,7 +168,23 @@ export function hasAvailableDingTalkRuntimeTool(
 }
 
 function tagDomain(tags: readonly string[] | undefined): DingTalkDomain {
-  for (const domain of ['contact', 'approval', 'attendance', 'calendar', 'todo'] as const) {
+  for (const domain of [
+    'contact',
+    'approval',
+    'attendance',
+    'calendar',
+    'todo',
+    'minutes',
+    'doc',
+    'wiki',
+    'report',
+    'mail',
+    'chat',
+    'aitable',
+    'contract',
+    'recruit',
+    'goal',
+  ] as const) {
     if (tags?.includes(domain)) return domain;
   }
   if (tags?.includes('runtime')) return 'runtime';
@@ -261,10 +300,25 @@ export function parseDingTalkBusinessEvidence(output: unknown): DingTalkBusiness
   const toolResult = record(invocation?.output);
   const details = record(toolResult?.details);
   const schemaDigest = optionalString(details?.schemaDigest);
+  const verification = record(details?.verification);
+  const verificationStatus = verification?.status === 'verified'
+    || verification?.status === 'succeeded_unverified'
+    || verification?.status === 'unknown'
+    ? verification.status
+    : null;
+  const verifierSchemaDigest = optionalString(verification?.verifierSchemaDigest);
   return {
     dwsCanonicalPath: optionalString(details?.dwsCanonicalPath),
     schemaDigest: schemaDigest && /^[a-f0-9]{64}$/.test(schemaDigest) ? schemaDigest : null,
     recoveryEventId: optionalString(details?.recoveryEventId),
+    verificationStatus,
+    verifierToolName: optionalString(verification?.verifierToolName),
+    verifierCanonicalPath: optionalString(verification?.verifierCanonicalPath),
+    verifierSchemaDigest: verifierSchemaDigest && /^[a-f0-9]{64}$/.test(verifierSchemaDigest)
+      ? verifierSchemaDigest
+      : null,
+    resourceId: optionalString(verification?.resourceId),
+    verificationReasonCode: optionalString(verification?.reasonCode),
   };
 }
 

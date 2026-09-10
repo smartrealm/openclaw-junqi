@@ -1,11 +1,12 @@
 {
   "name": "@junqi/openclaw-dingtalk-business",
-  "version": "0.1.1",
+  "version": "0.27.0",
   "description": "OpenClaw-owned DingTalk business tools backed by DWS",
   "type": "module",
   "license": "MIT",
   "files": [
     "dist",
+    "skills",
     "openclaw.plugin.json",
     "README.md"
   ],
@@ -22,6 +23,14 @@
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "validate:plugin": "npm run build && node scripts/validate-package.mjs",
+    "verify:target-readonly": "npm run build && node scripts/verify-target-readonly.mjs",
+    "verify:target-sensitive-readonly": "npm run build && node scripts/verify-target-sensitive-readonly.mjs",
+    "verify:target-event": "npm run build && node scripts/verify-target-event.mjs",
+    "verify:target-minutes": "npm run build && node scripts/verify-target-minutes.mjs",
+    "verify:target-calendar": "npm run build && node scripts/verify-target-calendar.mjs",
+    "verify:target-todo": "npm run build && node scripts/verify-target-todo.mjs",
+    "verify:target-approval": "npm run build && node scripts/verify-target-approval.mjs",
+    "verify:target-report": "npm run build && node scripts/verify-target-report.mjs",
     "pack:plugin": "npm run validate:plugin && node scripts/pack-plugin.mjs",
     "prepack": "npm run validate:plugin"
   },

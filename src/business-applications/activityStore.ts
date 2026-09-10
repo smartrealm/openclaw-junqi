@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 
-export type BusinessAttemptState = 'pending' | 'approval_required' | 'succeeded' | 'failed' | 'unknown';
+export type BusinessAttemptState =
+  | 'pending'
+  | 'approval_required'
+  | 'succeeded'
+  | 'succeeded_unverified'
+  | 'verified'
+  | 'failed'
+  | 'unknown';
 
 export interface BusinessInvocationEvidence {
   readonly gatewayToolName?: string;
@@ -8,6 +15,11 @@ export interface BusinessInvocationEvidence {
   readonly dwsCanonicalPath?: string;
   readonly schemaDigest?: string;
   readonly recoveryEventId?: string;
+  readonly verificationStatus?: 'verified' | 'succeeded_unverified' | 'unknown';
+  readonly verifierToolName?: string;
+  readonly verifierCanonicalPath?: string;
+  readonly verifierSchemaDigest?: string;
+  readonly resourceId?: string;
 }
 
 export interface BusinessActivityAttempt {

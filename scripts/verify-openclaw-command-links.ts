@@ -1,4 +1,4 @@
-const OPENCLAW_GATEWAY_PROTOCOL_URL = 'https://docs.openclaw.ai/gateway/protocol';
+const OPENCLAW_GATEWAY_PROTOCOL_URL = 'https://docs.openclaw.ai/gateway/protocol/operator-methods';
 const COMMANDS_LIST_METHOD = 'commands.list';
 
 async function verifyOpenClawCommandProtocol(): Promise<void> {

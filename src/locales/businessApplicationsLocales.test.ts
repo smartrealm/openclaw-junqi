@@ -12,7 +12,7 @@ function leafKeys(value: unknown, prefix = ''): string[] {
 }
 
 test('钉钉接入、DWS 操作与身份卡在三个语言资源中保持同一键集合', () => {
-  for (const section of ['readiness', 'dws', 'runtimeIdentity'] as const) {
+  for (const section of ['readiness', 'dws', 'runtimeIdentity', 'events'] as const) {
     const expected = leafKeys(zh.businessApplications[section]);
     assert.deepEqual(leafKeys(zhTW.businessApplications[section]), expected);
     assert.deepEqual(leafKeys(en.businessApplications[section]), expected);

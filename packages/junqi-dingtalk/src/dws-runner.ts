@@ -6,6 +6,7 @@ import { DingTalkRuntimeError } from "./errors.js";
 import type { DwsCommandResult, DwsRunnerConfig } from "./types.js";
 
 const RECOVERY_EVENT_PATTERN = /(?:^|\s)RECOVERY_EVENT_ID=([^\s]+)/m;
+export const DWS_STDIN_MAX_BYTES = 1_048_576;
 
 const DWS_ENVIRONMENT_KEYS = [
   "PATH",
@@ -192,10 +193,22 @@ export class DwsRunner {
 
   async run(
     command: readonly string[],
-    options: { profile?: string; confirmed?: boolean; signal?: AbortSignal; sideEffect?: boolean } = {},
+    options: {
+      profile?: string;
+      confirmed?: boolean;
+      signal?: AbortSignal;
+      sideEffect?: boolean;
+      stdin?: string;
+    } = {},
   ): Promise<DwsCommandResult> {
     if (options.signal?.aborted) {
       throw new DingTalkRuntimeError("DWS_CANCELLED", "DWS execution was cancelled before start");
+    }
+    if (options.stdin !== undefined && typeof options.stdin !== "string") {
+      throw new DingTalkRuntimeError("DWS_INPUT_INVALID", "DWS standard input must be a string");
+    }
+    if (options.stdin !== undefined && Buffer.byteLength(options.stdin, "utf8") > DWS_STDIN_MAX_BYTES) {
+      throw new DingTalkRuntimeError("DWS_INPUT_LIMIT", "DWS standard input exceeded the limit");
     }
     const executable = await this.resolveExecutable();
     if (options.signal?.aborted) {
@@ -207,7 +220,7 @@ export class DwsRunner {
       const child = spawn(nodeScript ? process.execPath : executable, nodeScript ? [executable, ...args] : args, {
         env: buildDwsEnvironment(process.env),
         shell: false,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
         windowsHide: true,
         ...(options.signal ? { signal: options.signal } : {}),
       });
@@ -217,6 +230,12 @@ export class DwsRunner {
       let timedOut = false;
       let overflowed = false;
       let settled = false;
+
+      if (!child.stdout || !child.stderr) {
+        child.kill();
+        reject(new DingTalkRuntimeError("DWS_SPAWN_FAILED", "Failed to attach DWS output streams"));
+        return;
+      }
 
       const stopForOverflow = (): void => {
         if (overflowed) return;
@@ -234,6 +253,10 @@ export class DwsRunner {
       };
       child.stdout.on("data", (chunk: Buffer) => collect(stdoutChunks, chunk));
       child.stderr.on("data", (chunk: Buffer) => collect(stderrChunks, chunk));
+      if (child.stdin) {
+        child.stdin.on("error", () => {});
+        child.stdin.end(options.stdin);
+      }
 
       const timer = setTimeout(() => {
         timedOut = true;

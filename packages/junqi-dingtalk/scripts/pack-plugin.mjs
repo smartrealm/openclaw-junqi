@@ -24,7 +24,14 @@ for (const file of files) {
   assert.ok(!/(^|\/)src\//.test(file));
   assert.ok(!/\.test\.[cm]?[jt]sx?$/.test(file));
 }
-for (const required of ["package.json", "openclaw.plugin.json", "README.md", "dist/index.js", "dist/index.d.ts"]) {
+for (const required of [
+  "package.json",
+  "openclaw.plugin.json",
+  "README.md",
+  "dist/index.js",
+  "dist/index.d.ts",
+  "skills/junqi-dingtalk-workflows/SKILL.md",
+]) {
   assert.ok(files.includes(required));
 }
 console.log(`Packed ${packed[0].filename} with ${files.length} verified files`);

@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   buildDwsCommandArguments,
   buildDwsEnvironment,
+  DWS_STDIN_MAX_BYTES,
   DwsRunner,
   normalizeRunnerConfig,
   validateProfileReference,
@@ -109,6 +110,54 @@ test("runs a configured npm JavaScript entry through the current Node runtime", 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("通过有界标准输入向 DWS 传递敏感 JSON 而不加入命令参数", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "junqi-dws-stdin-"));
+  const entry = path.join(directory, "dws.js");
+  await writeFile(entry, `
+const chunks = [];
+process.stdin.on("data", (chunk) => chunks.push(chunk));
+process.stdin.on("end", () => {
+  process.stdout.write(JSON.stringify({
+    success: true,
+    body: { args: process.argv.slice(2), stdin: Buffer.concat(chunks).toString("utf8") },
+  }));
+});
+`);
+  const runner = new DwsRunner({
+    dwsPath: entry,
+    timeoutMs: 30_000,
+    maxOutputBytes: 2_097_152,
+  });
+  try {
+    const result = await runner.run(["contract", "review", "analysis", "--file", "-"], {
+      stdin: "{\"fixture\":true}",
+    });
+    assert.deepEqual(result.data, {
+      success: true,
+      body: {
+        args: ["contract", "review", "analysis", "--file", "-", "--format", "json"],
+        stdin: "{\"fixture\":true}",
+      },
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("标准输入超限时在解析 DWS 可执行文件前失败关闭", async () => {
+  const runner = new DwsRunner({
+    dwsPath: path.join(os.tmpdir(), "must-not-resolve-dws"),
+    timeoutMs: 30_000,
+    maxOutputBytes: 2_097_152,
+  });
+  await assert.rejects(
+    runner.run(["contract", "review", "analysis", "--file", "-"], {
+      stdin: "x".repeat(DWS_STDIN_MAX_BYTES + 1),
+    }),
+    (error) => error instanceof DingTalkRuntimeError && error.code === "DWS_INPUT_LIMIT",
+  );
 });
 
 test("does not start DWS when the supplied signal is already aborted", async () => {

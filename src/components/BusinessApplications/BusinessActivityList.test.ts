@@ -48,13 +48,14 @@ test('审计摘要按官方记录和本窗口投影派生参与 Agent 与状态'
   ], [
     attempt({ state: 'approval_required' }),
     attempt({ id: 'attempt-unknown', state: 'unknown', agentId: 'operator' }),
+    attempt({ id: 'attempt-unverified', state: 'succeeded_unverified', agentId: 'operator' }),
   ]);
 
   assert.deepEqual(summary, {
     official: 2,
-    local: 2,
+    local: 3,
     agents: 3,
     active: 2,
-    attention: 2,
+    attention: 3,
   });
 });

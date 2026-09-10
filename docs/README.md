@@ -4,6 +4,9 @@
 
 ## 当前入口
 
+- [钉钉 DWS 工作流扩展审计](quality/dingtalk-dws-workflow-expansion-audit-2026-09-09.md)：现有写操作核验缺口、最新版 OpenClaw 与 DWS 依据、九阶段边界和未验证项。
+- [钉钉 DWS 工作流扩展规格](../specs/2026-09-09-dingtalk-dws-workflow-expansion.md)：写后权威重读、只读优先、草稿先行、事件运行时和高敏业务域验收条件。
+- [钉钉 DWS 工作流扩展计划](../plans/2026-09-09-dingtalk-dws-workflow-expansion.md)：阶段顺序、第一阶段文件范围和验证门禁。
 - [OpenClaw 2026.8.1 桌面兼容与交互审计](quality/openclaw-2026-8-1-desktop-compatibility-audit-2026-09-01.md)：2.0 插件编译与真实 Gateway 基线、结构化提问、最小权限和升级边界。
 - [OpenClaw 2026.8.1 桌面兼容规格](../specs/2026-09-01-openclaw-2026-8-1-desktop-compatibility.md)：插件认证、问题卡、密钥边界、输入法与可访问性验收条件。
 - [OpenClaw 2026.8.1 桌面兼容计划](../plans/2026-09-01-openclaw-2026-8-1-desktop-compatibility.md)：协议回归、事件链路、可视化、固定包和验证顺序。
