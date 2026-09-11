@@ -9,7 +9,14 @@ import type {
   CollaborationCapabilities,
   CollaborationWriteResponse,
 } from '@/types/collaboration';
-import type { CollaborationAbsenceProof } from './CollaborationAbsenceAttestation';
+import type {
+  CollaborationAbsenceProof,
+  CollaborationUpdateRecoveryProof,
+} from './CollaborationAbsenceAttestation';
+import {
+  CollaborationClientError,
+  type CollaborationMaintenanceIdentity,
+} from './client';
 
 function capabilities(
   overrides: Record<string, unknown> = {},
@@ -92,6 +99,20 @@ const absenceProof = {
   assertCurrent() {},
 } as CollaborationAbsenceProof;
 
+const updateRecoveryProof = {
+  targetFingerprint: 'target-1',
+  connectionId: 'connection-1',
+  targetClass: 'system_service',
+  deploymentKind: 'system_service',
+  ownership: 'junqi_managed',
+  gatewayVersion: '2026.7.1',
+  localStateDir: '/tmp/openclaw',
+  localConfigPath: '/tmp/openclaw/openclaw.json',
+  issuedAtMs: 1,
+  expiresAtMs: Number.MAX_SAFE_INTEGER,
+  assertCurrent() {},
+} as CollaborationUpdateRecoveryProof;
+
 function run(id = 'run-1') {
   return { id, status: 'RUNNING', goal: `Goal ${id}`, revision: 3 };
 }
@@ -105,6 +126,8 @@ interface HarnessOptions {
   connected?: boolean;
   absenceAttested?: boolean;
   absenceProofCurrent?: boolean;
+  updateRecoveryAttested?: boolean;
+  updateRecoveryProofCurrent?: boolean;
   useResolvedOwner?: boolean;
   resolveOwnerId?: () => Promise<string>;
   now?: number;
@@ -119,7 +142,7 @@ function harness(options: HarnessOptions = {}) {
   const nextCapability = () => {
     const value = capabilityValues.length > 1 ? capabilityValues.shift() : capabilityValues[0];
     if (value instanceof Error) throw value;
-    return value as CollaborationCapabilities;
+    return value as CollaborationMaintenanceIdentity;
   };
   const nextStatus = () => {
     if (statusValues.length === 0) throw new Error('No maintenance status response queued');
@@ -137,6 +160,16 @@ function harness(options: HarnessOptions = {}) {
     },
     assertAbsenceProofCurrent: async (proof) => {
       if (options.absenceProofCurrent === false) throw new Error('Gateway identity changed');
+      proof.assertCurrent();
+    },
+    attestUpdateRecoveryUnavailable: async () => {
+      if (options.updateRecoveryAttested !== true) {
+        throw new Error('collaboration repair state is not attested');
+      }
+      return updateRecoveryProof;
+    },
+    assertUpdateRecoveryUnavailableCurrent: async (proof) => {
+      if (options.updateRecoveryProofCurrent === false) throw new Error('Plugin state changed');
       proof.assertCurrent();
     },
     readStatus: async () => nextStatus(),
@@ -200,7 +233,7 @@ async function expectMaintenanceError(
   assert.fail(`Expected ${code}`);
 }
 
-test('an explicitly missing collaboration plugin is the only unguarded update path', async () => {
+test('an explicitly missing collaboration plugin permits an attested unguarded update', async () => {
   const missing = Object.assign(new Error('unknown method: junqi.collab.capabilities'), {
     code: 'INVALID_REQUEST',
   });
@@ -215,6 +248,133 @@ test('an explicitly missing collaboration plugin is the only unguarded update pa
   assert.equal(acquisition.status.availability, 'not-installed');
   assert.equal(acquisition.absenceProof?.connectionId, 'connection-1');
   assert.equal(writes.length, 0);
+});
+
+test('OpenClaw recovery update proceeds when the registered collaboration service is unavailable', async () => {
+  const startupFailure = () => new CollaborationClientError(
+    'SERVICE_START_FAILED',
+    'The collaboration plugin service failed to start',
+    'junqi.collab.capabilities',
+    { pluginVersion: '0.5.7' },
+  );
+  const { coordinator, writes } = harness({
+    capabilityValues: [startupFailure(), startupFailure()],
+  });
+  let operationCalls = 0;
+
+  const result = await coordinator.runGuarded('openclaw-update', async () => {
+    operationCalls += 1;
+    return 'updated';
+  });
+
+  assert.equal(result.value, 'updated');
+  assert.equal(result.acquisition.guarded, false);
+  assert.equal(result.acquisition.status.availability, 'service-unavailable');
+  assert.equal(result.acquisition.unavailableServiceCode, 'SERVICE_START_FAILED');
+  assert.equal(operationCalls, 1);
+  assert.equal(writes.length, 0);
+});
+
+test('maintenance accepts the stable identity projection without unrelated capability fields', async () => {
+  const { coordinator } = harness({
+    capabilityValues: [{
+      collaborationInstanceId: 'instance-1',
+      schemaVersion: 1,
+      databaseIntegrity: 'ok',
+    }],
+    statusValues: [inactiveStatus()],
+  });
+
+  const status = await coordinator.inspect();
+
+  assert.equal(status.availability, 'available');
+  assert.equal(status.collaborationInstanceId, 'instance-1');
+  assert.equal(status.activeRunCount, 0);
+});
+
+test('schema startup failure permits only an OpenClaw recovery update', async () => {
+  const schemaFailure = () => new CollaborationClientError(
+    'DATABASE_SCHEMA_UNSUPPORTED',
+    'The collaboration database schema is not supported by this plugin',
+    'junqi.collab.capabilities',
+    { pluginVersion: '0.5.7', actualSchemaVersion: 13, expectedSchemaVersion: 15 },
+  );
+  const updateHarness = harness({ capabilityValues: [schemaFailure(), schemaFailure()] });
+  const otherHarness = harness({ capabilityValues: [schemaFailure()] });
+
+  const acquisition = await updateHarness.coordinator.acquire('openclaw-update');
+  await updateHarness.coordinator.assertAcquisitionCurrent(acquisition);
+  assert.equal(acquisition.unavailableServiceCode, 'DATABASE_SCHEMA_UNSUPPORTED');
+
+  await expectMaintenanceError(
+    otherHarness.coordinator.acquire('storage-migration'),
+    'STATE_UNKNOWN',
+  );
+});
+
+test('a collaboration service state change before update keeps the mutation blocked', async () => {
+  const startupFailure = new CollaborationClientError(
+    'SERVICE_START_FAILED',
+    'The collaboration plugin service failed to start',
+    'junqi.collab.capabilities',
+  );
+  const { coordinator, writes } = harness({
+    capabilityValues: [startupFailure, capabilities()],
+  });
+  let operationCalls = 0;
+
+  const error = await expectMaintenanceError(
+    coordinator.runGuarded('openclaw-update', async () => {
+      operationCalls += 1;
+      return true;
+    }),
+    'STATE_UNKNOWN',
+  );
+
+  assert.match(error.message, /maintenance must be acquired normally/i);
+  assert.equal(operationCalls, 0);
+  assert.equal(writes.length, 0);
+});
+
+test('a missing RPC with an attested unhealthy installed plugin permits only OpenClaw recovery update', async () => {
+  const missing = Object.assign(new Error('unknown method: junqi.collab.capabilities'), {
+    code: 'INVALID_REQUEST',
+  });
+  const updateHarness = harness({
+    capabilityValues: [missing],
+    updateRecoveryAttested: true,
+  });
+  const otherHarness = harness({
+    capabilityValues: [missing],
+    updateRecoveryAttested: true,
+  });
+
+  const acquisition = await updateHarness.coordinator.acquire('openclaw-update');
+  assert.equal(acquisition.guarded, false);
+  assert.equal(acquisition.updateRecoveryProof, updateRecoveryProof);
+  await updateHarness.coordinator.assertAcquisitionCurrent(acquisition);
+
+  await expectMaintenanceError(
+    otherHarness.coordinator.acquire('storage-migration'),
+    'STATE_UNKNOWN',
+  );
+});
+
+test('an unhealthy-plugin recovery proof changing before update blocks the mutation', async () => {
+  const missing = Object.assign(new Error('unknown method: junqi.collab.capabilities'), {
+    code: 'INVALID_REQUEST',
+  });
+  const { coordinator } = harness({
+    capabilityValues: [missing],
+    updateRecoveryAttested: true,
+    updateRecoveryProofCurrent: false,
+  });
+  const acquisition = await coordinator.acquire('openclaw-update');
+
+  await expectMaintenanceError(
+    coordinator.assertAcquisitionCurrent(acquisition),
+    'STATE_UNKNOWN',
+  );
 });
 
 test('identity drift after an absence probe blocks an unguarded operation', async () => {

@@ -71,7 +71,7 @@ OpenClaw `v2026.8.1` 的正式参数如下：
 | `flow` | `setup` 或 `channels` | 缺省为完整 `setup`，`channels` 只运行渠道配置流程 |
 | `channel` | 非空字符串 | `channels` 流程的预选渠道，不代表最终一定配置成功 |
 
-JunQi 已经通过统一生命周期拥有所选 Runtime，因此完整首次配置提交 `installDaemon:false`。Gateway 拒绝正式参数时保留该次结构化失败，不删除字段重放，也不根据版本号改换请求。渠道专用 flow 只提交 `flow` 与可选 `channel`。
+JunQi 已经通过统一生命周期拥有所选 Runtime，因此完整首次配置先提交 `installDaemon:false`。如果 Gateway 以 `INVALID_REQUEST` 精确返回 `invalid wizard.start params: at root: unexpected property 'installDaemon'`，该响应证明会话尚未创建且当前正式 schema 只接受公共字段；客户端在操作代次仍有效时省略该字段启动一次，并完整呈现官方返回的 daemon 选择。其他参数、权限、连接和业务错误不会触发第二次请求。渠道专用 flow 只提交 `flow` 与可选 `channel`，不参与该协商。
 
 完整首次配置的最小请求示例：
 
@@ -318,7 +318,9 @@ JunQi 首次启动只发起完整官方配置：
 
 连接层只有一个退避所有者：Gateway Manager 管理连接轮次，Connection 管理 WebSocket 尝试、退避与耗尽。进程健康观察不能在 Connection 已经尝试或退避时并发创建第二轮连接。显式同目标连接先关闭旧传输再建立新轮；普通配对取消统一经 Manager 收敛活动握手和等待定时器，取消本身不触发自动重连。
 
-当前 Gateway 缺少配置修订字段时，JunQi 无法证明新配置已经应用，必须明确要求更新 OpenClaw。端口健康、旧 WebSocket 仍在线、重启命令返回成功和 `config.get.hash` 均不能替代活动配置修订证据。
+官方 Wizard 刚完成写入时，当前 Gateway 若缺少活动配置修订字段，JunQi 无法证明新配置已经应用，必须明确要求更新 OpenClaw。端口健康、旧 WebSocket 仍在线、重启命令返回成功和 `config.get.hash` 均不能替代这条写后活动配置修订证据。
+
+已有 Classic Runtime 的无写入接管属于另一条门禁。JunQi 不重新启动 Wizard，也不修改 OpenClaw 配置；它在同一已核验连接上读取有效的 `config.get` 信封和非空 `hash`，使用唯一临时 Session 依次调用官方 `agent` 与 `agent.wait` 完成真实模型调用，再确认连接与 `hash` 均未变化，并通过正式 Session 删除入口完成清理。只有整条证据链成功才可进入 Ready。该路径只能证明接管期间既有配置快照稳定且模型可用，不能证明历史配置写入何时被活动 Runtime 采用，也不能放宽 Guided 或 Wizard 写后交接的活动修订门禁。
 
 Wizard 完成不等于桌面客户端已经连接到正确 Runtime。上述核验失败时必须停留在配置页面，并保留“官方终态已确认”的本地派生恢复状态。此后的“重新核验”只重复连接围栏、所选 Runtime、配置终态和真实模型核验；当前连接失效时才重连。该恢复不调用 `wizard.start`、`wizard.next`，也不恢复或重放已经回收的官方会话。
 
@@ -336,6 +338,7 @@ Wizard 完成不等于桌面客户端已经连接到正确 Runtime。上述核�
 | 官方 `done` 后 Gateway 核验失败 | 官方配置已终态，本地运行时交接未完成 | 只重新执行运行时交接与身份核验，不重新启动 Wizard |
 | `configRevisionHash` 与 `appliedConfigHash` 不相等 | 配置文件修订尚未由活动 Runtime 采用 | 等待官方重载与新认证连接；普通超时不主动重启 |
 | 缺少活动配置修订字段 | 当前 Gateway 无法证明活动配置版本 | 明确要求更新 OpenClaw，不使用健康探测或版本号 fallback |
+| 已有 Classic Runtime 且本次没有配置写入 | 不需要重放官方 Wizard | 在同一连接和稳定 `config.get.hash` 围栏内执行真实 `agent`、`agent.wait` 与临时 Session 清理；任一步失败都不进入 Ready |
 | 当前连接的 Runtime Identity 核验失败 | 连接到了错误 Runtime，或当前身份与所选 Runtime 不一致 | 立即保留具体核验诊断，不等待通用连接收敛超时 |
 | Runtime Identity 核验期间连接关闭或换代 | 核验结果不再属于活动 socket | 作废待定身份并按当前所选 Runtime 恢复，迟到结果不得发布连接可用 |
 | 特权临时连接握手期间主连接换代 | 管理请求来源围栏已经失效 | 在发送 RPC 前拒绝请求，不得把写操作发送给旧目标 |

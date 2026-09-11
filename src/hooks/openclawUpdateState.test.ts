@@ -1,7 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { OpenclawUpdateResult, OpenclawUpdateStatus } from '@/api/tauri-commands';
-import { initialOpenclawUpdateState, openclawUpdateReducer } from './openclawUpdateState';
+import {
+  beginOpenclawUpdateOperation,
+  canPublishOpenclawUpdateOperation,
+  createOpenclawUpdateOperationGuard,
+  initialOpenclawUpdateState,
+  openclawUpdateReducer,
+  projectOpenclawUpdateCheckResult,
+  setOpenclawUpdateOperationMounted,
+} from './openclawUpdateState';
 
 const status: OpenclawUpdateStatus = {
   installedVersion: '2026.6.11',
@@ -125,4 +133,33 @@ test('explicit maintenance recovery clears the blocking update error', () => {
 
   assert.equal(recovered.phase, 'ready');
   assert.equal(recovered.error, null);
+});
+
+test('更新执行失败不抹除已经完成的稳定渠道检查结果', () => {
+  assert.deepEqual(projectOpenclawUpdateCheckResult('error', status), {
+    state: 'ready',
+    available: true,
+    managedChannelPolicy: 'eligible',
+  });
+
+  assert.deepEqual(projectOpenclawUpdateCheckResult('error', null), {
+    state: 'error',
+    available: null,
+    managedChannelPolicy: null,
+  });
+});
+
+test('effect listener rebuild does not discard an active update check result', () => {
+  const guard = createOpenclawUpdateOperationGuard();
+  setOpenclawUpdateOperationMounted(guard, true);
+  const operationId = beginOpenclawUpdateOperation(guard);
+
+  setOpenclawUpdateOperationMounted(guard, false);
+  setOpenclawUpdateOperationMounted(guard, true);
+
+  assert.equal(canPublishOpenclawUpdateOperation(guard, operationId), true);
+  assert.equal(canPublishOpenclawUpdateOperation(guard, operationId + 1), false);
+
+  setOpenclawUpdateOperationMounted(guard, false);
+  assert.equal(canPublishOpenclawUpdateOperation(guard, operationId), false);
 });

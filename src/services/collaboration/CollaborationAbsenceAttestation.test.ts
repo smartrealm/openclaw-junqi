@@ -7,6 +7,9 @@ import {
   CollaborationAbsenceAttestationError,
   CollaborationAbsenceAttestor,
   CollaborationAbsenceSpecification,
+  CollaborationUpdateRecoveryAttestation,
+  CollaborationUpdateRecoveryAttestor,
+  CollaborationUpdateRecoverySpecification,
 } from './CollaborationAbsenceAttestation';
 
 function identity(overrides: Partial<RuntimeIdentity> = {}): RuntimeIdentity {
@@ -212,4 +215,79 @@ test('attestor re-probes durable state immediately before proof consumption', as
     assert.equal(error.code, 'DURABLE_STATE_NOT_ABSENT');
     return true;
   });
+});
+
+test('OpenClaw 更新恢复证明只接受同一受管运行时中已安装但未加载的插件', () => {
+  const specification = new CollaborationUpdateRecoverySpecification();
+  const repairProbe = probe({
+    code: 'PLUGIN_NEEDS_REPAIR',
+    message: 'The collaboration plugin is installed but disabled or unhealthy',
+    plugin: { installed: true, enabled: false, status: 'disabled', version: '0.5.9' },
+    durableCollaborationState: 'present',
+  });
+
+  const proof = CollaborationUpdateRecoveryAttestation.from({
+    before: identity(),
+    after: identity(),
+    probe: repairProbe,
+  });
+
+  assert.equal(proof.targetFingerprint, 'target-1');
+  assert.equal(proof.connectionId, 'connection-1');
+  assert.equal(Object.isFrozen(proof), true);
+  assert.equal(specification.evaluate({
+    before: identity(),
+    after: identity(),
+    probe: repairProbe,
+  }).satisfied, true);
+});
+
+test('OpenClaw 更新恢复证明拒绝已加载、缺失、忙碌和不可核验状态', () => {
+  const specification = new CollaborationUpdateRecoverySpecification();
+  const repair = {
+    code: 'PLUGIN_NEEDS_REPAIR',
+    plugin: { installed: true, enabled: false, status: 'disabled' },
+    durableCollaborationState: 'present' as const,
+  };
+  const rejected = [
+    probe({ ...repair, plugin: { installed: true, enabled: true, status: 'loaded' } }),
+    probe({ ...repair, plugin: { installed: false, enabled: false } }),
+    probe({ ...repair, busy: true }),
+    probe({ ...repair, recoveryRequired: true }),
+    probe({ ...repair, warnings: ['plugin inspection warning'] }),
+    probe({ ...repair, durableCollaborationState: 'corrupt' }),
+    probe({ ...repair, durableCollaborationState: 'unknown' }),
+  ];
+
+  for (const observation of rejected) {
+    assert.equal(specification.evaluate({
+      before: identity(),
+      after: identity(),
+      probe: observation,
+    }).satisfied, false);
+  }
+});
+
+test('OpenClaw 更新恢复证明在实际写入前重新核验插件状态', async () => {
+  const current = identity();
+  const observations = [
+    probe({
+      code: 'PLUGIN_NEEDS_REPAIR',
+      plugin: { installed: true, enabled: false, status: 'disabled' },
+      durableCollaborationState: 'present',
+    }),
+    probe({
+      code: 'PLUGIN_READY',
+      message: 'The collaboration plugin is installed and loadable',
+      plugin: { installed: true, enabled: true, status: 'loaded' },
+      durableCollaborationState: 'present',
+    }),
+  ];
+  const attestor = new CollaborationUpdateRecoveryAttestor({
+    getRuntimeIdentity: () => current,
+    probe: async () => observations.shift()!,
+  });
+  const proof = await attestor.attest();
+
+  await assert.rejects(attestor.assertCurrent(proof));
 });

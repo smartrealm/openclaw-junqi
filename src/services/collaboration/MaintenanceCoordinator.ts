@@ -1,19 +1,22 @@
 import { getCollaborationMaintenanceOwner } from '@/api/tauri-commands';
 import { gateway, GatewayDisconnectedError } from '@/services/gateway';
 import {
+  CollaborationClientError,
   collaborationClient,
   createCollaborationWriteRequest,
   isCollaborationMethodUnavailable as isExactCollaborationMethodUnavailable,
+  type CollaborationMaintenanceIdentity,
 } from './client';
 import type {
-  CollaborationCapabilities,
   CollaborationWriteMethod,
   CollaborationWriteRequest,
   CollaborationWriteResponse,
 } from '@/types/collaboration';
 import {
   collaborationAbsenceAttestor,
+  collaborationUpdateRecoveryAttestor,
   type CollaborationAbsenceProof,
+  type CollaborationUpdateRecoveryProof,
 } from './CollaborationAbsenceAttestation';
 
 const MAINTENANCE_STATUS_METHOD = 'junqi.collab.maintenance.status' as const;
@@ -54,7 +57,7 @@ export interface CollaborationMaintenanceLease {
 }
 
 export interface CollaborationMaintenanceStatus {
-  availability: 'available' | 'not-installed';
+  availability: 'available' | 'not-installed' | 'service-unavailable';
   status: 'INACTIVE' | 'ACTIVE' | 'EXPIRED' | 'MALFORMED' | null;
   recoveryRequired: boolean;
   active: boolean;
@@ -75,7 +78,15 @@ export interface CollaborationMaintenanceAcquisition {
   status: CollaborationMaintenanceStatus;
   /** Opaque proof used when the collaboration RPC is absent. */
   absenceProof: CollaborationAbsenceProof | null;
+  /** 协作 RPC 已注册但服务未启动时，仅允许 OpenClaw 恢复更新使用的结构化证明。 */
+  unavailableServiceCode: CollaborationUnavailableServiceCode | null;
+  /** 协作 RPC 未注册但本地探针证明插件需要修复时使用的短期证明。 */
+  updateRecoveryProof: CollaborationUpdateRecoveryProof | null;
 }
+
+type CollaborationUnavailableServiceCode =
+  | 'SERVICE_START_FAILED'
+  | 'DATABASE_SCHEMA_UNSUPPORTED';
 
 export interface CollaborationMaintenanceRelease {
   released: boolean;
@@ -134,9 +145,11 @@ export class CollaborationMaintenanceError extends Error {
 }
 
 export interface CollaborationMaintenanceDependencies {
-  capabilities(): Promise<CollaborationCapabilities>;
+  capabilities(): Promise<CollaborationMaintenanceIdentity>;
   attestCollaborationAbsent(): Promise<CollaborationAbsenceProof>;
   assertAbsenceProofCurrent(proof: CollaborationAbsenceProof): Promise<void>;
+  attestUpdateRecoveryUnavailable(): Promise<CollaborationUpdateRecoveryProof>;
+  assertUpdateRecoveryUnavailableCurrent(proof: CollaborationUpdateRecoveryProof): Promise<void>;
   readStatus(): Promise<unknown>;
   write<T extends Record<string, unknown>>(
     method: CollaborationWriteMethod,
@@ -153,9 +166,13 @@ export interface CollaborationMaintenanceDependencies {
 }
 
 const defaultDependencies: CollaborationMaintenanceDependencies = {
-  capabilities: () => collaborationClient.capabilities(),
+  capabilities: () => collaborationClient.maintenanceIdentity(),
   attestCollaborationAbsent: () => collaborationAbsenceAttestor.attest(),
   assertAbsenceProofCurrent: (proof) => collaborationAbsenceAttestor.assertCurrent(proof),
+  attestUpdateRecoveryUnavailable: () => collaborationUpdateRecoveryAttestor.attest(),
+  assertUpdateRecoveryUnavailableCurrent: (proof) => (
+    collaborationUpdateRecoveryAttestor.assertCurrent(proof)
+  ),
   readStatus: () => gateway.call(MAINTENANCE_STATUS_METHOD, {}),
   write: (method, request) => collaborationClient.write(method, request),
   isGatewayConnected: () => gateway.getStatus().connected,
@@ -281,7 +298,7 @@ interface CapabilityIdentity {
   databaseIntegrity: string;
 }
 
-function parseCapabilityIdentity(capabilities: CollaborationCapabilities): CapabilityIdentity {
+function parseCapabilityIdentity(capabilities: CollaborationMaintenanceIdentity): CapabilityIdentity {
   const raw = capabilities as unknown as Record<string, unknown>;
   const collaborationInstanceId = stringField(
     raw.collaborationInstanceId,
@@ -400,6 +417,44 @@ function unavailableStatus(absenceProof: CollaborationAbsenceProof): Collaborati
   };
 }
 
+function unavailableServiceStatus(): CollaborationMaintenanceStatus {
+  return {
+    availability: 'service-unavailable',
+    status: null,
+    recoveryRequired: false,
+    active: false,
+    collaborationInstanceId: null,
+    schemaVersion: null,
+    databaseIntegrity: null,
+    lease: null,
+    activeRuns: [],
+    activeRunCount: 0,
+    activeRunsTruncated: false,
+    absenceProof: null,
+  };
+}
+
+function unavailableServiceCode(error: unknown): CollaborationUnavailableServiceCode | null {
+  const cause = error instanceof CollaborationMaintenanceError ? error.originalError : error;
+  if (
+    cause instanceof CollaborationClientError
+    && cause.method === 'junqi.collab.capabilities'
+    && (cause.code === 'SERVICE_START_FAILED' || cause.code === 'DATABASE_SCHEMA_UNSUPPORTED')
+  ) {
+    return cause.code;
+  }
+  return null;
+}
+
+function containsMissingCapabilitiesRpc(error: unknown): boolean {
+  const cause = error instanceof CollaborationMaintenanceError ? error.originalError : error;
+  if (isExplicitlyMissingCollaboration(cause)) return true;
+  if (cause === null || typeof cause !== 'object' || Array.isArray(cause)) return false;
+  return isExplicitlyMissingCollaboration(
+    (cause as Record<string, unknown>).capabilityError,
+  );
+}
+
 function integrityIsHealthy(value: string): boolean {
   return value.trim().toLowerCase() === 'ok';
 }
@@ -442,7 +497,7 @@ export class CollaborationMaintenanceCoordinator {
   }
 
   async inspect(): Promise<CollaborationMaintenanceStatus> {
-    let capabilities: CollaborationCapabilities;
+    let capabilities: CollaborationMaintenanceIdentity;
     try {
       capabilities = await this.dependencies.capabilities();
     } catch (error) {
@@ -510,13 +565,48 @@ export class CollaborationMaintenanceCoordinator {
 
   async acquire(reason: string): Promise<CollaborationMaintenanceAcquisition> {
     const normalizedReason = stringField(reason, 'reason');
-    const preflight = await this.inspect();
+    let preflight: CollaborationMaintenanceStatus;
+    try {
+      preflight = await this.inspect();
+    } catch (error) {
+      const serviceFailure = unavailableServiceCode(error);
+      // OpenClaw 更新用于恢复承载协作插件的 Gateway。插件明确报告服务未启动时，
+      // 不存在可进入维护态的服务；只允许该恢复动作在写入前再次核验同一故障。
+      if (normalizedReason === 'openclaw-update' && serviceFailure) {
+        return {
+          guarded: false,
+          lease: null,
+          status: unavailableServiceStatus(),
+          absenceProof: null,
+          unavailableServiceCode: serviceFailure,
+          updateRecoveryProof: null,
+        };
+      }
+      if (normalizedReason === 'openclaw-update' && containsMissingCapabilitiesRpc(error)) {
+        try {
+          const updateRecoveryProof = await this.dependencies.attestUpdateRecoveryUnavailable();
+          return {
+            guarded: false,
+            lease: null,
+            status: unavailableServiceStatus(),
+            absenceProof: null,
+            unavailableServiceCode: null,
+            updateRecoveryProof,
+          };
+        } catch {
+          // 探针无法形成严格恢复证明时保留原始维护错误，不能扩大未知失败的放行范围。
+        }
+      }
+      throw error;
+    }
     if (preflight.availability === 'not-installed') {
       return {
         guarded: false,
         lease: null,
         status: preflight,
         absenceProof: preflight.absenceProof ?? null,
+        unavailableServiceCode: null,
+        updateRecoveryProof: null,
       };
     }
     if (preflight.active) {
@@ -597,7 +687,14 @@ export class CollaborationMaintenanceCoordinator {
         combinedRuns,
       );
     }
-    return { guarded: true, lease, status: { ...confirmed, lease }, absenceProof: null };
+    return {
+      guarded: true,
+      lease,
+      status: { ...confirmed, lease },
+      absenceProof: null,
+      unavailableServiceCode: null,
+      updateRecoveryProof: null,
+    };
   }
 
   operationFailed(
@@ -641,7 +738,7 @@ export class CollaborationMaintenanceCoordinator {
     return { value, acquisition, release };
   }
 
-  /** Revalidate a plugin-absent acquisition immediately before mutation. */
+  /** 在实际写入前重新核验无维护租约的恢复条件。 */
   async assertAcquisitionCurrent(acquisition: CollaborationMaintenanceAcquisition): Promise<void> {
     if (acquisition.guarded) {
       if (!acquisition.lease) {
@@ -653,6 +750,43 @@ export class CollaborationMaintenanceCoordinator {
       }
       await this.assertLeaseCurrent(acquisition.lease);
       return;
+    }
+    if (acquisition.unavailableServiceCode) {
+      try {
+        await this.dependencies.capabilities();
+      } catch (error) {
+        if (unavailableServiceCode(error) === acquisition.unavailableServiceCode) return;
+        throw new CollaborationMaintenanceError(
+          'STATE_UNKNOWN',
+          'Collaboration service availability changed before the OpenClaw update; the update was not attempted',
+          'operation',
+          null,
+          [],
+          error,
+        );
+      }
+      throw new CollaborationMaintenanceError(
+        'STATE_UNKNOWN',
+        'Collaboration service recovered before the OpenClaw update; maintenance must be acquired normally',
+        'operation',
+      );
+    }
+    if (acquisition.updateRecoveryProof) {
+      try {
+        await this.dependencies.assertUpdateRecoveryUnavailableCurrent(
+          acquisition.updateRecoveryProof,
+        );
+        return;
+      } catch (error) {
+        throw new CollaborationMaintenanceError(
+          'STATE_UNKNOWN',
+          'Collaboration recovery proof is no longer current; the OpenClaw update was not attempted',
+          'operation',
+          null,
+          [],
+          error,
+        );
+      }
     }
     if (!acquisition.absenceProof) {
       throw new CollaborationMaintenanceError(
@@ -970,7 +1104,14 @@ export class CollaborationMaintenanceCoordinator {
         originalError,
       );
     }
-    return { guarded: true, lease: status.lease, status, absenceProof: null };
+    return {
+      guarded: true,
+      lease: status.lease,
+      status,
+      absenceProof: null,
+      unavailableServiceCode: null,
+      updateRecoveryProof: null,
+    };
   }
 
   private async waitForRuntimeIdentity(

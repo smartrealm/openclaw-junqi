@@ -1,13 +1,23 @@
 # JunQi 项目状态
 
-更新时间：2026-09-10
+更新时间：2026-09-11
 
 ## 当前目标
 
-持续评估并扩展钉钉 DWS 集成，按 P0、P1、P2 顺序完成契约准入、写入核验、实时事件、日常工作流和高敏业务域。当前代码阶段已完成 P0 底座、主要读写与目标 Gateway 验收入口，并完成钉钉桌面工作台的信息层级、目录检查器布局、窄窗口聚焦、活动证据渐进披露和接入页视觉一致性重构。本轮同时收敛首次设置中“复用现有 OpenClaw”与“独立 npm 安装”的语义、统一桌面应用图标，并修复数据位置页运行时恢复被无关 Node.js 检查阻断、恢复失败返回重复回滚和未知端口占用等待无反馈的问题。当前最紧急门禁是先关闭目标桌面上占用候选 Gateway 端口的未知进程并复测恢复成功，再在 Docker 可用的受控测试机跑通两层隔离 Gateway 验收，以正式 DWS 和受控钉钉租户执行目标读写矩阵。
+持续评估并扩展钉钉 DWS 集成，同时完成当前首次设置的真机闭环。目标 macOS 已复用现有 OpenClaw、现有数据位置和兼容 Node.js，用户跳过可选更新后通过既有 Classic Runtime 的真实模型核验进入 Ready，并已打开仪表盘。当前重点转为验证仪表盘日常会话和目标钉钉租户链路；OpenClaw 更新继续作为独立可选维护操作，不再是首次使用的前置条件。
 
 ## 已完成内容
 
+- 修复已有本地 OpenClaw 配置可用却仍被要求更新或重跑官方向导的问题。无写入的 Classic Runtime 接管现在绑定同一已核验连接和有效 `config.get.hash`，通过唯一临时 Session 调用官方 `agents.list`、`agent` 与 `agent.wait` 做真实模型核验，再确认连接与配置快照未漂移并删除临时 Session。该路径不把配置哈希冒充活动修订，也不放宽 Guided 或 Wizard 写后交接门禁。目标 macOS 已在不安装、不更新 OpenClaw 的情况下完成首次设置并进入仪表盘。
+- 修复默认 Web Crypto 标识生成在真实浏览器中因方法脱离 `Crypto` 实例而抛错的问题。现在只在注入测试标识生成器时调用注入函数，否则直接通过 `globalThis.crypto.randomUUID()` 生成隔离 Session 标识。
+- 修复更新页报 `Collaboration maintenance state could not be read` 后无法继续的问题。更新维护检查前先通过统一 Gateway 生命周期恢复当前所选 Runtime 的已核验连接；协作服务正常时仍严格取得维护租约。能力接口精确返回服务启动失败或数据库 Schema 不受支持时，OpenClaw 恢复更新可暂时无租约继续。旧 Gateway 没有注册该接口时，新增绑定同一 Runtime 身份、连接、路径和版本的短期本地恢复证明；它只接受插件已安装但未加载、无维护事务与警告、允许桌面修改且持久状态可读的探针结果。所有证明均在实际写入前重读；服务恢复、故障变化、插件已加载、其他维护动作、活动任务、身份漂移、状态损坏和未知错误仍失败关闭。
+- 修复发现 OpenClaw 更新但用户选择跳过时无法进入配置的问题。Classic `wizard.start` 仍先提交主线正式参数 `installDaemon:false`；只有 Gateway 以 `INVALID_REQUEST` 精确证明 stable schema 不接受该字段且尚未创建会话时，才使用 `mode` 与规范化 `workspace` 公共正式参数启动一次。操作代次失效、渠道 flow、权限、连接和其他 schema 错误均不重放。更新页现在复用共享 `StatusPanel` 和现有 `aegis-*` 语义主题 token 就地显示配置准备失败，并把主操作改为重新核验，不再表现为转圈后无反馈。
+- 修复已有 OpenClaw 更新检查停在 100% 和“正在检查”的问题。进度监听器清理不再递增请求代次；独立挂载围栏允许开发模式的 Effect 清理与重建后接收原 Tauri 请求结果，同时继续拒绝真实卸载后的迟到结果和后续请求换代前的旧结果。进度事件仍只负责展示，不能替代结构化命令返回推断成功。
+- 修复 Gateway 停止参数固定写死为 `--force` 的问题。所有停止入口现在先读取已核验目标 CLI 的 `gateway stop --help`；只有该帮助明确声明 `--force` 才携带，否则执行裸停止。帮助失败即失败关闭，停止命令不因参数错误自动换参重放。
+- 修复运行时恢复成功后的步骤状态未收敛问题。Gateway 认证与运行时身份核验完成后，现在用一次状态提交完成 Native 的 Node.js、OpenClaw、Gateway，并将本次未参与安装的 npm 标为已跳过；已有 npm 完成事实和 Docker 镜像事实继续保留，成功摘要不再与假转圈、等待状态和 50% 进度并存。
+- 修复 macOS 和 Linux 的系统 Node.js 发现只返回 PATH 首个候选的问题。现在会按 PATH 顺序保留全部可执行 `node`，现有运行时解析继续逐项核验版本和同发行版 npm；旧的不兼容版本仍用于诊断，但不会遮蔽后续兼容运行时。用户已安装的官方 Node.js v24.21.0 因此无需重复下载。
+- 数据位置提交遇到“已登记 Gateway，但 OpenClaw 运行时不可用”时，现在显示本地化的 Node.js 修复结论和“修复 Node.js 并继续”主操作。操作期间表单、返回和重复点击均锁定；Node 不可用时使用现有安装契约，npm 缺失时使用同发行版修复契约，两者核验成功后自动重试 `configure_storage`。
+- 已修复当前 macOS 首次设置中“已有 OpenClaw 但 Node.js 不兼容”被数据位置步骤提前阻断的问题。服务核验现在在 OpenClaw CLI 无法执行时改用官方平台痕迹：macOS 检查默认 LaunchAgent 文件和 `launchctl` 注册，Linux 检查 systemd unit 文件和用户 unit 列表，Windows 保留计划任务与登录项核验；同时继续检查 JunQi 自有进程、端口和待恢复事务。真实数据迁移仍核验 Docker 残留，当前位置仅调整 Native 依赖不再因 Docker 守护进程不可用而阻断。只有没有待保护运行时的证据完整时才进入后续 Node.js 自动安装，不要求用户重复下载 OpenClaw，也不跳过已存在服务的所有权门禁。
 - 钉钉插件源码升级到 `0.27.0`，注册 81 个业务工具和 4 个内部工具，共 85 个工具，并增加一个不计入 Agent 工具面的操作员只读事件快照 RPC。
 - 所有业务工具与事件消费契约现在要求目标 DWS 叶子 Schema 明确声明 `availability=available`；字段缺失或为 `unavailable` 时失败关闭。官方主线标记为不可用的 4 个 HRbrain Shortcut 已从插件清单、运行时规格和桌面域列表移除。
 - 插件严格区分最新版 DWS 核验 Shortcut 的 `ok/outcome/data` 信封和 OA 原子命令保留的裸 MCP JSON，不再混用两种协议。
@@ -88,7 +98,7 @@
 - 钉钉桌面工作台只重排当前 Session 已核验投影，不用 UI 常量补齐工具、权限、Profile 或执行结果。低频技术证据采用原生 `details` 渐进披露；目录选择以一个按钮和 `aria-current` 表达，避免整行点击与嵌套操作形成双重入口。
 - 安装位置中的自定义 npm 前缀是权威运行时选择，不是对任意现有 OpenClaw 的搜索目录。用户选择独立目录时不再用模糊的“自定义安装目录”暗示可复用其他位置；核验失败继续保持零存储写入，界面只改进解释和恢复路径，不改变后端安全门禁。
 - 应用图标复用 `src/assets/brand/daxia-group-light.png` 中的官方徽记，不重新描摹公司标志；图标源只负责底板、裁切、留白和层次。生成入口使用 Tauri CLI 的正式图标命令，避免桌面和移动端资源从不同工具链产生视觉漂移。
-- 运行时恢复的进程终止权限只来自当前 `GatewayProcess` 持有的子进程句柄、持久事务证明的所选官方服务或当前选定 Docker。认证端口或端口号本身不能构成杀进程权限；归属未知时保留恢复标记并给出人工关闭路径。
+- 运行时恢复的常规进程终止权限继续只来自当前 `GatewayProcess` 持有的子进程句柄、持久事务证明的所选官方服务或当前选定 Docker。仅当持久恢复事务明确绑定候选端口、桌面已识别唯一监听进程且用户在警告对话框确认时，恢复页才允许一次受限终止：后端会重新核对端口、PID、启动时间、当前用户和非自身进程，优先请求正常退出，必要时才强制结束；监听者切换或权限不明时立即失败关闭。
 
 ## 核心文件
 
@@ -135,14 +145,35 @@
 - `plans/2026-09-10-dingtalk-desktop-workbench-ui.md`
 - `src/components/setup/StorageSetupGate.tsx`
 - `src/components/setup/storageSetupModel.ts`
+- `src/api/tauri-commands.ts`
+- `src-tauri/src/commands/gateway_port_owner.rs`
+- `src-tauri/src/commands/gateway_service.rs`
 - `src/hooks/useSetupFlow/helpers.ts`
 - `src/hooks/useSetupFlow/index.ts`
+- `src/services/gateway/OpenClawConfigApplicationClient.ts`
+- `src/services/setup/classicOpenClawModelVerification.ts`
+- `src/services/setup/openClawSetupHandoff.ts`
+- `src/hooks/useOpenclawUpdate.ts`
+- `src/hooks/openclawUpdateState.ts`
+- `src/hooks/openclawUpdateState.test.ts`
+- `src/services/openclawUpdateLifecycle.ts`
+- `src/services/openclawUpdateLifecycle.test.ts`
+- `src/services/collaboration/CollaborationAbsenceAttestation.ts`
+- `src/services/collaboration/CollaborationAbsenceAttestation.test.ts`
+- `src/services/collaboration/MaintenanceCoordinator.ts`
+- `src/services/collaboration/MaintenanceCoordinator.test.ts`
 - `src-tauri/src/commands/storage.rs`
 - `src-tauri/icons/icon-source.svg`
 - `scripts/render-app-icon.sh`
 
 ## 测试与验证
 
+- 已有 Classic Runtime 无写入接管的 51 项定向回归通过，覆盖正式 `config.get.hash` 投影、稳定快照成功、持续配置漂移阻断、连接围栏、智能体目录失败收敛、真实模型终态、临时 Session 清理、默认 Web Crypto 标识生成，以及更新执行失败后的继续资格。目标 macOS 真实首次设置已选择现有数据位置、保持 JunQi 独立安装关闭、跳过可选更新、完成 DeepSeek 真实模型调用、进入 Ready 并打开仪表盘；没有执行 OpenClaw 安装或更新。设置核验临时 Session 清理后，目标前缀会话数量为零。最终 `corepack pnpm lint`、全仓 `corepack pnpm test`、生产 `corepack pnpm build`、`corepack pnpm verify:openclaw-docs` 和 `git diff --check` 均通过；全仓前端与运行时测试 3043 项、脚本测试 309 项全部通过。59 个修改或新增文件的完整 Emoji 与常见 DeepSeek 密钥形态扫描均无命中。
+- OpenClaw 更新维护门禁与客户端现有 59 项定向测试通过，覆盖缺失已核验连接时统一重连、有效连接复用、重连失败阻断、精确协作服务故障、旧 Gateway 插件待修复证明、旧插件窄维护身份投影、其他维护动作阻断和实际写入前状态变化阻断。维护入口不再用完整新版展示能力模型解析旧插件，只读取实例标识、Schema 版本和数据库完整性，再读取正式维护状态；三个稳定字段缺失或畸形仍失败关闭。TypeScript 检查、`corepack pnpm lint`、完整前端与脚本测试和生产构建均通过；差异检查和完整文件扫描在最终写入后通过。真实更新操作仍需由用户在重新启动的调试应用中确认。本轮没有修改 Rust，未重复执行 Rust 测试。
+- Classic Wizard 参数协商新增 3 项行为回归，覆盖 stable 精确字段拒绝后的单次公共参数启动、其他错误禁止重试和操作失效禁止第二次请求；更新页新增 1 项失败反馈呈现回归。相关定向测试共 37 项通过，`corepack pnpm lint`、完整前端与脚本测试和生产构建通过。真实 Tauri 窗口已确认更新检查可以收口、按钮可以解锁并发现更新；随后已通过“跳过更新并继续”完成既有 Runtime 接管并进入仪表盘。
+- Gateway 就绪步骤收敛新增 2 项纯函数回归，连同运行时摘要组件共 11 项定向测试通过；`corepack pnpm lint` 通过，覆盖 966 个文件的模块边界、四处版本一致性和 TypeScript 编译。后续完整前端与脚本测试、生产构建均通过；目标 macOS 真机流程已确认步骤状态收敛、Ready 和仪表盘交接。
+- Unix PATH 多候选回归通过，证明首位旧 Node 和后续系统 Node 都会按优先级进入候选；既有“完整 Node 与 npm 对优先于不完整候选”回归继续通过。`cargo check --lib` 和 Rust library 完整测试通过，共 673 项通过、2 项忽略；完整前端与脚本测试、TypeScript 与模块边界检查、版本一致性检查和生产构建通过；`cargo fmt -- --check` 与 `git diff --check` 通过。为完成格式校验，已给项目锁定的 Rust 1.96 工具链补装官方 `rustfmt` 组件。
+- 当前 Node.js 提前阻断修复的定向 Rust 测试已通过：macOS LaunchAgent 标签解析、无运行时时的服务或端口失败关闭判据、当前目录无服务变更判据，以及当前位置 Native 修复不调用 Docker 残留探针。上一轮 `pnpm lint`、完整前端与脚本测试和生产构建通过；本轮 Rust library 总数更新为 673 项通过、2 项忽略，格式与编译检查也已通过。目标 macOS 的数据位置“下一步”和后续运行时恢复已完成真机核对。
 - 从 DWS 官方提交 `d4098a72dbcbbf8bdb286dcca96994bc5a9f462f` 构建 Schema 二进制，枚举确认 81 个已审阅工具为 `available`、4 个 HRbrain Shortcut 为 `unavailable`。移除 HR 注册项后逐项核验剩余 81 个业务工具的完整叶子 canonical path、CLI path、availability、effect、risk、confirmation、idempotency、参数语义和约束；81 项全部一致。
 - DWS 官方主线源码已刷新到提交 `bea76da8ba5091154a31779e2850d652c212aef6`。相对上一审阅提交的变化集中在聊天读取，待办生命周期实现未变化；创建、更新、完成和重开继续以稳定 taskId 完成写后读取并返回 `verified=true`。当前受控工具链仍无法构建最新主线，因此 81 工具动态审计证据继续限定在上一条已成功构建的官方提交，不能描述为最新主线动态通过。
 - 同一官方 Schema 二进制确认扩展只读预检新增的听记、知识库、日报周报、邮件、消息、招聘和目标管理七个叶子均为 `available`、`read`、`low`、`not_required`、`idempotent`，且没有必填业务参数；同时确认高敏预检覆盖的 17 个 AI 表格、合同、招聘和目标工具均为相同的可用、低风险、无需确认和幂等读取契约，并按正式 Schema 提取必填参数。
@@ -177,21 +208,23 @@
 - `corepack pnpm test` 全仓测试通过；前端与运行时测试 3001 项通过，全部脚本测试 309 项通过。目标 Gateway 当前用户读取、普通只读矩阵、高敏只读矩阵、日历写入和待办写入验收共 52 项定向测试通过。
 - `corepack pnpm build` 通过，协作与钉钉插件固定包、TypeScript 和 Vite 生产构建均完成。
 - 钉钉 UI 定向测试通过，覆盖 1280 像素宽桌面断点、工具项唯一按钮与 `aria-current`、说明直显、业务域列去重、技术证据默认折叠和三语言资源一致性。636 像素交互式静态预览完成暗色、亮色、键盘焦点、回车进入详情、回车返回目录和写操作风险邻近检查。
-- 数据位置恢复与返回策略定向测试 35 项通过，覆盖无所选服务时跳过服务运行时解析、恢复失败页只导航返回、普通数据位置和运行方式返回仍补偿、Node.js 范围提取、未知占用端口提取以及恢复单飞。存储设置模型 5 项全部通过。
+- 数据位置恢复与返回策略既有定向测试继续通过；本轮 15 项前端定向测试覆盖占用者核验命令参数、只有安全识别后才出现终止主操作，以及共享确认对话框的不定进度。Rust 新增回归覆盖 macOS、Linux、Windows 监听输出解析、同用户与启动代次权限围栏、受控真实监听识别、独立受控监听进程终止后端口释放，以及服务停止参数随目标 CLI 帮助契约选择；独立监听辅助入口只由父测试启动，因此保持忽略标记。
+- Node.js 就地修复新增的 67 项前端定向与回归测试全部通过，覆盖 Gateway 服务错误精确分类、Node 安装与 npm 修复决策、存储表单装配、既有首次安装闭环和三语资源完整性。后续全仓 `npm test`、TypeScript 编译、模块边界、版本一致性、生产构建与 `git diff --check` 全部通过。直接调用当前环境的 `pnpm exec` 时，工具尝试非交互重装依赖并中止；改用仓库已安装编译器完成同一 TypeScript 校验，未改写依赖。
+- `npm run tauri dev` 已在当前代码上重新启动调试应用进程。桌面窗口中的真实安装器与自动重试终态继续由用户交互验收，不把进程存在描述为界面闭环已通过。
 - `bash scripts/render-app-icon.sh` 使用项目锁定的 Tauri CLI 成功生成全部平台资源；已核对桌面 PNG 为 32、128、256 和 512 像素规格，`icns` 与包含 16、24、32、48、64、256 像素层级的 `ico` 均为有效容器。512 像素和放大的 32 像素预览完成透明边缘、主体居中、品牌一致性与小尺寸辨识度检查。
-- 本轮 `corepack pnpm test` 全仓测试、`corepack pnpm lint`、`corepack pnpm build`、`cargo check --lib`、`cargo test --lib` 和 `git diff --check` 均通过；Rust 共 665 项通过、1 项忽略。生产构建生成的协作插件归档摘要噪声已从本任务变更中排除。
-- 本机 `corepack pnpm tauri dev` 已用修复后代码完成编译并重启当前调试应用，进程保留给用户本地检查。启动恢复已越过无所选服务事务上的 Node.js 误门禁，并立即报告候选端口 18789 由无法核验归属的进程占用；不再等待 30 秒。由于原生 Tauri 窗口不在当前自动化控制面，按钮真机点击和关闭占用进程后的恢复成功仍需用户现场确认。
+- 本轮 `corepack pnpm test` 全仓测试、`corepack pnpm lint`、`corepack pnpm build`、`corepack pnpm verify:openclaw-docs`、`cargo check --lib`、`cargo test --lib` 和 `git diff --check` 均通过；最新 Rust 完整测试为 673 项通过、2 项忽略，其中一项是只供受控终止测试拉起的监听辅助入口。Gateway 停止契约定向测试覆盖帮助声明 `--force`、帮助未声明该参数、错误文本不误判以及已安装服务所有权门禁；数据位置前端回归 45 项通过。生产构建生成的协作插件归档摘要噪声已从本任务变更中排除。
+- OpenClaw 官方主线已刷新到提交 `cbe5634a299a9375ab544ff4cfc264d7b2c8b994`。官方服务文档和源码确认主线非交互 `gateway stop` 需要显式 `--force`；目标真机 CLI 的结构化错误同时证明它没有该选项。当前实现以运行时帮助契约选择一次性停止参数，不使用版本门禁，也不把 `gateway run --force` 误用为通用端口清理命令。
+- 本机 `corepack pnpm tauri dev` 已用本轮代码完成编译并保持调试应用运行；目标 macOS 已从 Gateway 身份核验继续完成跳过可选更新、既有配置接管、Ready 和仪表盘交接。
 - 固定钉钉插件归档已重建；两份元数据字节一致，均为版本 `0.27.0`、工具数 `85`、摘要 `5b9dea8641bb32da7ac301f7ad94462422b12b80774ed3c0d21fc89f73b2858f`。归档包含 96 个文件，新增合同分析安全标准输入转换和共享 17 项高敏调用计划，并继续包含完整叶子 Schema、参数语义和跨参数约束准入、统一结果信封、目标验收、日程和待办内嵌核心只读门禁、配置摘要、运行代际围栏、两类写策略、13 个有界审批摘要、日报有界 stdin、高敏预检、目标事件验收，以及显式 Profile 授权的无业务载荷操作员快照逻辑，且不含任何 HRbrain 工具注册项。
 - 同一源码连续两次打包的 SHA-256 一致，排除当前固定包非确定性。
 - `git diff --check` 通过。
-- 对当前 20 个修改文本文件执行完整 Emoji 扫描，未发现命中。
-- 项目锁定的 Rust 1.96.0 工具链当前未安装 `rustfmt` 组件，`cargo fmt -- --check` 无法执行；命令在格式检查前退出且没有改写文件。Rust 编译、完整测试和人工差异检查已完成，但不能把它们替代为格式化通过。
-- 验证命令报告当前执行进程不在包声明的 Node engines 范围内，因此仍需在项目声明支持的 Node 范围复跑发布前验证。
+- 对本轮修改文本文件执行完整 Emoji 扫描，未发现命中。
 - DWS 最新主线源码提交 `bea76da8ba5091154a31779e2850d652c212aef6` 当前未在受控环境完成动态构建。待办生命周期有最新源码与官方测试证据；81 工具动态审计仍限定在已成功构建的官方提交 `d4098a72dbcbbf8bdb286dcca96994bc5a9f462f`。
 
 ## 已知问题与未验证边界
 
-- 当前 Tauri 恢复实测已越过 Node.js 误阻断，但候选 Gateway 端口 18789 正被 JunQi 无法核验归属的进程占用。应用现在会立即显示关闭该 Gateway 后重试，且“上一步”可用；尚未在关闭占用进程后取得恢复成功终态，不能描述为当前机器完整跑通。
+- 当前 Tauri 恢复页的 Node.js 修复、服务停止参数协商、布局恢复、服务重启、Gateway 健康和运行时身份核验已在目标 macOS 真机走通。安全终止占用者的独立受控测试已通过，但本次真实链路没有再次触发该分支；Windows 与 Linux 当前只完成解析、权限和编译路径验证。
+- 真机成功页暴露的 Node.js 转圈、npm 等待和 50% 进度是前端旧投影，不代表后台仍在检测。原子状态收敛已完成代码与自动化验证，修复后的完整视觉终态仍需下一次真实流程核对。
 - 当前没有目标钉钉测试租户、正式 DWS Profile 和对应权限，未执行真实日程、待办、审批、听记、文档、知识库、日报、邮件或聊天调用；自动化不能替代目标租户实测。
 - 13 个写操作审批摘要已按 OpenClaw 正式数据模型完成自动化验证，但尚未在真实 Gateway 的桌面审批、TUI、频道转发和移动推送界面逐一核对显示、截断与隐私边界。
 - 审批拒绝和撤销缺少可证明终态的正式结果字段，因此不会显示为完全核验。
@@ -215,10 +248,14 @@
 - UI 复用既有 `Button`、`IconButton`、`Switch`、主题化 `Select`、`DingTalkProfileSelect` 和活动列表，以及 `aegis-bg`、`aegis-surface`、`aegis-border`、`aegis-text`、`aegis-primary` 和状态色。最近事件通知与快照使用同一主题 token、就地 `role=status` 和 `role=alert`，不新增本地业务终态。自动化覆盖配置、连接隔离、严格快照解码、自动读取结果和提示语义，尚未在真实 Tauri 窗口完成亮色、暗色、窄窗口、键盘焦点、加载、失败和空配置视觉验收。
 - 新版钉钉目录与检查器已在静态预览完成亮色、暗色、636 像素窄窗口和键盘切换验证；浏览器因缺少 Tauri 持久化能力无法进入实际应用业务路由，因此宽窗口真实装配、加载到结果连续帧、正式 Gateway 与 DWS 状态仍未验证。Windows、Linux、高对比度和屏幕阅读器也需目标平台实测。
 - 新图标已完成源图、32 像素和 512 像素静态视觉检查，尚未在 Windows 任务栏、Linux 桌面环境和移动端启动器真机验收；这些平台不能由资源生成成功替代视觉验收。存储页的新错误提示已通过类型、模型和生产构建验证，仍需在真实 Tauri 首次设置流程复现同一失败状态并核对窄窗口、键盘焦点与三种主题。
-- 当前调试应用已在 macOS 启动，但原生窗口和 Dock 无法由现有自动化读取，因此不把进程启动描述为新图标或错误卡片的真机视觉通过；需要用户在已打开窗口中确认。
+- 当前调试应用已在目标 macOS 原生窗口完成亮色主题首次设置和进入仪表盘的连续交互核对；更新检查、跳过更新、真实模型核验、Ready 与仪表盘连接状态均已观察。暗色、窄窗口、键盘完整路径、Windows 和 Linux 仍未完成本轮真机视觉验收；新图标与钉钉业务页的既有未验证边界继续保留。
 
 ## 失败方案与已删除路径
 
+- 已有 Runtime 接管回归首次单独运行时遗漏仓库 `test-setup.ts`，测试环境因缺少完整 `localStorage` 适配而在加载阶段退出；使用项目正式测试初始化后定向 49 项与全仓测试全部通过。配置漂移用例最初只模拟一次变化，实际实现按设计对新快照重新核验；用例改为持续漂移后才准确覆盖超时阻断契约。
+- 本轮为旧 Gateway 插件待修复分支新增测试后，首次定向执行按预期因证明类型和协调器分支尚未实现而失败，共 3 项失败；完成绑定身份与本地探针的短期证明后，同组 43 项全部通过。该失败是回归测试对原缺陷的复现，不是新的运行时回归。
+- 本轮为旧插件窄维护身份新增测试后，首次定向执行中两项按预期因客户端尚无窄读取入口而失败；另一项因测试误用了未导入的包常量失败，随后改为维护协议允许的正整数并完成类型核对。实现后客户端、维护协调器和更新生命周期共 59 项通过。
+- 本轮首次直接执行两个 TypeScript 定向测试时遗漏根级 `test-setup.ts`，测试加载阶段因 `localStorage` 环境不完整退出，未进入产品断言。改用仓库完整测试初始化后 31 项全部通过；单文件结果不得脱离项目测试环境解释为产品失败。
 - 删除待办通用“设置完成状态”原子入口，改为 DWS 官方 `+complete` 和 `+reopen` 两个有明确目标状态且自带读回核验的命令。
 - 删除原子“同意审批”入口，改为 DWS 官方 `+approve-by` 唯一匹配并读回任务终态的高风险 Shortcut。
 - 日程和待办不再由插件复制字段比对逻辑，直接采用 DWS 正式复合契约。
@@ -232,6 +269,7 @@
 - 一次性 `tsx -e` 审计脚本不能使用 CommonJS 输出不支持的顶层 `await`；改为显式异步函数后完成同一审计。
 - OpenClaw 文档站已把 `commands.list` 从协议总览拆到 operator methods 页面；文档链接校验已改为检查新的官方页面。
 - 一次进程级负向检查曾使用 zsh 只读变量名 `status`，导致业务命令已经按预期失败后外层校验脚本再次报错；复跑时改用任务专属变量 `approval_exit`，避免复用 shell 保留名。
+- 本轮 Emoji 扫描首次在 zsh 循环中使用变量名 `path`，该特殊数组会同步覆盖 `PATH`，导致循环后的 `file` 和 `rg` 无法解析；改用任务专属名 `changed_file` 和显式 zsh 换行数组后，完成所有修改文本文件与新增 Rust 文件的完整 Emoji 扫描。后续 zsh 脚本不得使用 `path` 作为局部标量。
 - 首次枚举全部叶子 Schema 时无上限并发启动 DWS 子进程导致脚本超时；该失败不是 DWS 契约失败。改用与插件一致的并发上限 4 后完成枚举，并据此发现 4 个 HRbrain Shortcut 的正式不可用状态。
 - 首次启用 `availability` 必填校验后，4 个事件运行时测试夹具因缺少该正式字段按预期失败；补齐夹具并新增不可用事件契约回归测试后，插件 103 项测试全部通过。
 - 首次制品检查错误地要求仓库维护脚本 `scripts/verify-target-readonly.mjs` 存在于固定插件归档，因此按包清单正确失败。该脚本只供仓库维护者使用，安装包正式范围是 `dist`、`skills`、manifest 和 README；修正后的检查分别核验归档内预检运行逻辑与仓库内 CLI 入口。
@@ -274,7 +312,7 @@
 
 ## 下一步顺序
 
-1. 关闭当前目标桌面上占用候选 Gateway 端口 18789 的未知进程，重新打开数据位置恢复页，核对“重试恢复”成功清除持久标记、普通返回可用以及恢复后位置表单可编辑；不得由 JunQi 或验证脚本按端口强制杀进程。
+1. 在当前仪表盘验证日常会话加载和一条由用户发起的普通对话；把 OpenClaw 更新保留为独立可选维护测试，后续单独核对成功更新与失败恢复，不再把更新或重复官方向导作为首次进入仪表盘的前置条件。
 2. P0-A：在 Docker 可用的受控测试机依次运行 `corepack pnpm dingtalk:gateway:smoke` 和 `corepack pnpm dingtalk:gateway:chain-smoke`，动态证明固定归档关闭态以及 Session、实际工具投影、`tools.invoke`、插件、Schema、DWS 子进程和结果信封链路；两者均不证明正式 DWS 或租户。
 3. P0-B：先运行 `corepack pnpm dingtalk:verify-target-contracts -- --dws-path <absolute-path>` 完成目标 DWS 的 81 工具 Schema 核验；再以环境变量提供 Gateway 令牌，并把 `agentId`、`sessionKey` 和 Profile 通过闭合 JSON 标准输入传给 `dingtalk:gateway:target-read` 完成最小当前用户读取，随后对同一目标依次执行 `dingtalk:gateway:target-readonly` 的 `core` 五项和 `extended` 十二项矩阵。最后必须用真实带身份同步的客户端验收认证 Profile 门禁；纯令牌 CLI 没有身份同步句柄，不能冒充这项证明。
 4. 使用受控 Profile 和真实 fixture 先执行 DWS 直连 17 项高敏只读预检，再对同一 Agent、Session、Profile 和 fixture 执行 `dingtalk:gateway:target-sensitive-readonly`，逐域核对 AI 表格、合同、招聘和目标管理的工具投影、Schema、参数、权限、对象存在性、敏感字段与最小数据范围；最后由带身份同步的真实客户端单独验收 Profile 门禁。

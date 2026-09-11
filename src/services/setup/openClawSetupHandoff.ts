@@ -20,6 +20,7 @@ export interface OpenClawSetupHandoffPorts {
   }>;
   probeSelectedGateway: () => Promise<boolean>;
   readConfigApplication: (connectionId: string) => Promise<{
+    configHash?: string;
     configRevisionHash?: string;
     appliedConfigHash?: string | null;
     reloadDisabled?: boolean;
@@ -51,7 +52,11 @@ export type OpenClawSetupCompletionEvidence =
     detectSetup: () => Promise<{ setupComplete: boolean; configuredModel?: string }>;
     verifyModel: () => Promise<{ ok: true } | { ok: false; error: string }>;
   }
-  | { kind: "classic-wizard-terminal" };
+  | { kind: "classic-wizard-terminal" }
+  | {
+    kind: "classic-existing-runtime";
+    verifyModel: () => Promise<{ ok: true } | { ok: false; error: string }>;
+  };
 
 export type OpenClawSetupHandoffResult =
   | { ready: true }
@@ -68,8 +73,8 @@ export type OpenClawSetupHandoffResult =
   };
 
 /**
- * OpenClaw 持有配置语义，JunQi 只在官方流程终态后依次核验认证连接、所选
- * Runtime、配置完成状态与真实模型。任何一步失败都停留在交接阶段，不重放向导。
+ * OpenClaw 持有配置语义，JunQi 在官方流程终态或既有 Runtime 接管时依次核验
+ * 认证连接、所选 Runtime、配置证据与真实模型。任何一步失败都停留在交接阶段。
  */
 export async function performOpenClawSetupHandoff(
   ports: OpenClawSetupHandoffPorts,
@@ -96,7 +101,12 @@ export async function performOpenClawSetupHandoff(
       }
       continue;
     }
-    const convergence = await convergeConfigurationApplication(ports, transaction);
+    const existingRuntimeSnapshot = evidence.kind === "classic-existing-runtime";
+    const convergence = await convergeConfigurationApplication(
+      ports,
+      transaction,
+      existingRuntimeSnapshot,
+    );
     if (!convergence.ready) return convergence;
     if (!hasHandoffBudget(transaction)) return configurationApplicationTimeout(finalDiagnostic);
     const connectionId = convergence.connectionId;
@@ -113,7 +123,7 @@ export async function performOpenClawSetupHandoff(
     }
 
     // Classic Wizard 的 done 是官方终态，不要求 Runtime 同时实现 Guided 方法。
-    // Guided 必须通过正式 verify RPC 核验，两种终态共享连接和 Runtime 身份门禁。
+    // 既有 Classic Runtime 没有完成探针时必须运行官方 agent 核验，不能只凭配置文本放行。
     if (evidence.kind === "guided") {
       const detection = await awaitWithinHandoffDeadline(() => evidence.detectSetup(), transaction);
       if (!detection.settled) return configurationApplicationTimeout(finalDiagnostic);
@@ -141,6 +151,23 @@ export async function performOpenClawSetupHandoff(
           diagnostic: verification.value.error,
         };
       }
+    } else if (evidence.kind === "classic-existing-runtime") {
+      const verification = await awaitWithinHandoffDeadline(
+        () => evidence.verifyModel(),
+        transaction,
+      );
+      if (!verification.settled) return configurationApplicationTimeout(finalDiagnostic);
+      if (!isLifecycleReceiptCurrent(ports, transaction)) continue;
+      if (!ports.isAttestedConnectionCurrent(connectionId)) {
+        return { ready: false, reason: "connection-unavailable" };
+      }
+      if (!verification.value.ok) {
+        return {
+          ready: false,
+          reason: "model-unverified",
+          diagnostic: verification.value.error,
+        };
+      }
     }
 
     const finalApplication = await verifyFinalConfigurationApplication(
@@ -148,6 +175,7 @@ export async function performOpenClawSetupHandoff(
       connectionId,
       revisionHash,
       transaction,
+      existingRuntimeSnapshot,
     );
     if (!isLifecycleReceiptCurrent(ports, transaction)) continue;
     if (finalApplication.ready) return { ready: true };
@@ -190,20 +218,25 @@ type HandoffDeadlineResult<T> =
 const HANDOFF_TIMEOUT_MARKER = Symbol("openclaw-handoff-timeout");
 
 function classifyConfigurationApplication(application: {
+  configHash?: string;
   configRevisionHash?: string;
   appliedConfigHash?: string | null;
   reloadDisabled?: boolean;
-}): ConfigurationApplicationState {
+}, allowStableConfigSnapshot: boolean): ConfigurationApplicationState {
   const revisionHash = application.configRevisionHash?.trim() ?? "";
-  if (!revisionHash || application.appliedConfigHash === undefined) {
-    return { state: "unsupported", reloadDisabled: false, revisionHash: null };
+  if (revisionHash && application.appliedConfigHash !== undefined) {
+    const appliedConfigHash = application.appliedConfigHash?.trim() ?? "";
+    const state = Boolean(appliedConfigHash)
+      && revisionHash === appliedConfigHash
+      ? "applied"
+      : "pending";
+    return { state, reloadDisabled: application.reloadDisabled === true, revisionHash };
   }
-  const appliedConfigHash = application.appliedConfigHash?.trim() ?? "";
-  const state = Boolean(appliedConfigHash)
-    && revisionHash === appliedConfigHash
-    ? "applied"
-    : "pending";
-  return { state, reloadDisabled: application.reloadDisabled === true, revisionHash };
+  const configHash = application.configHash?.trim() ?? "";
+  if (allowStableConfigSnapshot && configHash) {
+    return { state: "applied", reloadDisabled: false, revisionHash: configHash };
+  }
+  return { state: "unsupported", reloadDisabled: false, revisionHash: null };
 }
 
 async function verifyFinalConfigurationApplication(
@@ -211,6 +244,7 @@ async function verifyFinalConfigurationApplication(
   connectionId: string,
   expectedRevisionHash: string,
   transaction: HandoffTransaction,
+  allowStableConfigSnapshot: boolean,
 ): Promise<{ ready: true } | Extract<OpenClawSetupHandoffResult, { ready: false }>> {
   if (!ports.isAttestedConnectionCurrent(connectionId)) {
     return { ready: false, reason: "connection-unavailable" };
@@ -224,7 +258,10 @@ async function verifyFinalConfigurationApplication(
     if (!isLifecycleReceiptCurrent(ports, transaction)) {
       return configurationApplicationTimeout('Gateway lifecycle changed during configuration verification.');
     }
-    const application = classifyConfigurationApplication(read.value);
+    const application = classifyConfigurationApplication(
+      read.value,
+      allowStableConfigSnapshot,
+    );
     if (!ports.isAttestedConnectionCurrent(connectionId)) {
       return { ready: false, reason: "connection-unavailable" };
     }
@@ -253,6 +290,7 @@ async function verifyFinalConfigurationApplication(
 async function convergeConfigurationApplication(
   ports: OpenClawSetupHandoffPorts,
   transaction: HandoffTransaction,
+  allowStableConfigSnapshot: boolean,
 ): Promise<ConfigurationConvergenceResult> {
   const wait = ports.wait ?? ((delayMs) => new Promise<void>((resolve) => {
     globalThis.setTimeout(resolve, delayMs);
@@ -298,7 +336,10 @@ async function convergeConfigurationApplication(
         );
         if (!read.settled) return null;
         if (!isLifecycleReceiptCurrent(ports, transaction)) continue;
-        const application = classifyConfigurationApplication(read.value);
+        const application = classifyConfigurationApplication(
+          read.value,
+          allowStableConfigSnapshot,
+        );
         observedConfigurationApplication = true;
         lastConfigDiagnostic = undefined;
         if (application.state === "unsupported") {

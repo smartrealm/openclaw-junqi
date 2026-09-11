@@ -334,12 +334,10 @@ pub fn detect_path(binary: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Return every executable candidate visible to the current process.
+/// 返回当前搜索路径内的全部可执行候选。
 ///
-/// Windows commonly has several Node.js installations on PATH (for example,
-/// a version-manager shim followed by the system installer). Callers that
-/// need a specific runtime contract must evaluate every candidate instead of
-/// treating the first path entry as the machine's only installation.
+/// 同一台机器可能同时存在版本管理器和系统安装器提供的 Node.js。调用方需要逐个
+/// 核验候选，不能把 PATH 中排在第一位的版本误当成机器上唯一可用的运行时。
 pub fn detect_paths(binary: &str) -> Vec<String> {
     if binary.contains('\\') || binary.contains('/') {
         return PathBuf::from(binary)
@@ -373,12 +371,32 @@ pub fn detect_paths(binary: &str) -> Vec<String> {
 
     #[cfg(not(windows))]
     {
-        let detected = detect_path(binary);
-        (!detected.is_empty())
-            .then_some(detected)
-            .into_iter()
-            .collect()
+        find_all_on_unix_path(binary, login_shell_path())
     }
+}
+
+#[cfg(not(windows))]
+fn find_all_on_unix_path(binary: &str, path_value: &str) -> Vec<String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut matches = Vec::new();
+    for directory in std::env::split_paths(path_value) {
+        if directory.as_os_str().is_empty() {
+            continue;
+        }
+        let candidate = directory.join(binary);
+        let Ok(metadata) = candidate.metadata() else {
+            continue;
+        };
+        if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+            continue;
+        }
+        let candidate = candidate.to_string_lossy().into_owned();
+        if !matches.iter().any(|known| known == &candidate) {
+            matches.push(candidate);
+        }
+    }
+    matches
 }
 
 /// 在传给 `portable-pty` 前先解析命令路径。
@@ -517,6 +535,9 @@ mod tests {
     use super::{find_all_on_windows_path, WindowsPathEntries};
     use std::path::PathBuf;
 
+    #[cfg(not(windows))]
+    use super::find_all_on_unix_path;
+
     fn path_test_root(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "junqi-windows-path-{name}-{}-{}",
@@ -571,6 +592,42 @@ mod tests {
         let candidates = find_all_on_windows_path("git.exe", &format!("\"{}\"", git_dir.display()));
 
         assert_eq!(candidates, vec![git.to_string_lossy().into_owned()]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_path_keeps_every_executable_node_candidate_in_precedence_order() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "junqi-unix-node-candidates-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let old_node_dir = root.join("version-manager");
+        let system_node_dir = root.join("system-runtime");
+        std::fs::create_dir_all(&old_node_dir).unwrap();
+        std::fs::create_dir_all(&system_node_dir).unwrap();
+        let old_node = old_node_dir.join("node");
+        let system_node = system_node_dir.join("node");
+        for candidate in [&old_node, &system_node] {
+            std::fs::write(candidate, "#!/bin/sh\n").unwrap();
+            let mut permissions = std::fs::metadata(candidate).unwrap().permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(candidate, permissions).unwrap();
+        }
+
+        let search_path = std::env::join_paths([&old_node_dir, &system_node_dir]).unwrap();
+        let candidates = find_all_on_unix_path("node", &search_path.to_string_lossy());
+
+        assert_eq!(
+            candidates,
+            vec![
+                old_node.to_string_lossy().into_owned(),
+                system_node.to_string_lossy().into_owned(),
+            ]
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

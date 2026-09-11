@@ -1,6 +1,7 @@
 import { debugWarn } from '@/utils/debugLog';
 import { wizardRuntimeScopeKey } from '@/services/setup/wizardRuntimeScope';
 import { isOpenClawSetupAdmissionBusy } from '@/services/setup/openClawSetupAdmission';
+import { GatewayRpcError } from '@/services/gateway/Connection';
 
 export type OpenClawWizardStepType =
   | 'note'
@@ -62,6 +63,15 @@ export interface OpenClawWizardStartOptions {
   installDaemon?: boolean;
   flow?: 'setup' | 'channels';
   channel?: string;
+}
+
+const INSTALL_DAEMON_UNSUPPORTED_MESSAGE =
+  "invalid wizard.start params: at root: unexpected property 'installDaemon'";
+
+function isInstallDaemonUnsupported(error: unknown): error is GatewayRpcError {
+  return error instanceof GatewayRpcError
+    && error.code === 'INVALID_REQUEST'
+    && error.message === INSTALL_DAEMON_UNSUPPORTED_MESSAGE;
 }
 
 function isWizardOption(value: unknown): value is OpenClawWizardOption {
@@ -537,7 +547,23 @@ export class OpenClawWizardClient {
             : {}),
         };
     const requestOptions = { timeoutMs: OPENCLAW_WIZARD_CONTROL_TIMEOUT_MS };
-    const rawResult = await this.callGateway('wizard.start', startParams, requestOptions);
+    let rawResult: unknown;
+    try {
+      rawResult = await this.callGateway('wizard.start', startParams, requestOptions);
+    } catch (error) {
+      this.assertOperationCurrent(operation);
+      if (this.startOptions.flow === 'channels'
+        || typeof this.startOptions.installDaemon !== 'boolean'
+        || !isInstallDaemonUnsupported(error)) {
+        throw error;
+      }
+      // stable 的正式 schema 只接受 mode 与 workspace。首次请求在创建会话前被精确拒绝时，
+      // 改用两个版本共有的参数启动一次；后续 daemon 选择仍由官方 Wizard 步骤拥有。
+      rawResult = await this.callGateway('wizard.start', {
+        mode: 'local',
+        ...(this.startOptions.workspace ? { workspace: this.startOptions.workspace } : {}),
+      }, requestOptions);
+    }
     const result = parseOpenClawWizardStartResult(rawResult);
     this.assertOperationCurrent(operation);
     const returnedSessionId = result.sessionId;

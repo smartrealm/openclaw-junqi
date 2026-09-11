@@ -1,19 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Check, ChevronDown, CircleAlert, Cpu, Database, FolderOpen, GitBranch, HardDrive, LoaderCircle, Package, Terminal } from 'lucide-react';
+import { Check, ChevronDown, CircleAlert, Cpu, Database, FolderOpen, GitBranch, HardDrive, LoaderCircle, Package, RefreshCw, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
+import { AlertDialog } from '@/components/shared/AlertDialog';
 import { SetupShell, StatusPanel } from '@/components/setup/SetupFlowPanels';
 import {
   classifyStorageSetupError,
   initialStorageLocationsVisibility,
   nodeRequirementFromRuntimeRecoveryError,
   portFromRuntimeRecoveryError,
+  runtimeRecoveryPrimaryAction,
   storageSubmissionPresentation,
   type StorageCompletion,
 } from '@/components/setup/storageSetupModel';
-import { rollbackRuntimeReconfiguration } from '@/api/tauri-commands';
+import {
+  inspectRuntimeRecoveryPortOwner,
+  rollbackRuntimeReconfiguration,
+  terminateRuntimeRecoveryPortOwnerAndRetry,
+  type RuntimeRecoveryPortOwner,
+} from '@/api/tauri-commands';
 import { useAppStore, type SetupLog, type StorageSetupDraft } from '@/stores/app-store';
 import type { SetupFlow } from '@/hooks/useSetupFlow';
 import { hasTauriEventBridge, subscribeTauriEvent } from '@/utils/tauriEvents';
@@ -56,6 +63,7 @@ interface StorageSetupStepProps {
   onReady: (result?: StorageCompletion) => void;
   onBack: () => void | Promise<void>;
   onRecoveryBack: () => void | Promise<void>;
+  onRepairNodeRuntime: () => Promise<boolean>;
   logs: SetupLog[];
   forceConfigure?: boolean;
 }
@@ -156,7 +164,7 @@ function StorageFormSkeleton() {
   );
 }
 
-export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack, logs, forceConfigure = false }: StorageSetupStepProps) {
+export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack, onRepairNodeRuntime, logs, forceConfigure = false }: StorageSetupStepProps) {
   const { t } = useTranslation();
   const storageDraft = useAppStore((state) => state.storageDraft);
   const setStorageDraft = useAppStore((state) => state.setStorageDraft);
@@ -164,6 +172,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack,
   const checkedRef = useRef(false);
   const mountedRef = useRef(false);
   const applyInFlightRef = useRef(false);
+  const nodeRepairInFlightRef = useRef(false);
   const backInFlightRef = useRef(false);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
@@ -184,12 +193,19 @@ export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack,
   const [migrateExisting, setMigrateExisting] = useState(true);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
+  const [repairingNode, setRepairingNode] = useState(false);
+  const [nodeRepairError, setNodeRepairError] = useState<string | null>(null);
   const [recoveringRuntime, setRecoveringRuntime] = useState(false);
+  const [inspectingRecoveryOwner, setInspectingRecoveryOwner] = useState(false);
+  const [recoveryPortOwner, setRecoveryPortOwner] = useState<RuntimeRecoveryPortOwner | null>(null);
+  const [recoveryOwnerError, setRecoveryOwnerError] = useState<string | null>(null);
+  const [terminateConfirmationOpen, setTerminateConfirmationOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadStorageStatus = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setNodeRepairError(null);
     try {
       if (!hasTauriEventBridge()) {
         throw new Error(t('storage.desktopIntegrationUnavailable'));
@@ -291,6 +307,46 @@ export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack,
       : null,
     [runtimeRecoveryError],
   );
+  const recoveryPrimaryAction = runtimeRecoveryPrimaryAction(
+    recoveryPortOwner,
+    inspectingRecoveryOwner,
+  );
+
+  const inspectRecoveryOwner = useCallback(async () => {
+    if (!recoveryOccupiedPort || recoveringRuntime) return;
+    setInspectingRecoveryOwner(true);
+    setRecoveryOwnerError(null);
+    try {
+      const owner = await inspectRuntimeRecoveryPortOwner();
+      if (!mountedRef.current) return;
+      setRecoveryPortOwner(owner);
+      if (!owner) {
+        setRecoveryOwnerError(t(
+          'storage.runtimeRecoveryOwnerReleased',
+          '端口已经释放，可以直接重试恢复。',
+        ));
+      }
+    } catch (cause) {
+      if (!mountedRef.current) return;
+      setRecoveryPortOwner(null);
+      setRecoveryOwnerError(errorMessage(
+        cause,
+        t('storage.runtimeRecoveryOwnerInspectFailed', '暂时无法识别占用进程，请重新检测或手动关闭。'),
+      ));
+    } finally {
+      if (mountedRef.current) setInspectingRecoveryOwner(false);
+    }
+  }, [recoveringRuntime, recoveryOccupiedPort, t]);
+
+  useEffect(() => {
+    if (!recoveryOccupiedPort) {
+      setRecoveryPortOwner(null);
+      setRecoveryOwnerError(null);
+      setTerminateConfirmationOpen(false);
+      return;
+    }
+    void inspectRecoveryOwner();
+  }, [inspectRecoveryOwner, recoveryOccupiedPort]);
 
   const chooseDirectory = useCallback(async () => {
     const selected = await open({
@@ -334,6 +390,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack,
     applyInFlightRef.current = true;
     setApplying(true);
     setError(null);
+    setNodeRepairError(null);
     try {
       const shouldMigrateSelectedState = !usingSourceLocation
         && migrateExisting
@@ -412,7 +469,7 @@ export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack,
   }, [customGitRuntime, customNodeRuntime, customNpmCache, customNpmPrefix, gitRuntimeDir, migrateExisting, nodeRuntimeDir, npmCacheDir, npmPrefix, runtimeDir, setStorageDraft, showLocations, targetDir, terminalIntegration, workspaceDir]);
 
   const handleBack = useCallback(async () => {
-    if (backInFlightRef.current || applyInFlightRef.current || recoveringRuntime) return;
+    if (backInFlightRef.current || applyInFlightRef.current || nodeRepairInFlightRef.current || recoveringRuntime) return;
     backInFlightRef.current = true;
     try {
       if (status) rememberDraft();
@@ -421,6 +478,46 @@ export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack,
       backInFlightRef.current = false;
     }
   }, [onBack, onRecoveryBack, recoveringRuntime, rememberDraft, status]);
+
+  const repairNodeRuntimeAndApply = useCallback(async () => {
+    if (
+      nodeRepairInFlightRef.current
+      || applyInFlightRef.current
+      || backInFlightRef.current
+      || recoveringRuntime
+    ) return;
+    nodeRepairInFlightRef.current = true;
+    setRepairingNode(true);
+    setNodeRepairError(null);
+    appendSetupLog({
+      source: 'setup',
+      step: 'storage',
+      level: 'info',
+      message: t('storage.nodeRepairStarted', '正在准备兼容的 Node.js 运行时…'),
+    });
+    try {
+      const repaired = await onRepairNodeRuntime();
+      if (!mountedRef.current || !repaired) return;
+      nodeRepairInFlightRef.current = false;
+      setRepairingNode(false);
+      await applyStorage();
+    } catch (cause) {
+      const message = errorMessage(cause, t('storage.nodeRepairFailed', '无法修复 Node.js 运行时'));
+      appendSetupLog({
+        source: 'setup',
+        step: 'storage',
+        level: 'error',
+        message: t('storage.logNodeRepairFailed', {
+          message,
+          defaultValue: 'Node.js 运行时修复失败：{{message}}',
+        }),
+      });
+      if (mountedRef.current) setNodeRepairError(message);
+    } finally {
+      nodeRepairInFlightRef.current = false;
+      if (mountedRef.current) setRepairingNode(false);
+    }
+  }, [appendSetupLog, applyStorage, onRepairNodeRuntime, recoveringRuntime, t]);
 
   const recoverRuntimeReconfiguration = useCallback(async () => {
     if (recoveringRuntime) return;
@@ -440,11 +537,42 @@ export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack,
           defaultValue: 'Could not recover the previous runtime change: {{message}}',
         }),
       });
-      if (mountedRef.current) setError(message);
+      if (mountedRef.current) {
+        setError(message);
+        void inspectRecoveryOwner();
+      }
     } finally {
       if (mountedRef.current) setRecoveringRuntime(false);
     }
-  }, [appendSetupLog, loadStorageStatus, recoveringRuntime, t]);
+  }, [appendSetupLog, inspectRecoveryOwner, loadStorageStatus, recoveringRuntime, t]);
+
+  const terminateRecoveryOwnerAndRetry = useCallback(async () => {
+    if (!recoveryPortOwner || recoveringRuntime) return;
+    setRecoveringRuntime(true);
+    setError(null);
+    try {
+      await terminateRuntimeRecoveryPortOwnerAndRetry(recoveryPortOwner);
+      await loadStorageStatus();
+    } catch (cause) {
+      const message = errorMessage(cause, t('storage.unknownError', 'Unexpected storage error'));
+      appendSetupLog({
+        source: 'setup',
+        step: 'storage',
+        level: 'error',
+        message: t('storage.logRecoveryTerminateFailed', {
+          message,
+          defaultValue: 'Could not close the port owner and recover the runtime: {{message}}',
+        }),
+      });
+      if (mountedRef.current) {
+        setError(message);
+        void inspectRecoveryOwner();
+      }
+      throw new Error(message);
+    } finally {
+      if (mountedRef.current) setRecoveringRuntime(false);
+    }
+  }, [appendSetupLog, inspectRecoveryOwner, loadStorageStatus, recoveringRuntime, recoveryPortOwner, t]);
 
   if (loading) {
     return (
@@ -487,62 +615,138 @@ export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack,
 
   if (status.runtimeReconfigurationRecoveryError) {
     return (
-      <SetupShell
-        active={activeStage}
-        contentIdentity="storage:runtime-recovery"
-        title={t('storage.title', '选择 OpenClaw 数据位置')}
-        subtitle={t('storage.runtimeRecoverySubtitle', 'OpenClaw 的先前运行时和 Gateway 服务需要先恢复，完成后才能继续更改数据位置。')}
-        logs={logs}
-        previousAction={{ onClick: handleBack, disabled: recoveringRuntime }}
-        nextAction={{
-          label: recoveringRuntime
-            ? t('storage.runtimeRecoveryRunning', '正在恢复…')
-            : t('storage.runtimeRecoveryRetry', '重试恢复'),
-          onClick: () => void recoverRuntimeReconfiguration(),
-          disabled: recoveringRuntime,
-          loading: recoveringRuntime,
-          icon: 'none',
-        }}
-      >
-        <div className="flex min-h-[260px] items-center" aria-busy={recoveringRuntime} aria-live="polite">
-          <StatusPanel
-            icon={recoveringRuntime
-              ? <LoaderCircle size={22} className="animate-spin motion-reduce:animate-none" />
-              : <CircleAlert size={22} />}
-            tone={recoveringRuntime ? "warning" : "danger"}
-            title={recoveringRuntime
-              ? t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')
-              : t('storage.runtimeRecoveryFailedTitle', '上一次运行时更改恢复失败')}
-            message={recoveringRuntime
-              ? t('storage.runtimeRecoveryRunningHint', '正在恢复原来的数据位置和 Gateway 状态，请稍候。')
-              : recoveryNodeRequirement
-                ? t('storage.runtimeRecoveryNodeHint', {
-                  requirement: recoveryNodeRequirement,
-                  defaultValue: '当前没有满足 OpenClaw 要求（{{requirement}}）的 Node.js。你可以返回环境检测修复 Node.js，再回到这里重试；不需要手动重复下载 JunQi。',
-                })
-                : recoveryOccupiedPort
-                  ? t('storage.runtimeRecoveryPortHint', {
-                    port: recoveryOccupiedPort,
-                    defaultValue: 'Gateway 端口 {{port}} 正被另一个无法核验归属的进程占用。请先关闭正在使用该端口的 OpenClaw Gateway，再点击“重试恢复”。JunQi 不会强制结束未知进程。',
+      <>
+        <SetupShell
+          active={activeStage}
+          contentIdentity="storage:runtime-recovery"
+          title={t('storage.title', '选择 OpenClaw 数据位置')}
+          subtitle={t('storage.runtimeRecoverySubtitle', 'OpenClaw 的先前运行时和 Gateway 服务需要先恢复，完成后才能继续更改数据位置。')}
+          logs={logs}
+          previousAction={{ onClick: handleBack, disabled: recoveringRuntime }}
+          nextAction={{
+            label: recoveringRuntime
+              ? t('storage.runtimeRecoveryRunning', '正在恢复…')
+              : recoveryPrimaryAction === 'inspect'
+                ? t('storage.runtimeRecoveryInspectingOwner', '正在识别占用进程…')
+                : recoveryPrimaryAction === 'terminate'
+                  ? t('storage.runtimeRecoveryTerminate', '关闭进程并恢复')
+                  : t('storage.runtimeRecoveryRetry', '重试恢复'),
+            onClick: recoveryPrimaryAction === 'terminate'
+              ? () => setTerminateConfirmationOpen(true)
+              : () => void recoverRuntimeReconfiguration(),
+            disabled: recoveringRuntime || recoveryPrimaryAction === 'inspect',
+            loading: recoveringRuntime || recoveryPrimaryAction === 'inspect',
+            icon: 'none',
+          }}
+        >
+          <div className="flex min-h-[260px] items-center" aria-busy={recoveringRuntime || inspectingRecoveryOwner} aria-live="polite">
+            <StatusPanel
+              icon={recoveringRuntime
+                ? <LoaderCircle size={22} className="animate-spin motion-reduce:animate-none" />
+                : <CircleAlert size={22} />}
+              tone={recoveringRuntime ? "warning" : "danger"}
+              title={recoveringRuntime
+                ? t('storage.runtimeRecoveryTitle', '正在恢复上一次运行时更改')
+                : t('storage.runtimeRecoveryFailedTitle', '上一次运行时更改恢复失败')}
+              message={recoveringRuntime
+                ? t('storage.runtimeRecoveryRunningHint', '正在恢复原来的数据位置和 Gateway 状态，请稍候。')
+                : recoveryNodeRequirement
+                  ? t('storage.runtimeRecoveryNodeHint', {
+                    requirement: recoveryNodeRequirement,
+                    defaultValue: '当前没有满足 OpenClaw 要求（{{requirement}}）的 Node.js。你可以返回环境检测修复 Node.js，再回到这里重试；不需要手动重复下载 JunQi。',
                   })
-                : t('storage.runtimeRecoveryFailedHint', '恢复尚未完成。你可以重试，或返回环境检测处理依赖问题后再回来。')}
-            footer={!recoveringRuntime && runtimeRecoveryError ? (
-              <details className="text-[11px] text-aegis-text-dim">
-                <summary className="cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/60">
-                  {t('storage.technicalDetails', '查看技术详情')}
-                </summary>
-                <p className="mt-1 break-words font-mono leading-5">{runtimeRecoveryError}</p>
-              </details>
-            ) : undefined}
-          />
-        </div>
-      </SetupShell>
+                  : recoveryOccupiedPort
+                    ? recoveryPortOwner
+                      ? recoveryPortOwner.canTerminate
+                        ? t('storage.runtimeRecoveryOwnerReadyHint', {
+                          port: recoveryPortOwner.port,
+                          defaultValue: '已识别端口 {{port}} 的占用进程。确认后，JunQi 会先请求进程正常退出，必要时再强制结束，并在端口释放后自动恢复。',
+                        })
+                        : t('storage.runtimeRecoveryOwnerProtectedHint', {
+                          port: recoveryPortOwner.port,
+                          defaultValue: '已识别端口 {{port}} 的占用进程，但当前用户没有安全结束它的权限。请手动关闭后重试。',
+                        })
+                      : t('storage.runtimeRecoveryPortHint', {
+                        port: recoveryOccupiedPort,
+                        defaultValue: 'Gateway 端口 {{port}} 正被另一个进程占用。JunQi 正在核验进程身份；核验完成前不会结束任何进程。',
+                      })
+                    : t('storage.runtimeRecoveryFailedHint', '恢复尚未完成。你可以重试，或返回环境检测处理依赖问题后再回来。')}
+              footer={!recoveringRuntime && runtimeRecoveryError ? (
+                <div className="space-y-3">
+                  {recoveryPortOwner ? (
+                    <div className="flex flex-col gap-2 rounded-lg border border-aegis-border bg-aegis-bg/55 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-semibold text-aegis-text">
+                          {t('storage.runtimeRecoveryOwnerLabel', '占用进程')}
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-aegis-text-muted">
+                          <span className="max-w-full truncate font-mono">{recoveryPortOwner.processName}</span>
+                          <span className="font-mono">PID {recoveryPortOwner.pid}</span>
+                          <span>{recoveryPortOwner.likelyOpenclaw
+                            ? t('storage.runtimeRecoveryOwnerOpenClaw', 'OpenClaw 相关进程')
+                            : t('storage.runtimeRecoveryOwnerUnknown', '归属未确认')}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void inspectRecoveryOwner()}
+                        disabled={inspectingRecoveryOwner}
+                        className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-aegis-border px-2.5 text-[11px] font-medium text-aegis-text-muted transition-colors hover:bg-aegis-hover/40 hover:text-aegis-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/50 disabled:cursor-wait disabled:opacity-50"
+                      >
+                        <RefreshCw size={12} className={inspectingRecoveryOwner ? 'animate-spin motion-reduce:animate-none' : undefined} />
+                        {t('storage.runtimeRecoveryInspectAgain', '重新检测')}
+                      </button>
+                    </div>
+                  ) : recoveryOwnerError ? (
+                    <p className="rounded-md border border-aegis-border bg-aegis-bg/55 px-3 py-2 text-[11px] leading-5 text-aegis-text-muted">
+                      {recoveryOwnerError}
+                    </p>
+                  ) : null}
+                  <details className="text-[11px] text-aegis-text-dim">
+                    <summary className="cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/60">
+                      {t('storage.technicalDetails', '查看技术详情')}
+                    </summary>
+                    <p className="mt-1 break-words font-mono leading-5">{runtimeRecoveryError}</p>
+                  </details>
+                </div>
+              ) : undefined}
+            />
+          </div>
+        </SetupShell>
+        <AlertDialog
+          open={terminateConfirmationOpen && Boolean(recoveryPortOwner)}
+          onClose={() => setTerminateConfirmationOpen(false)}
+          title={t('storage.runtimeRecoveryTerminateTitle', '关闭占用进程并恢复')}
+          message={recoveryPortOwner
+            ? recoveryPortOwner.likelyOpenclaw
+              ? t('storage.runtimeRecoveryTerminateOpenClawConfirm', {
+                process: recoveryPortOwner.processName,
+                pid: recoveryPortOwner.pid,
+                defaultValue: '将关闭 OpenClaw 相关进程 {{process}}（PID {{pid}}）。正在执行的任务可能中断；端口释放后会自动继续恢复。',
+              })
+              : t('storage.runtimeRecoveryTerminateUnknownConfirm', {
+                process: recoveryPortOwner.processName,
+                pid: recoveryPortOwner.pid,
+                defaultValue: '无法确认 {{process}}（PID {{pid}}）属于 OpenClaw。只有在你确认该进程可以关闭时才继续；端口释放后会自动恢复。',
+              })
+            : undefined}
+          variant="warning"
+          cancelLabel={t('common.cancel', '取消')}
+          confirmLabel={t('storage.runtimeRecoveryTerminateConfirm', '关闭并恢复')}
+          onConfirm={terminateRecoveryOwnerAndRetry}
+        />
+      </>
     );
   }
 
   // 数据位置读取只填充表单；只有用户点击下一步且原生存储事务成功后才推进阶段。
   const submission = storageSubmissionPresentation(applying, usingSourceLocation);
-  const actionLabel = submission.action === 'confirm-current'
+  const nodeRepairRequired = errorKind === 'gateway-service-node-repair-required';
+  const actionLabel = repairingNode
+    ? t('storage.nodeRepairRunning', '正在修复 Node.js…')
+    : nodeRepairRequired
+      ? t('storage.nodeRepairAndContinue', '修复 Node.js 并继续')
+      : submission.action === 'confirm-current'
     ? t('storage.activating', '正在确认存储位置…')
     : submission.action === 'prepare-new'
       ? t('storage.preparing', '正在准备新存储位置…')
@@ -567,18 +771,20 @@ export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack,
       title={t('storage.title', '选择 OpenClaw 数据位置')}
       subtitle={t('storage.subtitle', '配置、会话、认证和工作区将使用此位置；Node.js、Git 和 npm 缓存默认沿用系统设置。')}
       logs={logs}
-      previousAction={{ onClick: handleBack, disabled: submission.locked }}
+      previousAction={{ onClick: handleBack, disabled: submission.locked || repairingNode }}
       nextAction={{
         label: actionLabel,
-        onClick: () => void applyStorage(),
-        disabled: submission.locked || !layoutComplete,
-        loading: submission.loading,
+        onClick: nodeRepairRequired
+          ? () => void repairNodeRuntimeAndApply()
+          : () => void applyStorage(),
+        disabled: submission.locked || repairingNode || !layoutComplete,
+        loading: submission.loading || repairingNode,
         icon: 'none',
       }}
     >
       <fieldset
-        disabled={submission.locked}
-        aria-busy={submission.loading}
+        disabled={submission.locked || repairingNode}
+        aria-busy={submission.loading || repairingNode}
         className="m-0 min-w-0 border-x-0 border-y border-aegis-border px-0 py-6"
       >
         <div className="grid gap-3 sm:grid-cols-2">
@@ -840,6 +1046,8 @@ export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack,
               <p className="text-sm font-semibold">
                 {errorKind === 'openclaw-unavailable'
                   ? t('storage.openclawUnavailableTitle', '未核验到当前选择的 OpenClaw')
+                  : errorKind === 'gateway-service-node-repair-required'
+                    ? t('storage.gatewayServiceNodeRepairTitle', '需要先修复 Node.js')
                   : t('storage.errorTitle', '当前设置未生效')}
               </p>
               <p className="mt-1 text-xs leading-5 text-aegis-text-secondary">
@@ -847,8 +1055,18 @@ export function StorageSetupStep({ activeStage, onReady, onBack, onRecoveryBack,
                   ? customNpmPrefix
                     ? t('storage.openclawUnavailableCustomHint', '所选独立 npm 目录中还没有可用的 OpenClaw，因此没有开始迁移。已有安装在其他位置时，请关闭上方选项并返回上一步重新检测；需要独立安装时保留开启。')
                     : t('storage.openclawUnavailableExistingHint', '当前环境没有检测到可用于官方 Gateway 的 OpenClaw，因此没有开始迁移。请返回上一步重新检测现有安装。')
+                  : errorKind === 'gateway-service-node-repair-required'
+                    ? t('storage.gatewayServiceNodeRepairHint', '检测到由 OpenClaw 登记的 Gateway 服务，但当前 Node.js 无法运行 OpenClaw。点击“修复 Node.js 并继续”，JunQi 会准备兼容运行时并自动重试；无需重新下载 JunQi，也无需改动上方选项。')
                   : t('storage.errorHint', '没有写入当前更改，请查看技术详情后重试。')}
               </p>
+              {nodeRepairError && (
+                <p className="mt-2 rounded-md border border-aegis-danger/20 bg-aegis-bg/55 px-2.5 py-2 text-[11px] leading-5 text-aegis-text-secondary">
+                  {t('storage.nodeRepairFailureDetail', {
+                    message: nodeRepairError,
+                    defaultValue: 'Node.js 修复未完成：{{message}}',
+                  })}
+                </p>
+              )}
               <details className="mt-1.5 text-[11px] text-aegis-text-dim">
                 <summary className="cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aegis-primary/60">
                   {t('storage.technicalDetails', '查看技术详情')}

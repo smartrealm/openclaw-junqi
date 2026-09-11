@@ -2,6 +2,7 @@ import { gateway } from './index';
 import { readOpenClawConfigSnapshot } from './OpenClawConfigSnapshot';
 
 export interface OpenClawConfigApplicationEvidence {
+  configHash?: string;
   configRevisionHash?: string;
   appliedConfigHash?: string | null;
   reloadDisabled: boolean;
@@ -56,6 +57,7 @@ export async function readOpenClawConfigApplicationEvidence(
   }
 
   return {
+    ...(snapshot.hash ? { configHash: snapshot.hash } : {}),
     ...(snapshot.configRevisionHash ? { configRevisionHash: snapshot.configRevisionHash } : {}),
     ...(snapshot.appliedConfigHash !== undefined
       ? { appliedConfigHash: snapshot.appliedConfigHash }

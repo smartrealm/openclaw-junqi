@@ -12,6 +12,58 @@ export interface OpenclawUpdateState {
   logs: string[];
 }
 
+export interface OpenclawUpdateCheckProjection {
+  state: 'pending' | 'ready' | 'error';
+  available: boolean | null;
+  managedChannelPolicy: 'eligible' | 'unsupported' | 'unknown' | null;
+}
+
+export function projectOpenclawUpdateCheckResult(
+  phase: OpenclawUpdatePhase,
+  status: OpenclawUpdateStatus | null,
+): OpenclawUpdateCheckProjection {
+  const hasVerifiedStatus = status !== null && !status.error;
+  if (hasVerifiedStatus && ['ready', 'success', 'error'].includes(phase)) {
+    return {
+      state: 'ready',
+      available: status.available,
+      managedChannelPolicy: status.managedChannelPolicy,
+    };
+  }
+  if (phase === 'error') {
+    return { state: 'error', available: null, managedChannelPolicy: null };
+  }
+  return { state: 'pending', available: null, managedChannelPolicy: null };
+}
+
+export interface OpenclawUpdateOperationGuard {
+  mounted: boolean;
+  currentId: number;
+}
+
+export function createOpenclawUpdateOperationGuard(): OpenclawUpdateOperationGuard {
+  return { mounted: false, currentId: 0 };
+}
+
+export function setOpenclawUpdateOperationMounted(
+  guard: OpenclawUpdateOperationGuard,
+  mounted: boolean,
+): void {
+  guard.mounted = mounted;
+}
+
+export function beginOpenclawUpdateOperation(guard: OpenclawUpdateOperationGuard): number {
+  guard.currentId += 1;
+  return guard.currentId;
+}
+
+export function canPublishOpenclawUpdateOperation(
+  guard: OpenclawUpdateOperationGuard,
+  operationId: number,
+): boolean {
+  return guard.mounted && operationId === guard.currentId;
+}
+
 export type OpenclawUpdateAction =
   | { type: 'checkStarted' }
   | { type: 'checkCompleted'; status: OpenclawUpdateStatus }

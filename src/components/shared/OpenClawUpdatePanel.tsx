@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { CheckCircle2, CircleAlert, Download, ExternalLink, RefreshCw, ShieldCheck, TerminalSquare } from 'lucide-react';
 import clsx from 'clsx';
 import { useOpenclawUpdate } from '@/hooks/useOpenclawUpdate';
+import { projectOpenclawUpdateCheckResult } from '@/hooks/openclawUpdateState';
 import { openDesktopExternalLink } from '@/runtime/desktopExternalLink';
 import { resolveOpenclawUpdateIndicator } from './openclawUpdateIndicator';
 import { Alert } from './alert';
@@ -59,17 +60,7 @@ export function OpenClawUpdatePanel({
 
   useEffect(() => {
     if (!onCheckResultChange) return;
-    if (update.phase === 'ready' || update.phase === 'success') {
-      onCheckResultChange({
-        state: 'ready',
-        available: status?.error ? null : (status?.available ?? null),
-        managedChannelPolicy: status?.managedChannelPolicy ?? 'unknown',
-      });
-    } else if (update.phase === 'error') {
-      onCheckResultChange({ state: 'error', available: null, managedChannelPolicy: null });
-    } else {
-      onCheckResultChange({ state: 'pending', available: null, managedChannelPolicy: null });
-    }
+    onCheckResultChange(projectOpenclawUpdateCheckResult(update.phase, status));
   }, [onCheckResultChange, status?.available, status?.error, status?.managedChannelPolicy, update.phase]);
 
   const channelLabel = status?.channel

@@ -25,6 +25,7 @@ pub mod fs_watcher;
 pub mod gateway;
 pub mod gateway_credentials;
 pub mod gateway_logs;
+pub(crate) mod gateway_port_owner;
 pub mod gateway_rescue;
 pub(crate) mod gateway_service;
 pub mod gateway_supervisor;

@@ -4,6 +4,7 @@ import type { SetupFlow } from '@/hooks/useSetupFlow';
 import type { SetupLog } from '@/stores/app-store';
 import { SetupShell } from '@/components/setup/SetupFlowPanels';
 import { OpenClawUpdatePanel } from '@/components/shared/OpenClawUpdatePanel';
+import { OpenClawUpdateContinuationFailure } from './OpenClawUpdateContinuationFailure';
 import {
   isOpenClawUpdateContinuationDisabled,
   type SetupUpdateCheckResult,
@@ -19,6 +20,7 @@ export function OpenClawUpdateScreen({ flow, logs }: { flow: SetupFlow; logs: Se
   const { t } = useTranslation();
   const [checkResult, setCheckResult] = useState<SetupUpdateCheckResult>(INITIAL_CHECK_RESULT);
   const continuing = flow.gatewayReadyContinuation.status === 'checking';
+  const continuationFailed = flow.gatewayReadyContinuation.status === 'failed';
 
   return (
     <SetupShell
@@ -36,7 +38,11 @@ export function OpenClawUpdateScreen({ flow, logs }: { flow: SetupFlow; logs: Se
       nextAction={{
         label: continuing
           ? t('setup.gatewayReadyCheckingAction', '正在核验配置…')
-          : t('common.next', '下一步'),
+          : continuationFailed
+            ? t('setup.gatewayReadyRetryAction', '重新核验')
+            : checkResult.available
+              ? t('setup.openclawUpdate.skipAndContinue', '跳过更新并继续')
+              : t('common.next', '下一步'),
         onClick: () => { void flow.continueAfterOpenClawUpdate(); },
         disabled: continuing || isOpenClawUpdateContinuationDisabled({
           checkResult,
@@ -54,6 +60,11 @@ export function OpenClawUpdateScreen({ flow, logs }: { flow: SetupFlow; logs: Se
             await flow.refreshRuntime();
           }}
         />
+        {continuationFailed ? (
+          <OpenClawUpdateContinuationFailure
+            message={flow.gatewayReadyContinuation.error}
+          />
+        ) : null}
       </div>
     </SetupShell>
   );

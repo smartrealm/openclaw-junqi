@@ -97,6 +97,31 @@ export const INITIAL_DOCKER_STEPS: StepState[] = [
   { id: "gateway",   label: "Gateway",       status: "pending" },
 ];
 
+export function settleRuntimeStepsAfterGatewayReady(
+  steps: StepState[],
+  mode: "native" | "docker",
+): StepState[] {
+  const completedIds = mode === "native"
+    ? new Set(["node", "openclaw", "gateway"])
+    : new Set(["container", "gateway"]);
+
+  return steps.map((step) => {
+    const nextStatus = completedIds.has(step.id)
+      ? "done"
+      : mode === "native" && step.id === "npm" && step.status !== "done"
+        ? "skipped"
+        : step.status;
+    if (nextStatus === step.status) return step;
+    return {
+      ...step,
+      status: nextStatus,
+      progress: 100,
+      // 恢复路径会绕过安装器步骤；清除旧的进行中文案，避免成功页继续显示假活动。
+      detail: step.status === "done" || step.status === "skipped" ? step.detail : undefined,
+    };
+  });
+}
+
 export function cacheGatewayTarget(port?: number | null): void {
   if (!port) return;
   try {

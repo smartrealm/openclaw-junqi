@@ -34,7 +34,38 @@ export interface CollaborationAbsenceDecision {
   reason: string | null;
 }
 
+export interface CollaborationUpdateRecoveryDecision {
+  satisfied: boolean;
+  code: CollaborationUpdateRecoveryRejectionCode | null;
+  reason: string | null;
+}
+
 export interface CollaborationAbsenceProof {
+  readonly targetFingerprint: string;
+  readonly connectionId: string;
+  readonly targetClass: AttestableTargetClass;
+  readonly deploymentKind: RuntimeDeploymentKind;
+  readonly ownership: RuntimeIdentity['ownership'];
+  readonly gatewayVersion: string;
+  readonly localStateDir: string;
+  readonly localConfigPath: string;
+  readonly issuedAtMs: number;
+  readonly expiresAtMs: number;
+  assertCurrent(identity?: RuntimeIdentity | null): void;
+}
+
+export type CollaborationUpdateRecoveryRejectionCode =
+  | 'IDENTITY_UNAVAILABLE'
+  | 'IDENTITY_NOT_ATTESTED'
+  | 'IDENTITY_CHANGED'
+  | 'TARGET_UNSUPPORTED'
+  | 'PROBE_FAILED'
+  | 'PROBE_IDENTITY_MISMATCH'
+  | 'PROBE_NOT_AUTHORITATIVE'
+  | 'PLUGIN_NOT_PROVEN_UNAVAILABLE'
+  | 'DURABLE_STATE_UNSAFE';
+
+export interface CollaborationUpdateRecoveryProof {
   readonly targetFingerprint: string;
   readonly connectionId: string;
   readonly targetClass: AttestableTargetClass;
@@ -56,10 +87,10 @@ const TARGET_CLASS_BY_DEPLOYMENT: Partial<
   docker: 'docker',
 };
 
-function rejected(
-  code: CollaborationAbsenceRejectionCode,
+function rejected<Code extends string>(
+  code: Code,
   reason: string,
-): CollaborationAbsenceDecision {
+): { satisfied: false; code: Code; reason: string } {
   return { satisfied: false, code, reason };
 }
 
@@ -243,6 +274,144 @@ export class CollaborationAbsenceAttestation implements CollaborationAbsenceProo
   }
 }
 
+export class CollaborationUpdateRecoverySpecification {
+  evaluate(observation: CollaborationAbsenceObservation): CollaborationUpdateRecoveryDecision {
+    const { before, after, probe } = observation;
+    if (!identityIsAttested(before)) {
+      return rejected('IDENTITY_NOT_ATTESTED', 'The active Gateway identity is not attested for local inspection');
+    }
+    if (!after) {
+      return rejected('IDENTITY_CHANGED', 'The Gateway connection ended while collaboration recovery was inspected');
+    }
+    if (
+      !identityIsAttested(after)
+      || after.targetFingerprint !== before.targetFingerprint
+      || after.connectionId !== before.connectionId
+      || after.deploymentKind !== before.deploymentKind
+      || after.ownership !== before.ownership
+      || after.localStateDir !== before.localStateDir
+      || after.localConfigPath !== before.localConfigPath
+    ) {
+      return rejected('IDENTITY_CHANGED', 'The attested Gateway identity changed while collaboration recovery was inspected');
+    }
+
+    const targetClass = TARGET_CLASS_BY_DEPLOYMENT[before.deploymentKind];
+    if (!targetClass || !deploymentContractIsAttested(before)) {
+      return rejected('TARGET_UNSUPPORTED', 'External and unknown Gateway targets cannot prove local collaboration recovery safety');
+    }
+    if (
+      probe.targetFingerprint !== before.targetFingerprint
+      || probe.connectionId !== before.connectionId
+      || probe.targetClass !== targetClass
+      || probe.deploymentKind !== before.deploymentKind
+      || probe.ownership !== before.ownership
+      || probe.gatewayVersion !== before.gatewayVersion
+      || probe.stateDir !== before.localStateDir
+      || probe.configPath !== before.localConfigPath
+    ) {
+      return rejected('PROBE_IDENTITY_MISMATCH', 'The collaboration recovery probe does not belong to the exact attested Gateway connection');
+    }
+    if (
+      probe.ok !== true
+      || probe.code !== 'PLUGIN_NEEDS_REPAIR'
+      || probe.mutationAllowed !== true
+      || probe.manualInstallRequired !== false
+      || probe.manualInstallInstructions !== null
+      || probe.busy !== false
+      || probe.recoveryRequired !== false
+      || !Array.isArray(probe.warnings)
+      || probe.warnings.length !== 0
+    ) {
+      return rejected('PROBE_NOT_AUTHORITATIVE', 'The collaboration recovery probe is busy, ambiguous, warned, or otherwise non-authoritative');
+    }
+    if (
+      probe.plugin.installed !== true
+      || (probe.plugin.enabled === true && probe.plugin.status === 'loaded')
+    ) {
+      return rejected('PLUGIN_NOT_PROVEN_UNAVAILABLE', 'The collaboration plugin is not proven installed and unavailable');
+    }
+    if (
+      probe.durableCollaborationState !== 'absent'
+      && probe.durableCollaborationState !== 'present'
+    ) {
+      return rejected('DURABLE_STATE_UNSAFE', 'Durable collaboration state is corrupt or could not be inspected');
+    }
+    return { satisfied: true, code: null, reason: null };
+  }
+}
+
+export class CollaborationUpdateRecoveryAttestation implements CollaborationUpdateRecoveryProof {
+  static readonly TTL_MS = 30_000;
+
+  private constructor(
+    public readonly targetFingerprint: string,
+    public readonly connectionId: string,
+    public readonly targetClass: AttestableTargetClass,
+    public readonly deploymentKind: RuntimeDeploymentKind,
+    public readonly ownership: RuntimeIdentity['ownership'],
+    public readonly gatewayVersion: string,
+    public readonly localStateDir: string,
+    public readonly localConfigPath: string,
+    public readonly issuedAtMs: number,
+    public readonly expiresAtMs: number,
+  ) {
+    Object.freeze(this);
+  }
+
+  assertCurrent(identity: RuntimeIdentity | null = getCurrentRuntimeIdentity()): void {
+    if (
+      Date.now() > this.expiresAtMs
+      || !identityIsAttested(identity as RuntimeIdentity)
+      || identity?.targetFingerprint !== this.targetFingerprint
+      || identity.connectionId !== this.connectionId
+      || identity.deploymentKind !== this.deploymentKind
+      || identity.ownership !== this.ownership
+      || identity.gatewayVersion !== this.gatewayVersion
+      || identity.localStateDir !== this.localStateDir
+      || identity.localConfigPath !== this.localConfigPath
+    ) {
+      throw new CollaborationUpdateRecoveryAttestationError(
+        'IDENTITY_CHANGED',
+        'The attested Gateway identity is no longer current',
+      );
+    }
+  }
+
+  static from(observation: CollaborationAbsenceObservation): CollaborationUpdateRecoveryAttestation {
+    const decision = new CollaborationUpdateRecoverySpecification().evaluate(observation);
+    if (!decision.satisfied) {
+      throw new CollaborationUpdateRecoveryAttestationError(
+        decision.code as CollaborationUpdateRecoveryRejectionCode,
+        decision.reason ?? 'Collaboration recovery safety could not be proven',
+      );
+    }
+    const issuedAtMs = Date.now();
+    return new CollaborationUpdateRecoveryAttestation(
+      observation.before.targetFingerprint,
+      observation.before.connectionId,
+      TARGET_CLASS_BY_DEPLOYMENT[observation.before.deploymentKind]!,
+      observation.before.deploymentKind,
+      observation.before.ownership,
+      observation.before.gatewayVersion,
+      observation.before.localStateDir,
+      observation.before.localConfigPath,
+      issuedAtMs,
+      issuedAtMs + CollaborationUpdateRecoveryAttestation.TTL_MS,
+    );
+  }
+}
+
+export class CollaborationUpdateRecoveryAttestationError extends Error {
+  constructor(
+    public readonly code: CollaborationUpdateRecoveryRejectionCode,
+    message: string,
+    public readonly originalError?: unknown,
+  ) {
+    super(message);
+    this.name = 'CollaborationUpdateRecoveryAttestationError';
+  }
+}
+
 export interface CollaborationAbsenceAttestorDependencies {
   getRuntimeIdentity(): RuntimeIdentity | null;
   probe(targetFingerprint: string, expectedConnectionId: string): Promise<CollaborationBootstrapProbe>;
@@ -324,3 +493,75 @@ export class CollaborationAbsenceAttestor {
 }
 
 export const collaborationAbsenceAttestor = new CollaborationAbsenceAttestor();
+
+export class CollaborationUpdateRecoveryAttestor {
+  constructor(
+    private readonly dependencies: CollaborationAbsenceAttestorDependencies = defaultDependencies,
+  ) {}
+
+  async attest(): Promise<CollaborationUpdateRecoveryAttestation> {
+    const before = this.dependencies.getRuntimeIdentity();
+    if (!before) {
+      throw new CollaborationUpdateRecoveryAttestationError(
+        'IDENTITY_UNAVAILABLE',
+        'The active Gateway identity is unavailable; collaboration recovery cannot be proven',
+      );
+    }
+    if (!identityIsAttested(before)) {
+      throw new CollaborationUpdateRecoveryAttestationError(
+        'IDENTITY_NOT_ATTESTED',
+        'The active Gateway identity is not attested for collaboration recovery inspection',
+      );
+    }
+
+    let observed: CollaborationBootstrapProbe;
+    try {
+      observed = await this.dependencies.probe(before.targetFingerprint, before.connectionId);
+    } catch (error) {
+      throw new CollaborationUpdateRecoveryAttestationError(
+        'PROBE_FAILED',
+        'The local collaboration recovery probe failed',
+        error,
+      );
+    }
+    return CollaborationUpdateRecoveryAttestation.from({
+      before,
+      after: this.dependencies.getRuntimeIdentity(),
+      probe: observed,
+    });
+  }
+
+  async assertCurrent(proof: CollaborationUpdateRecoveryProof): Promise<void> {
+    proof.assertCurrent(this.dependencies.getRuntimeIdentity());
+    const before = this.dependencies.getRuntimeIdentity();
+    if (!before) {
+      throw new CollaborationUpdateRecoveryAttestationError(
+        'IDENTITY_UNAVAILABLE',
+        'The active Gateway identity is unavailable; collaboration recovery cannot be revalidated',
+      );
+    }
+    let observed: CollaborationBootstrapProbe;
+    try {
+      observed = await this.dependencies.probe(proof.targetFingerprint, proof.connectionId);
+    } catch (error) {
+      throw new CollaborationUpdateRecoveryAttestationError(
+        'PROBE_FAILED',
+        'The local collaboration recovery probe failed during mutation fencing',
+        error,
+      );
+    }
+    const decision = new CollaborationUpdateRecoverySpecification().evaluate({
+      before,
+      after: this.dependencies.getRuntimeIdentity(),
+      probe: observed,
+    });
+    if (!decision.satisfied) {
+      throw new CollaborationUpdateRecoveryAttestationError(
+        decision.code as CollaborationUpdateRecoveryRejectionCode,
+        decision.reason ?? 'Collaboration recovery safety is no longer proven',
+      );
+    }
+  }
+}
+
+export const collaborationUpdateRecoveryAttestor = new CollaborationUpdateRecoveryAttestor();

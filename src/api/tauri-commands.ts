@@ -680,6 +680,26 @@ export const commitSetupGatewayRuntime = (mode: GatewayRuntimeMode) => (
 export const rollbackRuntimeReconfiguration = () => (
   invoke<boolean>("rollback_runtime_reconfiguration")
 );
+export interface RuntimeRecoveryPortOwner {
+  port: number;
+  pid: number;
+  processName: string;
+  startedAt: number;
+  likelyOpenclaw: boolean;
+  canTerminate: boolean;
+}
+export const inspectRuntimeRecoveryPortOwner = () => (
+  invoke<RuntimeRecoveryPortOwner | null>('inspect_runtime_recovery_port_owner')
+);
+export const terminateRuntimeRecoveryPortOwnerAndRetry = (
+  owner: RuntimeRecoveryPortOwner,
+) => invoke<boolean>('terminate_runtime_recovery_port_owner_and_retry', {
+  owner: {
+    port: owner.port,
+    pid: owner.pid,
+    startedAt: owner.startedAt,
+  },
+});
 
 /** Result of ensure_gateway_running — see src-tauri/src/commands/ensure.rs */
 export type GatewayMode = 'native' | 'docker' | 'unavailable';

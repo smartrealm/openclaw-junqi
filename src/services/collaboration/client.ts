@@ -48,6 +48,12 @@ export type CollaborationRpcCall = (
 
 export type CollaborationClientErrorCode = CollaborationErrorCode | 'METHOD_UNAVAILABLE';
 
+export interface CollaborationMaintenanceIdentity {
+  collaborationInstanceId: string;
+  schemaVersion: number;
+  databaseIntegrity: string;
+}
+
 export class CollaborationClientError extends Error {
   constructor(
     public readonly code: CollaborationClientErrorCode,
@@ -454,6 +460,38 @@ export class CollaborationClient {
     const method = 'junqi.collab.capabilities';
     const response = await this.call(method);
     return decodeWire(method, () => decodeCapabilities(response));
+  }
+
+  async maintenanceIdentity(): Promise<CollaborationMaintenanceIdentity> {
+    const method = 'junqi.collab.capabilities';
+    const response = requireRecord(await this.call(method), method);
+    const schemaVersion = response.schemaVersion;
+    if (!Number.isSafeInteger(schemaVersion) || Number(schemaVersion) < 1) {
+      throw new CollaborationClientError(
+        'INVALID_RESPONSE',
+        `${method} returned an invalid maintenance identity`,
+        method,
+        { field: 'schemaVersion' },
+      );
+    }
+    const databaseIntegrity = response.databaseIntegrity;
+    if (
+      typeof databaseIntegrity !== 'string'
+      || !databaseIntegrity.trim()
+      || databaseIntegrity.length > 256
+    ) {
+      throw new CollaborationClientError(
+        'INVALID_RESPONSE',
+        `${method} returned an invalid maintenance identity`,
+        method,
+        { field: 'databaseIntegrity' },
+      );
+    }
+    return {
+      collaborationInstanceId: requireInstanceId(response, method),
+      schemaVersion: Number(schemaVersion),
+      databaseIntegrity: databaseIntegrity.trim(),
+    };
   }
 
   async getRun(runId: string): Promise<CollaborationRunGetResponse> {

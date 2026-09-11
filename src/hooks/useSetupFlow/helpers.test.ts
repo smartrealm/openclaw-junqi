@@ -3,6 +3,7 @@ import test from "node:test";
 import type { SetupStep } from "@/stores/setup-navigation";
 import {
   cacheGatewayTarget,
+  settleRuntimeStepsAfterGatewayReady,
   shouldRollbackRuntimeReconfigurationOnBack,
   setupBackPolicy,
 } from "./helpers";
@@ -65,4 +66,46 @@ test("运行时恢复失败页返回时保留待恢复事务并退出当前页�
   assert.equal(shouldRollbackRuntimeReconfigurationOnBack("storage", false), true);
   assert.equal(shouldRollbackRuntimeReconfigurationOnBack("storage", true), false);
   assert.equal(shouldRollbackRuntimeReconfigurationOnBack("choosing-mode", true), true);
+});
+
+test("Native Gateway 核验成功会原子收敛恢复路径遗留的步骤状态", () => {
+  assert.deepEqual(
+    settleRuntimeStepsAfterGatewayReady([
+      { id: "node", label: "Node.js", status: "running", detail: "正在检测" },
+      { id: "npm", label: "npm", status: "pending" },
+      { id: "openclaw", label: "OpenClaw", status: "done", detail: "2026.7.1-2", progress: 100 },
+      { id: "gateway", label: "Gateway", status: "running", detail: "正在连接" },
+    ], "native"),
+    [
+      { id: "node", label: "Node.js", status: "done", detail: undefined, progress: 100 },
+      { id: "npm", label: "npm", status: "skipped", detail: undefined, progress: 100 },
+      { id: "openclaw", label: "OpenClaw", status: "done", detail: "2026.7.1-2", progress: 100 },
+      { id: "gateway", label: "Gateway", status: "done", detail: undefined, progress: 100 },
+    ],
+  );
+});
+
+test("已核验的 npm 版本和 Docker 拉取结果不会被 Gateway 终态覆盖", () => {
+  assert.deepEqual(
+    settleRuntimeStepsAfterGatewayReady([
+      { id: "npm", label: "npm", status: "done", detail: "11.9.0", progress: 100 },
+      { id: "gateway", label: "Gateway", status: "running" },
+    ], "native"),
+    [
+      { id: "npm", label: "npm", status: "done", detail: "11.9.0", progress: 100 },
+      { id: "gateway", label: "Gateway", status: "done", detail: undefined, progress: 100 },
+    ],
+  );
+  assert.deepEqual(
+    settleRuntimeStepsAfterGatewayReady([
+      { id: "pull", label: "Docker Image", status: "done", detail: "已复用", progress: 100 },
+      { id: "container", label: "Container", status: "running" },
+      { id: "gateway", label: "Gateway", status: "running" },
+    ], "docker"),
+    [
+      { id: "pull", label: "Docker Image", status: "done", detail: "已复用", progress: 100 },
+      { id: "container", label: "Container", status: "done", detail: undefined, progress: 100 },
+      { id: "gateway", label: "Gateway", status: "done", detail: undefined, progress: 100 },
+    ],
+  );
 });

@@ -75,6 +75,7 @@ export interface SetupFlow {
   openClassicSetup: () => Promise<void>;
   runNativeSetup: () => Promise<boolean>;
   runDockerSetup: () => Promise<boolean>;
+  repairNodeRuntimeForStorage: () => Promise<boolean>;
   retrySetup: () => Promise<boolean>;
   requestReinstall: () => void;
   completeStorageSetup: (result?: {

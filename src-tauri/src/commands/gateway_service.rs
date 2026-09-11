@@ -20,10 +20,34 @@ const SERVICE_COMMAND_STDERR_LIMIT: usize = 128 * 1024;
 #[cfg(any(windows, test))]
 const WINDOWS_GATEWAY_TASK_NAME: &str = "OpenClaw Gateway";
 
-/// Read-only evidence available without an OpenClaw executable. It is used
-/// only to decide whether an interrupted Native setup is safe to resume; a
-/// present or uninspectable artifact is never mutated through this path.
-#[cfg_attr(not(windows), allow(dead_code))]
+fn help_line_declares_long_option(line: &str, option: &str) -> bool {
+    let mut fields = line.trim_start().split_ascii_whitespace();
+    let Some(first) = fields.next() else {
+        return false;
+    };
+    if !first.starts_with('-') {
+        return false;
+    }
+    first.trim_end_matches(',') == option
+        || (first.ends_with(',') && fields.next().is_some_and(|field| field == option))
+}
+
+fn service_stop_args(help_stdout: &[u8], help_stderr: &[u8]) -> Vec<&'static str> {
+    let force_supported = [help_stdout, help_stderr].into_iter().any(|stream| {
+        std::str::from_utf8(stream).ok().is_some_and(|text| {
+            text.lines()
+                .any(|line| help_line_declares_long_option(line, "--force"))
+        })
+    });
+    let mut args = vec!["gateway", "stop"];
+    if force_supported {
+        args.push("--force");
+    }
+    args
+}
+
+/// 在 OpenClaw 当前无法执行时读取平台服务痕迹。
+/// 该结果只用于判定是否可以继续运行时修复；存在或无法核验的痕迹都不会在此处修改。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GatewayServiceArtifactPresence {
     Absent,
@@ -181,10 +205,8 @@ fn windows_gateway_startup_entry_presence(expected_task_name: &str) -> Result<bo
     Ok(false)
 }
 
-/// Probe the selected official Windows task and OpenClaw's login-item fallback
-/// without requiring the OpenClaw package. A failed exact query is followed by
-/// a successful full task enumeration before absence is accepted, avoiding
-/// locale-dependent parsing of `schtasks` error text.
+/// 不依赖 OpenClaw 包，核验官方 Windows 任务和登录项回退。
+/// 精确查询失败后仍要求完整枚举成功，避免依赖本地化的 `schtasks` 错误文本。
 #[cfg(windows)]
 pub(crate) async fn inspect_gateway_service_artifacts_without_runtime(
 ) -> GatewayServiceArtifactPresence {
@@ -224,7 +246,111 @@ pub(crate) async fn inspect_gateway_service_artifacts_without_runtime(
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(any(target_os = "macos", test))]
+fn launchctl_list_contains_gateway(stdout: &[u8]) -> Result<bool, String> {
+    let text = std::str::from_utf8(stdout)
+        .map_err(|error| format!("launchctl output was not UTF-8: {error}"))?;
+    Ok(text.lines().any(|line| {
+        line.split_whitespace()
+            .last()
+            .is_some_and(|label| label == "ai.openclaw.gateway")
+    }))
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) async fn inspect_gateway_service_artifacts_without_runtime(
+) -> GatewayServiceArtifactPresence {
+    use crate::commands::process_control::{run_command_output_confirmed, ControlledOutputLimits};
+
+    let Some(home) = platform::home_dir() else {
+        return GatewayServiceArtifactPresence::Unverifiable;
+    };
+    if home
+        .join("Library/LaunchAgents/ai.openclaw.gateway.plist")
+        .is_file()
+        || Path::new("/Library/LaunchDaemons/ai.openclaw.gateway.plist").is_file()
+    {
+        return GatewayServiceArtifactPresence::Present;
+    }
+
+    let mut list = tokio::process::Command::new("launchctl");
+    list.arg("list");
+    match run_command_output_confirmed(
+        list,
+        ControlledOutputLimits {
+            timeout: Duration::from_secs(15),
+            stdout_bytes: 2 * 1024 * 1024,
+            stderr_bytes: 128 * 1024,
+        },
+    )
+    .await
+    {
+        Ok(output) if output.status.success() => {
+            match launchctl_list_contains_gateway(&output.stdout) {
+                Ok(true) => GatewayServiceArtifactPresence::Present,
+                Ok(false) => GatewayServiceArtifactPresence::Absent,
+                Err(_) => GatewayServiceArtifactPresence::Unverifiable,
+            }
+        }
+        _ => GatewayServiceArtifactPresence::Unverifiable,
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) async fn inspect_gateway_service_artifacts_without_runtime(
+) -> GatewayServiceArtifactPresence {
+    use crate::commands::process_control::{run_command_output_confirmed, ControlledOutputLimits};
+
+    let Some(home) = platform::home_dir() else {
+        return GatewayServiceArtifactPresence::Unverifiable;
+    };
+    if home
+        .join(".config/systemd/user/openclaw-gateway.service")
+        .is_file()
+        || Path::new("/etc/systemd/system/openclaw-gateway.service").is_file()
+    {
+        return GatewayServiceArtifactPresence::Present;
+    }
+
+    let mut list = tokio::process::Command::new("systemctl");
+    list.args([
+        "--user",
+        "list-unit-files",
+        "openclaw-gateway.service",
+        "--no-legend",
+        "--no-pager",
+    ]);
+    match run_command_output_confirmed(
+        list,
+        ControlledOutputLimits {
+            timeout: Duration::from_secs(15),
+            stdout_bytes: 128 * 1024,
+            stderr_bytes: 128 * 1024,
+        },
+    )
+    .await
+    {
+        Ok(output) if output.status.success() => {
+            let present = std::str::from_utf8(&output.stdout)
+                .ok()
+                .is_some_and(|text| {
+                    text.lines().any(|line| {
+                        line.split_whitespace()
+                            .next()
+                            .is_some_and(|unit| unit == "openclaw-gateway.service")
+                    })
+                });
+            if present {
+                GatewayServiceArtifactPresence::Present
+            } else {
+                GatewayServiceArtifactPresence::Absent
+            }
+        }
+        _ => GatewayServiceArtifactPresence::Unverifiable,
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 pub(crate) async fn inspect_gateway_service_artifacts_without_runtime(
 ) -> GatewayServiceArtifactPresence {
     GatewayServiceArtifactPresence::Unverifiable
@@ -307,13 +433,9 @@ async fn stop_windows_gateway_before_task_run(
     identity: &GatewayServiceIdentity,
     search_path: Option<&str>,
 ) -> Result<(), String> {
-    // OpenClaw's official Windows stop path tolerates an already stopped task,
-    // terminates listeners left behind by a failed task transition, and waits
-    // for the configured port to be released. Reuse that cleanup contract
-    // before a direct /Run so a second process cannot race the old listener.
-    let args = ["gateway", "stop"];
-    let output = run_service_command(runtime, identity, search_path, &args).await?;
-    command_success(&output, &args)
+    // 官方 Windows 停止入口会处理已停止任务、清理失败切换遗留的监听者，
+    // 并等待配置端口释放。直接运行任务前复用该契约，避免旧监听者竞争。
+    stop_gateway_service_command(runtime, identity, search_path).await
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -925,6 +1047,21 @@ fn command_success(output: &std::process::Output, args: &[&str]) -> Result<(), S
     })
 }
 
+async fn stop_gateway_service_command(
+    runtime: &system::NativeOpenclawRuntime,
+    identity: &GatewayServiceIdentity,
+    search_path: Option<&str>,
+) -> Result<(), String> {
+    // 停止命令会产生副作用，不能先失败一次再换参数重放。先读取当前 CLI 自己发布的
+    // 帮助契约，再且只再执行一次与该运行时匹配的停止命令。
+    let help_args = ["gateway", "stop", "--help"];
+    let help = run_service_command(runtime, identity, search_path, &help_args).await?;
+    command_success(&help, &help_args)?;
+    let args = service_stop_args(&help.stdout, &help.stderr);
+    let output = run_service_command(runtime, identity, search_path, &args).await?;
+    command_success(&output, &args)
+}
+
 fn service_status_args() -> [&'static str; 4] {
     ["gateway", "status", "--json", "--no-probe"]
 }
@@ -970,9 +1107,7 @@ pub(crate) async fn stop_selected_gateway_service_verified(
         return Ok(false);
     }
     let identity = GatewayServiceIdentity::for_runtime(state_dir, config_path, runtime);
-    let args = ["gateway", "stop"];
-    let output = run_service_command(runtime, &identity, search_path, &args).await?;
-    command_success(&output, &args)?;
+    stop_gateway_service_command(runtime, &identity, search_path).await?;
     Ok(true)
 }
 
@@ -997,9 +1132,7 @@ pub(crate) async fn stop_installed_selected_gateway_service_verified(
         return Ok(false);
     }
     let identity = GatewayServiceIdentity::for_runtime(state_dir, config_path, runtime);
-    let args = ["gateway", "stop"];
-    let output = run_service_command(runtime, &identity, search_path, &args).await?;
-    command_success(&output, &args)?;
+    stop_gateway_service_command(runtime, &identity, search_path).await?;
     Ok(true)
 }
 
@@ -1151,9 +1284,7 @@ pub(crate) async fn rebind_selected_gateway_service(
         start_selected_gateway_service_with_path(runtime, state_dir, config_path, search_path).await
     } else {
         let identity = GatewayServiceIdentity::for_runtime(state_dir, config_path, runtime);
-        let args = ["gateway", "stop"];
-        let output = run_service_command(runtime, &identity, search_path, &args).await?;
-        command_success(&output, &args)
+        stop_gateway_service_command(runtime, &identity, search_path).await
     }
 }
 
@@ -1187,6 +1318,28 @@ pub(crate) async fn reconcile_pending_gateway_service(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gateway_stop_arguments_follow_the_selected_runtime_help_contract() {
+        assert_eq!(
+            service_stop_args(
+                b"Usage: openclaw gateway stop [options]\n\nOptions:\n  --force  Allow stop from a non-interactive shell\n",
+                b"",
+            ),
+            ["gateway", "stop", "--force"]
+        );
+        assert_eq!(
+            service_stop_args(
+                b"Usage: openclaw gateway stop [options]\n\nOptions:\n  --json  Output JSON\n",
+                b"",
+            ),
+            ["gateway", "stop"]
+        );
+        assert_eq!(
+            service_stop_args(b"", b"error: unknown option '--force'\n"),
+            ["gateway", "stop"]
+        );
+    }
 
     // A reinstall replaces the package tree the service runs from. Only a
     // service we own and that is installed may be stopped for that; a foreign
@@ -1386,6 +1539,14 @@ mod tests {
     fn localized_windows_task_columns_do_not_break_ascii_name_detection() {
         let tasks = b"\"Other Task\",\xff\xfe\r\n\"OpenClaw Gateway\",\x80\x81\r\n";
         assert!(windows_task_list_contains_gateway(tasks).unwrap());
+    }
+
+    #[test]
+    fn launchctl_parser_matches_only_the_official_default_gateway_label() {
+        let services = b"PID\tStatus\tLabel\n421\t0\tai.openclaw.gateway\n-\t0\tai.openclaw.node\n";
+        assert!(launchctl_list_contains_gateway(services).unwrap());
+        assert!(!launchctl_list_contains_gateway(b"-\t0\tai.openclaw.gateway-helper\n").unwrap());
+        assert!(launchctl_list_contains_gateway(&[0xff]).is_err());
     }
 
     #[test]

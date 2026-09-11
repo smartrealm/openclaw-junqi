@@ -4,6 +4,10 @@ import {
   type CollaborationMaintenanceAcquisition,
   type CollaborationMaintenanceRelease,
 } from './collaboration/MaintenanceCoordinator';
+import {
+  captureCurrentAttestedGatewayConnectionId,
+  gatewayLifecycle,
+} from '@/runtime/gatewayLifecycle';
 
 export { CollaborationMaintenanceError } from './collaboration/MaintenanceCoordinator';
 export type {
@@ -15,6 +19,16 @@ export const OPENCLAW_UPDATE_MAINTENANCE_STARTED = 'aegis:openclaw-update-mainte
 export const OPENCLAW_UPDATE_MAINTENANCE_FINISHED = 'aegis:openclaw-update-maintenance-finished';
 
 let activeMaintenanceOperations = 0;
+
+interface OpenclawUpdateMaintenancePreflightDependencies {
+  captureAttestedConnectionId(): string | null;
+  reconnectSelectedRuntime(): Promise<{
+    success: boolean;
+    superseded?: boolean;
+    error?: string;
+  }>;
+  acquire(): Promise<CollaborationMaintenanceAcquisition>;
+}
 
 export function dispatchOpenclawUpdateMaintenanceStarted(): void {
   activeMaintenanceOperations += 1;
@@ -31,8 +45,34 @@ export function dispatchOpenclawUpdateMaintenanceFinished(): void {
   }
 }
 
+export async function acquireOpenclawUpdateMaintenance(
+  dependencies: OpenclawUpdateMaintenancePreflightDependencies,
+): Promise<CollaborationMaintenanceAcquisition> {
+  if (!dependencies.captureAttestedConnectionId()) {
+    const reconnect = await dependencies.reconnectSelectedRuntime();
+    if (
+      !reconnect.success
+      || reconnect.superseded
+      || !dependencies.captureAttestedConnectionId()
+    ) {
+      throw new CollaborationMaintenanceError(
+        'RUNTIME_NOT_READY',
+        reconnect.error || 'Gateway did not reconnect with an attested runtime identity before the OpenClaw update',
+        'status',
+      );
+    }
+  }
+  return dependencies.acquire();
+}
+
 export function beginOpenclawUpdateMaintenance(): Promise<CollaborationMaintenanceAcquisition> {
-  return collaborationMaintenanceCoordinator.acquire('openclaw-update');
+  return acquireOpenclawUpdateMaintenance({
+    captureAttestedConnectionId: captureCurrentAttestedGatewayConnectionId,
+    reconnectSelectedRuntime: () => (
+      gatewayLifecycle.reconnectSelectedRuntimeAfterCurrent('openclaw-update-maintenance')
+    ),
+    acquire: () => collaborationMaintenanceCoordinator.acquire('openclaw-update'),
+  });
 }
 
 export function assertOpenclawUpdateMaintenanceCurrent(

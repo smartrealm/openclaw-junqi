@@ -23,7 +23,10 @@ import {
   isMissingGitDependencyError,
   SetupPrerequisiteError,
 } from "./helpers";
-import { describeNodeRuntimePreparation } from "./nodeRuntimePreparation";
+import {
+  describeNodeRuntimePreparation,
+  nextSetupNodeRepairAction,
+} from "./nodeRuntimePreparation";
 import { describeOpenclawInstallFailure, requiresOpenclawRepair } from "./openclawInstallHealth";
 import type { InstallTarget, StepState, StepStatus } from "./types";
 
@@ -278,5 +281,55 @@ export function useSetupInstallers({
     finishSetupOperation, isRunActive, patchStep, replaceSetupStep, report,
     runSetupOperation, setGatewayRunning, setSetupError, startGateway, t]);
 
-  return { runNativeSetup, runDockerSetup };
+  const repairNodeRuntimeForStorage = useCallback(async (): Promise<boolean> => {
+    const runId = beginRun();
+    if (!beginSetupOperation(runId)) {
+      throw new Error(t("storage.nodeRepairBusy", "另一个安装操作正在进行，请稍候再试。"));
+    }
+    try {
+      reportPhase("node", t("setup.checkingNode"));
+      let setupNode = await checkSetupNode();
+      if (!isRunActive(runId)) return false;
+      setNodeRequirement(setupNode.requirement);
+
+      if (nextSetupNodeRepairAction(setupNode) === "install") {
+        const preparation = describeNodeRuntimePreparation(setupNode.node, setupNode.requirement);
+        reportPhase("node", t(preparation.key, preparation.params), 20);
+        setupNode = await runSetupOperation(
+          runId,
+          "node",
+          (operationId) => installNode(false, operationId),
+        );
+        if (!isRunActive(runId)) return false;
+        setNodeRequirement(setupNode.requirement);
+      }
+
+      if (!setupNode.node.available) {
+        throw new Error(t("setup.nodeInstallFailed", "Node.js 安装后校验失败"));
+      }
+
+      if (nextSetupNodeRepairAction(setupNode) === "repair-npm") {
+        reportPhase("node", t("setup.repairingNodeRuntime", "正在修复所选 Node.js 运行时…"), 70);
+        setupNode = await runSetupOperation(runId, "node", repairSetupNodeRuntime);
+        if (!isRunActive(runId)) return false;
+        setNodeRequirement(setupNode.requirement);
+      }
+
+      if (!setupNode.node.available) {
+        throw new Error(t("setup.nodeInstallFailed", "Node.js 安装后校验失败"));
+      }
+      if (!setupNode.npm.available) {
+        throw new Error(setupNode.npm.reason
+          ?? t("setup.npmInstallFailed", "所选 Node.js 未提供可用 npm"));
+      }
+
+      reportPhase("node", t("storage.nodeRepairReady", "Node.js 运行时已修复，正在重试存储设置…"), 100);
+      return true;
+    } finally {
+      finishSetupOperation(runId);
+    }
+  }, [beginRun, beginSetupOperation, finishSetupOperation, isRunActive, reportPhase,
+    runSetupOperation, setNodeRequirement, t]);
+
+  return { runNativeSetup, runDockerSetup, repairNodeRuntimeForStorage };
 }

@@ -7,8 +7,12 @@ import {
   type OpenclawUpdateStatus,
 } from '@/api/tauri-commands';
 import {
+  beginOpenclawUpdateOperation,
+  canPublishOpenclawUpdateOperation,
+  createOpenclawUpdateOperationGuard,
   initialOpenclawUpdateState,
   openclawUpdateReducer,
+  setOpenclawUpdateOperationMounted,
 } from './openclawUpdateState';
 import {
   beginOpenclawUpdateMaintenance,
@@ -48,10 +52,18 @@ function errorMessage(error: unknown): string {
 export function useOpenclawUpdate() {
   const { t } = useTranslation();
   const [state, dispatch] = useReducer(openclawUpdateReducer, initialOpenclawUpdateState);
-  const operationId = useRef(0);
+  const operationGuard = useRef(createOpenclawUpdateOperationGuard());
   const busy = useRef(false);
   const [maintenanceIssue, setMaintenanceIssue] = useState<CollaborationMaintenanceError | null>(null);
   const [recoveringMaintenance, setRecoveringMaintenance] = useState(false);
+
+  useEffect(() => {
+    const guard = operationGuard.current;
+    setOpenclawUpdateOperationMounted(guard, true);
+    return () => {
+      setOpenclawUpdateOperationMounted(guard, false);
+    };
+  }, []);
 
   useEffect(() => {
     const unlisten = subscribeTauriEvent('setup-progress', (event) => {
@@ -74,26 +86,25 @@ export function useOpenclawUpdate() {
         ),
       });
     });
-    return () => {
-      operationId.current += 1;
-      unlisten();
-    };
+    // 监听器重建不代表请求取消；开发模式会额外执行一次 Effect 清理与重建。
+    return unlisten;
   }, [t]);
 
   const check = useCallback(async (): Promise<OpenclawUpdateStatus | null> => {
     if (busy.current) return null;
     busy.current = true;
-    const id = ++operationId.current;
+    const guard = operationGuard.current;
+    const id = beginOpenclawUpdateOperation(guard);
     dispatch({ type: 'checkStarted' });
     setMaintenanceIssue(null);
     try {
       const status = await checkOpenclawUpdate();
-      if (id === operationId.current) {
+      if (canPublishOpenclawUpdateOperation(guard, id)) {
         dispatch({ type: 'checkCompleted', status });
       }
       return status;
     } catch (error) {
-      if (id === operationId.current) {
+      if (canPublishOpenclawUpdateOperation(guard, id)) {
         dispatch({ type: 'operationFailed', error: errorMessage(error) });
       }
       return null;
@@ -105,7 +116,8 @@ export function useOpenclawUpdate() {
   const apply = useCallback(async (): Promise<OpenclawUpdateCompletion | null> => {
     if (busy.current) return null;
     busy.current = true;
-    const id = ++operationId.current;
+    const guard = operationGuard.current;
+    const id = beginOpenclawUpdateOperation(guard);
     let maintenanceEventStarted = false;
     let maintenance: Awaited<ReturnType<typeof beginOpenclawUpdateMaintenance>> | null = null;
     try {
@@ -123,7 +135,7 @@ export function useOpenclawUpdate() {
             new Error(result.error || result.reason || 'OpenClaw update did not complete'),
           );
         }
-        if (id === operationId.current) {
+        if (canPublishOpenclawUpdateOperation(guard, id)) {
           dispatch({
             type: 'operationFailed',
             error: result.error || result.reason || 'OpenClaw update did not complete',
@@ -138,10 +150,9 @@ export function useOpenclawUpdate() {
       try {
         status = await checkOpenclawUpdate();
       } catch {
-        // The core update succeeded. A follow-up network check is optional;
-        // retain the updater's afterVersion when the registry is unavailable.
+        // 核心更新已经成功；注册表不可用时保留更新器返回的版本，不以追加检查否定成功结果。
       }
-      if (id === operationId.current) {
+      if (canPublishOpenclawUpdateOperation(guard, id)) {
         dispatch({ type: 'updateCompleted', result, status });
       }
       return { result, status };
@@ -150,7 +161,7 @@ export function useOpenclawUpdate() {
         ? cause
         : failOpenclawUpdateMaintenance(maintenance, cause);
       const issue = error instanceof CollaborationMaintenanceError ? error : null;
-      if (id === operationId.current) {
+      if (canPublishOpenclawUpdateOperation(guard, id)) {
         setMaintenanceIssue(issue);
         dispatch({ type: 'operationFailed', error: errorMessage(error) });
       }
@@ -166,19 +177,28 @@ export function useOpenclawUpdate() {
   const recoverMaintenance = useCallback(async (): Promise<boolean> => {
     if (busy.current || recoveringMaintenance) return false;
     busy.current = true;
-    setRecoveringMaintenance(true);
+    const guard = operationGuard.current;
+    if (guard.mounted) {
+      setRecoveringMaintenance(true);
+    }
     try {
       await recoverOpenclawUpdateMaintenance();
-      setMaintenanceIssue(null);
-      dispatch({ type: 'maintenanceRecovered' });
+      if (guard.mounted) {
+        setMaintenanceIssue(null);
+        dispatch({ type: 'maintenanceRecovered' });
+      }
       return true;
     } catch (error) {
       const issue = error instanceof CollaborationMaintenanceError ? error : null;
-      setMaintenanceIssue(issue);
-      dispatch({ type: 'operationFailed', error: errorMessage(error) });
+      if (guard.mounted) {
+        setMaintenanceIssue(issue);
+        dispatch({ type: 'operationFailed', error: errorMessage(error) });
+      }
       return false;
     } finally {
-      setRecoveringMaintenance(false);
+      if (guard.mounted) {
+        setRecoveringMaintenance(false);
+      }
       busy.current = false;
     }
   }, [recoveringMaintenance]);

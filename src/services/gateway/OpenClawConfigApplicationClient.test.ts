@@ -39,6 +39,7 @@ test('配置待应用且官方监听器禁用时生成一次补偿重启依据',
   );
 
   assert.equal(evidence.reloadDisabled, true);
+  assert.equal(evidence.configHash, 'config-hash');
   assert.deepEqual(methods, ['config.get', 'health']);
 });
 

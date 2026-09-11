@@ -1798,13 +1798,53 @@ fn missing_native_runtime_preflight_error(
                 .to_string(),
         ),
         crate::commands::gateway_service::GatewayServiceArtifactPresence::Present => Err(
-            "A Windows OpenClaw Gateway service or login item remains, but its OpenClaw runtime is unavailable; restore OpenClaw so JunQi can verify ownership before changing storage"
+            "An OpenClaw Gateway service remains, but its OpenClaw runtime is unavailable; repair Node.js so JunQi can verify ownership before changing storage"
                 .to_string(),
         ),
         crate::commands::gateway_service::GatewayServiceArtifactPresence::Unverifiable => Err(
-            "Windows Gateway service presence could not be verified while OpenClaw is unavailable; no service was changed and storage changes were not started"
+            "Gateway service presence could not be verified while OpenClaw is unavailable; no service was changed and storage changes were not started"
                 .to_string(),
         ),
+    }
+}
+
+async fn selected_gateway_service_without_runtime(
+    state: &GatewayProcess,
+    native_config_path: &Path,
+    layout: &StorageBootstrap,
+    allow_pending_openclaw_relocation: bool,
+    inspect_docker_artifacts: bool,
+) -> Result<SelectedGatewayService, String> {
+    let (observed_mode, managed_pid) = crate::commands::gateway::inspect_gateway_owner(state)?;
+    let managed_child_present =
+        managed_pid.is_some() || !matches!(observed_mode, GatewayRuntimeMode::None);
+    let pending_recovery = (layout.openclaw_relocation_required
+        && !allow_pending_openclaw_relocation)
+        || layout.gateway_service_rebind_required
+        || layout.runtime_switch_rollback_mode.is_some()
+        || layout.pending_runtime_reconfiguration.is_some();
+    let artifacts =
+        crate::commands::gateway_service::inspect_gateway_service_artifacts_without_runtime().await;
+    // 当前目录仅调整 Native 依赖时不会移动 Docker 挂载，也不会启动或删除容器。
+    // 只有真实存储迁移才要求 Docker 守护进程证明残留状态。
+    let docker_artifacts = docker_artifacts_for_storage_preflight(inspect_docker_artifacts).await;
+    let port = crate::commands::gateway::gateway_port_for_config(native_config_path);
+    missing_native_runtime_preflight_error(
+        artifacts,
+        crate::commands::gateway_supervisor::is_port_available(port).await,
+        managed_child_present,
+        docker_artifacts,
+        pending_recovery,
+    )
+}
+
+async fn docker_artifacts_for_storage_preflight(
+    inspect: bool,
+) -> crate::commands::docker::ManagedDockerArtifactPresence {
+    if inspect {
+        crate::commands::docker::inspect_managed_docker_artifact_without_runtime().await
+    } else {
+        crate::commands::docker::ManagedDockerArtifactPresence::Absent
     }
 }
 
@@ -1816,45 +1856,39 @@ async fn selected_gateway_service(
     state: &GatewayProcess,
     layout: &StorageBootstrap,
     allow_pending_openclaw_relocation: bool,
+    inspect_docker_artifacts: bool,
 ) -> Result<SelectedGatewayService, String> {
     let Some(binary) = binary else {
         if matches!(runtime_mode, OpenClawRuntimeMode::Docker) {
-            // A Docker-only installation intentionally has no host OpenClaw
-            // package. Native service ownership is deferred until a Native
-            // runtime is selected; Docker startup will still fail closed if
-            // an unknown process owns the configured port.
+            // 纯 Docker 安装允许没有宿主 OpenClaw 包；切换到 Native 时再核验
+            // 服务所有权，Docker 启动仍会对未知端口占用失败关闭。
             return Ok(SelectedGatewayService::default());
         }
-        if !cfg!(windows) {
-            return Err(
-                "OpenClaw is not available to verify the selected official Gateway service; storage changes were not started"
-                    .to_string(),
-            );
-        }
-        let (observed_mode, managed_pid) = crate::commands::gateway::inspect_gateway_owner(state)?;
-        let managed_child_present =
-            managed_pid.is_some() || !matches!(observed_mode, GatewayRuntimeMode::None);
-        let pending_recovery = (layout.openclaw_relocation_required
-            && !allow_pending_openclaw_relocation)
-            || layout.gateway_service_rebind_required
-            || layout.runtime_switch_rollback_mode.is_some()
-            || layout.pending_runtime_reconfiguration.is_some();
-        let artifacts =
-            crate::commands::gateway_service::inspect_gateway_service_artifacts_without_runtime()
-                .await;
-        let docker_artifacts =
-            crate::commands::docker::inspect_managed_docker_artifact_without_runtime().await;
-        let port = crate::commands::gateway::gateway_port_for_config(native_config_path);
-        return missing_native_runtime_preflight_error(
-            artifacts,
-            crate::commands::gateway_supervisor::is_port_available(port).await,
-            managed_child_present,
-            docker_artifacts,
-            pending_recovery,
-        );
+        return selected_gateway_service_without_runtime(
+            state,
+            native_config_path,
+            layout,
+            allow_pending_openclaw_relocation,
+            inspect_docker_artifacts,
+        )
+        .await;
     };
     let runtime =
-        crate::commands::system::compatible_native_openclaw_runtime(binary.to_path_buf()).await?;
+        match crate::commands::system::compatible_native_openclaw_runtime(binary.to_path_buf())
+            .await
+        {
+            Ok(runtime) => runtime,
+            Err(_) => {
+                return selected_gateway_service_without_runtime(
+                    state,
+                    native_config_path,
+                    layout,
+                    allow_pending_openclaw_relocation,
+                    inspect_docker_artifacts,
+                )
+                .await
+            }
+        };
     let identity = crate::commands::gateway_service::GatewayServiceIdentity::for_runtime(
         state_dir,
         native_config_path,
@@ -2543,6 +2577,42 @@ pub async fn rollback_runtime_reconfiguration(
 }
 
 #[tauri::command]
+pub async fn inspect_runtime_recovery_port_owner(
+) -> Result<Option<crate::commands::gateway_port_owner::RuntimeRecoveryPortOwner>, String> {
+    let Some((_candidate, pending)) = paths::preflight_runtime_reconfiguration_recovery()? else {
+        return Ok(None);
+    };
+    let port = pending.gateway_recovery().port;
+    crate::commands::gateway_port_owner::inspect_runtime_recovery_port_owner(port).await
+}
+
+#[tauri::command]
+pub async fn terminate_runtime_recovery_port_owner_and_retry(
+    app: AppHandle,
+    state: State<'_, GatewayProcess>,
+    owner: crate::commands::gateway_port_owner::RuntimeRecoveryPortOwnerRequest,
+) -> Result<bool, String> {
+    let operation_gate = state.operation_gate.clone();
+    let _operation_guard = operation_gate.lock_owned().await;
+    let Some((_candidate, pending)) = paths::preflight_runtime_reconfiguration_recovery()? else {
+        return Err("No runtime recovery is pending; no process was terminated".to_string());
+    };
+    if pending.gateway_recovery().port != owner.port {
+        return Err(
+            "The pending Gateway port changed; inspect the current owner before retrying"
+                .to_string(),
+        );
+    }
+
+    crate::commands::gateway_port_owner::terminate_runtime_recovery_port_owner(&owner).await?;
+    let result = recover_pending_runtime_reconfiguration(&app, &state).await;
+    if let Err(error) = &result {
+        let _ = paths::record_runtime_reconfiguration_recovery_error(error.clone());
+    }
+    result
+}
+
+#[tauri::command]
 pub async fn get_storage_setup_status() -> Result<StorageSetupStatus, String> {
     let bootstrap = paths::load_storage_bootstrap();
     let runtime_reconfiguration_recovery_error = paths::runtime_reconfiguration_recovery_error()?;
@@ -2826,6 +2896,7 @@ pub async fn configure_storage(
                     &state,
                     &existing_layout,
                     !runtime_location_changes.requires_setup(),
+                    false,
                 )
                 .await?
             } else {
@@ -3021,6 +3092,7 @@ pub async fn configure_storage(
                 &state,
                 &existing_layout,
                 false,
+                true,
             )
             .await?
         } else {
@@ -3538,7 +3610,7 @@ mod tests {
             false
         )
         .unwrap_err()
-        .contains("service or login item remains"));
+        .contains("Gateway service remains"));
         assert!(missing_native_runtime_preflight_error(
             Presence::Absent,
             false,
@@ -3853,6 +3925,14 @@ mod tests {
         assert!(selected_layout(root, selection)
             .unwrap_err()
             .contains("only supported on Windows"));
+    }
+
+    #[tokio::test]
+    async fn same_location_native_repair_does_not_require_docker_residue_probe() {
+        assert_eq!(
+            docker_artifacts_for_storage_preflight(false).await,
+            crate::commands::docker::ManagedDockerArtifactPresence::Absent
+        );
     }
 
     #[test]

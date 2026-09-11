@@ -30,6 +30,7 @@ import { sanitizeSetupDiagnostic } from "@/services/setup/setupDiagnostic";
 import {
   performOpenClawSetupHandoff,
 } from "@/services/setup/openClawSetupHandoff";
+import { verifyClassicOpenClawModel } from "@/services/setup/classicOpenClawModelVerification";
 import {
   resolveOpenClawSetupCapability,
   type OpenClawSetupCapability,
@@ -55,6 +56,7 @@ import {
   INITIAL_DOCKER_STEPS,
   INITIAL_NATIVE_STEPS,
   cacheGatewayTarget,
+  settleRuntimeStepsAfterGatewayReady,
   shouldRollbackRuntimeReconfigurationOnBack,
   setupBackPolicy,
 } from "./helpers";
@@ -209,14 +211,73 @@ export function useSetupFlow(
     const capability = await resolveOpenClawSetupCapability(() => client.detect());
     activeSetupCapabilityRef.current = capability;
     setConfigurationMode(capability.mode);
-    // 稳定版 Classic Wizard 没有全局只读完成探针。该模式只沿用当前流程中
-    // 已由官方 Wizard 终态更新的需求状态，不从 Gateway 健康或配置文本猜测。
-    const required = capability.mode === "guided"
+    let required = capability.mode === "guided"
       ? !capability.detection.setupComplete
       : needsOnboardingRef.current;
+    if (capability.mode === "classic" && required) {
+      const handoff = await performOpenClawSetupHandoff({
+        waitForLifecycleIdle: (boundary) => gatewayLifecycle.waitForIdle(boundary),
+        isLifecycleReceiptCurrent: (receipt) => gatewayLifecycle.isIdleReceiptCurrent(receipt),
+        captureAttestedConnectionId: captureCurrentAttestedGatewayConnectionId,
+        isAttestedConnectionCurrent: isAttestedGatewayConnectionCurrent,
+        reconnectSelectedRuntime: async (boundary) => {
+          const result = await gatewayLifecycle.reconnectSelectedRuntimeAfterCurrent(
+            "classic-existing-runtime-verification",
+            boundary,
+          );
+          return {
+            success: result.success && !result.superseded,
+            ...(result.connectionId ? { connectionId: result.connectionId } : {}),
+            ...(result.error ? { diagnostic: result.error } : {}),
+          };
+        },
+        restartSelectedRuntime: async (boundary, configRevisionHash) => {
+          const result = await gatewayLifecycle.restartAfterCurrent(
+            "classic-existing-runtime-reload-disabled",
+            "OpenClaw configuration reload is disabled",
+            boundary,
+            configRevisionHash,
+          );
+          return {
+            success: result.success && !result.superseded,
+            ...(result.connectionId ? { connectionId: result.connectionId } : {}),
+            ...(result.error ? { diagnostic: result.error } : {}),
+          };
+        },
+        probeSelectedGateway: () => probeSelectedGateway().catch(() => false),
+        readConfigApplication: readOpenClawConfigApplicationEvidence,
+      }, {
+        kind: "classic-existing-runtime",
+        verifyModel: () => verifyClassicOpenClawModel({
+          captureConnectionId: captureCurrentAttestedGatewayConnectionId,
+          isConnectionCurrent: isAttestedGatewayConnectionCurrent,
+          requestFenced: (method, params, connectionId) => gateway.callFenced(
+            method,
+            params,
+            connectionId,
+          ),
+          requestPrivileged: (method, params, timeoutMs) => gateway.callPrivileged(
+            method,
+            params,
+            timeoutMs === undefined ? undefined : { timeoutMs },
+          ),
+          cleanupSession: async (sessionKey) => {
+            await gateway.deleteSession(sessionKey, true);
+          },
+        }),
+      });
+      if (handoff.ready) {
+        required = false;
+      } else if (handoff.reason !== "model-unverified") {
+        throw new Error(handoff.diagnostic || t(
+          `setup.handoff.${handoff.reason}`,
+          "OpenClaw 现有配置尚未完成运行时核验。",
+        ));
+      }
+    }
     updateOnboardingRequirement(required);
     return required;
-  }, [updateOnboardingRequirement]);
+  }, [t, updateOnboardingRequirement]);
   // 检测阶段依赖此探针；保持引用稳定，避免检测 effect 因渲染而重复启动。
   const isGatewayConnected = useCallback(
     () => captureCurrentAttestedGatewayConnectionId() !== null,
@@ -408,15 +469,15 @@ export function useSetupFlow(
       await waitForGatewayReady(runId, isDockerRuntime ? 30_000 : 10_000, status?.port);
       await waitForAuthenticatedGateway(runId);
       if (!isRunActive(runId)) return false;
-      if (isDockerRuntime) {
-        patchStep("container", "done");
-      }
       setGatewayRunning(true);
       // Gateway 已真实就绪：此前的插件启动验证记录随之失效。
       pluginHealAttemptedRef.current.clear();
       setPostStorageStep(needsOnboardingRef.current ? "configure-openclaw" : "ready");
-      if (stepsRef.current.some((s) => s.id === "gateway")) {
-        patchStep("gateway", "done");
+      if (stepsRef.current.some((step) => step.id === "gateway")) {
+        commitSteps(settleRuntimeStepsAfterGatewayReady(
+          stepsRef.current,
+          isDockerRuntime ? "docker" : "native",
+        ));
       } else {
         commitSteps([{ id: "gateway", label: "Gateway", status: "done", progress: 100 }]);
       }
@@ -543,7 +604,7 @@ export function useSetupFlow(
     void startGatewayAction();
   }, [setupStep, startGatewayAction]);
 
-  const { runNativeSetup, runDockerSetup } = useSetupInstallers({
+  const { runNativeSetup, runDockerSetup, repairNodeRuntimeForStorage } = useSetupInstallers({
     dockerStatus,
     reinstallRequestedRef,
     relocationRequestedRef,
@@ -1113,6 +1174,7 @@ export function useSetupFlow(
     openClassicSetup,
     runNativeSetup,
     runDockerSetup,
+    repairNodeRuntimeForStorage,
     retrySetup,
     requestReinstall,
     completeStorageSetup,

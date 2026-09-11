@@ -185,3 +185,27 @@
 - `pnpm build` 与 `pnpm verify:openclaw-docs` 已通过；生产构建同时验证了协作插件和钉钉业务插件产物。
 - 本机安装的 OpenClaw `2026.7.1-2` 缺少活动配置修订字段，只能复现“证据不可用”分支，不能验证新版成功接管链路。
 - 最新 OpenClaw、macOS 安装包、Windows 和 Linux 上的真实 token 轮换、官方延迟重启与新认证连接仍需真机端到端验证。
+
+## 2026-09-11 已有 Classic Runtime 无写入接管
+
+### 根因与契约边界
+
+- 当前目标 Runtime 已有有效配置和可用模型，但首次设置仍要求重跑 Classic Wizard。该 Runtime 没有提供 Wizard 写后交接使用的活动配置修订字段，因此旧门禁将“接管既有配置”和“证明刚写入的配置已生效”错误合并。
+- 官方 `config.get.hash` 是配置快照和写入冲突控制证据，不是活动配置修订。它只能用于证明本次无写入核验前后配置没有变化。
+- 当前目标 Runtime 没有正式 `models.probe`；已注册的 `agents.list`、`agent` 与 `agent.wait` 可以完成真实模型调用。JunQi 不新增 RPC，也不读取回复正文推断成功。
+
+### 当前实现
+
+- 只有已有 Classic Runtime 且本次没有配置写入时，允许使用稳定的 `config.get.hash` 作为同一次接管事务的快照围栏。
+- 模型核验创建唯一临时 Session，要求 `agent` 返回匹配 Session 的 `accepted` 和稳定 `runId`，再要求 `agent.wait` 返回同一 `runId` 的 `ok` 终态。
+- 调用前后连接标识、Runtime 身份和配置 `hash` 必须保持一致；配置持续变化、连接换代、响应畸形、模型失败或 Session 清理失败均不进入 Ready。
+- Guided 与 Classic Wizard 写后交接仍要求正式活动配置修订一致；已有 Runtime 路径不能绕过或替代该门禁。
+
+### 真机与自动化结果
+
+- 目标 macOS 已复用现有 OpenClaw、现有数据位置和系统兼容 Node.js；没有执行 OpenClaw 安装或更新。
+- DeepSeek 凭据通过 OpenClaw 官方配置流程写入其凭据边界，配置校验、模型状态和真实模型调用通过；凭据没有写入仓库、日志、测试或文档。
+- 首次设置已真实完成环境、数据位置、运行时、跳过可选更新、既有配置接管、Ready 与进入仪表盘，仪表盘显示同一 Gateway 已连接并投影当前模型。
+- 临时设置核验 Session 已通过正式删除入口清理，清理后目标前缀会话数量为零。
+- 定向测试覆盖当前正式配置哈希、持续配置漂移、默认 Web Crypto 标识生成和模型 Session 清理。完整检查结果以 `PROJECT_STATUS.md` 为准。
+- 亮色主题的目标 macOS 流程已核对；暗色、窄窗口、Windows 和 Linux 仍未真机验证。

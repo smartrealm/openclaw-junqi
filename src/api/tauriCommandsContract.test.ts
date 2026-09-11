@@ -13,6 +13,7 @@ import {
   getOpenclawChannelLogs,
   getOpenclawChannelStatus,
   getPersistentNotifications,
+  inspectRuntimeRecoveryPortOwner,
   markPersistentNotificationRead,
   markPersistentNotificationsRead,
   openGatewayControlUi,
@@ -29,6 +30,7 @@ import {
   stopNativeVoiceWake,
   stopTalkPlayback,
   stopVoiceCapture,
+  terminateRuntimeRecoveryPortOwnerAndRetry,
   type GatewayDeviceChallengeParams,
 } from './tauri-commands';
 import {
@@ -109,6 +111,31 @@ test('Gateway 生命周期包装器保留选定运行时的命令与参数语义
         { command: 'probe_selected_gateway', args: { port: 19000 } },
         { command: 'stop_gateway', args: {} },
         { command: 'get_gateway_runtime_snapshot', args: {} },
+      ]);
+    },
+  );
+});
+
+test('运行时恢复端口占用者核验和终止请求保持同一身份参数', async () => {
+  const owner = {
+    port: 18789,
+    pid: 712,
+    processName: 'node',
+    startedAt: 920,
+    likelyOpenclaw: true,
+    canTerminate: true,
+  };
+  await captureTauriInvocations(
+    (command) => command === 'inspect_runtime_recovery_port_owner' ? owner : true,
+    async (calls) => {
+      assert.deepEqual(await inspectRuntimeRecoveryPortOwner(), owner);
+      assert.equal(await terminateRuntimeRecoveryPortOwnerAndRetry(owner), true);
+      assert.deepEqual(calls, [
+        { command: 'inspect_runtime_recovery_port_owner', args: {} },
+        {
+          command: 'terminate_runtime_recovery_port_owner_and_retry',
+          args: { owner: { port: 18789, pid: 712, startedAt: 920 } },
+        },
       ]);
     },
   );

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { NodeStatus } from "@/api/tauri-commands";
-import { describeNodeRuntimePreparation } from "./nodeRuntimePreparation";
+import type { NodeStatus, SetupNodeStatus } from "@/api/tauri-commands";
+import {
+  describeNodeRuntimePreparation,
+  nextSetupNodeRepairAction,
+} from "./nodeRuntimePreparation";
 
 function node(overrides: Partial<NodeStatus> = {}): NodeStatus {
   return {
@@ -10,6 +13,24 @@ function node(overrides: Partial<NodeStatus> = {}): NodeStatus {
     path: null,
     source: null,
     ...overrides,
+  };
+}
+
+function setupNode(
+  nodeAvailable: boolean,
+  npmAvailable: boolean,
+): SetupNodeStatus {
+  return {
+    node: node({ available: nodeAvailable }),
+    npm: {
+      available: npmAvailable,
+      version: null,
+      path: null,
+      source: null,
+      reason: null,
+    },
+    requirement: ">=24.15.0 <25",
+    requirementError: null,
   };
 }
 
@@ -44,4 +65,10 @@ test("目标包要求暂时未知时保留中性的安装提示", () => {
     describeNodeRuntimePreparation(node(), null),
     { key: "setup.installingNode", params: {} },
   );
+});
+
+test("存储恢复只在 Node 不可用时安装，Node 可用但 npm 缺失时修复", () => {
+  assert.equal(nextSetupNodeRepairAction(setupNode(false, false)), "install");
+  assert.equal(nextSetupNodeRepairAction(setupNode(true, false)), "repair-npm");
+  assert.equal(nextSetupNodeRepairAction(setupNode(true, true)), "ready");
 });

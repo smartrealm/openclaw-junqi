@@ -278,6 +278,89 @@ test("经典 Wizard 官方终态不依赖 Guided 专属 RPC", async () => {
   assert.deepEqual(events, ["attested", "config", "probe", "config"]);
 });
 
+test("Classic 既有 Runtime 通过真实模型核验后允许交接", async () => {
+  const events: string[] = [];
+
+  const result = await performOpenClawSetupHandoff(createPorts(events), {
+    kind: "classic-existing-runtime",
+    verifyModel: async () => {
+      events.push("verify");
+      return { ok: true };
+    },
+  });
+
+  assert.deepEqual(result, { ready: true });
+  assert.deepEqual(events, ["attested", "config", "probe", "verify", "config"]);
+});
+
+test("Classic 既有 Runtime 可用官方 config.get hash 锁定真实模型核验窗口", async () => {
+  const events: string[] = [];
+
+  const result = await performOpenClawSetupHandoff(createPorts(events, {
+    readConfigApplication: async () => {
+      events.push("config");
+      return { configHash: "existing-config" };
+    },
+  }), {
+    kind: "classic-existing-runtime",
+    verifyModel: async () => {
+      events.push("verify");
+      return { ok: true };
+    },
+  });
+
+  assert.deepEqual(result, { ready: true });
+  assert.deepEqual(events, ["attested", "config", "probe", "verify", "config"]);
+});
+
+test("Classic 既有 Runtime 在真实模型核验期间配置持续变化时不得进入 Ready", async () => {
+  const events: string[] = [];
+  let configReads = 0;
+  let now = 0;
+
+  const result = await performOpenClawSetupHandoff(createPorts(events, {
+    readConfigApplication: async () => {
+      events.push("config");
+      configReads += 1;
+      return { configHash: `config-${configReads}` };
+    },
+    now: () => now,
+    wait: async (delayMs) => { now += delayMs; },
+  }), {
+    kind: "classic-existing-runtime",
+    verifyModel: async () => {
+      events.push("verify");
+      return { ok: true };
+    },
+  });
+
+  assert.deepEqual(result, {
+    ready: false,
+    reason: "configuration-application-timeout",
+    diagnostic: "OpenClaw configuration revision changed during verification.",
+  });
+  assert.equal(events.filter((event) => event === "verify").length, 2);
+});
+
+test("Classic 既有 Runtime 模型核验失败时仍要求官方配置", async () => {
+  const events: string[] = [];
+
+  const result = await performOpenClawSetupHandoff(createPorts(events), {
+    kind: "classic-existing-runtime",
+    verifyModel: async () => {
+      events.push("verify");
+      return { ok: false, error: "provider rejected credential" };
+    },
+  });
+
+  assert.deepEqual(result, {
+    ready: false,
+    reason: "model-unverified",
+    diagnostic: "provider rejected credential",
+  });
+  assert.deepEqual(events, ["attested", "config", "probe", "verify"]);
+});
+
 test("Gateway 不提供活动配置修订证据时停止交接", async () => {
   const events: string[] = [];
   const result = await performOpenClawSetupHandoff(createPorts(events, {

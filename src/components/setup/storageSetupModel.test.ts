@@ -5,6 +5,7 @@ import {
   initialStorageLocationsVisibility,
   nodeRequirementFromRuntimeRecoveryError,
   portFromRuntimeRecoveryError,
+  runtimeRecoveryPrimaryAction,
   storageSubmissionPresentation,
 } from './storageSetupModel';
 
@@ -40,6 +41,10 @@ test('把 OpenClaw 核验失败与普通存储错误分开呈现', () => {
     classifyStorageSetupError('OpenClaw is not available to verify the selected official Gateway service; storage changes were not started'),
     'openclaw-unavailable',
   );
+  assert.equal(
+    classifyStorageSetupError('An OpenClaw Gateway service remains, but its OpenClaw runtime is unavailable; repair Node.js so JunQi can verify ownership before changing storage'),
+    'gateway-service-node-repair-required',
+  );
   assert.equal(classifyStorageSetupError('permission denied'), 'generic');
 });
 
@@ -61,4 +66,11 @@ test('从运行时恢复错误中提取被占用的候选 Gateway 端口', () =>
     18789,
   );
   assert.equal(portFromRuntimeRecoveryError('Gateway recovery failed'), null);
+});
+
+test('只有完成占用者核验后才把关闭进程作为恢复主操作', () => {
+  assert.equal(runtimeRecoveryPrimaryAction(null, true), 'inspect');
+  assert.equal(runtimeRecoveryPrimaryAction(null, false), 'retry');
+  assert.equal(runtimeRecoveryPrimaryAction({ canTerminate: false }, false), 'retry');
+  assert.equal(runtimeRecoveryPrimaryAction({ canTerminate: true }, false), 'terminate');
 });

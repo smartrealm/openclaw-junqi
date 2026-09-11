@@ -58,6 +58,43 @@ test('preserves structured collaboration service startup failures from Gateway',
   );
 });
 
+test('maintenance identity ignores unrelated capability fields from an older plugin contract', async () => {
+  const response = {
+    collaborationInstanceId: 'instance-legacy',
+    schemaVersion: 15,
+    databaseIntegrity: 'ok',
+    configuredAgents: null,
+    featureEvidence: null,
+  };
+  const client = new CollaborationClient(async () => response);
+
+  assert.deepEqual(await client.maintenanceIdentity(), {
+    collaborationInstanceId: 'instance-legacy',
+    schemaVersion: 15,
+    databaseIntegrity: 'ok',
+  });
+  await assert.rejects(
+    client.capabilities(),
+    (error: unknown) => error instanceof CollaborationClientError
+      && error.code === 'INVALID_RESPONSE',
+  );
+});
+
+test('maintenance identity fails closed when a required identity field is malformed', async () => {
+  const client = new CollaborationClient(async () => ({
+    collaborationInstanceId: 'instance-legacy',
+    schemaVersion: 0,
+    databaseIntegrity: 'ok',
+  }));
+
+  await assert.rejects(
+    client.maintenanceIdentity(),
+    (error: unknown) => error instanceof CollaborationClientError
+      && error.code === 'INVALID_RESPONSE'
+      && error.details?.field === 'schemaVersion',
+  );
+});
+
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'undefined';
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
