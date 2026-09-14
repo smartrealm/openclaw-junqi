@@ -224,3 +224,9 @@ JunQi 已严格解析 `unavailableCandidates` 和 `recommendedInstalls`，但 Gu
 ## 验证边界
 
 本轮已完成官方源码、协议 schema、handler、权限描述符、JunQi TypeScript/Rust 调用图和 npm 命令的静态核对。数据位置确认、提交内容稳定性、日志默认收起和 Gateway 所选 Runtime 重连的新增回归已通过；完整验证结果以本轮结束时的 `PROJECT_STATUS.md` 为准。Windows、Linux、Docker、真实 provider 登录、真实 completion、官方对话式配置和 classic daemon 选择仍需目标环境验证。
+
+## 2026-09-11 升级后检测协议复核
+
+OpenClaw 官方仓库已刷新到主线提交 `3456f50eb1780b6f3296fcba87b8d171dd54ebcf`。正式 `SystemAgentSetupDetectResultSchema` 允许 `saved-auth:*` 候选，授权方式包含 `oauth`、`device-code`、`install` 与 `custom`，并把不可用候选、授权方式、推荐安装和原生会话目录定义为可选字段。目标 `2026.9.4` Gateway 的只读响应实际返回了 `install` 和 `custom` 授权方式，因此旧解析器把有效响应误判为非法。
+
+当前解析器逐字段核验这些正式结构，并仅将官方可选列表缺失规范化为空列表；未知候选、非法授权类型、错误布尔值和不安全展示地址继续失败关闭。目标 Gateway 的真实只读响应已经通过同一解析函数，证明更新完成后可以继续进入配置能力判断；这不替代 fresh setup 的原生会话目录选择、真实供应商授权和 Windows、Linux、Docker 验收。

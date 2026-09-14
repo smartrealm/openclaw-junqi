@@ -1,8 +1,10 @@
 {
-  "formatVersion": 1,
+  "formatVersion": 2,
   "pluginId": "junqi-dingtalk",
   "packageName": "@junqi/openclaw-dingtalk-business",
   "pluginVersion": "0.27.0",
+  "pluginApiRange": ">=2026.8.1",
+  "minimumGatewayVersion": "2026.8.1",
   "toolCount": 85,
   "sha256": "5b9dea8641bb32da7ac301f7ad94462422b12b80774ed3c0d21fc89f73b2858f",
   "archiveFile": "junqi-dingtalk.tgz",

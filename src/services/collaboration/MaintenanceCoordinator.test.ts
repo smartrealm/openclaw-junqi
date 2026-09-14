@@ -127,6 +127,7 @@ interface HarnessOptions {
   absenceAttested?: boolean;
   absenceProofCurrent?: boolean;
   updateRecoveryAttested?: boolean;
+  updateRecoveryAttestationError?: Error;
   updateRecoveryProofCurrent?: boolean;
   useResolvedOwner?: boolean;
   resolveOwnerId?: () => Promise<string>;
@@ -163,6 +164,9 @@ function harness(options: HarnessOptions = {}) {
       proof.assertCurrent();
     },
     attestUpdateRecoveryUnavailable: async () => {
+      if (options.updateRecoveryAttestationError) {
+        throw options.updateRecoveryAttestationError;
+      }
       if (options.updateRecoveryAttested !== true) {
         throw new Error('collaboration repair state is not attested');
       }
@@ -360,6 +364,42 @@ test('a missing RPC with an attested unhealthy installed plugin permits only Ope
   );
 });
 
+test('an unclassified collaboration RPC failure still uses strict local recovery proof for OpenClaw update', async () => {
+  const unclassified = new CollaborationClientError(
+    'RPC_FAILED',
+    'Collaboration RPC failed without a structured Gateway code',
+    'junqi.collab.capabilities',
+  );
+  const { coordinator } = harness({
+    capabilityValues: [unclassified],
+    updateRecoveryAttested: true,
+  });
+
+  const acquisition = await coordinator.acquire('openclaw-update');
+
+  assert.equal(acquisition.guarded, false);
+  assert.equal(acquisition.updateRecoveryProof, updateRecoveryProof);
+});
+
+test('OpenClaw 更新恢复证明失败时返回可操作的具体原因', async () => {
+  const unclassified = new CollaborationClientError(
+    'RPC_FAILED',
+    'Collaboration RPC failed without a structured Gateway code',
+    'junqi.collab.capabilities',
+  );
+  const { coordinator } = harness({
+    capabilityValues: [unclassified],
+    updateRecoveryAttestationError: new Error('The collaboration plugin probe is not authoritative'),
+  });
+
+  const error = await expectMaintenanceError(
+    coordinator.acquire('openclaw-update'),
+    'STATE_UNKNOWN',
+  );
+
+  assert.match(error.message, /plugin probe is not authoritative/i);
+});
+
 test('an unhealthy-plugin recovery proof changing before update blocks the mutation', async () => {
   const missing = Object.assign(new Error('unknown method: junqi.collab.capabilities'), {
     code: 'INVALID_REQUEST',
@@ -408,7 +448,7 @@ test('a missing collaboration RPC remains guarded when durable absence is not at
 
   const error = await expectMaintenanceError(coordinator.acquire('openclaw-update'), 'STATE_UNKNOWN');
 
-  assert.match(error.message, /absence could not be proven/i);
+  assert.match(error.message, /recovery safety could not be proven/i);
   assert.equal(writes.length, 0);
 });
 

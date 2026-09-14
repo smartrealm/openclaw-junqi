@@ -24,13 +24,23 @@ fn read_gateway_token() -> Option<String> {
         .map(|s| s.to_string())
 }
 
-fn control_ui_url(port: u16, token: Option<String>) -> Result<url::Url, String> {
+fn control_ui_url(
+    port: u16,
+    token: Option<String>,
+    route: Option<&str>,
+) -> Result<url::Url, String> {
     let mut url = url::Url::parse(&format!(
         "http://{}:{}",
         crate::commands::config::default_gateway_host(),
         port
     ))
     .map_err(|e| format!("Invalid Control UI URL: {}", e))?;
+
+    match route {
+        None => {}
+        Some("devices") => url.set_path("/settings/devices"),
+        Some(value) => return Err(format!("Unsupported Control UI route: {}", value)),
+    }
 
     if let Some(token) = token.filter(|value| !value.is_empty()) {
         // The Control UI reads the hash with URLSearchParams. Serialize the
@@ -228,9 +238,9 @@ const RETURN_BUTTON_SCRIPT: &str = r#"
 })();
 "#;
 
-/// Open (or focus) the Control UI window, authenticating via the token hash.
+/// 打开或聚焦 Control UI，并通过令牌片段完成认证；显式业务入口可定位到受控官方页面。
 #[tauri::command]
-pub async fn open_control_ui(app: AppHandle) -> Result<(), String> {
+pub async fn open_control_ui(app: AppHandle, route: Option<String>) -> Result<(), String> {
     let port = crate::commands::gateway::configured_gateway_port();
     if !crate::commands::gateway::is_gateway_healthy(port).await {
         return Err(format!(
@@ -240,17 +250,16 @@ pub async fn open_control_ui(app: AppHandle) -> Result<(), String> {
         ));
     }
 
-    let target = control_ui_url(port, read_gateway_token())?;
+    let target = control_ui_url(port, read_gateway_token(), route.as_deref())?;
 
     if let Some(win) = app.get_webview_window(CONTROL_UI_LABEL) {
-        // Re-target only when the configured port changed. Keeping an existing
-        // window on the same endpoint preserves the user's current Control UI
-        // route and avoids discarding in-progress work on a simple focus click.
+        // 普通打开只在端点变化时重定向；显式业务入口还需要切换到指定官方页面。
         let needs_navigation = win
             .url()
             .map(|current| {
                 current.host_str() != Some(crate::commands::config::default_gateway_host())
                     || current.port_or_known_default() != Some(port)
+                    || (route.is_some() && current.path() != target.path())
             })
             .unwrap_or(true);
         if needs_navigation {
@@ -294,8 +303,15 @@ mod tests {
 
     #[test]
     fn control_ui_url_uses_the_configured_port_and_encodes_the_token() {
-        let url = control_ui_url(28123, Some("token with & separators".into())).unwrap();
+        let url = control_ui_url(28123, Some("token with & separators".into()), None).unwrap();
         assert_eq!(url.port_or_known_default(), Some(28123));
         assert_eq!(url.fragment(), Some("token=token+with+%26+separators"));
+    }
+
+    #[test]
+    fn control_ui_url_accepts_only_the_devices_route() {
+        let url = control_ui_url(28123, None, Some("devices")).unwrap();
+        assert_eq!(url.path(), "/settings/devices");
+        assert!(control_ui_url(28123, None, Some("unknown")).is_err());
     }
 }

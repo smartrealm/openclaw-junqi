@@ -110,6 +110,25 @@ function pluginSnapshotProvesMissing(probe: CollaborationBootstrapProbe): boolea
     && optionalFieldIsEmpty(plugin.installRecord);
 }
 
+function recoveryProbeSummary(probe: CollaborationBootstrapProbe): string {
+  const warningCount = Array.isArray(probe.warnings) ? probe.warnings.length : 'invalid';
+  const instructionsState = probe.manualInstallInstructions === null
+    ? 'empty'
+    : probe.manualInstallInstructions === undefined
+      ? 'missing'
+      : 'present';
+  return [
+    `code=${String(probe.code)}`,
+    `ok=${String(probe.ok)}`,
+    `mutationAllowed=${String(probe.mutationAllowed)}`,
+    `manualInstallRequired=${String(probe.manualInstallRequired)}`,
+    `manualInstallInstructions=${instructionsState}`,
+    `busy=${String(probe.busy)}`,
+    `recoveryRequired=${String(probe.recoveryRequired)}`,
+    `warnings=${String(warningCount)}`,
+  ].join(', ');
+}
+
 function identityIsAttested(identity: RuntimeIdentity): boolean {
   if (!identity || typeof identity !== 'object') return false;
   const candidate = identity as unknown as Record<string, unknown>;
@@ -277,6 +296,8 @@ export class CollaborationAbsenceAttestation implements CollaborationAbsenceProo
 export class CollaborationUpdateRecoverySpecification {
   evaluate(observation: CollaborationAbsenceObservation): CollaborationUpdateRecoveryDecision {
     const { before, after, probe } = observation;
+    const hostIncompatible = probe.code === 'PLUGIN_HOST_INCOMPATIBLE';
+    const pluginMissing = probe.code === 'PLUGIN_MISSING';
     if (!identityIsAttested(before)) {
       return rejected('IDENTITY_NOT_ATTESTED', 'The active Gateway identity is not attested for local inspection');
     }
@@ -313,22 +334,29 @@ export class CollaborationUpdateRecoverySpecification {
     }
     if (
       probe.ok !== true
-      || probe.code !== 'PLUGIN_NEEDS_REPAIR'
+      || (probe.code !== 'PLUGIN_NEEDS_REPAIR' && !hostIncompatible && !pluginMissing)
       || probe.mutationAllowed !== true
       || probe.manualInstallRequired !== false
       || probe.manualInstallInstructions !== null
       || probe.busy !== false
       || probe.recoveryRequired !== false
       || !Array.isArray(probe.warnings)
-      || probe.warnings.length !== 0
+      || (!hostIncompatible && probe.warnings.length !== 0)
     ) {
-      return rejected('PROBE_NOT_AUTHORITATIVE', 'The collaboration recovery probe is busy, ambiguous, warned, or otherwise non-authoritative');
+      return rejected(
+        'PROBE_NOT_AUTHORITATIVE',
+        `The collaboration recovery probe is not authoritative: ${recoveryProbeSummary(probe)}`,
+      );
     }
-    if (
-      probe.plugin.installed !== true
-      || (probe.plugin.enabled === true && probe.plugin.status === 'loaded')
-    ) {
+    const unavailablePluginIsProven = pluginMissing
+      ? pluginSnapshotProvesMissing(probe)
+      : probe.plugin.installed === true
+        && !(probe.plugin.enabled === true && probe.plugin.status === 'loaded');
+    if (!unavailablePluginIsProven) {
       return rejected('PLUGIN_NOT_PROVEN_UNAVAILABLE', 'The collaboration plugin is not proven installed and unavailable');
+    }
+    if (pluginMissing && probe.durableCollaborationState !== 'absent') {
+      return rejected('DURABLE_STATE_UNSAFE', 'A missing collaboration plugin still has durable state or its state could not be inspected');
     }
     if (
       probe.durableCollaborationState !== 'absent'

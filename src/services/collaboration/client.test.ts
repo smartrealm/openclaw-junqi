@@ -5,6 +5,7 @@ import {
   CollaborationClient,
   CollaborationClientError,
   createCollaborationWriteRequest,
+  isCollaborationCapabilityAuthorizationDenied,
   isCollaborationMethodUnavailable,
 } from './client';
 import {
@@ -31,6 +32,31 @@ test('normalizes OpenClaw INVALID_REQUEST unknown-method responses to a typed ab
   assert.equal(isCollaborationMethodUnavailable({
     code: 'INVALID_REQUEST',
     message: 'unknown method: sessions.reset',
+  }), false);
+});
+
+test('preserves structured scope denial for background capability probe convergence', async () => {
+  const client = new CollaborationClient(async () => {
+    throw {
+      code: 'FORBIDDEN',
+      message: 'missing scope: operator.admin',
+      details: {
+        code: 'MISSING_SCOPE',
+        missingScope: 'operator.admin',
+      },
+    };
+  });
+  let observed: unknown;
+  try {
+    await client.capabilities();
+  } catch (error) {
+    observed = error;
+  }
+  assert.ok(observed instanceof CollaborationClientError);
+  assert.equal(isCollaborationCapabilityAuthorizationDenied(observed), true);
+  assert.equal(isCollaborationCapabilityAuthorizationDenied({
+    code: 'INVALID_REQUEST',
+    message: 'unknown method: junqi.collab.capabilities',
   }), false);
 });
 

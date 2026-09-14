@@ -1,5 +1,6 @@
 import { gateway } from '@/services/gateway';
 import { isOpenClawUnknownMethodError } from '@/services/gateway/GatewayProtocolEvidence';
+import { classifyGatewayAuthorizationError } from '@/services/gateway/messageRouter';
 import {
   COLLABORATION_PLUGIN_BUNDLE,
   type CollaborationPluginBundleMetadata,
@@ -105,6 +106,17 @@ export function isCollaborationMethodUnavailable(
     return error.code === 'METHOD_UNAVAILABLE' && expectedMethods.includes(error.method);
   }
   return expectedMethods.some((method) => isOpenClawUnknownMethodError(error, method));
+}
+
+/**
+ * 可选协作插件缺席时，OpenClaw 的未知插件方法会按默认拒绝策略要求管理员权限。
+ * 这里只识别结构化权限结果，不把它伪装成插件缺席或 RPC 成功。
+ */
+export function isCollaborationCapabilityAuthorizationDenied(error: unknown): boolean {
+  const source = error instanceof CollaborationClientError
+    ? error.originalError
+    : error;
+  return classifyGatewayAuthorizationError(source)?.kind === 'scope_denied';
 }
 
 function decodeWire<T>(method: string, decode: () => T): T {

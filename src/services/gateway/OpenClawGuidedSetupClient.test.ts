@@ -106,13 +106,13 @@ test('guided setup detection preserves provider-owned structured options', () =>
     () => parseGuidedSetupDetection({ ...detection, candidates: [{ ...detection.candidates[0], kind: 'invented' }] }),
     OpenClawGuidedSetupResponseError,
   );
-  assert.throws(
-    () => parseGuidedSetupDetection({ ...detection, unavailableCandidates: undefined }),
-    OpenClawGuidedSetupResponseError,
-  );
-  assert.throws(
-    () => parseGuidedSetupDetection({ ...detection, recommendedInstalls: undefined }),
-    OpenClawGuidedSetupResponseError,
+  assert.deepEqual(
+    parseGuidedSetupDetection({
+      ...detection,
+      unavailableCandidates: undefined,
+      recommendedInstalls: undefined,
+    }).unavailableCandidates,
+    [],
   );
   assert.equal(
     Object.prototype.hasOwnProperty.call(
@@ -121,6 +121,64 @@ test('guided setup detection preserves provider-owned structured options', () =>
     ),
     false,
   );
+});
+
+test('guided setup detection accepts the current OpenClaw optional catalogs and setup kinds', () => {
+  const parsed = parseGuidedSetupDetection({
+    candidates: [{
+      kind: 'saved-auth:deepseek%3Adefault',
+      brandId: 'deepseek',
+      label: 'Saved DeepSeek credential',
+      detail: 'available',
+      modelRef: 'deepseek/deepseek-v4-flash',
+      recommended: false,
+      credentials: true,
+    }],
+    manualProviders: [{
+      id: 'deepseek-api-key',
+      brandId: 'deepseek',
+      groupLabel: 'DeepSeek',
+      label: 'DeepSeek API key',
+      hint: '',
+    }],
+    authOptions: [
+      {
+        id: 'anthropic-cli',
+        brandId: 'anthropic',
+        label: 'Anthropic Claude CLI',
+        hint: 'Install and sign in on this Gateway host',
+        groupLabel: 'Anthropic',
+        kind: 'install',
+        featured: true,
+      },
+      {
+        id: 'custom-api-key',
+        brandId: 'custom',
+        label: 'Custom endpoint',
+        groupLabel: '',
+        kind: 'custom',
+        featured: false,
+      },
+    ],
+    nativeSessionCatalogs: [{
+      pluginId: 'codex',
+      label: 'Codex',
+      detail: '',
+    }],
+    nativeSessionCatalogPreferenceRequired: false,
+    workspace: '/tmp/openclaw-workspace',
+    configuredModel: '',
+    setupComplete: true,
+  });
+
+  assert.equal(parsed.candidates[0]?.kind, 'saved-auth:deepseek%3Adefault');
+  assert.deepEqual(parsed.unavailableCandidates, []);
+  assert.deepEqual(parsed.recommendedInstalls, []);
+  assert.equal(parsed.authOptions[0]?.kind, 'install');
+  assert.equal(parsed.authOptions[1]?.kind, 'custom');
+  assert.equal(parsed.nativeSessionCatalogs?.[0]?.pluginId, 'codex');
+  assert.equal(parsed.nativeSessionCatalogPreferenceRequired, false);
+  assert.equal(parsed.configuredModel, '');
 });
 
 test('guided setup client classifies the official setup method as unavailable', async () => {

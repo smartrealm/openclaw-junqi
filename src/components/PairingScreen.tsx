@@ -7,6 +7,7 @@ import { LoadingIndicator } from '@/components/shared/LoadingIndicator';
 interface PairingScreenProps {
   issue: GatewayAuthorizationIssue;
   onApprove: (requestId: string) => Promise<void>;
+  onOpenControlUi: () => Promise<void>;
   onRequestScopeUpgrade: () => Promise<void>;
   onPaired: (token: string) => void;
   onCancel: () => void;
@@ -14,11 +15,12 @@ interface PairingScreenProps {
 
 /**
  * 待批准设备请求由 OpenClaw 创建并持有。scope upgrade 先通过当前已核验连接
- * 注册准确请求；只有用户确认后才批准所选本地运行时，其他方式只作为恢复入口。
+ * 注册准确请求；权限升级必须由官方控制台或另一台已授权设备批准，当前设备不能自批。
  */
 export function PairingScreen({
   issue,
   onApprove,
+  onOpenControlUi,
   onRequestScopeUpgrade,
   onPaired,
   onCancel,
@@ -30,9 +32,19 @@ export function PairingScreen({
   const [submitting, setSubmitting] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [controlUiOpened, setControlUiOpened] = useState(false);
   const requestId = issue.requestId?.trim() || '';
   const scopeDenied = issue.kind === 'scope_denied';
   const scopeUpgradePending = scopeDenied && issue.code === 'SCOPE_UPGRADE_PENDING' && Boolean(requestId);
+  const scopeUpgradeFailureLabel = scopeDenied
+    ? issue.code === 'SCOPE_UPGRADE_REJECTED'
+      ? t('pairing.scopeUpgradeRejected')
+      : issue.code === 'SCOPE_UPGRADE_EXPIRED'
+        ? t('pairing.scopeUpgradeExpired')
+        : issue.code === 'SCOPE_UPGRADE_FAILED'
+          ? t('pairing.scopeUpgradeFailed')
+          : null
+    : null;
   const requiredScope = issue.missingScope
     ?? issue.requiredScopes?.filter((scope) => scope.trim()).join(', ')
     ?? '';
@@ -71,6 +83,20 @@ export function PairingScreen({
     setApprovalError(null);
     try {
       await onRequestScopeUpgrade();
+    } catch (error) {
+      setApprovalError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openControlUiForApproval = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setApprovalError(null);
+    try {
+      await onOpenControlUi();
+      setControlUiOpened(true);
     } catch (error) {
       setApprovalError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -126,10 +152,14 @@ export function PairingScreen({
             {scopeDenied ? t('pairing.scopeUpgradeRecovery') : t('pairing.confirmApprovalScope')}
           </p>
 
-          {approvalError && (
+          {(approvalError || scopeUpgradeFailureLabel) && (
             <div role="alert" className="mb-4 w-full rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-start text-xs leading-5 text-red-300">
-              <div className="font-medium">{t('pairing.approvalFailed')}</div>
-              <div className="mt-1 break-words font-mono text-[10px]">{approvalError}</div>
+              <div className="font-medium">
+                {approvalError ? t('pairing.approvalFailed') : scopeUpgradeFailureLabel}
+              </div>
+              {approvalError && (
+                <div className="mt-1 break-words font-mono text-[10px]">{approvalError}</div>
+              )}
             </div>
           )}
 
@@ -141,11 +171,15 @@ export function PairingScreen({
               className="flex w-full items-center justify-center gap-2 rounded-md bg-aegis-primary px-4 py-2.5 text-sm font-semibold text-aegis-btn-primary-text transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {submitting ? <LoadingIndicator size={15} /> : <ShieldCheck size={16} />}
-              {submitting ? t('pairing.requestingScopeUpgrade') : t('pairing.requestRequiredAccess')}
+              {submitting
+                ? t('pairing.requestingScopeUpgrade')
+                : scopeUpgradeFailureLabel
+                  ? t('pairing.retryScopeUpgrade')
+                  : t('pairing.requestRequiredAccess')}
             </button>
           )}
 
-          {(!scopeDenied || scopeUpgradePending) && (
+          {!scopeDenied && (
             <>
               <button
                 type="button"
@@ -154,11 +188,41 @@ export function PairingScreen({
                 className="flex w-full items-center justify-center gap-2 rounded-md bg-aegis-primary px-4 py-2.5 text-sm font-semibold text-aegis-btn-primary-text transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {submitting ? <LoadingIndicator size={15} /> : <ShieldCheck size={16} />}
+                {submitting ? t('pairing.approving') : t('pairing.confirmAndContinue')}
+              </button>
+
+              <div className="mt-4 flex items-center gap-2 text-xs text-aegis-text-dim">
+                <LoadingIndicator size={13} className="text-aegis-primary" />
+                <span>{t('pairing.waitingApprovalRetry')}</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowAdvanced((value) => !value)}
+                disabled={submitting}
+                className="mt-5 flex items-center gap-2 rounded-md px-3 py-2 text-xs text-aegis-text-muted transition-colors hover:bg-aegis-glass hover:text-aegis-text disabled:cursor-not-allowed disabled:opacity-40"
+                aria-expanded={showAdvanced}
+              >
+                <Terminal size={14} />
+                {showAdvanced ? t('pairing.hideAdvanced') : t('pairing.showAdvanced')}
+              </button>
+            </>
+          )}
+
+          {scopeUpgradePending && (
+            <>
+              <button
+                type="button"
+                onClick={() => void openControlUiForApproval()}
+                disabled={submitting}
+                className="flex w-full items-center justify-center gap-2 rounded-md bg-aegis-primary px-4 py-2.5 text-sm font-semibold text-aegis-btn-primary-text transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {submitting ? <LoadingIndicator size={15} /> : <ShieldCheck size={16} />}
                 {submitting
-                  ? t('pairing.approving')
-                  : scopeDenied
-                    ? t('pairing.approveRequiredAccess')
-                    : t('pairing.confirmAndContinue')}
+                  ? t('pairing.openingControlUi')
+                  : controlUiOpened
+                    ? t('pairing.reopenControlUi')
+                    : t('pairing.openControlUiForApproval')}
               </button>
 
               <div className="mt-4 flex items-center gap-2 text-xs text-aegis-text-dim">
@@ -195,7 +259,9 @@ export function PairingScreen({
           {showAdvanced && (
             <div className="mt-2 w-full border-t border-aegis-border pt-4 text-start">
               <p className="mb-3 text-xs leading-5 text-aegis-text-muted">
-                {t('pairing.advancedDesc')}
+                {scopeUpgradePending
+                  ? t('pairing.scopeUpgradeAdvancedDesc')
+                  : t('pairing.advancedDesc')}
               </p>
               {requestId && (
                 <div className="mb-3">

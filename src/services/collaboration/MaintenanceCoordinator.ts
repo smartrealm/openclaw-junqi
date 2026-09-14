@@ -446,15 +446,6 @@ function unavailableServiceCode(error: unknown): CollaborationUnavailableService
   return null;
 }
 
-function containsMissingCapabilitiesRpc(error: unknown): boolean {
-  const cause = error instanceof CollaborationMaintenanceError ? error.originalError : error;
-  if (isExplicitlyMissingCollaboration(cause)) return true;
-  if (cause === null || typeof cause !== 'object' || Array.isArray(cause)) return false;
-  return isExplicitlyMissingCollaboration(
-    (cause as Record<string, unknown>).capabilityError,
-  );
-}
-
 function integrityIsHealthy(value: string): boolean {
   return value.trim().toLowerCase() === 'ok';
 }
@@ -582,7 +573,7 @@ export class CollaborationMaintenanceCoordinator {
           updateRecoveryProof: null,
         };
       }
-      if (normalizedReason === 'openclaw-update' && containsMissingCapabilitiesRpc(error)) {
+      if (normalizedReason === 'openclaw-update') {
         try {
           const updateRecoveryProof = await this.dependencies.attestUpdateRecoveryUnavailable();
           return {
@@ -593,8 +584,19 @@ export class CollaborationMaintenanceCoordinator {
             unavailableServiceCode: null,
             updateRecoveryProof,
           };
-        } catch {
-          // 探针无法形成严格恢复证明时保留原始维护错误，不能扩大未知失败的放行范围。
+        } catch (attestationError) {
+          // 更新恢复证明失败时保留原始维护故障，并向界面返回严格探针的具体拒绝原因。
+          const attestationMessage = attestationError instanceof Error
+            ? attestationError.message
+            : 'The local collaboration recovery probe returned an unknown error';
+          throw new CollaborationMaintenanceError(
+            'STATE_UNKNOWN',
+            `OpenClaw update is blocked because local collaboration recovery safety could not be proven: ${attestationMessage}`,
+            'status',
+            this.pendingLease,
+            [],
+            { maintenanceError: error, attestationError },
+          );
         }
       }
       throw error;

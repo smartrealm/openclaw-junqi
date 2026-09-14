@@ -242,7 +242,37 @@ test('OpenClaw 更新恢复证明只接受同一受管运行时中已安装但�
   }).satisfied, true);
 });
 
-test('OpenClaw 更新恢复证明拒绝已加载、缺失、忙碌和不可核验状态', () => {
+test('OpenClaw 更新恢复证明接受由本地清单核验的宿主版本不兼容插件', () => {
+  const specification = new CollaborationUpdateRecoverySpecification();
+  const incompatibleProbe = probe({
+    code: 'PLUGIN_HOST_INCOMPATIBLE',
+    message: 'The installed collaboration plugin requires a newer OpenClaw host',
+    plugin: { installed: true, enabled: true, status: 'error', version: '0.5.9' },
+    warnings: ['The collaboration plugin requires a newer plugin API'],
+    durableCollaborationState: 'present',
+  });
+
+  const decision = specification.evaluate({
+    before: identity(),
+    after: identity(),
+    probe: incompatibleProbe,
+  });
+
+  assert.equal(decision.satisfied, true);
+});
+
+test('OpenClaw 更新恢复证明接受同一受管运行时中插件与持久状态均缺失', () => {
+  const specification = new CollaborationUpdateRecoverySpecification();
+  const decision = specification.evaluate({
+    before: identity(),
+    after: identity(),
+    probe: probe(),
+  });
+
+  assert.equal(decision.satisfied, true);
+});
+
+test('OpenClaw 更新恢复证明拒绝已加载、不一致缺失、忙碌和不可核验状态', () => {
   const specification = new CollaborationUpdateRecoverySpecification();
   const repair = {
     code: 'PLUGIN_NEEDS_REPAIR',
@@ -266,6 +296,26 @@ test('OpenClaw 更新恢复证明拒绝已加载、缺失、忙碌和不可核�
       probe: observation,
     }).satisfied, false);
   }
+});
+
+test('OpenClaw 更新恢复证明拒绝时返回安全的结构化探针摘要', () => {
+  const specification = new CollaborationUpdateRecoverySpecification();
+  const decision = specification.evaluate({
+    before: identity(),
+    after: identity(),
+    probe: probe({
+      recoveryRequired: true,
+      warnings: ['sensitive diagnostic must not be exposed'],
+    }),
+  });
+
+  assert.equal(decision.satisfied, false);
+  assert.equal(decision.code, 'PROBE_NOT_AUTHORITATIVE');
+  assert.match(decision.reason ?? '', /code=PLUGIN_MISSING/);
+  assert.match(decision.reason ?? '', /recoveryRequired=true/);
+  assert.match(decision.reason ?? '', /warnings=1/);
+  assert.doesNotMatch(decision.reason ?? '', /sensitive diagnostic/);
+  assert.doesNotMatch(decision.reason ?? '', /\/tmp\/openclaw/);
 });
 
 test('OpenClaw 更新恢复证明在实际写入前重新核验插件状态', async () => {

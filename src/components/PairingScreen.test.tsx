@@ -7,6 +7,7 @@ import { PairingScreen } from './PairingScreen';
 
 const callbacks = {
   onApprove: async () => {},
+  onOpenControlUi: async () => {},
   onRequestScopeUpgrade: async () => {},
   onPaired: () => {},
   onCancel: () => {},
@@ -25,10 +26,9 @@ test('scope 拒绝先提供官方管理员权限申请入口', async () => {
   }));
 
   assert.ok(html.includes(i18n.t('pairing.requestRequiredAccess')));
-  assert.equal(html.includes(i18n.t('pairing.approveRequiredAccess')), false);
 });
 
-test('Gateway 返回升级请求后只批准该准确请求', async () => {
+test('Gateway 返回升级请求后改由官方控制台审批', async () => {
   await i18n.changeLanguage('zh');
   const html = renderToStaticMarkup(createElement(PairingScreen, {
     ...callbacks,
@@ -41,6 +41,29 @@ test('Gateway 返回升级请求后只批准该准确请求', async () => {
     },
   }));
 
-  assert.ok(html.includes(i18n.t('pairing.approveRequiredAccess')));
+  assert.ok(html.includes(i18n.t('pairing.openControlUiForApproval')));
   assert.equal(html.includes(`>${i18n.t('pairing.requestRequiredAccess')}<`), false);
 });
+
+for (const [code, messageKey] of [
+  ['SCOPE_UPGRADE_REJECTED', 'pairing.scopeUpgradeRejected'],
+  ['SCOPE_UPGRADE_EXPIRED', 'pairing.scopeUpgradeExpired'],
+  ['SCOPE_UPGRADE_FAILED', 'pairing.scopeUpgradeFailed'],
+] as const) {
+  test(`${code} 显示明确终态并提供重新申请入口`, async () => {
+    await i18n.changeLanguage('zh');
+    const html = renderToStaticMarkup(createElement(PairingScreen, {
+      ...callbacks,
+      issue: {
+        kind: 'scope_denied',
+        code,
+        message: 'terminal scope upgrade state',
+        missingScope: 'operator.admin',
+      },
+    }));
+
+    assert.ok(html.includes(i18n.t(messageKey)));
+    assert.ok(html.includes(i18n.t('pairing.retryScopeUpgrade')));
+    assert.equal(html.includes(`>${i18n.t('pairing.requestRequiredAccess')}<`), false);
+  });
+}

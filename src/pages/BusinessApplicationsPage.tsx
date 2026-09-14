@@ -1094,11 +1094,11 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
   }, [performInvocation, selectedTool, t]);
 
   const performPluginInstallation = useCallback(async () => {
+    setPluginError(null);
     setPluginInstallationProgress({ phase: 'checking', message: t('businessApplications.pluginInstall.progress.checking') });
     const current = getCurrentRuntimeIdentity();
     if (!current?.verified || !current.desktopMutationAllowed) {
       const message = dingtalkPluginInstallBlocker(current);
-      setPluginError(message);
       setPluginInstallationProgress({ phase: 'failed', message });
       return;
     }
@@ -1111,7 +1111,6 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
       setPluginInstallationProgress({ phase: 'completed', message: t('businessApplications.pluginInstall.progress.completed') });
     } catch (error) {
       const message = errorMessage(error);
-      setPluginError(message);
       setPluginInstallationProgress({ phase: 'failed', message });
     } finally {
       setPluginOperation(null);
@@ -1122,6 +1121,12 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
     setPluginInstallationProgress({ phase: 'idle', message: null });
     setPluginInstallDialogOpen(true);
   }, []);
+
+  const handleOpenClawUpdated = useCallback(async () => {
+    setPluginError(null);
+    await refreshAll();
+    await refreshDingTalkState();
+  }, [refreshDingTalkState]);
 
   const runDwsOperation = useCallback((kind: DwsOperationKind, operationProfile?: string) => {
     if (dwsOperationActive || !claimDwsOperationStart(dwsStartGuard)) return;
@@ -1320,6 +1325,11 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
             ? t('businessApplications.workbench.status.profileRequired')
             : pluginStatusLoading
               ? t('businessApplications.workbench.status.pluginChecking')
+              : pluginStatus?.compatibility === 'incompatible'
+                ? t('businessApplications.workbench.status.pluginRuntimeIncompatible', {
+                  current: pluginStatus.gatewayVersion,
+                  minimum: pluginStatus.minimumGatewayVersion,
+                })
               : pluginStatus?.installed
                 ? t('businessApplications.workbench.status.pluginRestartPending')
                 : localInstallAvailable
@@ -1341,6 +1351,9 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
     pluginNeedsInstall,
     pluginStatusPending: localInstallAvailable && pluginStatusLoading,
     restartRequired: Boolean(pluginStatus?.restartRequired),
+    pluginCompatibility: pluginStatus?.compatibility ?? null,
+    gatewayVersion: pluginStatus?.gatewayVersion ?? null,
+    minimumGatewayVersion: pluginStatus?.minimumGatewayVersion ?? null,
     agentId: activeAgentId,
     authorizationAgentOptions,
     authorizationTargetAgentId: selectedAuthorizationAgentId,
@@ -1402,8 +1415,13 @@ function BusinessApplicationsWorkspace({ activeSessionKey }: { activeSessionKey:
         open={pluginInstallDialogOpen}
         progress={pluginInstallationProgress}
         busy={pluginOperation === 'installing'}
+        compatibility={pluginStatus?.compatibility ?? null}
+        gatewayVersion={pluginStatus?.gatewayVersion ?? null}
+        pluginApiRange={pluginStatus?.pluginApiRange ?? null}
+        minimumGatewayVersion={pluginStatus?.minimumGatewayVersion ?? null}
         onOpenChange={setPluginInstallDialogOpen}
         onConfirm={() => void performPluginInstallation()}
+        onUpdated={handleOpenClawUpdated}
         onRestartGateway={() => {
           void restartGateway().then((success) => {
             if (success) setPluginInstallDialogOpen(false);

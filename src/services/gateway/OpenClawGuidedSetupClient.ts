@@ -37,7 +37,9 @@ const SETUP_STATUSES = [
   'unknown',
 ] as const;
 
-export type GuidedSetupKind = typeof SETUP_KINDS[number] | `provider-auto:${string}`;
+export type GuidedSetupKind = typeof SETUP_KINDS[number]
+  | `provider-auto:${string}`
+  | `saved-auth:${string}`;
 export type GuidedSetupStatus = typeof SETUP_STATUSES[number];
 
 export interface GuidedSetupCandidate {
@@ -82,7 +84,7 @@ export interface GuidedSetupAuthOption {
   groupLabel?: string;
   icon?: string;
   website?: string;
-  kind: 'oauth' | 'device-code';
+  kind: 'oauth' | 'device-code' | 'install' | 'custom';
   featured: boolean;
 }
 
@@ -105,6 +107,12 @@ export interface GuidedSetupRecommendedInstall {
   icon: string;
 }
 
+export interface GuidedSetupNativeSessionCatalog {
+  pluginId: string;
+  label: string;
+  detail?: string;
+}
+
 export interface GuidedSetupDetection {
   candidates: GuidedSetupCandidate[];
   unavailableCandidates: GuidedSetupUnavailableCandidate[];
@@ -112,6 +120,8 @@ export interface GuidedSetupDetection {
   authOptions: GuidedSetupAuthOption[];
   prepareOptions?: GuidedSetupPrepareOption[];
   recommendedInstalls: GuidedSetupRecommendedInstall[];
+  nativeSessionCatalogs?: GuidedSetupNativeSessionCatalog[];
+  nativeSessionCatalogPreferenceRequired?: boolean;
   workspace: string;
   configuredModel?: string;
   setupComplete: boolean;
@@ -213,6 +223,11 @@ function optionalText(value: unknown): string | undefined | null {
   return text(value);
 }
 
+function optionalString(value: unknown): string | undefined | null {
+  if (value === undefined) return undefined;
+  return typeof value === 'string' ? value : null;
+}
+
 function httpsUrl(value: unknown): string | undefined | null {
   if (value === undefined) return undefined;
   const source = text(value);
@@ -228,6 +243,7 @@ function isSetupKind(value: unknown): value is GuidedSetupKind {
   return typeof value === 'string' && (
     (SETUP_KINDS as readonly string[]).includes(value)
     || /^provider-auto:.+$/u.test(value)
+    || /^saved-auth:.+$/u.test(value)
   );
 }
 
@@ -240,6 +256,7 @@ function setupStatus(value: unknown): GuidedSetupStatus | null {
 function parseBrandedEntry(
   value: unknown,
   fields: readonly string[],
+  optionalStringFields: readonly string[] = [],
 ): Record<string, unknown> | null {
   const source = record(value);
   if (!source) return null;
@@ -248,6 +265,11 @@ function parseBrandedEntry(
     const parsedText = optionalText(source[field]);
     if (parsedText === null) return null;
     if (parsedText !== undefined) parsed[field] = parsedText;
+  }
+  for (const field of optionalStringFields) {
+    const parsedString = optionalString(source[field]);
+    if (parsedString === null) return null;
+    if (parsedString !== undefined) parsed[field] = parsedString;
   }
   for (const field of ['icon', 'website'] as const) {
     const parsedUrl = httpsUrl(source[field]);
@@ -287,23 +309,30 @@ function parseUnavailableCandidate(value: unknown): GuidedSetupUnavailableCandid
 }
 
 function parseManualProvider(value: unknown): GuidedSetupManualProvider | null {
-  const source = parseBrandedEntry(value, ['id', 'brandId', 'groupLabel', 'label', 'hint']);
+  const source = parseBrandedEntry(value, ['id', 'brandId', 'groupLabel', 'label'], ['hint']);
   if (!source || !text(source.id) || !text(source.label)) return null;
   return source as unknown as GuidedSetupManualProvider;
 }
 
 function parseAuthOption(value: unknown): GuidedSetupAuthOption | null {
-  const source = parseBrandedEntry(value, ['id', 'brandId', 'label', 'hint', 'groupLabel']);
+  const source = parseBrandedEntry(value, ['id', 'brandId', 'label'], ['hint', 'groupLabel']);
   if (!source || !text(source.id) || !text(source.label)) return null;
-  if (source.kind !== 'oauth' && source.kind !== 'device-code') return null;
+  if (source.kind !== 'oauth' && source.kind !== 'device-code'
+    && source.kind !== 'install' && source.kind !== 'custom') return null;
   if (typeof source.featured !== 'boolean') return null;
   return source as unknown as GuidedSetupAuthOption;
 }
 
 function parsePrepareOption(value: unknown): GuidedSetupPrepareOption | null {
-  const source = parseBrandedEntry(value, ['id', 'brandId', 'label', 'hint', 'actionLabel']);
+  const source = parseBrandedEntry(value, ['id', 'brandId', 'label', 'actionLabel'], ['hint']);
   if (!source || !text(source.id) || !text(source.label)) return null;
   return source as unknown as GuidedSetupPrepareOption;
+}
+
+function parseNativeSessionCatalog(value: unknown): GuidedSetupNativeSessionCatalog | null {
+  const source = parseBrandedEntry(value, ['pluginId', 'label'], ['detail']);
+  if (!source || !text(source.pluginId) || !text(source.label)) return null;
+  return source as unknown as GuidedSetupNativeSessionCatalog;
 }
 
 function parseRecommendedInstall(value: unknown): GuidedSetupRecommendedInstall | null {
@@ -332,25 +361,45 @@ export function parseGuidedSetupDetection(
     throw new OpenClawGuidedSetupResponseError(OPENCLAW_GUIDED_SETUP_METHODS.detect);
   }
   const candidates = parseArray(source.candidates, parseCandidate);
-  const unavailableCandidates = parseArray(source.unavailableCandidates, parseUnavailableCandidate);
+  const unavailableCandidates = parseArray(
+    source.unavailableCandidates,
+    parseUnavailableCandidate,
+    true,
+  );
   const manualProviders = parseArray(source.manualProviders, parseManualProvider);
-  const authOptions = parseArray(source.authOptions, parseAuthOption);
+  const authOptions = parseArray(source.authOptions, parseAuthOption, true);
   const prepareOptions = parseArray(source.prepareOptions, parsePrepareOption, true);
-  const recommendedInstalls = parseArray(source.recommendedInstalls, parseRecommendedInstall);
+  const recommendedInstalls = parseArray(
+    source.recommendedInstalls,
+    parseRecommendedInstall,
+    true,
+  );
+  const nativeSessionCatalogs = parseArray(
+    source.nativeSessionCatalogs,
+    parseNativeSessionCatalog,
+    true,
+  );
   const workspace = text(source.workspace);
-  const configuredModel = optionalText(source.configuredModel);
-  if (!candidates || !unavailableCandidates || !manualProviders || !authOptions
-    || prepareOptions === null || !recommendedInstalls || !workspace
-    || configuredModel === null) {
+  const configuredModel = optionalString(source.configuredModel);
+  const nativeSessionCatalogPreferenceRequired = source.nativeSessionCatalogPreferenceRequired;
+  if (!candidates || unavailableCandidates === null || !manualProviders || authOptions === null
+    || prepareOptions === null || recommendedInstalls === null || nativeSessionCatalogs === null
+    || !workspace || configuredModel === null
+    || (nativeSessionCatalogPreferenceRequired !== undefined
+      && typeof nativeSessionCatalogPreferenceRequired !== 'boolean')) {
     throw new OpenClawGuidedSetupResponseError(OPENCLAW_GUIDED_SETUP_METHODS.detect);
   }
   return {
     candidates,
-    unavailableCandidates,
+    unavailableCandidates: unavailableCandidates ?? [],
     manualProviders,
-    authOptions,
+    authOptions: authOptions ?? [],
     ...(prepareOptions !== undefined ? { prepareOptions } : {}),
-    recommendedInstalls,
+    recommendedInstalls: recommendedInstalls ?? [],
+    ...(nativeSessionCatalogs !== undefined ? { nativeSessionCatalogs } : {}),
+    ...(typeof nativeSessionCatalogPreferenceRequired === 'boolean'
+      ? { nativeSessionCatalogPreferenceRequired }
+      : {}),
     workspace,
     ...(configuredModel !== undefined ? { configuredModel } : {}),
     setupComplete: source.setupComplete,

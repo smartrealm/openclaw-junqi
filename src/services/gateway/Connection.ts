@@ -23,7 +23,11 @@ import {
   invalidateGatewayRuntimeIdentity,
   observeGatewayHello,
 } from './runtimeIdentity';
-import { storeGatewayConnectionDeviceCredential } from './GatewayConnectionTargetResolver';
+import {
+  deleteGatewayConnectionDeviceCredential,
+  resolveGatewayConnectionSharedCredentialRecovery,
+  storeGatewayConnectionDeviceCredential,
+} from './GatewayConnectionTargetResolver';
 import { signGatewayDeviceChallenge } from './deviceAuthentication';
 import { getNativePlatformInfo } from '@/api/tauri-commands';
 import {
@@ -45,6 +49,9 @@ const GATEWAY_PROTOCOL_MAX = GATEWAY_OPERATOR_PROTOCOL_VERSION;
 const GATEWAY_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_GATEWAY_TICK_INTERVAL_MS = 30_000;
 const MIN_GATEWAY_TICK_WATCH_INTERVAL_MS = 1_000;
+// JunQi 是独立桌面客户端，不能冒用只保留给官方浏览器控制台的客户端标识。
+const GATEWAY_CLIENT_ID = 'gateway-client';
+const GATEWAY_CLIENT_MODE = 'ui';
 
 function isGatewayOperatorProtocol(value: unknown): value is typeof GATEWAY_OPERATOR_PROTOCOL_VERSION {
   return value === GATEWAY_OPERATOR_PROTOCOL_VERSION;
@@ -113,6 +120,10 @@ export interface GatewayConnectionOptions {
   transient?: boolean;
   /** 非临时连接完成握手后持久化轮换的设备凭据。 */
   persistDeviceCredential?: (gatewayUrl: string, token: string) => Promise<unknown>;
+  /** 删除当前端点已经被 Gateway 判定失效的设备凭据。 */
+  deleteDeviceCredential?: (gatewayUrl: string) => Promise<unknown>;
+  /** 仅从当前选中的同一 Runtime 读取共享凭据以重新签发设备令牌。 */
+  resolveSharedCredentialRecovery?: (gatewayUrl: string) => Promise<string>;
 }
 
 // ── Platform Detection (cross-platform) ──
@@ -388,6 +399,16 @@ class GatewayConnectionTarget {
   withExclusiveDeviceToken(deviceToken: string): GatewayConnectionTarget {
     return new GatewayConnectionTarget(this.url, '', deviceToken);
   }
+
+  withSharedTokenOnly(token: string): GatewayConnectionTarget {
+    return new GatewayConnectionTarget(this.url, token, '');
+  }
+}
+
+interface GatewayDeviceCredentialTransition {
+  approvedScopes: GatewayOperatorScope[];
+  recoverySharedToken: string;
+  phase: 'verify-device-token' | 'recover-shared-token' | 'restore-daily-scopes';
 }
 
 export class GatewayConnection {
@@ -454,6 +475,10 @@ export class GatewayConnection {
     return this.target.deviceToken;
   }
   private readonly persistDeviceCredential: (gatewayUrl: string, token: string) => Promise<unknown>;
+  private readonly deleteDeviceCredential: (gatewayUrl: string) => Promise<unknown>;
+  private readonly resolveSharedCredentialRecovery: (gatewayUrl: string) => Promise<string>;
+  private deviceCredentialTransition: GatewayDeviceCredentialTransition | null = null;
+  private authorizationReconnectPaused = false;
   private readonly resolvePlatform: () => Promise<GatewayClientPlatform>;
   private readonly signDeviceChallenge: typeof signGatewayDeviceChallenge;
   private readonly attestRuntimeIdentity: GatewayConnectionDependencies['attestRuntimeIdentity'];
@@ -471,6 +496,9 @@ export class GatewayConnection {
     this.requestedScopes = [...new Set(options.scopes?.length ? options.scopes : DAILY_OPERATOR_SCOPES)];
     this.transient = options.transient === true;
     this.persistDeviceCredential = options.persistDeviceCredential ?? storeGatewayConnectionDeviceCredential;
+    this.deleteDeviceCredential = options.deleteDeviceCredential ?? deleteGatewayConnectionDeviceCredential;
+    this.resolveSharedCredentialRecovery = options.resolveSharedCredentialRecovery
+      ?? resolveGatewayConnectionSharedCredentialRecovery;
     this.resolvePlatform = dependencies.resolvePlatform ?? resolveGatewayClientPlatform;
     this.signDeviceChallenge = dependencies.signDeviceChallenge ?? signGatewayDeviceChallenge;
     this.attestRuntimeIdentity = dependencies.attestRuntimeIdentity ?? observeGatewayHello;
@@ -621,6 +649,10 @@ export class GatewayConnection {
     const nextTarget = new GatewayConnectionTarget(url, token, deviceToken);
     const sameTarget = this.target.equals(nextTarget);
     if (sameTarget && this.ws && (this.connected || this.connecting)) return;
+    if (!sameTarget) {
+      this.deviceCredentialTransition = null;
+      this.authorizationReconnectPaused = false;
+    }
     if (!sameTarget || this.ws) {
       this.clearTransport(new GatewayTransportLifecycleError(
         sameTarget ? 'Gateway connection closed' : 'Gateway connection target changed',
@@ -692,6 +724,8 @@ export class GatewayConnection {
         return;
       }
 
+      if (this.authorizationReconnectPaused) return;
+
       // 配对等待使用固定间隔，其他关闭原因进入普通连接重试。
       if (this.pairingRequired) {
         this.schedulePairingRetry();
@@ -709,6 +743,8 @@ export class GatewayConnection {
   }
 
   disconnect() {
+    this.deviceCredentialTransition = null;
+    this.authorizationReconnectPaused = false;
     this.clearTransport(new GatewayTransportLifecycleError());
     this.emitRetryState('idle');
     this.emitStatus();
@@ -831,12 +867,15 @@ export class GatewayConnection {
     const id = this.nextId();
     this.handshakeRequestId = id;
     const handshakeSocket = this.ws;
-    const scopes = [...this.requestedScopes];
-    const clientId = 'openclaw-control-ui';
-    const clientMode = 'ui';
+    const transition = this.deviceCredentialTransition;
+    const scopes = transition && transition.phase !== 'restore-daily-scopes'
+      ? [...transition.approvedScopes]
+      : [...this.requestedScopes];
+    const clientId = GATEWAY_CLIENT_ID;
+    const clientMode = GATEWAY_CLIENT_MODE;
     const sharedToken = this.token.trim();
     const storedDeviceToken = this.deviceToken.trim();
-    const authToken = sharedToken || storedDeviceToken;
+    const signatureToken = sharedToken || storedDeviceToken;
     const authDeviceToken = sharedToken ? '' : storedDeviceToken;
 
     this.registerCallback(
@@ -860,6 +899,49 @@ export class GatewayConnection {
         const hello = validateGatewayHello(response);
         if (!hello) {
           this.failHandshake(handshakeSocket, 'Gateway handshake returned an invalid hello-ok');
+          return;
+        }
+        if (
+          !this.transient
+          && transition
+          && transition.phase !== 'restore-daily-scopes'
+        ) {
+          const returnedDeviceToken = hello.authDeviceToken?.trim() ?? '';
+          if (!returnedDeviceToken) {
+            this.failHandshake(
+              handshakeSocket,
+              'Gateway did not return a device token during credential transition',
+            );
+            return;
+          }
+          if (returnedDeviceToken !== this.deviceToken.trim()) {
+            try {
+              await this.persistDeviceCredential(this.url, returnedDeviceToken);
+            } catch (error) {
+              this.failHandshake(
+                handshakeSocket,
+                error instanceof Error ? error.message : String(error),
+                'Gateway device credential could not be persisted',
+              );
+              return;
+            }
+          }
+          if (!isCurrentGatewayHandshake(
+            this.ws,
+            handshakeSocket,
+            this.connecting,
+            this.handshakeRequestId,
+            id,
+          )) return;
+          this.deviceCredentialTransition = {
+            ...transition,
+            phase: transition.phase === 'recover-shared-token'
+              ? 'verify-device-token'
+              : 'restore-daily-scopes',
+          };
+          this.replaceConnectionTargetForCredentialTransition(
+            this.target.withExclusiveDeviceToken(returnedDeviceToken),
+          );
           return;
         }
         if (!this.transient) {
@@ -922,12 +1004,17 @@ export class GatewayConnection {
           }
         }
         debugLog('gateway', '[GW] Connected');
+        if (transition?.phase === 'restore-daily-scopes') {
+          this.deviceCredentialTransition = null;
+        }
         if (!this.transient && hello.authDeviceToken) {
           const previousDeviceToken = this.deviceToken.trim();
-          this.target = this.target.withDeviceToken(hello.authDeviceToken);
-          // 共享 token 已完成当前连接时，设备 token 只保留在进程内，避免首次进入
-          // 工作区又为独立 Keychain 项发起授权。无共享 token 的设备认证仍需持久化。
-          if (!this.token.trim() && hello.authDeviceToken !== previousDeviceToken) {
+          const connectedWithSharedToken = Boolean(this.token.trim());
+          this.target = this.target.withExclusiveDeviceToken(hello.authDeviceToken);
+          // 共享凭据只负责当前首次信任握手；Gateway 签发设备凭据后立即切换认证来源，
+          // 避免后续管理员连接继续使用共享凭据并重复触发权限升级。
+          // 首次信任不额外写入系统凭据库，设备认证返回的新令牌仍按既有边界持久化。
+          if (!connectedWithSharedToken && hello.authDeviceToken !== previousDeviceToken) {
             void this.persistDeviceCredential(this.url, hello.authDeviceToken)
               .catch(() => {});
           }
@@ -954,6 +1041,22 @@ export class GatewayConnection {
         debugError('gateway', '[GW] Handshake rejected:', errStr);
         this.connecting = false;
         const authorizationIssue = classifyGatewayAuthorizationError(err);
+        if (
+          !this.transient
+          && authorizationIssue?.code === 'AUTH_DEVICE_TOKEN_MISMATCH'
+          && storedDeviceToken
+          && !sharedToken
+        ) {
+          if (!this.deviceCredentialTransition) {
+            this.deviceCredentialTransition = {
+              approvedScopes: [...this.requestedScopes],
+              recoverySharedToken: '',
+              phase: 'verify-device-token',
+            };
+          }
+          void this.recoverRotatedDeviceCredentialMismatch(handshakeSocket);
+          return;
+        }
         this.pairingRequired = authorizationIssue?.kind === 'pairing_required';
         this.lastError = errStr;
         if (authorizationIssue) this.emitAuthorizationIssue(authorizationIssue);
@@ -989,7 +1092,7 @@ export class GatewayConnection {
         clientMode,
         role: 'operator',
         scopes,
-        token: authToken,
+        token: signatureToken,
         platform,
         deviceFamily: null,
       });
@@ -1048,7 +1151,7 @@ export class GatewayConnection {
         commands: [],
         permissions: {},
         auth: {
-          ...(authToken ? { token: authToken } : {}),
+          ...(sharedToken ? { token: sharedToken } : {}),
           ...(authDeviceToken ? { deviceToken: authDeviceToken } : {}),
         },
         device,
@@ -1469,14 +1572,76 @@ export class GatewayConnection {
     }, 300);
   }
 
+  /** 在设备令牌切换阶段替换认证目标，且不对外发布中间连接为可用。 */
+  private replaceConnectionTargetForCredentialTransition(nextTarget: GatewayConnectionTarget): void {
+    this.clearTransport(new GatewayTransportLifecycleError(
+      'Gateway device credential transition',
+      'credentials-changed',
+    ));
+    this.retryPolicy.reset();
+    this.target = nextTarget;
+    this.authorizationReconnectPaused = false;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.target.equals(nextTarget) || !this.deviceCredentialTransition) return;
+      this.connect(nextTarget.url, nextTarget.token, nextTarget.deviceToken);
+    }, 300);
+  }
+
+  /** 令牌轮换竞态发生时，仅在同一已选 Runtime 内重新签发一次设备令牌。 */
+  private async recoverRotatedDeviceCredentialMismatch(handshakeSocket: WebSocket | null): Promise<void> {
+    const transition = this.deviceCredentialTransition;
+    if (!transition || transition.phase === 'recover-shared-token') return;
+    const url = this.url;
+    this.authorizationReconnectPaused = true;
+    if (this.ws === handshakeSocket) {
+      this.clearTransport(new GatewayTransportLifecycleError(
+        'Gateway rejected the rotated device credential',
+        'credentials-changed',
+      ));
+    }
+    try {
+      await this.deleteDeviceCredential(url);
+      const recoverySharedToken = transition.recoverySharedToken
+        || await this.resolveSharedCredentialRecovery(url);
+      if (
+        this.deviceCredentialTransition !== transition
+        || this.url !== url
+      ) return;
+      this.deviceCredentialTransition = {
+        ...transition,
+        recoverySharedToken,
+        phase: 'recover-shared-token',
+      };
+      this.replaceConnectionTargetForCredentialTransition(
+        this.target.withSharedTokenOnly(recoverySharedToken),
+      );
+    } catch (error) {
+      if (this.deviceCredentialTransition !== transition || this.url !== url) return;
+      const diagnostic = error instanceof Error ? error.message : String(error);
+      this.deviceCredentialTransition = null;
+      this.authorizationReconnectPaused = false;
+      this.lastError = diagnostic;
+      this.emitRetryState('exhausted', { error: diagnostic });
+      this.emitStatus({ error: diagnostic });
+    }
+  }
+
   /** 持久化官方轮换的设备令牌后，以该设备凭据替换当前认证连接。 */
-  async applyRotatedDeviceCredential(newToken: string, expectedConnectionId: string): Promise<void> {
+  async applyRotatedDeviceCredential(
+    newToken: string,
+    approvedScopes: readonly string[],
+    expectedConnectionId: string,
+  ): Promise<void> {
     const token = newToken.trim();
+    const scopes = [...new Set(approvedScopes.map((scope) => scope.trim()).filter(Boolean))];
     const connectionId = expectedConnectionId.trim();
     const url = this.url;
+    if (!token || scopes.length === 0) {
+      throw new Error('Gateway approved device credential is invalid');
+    }
     if (
-      !token
-      || !connectionId
+      !connectionId
       || !this.isConnected()
       || this.runtimeIdentityConnectionId !== connectionId
     ) {
@@ -1490,18 +1655,14 @@ export class GatewayConnection {
     ) {
       throw new GatewayConnectionFenceError(connectionId, this.runtimeIdentityConnectionId);
     }
-    this.clearTransport(new GatewayTransportLifecycleError(
-      'Gateway device credentials changed',
-      'credentials-changed',
-    ));
-    this.retryPolicy.reset();
-    const nextTarget = this.target.withExclusiveDeviceToken(token);
-    this.target = nextTarget;
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      if (!this.target.equals(nextTarget)) return;
-      this.connect(nextTarget.url, nextTarget.token, nextTarget.deviceToken);
-    }, 300);
+    this.deviceCredentialTransition = {
+      approvedScopes: scopes as GatewayOperatorScope[],
+      recoverySharedToken: this.token.trim(),
+      phase: 'verify-device-token',
+    };
+    this.replaceConnectionTargetForCredentialTransition(
+      this.target.withExclusiveDeviceToken(token),
+    );
   }
 
 }

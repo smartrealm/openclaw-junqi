@@ -9,6 +9,7 @@ export type DingTalkReadiness = {
   readonly action:
     | 'refresh'
     | 'install-plugin'
+    | 'update-openclaw'
     | 'restart-gateway'
     | 'configure-agent'
     | 'install-dws'
@@ -29,6 +30,9 @@ export function resolveDingTalkReadiness({
   pluginNeedsInstall,
   pluginStatusPending,
   restartRequired,
+  pluginCompatibility,
+  gatewayVersion,
+  minimumGatewayVersion,
   agentId,
 }: {
   sessionExists: boolean;
@@ -39,12 +43,27 @@ export function resolveDingTalkReadiness({
   pluginNeedsInstall: boolean;
   pluginStatusPending: boolean;
   restartRequired: boolean;
+  pluginCompatibility?: 'compatible' | 'incompatible' | 'unknown';
+  gatewayVersion?: string | null;
+  minimumGatewayVersion?: string | null;
   agentId: string | null;
 }): DingTalkReadiness {
   if (!sessionExists) {
     return { tone: 'blocked', titleKey: 'sessionRequiredTitle', descriptionKey: 'sessionRequiredDescription', action: null };
   }
   if (!runtimeToolAvailable) {
+    if (pluginNeedsInstall && pluginCompatibility === 'incompatible') {
+      return {
+        tone: 'blocked',
+        titleKey: 'pluginRuntimeIncompatibleTitle',
+        descriptionKey: 'pluginRuntimeIncompatibleDescription',
+        descriptionParams: {
+          gatewayVersion: gatewayVersion ?? '-',
+          minimumGatewayVersion: minimumGatewayVersion ?? '-',
+        },
+        action: 'update-openclaw',
+      };
+    }
     if (restartRequired) {
       return { tone: 'pending', titleKey: 'restartRequiredTitle', descriptionKey: 'restartRequiredDescription', action: 'restart-gateway' };
     }

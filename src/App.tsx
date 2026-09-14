@@ -44,9 +44,14 @@ import { gatewayLifecycle } from '@/runtime/gatewayLifecycle';
 import { formatGatewayLogs } from '@/services/gateway/gatewayLogFormatting';
 import { runGatewayErrorScreenRecovery } from '@/services/gateway/gatewayErrorRecovery';
 import {
+  settlePrivilegedAuthorizationIssueAfterReconnect,
+  shouldPresentMainGatewayAuthorizationIssue,
+} from '@/services/gateway/privilegedAuthorizationState';
+import {
   loadGatewayProcessLogs,
 } from '@/services/gateway/gatewayProcessObservation';
 import { resolveGatewaySessionModelId } from '@/services/gateway/modelIdentity';
+import { openSelectedGatewayDevicesUi } from '@/services/gateway/GatewayControlUi';
 import {
   OPENCLAW_UPDATE_MAINTENANCE_FINISHED,
   OPENCLAW_UPDATE_MAINTENANCE_STARTED,
@@ -874,13 +879,16 @@ export default function App() {
         }
         if (status.connected) {
           cancelGatewayMigrationRetry();
-          // 权限升级只有在轮换设备令牌完成重连后才能恢复原特权操作；普通配对仍由
-          // 任意成功握手收敛。状态回调只安装一次，因此通过状态更新读取当前问题。
+          // 新连接完成身份核验后，恢复仍在等待的特权操作；只有实际存在等待者时才
+          // 保留授权界面，最终仍由该操作的真实成功事件关闭。没有等待者说明提示已过期。
           const resumedPrivilegedOperation = gateway.resumePrivilegedAfterOperatorScopeUpgrade();
           setPairingIssue((currentIssue) => {
-            if (currentIssue?.kind === 'scope_denied' && !resumedPrivilegedOperation) return currentIssue;
-            pairingTriggeredRef.current = false;
-            return null;
+            const nextIssue = settlePrivilegedAuthorizationIssueAfterReconnect(
+              currentIssue,
+              resumedPrivilegedOperation,
+            );
+            if (!nextIssue) pairingTriggeredRef.current = false;
+            return nextIssue;
           });
           const boot = useBootSequenceStore.getState();
           boot.markStageCompleted('connection', 'WebSocket handshake complete');
@@ -889,7 +897,7 @@ export default function App() {
       },
       onAuthorizationIssue: (issue) => {
         debugWarn('app', '[App] Gateway authorization issue:', issue.code);
-        if (issue.kind !== 'pairing_required' && issue.kind !== 'scope_denied') return;
+        if (!shouldPresentMainGatewayAuthorizationIssue(issue)) return;
         pairingTriggeredRef.current = true;
         setPairingIssue(issue);
       },
@@ -1009,13 +1017,21 @@ export default function App() {
     if (pairingIssue?.kind !== 'scope_denied') gateway.retryPrivilegedAuthorizationNow();
   }, [pairingIssue?.kind]);
 
+  const handleOpenPairingControlUi = useCallback(async () => {
+    const result = await openSelectedGatewayDevicesUi();
+    if (!result.success) {
+      throw new Error(result.error ?? t('pairing.openControlUiFailed'));
+    }
+  }, [t]);
+
   const handleRequestOperatorScopeUpgrade = useCallback(async () => {
     const scopes = [
       ...(pairingIssue?.requiredScopes ?? []),
       ...(pairingIssue?.missingScope ? [pairingIssue.missingScope] : []),
     ];
     await gateway.beginOperatorScopeUpgrade(scopes);
-  }, [pairingIssue?.missingScope, pairingIssue?.requiredScopes]);
+    await handleOpenPairingControlUi();
+  }, [handleOpenPairingControlUi, pairingIssue?.missingScope, pairingIssue?.requiredScopes]);
 
   const handlePairingCancel = useCallback(() => {
     debugLog('gateway', '[App] Pairing cancelled by user');
@@ -1086,6 +1102,7 @@ export default function App() {
             <PairingScreen
               issue={pairingIssue}
               onApprove={handlePairingApprove}
+              onOpenControlUi={handleOpenPairingControlUi}
               onRequestScopeUpgrade={handleRequestOperatorScopeUpgrade}
               onPaired={handlePairingComplete}
               onCancel={handlePairingCancel}
@@ -1156,6 +1173,7 @@ export default function App() {
           <PairingScreen
             issue={pairingIssue}
             onApprove={handlePairingApprove}
+            onOpenControlUi={handleOpenPairingControlUi}
             onRequestScopeUpgrade={handleRequestOperatorScopeUpgrade}
             onPaired={handlePairingComplete}
             onCancel={handlePairingCancel}

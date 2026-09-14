@@ -73,3 +73,31 @@ Session、run、tool call、DWS 路径、核验路径、资源 ID 和恢复事�
 - 交互式静态预览在 636 像素窄窗口完成暗色和亮色检查，并验证搜索到业务域的键盘焦点顺序、回车打开写操作详情、回车返回目录、写入风险与主动作邻近呈现。
 - 浏览器环境缺少 Tauri 持久化能力，实际应用路由停在首次设置流程，因此本轮浏览器视觉结果只证明结构预览和交互模型，不证明真实桌面装配、Gateway 状态或 DWS 调用。
 - 真实 Tauri 宽窗口、加载到结果连续帧、Windows、Linux、高对比度、屏幕阅读器、正式 DWS Profile 和目标租户仍未验证。
+
+## 插件兼容性故障收敛
+
+2026-09-11 真机截图证明 OpenClaw `2026.7.1-2` 会拒绝安装声明插件 API `>=2026.8.1` 的固定钉钉插件。旧界面仍将该状态呈现为可重装，并同时在就绪面板与安装对话框重复显示原始错误。
+
+根据 OpenClaw 官方插件安装契约，本地归档在安装前必须通过兼容性校验；固定归档不会自动选择历史兼容版本。本轮因此保留插件已验证的 `2026.8.1` 下限，将兼容范围写入固定包元数据，并在 Rust 安装边界与业务台界面使用同一真实状态。确定不兼容时，界面只提供 OpenClaw 官方更新入口，不再发起注定失败的插件安装。
+
+官方依据：
+
+- https://docs.openclaw.ai/cli/plugins/install
+- https://docs.openclaw.ai/plugins/compatibility
+- OpenClaw 官方主线 `e8e68e84e4559ed2bb0455335267c800e1fa5aca` 的 `src/plugins/install-shared.ts`
+
+## 更新维护探针的运行时一致性
+
+目标 macOS 复现表明，官方更新器已经能使用兼容 Node.js 完成 OpenClaw 升级，但协作维护探针把 npm 启动器解析为 JavaScript 文件后直接执行，解释器再次由通用 PATH 选择。系统存在另一个不兼容 Node.js 时，维护探针会错误返回运行时不可用，界面最终表现为更新失败。
+
+本轮将固定原生 CLI 目标扩展为同时携带已核验 `NativeOpenclawRuntime`。协作探测、安装和恢复命令继续绑定原状态目录与配置文件，但改由同一 Node.js 和 OpenClaw 入口执行。Docker 分支保持不变，不增加版本号能力开关或备用安装路径。
+
+自动化已覆盖错误 JavaScript 启动器与已核验 Node.js 启动器并存时的选择结果，以及插件清单对旧、新 Gateway 的宿主兼容性判断。目标机器上的官方 `update --dry-run --json` 已返回当前稳定版本和同一安装身份；完整钉钉插件安装、Gateway 重启与 Session 工具投影仍需在解锁后的 Tauri 窗口继续核验。
+
+## 非交互安装确认与错误诊断
+
+2026-09-14 的真机截图表明，固定钉钉归档安装失败时，OpenClaw 会先把飞书、微信的重复插件标识作为配置警告写入标准错误，随后再输出钉钉安装的真实失败原因。JunQi 旧实现只取第一条标准错误，导致无关配置警告遮蔽真实错误。OpenClaw 官方主线同时确认，非交互插件安装和启用需要由调用方明确接受插件声明能力；安装策略警告使用独立确认参数，`--force` 不能替代该确认。
+
+本轮将“确认安装”绑定到已校验固定归档的能力确认与安装策略警告确认，OpenClaw 的阻止规则和失败仍保持终止语义。安装与启用命令均显式接受插件声明能力；本地 `.tgz` 固定归档不再携带只适用于 npm registry 安装的 `--pin`，其来源固定性继续由资源元数据、SHA-256 和归档内版本契约共同保证。错误提取会跳过前置配置警告并优先显示真实失败行，不会把飞书、微信警告当成钉钉安装结果，也不会修改或删除已有插件配置。
+
+官方依据为 OpenClaw `v2026.9.4` 标签提交 `3a9d69db306cd7f081e06254cb89c4bcc14a7107` 以及主线提交 `5685a8f3ea2361c86d1680bfb7f95ab48ed7edc2` 的 `src/cli/plugins-cli.ts`、`src/cli/plugins-install-command.ts`、`src/cli/plugin-capability-consent.ts`、`src/cli/install-policy-warning-acknowledgement.ts` 与 `src/config/io.warnings.ts`。

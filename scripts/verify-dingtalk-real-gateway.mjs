@@ -95,10 +95,12 @@ async function assertRegularFile(filePath, field) {
 
 function assertMetadataShape(metadata) {
   invariant(metadata && typeof metadata === 'object' && !Array.isArray(metadata), 'BUNDLE_METADATA_INVALID', 'DingTalk bundle metadata must be an object');
-  invariant(metadata.formatVersion === 1, 'BUNDLE_METADATA_INVALID', 'Unexpected DingTalk bundle metadata format');
+  invariant(metadata.formatVersion === 2, 'BUNDLE_METADATA_INVALID', 'Unexpected DingTalk bundle metadata format');
   invariant(metadata.pluginId === 'junqi-dingtalk', 'BUNDLE_METADATA_INVALID', 'Unexpected DingTalk plugin id');
   invariant(metadata.packageName === '@junqi/openclaw-dingtalk-business', 'BUNDLE_METADATA_INVALID', 'Unexpected DingTalk package name');
   invariant(typeof metadata.pluginVersion === 'string' && /^\d+\.\d+\.\d+$/.test(metadata.pluginVersion), 'BUNDLE_METADATA_INVALID', 'Invalid DingTalk plugin version');
+  invariant(typeof metadata.pluginApiRange === 'string' && metadata.pluginApiRange.trim().length > 0, 'BUNDLE_METADATA_INVALID', 'Invalid DingTalk plugin API range');
+  invariant(typeof metadata.minimumGatewayVersion === 'string' && /^\d+\.\d+\.\d+(?:-\d+)?$/.test(metadata.minimumGatewayVersion), 'BUNDLE_METADATA_INVALID', 'Invalid DingTalk minimum Gateway version');
   invariant(Number.isSafeInteger(metadata.toolCount) && metadata.toolCount >= 4, 'BUNDLE_METADATA_INVALID', 'Invalid DingTalk tool count');
   invariant(typeof metadata.sha256 === 'string' && /^[a-f0-9]{64}$/.test(metadata.sha256), 'BUNDLE_METADATA_INVALID', 'Invalid DingTalk archive SHA-256');
   invariant(metadata.archiveFile === 'junqi-dingtalk.tgz', 'BUNDLE_METADATA_INVALID', 'Unexpected DingTalk archive file');

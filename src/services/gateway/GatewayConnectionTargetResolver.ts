@@ -5,7 +5,8 @@ import {
 } from '@/api/tauri-commands';
 import { defaultGatewayWsUrl } from '@/config/runtimeDefaults';
 import {
-  getGatewayDeviceCredentialForUrl,
+  deleteGatewayDeviceCredential,
+  getGatewayDeviceCredential,
   gatewayRuntimeKeyFromUrl,
   resolveGatewayCredentialRuntimeKey,
   selectedGatewayRuntimeKey,
@@ -20,21 +21,24 @@ export interface GatewayConnectionTargetRequest {
   useTokenOverride?: boolean;
   useSavedUrl?: boolean;
   targetScope?: 'selected-runtime';
+  preferStoredDeviceCredential?: boolean;
 }
 
 export interface GatewayConnectionTargetResolverDependencies {
   detectConfig: () => Promise<GatewayConfigInfo>;
   getToken: () => Promise<string>;
-  getDeviceCredential: (gatewayUrl: string) => Promise<GatewayCredential>;
+  getDeviceCredential: (runtimeKey: string) => Promise<GatewayCredential>;
   storeDeviceCredential: (runtimeKey: string, token: string) => Promise<GatewayCredential>;
+  deleteDeviceCredential: (runtimeKey: string) => Promise<GatewayCredential>;
   getSavedUrl: () => string;
 }
 
 const defaultDependencies: GatewayConnectionTargetResolverDependencies = {
   detectConfig: detectGatewayConfig,
   getToken: getGatewayToken,
-  getDeviceCredential: getGatewayDeviceCredentialForUrl,
+  getDeviceCredential: getGatewayDeviceCredential,
   storeDeviceCredential: storeGatewayDeviceCredential,
+  deleteDeviceCredential: deleteGatewayDeviceCredential,
   getSavedUrl: readSavedGatewayUrl,
 };
 
@@ -85,9 +89,11 @@ function readSavedGatewayUrl(): string {
 
 async function deviceCredential(
   gatewayUrl: string,
+  configured: GatewayConfigInfo | null,
   dependencies: GatewayConnectionTargetResolverDependencies,
 ): Promise<string> {
-  const credential = await dependencies.getDeviceCredential(gatewayUrl);
+  const runtimeKey = resolveGatewayConnectionCredentialRuntimeKey(gatewayUrl, configured);
+  const credential = await dependencies.getDeviceCredential(runtimeKey);
   return credential.token?.trim() ?? '';
 }
 
@@ -96,7 +102,8 @@ export async function getStoredGatewayCredentialToken(
   gatewayUrl: string,
   dependencies: GatewayConnectionTargetResolverDependencies = defaultDependencies,
 ): Promise<string> {
-  return deviceCredential(gatewayUrl, dependencies);
+  const configured = await dependencies.detectConfig().catch(() => null);
+  return deviceCredential(gatewayUrl, configured, dependencies);
 }
 
 /** 将轮换或新配对的设备令牌写入当前 Gateway 端点绑定的凭据作用域。 */
@@ -110,6 +117,30 @@ export async function storeGatewayConnectionDeviceCredential(
   const configured = await dependencies.detectConfig().catch(() => null);
   const runtimeKey = resolveGatewayConnectionCredentialRuntimeKey(gatewayUrl, configured);
   return dependencies.storeDeviceCredential(runtimeKey, normalizedToken);
+}
+
+/** 删除当前端点绑定的失效设备令牌，不触碰其他 Runtime 的凭据。 */
+export async function deleteGatewayConnectionDeviceCredential(
+  gatewayUrl: string,
+  dependencies: GatewayConnectionTargetResolverDependencies = defaultDependencies,
+): Promise<GatewayCredential> {
+  const configured = await dependencies.detectConfig().catch(() => null);
+  const runtimeKey = resolveGatewayConnectionCredentialRuntimeKey(gatewayUrl, configured);
+  return dependencies.deleteDeviceCredential(runtimeKey);
+}
+
+/** 仅为同一已选 Runtime 的设备令牌恢复读取共享认证凭据。 */
+export async function resolveGatewayConnectionSharedCredentialRecovery(
+  gatewayUrl: string,
+  dependencies: GatewayConnectionTargetResolverDependencies = defaultDependencies,
+): Promise<string> {
+  const configured = await dependencies.detectConfig();
+  if (!gatewayEndpointsMatch(gatewayUrl, configured.ws_url)) {
+    throw new Error('Gateway device credential recovery is not bound to the selected Runtime');
+  }
+  const token = (await dependencies.getToken()).trim();
+  if (!token) throw new Error('Selected OpenClaw Runtime did not provide a recovery credential');
+  return token;
 }
 
 /**
@@ -135,9 +166,14 @@ export async function resolveGatewayConnectionTarget(
     : normalizeUrl(request.preferredUrl);
   const wsUrl = explicitUrl || savedUrl || configuredUrl || defaultGatewayWsUrl();
   const sameSelectedRuntime = Boolean(configuredUrl) && gatewayEndpointsMatch(wsUrl, configuredUrl);
-  const storedDeviceToken = request.useTokenOverride || request.targetScope === 'selected-runtime'
-    ? ''
-    : await deviceCredential(wsUrl, dependencies);
+  const shouldReadStoredDeviceCredential = !request.useTokenOverride
+    && (
+      request.targetScope !== 'selected-runtime'
+      || request.preferStoredDeviceCredential === true
+    );
+  const storedDeviceToken = shouldReadStoredDeviceCredential
+    ? await deviceCredential(wsUrl, configured, dependencies)
+    : '';
   const token = request.useTokenOverride
     ? (request.tokenOverride?.trim() ?? '')
     : storedDeviceToken
@@ -147,8 +183,8 @@ export async function resolveGatewayConnectionTarget(
         ? await dependencies.getToken()
         : await dependencies.getToken().catch(() => configured?.token ?? '')
       : '';
-  // 首次设置仍以所选运行时凭据建立信任；后续连接优先恢复已持久化的设备权限，
-  // 避免共享令牌覆盖官方 scope upgrade 轮换后的设备授权。
+  // 首次设置仍以所选运行时凭据建立信任；已完成配对的所选运行时重连则恢复设备权限，
+  // 避免进程恢复或插件安装重启后退回共享令牌并再次触发授权。
   const deviceToken = storedDeviceToken;
   const httpUrl = wsUrl.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
 

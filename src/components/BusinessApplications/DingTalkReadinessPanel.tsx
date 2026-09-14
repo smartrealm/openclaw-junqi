@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CircleAlert, CircleCheck, CircleDashed, Copy, ExternalLink, RefreshCw, Square, Terminal, Wrench } from 'lucide-react';
+import { CircleAlert, CircleCheck, CircleDashed, Copy, Download, ExternalLink, RefreshCw, Square, Terminal, Wrench } from 'lucide-react';
 import { Button } from '@/components/shared/button/Button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -81,6 +81,9 @@ export function DingTalkReadinessPanel({
   pluginNeedsInstall,
   pluginStatusPending,
   restartRequired,
+  pluginCompatibility,
+  gatewayVersion,
+  minimumGatewayVersion,
   agentId,
   authorizationAgentOptions,
   authorizationTargetAgentId,
@@ -123,6 +126,9 @@ export function DingTalkReadinessPanel({
   pluginNeedsInstall: boolean;
   pluginStatusPending: boolean;
   restartRequired: boolean;
+  pluginCompatibility: 'compatible' | 'incompatible' | 'unknown' | null;
+  gatewayVersion: string | null;
+  minimumGatewayVersion: string | null;
   agentId: string | null;
   authorizationAgentOptions: readonly DingTalkAuthorizationAgentOption[];
   authorizationTargetAgentId: string | null;
@@ -171,6 +177,9 @@ export function DingTalkReadinessPanel({
     pluginNeedsInstall,
     pluginStatusPending,
     restartRequired,
+    pluginCompatibility: pluginCompatibility ?? undefined,
+    gatewayVersion,
+    minimumGatewayVersion,
     agentId,
   });
   if (shouldHideDingTalkReadinessPanel(
@@ -222,6 +231,8 @@ export function DingTalkReadinessPanel({
     ? installAvailable
       ? <Button size="xs" variant="outline" tone="primary" loading={busy} leadingIcon={<Wrench size={12} />} onClick={onInstallPlugin} title={t('businessApplications.readiness.installPluginTitle')}>{t('businessApplications.readiness.installInJunqi')}</Button>
       : <Button size="xs" variant="outline" tone="neutral" loading={refreshing} disabled={refreshDisabled} leadingIcon={<RefreshCw size={12} />} onClick={onRefresh}>{t(refreshing ? 'businessApplications.readiness.refreshing' : 'businessApplications.readiness.refresh')}</Button>
+    : readiness.action === 'update-openclaw'
+      ? <Button size="xs" variant="solid" tone="primary" leadingIcon={<Download size={12} />} onClick={onInstallPlugin}>{t('businessApplications.readiness.updateOpenclaw')}</Button>
     : readiness.action === 'configure-agent'
       ? <Button size="xs" variant="outline" tone="warning" loading={busy && operation === 'authorizing'} disabled={!authorizationTargetAgentId} onClick={() => setAuthorizationGuideOpen(true)}>{t('businessApplications.readiness.authorizeAgent')}</Button>
     : readiness.action === 'install-dws'

@@ -19,6 +19,30 @@ test('插件已更新时优先引导重启 Gateway', () => {
   assert.equal(readiness.titleKey, 'restartRequiredTitle');
 });
 
+test('当前 Gateway 低于内置插件兼容下限时引导升级 OpenClaw', () => {
+  const readiness = resolveDingTalkReadiness({
+    sessionExists: true,
+    runtimeToolAvailable: false,
+    agentRuntimeVerified: false,
+    runtime: null,
+    runtimeError: null,
+    pluginNeedsInstall: true,
+    pluginStatusPending: false,
+    restartRequired: false,
+    pluginCompatibility: 'incompatible',
+    gatewayVersion: '2026.7.1-2',
+    minimumGatewayVersion: '2026.8.1',
+    agentId: 'main',
+  });
+
+  assert.equal(readiness.action, 'update-openclaw');
+  assert.equal(readiness.titleKey, 'pluginRuntimeIncompatibleTitle');
+  assert.deepEqual(readiness.descriptionParams, {
+    gatewayVersion: '2026.7.1-2',
+    minimumGatewayVersion: '2026.8.1',
+  });
+});
+
 test('插件缺失且无需重启时提供 JunQi 安装入口', () => {
   const readiness = resolveDingTalkReadiness({
     sessionExists: true,

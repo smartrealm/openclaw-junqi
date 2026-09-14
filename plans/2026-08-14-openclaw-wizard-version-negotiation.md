@@ -35,9 +35,9 @@
 | --- | --- | --- |
 | WIZ-COMPAT-05 | `src/services/openclawUpdateLifecycle.ts` | 维护检查前经统一生命周期恢复当前所选 Runtime 的已核验连接 |
 | WIZ-COMPAT-05 | `src/services/collaboration/client.ts` | 为维护门禁提供只读取稳定身份字段的窄能力投影，避免被旧插件的非维护字段差异阻断 |
-| WIZ-COMPAT-05 | `src/services/collaboration/CollaborationAbsenceAttestation.ts` | 为旧 Gateway 上已安装但未加载的协作插件建立绑定运行时身份和本地权威探针的短期恢复证明 |
+| WIZ-COMPAT-05 | `src-tauri/src/commands/collaboration_bootstrap.rs`、`src/services/collaboration/CollaborationAbsenceAttestation.ts` | 为旧 Gateway 上已安装但未加载的协作插件建立绑定运行时身份和本地权威探针的短期恢复证明；宿主版本不兼容只由已核验安装目录中的正式 `pluginApi` 范围与当前 Gateway 版本判定 |
 | WIZ-COMPAT-05 | `src/services/collaboration/MaintenanceCoordinator.ts` | 仅为精确的协作服务启动、Schema 故障或权威的插件待修复证明提供 OpenClaw 恢复更新例外，并在写入前重读 |
-| WIZ-COMPAT-05 | 对应服务测试 | 覆盖重连、正常复用、精确故障放行、插件待修复证明、其他动作阻断和写入前状态变化 |
+| WIZ-COMPAT-05 | 对应服务与 Rust 测试 | 覆盖重连、正常复用、精确故障放行、插件待修复证明、宿主版本不兼容证明、其他动作阻断和写入前状态变化 |
 
 ### 阶段 E · 解耦可选更新与继续配置
 
@@ -67,3 +67,13 @@
 | WIZ-COMPAT-07 | 对应服务测试 | 覆盖成功、连接漂移、配置持续漂移、模型失败、清理失败和默认 Web Crypto 调用 |
 
 真机验收顺序：选择现有数据位置，保持 JunQi 独立安装关闭，跳过可选更新，核验现有配置与真实模型，进入 Ready 后再进入仪表盘。整个路径不得触发 OpenClaw 安装、更新或配置写入。
+
+### 阶段 H · 统一更新与维护探针的原生运行时
+
+| 编号 | 文件 | 修改 |
+| --- | --- | --- |
+| WIZ-COMPAT-08 | `src-tauri/src/commands/openclaw_cli.rs` | 固定原生 CLI 目标携带已核验 `NativeOpenclawRuntime`，命令通过同一 Node.js 与 JavaScript 入口执行 |
+| WIZ-COMPAT-08 | `src-tauri/src/commands/collaboration_bootstrap/target.rs` | 协作变更目标在固定二进制前解析并核验兼容原生运行时 |
+| WIZ-COMPAT-08 | `src-tauri/src/commands/collaboration_bootstrap.rs` | 持久恢复目标重新核验同一原生启动契约，测试覆盖宿主兼容性与启动器选择 |
+
+验证顺序：先运行固定原生启动器和插件宿主兼容性两项 Rust 回归，再执行 Rust 格式、检查与完整库测试；随后在真实 Tauri 流程中确认官方更新成功、Gateway 报告目标版本，并继续完成钉钉插件安装与工具投影核验。

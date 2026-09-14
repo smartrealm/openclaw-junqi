@@ -12,6 +12,7 @@ use crate::state::collaboration_control::{
 use crate::state::runtime_identity::{RuntimeIdentity, RuntimeIdentityState, RuntimeOwnership};
 use crate::state::GatewayProcess;
 use flate2::{Compression, GzBuilder};
+use node_semver::{Range, Version};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
@@ -2370,6 +2371,26 @@ fn validate_installed_plugin_directory(
         );
     }
     Ok((canonical, package_version.to_string()))
+}
+
+fn declared_plugin_api_compatibility(package: &Value, gateway_version: &str) -> Option<bool> {
+    let plugin_api_range = package
+        .pointer("/openclaw/compat/pluginApi")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let range = Range::parse(plugin_api_range).ok()?;
+    let version = Version::parse(gateway_version.trim().trim_start_matches('v')).ok()?;
+    Some(range.satisfies(&version))
+}
+
+fn installed_plugin_host_compatibility(
+    target: &MutationTarget,
+    plugin: &BootstrapPluginSnapshot,
+) -> Option<bool> {
+    let (root, _) = exact_plugin_source_directory(target, plugin).ok()?;
+    let package = read_plugin_manifest(&root.join("package.json"), "package.json").ok()?;
+    declared_plugin_api_compatibility(&package, &target.identity.gateway_version)
 }
 
 fn metadata_is_link_or_reparse_point(metadata: &std::fs::Metadata) -> bool {
@@ -5132,6 +5153,9 @@ pub async fn collaboration_bootstrap_probe(
         }
     };
     let ready = plugin.installed && plugin.enabled && plugin.status.as_deref() == Some("loaded");
+    let host_incompatible = !ready
+        && plugin.installed
+        && installed_plugin_host_compatibility(&target, &plugin) == Some(false);
     let durable_collaboration_state =
         inspect_durable_collaboration_state(Path::new(&target.identity.local_state_dir));
     if !plugin.installed {
@@ -5180,6 +5204,8 @@ pub async fn collaboration_bootstrap_probe(
         ok: true,
         code: if ready {
             "PLUGIN_READY"
+        } else if host_incompatible {
+            "PLUGIN_HOST_INCOMPATIBLE"
         } else if plugin.installed {
             "PLUGIN_NEEDS_REPAIR"
         } else {
@@ -5188,6 +5214,8 @@ pub async fn collaboration_bootstrap_probe(
         .to_string(),
         message: if ready {
             "The collaboration plugin is installed and loadable"
+        } else if host_incompatible {
+            "The installed collaboration plugin requires a newer OpenClaw host"
         } else if plugin.installed {
             "The collaboration plugin is installed but disabled or unhealthy"
         } else {
@@ -5538,10 +5566,16 @@ async fn recovery_target(
             OPENCLAW_CONTAINER_NAME,
         )
     } else {
-        PinnedOpenClawCliTarget::verified(
-            Path::new(&journal.target.binary_path),
+        let journal_binary = PathBuf::from(&journal.target.binary_path);
+        let runtime =
+            crate::commands::system::compatible_native_openclaw_runtime(journal_binary.clone())
+                .await
+                .map_err(|message| ("RECOVERY_RUNTIME_UNAVAILABLE".to_string(), message))?;
+        PinnedOpenClawCliTarget::verified_native(
+            &journal_binary,
             Path::new(&journal.target.state_dir),
             Path::new(&journal.target.config_path),
+            runtime,
         )
     }
     .map_err(|message| ("RECOVERY_BINARY_UNAVAILABLE".to_string(), message))?;
@@ -6270,6 +6304,7 @@ mod tests {
                 state_dir: root.to_path_buf(),
                 config_path: root.join("openclaw.json"),
                 container: None,
+                native_runtime: None,
             },
             identity,
             class,
@@ -6590,6 +6625,44 @@ mod tests {
     }
 
     #[test]
+    fn installed_plugin_api_contract_identifies_an_older_gateway_host() {
+        let root = std::env::temp_dir().join(format!(
+            "junqi-plugin-host-compatibility-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let plugin_root = create_test_plugin_directory(&root, "0.5.9");
+        let package_path = plugin_root.join("package.json");
+        let mut package = read_plugin_manifest(&package_path, "package.json").unwrap();
+        package["openclaw"]["compat"] = serde_json::json!({ "pluginApi": ">=2026.8.1" });
+        std::fs::write(&package_path, serde_json::to_vec_pretty(&package).unwrap()).unwrap();
+        let plugin = BootstrapPluginSnapshot {
+            installed: true,
+            enabled: true,
+            status: Some("error".to_string()),
+            version: Some("0.5.9".to_string()),
+            source: Some("installed".to_string()),
+            root_dir: Some(plugin_root.to_string_lossy().to_string()),
+            install_record: None,
+        };
+        let mut target = test_mutation_target(&root, RuntimeDeploymentKind::SystemService);
+
+        assert_eq!(
+            installed_plugin_host_compatibility(&target, &plugin),
+            Some(false)
+        );
+        target.identity.gateway_version = "v2026.9.4".to_string();
+        assert_eq!(
+            installed_plugin_host_compatibility(&target, &plugin),
+            Some(true)
+        );
+        package["name"] = Value::String("another-plugin".to_string());
+        std::fs::write(&package_path, serde_json::to_vec_pretty(&package).unwrap()).unwrap();
+        assert_eq!(installed_plugin_host_compatibility(&target, &plugin), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn direct_apply_target_gate_rejects_desktop_bound_managed_child() {
         let root = std::env::temp_dir().join(format!("junqi-target-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
@@ -6814,6 +6887,7 @@ mod tests {
             state_dir: root.clone(),
             config_path: config_path.clone(),
             container: None,
+            native_runtime: None,
         };
         finalize_rollback_journal(
             &control,
@@ -6921,6 +6995,7 @@ mod tests {
             state_dir: root.clone(),
             config_path: config_path.clone(),
             container: None,
+            native_runtime: None,
         };
         let error = rollback_bootstrap_state(&control, &mut journal, &target)
             .await
@@ -6966,6 +7041,7 @@ mod tests {
             state_dir: root.clone(),
             config_path: config_path.clone(),
             container: None,
+            native_runtime: None,
         };
         let control = CollaborationControlState::with_journal_path(root.join("journal.json"));
         let mut journal = test_journal(BootstrapPluginSnapshot::default());

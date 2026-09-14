@@ -49,13 +49,20 @@ export async function buildDingTalkPluginBundle() {
   if (packageJson.name !== "@junqi/openclaw-dingtalk-business" || manifest.id !== "junqi-dingtalk") {
     throw new Error("Unexpected DingTalk plugin package identity");
   }
+  const pluginApiRange = packageJson.openclaw?.compat?.pluginApi;
+  const minimumGatewayVersion = packageJson.openclaw?.compat?.minGatewayVersion;
+  if (typeof pluginApiRange !== "string" || typeof minimumGatewayVersion !== "string") {
+    throw new Error("DingTalk plugin compatibility metadata is required");
+  }
   const sourceArchive = await findArchive(path.join(pluginRoot, "dist"));
   const archiveBytes = await readFile(sourceArchive);
   const metadata = {
-    formatVersion: 1,
+    formatVersion: 2,
     pluginId: manifest.id,
     packageName: packageJson.name,
     pluginVersion: packageJson.version,
+    pluginApiRange,
+    minimumGatewayVersion,
     toolCount: manifest.contracts.tools.length,
     sha256: createHash("sha256").update(archiveBytes).digest("hex"),
     archiveFile: "junqi-dingtalk.tgz",

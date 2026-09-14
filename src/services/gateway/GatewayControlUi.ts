@@ -3,6 +3,7 @@ import {
   openGatewayControlUi,
   probeSelectedGateway,
   type GatewayProcessStatus,
+  type OpenClawControlUiRoute,
 } from '@/api/tauri-commands';
 
 export interface GatewayControlUiResult {
@@ -13,7 +14,7 @@ export interface GatewayControlUiResult {
 export interface GatewayControlUiDependencies {
   getStatus: () => Promise<GatewayProcessStatus>;
   probeReady: (port: number) => Promise<boolean>;
-  open: () => Promise<void>;
+  open: (route?: OpenClawControlUiRoute) => Promise<void>;
 }
 
 const defaultDependencies: GatewayControlUiDependencies = {
@@ -23,17 +24,30 @@ const defaultDependencies: GatewayControlUiDependencies = {
 };
 
 /** Opens Control UI only after the selected runtime authenticates successfully. */
-export async function openSelectedGatewayControlUi(
-  dependencies: GatewayControlUiDependencies = defaultDependencies,
+async function openSelectedGatewayControlUiRoute(
+  route: OpenClawControlUiRoute | undefined,
+  dependencies: GatewayControlUiDependencies,
 ): Promise<GatewayControlUiResult> {
   try {
     const status = await dependencies.getStatus();
     if (!status.running || !await dependencies.probeReady(status.port)) {
       return { success: false, error: 'Gateway is not ready yet.' };
     }
-    await dependencies.open();
+    await dependencies.open(route);
     return { success: true };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+export function openSelectedGatewayControlUi(
+  dependencies: GatewayControlUiDependencies = defaultDependencies,
+): Promise<GatewayControlUiResult> {
+  return openSelectedGatewayControlUiRoute(undefined, dependencies);
+}
+
+export function openSelectedGatewayDevicesUi(
+  dependencies: GatewayControlUiDependencies = defaultDependencies,
+): Promise<GatewayControlUiResult> {
+  return openSelectedGatewayControlUiRoute('devices', dependencies);
 }

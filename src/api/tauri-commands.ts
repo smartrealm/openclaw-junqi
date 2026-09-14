@@ -177,6 +177,10 @@ export interface DingTalkPluginStatus {
   version: string | null;
   bundledVersion: string;
   restartRequired: boolean;
+  compatibility: 'compatible' | 'incompatible' | 'unknown';
+  gatewayVersion: string;
+  pluginApiRange: string;
+  minimumGatewayVersion: string;
 }
 export type GatewayRecoveryRecommendation = 'retry' | 'repair' | 'inspect_config' | 'select_storage';
 export interface TerminalIntegrationStatus {
@@ -436,7 +440,12 @@ export const probeGatewayPort = (port?: number) => (
     ? invoke<boolean>('probe_gateway_port', {})
     : invoke<boolean>('probe_gateway_port', { port })
 );
-export const openGatewayControlUi = () => invoke<void>('open_control_ui');
+export type OpenClawControlUiRoute = 'devices';
+export const openGatewayControlUi = (route?: OpenClawControlUiRoute) => (
+  route
+    ? invoke<void>('open_control_ui', { route })
+    : invoke<void>('open_control_ui')
+);
 
 export interface GatewayRescueTarget {
   providerId: string;

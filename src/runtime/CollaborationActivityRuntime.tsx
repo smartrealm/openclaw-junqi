@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { COLLABORATION_PLUGIN_BUNDLE } from '@/services/collaboration/bundledPlugin';
 import { collaborationCapabilityIssue } from '@/services/collaboration/capabilityContract';
+import { isCollaborationCapabilityAuthorizationDenied } from '@/services/collaboration/client';
 import {
   bindCollaborationRuntimeIdentity,
   getCurrentRuntimeIdentity,
@@ -44,10 +45,11 @@ export function CollaborationActivityRuntime() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let inFlight: Promise<void> | null = null;
     let didBootstrap = false;
+    let authorizationBlocked = false;
     let unsubscribeHints: (() => void) | undefined;
 
     const sync = async (): Promise<void> => {
-      if (!active || inFlight) return inFlight ?? undefined;
+      if (!active || authorizationBlocked || inFlight) return inFlight ?? undefined;
       inFlight = (async () => {
         try {
           const currentCapabilities = await bootstrap(!didBootstrap);
@@ -71,9 +73,10 @@ export function CollaborationActivityRuntime() {
               .filter((run) => NEEDS_YOU_STATUSES.has(run.status))
               .map((run) => refreshRun(run.runId)),
           );
-        } catch {
-          // Activity Center remains usable with its other projections. The
-          // next event hint or scheduled cycle retries the authoritative read.
+        } catch (error) {
+          // 可选插件方法被当前连接的权限边界拒绝后，只有新的已核验连接才可能改变结论。
+          // 停止本连接上的后台探针，避免把安全默认拒绝放大成周期性授权提示。
+          authorizationBlocked = isCollaborationCapabilityAuthorizationDenied(error);
         } finally {
           inFlight = null;
         }
@@ -82,7 +85,7 @@ export function CollaborationActivityRuntime() {
     };
 
     const schedule = () => {
-      if (!active) return;
+      if (!active || authorizationBlocked) return;
       timer = setTimeout(() => {
         void sync().finally(schedule);
       }, GLOBAL_ACTIVITY_SYNC_INTERVAL_MS);

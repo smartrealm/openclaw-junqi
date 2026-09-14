@@ -198,10 +198,14 @@ pub(super) async fn resolve_mutation_target(
             OPENCLAW_CONTAINER_NAME,
         )
     } else {
-        PinnedOpenClawCliTarget::verified(
+        let runtime = system::compatible_native_openclaw_runtime(binary.clone())
+            .await
+            .map_err(|message| ("OPENCLAW_RUNTIME_UNAVAILABLE".to_string(), message))?;
+        PinnedOpenClawCliTarget::verified_native(
             binary,
             Path::new(&identity.local_state_dir),
             Path::new(&identity.local_config_path),
+            runtime,
         )
     }
     .map_err(|message| ("OPENCLAW_BINARY_INVALID".to_string(), message))?;

@@ -53,10 +53,12 @@ async function temporaryDirectory(prefix) {
 
 function metadataFor(bytes) {
   return {
-    formatVersion: 1,
+    formatVersion: 2,
     pluginId: 'junqi-dingtalk',
     packageName: '@junqi/openclaw-dingtalk-business',
     pluginVersion: '0.21.0',
+    pluginApiRange: '>=2026.8.1',
+    minimumGatewayVersion: '2026.8.1',
     toolCount: 85,
     sha256: sha256(bytes),
     archiveFile: 'junqi-dingtalk.tgz',

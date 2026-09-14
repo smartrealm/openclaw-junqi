@@ -445,8 +445,8 @@ const operatorScopeUpgrade = new GatewayScopeUpgradeCoordinator({
     connectionId,
     options,
   ),
-  applyRotatedDeviceCredential: (token, connectionId) => (
-    connection.applyRotatedDeviceCredential(token, connectionId)
+  applyRotatedDeviceCredential: (token, scopes, connectionId) => (
+    connection.applyRotatedDeviceCredential(token, scopes, connectionId)
   ),
 });
 const chatHandler = new ChatHandler(connection);
@@ -738,7 +738,7 @@ export interface PrivilegedRequester {
   ): Promise<T>;
   cancelActiveRequest(): void;
   cancelPairingRetry(): void;
-  retryPairingNow(): void;
+  retryPairingNow(): boolean;
 }
 
 export interface PrivilegedRequesterOptions {
@@ -1135,7 +1135,12 @@ export function createPrivilegedRequester(
   }) as PrivilegedRequester;
   request.cancelActiveRequest = () => cancelActivePairingRetry?.();
   request.cancelPairingRetry = () => cancelActivePairingRetry?.();
-  request.retryPairingNow = () => retryActivePairingNow?.();
+  request.retryPairingNow = () => {
+    const retry = retryActivePairingNow;
+    if (!retry) return false;
+    retry();
+    return true;
+  };
   return request;
 }
 
@@ -1155,7 +1160,6 @@ export function createApprovalRequester(
 
 const requestPrivileged = createPrivilegedRequester(connection);
 const requestApprovals = createApprovalRequester(connection);
-let approvedOperatorScopeUpgradeAwaitingReconnect = false;
 export const openClawBrowserClient = new OpenClawBrowserClient({
   request: (method, params, timeoutMs) => requestPrivileged(method, params, timeoutMs),
 });
@@ -1932,7 +1936,6 @@ export const gateway = {
     });
     void operation.completion.then((outcome) => {
       if (outcome.status === 'approved') {
-        approvedOperatorScopeUpgradeAwaitingReconnect = true;
         return;
       }
       emitPrivilegedAuthorizationIssue({
@@ -1957,15 +1960,13 @@ export const gateway = {
     return operation.requestId;
   },
   cancelOperatorScopeUpgrade() {
-    approvedOperatorScopeUpgradeAwaitingReconnect = false;
     operatorScopeUpgrade.cancel();
   },
   resumePrivilegedAfterOperatorScopeUpgrade(): boolean {
-    if (!approvedOperatorScopeUpgradeAwaitingReconnect || !connection.isConnected()) return false;
-    approvedOperatorScopeUpgradeAwaitingReconnect = false;
-    requestPrivileged.retryPairingNow();
-    requestApprovals.retryPairingNow();
-    return true;
+    if (!connection.isConnected()) return false;
+    const resumedPrivileged = requestPrivileged.retryPairingNow();
+    const resumedApproval = requestApprovals.retryPairingNow();
+    return resumedPrivileged || resumedApproval;
   },
   reconnectWithToken(newToken: string) { connection.reconnectWithToken(newToken); },
 };

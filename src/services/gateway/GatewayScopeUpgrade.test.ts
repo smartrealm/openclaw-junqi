@@ -24,8 +24,9 @@ test('权限升级严格校验请求并在设备令牌保存后重连', async ()
         scopes: ['operator.admin', 'operator.read', 'operator.write', 'operator.talk'],
       };
     },
-    applyRotatedDeviceCredential: async (token, connectionId) => {
+    applyRotatedDeviceCredential: async (token, scopes, connectionId) => {
       assert.equal(token, 'rotated-device-token');
+      assert.deepEqual(scopes, ['operator.admin', 'operator.read', 'operator.write', 'operator.talk']);
       assert.equal(connectionId, 'daily-1');
       calls.push('保存并重连');
     },

@@ -36,16 +36,16 @@ impl OpenClawCliTarget {
     }
 }
 
-/// An immutable CLI endpoint used by collaboration bootstrap and recovery.
-/// Unlike `OpenClawCliTarget`, this target remains bound to the exact
-/// binary, state directory, config file, and optional OpenClaw container that
-/// were attested at the start of the operation.
+/// 协作引导与恢复使用的不可变 CLI 端点。
+/// 与 `OpenClawCliTarget` 不同，它会固定操作开始时核验过的二进制、
+/// Node 启动契约、状态目录、配置文件和可选 OpenClaw 容器。
 #[derive(Debug, Clone)]
 pub struct PinnedOpenClawCliTarget {
     pub binary: PathBuf,
     pub state_dir: PathBuf,
     pub config_path: PathBuf,
     pub container: Option<String>,
+    pub(crate) native_runtime: Option<system::NativeOpenclawRuntime>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -92,7 +92,19 @@ impl PinnedOpenClawCliTarget {
             state_dir,
             config_path,
             container: None,
+            native_runtime: None,
         })
+    }
+
+    pub fn verified_native(
+        binary: impl AsRef<Path>,
+        state_dir: impl AsRef<Path>,
+        config_path: impl AsRef<Path>,
+        native_runtime: system::NativeOpenclawRuntime,
+    ) -> Result<Self, String> {
+        let mut target = Self::verified(binary, state_dir, config_path)?;
+        target.native_runtime = Some(native_runtime);
+        Ok(target)
     }
 
     pub fn verified_container(
@@ -269,13 +281,21 @@ where
         return Err("OpenClaw CLI output limits must be greater than zero".to_string());
     }
     let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
-    let mut command = tokio::process::Command::new(&target.binary);
+    let mut command = match (&target.container, &target.native_runtime) {
+        (None, Some(runtime)) => runtime.command(&system::OpenclawCommandContext::for_paths(
+            target.state_dir.clone(),
+            target.config_path.clone(),
+        )),
+        _ => tokio::process::Command::new(&target.binary),
+    };
     if let Some(container) = &target.container {
         command.args([OsString::from("--container"), OsString::from(container)]);
     }
+    command.args(&args);
+    if target.native_runtime.is_none() {
+        command.env("PATH", system::openclaw_search_path());
+    }
     command
-        .args(&args)
-        .env("PATH", system::openclaw_search_path())
         .env("OPENCLAW_STATE_DIR", &target.state_dir)
         .env("OPENCLAW_CONFIG_PATH", &target.config_path)
         .env("OPENCLAW_NO_RESPAWN", "1")
@@ -541,12 +561,20 @@ pub(crate) fn parse_cli_json(output: &CliOutput) -> Result<Value, String> {
 }
 
 pub(crate) fn output_error(label: &str, output: &CliOutput) -> String {
-    let detail = output
+    let details = output
         .stderr
         .lines()
         .chain(output.stdout.lines())
         .map(crate::commands::diagnostic_output::sanitize_diagnostic_line)
-        .find(|line| !line.is_empty())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    let detail = details
+        .iter()
+        .find(|line| {
+            !line.starts_with("[config] warnings:") && !line.starts_with("Config warnings:")
+        })
+        .or_else(|| details.first())
+        .cloned()
         .unwrap_or_else(|| "unknown error".to_string());
     format!("OpenClaw {label} failed: {detail}")
 }
@@ -574,6 +602,20 @@ mod tests {
                 .get("valid")
                 .and_then(Value::as_bool),
             Some(false)
+        );
+    }
+
+    #[test]
+    fn output_error_prefers_failure_after_config_warnings() {
+        let output = CliOutput {
+            success: false,
+            stdout: String::new(),
+            stderr: "[config] warnings: duplicate plugin id detected\nPlugin capabilities require approval"
+                .to_string(),
+        };
+        assert_eq!(
+            output_error("plugins install", &output),
+            "OpenClaw plugins install failed: Plugin capabilities require approval"
         );
     }
 
@@ -618,6 +660,63 @@ mod tests {
             Path::new("/tmp/state/openclaw.json"),
         );
         assert!(result.unwrap_err().contains("absolute"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pinned_native_target_uses_the_verified_node_launch_contract() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!("junqi-native-cli-{}", uuid::Uuid::new_v4()));
+        let package_dir = root.join("lib/node_modules/openclaw");
+        let bin_dir = root.join("bin");
+        std::fs::create_dir_all(&package_dir).unwrap();
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        std::fs::write(
+            package_dir.join("package.json"),
+            r#"{"name":"openclaw","version":"2026.7.1-2","bin":{"openclaw":"openclaw.mjs"},"engines":{"node":">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0"}}"#,
+        )
+        .unwrap();
+        let entry = package_dir.join("openclaw.mjs");
+        std::fs::write(&entry, "#!/bin/sh\nprintf 'wrong launcher\\n'\n").unwrap();
+        std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let launcher = bin_dir.join("openclaw");
+        std::os::unix::fs::symlink(&entry, &launcher).unwrap();
+        let verified_node = root.join("verified-node");
+        std::fs::write(
+            &verified_node,
+            "#!/bin/sh\nprintf 'verified node: %s\\n' \"$2\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&verified_node, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let runtime = system::native_openclaw_runtime(
+            launcher.clone(),
+            &system::NodeStatus {
+                available: true,
+                version: Some("24.21.0".to_string()),
+                path: Some(verified_node.to_string_lossy().to_string()),
+                source: Some(system::RuntimeToolSource::Custom),
+            },
+        )
+        .unwrap();
+        let target = PinnedOpenClawCliTarget::verified_native(
+            &launcher,
+            root.join("state"),
+            root.join("state/openclaw.json"),
+            runtime,
+        )
+        .unwrap();
+
+        let output = run_openclaw_cli(&target, ["--version"], OpenClawCliLimits::default())
+            .await
+            .unwrap();
+
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            "verified node: --version\n"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[cfg(unix)]

@@ -3,6 +3,7 @@ use crate::commands::openclaw_cli::{output_error, parse_cli_json, run_openclaw};
 use crate::paths::{self, OpenClawRuntimeMode};
 use crate::state::runtime_identity::{RuntimeIdentity, RuntimeIdentityState, RuntimeInstallTarget};
 use flate2::read::GzDecoder;
+use node_semver::{Range, Version};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -23,6 +24,21 @@ const MAX_EXPANDED_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_ENTRIES: usize = 4_096;
 const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
 
+fn plugin_install_args(archive: &str) -> [&str; 6] {
+    [
+        "plugins",
+        "install",
+        "--force",
+        "--accept-capabilities",
+        "--acknowledge-install-policy-warning",
+        archive,
+    ]
+}
+
+fn plugin_enable_args() -> [&'static str; 4] {
+    ["plugins", "enable", PLUGIN_ID, "--accept-capabilities"]
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct BundleMetadata {
@@ -30,10 +46,20 @@ struct BundleMetadata {
     plugin_id: String,
     package_name: String,
     plugin_version: String,
+    plugin_api_range: String,
+    minimum_gateway_version: String,
     tool_count: usize,
     sha256: String,
     archive_file: String,
     resource_path: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DingTalkPluginCompatibility {
+    Compatible,
+    Incompatible,
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -45,6 +71,10 @@ pub struct DingTalkPluginStatus {
     version: Option<String>,
     bundled_version: String,
     restart_required: bool,
+    compatibility: DingTalkPluginCompatibility,
+    gateway_version: String,
+    plugin_api_range: String,
+    minimum_gateway_version: String,
 }
 
 fn parse_metadata(raw: &[u8]) -> Result<BundleMetadata, String> {
@@ -58,10 +88,13 @@ fn parse_metadata(raw: &[u8]) -> Result<BundleMetadata, String> {
             .sha256
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase());
-    if metadata.format_version != 1
+    let compatibility_contract_valid = Range::parse(&metadata.plugin_api_range).is_ok()
+        && Version::parse(&metadata.minimum_gateway_version).is_ok();
+    if metadata.format_version != 2
         || metadata.plugin_id != PLUGIN_ID
         || metadata.package_name != PACKAGE_NAME
         || metadata.plugin_version.trim().is_empty()
+        || !compatibility_contract_valid
         || metadata.tool_count == 0
         || metadata.tool_count > MAX_ENTRIES
         || !valid_hash
@@ -71,6 +104,27 @@ fn parse_metadata(raw: &[u8]) -> Result<BundleMetadata, String> {
         return Err("The DingTalk bundle metadata contract is invalid".to_string());
     }
     Ok(metadata)
+}
+
+fn resolve_plugin_compatibility(
+    gateway_version: &str,
+    metadata: &BundleMetadata,
+) -> DingTalkPluginCompatibility {
+    let gateway_version = gateway_version.trim().trim_start_matches('v');
+    let Ok(version) = Version::parse(gateway_version) else {
+        return DingTalkPluginCompatibility::Unknown;
+    };
+    let Ok(plugin_api_range) = Range::parse(&metadata.plugin_api_range) else {
+        return DingTalkPluginCompatibility::Unknown;
+    };
+    let Ok(minimum_gateway_version) = Version::parse(&metadata.minimum_gateway_version) else {
+        return DingTalkPluginCompatibility::Unknown;
+    };
+    if plugin_api_range.satisfies(&version) && version >= minimum_gateway_version {
+        DingTalkPluginCompatibility::Compatible
+    } else {
+        DingTalkPluginCompatibility::Incompatible
+    }
 }
 
 fn hash_file(path: &Path) -> Result<String, String> {
@@ -169,6 +223,14 @@ fn verify_archive_contract(path: &Path, metadata: &BundleMetadata) -> Result<(),
         .collect::<std::collections::HashSet<_>>();
     if package.get("name").and_then(Value::as_str) != Some(PACKAGE_NAME)
         || package.get("version").and_then(Value::as_str) != Some(metadata.plugin_version.as_str())
+        || package
+            .pointer("/openclaw/compat/pluginApi")
+            .and_then(Value::as_str)
+            != Some(metadata.plugin_api_range.as_str())
+        || package
+            .pointer("/openclaw/compat/minGatewayVersion")
+            .and_then(Value::as_str)
+            != Some(metadata.minimum_gateway_version.as_str())
         || manifest.get("id").and_then(Value::as_str) != Some(PLUGIN_ID)
         || manifest.get("version").and_then(Value::as_str) != Some(metadata.plugin_version.as_str())
         || tool_ids.len() != metadata.tool_count
@@ -262,7 +324,11 @@ fn stage_for_selected_runtime(
         .join(ARCHIVE_FILE))
 }
 
-async fn inspect_plugin(bundled_version: String) -> Result<DingTalkPluginStatus, String> {
+async fn inspect_plugin(
+    metadata: &BundleMetadata,
+    gateway_version: &str,
+) -> Result<DingTalkPluginStatus, String> {
+    let compatibility = resolve_plugin_compatibility(gateway_version, metadata);
     let output = run_openclaw(
         &["plugins", "list", "--json"],
         None,
@@ -286,8 +352,12 @@ async fn inspect_plugin(bundled_version: String) -> Result<DingTalkPluginStatus,
             enabled: false,
             loaded: false,
             version: None,
-            bundled_version,
+            bundled_version: metadata.plugin_version.clone(),
             restart_required: false,
+            compatibility,
+            gateway_version: gateway_version.to_string(),
+            plugin_api_range: metadata.plugin_api_range.clone(),
+            minimum_gateway_version: metadata.minimum_gateway_version.clone(),
         });
     };
     let enabled = plugin
@@ -303,9 +373,13 @@ async fn inspect_plugin(bundled_version: String) -> Result<DingTalkPluginStatus,
         installed: true,
         enabled,
         loaded,
-        restart_required: enabled && version.as_deref() != Some(bundled_version.as_str()),
+        restart_required: enabled && version.as_deref() != Some(metadata.plugin_version.as_str()),
         version,
-        bundled_version,
+        bundled_version: metadata.plugin_version.clone(),
+        compatibility,
+        gateway_version: gateway_version.to_string(),
+        plugin_api_range: metadata.plugin_api_range.clone(),
+        minimum_gateway_version: metadata.minimum_gateway_version.clone(),
     })
 }
 
@@ -349,9 +423,9 @@ pub async fn get_dingtalk_plugin_status(
     target_fingerprint: String,
     expected_connection_id: String,
 ) -> Result<DingTalkPluginStatus, String> {
-    validated_target(&state, &target_fingerprint, &expected_connection_id)?;
+    let identity = validated_target(&state, &target_fingerprint, &expected_connection_id)?;
     let (metadata, _) = resolve_bundle(&app)?;
-    let status = inspect_plugin(metadata.plugin_version).await?;
+    let status = inspect_plugin(&metadata, &identity.gateway_version).await?;
     validated_target(&state, &target_fingerprint, &expected_connection_id)?;
     Ok(status)
 }
@@ -365,33 +439,32 @@ pub async fn install_bundled_dingtalk_plugin(
 ) -> Result<DingTalkPluginStatus, String> {
     validated_target(&state, &target_fingerprint, &expected_connection_id)?;
     let _guard = crate::commands::maintenance::acquire_operation_guard().await;
-    validated_target(&state, &target_fingerprint, &expected_connection_id)?;
-    let (metadata, archive) = resolve_bundle(&app)?;
     let identity = validated_target(&state, &target_fingerprint, &expected_connection_id)?;
+    let (metadata, archive) = resolve_bundle(&app)?;
+    if resolve_plugin_compatibility(&identity.gateway_version, &metadata)
+        == DingTalkPluginCompatibility::Incompatible
+    {
+        return Err(format!(
+            "The bundled DingTalk plugin requires OpenClaw {} or plugin API {}; the current Gateway is {}",
+            metadata.minimum_gateway_version, metadata.plugin_api_range, identity.gateway_version
+        ));
+    }
     let cli_archive = stage_for_selected_runtime(&archive, &metadata.sha256, &identity)?;
     let cli_archive = cli_archive
         .to_str()
         .ok_or_else(|| "The DingTalk plugin archive path is not valid UTF-8".to_string())?;
-    let install = run_openclaw(
-        &["plugins", "install", "--force", "--pin", cli_archive],
-        None,
-        Duration::from_secs(300),
-    )
-    .await?;
+    let install_args = plugin_install_args(cli_archive);
+    let install = run_openclaw(&install_args, None, Duration::from_secs(300)).await?;
     if !install.success {
         return Err(output_error("plugins install", &install));
     }
-    let enable = run_openclaw(
-        &["plugins", "enable", PLUGIN_ID],
-        None,
-        Duration::from_secs(60),
-    )
-    .await?;
+    let enable_args = plugin_enable_args();
+    let enable = run_openclaw(&enable_args, None, Duration::from_secs(60)).await?;
     if !enable.success {
         return Err(output_error("plugins enable", &enable));
     }
     validated_target(&state, &target_fingerprint, &expected_connection_id)?;
-    let mut status = inspect_plugin(metadata.plugin_version.clone()).await?;
+    let mut status = inspect_plugin(&metadata, &identity.gateway_version).await?;
     if !status.installed
         || !status.enabled
         || !status.loaded
@@ -429,5 +502,51 @@ mod tests {
             .join("dingtalk")
             .join(ARCHIVE_FILE);
         assert!(verify_archive_contract(&archive, &metadata).is_err());
+    }
+
+    #[test]
+    fn compatibility_rejects_a_gateway_below_the_bundled_plugin_requirement() {
+        let metadata = parse_metadata(EMBEDDED_METADATA.as_bytes()).unwrap();
+        assert_eq!(
+            resolve_plugin_compatibility("2026.7.1-2", &metadata),
+            DingTalkPluginCompatibility::Incompatible
+        );
+        assert_eq!(
+            resolve_plugin_compatibility("2026.8.1", &metadata),
+            DingTalkPluginCompatibility::Compatible
+        );
+        assert_eq!(
+            resolve_plugin_compatibility("v2026.9.4", &metadata),
+            DingTalkPluginCompatibility::Compatible
+        );
+    }
+
+    #[test]
+    fn compatibility_remains_unknown_for_an_unparseable_gateway_version() {
+        let metadata = parse_metadata(EMBEDDED_METADATA.as_bytes()).unwrap();
+        assert_eq!(
+            resolve_plugin_compatibility("unavailable", &metadata),
+            DingTalkPluginCompatibility::Unknown
+        );
+    }
+
+    #[test]
+    fn noninteractive_install_accepts_the_verified_bundle_contract() {
+        assert!(!plugin_install_args("/verified/plugin.tgz").contains(&"--pin"));
+        assert_eq!(
+            plugin_install_args("/verified/plugin.tgz"),
+            [
+                "plugins",
+                "install",
+                "--force",
+                "--accept-capabilities",
+                "--acknowledge-install-policy-warning",
+                "/verified/plugin.tgz",
+            ]
+        );
+        assert_eq!(
+            plugin_enable_args(),
+            ["plugins", "enable", PLUGIN_ID, "--accept-capabilities"]
+        );
     }
 }

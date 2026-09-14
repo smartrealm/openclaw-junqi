@@ -4,6 +4,7 @@ import { stopPolling, useGatewayDataStore } from '@/stores/gatewayDataStore';
 import type { RuntimeIdentity } from '@/types/gatewayRuntime';
 import type { GatewayDeviceChallengeParams } from '@/api/tauri-commands';
 import { GatewayConnection, type GatewayConnectionOptions } from './Connection';
+import { GatewayScopeUpgradeCoordinator } from './GatewayScopeUpgrade';
 import { GatewayTransportLifecycleError } from './GatewayTransportError';
 import type { GatewayAuthorizationIssue } from './messageRouter';
 import {
@@ -366,7 +367,7 @@ describe('Gateway credential security regression gates', () => {
     await turn();
   });
 
-  it('passes Gateway challenge facts into the v3 device signature and connect frame', async () => {
+  it('uses the generic Gateway client identity instead of impersonating the browser Control UI', async () => {
     resetSockets();
     const signedRequests: GatewayDeviceChallengeParams[] = [];
     const connection = new GatewayConnection({}, {
@@ -395,7 +396,7 @@ describe('Gateway credential security regression gates', () => {
     assert.deepEqual(signedRequests, [{
       nonce: 'nonce-0',
       signedAt: 1_735_000_000_456,
-      clientId: 'openclaw-control-ui',
+      clientId: 'gateway-client',
       clientMode: 'ui',
       role: 'operator',
       scopes: ['operator.read', 'operator.write', 'operator.questions', 'operator.talk'],
@@ -410,6 +411,10 @@ describe('Gateway credential security regression gates', () => {
       signedAt: 1_735_000_000_456,
       nonce: 'nonce-0',
     });
+    const client = handshake.params.client as Record<string, unknown>;
+    assert.equal(client.id, 'gateway-client');
+    assert.equal(client.platform, 'windows');
+    assert.equal(client.mode, 'ui');
 
     connection.disconnect();
     stopPolling();
@@ -1050,10 +1055,36 @@ describe('Gateway credential security regression gates', () => {
 
     const handshake = await waitForSocketRequest(socket, 'connect');
     assert.deepEqual(handshake.params.auth, {
-      token: 'paired-device-token',
       deviceToken: 'paired-device-token',
     });
 
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('共享凭据握手签发设备令牌后立即切换到设备凭据', async () => {
+    resetSockets();
+    const connection = createMemoryGatewayConnection();
+    connection.connect('ws://127.0.0.1:18789', 'shared-token');
+    const socket = MemoryWebSocket.instances[0];
+    socket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(
+          socket,
+          message,
+          'shared-bootstrap-connection',
+          ['operator.read', 'operator.write', 'operator.admin'],
+          'issued-admin-device-token',
+        );
+      }
+    };
+    challenge(socket);
+    await waitForSocketRequest(socket, 'connect');
+    await turn();
+
+    assert.equal(connection.token, '');
+    assert.equal(connection.deviceToken, 'issued-admin-device-token');
     connection.disconnect();
     stopPolling();
     await turn();
@@ -1083,7 +1114,7 @@ describe('Gateway credential security regression gates', () => {
     await turn();
   });
 
-  it('先保存轮换设备令牌再清除共享令牌并重连', async () => {
+  it('批准后先按批准范围验证设备令牌再恢复日常权限连接', async () => {
     resetSockets();
     const connection = createMemoryGatewayConnection({
       persistDeviceCredential: async (url, token) => {
@@ -1101,27 +1132,273 @@ describe('Gateway credential security regression gates', () => {
     await waitForSocketRequest(firstSocket, 'connect');
     await turn();
 
-    await connection.applyRotatedDeviceCredential('rotated-device-token', 'daily-connection');
+    const approvedScopes = [
+      'operator.admin',
+      'operator.read',
+      'operator.write',
+      'operator.questions',
+      'operator.talk',
+    ];
+    await connection.applyRotatedDeviceCredential(
+      'rotated-device-token',
+      approvedScopes,
+      'daily-connection',
+    );
     assert.deepEqual(savedDeviceTokens, [{
       url: 'ws://127.0.0.1:18789',
       token: 'rotated-device-token',
     }]);
     await waitForSocketCount(2);
-    const replacementSocket = MemoryWebSocket.instances[1];
-    replacementSocket.onSend = (message) => {
+    const verificationSocket = MemoryWebSocket.instances[1];
+    verificationSocket.onSend = (message) => {
       if (message.method !== 'connect') return;
       assert.deepEqual(message.params.auth, {
-        token: 'rotated-device-token',
         deviceToken: 'rotated-device-token',
       });
-      acceptHandshake(replacementSocket, message, 'daily-admin-connection', ['operator.admin']);
+      assert.deepEqual(message.params.scopes, approvedScopes);
+      acceptHandshake(
+        verificationSocket,
+        message,
+        'approved-scope-connection',
+        approvedScopes,
+        'rotated-device-token',
+      );
     };
-    challenge(replacementSocket);
-    await waitForSocketRequest(replacementSocket, 'connect');
+    challenge(verificationSocket);
+    await waitForSocketRequest(verificationSocket, 'connect');
+    await waitForSocketCount(3);
+
+    const dailySocket = MemoryWebSocket.instances[2];
+    dailySocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      assert.deepEqual(message.params.auth, {
+        deviceToken: 'rotated-device-token',
+      });
+      assert.deepEqual(message.params.scopes, [
+        'operator.read',
+        'operator.write',
+        'operator.questions',
+        'operator.talk',
+      ]);
+      acceptHandshake(
+        dailySocket,
+        message,
+        'daily-admin-connection',
+        message.params.scopes as string[],
+        'rotated-device-token',
+      );
+    };
+    challenge(dailySocket);
+    await waitForSocketRequest(dailySocket, 'connect');
     await turn();
 
     assert.equal(connection.token, '');
     assert.equal(connection.deviceToken, 'rotated-device-token');
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('普通启动发现设备令牌不匹配时从同一 Runtime 恢复日常连接', async () => {
+    resetSockets();
+    const deletedUrls: string[] = [];
+    const connection = createMemoryGatewayConnection({
+      persistDeviceCredential: async (url, token) => {
+        savedDeviceTokens.push({ url, token });
+      },
+      deleteDeviceCredential: async (url) => {
+        deletedUrls.push(url);
+      },
+      resolveSharedCredentialRecovery: async () => 'shared-token',
+    });
+    connection.connect('ws://127.0.0.1:18789', '', 'stale-device-token');
+    const rejectedSocket = MemoryWebSocket.instances[0];
+    rejectedSocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      rejectedSocket.receive({
+        type: 'res',
+        id: message.id,
+        ok: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'unauthorized: device token mismatch (rotate/reissue device token)',
+          details: { code: 'AUTH_DEVICE_TOKEN_MISMATCH' },
+        },
+      });
+    };
+    challenge(rejectedSocket);
+    await waitForSocketRequest(rejectedSocket, 'connect');
+    await waitForSocketCount(2);
+
+    const recoverySocket = MemoryWebSocket.instances[1];
+    recoverySocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      assert.deepEqual(message.params.auth, { token: 'shared-token' });
+      acceptHandshake(
+        recoverySocket,
+        message,
+        'recovery-connection',
+        message.params.scopes as string[],
+        'fresh-device-token',
+      );
+    };
+    challenge(recoverySocket);
+    await waitForSocketRequest(recoverySocket, 'connect');
+    await waitForSocketCount(3);
+
+    const verificationSocket = MemoryWebSocket.instances[2];
+    verificationSocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      assert.deepEqual(message.params.auth, { deviceToken: 'fresh-device-token' });
+      acceptHandshake(
+        verificationSocket,
+        message,
+        'verification-connection',
+        message.params.scopes as string[],
+        'fresh-device-token',
+      );
+    };
+    challenge(verificationSocket);
+    await waitForSocketRequest(verificationSocket, 'connect');
+    await waitForSocketCount(4);
+
+    const dailySocket = MemoryWebSocket.instances[3];
+    dailySocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      acceptHandshake(
+        dailySocket,
+        message,
+        'daily-restored-connection',
+        message.params.scopes as string[],
+        'fresh-device-token',
+      );
+    };
+    challenge(dailySocket);
+    await waitForSocketRequest(dailySocket, 'connect');
+    await turn();
+
+    assert.deepEqual(deletedUrls, ['ws://127.0.0.1:18789']);
+    assert.deepEqual(savedDeviceTokens, [{
+      url: 'ws://127.0.0.1:18789',
+      token: 'fresh-device-token',
+    }]);
+    assert.equal(connection.isConnected(), true);
+    connection.disconnect();
+    stopPolling();
+    await turn();
+  });
+
+  it('轮换令牌不匹配时删除旧凭据并在同一 Runtime 重新签发一次', async () => {
+    resetSockets();
+    const deletedUrls: string[] = [];
+    const recoveryUrls: string[] = [];
+    const connection = createMemoryGatewayConnection({
+      persistDeviceCredential: async (url, token) => {
+        savedDeviceTokens.push({ url, token });
+      },
+      deleteDeviceCredential: async (url) => {
+        deletedUrls.push(url);
+      },
+      resolveSharedCredentialRecovery: async (url) => {
+        recoveryUrls.push(url);
+        return 'shared-token';
+      },
+    });
+    connection.connect('ws://127.0.0.1:18789', '', 'old-device-token');
+    const firstSocket = MemoryWebSocket.instances[0];
+    firstSocket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(firstSocket, message, 'daily-connection', ['operator.read']);
+      }
+    };
+    challenge(firstSocket);
+    await waitForSocketRequest(firstSocket, 'connect');
+    await turn();
+
+    const approvedScopes = ['operator.admin', 'operator.read', 'operator.write'];
+    await connection.applyRotatedDeviceCredential(
+      'rotated-device-token',
+      approvedScopes,
+      'daily-connection',
+    );
+    await waitForSocketCount(2);
+    const rejectedSocket = MemoryWebSocket.instances[1];
+    rejectedSocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      rejectedSocket.receive({
+        type: 'res',
+        id: message.id,
+        ok: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'unauthorized: device token mismatch (rotate/reissue device token)',
+          details: { code: 'AUTH_DEVICE_TOKEN_MISMATCH' },
+        },
+      });
+    };
+    challenge(rejectedSocket);
+    await waitForSocketRequest(rejectedSocket, 'connect');
+    await waitForSocketCount(3);
+
+    const recoverySocket = MemoryWebSocket.instances[2];
+    recoverySocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      assert.deepEqual(message.params.auth, { token: 'shared-token' });
+      assert.deepEqual(message.params.scopes, approvedScopes);
+      acceptHandshake(
+        recoverySocket,
+        message,
+        'recovery-connection',
+        approvedScopes,
+        'fresh-device-token',
+      );
+    };
+    challenge(recoverySocket);
+    await waitForSocketRequest(recoverySocket, 'connect');
+    await waitForSocketCount(4);
+
+    const verificationSocket = MemoryWebSocket.instances[3];
+    verificationSocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      assert.deepEqual(message.params.auth, { deviceToken: 'fresh-device-token' });
+      assert.deepEqual(message.params.scopes, approvedScopes);
+      acceptHandshake(
+        verificationSocket,
+        message,
+        'verification-connection',
+        approvedScopes,
+        'fresh-device-token',
+      );
+    };
+    challenge(verificationSocket);
+    await waitForSocketRequest(verificationSocket, 'connect');
+    await waitForSocketCount(5);
+
+    const dailySocket = MemoryWebSocket.instances[4];
+    dailySocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      assert.deepEqual(message.params.auth, { deviceToken: 'fresh-device-token' });
+      acceptHandshake(
+        dailySocket,
+        message,
+        'daily-restored-connection',
+        message.params.scopes as string[],
+        'fresh-device-token',
+      );
+    };
+    challenge(dailySocket);
+    await waitForSocketRequest(dailySocket, 'connect');
+    await turn();
+
+    assert.deepEqual(deletedUrls, ['ws://127.0.0.1:18789']);
+    assert.deepEqual(recoveryUrls, ['ws://127.0.0.1:18789']);
+    assert.deepEqual(savedDeviceTokens.map(({ token }) => token), [
+      'rotated-device-token',
+      'fresh-device-token',
+    ]);
+    assert.equal(connection.token, '');
+    assert.equal(connection.deviceToken, 'fresh-device-token');
+    assert.equal(connection.isConnected(), true);
     connection.disconnect();
     stopPolling();
     await turn();
@@ -1255,6 +1532,7 @@ describe('Gateway credential security regression gates', () => {
       (connectionOptions) => createMemoryGatewayConnection(connectionOptions),
       { pairingRetryMs: 60_000, pairingTimeoutMs: 120_000 },
     );
+    assert.equal(requestPrivileged.retryPairingNow(), false);
     let pairingSurfaced = false;
     const unsubscribe = subscribePrivilegedAuthorizationIssues(() => {
       pairingSurfaced = true;
@@ -1280,7 +1558,7 @@ describe('Gateway credential security regression gates', () => {
     while (!pairingSurfaced && Date.now() < issueDeadline) await wait(5);
     assert.equal(pairingSurfaced, true);
 
-    requestPrivileged.retryPairingNow();
+    assert.equal(requestPrivileged.retryPairingNow(), true);
     await waitForSocketCount(2);
     const approvedSocket = MemoryWebSocket.instances[1];
     approvedSocket.onSend = (message) => {
@@ -1347,7 +1625,7 @@ describe('Gateway credential security regression gates', () => {
 
     connectionId = 'daily-admin-connection';
     deviceToken = 'rotated-device-token';
-    requestPrivileged.retryPairingNow();
+    assert.equal(requestPrivileged.retryPairingNow(), true);
     await waitForSocketCount(2);
     const adminSocket = MemoryWebSocket.instances[1];
     adminSocket.onSend = (message) => {
@@ -1363,6 +1641,228 @@ describe('Gateway credential security regression gates', () => {
     assert.deepEqual(await resultPromise, { ok: true });
     unsubscribe();
     assert.deepEqual(adminSocket.sent.map((message) => message.method), ['connect', 'config.patch']);
+  });
+
+  it('管理员批准闭环只申请一次并使用轮换凭据恢复原操作', async () => {
+    resetSockets();
+    const persistedTokens: string[] = [];
+    let requestPrivileged: ReturnType<typeof createPrivilegedRequester> | null = null;
+    const connection = createMemoryGatewayConnection({
+      persistDeviceCredential: async (_url, token) => {
+        persistedTokens.push(token);
+      },
+    });
+    connection.setCallbacks({
+      onMessage() {},
+      onStreamChunk() {},
+      onStreamEnd() {},
+      onStatusChange(status) {
+        if (status.connected) requestPrivileged?.retryPairingNow();
+      },
+    });
+    connection.connect('ws://127.0.0.1:18789', '', 'limited-device-token');
+    const dailySocket = MemoryWebSocket.instances[0];
+    dailySocket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(
+          dailySocket,
+          message,
+          'daily-limited-connection',
+          ['operator.read', 'operator.write', 'operator.questions', 'operator.talk'],
+          'limited-device-token',
+        );
+      }
+    };
+    challenge(dailySocket);
+    await waitForSocketRequest(dailySocket, 'connect');
+    await turn();
+
+    requestPrivileged = createPrivilegedRequester(
+      connection,
+      (options) => createMemoryGatewayConnection(options),
+      { pairingRetryMs: 60_000, pairingTimeoutMs: 120_000 },
+    );
+    const surfacedIssues: GatewayAuthorizationIssue[] = [];
+    const unsubscribe = subscribePrivilegedAuthorizationIssues((issue) => {
+      surfacedIssues.push(issue);
+    });
+    const privilegedResult = requestPrivileged<{ ok: boolean }>('config.patch', { patch: {} });
+    await waitForSocketCount(2);
+    const deniedSocket = MemoryWebSocket.instances[1];
+    deniedSocket.onSend = (message) => {
+      if (message.method === 'connect') {
+        acceptHandshake(
+          deniedSocket,
+          message,
+          'privileged-limited-connection',
+          ['operator.read', 'operator.write'],
+          'limited-device-token',
+        );
+        return;
+      }
+      assert.equal(message.method, 'config.patch');
+      deniedSocket.receive({
+        type: 'res',
+        id: message.id,
+        ok: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'missing scope: operator.admin',
+          details: {
+            code: 'MISSING_SCOPE',
+            missingScope: 'operator.admin',
+            requiredScopes: ['operator.admin'],
+          },
+        },
+      });
+    };
+    challenge(deniedSocket);
+    await waitForSocketRequest(deniedSocket, 'config.patch');
+    const issueDeadline = Date.now() + 2_000;
+    while (surfacedIssues.length === 0 && Date.now() < issueDeadline) await wait(5);
+    assert.equal(surfacedIssues.length, 1);
+
+    let waitUpgradeRequest: WireRequest | null = null;
+    dailySocket.onSend = (message) => {
+      if (message.method === 'device.scopes.requestUpgrade') {
+        dailySocket.receive({
+          type: 'res',
+          id: message.id,
+          ok: true,
+          payload: { requestId: 'upgrade-once' },
+        });
+        return;
+      }
+      if (message.method === 'device.scopes.waitUpgrade') {
+        waitUpgradeRequest = message;
+      }
+    };
+    const coordinator = new GatewayScopeUpgradeCoordinator({
+      captureConnection: () => {
+        const connectionId = connection.getAttestedConnectionId();
+        const hello = connection.getHelloObservation();
+        if (!connectionId || !hello) return null;
+        return { connectionId, scopes: hello.negotiatedScopes };
+      },
+      requestFenced: (method, params, connectionId, options) => connection.requestFenced(
+        method,
+        params,
+        connectionId,
+        options,
+      ),
+      applyRotatedDeviceCredential: (token, scopes, connectionId) => (
+        connection.applyRotatedDeviceCredential(token, scopes, connectionId)
+      ),
+    });
+    const operation = await coordinator.begin(['operator.admin']);
+    await waitForSocketRequest(dailySocket, 'device.scopes.waitUpgrade');
+    const capturedWaitUpgradeRequest = waitUpgradeRequest as WireRequest | null;
+    assert.ok(capturedWaitUpgradeRequest);
+    dailySocket.receive({
+      type: 'res',
+      id: capturedWaitUpgradeRequest.id,
+      ok: true,
+      payload: {
+        status: 'approved',
+        requestId: 'upgrade-once',
+        deviceToken: 'admin-device-token',
+        scopes: [
+          'operator.admin',
+          'operator.read',
+          'operator.write',
+          'operator.questions',
+          'operator.talk',
+        ],
+      },
+    });
+
+    await waitForSocketCount(3);
+    const verificationSocket = MemoryWebSocket.instances[2];
+    verificationSocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      assert.deepEqual(message.params.auth, { deviceToken: 'admin-device-token' });
+      assert.deepEqual(message.params.scopes, [
+        'operator.admin',
+        'operator.read',
+        'operator.write',
+        'operator.questions',
+        'operator.talk',
+      ]);
+      acceptHandshake(
+        verificationSocket,
+        message,
+        'approved-scope-connection',
+        message.params.scopes as string[],
+        'admin-device-token',
+      );
+    };
+    challenge(verificationSocket);
+
+    await waitForSocketCount(4);
+    const restoredDailySocket = MemoryWebSocket.instances[3];
+    restoredDailySocket.onSend = (message) => {
+      if (message.method !== 'connect') return;
+      assert.deepEqual(message.params.auth, { deviceToken: 'admin-device-token' });
+      acceptHandshake(
+        restoredDailySocket,
+        message,
+        'daily-admin-connection',
+        message.params.scopes as string[],
+        'admin-device-token',
+      );
+    };
+    challenge(restoredDailySocket);
+
+    await waitForSocketCount(5);
+    const resumedPrivilegedSocket = MemoryWebSocket.instances[4];
+    resumedPrivilegedSocket.onSend = (message) => {
+      if (message.method === 'connect') {
+        assert.deepEqual(message.params.auth, { deviceToken: 'admin-device-token' });
+        assert.deepEqual(message.params.scopes, ['operator.admin']);
+        acceptHandshake(
+          resumedPrivilegedSocket,
+          message,
+          'resumed-privileged-connection',
+          ['operator.admin'],
+          'admin-device-token',
+        );
+        return;
+      }
+      assert.equal(message.method, 'config.patch');
+      resumedPrivilegedSocket.receive({
+        type: 'res',
+        id: message.id,
+        ok: true,
+        payload: { ok: true },
+      });
+    };
+    challenge(resumedPrivilegedSocket);
+
+    assert.deepEqual(await operation.completion, {
+      status: 'approved',
+      requestId: 'upgrade-once',
+      scopes: [
+        'operator.admin',
+        'operator.read',
+        'operator.write',
+        'operator.questions',
+        'operator.talk',
+      ],
+    });
+    assert.deepEqual(await privilegedResult, { ok: true });
+    assert.deepEqual(persistedTokens, ['admin-device-token']);
+    assert.equal(surfacedIssues.length, 1);
+    assert.deepEqual(
+      dailySocket.sent
+        .filter((message) => message.method.startsWith('device.scopes.'))
+        .map((message) => message.method),
+      ['device.scopes.requestUpgrade', 'device.scopes.waitUpgrade'],
+    );
+
+    unsubscribe();
+    connection.disconnect();
+    stopPolling();
+    await turn();
   });
 
   it('fails closed when the daily Gateway identity changes during privileged pairing', async () => {

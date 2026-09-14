@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   openSelectedGatewayControlUi,
+  openSelectedGatewayDevicesUi,
   type GatewayControlUiDependencies,
 } from './GatewayControlUi';
 
@@ -30,6 +31,16 @@ test('Control UI opens only after the selected Gateway passes authenticated read
   assert.deepEqual(result, { success: true });
   assert.equal(port, 18789);
   assert.equal(opened, true);
+});
+
+test('权限申请直接打开官方设备审批页', async () => {
+  let route: string | undefined;
+  const result = await openSelectedGatewayDevicesUi(dependencies({
+    open: async (value) => { route = value; },
+  }));
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(route, 'devices');
 });
 
 test('Control UI never opens for a stopped or unauthenticated runtime', async () => {

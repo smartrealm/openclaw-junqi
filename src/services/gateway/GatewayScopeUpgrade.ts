@@ -27,7 +27,11 @@ interface GatewayScopeUpgradeDependencies {
     connectionId: string,
     options?: { timeoutMs?: number | null; signal?: AbortSignal },
   ): Promise<unknown>;
-  applyRotatedDeviceCredential(token: string, connectionId: string): Promise<void>;
+  applyRotatedDeviceCredential(
+    token: string,
+    scopes: readonly string[],
+    connectionId: string,
+  ): Promise<void>;
 }
 
 interface ActiveScopeUpgrade {
@@ -155,7 +159,11 @@ export class GatewayScopeUpgradeCoordinator {
       );
       const outcome = readOutcome(value, requestId, requiredScopes);
       if (outcome.status !== 'approved') return outcome;
-      await this.dependencies.applyRotatedDeviceCredential(outcome.deviceToken!, connectionId);
+      await this.dependencies.applyRotatedDeviceCredential(
+        outcome.deviceToken!,
+        outcome.scopes,
+        connectionId,
+      );
       return { status: 'approved', requestId, scopes: outcome.scopes };
     } catch (error) {
       if (active.controller.signal.aborted) throw new GatewayScopeUpgradeCancelledError();

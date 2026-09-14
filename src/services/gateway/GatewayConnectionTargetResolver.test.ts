@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  deleteGatewayConnectionDeviceCredential,
   getStoredGatewayCredentialToken,
+  resolveGatewayConnectionSharedCredentialRecovery,
   resolveGatewayConnectionTarget,
   storeGatewayConnectionDeviceCredential,
   type GatewayConnectionTargetResolverDependencies,
@@ -26,6 +28,9 @@ function dependencies(
     }),
     storeDeviceCredential: async (runtimeKey, token) => ({
       runtimeKey, token, persistence: 'system', migrated: false,
+    }),
+    deleteDeviceCredential: async (runtimeKey) => ({
+      runtimeKey, token: null, persistence: 'system', migrated: false,
     }),
     getSavedUrl: () => '',
     ...overrides,
@@ -98,6 +103,37 @@ test('首次设置目标范围忽略同一请求携带的手工地址', async ()
   assert.equal(target.token, 'selected-runtime-token');
 });
 
+test('所选 Runtime 恢复重连优先使用已批准的设备凭据', async () => {
+  let requestedRuntimeKey = '';
+  const target = await resolveGatewayConnectionTarget({
+    targetScope: 'selected-runtime',
+    preferStoredDeviceCredential: true,
+  }, dependencies({
+    getDeviceCredential: async (runtimeKey) => {
+      requestedRuntimeKey = runtimeKey;
+      return { runtimeKey, token: 'device-token', persistence: 'system', migrated: false };
+    },
+  }));
+
+  assert.equal(requestedRuntimeKey, 'selected:selected-runtime\0endpoint:ws://127.0.0.1:18789/');
+  assert.equal(target.token, '');
+  assert.equal(target.deviceToken, 'device-token');
+});
+
+test('所选 Runtime 没有设备凭据时才回退共享凭据', async () => {
+  const target = await resolveGatewayConnectionTarget({
+    targetScope: 'selected-runtime',
+    preferStoredDeviceCredential: true,
+  }, dependencies({
+    getDeviceCredential: async () => ({
+      runtimeKey: 'endpoint', token: null, persistence: 'system', migrated: false,
+    }),
+  }));
+
+  assert.equal(target.token, 'selected-runtime-token');
+  assert.equal(target.deviceToken, '');
+});
+
 test('首次设置无法重读所选 Runtime 凭据时拒绝复用旧值或设备凭据', async () => {
   let deviceCredentialReads = 0;
   await assert.rejects(
@@ -151,4 +187,37 @@ test('rotated selected-runtime device tokens keep the selected credential scope'
 
   assert.equal(stored.runtimeKey, 'selected:selected-runtime\0endpoint:ws://localhost:18789/');
   assert.equal(stored.token, 'rotated-device-token');
+});
+
+test('失效设备令牌只从当前端点绑定的凭据作用域删除', async () => {
+  let deletedRuntimeKey = '';
+  await deleteGatewayConnectionDeviceCredential(
+    'ws://localhost:18789/',
+    dependencies({
+      deleteDeviceCredential: async (runtimeKey) => {
+        deletedRuntimeKey = runtimeKey;
+        return { runtimeKey, token: null, persistence: 'system', migrated: false };
+      },
+    }),
+  );
+
+  assert.equal(deletedRuntimeKey, 'selected:selected-runtime\0endpoint:ws://localhost:18789/');
+});
+
+test('设备令牌恢复只读取同一已选 Runtime 的共享凭据', async () => {
+  assert.equal(
+    await resolveGatewayConnectionSharedCredentialRecovery(
+      'ws://localhost:18789/',
+      dependencies(),
+    ),
+    'selected-runtime-token',
+  );
+
+  await assert.rejects(
+    resolveGatewayConnectionSharedCredentialRecovery(
+      'wss://remote.example.test/gateway',
+      dependencies(),
+    ),
+    /not bound to the selected Runtime/,
+  );
 });

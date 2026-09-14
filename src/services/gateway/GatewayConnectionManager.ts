@@ -97,7 +97,7 @@ export class GatewayConnectionManager {
     reject: (error: Error) => void;
     generation: number;
   } | null = null;
-  private useSelectedRuntimeForNextConnection = false;
+  private selectedRuntimeCredentialIntent: 'bootstrap' | 'resume-device' | null = null;
   private connectionRound: GatewayConnectionRound = 'inactive';
   private readonly lifecycleEpoch = new LifecycleEpoch();
 
@@ -215,7 +215,7 @@ export class GatewayConnectionManager {
     this.connectionRound = 'inactive';
     // 首次设置必须从所选运行时建立新的认证连接，旧连接不能作为本次启动成功证据。
     this.connectionTransport.disconnect();
-    this.useSelectedRuntimeForNextConnection = true;
+    this.selectedRuntimeCredentialIntent = 'bootstrap';
     // 启动请求已经由 pendingStart 串行化，此处保留当前状态订阅代次，避免丢弃
     // 该启动操作随后产生的运行时状态。
     const generation = this.lifecycleEpoch.capture();
@@ -424,10 +424,18 @@ export class GatewayConnectionManager {
       case 'CONNECT': {
         // 健康端点只消费一次显式连接意图，后续退避完全由 Connection 持有。
         this.connectionRound = 'transport-owned';
-        const connectOptions = this.useSelectedRuntimeForNextConnection
-          ? { targetRequest: { targetScope: 'selected-runtime' as const } }
+        const selectedRuntimeCredentialIntent = this.selectedRuntimeCredentialIntent;
+        const connectOptions = selectedRuntimeCredentialIntent
+          ? {
+              targetRequest: {
+                targetScope: 'selected-runtime' as const,
+                ...(selectedRuntimeCredentialIntent === 'resume-device'
+                  ? { preferStoredDeviceCredential: true }
+                  : {}),
+              },
+            }
           : undefined;
-        this.useSelectedRuntimeForNextConnection = false;
+        this.selectedRuntimeCredentialIntent = null;
         void this.actionExecutor.connect(
           (httpUrl) => {
             if (!this.isCurrent(generation)) return;
@@ -499,7 +507,7 @@ export class GatewayConnectionManager {
     this.activateForDirectRecovery();
     this.invalidateLifecycle('A newer Gateway recovery was requested');
     this.connectionRound = 'inactive';
-    this.useSelectedRuntimeForNextConnection = selectedRuntime;
+    this.selectedRuntimeCredentialIntent = selectedRuntime ? 'resume-device' : null;
     this.dispatch({ type: event });
     this.refreshProcessObservation();
     this.connectionTransport.disconnect();
@@ -520,7 +528,7 @@ export class GatewayConnectionManager {
       this.dispatch({ type: 'START_SUCCESS' });
       this.pendingStart?.resolve(result);
     } else {
-      this.useSelectedRuntimeForNextConnection = false;
+      this.selectedRuntimeCredentialIntent = null;
       this.connectionRound = 'exhausted';
       this.connectionTransport.disconnect();
       const error = result?.error || 'Failed to start gateway';
@@ -633,7 +641,7 @@ export class GatewayConnectionManager {
 
   private invalidateLifecycle(reason: string): void {
     this.rejectPendingStart(reason);
-    this.useSelectedRuntimeForNextConnection = false;
+    this.selectedRuntimeCredentialIntent = null;
     this.lifecycleEpoch.invalidate();
   }
 
